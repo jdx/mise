@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use eyre::{Result, WrapErr};
 use flate2::Compression;
@@ -131,6 +131,7 @@ impl CacheManagerBuilder {
             cache: Box::new(OnceCell::new()),
             cache_async: Box::new(tokio::sync::OnceCell::new()),
             fetch_lock: Arc::default(),
+            adopted_at: None,
             fresh_files: self.fresh_files,
             fresh_duration: self.fresh_duration,
         }
@@ -150,6 +151,9 @@ where
     /// Held while fetching, so concurrent callers of one cache wait for the
     /// first fetch instead of each making the same request.
     fetch_lock: Arc<tokio::sync::Mutex<()>>,
+    /// When the file whose contents [`Self::adopt_file_if_fresh_for`] put in
+    /// memory was written, while that value is still the one in memory.
+    adopted_at: Option<SystemTime>,
 }
 
 impl<T> CacheManager<T>
@@ -275,7 +279,94 @@ where
         }
         *self.cache = OnceCell::with_value(val.clone());
         *self.cache_async = tokio::sync::OnceCell::new_with(Some(val.clone()));
+        self.adopted_at = None;
         Ok(val)
+    }
+
+    /// Like [`Self::refresh_async`], but reuse a cache file written less than
+    /// `max_age` ago (and still within the fresh duration), whoever wrote it.
+    ///
+    /// A refresh asks for an answer newer than the cache, and one written a
+    /// moment ago by this process or an earlier command is as new as a second
+    /// request would be.
+    pub async fn refresh_async_unless_newer_than<F, Fut>(
+        &mut self,
+        max_age: Duration,
+        fetch: F,
+    ) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+        T: Clone,
+    {
+        let max_age = self
+            .freshest_duration()
+            .map_or(max_age, |fresh| min(fresh, max_age));
+        let written_recently = self
+            .cache_file_path
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age < max_age));
+        // The file rather than the in-memory value: another command may have
+        // written it after this process read an older one.
+        if written_recently && let Ok(val) = self.parse() {
+            *self.cache = OnceCell::with_value(val.clone());
+            *self.cache_async = tokio::sync::OnceCell::new_with(Some(val.clone()));
+            self.adopted_at = None;
+            return Ok(val);
+        }
+        self.refresh_async(fetch).await
+    }
+
+    /// Load the cache file into memory when it is still fresh and `accept`
+    /// approves its contents given its age, and say whether it did.
+    ///
+    /// The file rather than any value already in memory, which another command
+    /// may have rewritten since, so the age and the contents `accept` judges
+    /// come from the same copy, and later reads use exactly that copy.
+    pub fn adopt_file_if(&mut self, accept: impl FnOnce(Duration, &T) -> bool) -> bool
+    where
+        T: Clone,
+    {
+        self.adopt_file_if_fresh_for(self.fresh_duration, accept)
+    }
+
+    /// Like [`Self::adopt_file_if`], but the file is fresh for `fresh_duration`
+    /// in place of the one this cache was built with (still bounded by any
+    /// fresh files), for a caller that may keep it longer or shorter.
+    pub fn adopt_file_if_fresh_for(
+        &mut self,
+        fresh_duration: Option<Duration>,
+        accept: impl FnOnce(Duration, &T) -> bool,
+    ) -> bool
+    where
+        T: Clone,
+    {
+        let Some((modified, age)) = self
+            .cache_file_path
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| Some((modified, modified.elapsed().ok()?)))
+        else {
+            return false;
+        };
+        if self
+            .freshest_duration_for(fresh_duration)
+            .is_some_and(|fresh| age >= fresh)
+        {
+            return false;
+        }
+        let Ok(val) = self.parse() else {
+            return false;
+        };
+        if !accept(age, &val) {
+            return false;
+        }
+        *self.cache = OnceCell::with_value(val.clone());
+        *self.cache_async = tokio::sync::OnceCell::new_with(Some(val));
+        self.adopted_at = Some(modified);
+        true
     }
 
     /// Read the cache file without checking freshness and without fetching or writing.
@@ -290,6 +381,28 @@ where
             return Ok(val.clone());
         }
         self.parse()
+    }
+
+    /// Drop a value [`Self::adopt_file_if_fresh_for`] put in memory once the
+    /// file it came from is `max_age` old or older, so the next read checks the
+    /// file again: a caller that adopted it for a longer duration than a later
+    /// caller allows must not answer that later caller from memory. A value
+    /// fetched in this process is kept, even if writing it to disk failed.
+    pub fn forget_memory_older_than(&mut self, max_age: Duration) {
+        let too_old = self
+            .adopted_at
+            .is_some_and(|modified| modified.elapsed().is_ok_and(|age| age >= max_age));
+        if too_old {
+            *self.cache = Default::default();
+            *self.cache_async = Default::default();
+            self.adopted_at = None;
+        }
+    }
+
+    /// Whether a read would be answered without fetching: the value is in
+    /// memory, or the cache file is fresh.
+    pub fn has_fresh_value(&self) -> bool {
+        self.cache_async.get().is_some() || self.cache.get().is_some() || self.is_fresh()
     }
 
     fn parse(&self) -> Result<T> {
@@ -326,6 +439,7 @@ where
         }
         *self.cache = Default::default();
         *self.cache_async = Default::default();
+        self.adopted_at = None;
         Ok(())
     }
 
@@ -343,7 +457,11 @@ where
     }
 
     fn freshest_duration(&self) -> Option<Duration> {
-        let mut freshest = self.fresh_duration;
+        self.freshest_duration_for(self.fresh_duration)
+    }
+
+    fn freshest_duration_for(&self, fresh_duration: Option<Duration>) -> Option<Duration> {
+        let mut freshest = fresh_duration;
         for path in self.fresh_files.iter().unique() {
             let duration = modified_duration(path).unwrap_or_default();
             freshest = Some(match freshest {
@@ -655,6 +773,156 @@ mod tests {
             )
         );
         assert_eq!(fetches.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    fn refresh_cache(dir: &Path, fresh: Duration) -> CacheManager<String> {
+        CacheManagerBuilder::new(dir.join("value.msgpack.z"))
+            .with_fresh_duration(Some(fresh))
+            .build()
+    }
+
+    #[tokio::test]
+    async fn refresh_reuses_a_file_written_within_max_age() {
+        let dir = tempfile::tempdir().unwrap();
+        refresh_cache(dir.path(), Duration::from_secs(3600))
+            .write(&"written".to_string())
+            .unwrap();
+        // A separate manager, as in a later command.
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(3600));
+
+        let val = cache
+            .refresh_async_unless_newer_than(Duration::from_secs(60), async || {
+                Ok("fetched".to_string())
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(val, "written");
+        assert_eq!(
+            cache.get_or_try_init(|| Ok("unused".to_string())).unwrap(),
+            "written"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_refetches_a_file_older_than_max_age() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(3600));
+        cache.write(&"written".to_string()).unwrap();
+        let ten_minutes_ago = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - Duration::from_secs(600),
+        );
+        // The file name carries the build's cache keys, so find it.
+        for entry in fs::read_dir(dir.path()).unwrap() {
+            filetime::set_file_mtime(entry.unwrap().path(), ten_minutes_ago).unwrap();
+        }
+
+        let val = cache
+            .refresh_async_unless_newer_than(Duration::from_secs(60), async || {
+                Ok("fetched".to_string())
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(val, "fetched");
+    }
+
+    /// A fresh duration shorter than `max_age` (`fetch_remote_versions_cache`
+    /// set to `0`) means no file is recent enough to reuse.
+    #[tokio::test]
+    async fn refresh_honors_a_shorter_fresh_duration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        cache.write(&"written".to_string()).unwrap();
+
+        let val = cache
+            .refresh_async_unless_newer_than(Duration::from_secs(60), async || {
+                Ok("fetched".to_string())
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(val, "fetched");
+    }
+
+    #[tokio::test]
+    async fn adopt_file_if_loads_the_approved_file_over_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(3600));
+        // An older value in memory, and a newer file another command wrote.
+        cache
+            .get_or_try_init(|| Ok("in memory".to_string()))
+            .unwrap();
+        refresh_cache(dir.path(), Duration::from_secs(3600))
+            .write(&"on disk".to_string())
+            .unwrap();
+
+        assert!(!cache.adopt_file_if(|_, val| val == "in memory"));
+        assert!(cache.adopt_file_if(|age, val| age < Duration::from_secs(60) && val == "on disk"));
+        assert_eq!(
+            cache.get_or_try_init(|| Ok("fetched".to_string())).unwrap(),
+            "on disk"
+        );
+    }
+
+    #[tokio::test]
+    async fn adopt_file_if_rejects_a_stale_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        cache.write(&"written".to_string()).unwrap();
+        assert!(!cache.adopt_file_if(|_, _| true));
+    }
+
+    /// A caller's own fresh duration replaces the cache's, either way.
+    #[tokio::test]
+    async fn adopt_file_if_fresh_for_uses_the_given_duration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        cache.write(&"written".to_string()).unwrap();
+        assert!(!cache.adopt_file_if_fresh_for(Some(Duration::ZERO), |_, _| true));
+        assert!(cache.adopt_file_if_fresh_for(Some(Duration::from_secs(60)), |_, _| true));
+
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(60));
+        assert!(!cache.adopt_file_if_fresh_for(Some(Duration::ZERO), |_, _| true));
+    }
+
+    #[tokio::test]
+    async fn forget_memory_older_than_drops_only_an_old_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(3600));
+        cache.write(&"written".to_string()).unwrap();
+        assert!(cache.adopt_file_if(|_, _| true));
+        cache.forget_memory_older_than(Duration::from_secs(60));
+        assert!(cache.has_fresh_value());
+        cache.forget_memory_older_than(Duration::ZERO);
+        assert_eq!(
+            cache
+                .get_or_try_init_async(async || Ok("fetched".to_string()))
+                .await
+                .unwrap(),
+            "written"
+        );
+
+        // A value fetched here is kept, whatever the file's age (a failed
+        // write leaves an old file behind).
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        cache
+            .get_or_try_init_async(async || Ok("fetched here".to_string()))
+            .await
+            .unwrap();
+        cache.forget_memory_older_than(Duration::ZERO);
+        assert_eq!(cache.get_cached().unwrap(), "fetched here");
+
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        assert!(cache.adopt_file_if_fresh_for(Some(Duration::from_secs(60)), |_, _| true));
+        cache.forget_memory_older_than(Duration::ZERO);
+        assert_eq!(
+            cache
+                .get_or_try_init_async(async || Ok("fetched".to_string()))
+                .await
+                .unwrap(),
+            "fetched"
+        );
     }
 
     fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {

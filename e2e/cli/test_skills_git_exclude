@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# Links mise makes are machine-local, so git must not offer them for commit,
+# while the skills a person writes beside them stay visible.
+mkdir -p plugin/bin
+cat >plugin/bin/list-all <<'SH'
+#!/usr/bin/env bash
+echo "1.0.0 2.0.0"
+SH
+cat >plugin/bin/install <<'SH'
+#!/usr/bin/env bash
+set -e
+mkdir -p "$ASDF_INSTALL_PATH/bin" "$ASDF_INSTALL_PATH/skill"
+echo "# skilled $ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/skill/SKILL.md"
+printf '#!/bin/sh\n' >"$ASDF_INSTALL_PATH/bin/skilled"
+chmod +x "$ASDF_INSTALL_PATH/bin/skilled"
+digest="$(printf 'a%.0s' $(seq 64))"
+cat >"$ASDF_INSTALL_PATH/.mise-packslip.json" <<JSON
+{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"skilled.tar.gz","digest":{"sha256":"$digest"}}],"predicateType":"https://packslip.dev/release/v1","predicate":{"project":"github.com/test/skilled","version":"$ASDF_INSTALL_VERSION","published_at":"2026-09-01T00:00:00Z","artifacts":[{"name":"skilled.tar.gz","size":1,"format":"tar.gz","bin":["bin/skilled"]}],"resources":[{"kind":"skill","name":"skilled","archive":"skill"}],"identity":{"scheme":"sigstore-oidc","key_id":"https://github.com/test/skilled/.github/workflows/release.yml@refs/tags/v$ASDF_INSTALL_VERSION","issuer":"https://token.actions.githubusercontent.com"}}}
+JSON
+SH
+chmod +x plugin/bin/list-all plugin/bin/install
+mise plugins link skilled "$PWD/plugin"
+
+git init -q .
+cat >mise.toml <<'EOF_TOML'
+[tools]
+skilled = "latest"
+
+[settings.skills]
+dir = ".agents/skills"
+auto_sync = true
+prune = true
+EOF_TOML
+mkdir -p .agents/skills/mine
+echo "# mine" >.agents/skills/mine/SKILL.md
+
+mise install skilled@1.0.0
+assert_contains "cat .git/info/exclude" "/.agents/skills/skilled"
+assert_contains "cat .git/info/exclude" "/.agents/skills/.mise-skills.json"
+# Nothing in the working tree records it, and the hand-written skill is still
+# offered.
+assert_not_contains "git status --porcelain --untracked-files=all" "skilled"
+assert_not_contains "git status --porcelain --untracked-files=all" ".mise-skills.json"
+assert_contains "git status --porcelain --untracked-files=all" ".agents/skills/mine/SKILL.md"
+assert "test -e .gitignore && echo yes || echo no" "no"
+
+# Pruning the link stops ignoring it.
+mise unuse skilled
+mise skills sync --prune
+assert_not_contains "cat .git/info/exclude" "skilled"
+assert_not_contains "cat .git/info/exclude" "mise skills"

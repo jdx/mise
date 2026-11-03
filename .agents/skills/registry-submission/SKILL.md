@@ -8,7 +8,7 @@ description: Rules for adding a new tool or shorthand to mise's `registry/` — 
 **Most new registry additions from agents get rejected.** Before adding a new tool to `registry/`, understand the rules:
 
 - **mise does not host self-written, personal, niche, or low-popularity tools.** The registry is curated for tools that are _already_ widely used. "It works" or "it has tests" is not the bar.
-- **There is a high bar for new registry additions: tools generally need thousands of GitHub stars, not hundreds.** jdx will reject projects that do not meet this popularity bar and will not give a reason. Per [contributing.md](../../../docs/contributing.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
+- **There is a high bar for new registry additions: tools generally need thousands of GitHub stars, not hundreds.** jdx will reject projects that do not meet this popularity bar and will not give a reason. Per [contributing/registry.md](../../../docs/contributing/registry.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
 - **Wasted PRs are the default outcome** for tools the agent or user has not vetted against this bar. Do not submit one speculatively.
 
 ## Required check for new registry additions

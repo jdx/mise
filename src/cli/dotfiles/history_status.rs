@@ -12,6 +12,9 @@ pub(crate) struct HistoryReport {
     pub enabled: bool,
     pub tracked_entries: usize,
     pub tracked_files: u64,
+    /// Entries kept in this machine's local-only history instead.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub local_entries: usize,
     /// Files under a tracked entry that every save leaves out, with why.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<crate::system::history::store::PathReason>,
@@ -21,6 +24,13 @@ pub(crate) struct HistoryReport {
     pub nested: Vec<crate::system::history::store::PathReason>,
     pub checkpoints: usize,
     pub latest: Option<LatestReport>,
+    /// Tracked paths edited since the latest checkpoint; `None` when they
+    /// could not be determined.
+    pub unsaved: Option<Vec<String>>,
+    /// Tracked entries another machine saved while they were not selected
+    /// here: saves leave them alone until a pull applies them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_applied: Vec<String>,
     pub pending_operations: usize,
     pub watcher: super::capture_health::Watcher,
     pub unavailable: Option<String>,
@@ -29,6 +39,10 @@ pub(crate) struct HistoryReport {
     /// The setup repository, when one is connected.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync: Option<SyncReport>,
+    /// The bare Git repository holding the local checkpoints, which is the
+    /// one to push when the origin's history is unrelated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_repo: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -126,15 +140,19 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             enabled: false,
             tracked_entries: 0,
             tracked_files: 0,
+            local_entries: 0,
             omitted: vec![],
             nested: vec![],
             checkpoints: 0,
             latest: None,
+            unsaved: None,
+            not_applied: vec![],
             pending_operations: 0,
             watcher: super::capture_health::Watcher::NotDeclared,
             unavailable: None,
             health: None,
             sync: None,
+            history_repo: None,
         });
     }
     let (store, tracked, entries) = super::history::open().await?;
@@ -151,47 +169,182 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         trigger: entry.checkpoint.trigger.as_str().to_string(),
         description: entry.checkpoint.description.clone(),
     });
+    // edits nothing has saved yet, which a stopped watcher or a manual-save
+    // entry leaves behind; worked out like `mise dot history diff`
+    let snapshot = entries
+        .iter()
+        .rev()
+        .find_map(|entry| entry.checkpoint.tree.snapshot.as_deref());
+    let not_applied = match (store.repo(), snapshot) {
+        (Some(repo), Some(snapshot)) => {
+            match crate::system::history::held::unheld_entries(repo, snapshot, &walk) {
+                Ok(entries) => entries.into_iter().map(|(_, display)| display).collect(),
+                Err(err) => {
+                    debug!("history: could not compare the working tree: {err:#}");
+                    vec![]
+                }
+            }
+        }
+        _ => vec![],
+    };
+    let unsaved = match (store.repo(), snapshot) {
+        (Some(repo), Some(snapshot)) => {
+            match crate::system::history::replay::unsaved_paths(repo, &tracked, &walk, snapshot) {
+                Ok(unsaved) => unsaved,
+                Err(err) => {
+                    debug!("history: could not compare the working tree: {err:#}");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
     Ok(HistoryReport {
         enabled,
         tracked_entries: tracked.entries.len(),
         tracked_files,
+        local_entries: tracked.local.len(),
         omitted: walk.omitted,
         nested: walk.nested,
         checkpoints: entries.len(),
         latest,
+        unsaved,
+        not_applied,
         pending_operations,
         watcher: super::capture_health::watcher().await?,
         unavailable: store.unavailable().map(str::to_string),
         health: crate::system::history::health::read(store.state_dir()),
         sync: sync_report(&store)?,
+        history_repo: store.repo().map(|_| {
+            crate::file::display_path(crate::system::history::shadow::HistoryRepo::path_in(
+                store.state_dir(),
+            ))
+        }),
     })
 }
 
+fn plural(count: impl Into<u64>, noun: &str) -> String {
+    let count = count.into();
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
+fn push_step(next: &mut Vec<String>, step: &str) {
+    if !next.iter().any(|existing| existing == step) {
+        next.push(step.to_string());
+    }
+}
+
+const OK: &str = "✓";
+const WARN: &str = "⚠";
+const BAD: &str = "✗";
+
+/// Prints the history half of `mise dot status` as sections, each led by its
+/// state, ending with the commands that would clear what needs attention.
 pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     if !report.enabled {
         miseprintln!("History: disabled (history.enabled = false).");
         return Ok(());
     }
-    if let Some(reason) = &report.unavailable {
-        miseprintln!("History: capture is unavailable: {reason}");
+    let mut next: Vec<String> = vec![];
+    print_tracking(report, &mut next)?;
+    if let Some(sync) = &report.sync {
+        print_repository(sync, report.history_repo.as_deref(), &mut next)?;
+        print_conflicts(sync, &mut next)?;
+    } else {
+        miseprintln!();
+        miseprintln!("Repository");
+        miseprintln!("  none (`mise dot origin set <url>` synchronizes committed history).");
+        if let Some(path) = &report.history_repo {
+            miseprintln!("  Local history: {path}");
+        }
     }
+    print_capture(report, &mut next)?;
+    if let Some(sync) = &report.sync
+        && sync.declarations_changed
+    {
+        miseprintln!();
+        miseprintln!("Bootstrap {WARN}");
+        miseprintln!("  declarations changed: run `mise bootstrap` (dry-run available)");
+        push_step(&mut next, "mise bootstrap");
+    }
+    if !next.is_empty() {
+        miseprintln!();
+        miseprintln!("Next steps");
+        for step in &next {
+            miseprintln!("  → {step}");
+        }
+    }
+    Ok(())
+}
+
+fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> {
+    miseprintln!();
+    miseprintln!("Tracking");
+    if let Some(reason) = &report.unavailable {
+        miseprintln!("  {BAD} capture is unavailable: {reason}");
+    }
+    let omitted = report.omitted.len();
     miseprintln!(
-        "History: tracking {} entries ({} files); {} checkpoints recorded.",
-        report.tracked_entries,
-        report.tracked_files,
-        report.checkpoints
+        "  {OK} {} · {}{}",
+        if report.tracked_entries == 1 {
+            "1 entry".to_string()
+        } else {
+            format!("{} entries", report.tracked_entries)
+        },
+        plural(report.tracked_files, "file"),
+        if omitted > 0 {
+            format!(" · {omitted} omitted")
+        } else {
+            String::new()
+        }
     );
+    if report.local_entries > 0 {
+        miseprintln!(
+            "  local-only: {} entries kept on this machine (`mise dot --local status`)",
+            report.local_entries
+        );
+    }
     match &report.latest {
         Some(latest) => miseprintln!(
-            "  latest checkpoint {} ({}, {}): {}",
+            "  {OK} {} · latest {} ({}, {}): {}",
+            plural(report.checkpoints as u64, "checkpoint"),
             latest.id,
             latest.trigger,
             local_time(&latest.created_at),
             latest.description
         ),
-        None => miseprintln!("  no checkpoint recorded yet; `mise dot save` records one."),
+        None => {
+            miseprintln!("  {WARN} no checkpoint recorded yet");
+            if report.tracked_entries > 0 {
+                push_step(next, "mise dot save");
+            }
+        }
     }
-    if !report.omitted.is_empty() || !report.nested.is_empty() {
+    if let Some(unsaved) = report
+        .unsaved
+        .as_ref()
+        .filter(|unsaved| !unsaved.is_empty())
+    {
+        const SHOWN: usize = 5;
+        let mut listed = unsaved.iter().take(SHOWN).cloned().collect::<Vec<_>>();
+        if unsaved.len() > SHOWN {
+            listed.push(format!("and {} more", unsaved.len() - SHOWN));
+        }
+        miseprintln!(
+            "  {WARN} unsaved changes: {} path(s) since the latest checkpoint ({}); `mise dot history diff` shows them",
+            unsaved.len(),
+            listed.join(", ")
+        );
+        push_step(next, "mise dot save");
+    }
+    if !report.not_applied.is_empty() {
+        miseprintln!(
+            "  {WARN} not applied here: {} (saved by another machine while not selected here); saves resume after a pull applies them",
+            report.not_applied.join(", ")
+        );
+        push_step(next, "mise dot pull");
+    }
+    if omitted > 0 || !report.nested.is_empty() {
         miseprintln!(
             "  {}.",
             crate::system::history::tracked::omission_summary(&report.omitted, &report.nested)
@@ -199,84 +352,122 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     }
     if report.pending_operations > 0 {
         miseprintln!(
-            "  {} operation(s) did not finish; `mise dot history --pending` lists them; `mise dot recover` retries safe recovery.",
+            "  {WARN} {} operation(s) did not finish; `mise dot history --pending` lists them",
             report.pending_operations
         );
+        push_step(next, "mise dot recover");
     }
+    Ok(())
+}
+
+fn print_repository(
+    sync: &SyncReport,
+    history_repo: Option<&str>,
+    next: &mut Vec<String>,
+) -> Result<()> {
+    let when = |at: &Option<String>| {
+        at.as_deref()
+            .map(local_time)
+            .unwrap_or_else(|| "never".into())
+    };
+    miseprintln!();
+    miseprintln!("Repository");
+    miseprintln!("  {}", sync.origin);
+    miseprintln!("  Branch: {} · Mode: {}", sync.branch, sync.mode);
+    if let Some(path) = history_repo {
+        miseprintln!("  Local history: {path}");
+    }
+    miseprintln!("  ↑ Last published: {}", when(&sync.last_publish));
+    miseprintln!("  ↓ Last fetched: {}", when(&sync.last_fetch));
+    miseprintln!("  ↓ Last pulled: {}", when(&sync.last_apply));
+    miseprintln!("  notifications: {}", sync.notifications);
+    if !sync.pending_applications.is_empty() {
+        miseprintln!(
+            "  {WARN} {} incoming change(s) pending ({})",
+            sync.pending_applications.len(),
+            sync.pending_applications.join(", ")
+        );
+        push_step(next, "mise dot pull");
+    }
+    if let Some(error) = &sync.last_error {
+        match &sync.failing_since {
+            Some(since) => miseprintln!(
+                "  {BAD} last error: {error} (failing since {}, {} attempt(s))",
+                local_time(since),
+                sync.consecutive_failures
+            ),
+            None => miseprintln!("  {BAD} last error: {error}"),
+        }
+    }
+    if let Some(error) = &sync.application_failure {
+        miseprintln!("  {BAD} sync paused: {error}");
+    }
+    if let Some(error) = &sync.validation_error {
+        miseprintln!("  {BAD} incoming setup is invalid: {error}");
+    }
+    for (path, reason) in &sync.skipped {
+        miseprintln!("  not shared: {path} ({reason})");
+    }
+    Ok(())
+}
+
+fn print_conflicts(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
+    if sync.conflicts.is_empty() {
+        return Ok(());
+    }
+    miseprintln!();
+    miseprintln!("Conflicts ({}) {BAD}", sync.conflicts.len());
+    for (path, reason) in &sync.conflicts {
+        let advice = crate::system::history::sync::apply::resolution_advice(path, reason);
+        miseprintln!("  {BAD} {path}");
+        miseprintln!("    {reason}");
+        miseprintln!("    {advice}");
+    }
+    miseprintln!("  Sharing is paused for the entire setup; local history continues.");
+    next.insert(
+        0,
+        format!(
+            "Resolve {} conflict(s) as described under Conflicts",
+            sync.conflicts.len()
+        ),
+    );
+    Ok(())
+}
+
+fn print_capture(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> {
+    use super::capture_health::Watcher;
     let failing = report
         .health
         .as_ref()
         .is_some_and(|health| health.failing_capture().is_some());
-    if failing && report.watcher == super::capture_health::Watcher::Running {
+    miseprintln!();
+    if failing && report.watcher == Watcher::Running {
+        miseprintln!("Automatic capture {BAD}");
         miseprintln!(
-            "  automatic capture: {} but failing (edits are not being saved until a capture succeeds).",
+            "  {}, but failing (edits are not being saved until a capture succeeds).",
             report.watcher.as_str()
         );
-    } else {
+    } else if report.watcher == Watcher::Running {
+        miseprintln!("Automatic capture {OK}");
         miseprintln!(
-            "  automatic capture: {} ({}).",
+            "  {} ({}).",
             report.watcher.as_str(),
             super::capture_health::advice(report.watcher)
         );
-    }
-    match &report.sync {
-        None => miseprintln!(
-            "Setup repository: none (`mise dot origin set <url>` synchronizes committed history)."
-        ),
-        Some(sync) => {
-            miseprintln!(
-                "Setup repository: {} (branch {}, mode {}).",
-                sync.origin,
-                sync.branch,
-                sync.mode,
+    } else {
+        miseprintln!("Automatic capture {WARN}");
+        miseprintln!(
+            "  {} ({}).",
+            report.watcher.as_str(),
+            super::capture_health::advice(report.watcher)
+        );
+        if report.watcher == Watcher::NotDeclared {
+            next.push(
+                "declare `history-watch` under [bootstrap.services] and run `mise bootstrap`"
+                    .to_string(),
             );
-            let when = |at: &Option<String>| {
-                at.as_deref()
-                    .map(local_time)
-                    .unwrap_or_else(|| "never".into())
-            };
-            miseprintln!(
-                "  last publish {}, last fetch {}, last pull {}.",
-                when(&sync.last_publish),
-                when(&sync.last_fetch),
-                when(&sync.last_apply)
-            );
-            miseprintln!("  notifications: {}", sync.notifications);
-            if !sync.pending_applications.is_empty() {
-                miseprintln!(
-                    "  {} incoming change(s) pending: `mise dot pull` ({})",
-                    sync.pending_applications.len(),
-                    sync.pending_applications.join(", ")
-                );
-            }
-            for (path, reason) in &sync.conflicts {
-                let advice = crate::system::history::sync::apply::resolution_advice(path, reason);
-                miseprintln!(
-                    "  sync paused: {path}: {reason}; sharing is paused for the entire setup; local history continues ({advice})"
-                );
-            }
-            if sync.declarations_changed {
-                miseprintln!("  declarations changed: run `mise bootstrap` (dry-run available)");
-            }
-            if let Some(error) = &sync.last_error {
-                match &sync.failing_since {
-                    Some(since) => miseprintln!(
-                        "  last error: {error} (failing since {}, {} attempt(s))",
-                        local_time(since),
-                        sync.consecutive_failures
-                    ),
-                    None => miseprintln!("  last error: {error}"),
-                }
-            }
-            if let Some(error) = &sync.application_failure {
-                miseprintln!("  sync paused: {error}");
-            }
-            if let Some(error) = &sync.validation_error {
-                miseprintln!("  incoming setup is invalid: {error}");
-            }
-            for (path, reason) in &sync.skipped {
-                miseprintln!("  not shared: {path} ({reason})");
-            }
+        } else {
+            next.push("mise bootstrap services apply".to_string());
         }
     }
     if let Some(health) = &report.health {
@@ -296,13 +487,13 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                 .as_deref()
                 .map(local_time)
                 .unwrap_or_else(|| "never".into()),
-            if report.watcher == super::capture_health::Watcher::Running {
+            if report.watcher == Watcher::Running {
                 ""
             } else {
                 "; the watcher is not running now, so this is what it last reported"
             }
         );
-        let running = report.watcher == super::capture_health::Watcher::Running;
+        let running = report.watcher == Watcher::Running;
         // a running watcher starts from its predecessor's record: an error
         // dated before this run is not its failure
         let error = if running {
@@ -351,4 +542,8 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }

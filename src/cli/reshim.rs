@@ -6,20 +6,23 @@ use crate::toolset::ToolsetBuilder;
 
 /// Create shims for executables provided by installed tools
 ///
-/// Run this when an executable was added to an existing installation outside mise,
-/// for example after a language package manager installed a CLI globally. It rebuilds
-/// the user shim directory by default; `--system` selects the shared system shim farm.
+/// Run this when an executable was added to an existing installation outside
+/// mise, for example after a language package manager installed a CLI globally.
+/// It rebuilds your shim directory (~/.local/share/mise/shims by default).
+/// `--system` rebuilds the system shim directory used by `mise install --system`.
 ///
-/// Shims are created for all installed versions. The shim resolves which version to
-/// run from the current configuration when invoked. `--force` rebuilds mise-owned
-/// shims; it does not turn unrelated files into mise-owned shims.
+/// Shims are created for all installed versions. When invoked, a shim picks the
+/// version to run from the current config. `--force` rebuilds mise-owned shims;
+/// it does not turn unrelated files into mise-owned shims.
+/// See https://mise.jdx.dev/dev-tools/shims.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise reshim
-~/.local/share/mise/shims/node -v"###,
-        help = "Rebuild shims, then check node. Example output: `v20.0.0`."
+~/.local/share/mise/shims/node -v
+v24.11.0"###,
+        help = "Rebuild shims, then run node through its shim"
     )
 )]
 pub(crate) struct Reshim {
@@ -32,7 +35,7 @@ pub(crate) struct Reshim {
     #[usage(long, short)]
     pub force: bool,
 
-    /// Rebuild the system shim farm
+    /// Rebuild the system shims, for tools installed with `mise install --system`
     #[usage(long)]
     pub system: bool,
 }

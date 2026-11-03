@@ -16,67 +16,67 @@ use crate::{
 };
 use crate::{env, file};
 
-/// Sets/gets tool version in local .tool-versions or mise.toml
+/// Set or show local tool versions (deprecated; use `mise use`)
 ///
-/// Use this to set a tool's version when within a directory
-/// Use `mise global` to set a tool version globally
-/// This uses `.tool-version` by default unless there is a `mise.toml` file or if `MISE_USE_TOML`
-/// is set. A future v2 release of mise will default to using `mise.toml`.
+/// Writes `mise.toml` in the current directory, or an existing `.tool-versions`
+/// there when there is no `mise.toml`. Set MISE_USE_TOML=0 to create
+/// `.tool-versions` instead. Use `mise global` for the global config.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     hide = true,
     alias = "l",
     example(
-        r###"mise local --pin node@20"###,
-        help = r###"set the current version of node to 20.x for the current directory will use a precise version (e.g.: 20.0.0) in .tool-versions file"###
+        r###"mise local --pin node@24"###,
+        help = r###"Save the exact version, such as `node = "24.11.0"`, in the current directory"###
     ),
     example(
-        r###"mise local -p node@20"###,
-        help = r###"set node to 20.x for the current project (recurses up to find .tool-versions)"###
+        r###"mise local -p node@24"###,
+        help = r###"Save node 24 in the nearest `mise.toml` in this or a parent directory"###
     ),
     example(
-        r###"mise local --fuzzy node@20"###,
-        help = r###"set the current version of node to 20.x for the current directory will use a fuzzy version (e.g.: 20) in .tool-versions file"###
+        r###"mise local --fuzzy node@24"###,
+        help = r###"Save node 24 as written, such as `node = "24"`, in the current directory"###
     ),
     example(
         r###"mise local --remove=node"###,
-        help = r###"removes node from .tool-versions"###
+        help = r###"Remove node from the local config"###
     ),
     example(
-        r###"mise local node"###,
-        help = r###"show the current version of node in .tool-versions; example output: `20.0.0`"###
+        r###"mise local node
+24.11.0"###,
+        help = r###"Show the local node version"###
     )
 )]
 pub(crate) struct Local {
-    /// Tool(s) to add to .tool-versions/mise.toml
-    /// e.g.: node@20
-    /// if this is a single tool with no version,
-    /// the current value of .tool-versions/mise.toml will be displayed
+    /// Tools to add to `mise.toml` or `.tool-versions`, such as `node@24`
+    ///
+    /// With a single tool and no version, prints that tool's local version.
     #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
-    /// Recurse up to find a .tool-versions file rather than using the current directory only
-    /// by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
+    /// Use the nearest `mise.toml` in this or a parent directory
+    ///
+    /// By default, only the current directory is used. With MISE_USE_TOML=0, a
+    /// `.tool-versions` file also counts.
     #[usage(short, long, verbatim_doc_comment)]
     parent: bool,
 
-    /// Save fuzzy version to `.tool-versions`
-    /// e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions
-    /// This is the default behavior unless MISE_ASDF_COMPAT=1
+    /// Save the version as written, such as `24`
+    ///
+    /// This is the default unless MISE_ASDF_COMPAT=1.
     #[usage(long, overrides = "pin")]
     fuzzy: bool,
 
-    /// Get the path of the config file
+    /// Print the path of the config file
     #[usage(long)]
     path: bool,
 
-    /// Save exact version to `.tool-versions`
-    /// e.g.: `mise local --pin node@20` will save `node 20.0.0` to .tool-versions
+    /// Save the exact version, such as `24.11.0`
     #[usage(long, verbatim_doc_comment, overrides = "fuzzy")]
     pin: bool,
 
-    /// Remove the tool(s) from .tool-versions
+    /// Remove these tools from the local config
     #[usage(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Option<Vec<BackendArg>>,
 }

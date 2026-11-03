@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# A tool that ships a skill, as a plugin whose install lays down a packslip
+# statement. Without skills.dir, sync picks .agents/skills or .claude/skills,
+# whichever exists, and links one to the other when neither does.
+mkdir -p plugin/bin
+cat >plugin/bin/list-all <<'SH'
+#!/usr/bin/env bash
+echo "1.0.0 2.0.0"
+SH
+cat >plugin/bin/install <<'SH'
+#!/usr/bin/env bash
+set -e
+mkdir -p "$ASDF_INSTALL_PATH/bin" "$ASDF_INSTALL_PATH/skill"
+echo "# skilled $ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/skill/SKILL.md"
+printf '#!/bin/sh\n' >"$ASDF_INSTALL_PATH/bin/skilled"
+chmod +x "$ASDF_INSTALL_PATH/bin/skilled"
+digest="$(printf 'a%.0s' $(seq 64))"
+cat >"$ASDF_INSTALL_PATH/.mise-packslip.json" <<JSON
+{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"skilled.tar.gz","digest":{"sha256":"$digest"}}],"predicateType":"https://packslip.dev/release/v1","predicate":{"project":"github.com/test/skilled","version":"$ASDF_INSTALL_VERSION","published_at":"2026-09-01T00:00:00Z","artifacts":[{"name":"skilled.tar.gz","size":1,"format":"tar.gz","bin":["bin/skilled"]}],"resources":[{"kind":"skill","name":"skilled","archive":"skill"}],"identity":{"scheme":"sigstore-oidc","key_id":"https://github.com/test/skilled/.github/workflows/release.yml@refs/tags/v$ASDF_INSTALL_VERSION","issuer":"https://token.actions.githubusercontent.com"}}}
+JSON
+SH
+chmod +x plugin/bin/list-all plugin/bin/install
+mise plugins link skilled "$PWD/plugin"
+
+# Neither exists: .agents/skills, with .claude/skills linked to it.
+mkdir fresh
+cd fresh || exit 1
+git init -q
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+mise skills sync
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert_contains "cat .claude/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert 'test -L .claude/skills; echo $?' "0"
+# Only the fixture is left to track; the links and the alias are excluded.
+assert "git ls-files --others --exclude-standard" "mise.toml"
+
+# Only .claude/skills exists: it stays the target.
+cd .. || exit 1
+mkdir claude-only
+cd claude-only || exit 1
+mkdir -p .claude/skills
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+mise skills sync
+assert_contains "cat .claude/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert 'test -e .agents; echo $?' "1"
+
+# Both exist as real directories: .agents/skills wins.
+cd .. || exit 1
+mkdir both
+cd both || exit 1
+mkdir -p .agents/skills .claude/skills
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+mise skills sync
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert 'test -e .claude/skills/skilled; echo $?' "1"
+
+# An explicit setting wins over both.
+mkdir ../explicit
+cd ../explicit || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+MISE_SKILLS_DIR=custom mise skills sync
+assert_contains "cat custom/skilled/SKILL.md" "# skilled 1.0.0"
+assert 'test -e .agents; echo $?' "1"
+
+# A .claude that is itself a link may be shared: no alias is made inside it.
+cd .. || exit 1
+mkdir dotfiles-claude real
+ln -s "$PWD/dotfiles-claude" real/.claude
+cd real || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+assert_contains "mise skills sync 2>&1" "did not make"
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert 'test -e ../dotfiles-claude/skills; echo $?' "1"
+
+# The alias is hidden from git only while it is mise's link: once a person
+# replaces it with a directory of their own, git sees their skills again.
+cd .. || exit 1
+cd fresh || exit 1
+rm .claude/skills
+mkdir .claude/skills
+echo mine >.claude/skills/handwritten.md
+mise skills sync
+assert_contains "git ls-files --others --exclude-standard" ".claude/skills/handwritten.md"
+
+# A linked .claude that already holds a skills directory is left alone, and
+# so is the exclude file of the repository it lives in.
+cd .. || exit 1
+mkdir other-repo
+git -C other-repo init -q
+mkdir -p project-a/.agents/skills other-repo/.claude-real/skills
+ln -s "$PWD/other-repo/.claude-real" project-a/.claude
+cd project-a || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+before="$(cat "$PWD/../other-repo/.git/info/exclude")"
+mise skills sync
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert "cat $PWD/../other-repo/.git/info/exclude" "$before"

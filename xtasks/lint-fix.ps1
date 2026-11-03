@@ -4,5 +4,5 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
 cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
-prettier -w .
+oxfmt --write .
 cargo fmt --all

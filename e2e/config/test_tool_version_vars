@@ -133,3 +133,22 @@ EOF
 
 assert_fail "mise ls tiny" "invalid version for tiny"
 assert_fail "mise ls tiny" 'rendered to "bogus:1.0"'
+
+# `config ls` reports the same error instead of panicking, in both output formats.
+cat <<EOF >mise.toml
+[tools]
+tiny = "bogus:1.0"
+EOF
+
+# The panic printed the same message, so only the exit status tells the two apart.
+assert_config_ls_error() {
+  local out status=0
+  out="$(mise config ls "$@" 2>&1)" || status=$?
+  if [[ $status -ne 1 ]]; then
+    fail "[mise config ls $*] expected exit code 1, got $status: $out"
+  fi
+  assert_contains_text "$out" "invalid version for tiny in"
+  assert_contains_text "$out" "mise.toml"
+}
+assert_config_ls_error
+assert_config_ls_error --json

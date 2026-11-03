@@ -57,7 +57,8 @@ function util.get_versions()
     for _, release in ipairs(releases) do
       local version = release.tag_name:match("^v(.+)$")
       if version then
-        table.insert(versions, { version = version })
+        local created_at = type(release.published_at) == "string" and release.published_at or nil
+        table.insert(versions, { version = version, created_at = created_at })
       end
     end
   end
@@ -67,6 +68,9 @@ function util.get_versions()
 end
 
 function util.download_url(version)
+  if OS_TYPE == "linux" and ARCH_TYPE ~= "amd64" then
+    error("TinyTeX only provides x86_64 Linux binaries; unsupported architecture: " .. tostring(ARCH_TYPE))
+  end
   local ext = "tar.gz"
   if OS_TYPE == "darwin" or OS_TYPE == "macos" then
     ext = "tgz"

@@ -8,10 +8,12 @@ use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::runtime_symlinks;
 use crate::toolset::{
-    NeededVersions, PrunableTools, RunningProcess, ToolVersion, prunable_tools_with_sources,
+    NeededVersions, PrunableTools, RunningProcess, ToolVersion, needed_key,
+    prunable_tools_with_sources,
 };
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::ProgressIcon;
 use crate::ui::prompt::{self, Confirmation};
 use crate::{backend::Backend, config, exit};
 use console::style;
@@ -19,52 +21,54 @@ use eyre::Result;
 
 use super::trust::Trust;
 
-/// Delete unused versions of tools
+/// Delete tool versions that nothing uses
 ///
-/// mise tracks which config files have been used in ~/.local/state/mise/tracked-configs
-/// Versions which are no longer the latest specified in any of those configs are deleted.
-/// Versions installed only with environment variables `MISE_<TOOL>_VERSION` will be deleted,
-/// as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>`.
+/// mise records each config file it loads (in ~/.local/state/mise/tracked-configs)
+/// and each tool stub it runs (in ~/.local/state/mise/tracked-stubs). `mise prune`
+/// deletes installed versions that none of them selects. A config that requests
+/// `node = "20"` keeps only the 20.x version it resolves to. Versions installed
+/// only for `mise exec <TOOL>@<VERSION>` or through `MISE_<TOOL>_VERSION` are
+/// deleted. Versions that a running process was started from are kept, so a
+/// long-running program keeps its files.
 ///
-/// Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
-/// Versions still referenced by a tracked stub are not deleted.
-///
-/// Versions that a running process was started from are not deleted either,
-/// so a long-running program keeps its files after its version stops being needed.
-///
-/// You can list prunable tools with `mise ls --prunable`
+/// It also forgets tracked, trusted, and ignored config files that no longer
+/// exist. Pass `--tools` or `--configs` to do only one of the two. List the
+/// versions it would delete with `mise ls --prunable`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        "mise prune --dry-run",
-        help = "Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
-    )
+        r###"mise prune --dry-run
+mise node@20.0.0 is prunable: node is required at 20.19.5 by ~/src/app/mise.toml
+mise node@20.0.0 [dryrun]  remove ~/.local/share/mise/installs/node/20.0.0, ~/.cache/mise/node/20.0.0"###,
+        help = "Preview what would be deleted and why"
+    ),
+    example("mise prune --tools node", help = "Delete unused node versions only")
 )]
 pub(crate) struct Prune {
     /// Prune only these tools
     #[usage()]
     pub installed_tool: Option<Vec<ToolArg>>,
 
-    /// Do not actually delete anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     pub dry_run: bool,
 
-    /// Prune only tracked and trusted configuration links that point to nonexistent configurations
+    /// Only forget tracked, trusted, and ignored config files that no longer exist
     #[usage(long)]
     pub configs: bool,
 
-    /// Like --dry-run but exits with code 1 if there are tools to prune
+    /// Like --dry-run, but exit with code 1 if there are tools to prune
     ///
-    /// This is useful for scripts to check if tools need to be pruned.
-    #[usage(long, verbatim_doc_comment)]
+    /// Use it in scripts that check whether tools need pruning.
+    #[usage(long)]
     pub dry_run_code: bool,
 
     /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     pub monorepo: bool,
 
-    /// Prune only unused versions of tools
+    /// Only delete unused tool versions
     #[usage(long)]
     pub tools: bool,
 }
@@ -76,7 +80,7 @@ impl Prune {
 
     pub(crate) async fn run(self) -> Result<()> {
         if self.monorepo {
-            unimplemented!("mise prune --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise prune yet");
         }
         // Prune inspects the project it runs in from whatever environment it was
         // started in, including when it rebuilds shims afterwards; none of that is
@@ -96,7 +100,7 @@ impl Prune {
                 to_delete,
                 needed,
                 running,
-            } = prunable_tools_with_sources(&config, tools).await?;
+            } = scan_prunable(&config, tools).await?;
             explain_running(&running);
             let has_work = !to_delete.is_empty();
             let explain = self.is_dry_run().then_some(&needed);
@@ -140,15 +144,37 @@ impl Prune {
     }
 }
 
-pub(super) async fn prune(
+/// Prune every unused version of `tools`, plus the unused ones among `versions`.
+///
+/// A version in `versions` is one the caller was asked to remove by name, so its
+/// siblings are none of its business: they stay even when nothing uses them. When
+/// such a version is kept because something still needs it, say what, since
+/// otherwise the command that was asked to remove it appears to do nothing.
+pub(super) async fn prune_scoped(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    versions: Vec<ToolVersion>,
     dry_run: bool,
 ) -> Result<()> {
     let _suspended = crate::install_layout::snapshots::suspend();
+    let scanned = tools
+        .iter()
+        .copied()
+        .chain(versions.iter().map(|tv| tv.ba()))
+        .collect::<Vec<_>>();
     let PrunableTools {
-        to_delete, running, ..
-    } = prunable_tools_with_sources(config, tools).await?;
+        mut to_delete,
+        needed,
+        running,
+    } = scan_prunable(config, scanned).await?;
+    let selected = versions.iter().map(needed_key).collect::<BTreeSet<_>>();
+    to_delete.retain(|(_, tv)| tools.contains(&tv.ba()) || selected.contains(&needed_key(tv)));
+    // A running process only matters for what this call could have removed.
+    let running = running
+        .into_iter()
+        .filter(|(tv, _)| tools.contains(&tv.ba()) || selected.contains(&needed_key(tv)))
+        .collect::<Vec<_>>();
+    explain_kept(&versions, &needed);
     explain_running(&running);
     delete(
         config,
@@ -158,6 +184,28 @@ pub(super) async fn prune(
         UnavailableConfirmation::Decline,
     )
     .await
+}
+
+/// Say which of the versions that were asked for stay, and what needs them.
+fn explain_kept(versions: &[ToolVersion], needed: &NeededVersions) {
+    for tv in versions {
+        if let Some(sources) = needed.get(&needed_key(tv)) {
+            let sources = sources.iter().map(display_path).collect::<Vec<_>>();
+            info!("{} is kept: required by {}", tv.style(), sources.join(", "));
+        }
+    }
+}
+
+/// Find the prunable versions behind a progress line, since resolving every
+/// tracked config can take a while and nothing else is on screen yet.
+async fn scan_prunable(config: &Arc<Config>, tools: Vec<&BackendArg>) -> Result<PrunableTools> {
+    let pr = MultiProgressReport::get().add("scanning tracked configs");
+    let result = prunable_tools_with_sources(config, tools, Some(pr.as_ref())).await;
+    match &result {
+        Ok(_) => pr.finish(),
+        Err(_) => pr.finish_with_icon(String::new(), ProgressIcon::Error),
+    }
+    result
 }
 
 /// How a caller wants to handle a confirmation prompt that nobody can answer.

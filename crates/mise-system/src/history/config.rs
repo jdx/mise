@@ -1,0 +1,250 @@
+//! `[history]`: the operational history configuration read from the system
+//! and global configuration layers only. Project configuration found from
+//! the current directory never contributes, so no project can change what
+//! personal history captures.
+
+use std::path::{Path, PathBuf};
+
+use eyre::{Result, WrapErr};
+use indexmap::IndexMap;
+
+pub(crate) use mise_config::history::HistoryTomlConfig;
+pub use mise_config::history::OriginTomlConfig;
+use mise_util::file::display_path;
+
+/// The configured `[history] machine`, if any layer sets one.
+pub(crate) fn machine_name() -> Result<Option<String>> {
+    let Some(name) = layers()?
+        .into_iter()
+        .filter_map(|(_, layer)| layer.machine)
+        .next_back()
+    else {
+        return Ok(None);
+    };
+    eyre::ensure!(
+        super::store::is_valid_machine_name(&name),
+        "[history].machine must be 1-63 letters, digits, dots, dashes, or underscores, starting with a letter or digit: {name:?}"
+    );
+    Ok(Some(name))
+}
+
+/// Resolve the history commit identity when the commit is created. A shared
+/// configuration may use `{hostname}` without a per-machine override.
+pub(crate) fn git_email() -> Result<String> {
+    let template = layers()?
+        .into_iter()
+        .filter_map(|(_, layer)| layer.git_email)
+        .next_back()
+        .unwrap_or_else(|| "mise@localhost".to_string());
+    render_git_email(&template, &super::store::machine().name)
+}
+
+fn render_git_email(template: &str, hostname: &str) -> Result<String> {
+    let email = template.replace("{hostname}", hostname);
+    eyre::ensure!(
+        email.split('@').count() == 2
+            && !email.starts_with('@')
+            && !email.ends_with('@')
+            && !email.contains('{')
+            && !email.contains('}')
+            && !email
+                .chars()
+                .any(|c| c.is_whitespace() || c.is_control() || "<>".contains(c)),
+        "[history].git_email must resolve to a Git email address"
+    );
+    Ok(email)
+}
+
+pub(crate) fn file_recipients() -> Result<Vec<String>> {
+    let mut recipients = Vec::new();
+    for (path, layer) in layers()? {
+        if let Some(encryption) = layer.encryption {
+            if !crate::host::is_trusted(&path) {
+                eyre::bail!(
+                    "trust the configuration before using its encryption recipients: {}",
+                    display_path(&path)
+                );
+            }
+            recipients = encryption.recipients;
+            if recipients.is_empty() {
+                eyre::bail!(
+                    "[history.encryption].recipients must not be empty; configure recipients before capturing encrypted files"
+                );
+            }
+        }
+    }
+    Ok(recipients)
+}
+
+/// The effective `settings.history.describe_command`: the environment wins,
+/// otherwise the last trusted system/global layer that declares it wins.
+/// Project settings are deliberately never considered: this command receives
+/// personal dotfile contents and must not be controlled by a repository.
+pub(crate) fn describe_command() -> Result<Option<String>> {
+    if let Some(command) = std::env::var_os("MISE_HISTORY_DESCRIBE_COMMAND") {
+        let command = command
+            .into_string()
+            .map_err(|_| eyre::eyre!("MISE_HISTORY_DESCRIBE_COMMAND contains invalid Unicode"))?;
+        return Ok(nonempty_command(command));
+    }
+
+    let mut found = None;
+    for path in config_files() {
+        let command = match crate::host::describe_command_setting(&path) {
+            Ok(command) => command,
+            Err(err) => {
+                warn!(
+                    "history: cannot read description command from {}: {err}",
+                    display_path(&path)
+                );
+                continue;
+            }
+        };
+        if let Some(command) = command {
+            if !crate::host::is_trusted(&path) {
+                warn!(
+                    "history: ignoring settings.history.describe_command in untrusted {}",
+                    display_path(&path)
+                );
+                continue;
+            }
+            found = Some(command);
+        }
+    }
+    Ok(found.and_then(nonempty_command))
+}
+
+fn nonempty_command(command: String) -> Option<String> {
+    let command = command.trim().to_string();
+    (!command.is_empty()).then_some(command)
+}
+
+/// The effective `[history.origin]`: the last layer that declares one.
+pub fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
+    // local-only history is never shared
+    if super::local::active() {
+        return Ok(None);
+    }
+    let mut found = None;
+    for (path, layer) in layers()? {
+        if let Some(origin) = layer.origin {
+            super::sync::network::validate_url(&origin.url)?;
+            found = Some((path, origin));
+        }
+    }
+    Ok(found)
+}
+
+/// The `[history]` tables of the system and global layers, in discovery
+/// order, each with the file that declared it.
+pub(crate) fn layers() -> Result<Vec<(PathBuf, HistoryTomlConfig)>> {
+    let mut layers = vec![];
+    for path in config_files() {
+        if let Some(history) = read_layer(&path)? {
+            layers.push((path, history));
+        }
+    }
+    Ok(layers)
+}
+
+fn config_files() -> impl Iterator<Item = PathBuf> {
+    crate::host::system_config_files()
+        .into_iter()
+        .chain(crate::host::global_config_files())
+        .filter(|path| path.is_file())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+}
+
+fn read_layer(path: &Path) -> Result<Option<HistoryTomlConfig>> {
+    // Ignoring a malformed later layer could restore obsolete recipients or
+    // remove exclusions. Fail closed instead of falling back to another policy.
+    let toml = crate::host::parse_config_file(path)
+        .wrap_err_with(|| format!("cannot read history configuration: {}", display_path(path)))?;
+    Ok(toml.history_config())
+}
+
+/// The effective reload map: glob -> command, a later layer overriding an
+/// earlier one for the same glob. Read from the trusted layers only, and
+/// resolved before an operation begins so nothing it writes can change it.
+pub fn reload_commands() -> Result<IndexMap<String, String>> {
+    let mut commands = IndexMap::new();
+    for (path, layer) in layers()? {
+        if !crate::host::is_trusted(&path) {
+            if !layer.reload.is_empty() {
+                warn!(
+                    "history: ignoring [history.reload] in untrusted {}",
+                    display_path(&path)
+                );
+            }
+            continue;
+        }
+        for (glob, command) in &layer.reload {
+            commands.insert(glob.clone(), command.clone());
+        }
+    }
+    Ok(commands)
+}
+
+/// The effective `exclude` list: every layer's globs in order, later
+/// layers after earlier ones, repeats included. Patterns apply in order
+/// and the last match wins, so `!glob` re-includes what an earlier glob
+/// excluded and a repeated glob excludes again what a `!glob` in between
+/// re-included.
+pub fn exclude_globs() -> Result<Vec<String>> {
+    let mut globs: Vec<String> = vec![];
+    for (_, layer) in layers()? {
+        globs.extend(layer.exclude.iter().cloned());
+    }
+    Ok(globs)
+}
+
+/// The configuration files that declare `pattern` as an exclusion.
+///
+/// Read only to build a refusal message. A rule the matcher cannot use
+/// has to be findable, and "somewhere in your configuration" is not a
+/// place: `[history] exclude` is composed from the system and global
+/// layers, so the pattern alone does not say which file to edit.
+pub(crate) fn exclusion_sources(pattern: &str) -> Vec<PathBuf> {
+    let Ok(layers) = layers() else {
+        return vec![];
+    };
+    layers
+        .into_iter()
+        .filter(|(_, layer)| layer.exclude.iter().any(|glob| glob == pattern))
+        .map(|(path, _)| path)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_git_email_resolves_hostname_and_rejects_invalid_email() {
+        let config: HistoryTomlConfig = toml::from_str("git_email = 'mise@{hostname}'").unwrap();
+        assert_eq!(config.git_email.as_deref(), Some("mise@{hostname}"));
+        assert_eq!(
+            render_git_email(config.git_email.as_deref().unwrap(), "work-mbp.local").unwrap(),
+            "mise@work-mbp.local"
+        );
+        assert!(render_git_email("mise@{hostname}", "bad host").is_err());
+        assert_eq!(
+            render_git_email("mise@static.example", "work-mbp.local").unwrap(),
+            "mise@static.example"
+        );
+        assert!(render_git_email("mise@{host}", "host").is_err());
+        assert!(render_git_email("not-an-email", "host").is_err());
+    }
+
+    #[test]
+    fn malformed_encryption_is_rejected_and_layer_errors_propagate() {
+        let error = toml::from_str::<HistoryTomlConfig>("[encryption]\nrecipents = ['typo']\n")
+            .unwrap_err();
+        assert!(error.to_string().contains("recipents"));
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, "[history.encryption]\nrecipents = ['typo']\n").unwrap();
+        let error = read_layer(&path).unwrap_err();
+        assert!(format!("{error:#}").contains("config.toml"));
+    }
+}

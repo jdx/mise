@@ -1,19 +1,24 @@
 //! Opt-in updates for tools configured in global config.
 //!
-//! A tool whose global `[tools]` entry sets `auto_update` is upgraded within
-//! its configured version when its check interval has elapsed: by the
-//! `tool-update` service when it is running, otherwise when a shim or `mise x`
-//! is about to launch it. The upgrade runs in `mise __tool-update`; this module
+//! A tool whose global `[tools]` entry sets `auto_update`, or any global tool
+//! when `tool_update.global_auto` is on, is upgraded within its configured version
+//! when its check interval has elapsed: by the `tool-update` service when it
+//! is running, otherwise when a shim or `mise x` is about to launch it, or in
+//! the background at a shell prompt. The upgrade runs in `mise __tool-update`; this module
 //! decides which tool is eligible and when, and keeps the state that
 //! rate-limits checks and reports failures to `mise doctor`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use eyre::{Result, bail};
 
-use crate::config::{Settings, SettingsExt, is_global_config};
-use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
+use crate::config::settings::AutoUpdate;
+use crate::config::{Config, Settings, SettingsExt, is_global_config};
+use crate::toolset::{
+    ConfigScope, ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
+};
 use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
@@ -40,31 +45,37 @@ pub fn parse_auto_update(value: &str) -> Result<Option<Duration>> {
     }
 }
 
-/// The `auto_update` value of a request written in a global config file.
-/// Options layered on from anywhere else (a runtime argument, an env var, a
-/// project's tool alias, the registry) never count: a project must not be able
-/// to make a user's commands download and install tools.
+/// The `auto_update` value of a request written in a global config file, or
+/// `tool_update.global_auto`'s when its entry doesn't set one. Options
+/// layered on from anywhere else (a runtime argument, an env var, a project's
+/// tool alias, the registry) never count: a project must not be able to make a
+/// user's commands download and install tools.
 fn global_auto_update(request: &ToolRequest) -> Option<String> {
     let ToolSource::MiseToml(path) = request.source() else {
         return None;
     };
+    if !is_global_config(path) {
+        return None;
+    }
     // Options in the entry's own table are `InlineBackendArg`, and in its
     // version spec `Request`; both were written in this file.
     let from_entry = matches!(
         request.option_source("auto_update"),
         Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
     );
-    if !from_entry || !is_global_config(path) {
-        return None;
+    if from_entry {
+        return request.options().get("auto_update").map(str::to_string);
     }
-    request.options().get("auto_update").map(str::to_string)
+    match &Settings::get().tool_update.global_auto {
+        AutoUpdate::Off => None,
+        AutoUpdate::On => Some("true".to_string()),
+        AutoUpdate::Every(interval) => Some(interval.clone()),
+    }
 }
 
 /// Whether `request`, from a global config file, has `auto_update` enabled.
 pub fn enabled(request: &ToolRequest) -> bool {
-    global_auto_update(request)
-        .and_then(|value| parse_auto_update(&value).ok().flatten())
-        .is_some()
+    interval(request).is_some()
 }
 
 /// Whether any tool in `toolset` opted in. This is in memory only, so a
@@ -73,14 +84,14 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
     toolset
         .list_current_versions()
         .iter()
-        .any(|(_, tv)| global_auto_update(&tv.request).is_some())
+        .any(|(_, tv)| enabled(&tv.request))
 }
 
 /// Who is asking to update a tool.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Updater {
-    /// A shim or `mise x` about to launch the tool; it leaves updates to the
-    /// service while one runs.
+    /// A shim or `mise x` about to launch the tool, or a shell prompt; it
+    /// leaves updates to the service while one runs.
     Launch,
     /// The `tool-update` service.
     Service,
@@ -135,6 +146,14 @@ fn eligible(request: &ToolRequest, updater: Updater) -> Option<(String, Duration
         return None;
     }
     let value = global_auto_update(request)?;
+    let tool_id = request.ba().full_without_opts();
+    let interval = match parse_auto_update(&value) {
+        Ok(interval) => interval?,
+        Err(err) => {
+            debug!("tool-update: {tool_id}: {err:#}");
+            return None;
+        }
+    };
     let settings = Settings::get();
     // Only what describes this machine right now. Settings about a project's
     // lockfile or remote lookups don't apply: the update runs on global config
@@ -145,14 +164,7 @@ fn eligible(request: &ToolRequest, updater: Updater) -> Option<(String, Duration
     if updater == Updater::Launch && service_running() {
         return None;
     }
-    let tool_id = request.ba().full_without_opts();
-    match parse_auto_update(&value) {
-        Ok(interval) => Some((tool_id, interval?)),
-        Err(err) => {
-            debug!("tool-update: {tool_id}: {err:#}");
-            None
-        }
-    }
+    Some((tool_id, interval))
 }
 
 /// Whether `tool_id` was checked within `interval` (at least an hour).
@@ -189,6 +201,82 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
         warn!("auto_update interval for {tool_id} is below the 1h minimum, using 1h instead");
     }
     Ok(true)
+}
+
+/// Take the lock detached prompt updates queue on, waiting for the one
+/// running. Each such update's time limit starts after this, so one waiting
+/// behind another is not stopped for the other's run.
+pub fn lock_background_update() -> Result<fslock::LockFile> {
+    lock_file::LockFile::at(&state_dir().join("background.lock"))
+        .with_pid()
+        .lock()
+}
+
+/// Where a prompt records when an opted-in tool's check is next due, for
+/// [`prompt_check_due`].
+fn prompt_check_path() -> PathBuf {
+    state_dir().join("prompt-next-check")
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+/// Whether a prompt should take the full `hook-env` path, not the early exit
+/// for an unchanged environment, because an opted-in tool's check is due. A
+/// single small read, and only for users who opted in.
+pub fn prompt_check_due() -> bool {
+    std::fs::read_to_string(prompt_check_path())
+        .ok()
+        .and_then(|due| due.trim().parse::<u64>().ok())
+        .is_some_and(|due| unix_now() >= due)
+}
+
+/// Record when the next prompt should check the opted-in tools: when the first
+/// one's interval ends, or in an hour when one is overdue yet could not be
+/// checked (offline, in CI, behind the service), so that does not send every
+/// prompt through the full path. The file is shared by every shell, so it comes
+/// from global config alone, not from the current directory's toolset, where a
+/// project that pins a tool would hide it. Removed when no tool opted in.
+pub fn record_prompt_check(config: &Arc<Config>) {
+    let path = prompt_check_path();
+    // A config that can't be read this once says nothing about which tools
+    // opted in: leave the schedule as it was.
+    let Ok(global) = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .without_runtime_env()
+        .build_unresolved(config)
+    else {
+        return;
+    };
+    let waits = std::iter::once(&global)
+        .flat_map(|global| global.versions.values())
+        .flat_map(|versions| versions.requests.iter())
+        .filter(|request| request.is_os_supported())
+        .filter_map(|request| {
+            let interval = interval(request)?.max(MIN_CHECK_DURATION);
+            let age =
+                file::modified_duration(&StatePaths::new(&request.ba().full_without_opts()).marker);
+            Some(age.map_or(Duration::ZERO, |age| interval.saturating_sub(age)))
+        })
+        .min();
+    let Some(wait) = waits else {
+        let _ = std::fs::remove_file(&path);
+        return;
+    };
+    let wait = if wait.is_zero() {
+        MIN_CHECK_DURATION
+    } else {
+        wait
+    };
+    let due = unix_now() + wait.as_secs();
+    if let Err(err) =
+        file::create_dir_all(state_dir()).and_then(|()| file::write_atomic(&path, due.to_string()))
+    {
+        debug!("tool-update: could not record the next prompt check: {err:#}");
+    }
 }
 
 /// Whether the `tool-update` service is running: it holds this lock for as
@@ -273,7 +361,14 @@ impl Tick {
         }
         #[cfg(windows)]
         {
-            let (child, job) = crate::windows_job::spawn(&mut command, 0)?;
+            use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+            // No terminal reads a pass, and the detached process a prompt
+            // started has no console at all: Windows gives a console program
+            // started by a process with no console a console of its own — a
+            // window on the desktop until the pass ends (jdx/mise#14995).
+            // This starts it with a console that has no window instead, and
+            // everything the pass starts inherits that and stays hidden too.
+            let (child, job) = crate::windows_job::spawn(&mut command, CREATE_NO_WINDOW)?;
             Ok(Self {
                 child,
                 job,
@@ -347,7 +442,9 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
         Err(err) => {
             let failure = Failure {
                 tool: tool_id.to_string(),
-                error: format!("{err:#}"),
+                // Written to the state directory and printed by `mise doctor`, so
+                // redacted the way the logger would redact it.
+                error: mise_util::redactions::redact_output(&format!("{err:#}")),
             };
             serde_json::to_string(&failure)
                 .map_err(eyre::Report::from)

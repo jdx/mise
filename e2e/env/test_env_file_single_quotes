@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016,SC1003
+
+# Single-quoted dotenv values are literal: backslashes are kept, including a UNC path's
+# leading pair and a trailing one before the closing quote.
+cat >.env <<'EOF2'
+UNC_PATH='\\fileserver\data\share'
+TRAILING='C:\temp\'
+NOT_NEWLINE='a\nb'
+EOF2
+
+cat >mise.toml <<'EOF2'
+[env]
+_.file = ".env"
+EOF2
+assert "mise x -- sh -c 'printf %s \"\$UNC_PATH\"'" '\\fileserver\data\share'
+assert "mise x -- sh -c 'printf %s \"\$TRAILING\"'" 'C:\temp\'
+assert "mise x -- sh -c 'printf %s \"\$NOT_NEWLINE\"'" 'a\nb'
+
+# The `env_file` setting parses the same way.
+rm mise.toml
+assert "MISE_ENV_FILE=.env mise x -- sh -c 'printf %s \"\$UNC_PATH\"'" '\\fileserver\data\share'

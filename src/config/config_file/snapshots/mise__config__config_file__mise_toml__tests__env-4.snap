@@ -23,9 +23,12 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             "bar",
             EnvDirectiveOptions {
                 tools: false,
+                position: Prepend,
                 redact: None,
                 required: False,
                 expand: false,
+                find_up: false,
+                prompt: None,
             },
         ),
         Val(
@@ -33,9 +36,12 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             "qux\\nquux",
             EnvDirectiveOptions {
                 tools: false,
+                position: Prepend,
                 redact: None,
                 required: False,
                 expand: false,
+                find_up: false,
+                prompt: None,
             },
         ),
         Val(
@@ -43,9 +49,12 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             "qux\nquux",
             EnvDirectiveOptions {
                 tools: false,
+                position: Prepend,
                 redact: None,
                 required: False,
                 expand: false,
+                find_up: false,
+                prompt: None,
             },
         ),
     ],

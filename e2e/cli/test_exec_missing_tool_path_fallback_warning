@@ -99,7 +99,16 @@ MISE_EXEC_AUTO_INSTALL=0 assert "mise x -- dummy wrapped" "wrapped"
 MISE_EXEC_AUTO_INSTALL=0 assert_not_contains "mise x -- dummy wrapped 2>&1" "$warning"
 
 # A wrapper's own command gets the same check when the wrapper dispatches it.
-# That lookup skips the wrapper directories, so the dummy wrapper does not apply.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "2.0.0"
+
+[wrappers]
+cargo = "dummy"
+TOML
+MISE_EXEC_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 assert_contains "mise x -- cargo --version 2>&1" "dummy@2.0.0 is $warning"
+
+# A wrapper for that command applies, as it does for any command a wrapper runs.
 cat >mise.toml <<'TOML'
 [tools]
 dummy = "2.0.0"
@@ -108,7 +117,8 @@ dummy = "2.0.0"
 cargo = "dummy"
 dummy = "echo"
 TOML
-MISE_EXEC_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 assert_contains "mise x -- cargo --version 2>&1" "dummy@2.0.0 is $warning"
+MISE_EXEC_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 assert "mise x -- cargo wrapped" "wrapped"
+MISE_EXEC_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 assert_not_contains "mise x -- cargo wrapped 2>&1" "$warning"
 
 # With auto-install on, the pinned version is installed and run as before.
 cat >mise.toml <<'TOML'

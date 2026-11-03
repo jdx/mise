@@ -96,6 +96,12 @@ pub struct CachedEnv {
     pub user_paths: Vec<PathBuf>,
     /// Tool paths from installations
     pub tool_paths: Vec<PathBuf>,
+    /// Keys of the tool-aware env (`tools = true`) to mask on a cache hit. Names only.
+    #[serde(default)]
+    pub redactions: Vec<String>,
+    /// Keys excluded from `redactions`
+    #[serde(default)]
+    pub redaction_exclusions: BTreeSet<String>,
     /// Time when the cache was created
     pub created_at: u64,
     /// Files to watch for changes (from modules and _.source directives)
@@ -119,6 +125,9 @@ pub(crate) struct CachedNonToolEnv {
     pub env_files: Vec<PathBuf>,
     /// paths added by env directives
     pub env_paths: Vec<PathBuf>,
+    /// paths added after tool paths by env directives
+    #[serde(default)]
+    pub env_paths_append: Vec<PathBuf>,
     /// scripts sourced by env directives
     pub env_scripts: Vec<PathBuf>,
     /// redaction patterns contributed by env directives
@@ -486,6 +495,13 @@ pub(crate) fn compute_settings_hash() -> String {
     // Safe mode drops project [env]/_.path directives, so a cache entry built
     // with a different `safe` value must not be reused.
     hasher.update(settings.safe.to_string().as_bytes());
+    // Paranoid mode requires trust for each env file, which a cache hit never checks, so an
+    // entry built without it must not be reused with it. The selected categories are hashed,
+    // so differing selections never share an entry.
+    hasher.update(settings.paranoid.fingerprint().as_bytes());
+    // Redacted values are cached only on request, so an entry built with it on must not be
+    // reused with it off.
+    hasher.update(settings.env_cache_redacted.to_string().as_bytes());
 
     // Where tools are installed: the install layout decides which directory a
     // tool's env (JAVA_HOME, PATH entries) names.
@@ -494,8 +510,9 @@ pub(crate) fn compute_settings_hash() -> String {
     hasher.update(dirs::INSTALL_STORE.to_string_lossy().as_bytes());
 
     // Add any other relevant settings
-    if let Some(env_file) = &settings.env_file {
+    for env_file in settings.env_file.iter().flatten() {
         hasher.update(env_file.to_string_lossy().as_bytes());
+        hasher.update(b"\0");
     }
 
     let hash = hasher.finalize();

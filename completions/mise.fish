@@ -57,7 +57,11 @@ function __usage_complete_mise
                     continue
                 end
                 for extension in $extensions
-                    if string match -q "*.$extension" -- "$value"
+                    # A literal suffix test, not `string match "*.$extension"`: the extension is
+                    # a name the binary sent, and a `*` or `?` in it should not widen the filter.
+                    set -l suffix ".$extension"
+                    set -l tail (string sub -s -(string length -- "$suffix") -- "$value")
+                    if test "$tail" = "$suffix"
                         printf '%s\n' $candidate
                         break
                     end

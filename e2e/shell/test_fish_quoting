@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# fish reads \' and \\ as escapes inside single quotes, which POSIX shells do not. Values
+# mise writes for fish -- env values, PATH entries, and the -C script "mise exec -- fish"
+# builds -- must come back as exactly the value, so a directory name holding \' cannot end
+# its string early and run the rest as commands.
+
+if ! type -p fish >/dev/null; then
+  echo "fish not installed, skipping"
+  exit 0
+fi
+
+hostile="d\\'; echo INJ(echo ECTED); #"
+mkdir -p "$hostile"
+
+cat <<'TOML' >mise.toml
+[env]
+FISH_QUOTED = "x\\'; echo INJ(echo ECTED); #"
+FISH_TRAILING = 'ends\'
+_.path = ["./d\\'; echo INJ(echo ECTED); #"]
+TOML
+
+mise env -s fish >env.fish
+out="$(fish --no-config -c 'source env.fish; printf "[%s]\n" $FISH_QUOTED $FISH_TRAILING; contains -- "$PWD/'"$hostile"'" $PATH; and echo on-path' 2>&1)"
+assert_not_contains_text "$out" "INJECTED"
+assert_contains_text "$out" "[x\\'; echo INJ(echo ECTED); #]"
+assert_contains_text "$out" '[ends\]'
+assert_contains_text "$out" "on-path"
+
+out="$(mise x -- fish --no-config -c 'printf "[%s]\n" $FISH_QUOTED; contains -- "$PWD/'"$hostile"'" $PATH; and echo on-path' 2>&1)"
+assert_not_contains_text "$out" "INJECTED"
+assert_contains_text "$out" "on-path"

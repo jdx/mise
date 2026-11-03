@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# mise config explain describes each key a config file sets.
+
+# schema: invalid
+cat <<'EOF' >mise.toml
+[tools]
+node = "22"
+
+[settings]
+experimantal = true
+
+[tasks.build]
+run = "echo build"
+EOF
+
+assert_contains "mise config explain" "tools.node             a version of the tool, or a table with its version and options"
+assert_contains "mise config explain" "settings.experimantal  not a key mise reads; did you mean experimental?"
+assert_contains "mise config explain" "tasks.build.run        script to run"
+
+# A key path limits the output to that key and the keys under it.
+assert_not_contains "mise config explain tasks" "tools"
+assert_contains "mise config explain tasks" "tasks.build"
+
+assert "mise config explain settings.experimantal --json | jq -r '.[0].suggestion'" "experimental"
+assert "mise config explain tools --json | jq -r '.[1].line'" "2"
+assert_fail "mise config explain nope" "Key not found: nope"
+
+# Keys are listed in file order even when a table is split across headers, an inline array of
+# tables is walked, and an env plugin under env._ is a key mise reads.
+# schema: skip
+cat <<'EOF' >split.toml
+[tasks.first]
+run = "a"
+
+[tools]
+node = "22"
+
+[tasks.second]
+run = "b"
+EOF
+assert "mise config explain --file split.toml --json | jq -r 'map(.key) | join(\" \")'" "tasks tasks.first tasks.first.run tools tools.node tasks.second tasks.second.run"
+# schema: skip
+cat <<'EOF' >env.toml
+env = [{ FOO = "one" }, { BAR = { value = "two", redat = true } }]
+EOF
+assert_contains "mise config explain --file env.toml" "env.1.BAR.redat  not a key mise reads; did you mean redact?"
+# schema: skip
+cat <<'EOF' >plugin.toml
+[env]
+_.my-env-plugin = { x = 1 }
+EOF
+assert_not_contains "mise config explain --file plugin.toml" "not a key mise reads"
+
+# A key is described by the shape its value is written in, and an option a plugin tool
+# receives is a key mise reads.
+# schema: skip
+cat <<'EOF' >shapes.toml
+[env]
+DATABASE_URL = { required = true }
+
+[vars]
+test_mode = { default = "headless" }
+
+[tools]
+"asdf:mise-plugins/mise-foo" = { version = "1", mirror = "eu" }
+jq = ["1.7.1", "1.6"]
+EOF
+# A list of versions is described like one version.
+assert "mise config explain --file shapes.toml tools.jq --json | jq -r '.[0].description'" "a version of the tool, or a table with its version and options"
+assert_contains "mise config explain --file shapes.toml" "env.DATABASE_URL.required"
+assert_contains "mise config explain --file shapes.toml" "a variable without a value must be required"
+assert_not_contains "mise config explain --file shapes.toml" "not a key mise reads"
+assert_not_contains "mise config explain --file shapes.toml" "age-encrypted"
+
+# A config whose settings fail to load can still be explained by name, also from --cd.
+# schema: invalid
+cat <<'EOF' >mise.toml
+[settings.status]
+missing_tools = "sometimes"
+EOF
+assert_fail "mise config explain"
+assert_contains "mise config explain --file mise.toml" "settings.status.missing_tools  When to warn"
+mkdir -p other
+cp mise.toml other/mise.toml
+assert_contains "cd / && mise -C $PWD/other config explain --file mise.toml" "settings.status.missing_tools"
+
+# A hook's script is deprecated only in the form that deprecates it: without a shell.
+# schema: skip
+cat <<'EOF' >hooks.toml
+[hooks]
+enter = { script = "echo a" }
+cd = { script = "echo b", shell = "bash" }
+EOF
+assert_contains "mise config explain --file hooks.toml" "hooks.enter.script  deprecated:"
+assert_not_contains "mise config explain --file hooks.toml" "hooks.cd.script     deprecated:"
+
+# A table that names no keys, such as a daemon preset's options, takes any key.
+cat <<'EOF' >daemons.toml
+[daemons.db]
+preset = "cockroachdb"
+version = "26"
+options.database = "app"
+EOF
+assert_contains "mise config explain --file daemons.toml" "daemons.db.options.database"
+assert_not_contains "mise config explain --file daemons.toml" "not a key mise reads"
+
+# A key is known only in the shape its table is written in: a daemon that names a project
+# takes no port, though a daemon that runs a command does.
+# schema: invalid
+cat <<'EOF' >project.toml
+[daemons.shared]
+project = "../infra"
+port = 5432
+EOF
+assert_contains "mise config explain --file project.toml" "daemons.shared.port     not a key mise reads"
+assert_not_contains "mise config explain --file project.toml" "did you mean port"
+
+# A task name with a dot in it is one key: it is printed quoted, and a filter for
+# `tasks.hello` does not take in the separate task `hello.sh`.
+cat <<'EOF' >dots.toml
+[tasks.hello]
+run = "echo hello"
+
+[tasks."hello.sh"]
+run = "echo hello.sh"
+EOF
+assert "mise config explain --file dots.toml tasks.hello --json | jq -r 'map(.key) | join(\" \")'" "tasks.hello tasks.hello.run"
+assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r 'map(.key) | join(\" \")'" 'tasks."hello.sh" tasks."hello.sh".run'
+assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r '.[0].path | join(\"|\")'" "tasks|hello.sh"
+assert "mise config explain --file dots.toml 'tasks.\"hello\\u002esh\"' --json | jq -r '.[0].key'" 'tasks."hello.sh"'
+# Without the quotes, tasks.hello still means the task hello, and tasks.hello.sh finds hello.sh
+# only because nothing under hello is named sh.
+assert "mise config explain --file dots.toml tasks.hello.sh --json | jq -r 'map(.key) | join(\" \")'" 'tasks."hello.sh" tasks."hello.sh".run'
+
+# A daemon that has none of the keys that pick its shape still has its typos found.
+# schema: invalid
+cat <<'EOF' >typo.toml
+[daemons.db]
+prot = 5432
+EOF
+assert_contains "mise config explain --file typo.toml" "daemons.db.prot  not a key mise reads; did you mean port?"

@@ -42,6 +42,7 @@ import {
   capture,
   CUT_ON,
   frameAt,
+  lapseRate,
   lastBefore,
   type ReelData,
   reelData,
@@ -653,13 +654,14 @@ export const LAPSE = 3;
 export function install(c: Capture, name: string, at: number): Play[] {
   const s = stepOf(c, name);
   const t = typed(at, s.type, s.enter, s.enter + 0.02);
+  const stop = lastBefore(c, CUT_ON, s.enter, s.end);
   return [
     t,
     play(
       at + playLen(t),
       s.enter + 0.02,
-      lastBefore(c, CUT_ON, s.enter, s.end),
-      LAPSE,
+      stop,
+      lapseRate(c, LAPSE, s.enter + 0.02, stop),
     ),
   ];
 }

@@ -664,7 +664,7 @@ impl DepsEngine {
             };
 
             if !freshness.is_fresh() {
-                // Carry both required and optional outputs so session-staleness
+                // Carry both required and optional outputs so the stale marker
                 // can be cleared on whichever paths actually exist after the run.
                 let outputs: Vec<PathBuf> = provider
                     .outputs()
@@ -746,29 +746,23 @@ impl DepsEngine {
                 .map(|job| (job.id.clone(), job.command_hash.clone()))
                 .collect();
             let has_deps = to_run.iter().any(|j| !j.depends.is_empty());
+            // Read before the run: a venv mise recreates during the run gets a
+            // newer generation, which keeps its providers stale.
+            let stale_generations: HashMap<PathBuf, Option<String>> = to_run
+                .iter()
+                .flat_map(|job| &job.outputs)
+                .map(|output| (output.clone(), super::stale_output_generation(output)))
+                .collect();
 
-            if has_deps {
-                let run_results = self
-                    .run_with_deps(to_run, &satisfied_ids, &opts.env, &opts.env_remove)
-                    .await?;
-                for (step_result, outputs) in run_results {
-                    for output in &outputs {
-                        super::clear_output_stale(output);
-                    }
-                    results.push(step_result);
-                }
+            let run_results = if has_deps {
+                self.run_with_deps(to_run, &satisfied_ids, &opts.env, &opts.env_remove)
+                    .await?
             } else {
                 // No dependencies — use simple parallel execution
-                let run_results = self
-                    .run_parallel(to_run, &opts.env, &opts.env_remove)
-                    .await?;
-                for (step_result, outputs) in run_results {
-                    for output in &outputs {
-                        super::clear_output_stale(output);
-                    }
-                    results.push(step_result);
-                }
-            }
+                self.run_parallel(to_run, &opts.env, &opts.env_remove)
+                    .await?
+            };
+            results.extend(run_results.into_iter().map(|(step_result, _)| step_result));
 
             // Save content hashes and existing outputs for each successfully
             // ran provider. Recording the expanded required outputs lets us
@@ -795,6 +789,16 @@ impl DepsEngine {
                             st.set_command_hash(provider_id, command_hash.clone());
                         }
                         st.set_output_rules(provider_id, provider.base().output_rules_hash());
+                        let generations = provider
+                            .outputs()
+                            .into_iter()
+                            .chain(provider.optional_outputs())
+                            .filter_map(|output| {
+                                let generation = stale_generations.get(&output)?.clone()?;
+                                Some((state::relative_str(&output, project_root), generation))
+                            })
+                            .collect();
+                        st.set_stale_marker_generations(provider_id, generations);
                         if let Err(e) = st.save(project_root) {
                             warn!("failed to save deps state: {e}");
                         }
@@ -1084,12 +1088,17 @@ impl DepsEngine {
         let st = DepsState::load(project_root);
         let provider_id = provider.base().id.as_str();
 
-        // Session-stale check applies to any output that currently exists,
+        // An output mise created stays stale until this provider runs against it,
         // regardless of whether it was required or optional.
         for output in outputs.iter().chain(optional_outputs.iter()) {
-            if super::is_output_stale(output) {
+            if let Some(generation) = super::stale_output_generation(output)
+                && st.get_stale_marker_generation(
+                    provider_id,
+                    &state::relative_str(output, project_root),
+                ) != Some(generation.as_str())
+            {
                 return Ok(FreshnessResult::Stale(
-                    "output created this session".to_string(),
+                    "output created since the last run".to_string(),
                 ));
             }
         }

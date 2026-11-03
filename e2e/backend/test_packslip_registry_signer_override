@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# A registry entry that pins its signing workflow must yield to a signer the
+# user pins themselves, rather than being rejected as a conflicting option.
+
+export MISE_MINIMUM_RELEASE_AGE=0
+
+# `hk` is pinned by the registry with `workflow`. A key of the user's own
+# replaces that pin; the key is rejected for being malformed, not for sitting
+# next to `workflow`.
+cat >mise.toml <<'EOF'
+[tools]
+hk = { version = "1.58.1", pubkey = "not a key" }
+EOF
+assert_fail "mise install hk" "pubkey"
+assert_not_contains "mise install hk 2>&1 || true" "cannot be combined"
+
+# The reverse: a user `workflow` replaces a registry pin that names an
+# identity (`communique` signs from main).
+cat >mise.toml <<'EOF'
+[tools]
+communique = { version = "1.3.5", workflow = "nope/x.yml" }
+EOF
+assert_contains "mise install communique 2>&1 || true" "must be a workflow file name"
+assert_not_contains "mise install communique 2>&1 || true" "cannot be combined"
+
+# A user-set `workflow` next to another user signer option is still an error.
+cat >mise.toml <<'EOF'
+[tools]
+hk = { version = "1.58.1", workflow = "release.yml", pubkey = "k" }
+EOF
+assert_contains "mise install hk 2>&1 || true" "cannot be combined"

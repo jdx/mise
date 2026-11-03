@@ -25,7 +25,13 @@ module ReshimInstaller
     def reshim
       if defined?(RbConfig::CONFIG)
         log_debug "reshim"
-        `mise reshim`
+        begin
+          `mise reshim`
+        rescue SystemCallError => e
+          # mise isn't on PATH (e.g. a localized wrapper); reshimming is a
+          # convenience for shim users and must not fail the gem install.
+          log_debug "reshim skipped: #{e.message}"
+        end
       else
         log_debug "reshim skipped: ruby not found"
       end

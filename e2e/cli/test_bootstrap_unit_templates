@@ -47,6 +47,7 @@ assert_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.fine.
 assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.broken.service"
 
 # a typo in a unit key is still reported, with the section and unit name
+# schema: invalid
 cat <<'EOF' >mise.toml
 [bootstrap.linux.systemd.units.typo]
 exec_start = "/bin/true"
@@ -56,6 +57,7 @@ assert_contains "mise bootstrap linux systemd-units status 2>&1" "bootstrap.linu
 
 # a typo in a declaration a more local config shadows is still reported: the
 # warning belongs to the file that declared it, not to the entry that wins
+# schema: invalid
 cat <<'EOF' >mise.toml
 [bootstrap.linux.systemd.units.shadowed]
 exec_start = "/bin/true"

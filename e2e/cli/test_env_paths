@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# mise env --paths lists the PATH entries mise manages, in the order they take in
+# the PATH mise env prints, including a directory the inherited PATH already had.
+mkdir -p promoted added
+cat <<EOF2 >mise.toml
+[env]
+_.path = ["{{config_root}}/promoted", "{{config_root}}/added"]
+EOF2
+
+# The inherited PATH has "promoted" behind another entry, as ~/.cargo/bin is on a runner.
+export PATH="$PWD/other:$PWD/promoted:$PATH"
+
+assert "mise env --paths" "$PWD/promoted
+$PWD/added"
+assert_contains "mise env --json" "$PWD/promoted:$PWD/added:$PWD/other"
+assert_not_contains "mise env --paths" "$PWD/other"
+
+# With the env cache on, --paths reads the same cached paths as mise env --json.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+mise env --json >/dev/null
+# The trace is only emitted when the cached environment is loaded, so a --paths that
+# skipped the cache would fail here instead of silently recomputing the same paths.
+assert_contains "MISE_TRACE=1 mise env --paths 2>&1" "env_cache: using cached environment with split paths"
+assert "mise env --paths" "$PWD/promoted
+$PWD/added"
+assert_contains "mise env --json" "$PWD/promoted:$PWD/added:$PWD/other"

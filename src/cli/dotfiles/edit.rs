@@ -12,13 +12,24 @@ use crate::system::history::OperationScope;
 use crate::system::history::tracked::{self, TrackedSet};
 use crate::ui::prompt;
 
-/// Edit a managed dotfile source
+/// Open a dotfile's source in your editor
+///
+/// Opens the file that defines TARGET in `$VISUAL` or `$EDITOR`: the source for
+/// symlink, copy, and template entries; the file itself for tracked and
+/// permissions-only entries; and the declaring config for inline `content`,
+/// `absent` entries, and edits without a source file. A `fnox` entry is
+/// edited with `fnox edit --file`, which stores the change in fnox.
+///
+/// An unmanaged target is first added to the global `[dotfiles]`, as
+/// `mise dot add --no-apply` would add it, after a prompt that `--yes` skips.
+/// Without a terminal, an unmanaged target needs `--yes`. With `--apply`,
+/// applies the target after the editor exits.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
+    example("mise dot edit ~/.zshrc", help = "Edit the source of ~/.zshrc"),
     example(
-        r###"mise dot edit ~/.zshrc
-mise dot edit --apply ~/.config/starship.toml"###
+        "mise dot edit --apply ~/.config/starship.toml",
+        help = "Edit the source, then deploy it"
     )
 )]
 pub(crate) struct DotfilesEdit {
@@ -30,7 +41,8 @@ pub(crate) struct DotfilesEdit {
     #[usage(long)]
     apply: bool,
 
-    /// Dotfile mode to use if the target is not yet managed
+    /// Mode to use if the target is not managed yet: symlink, symlink-each, copy,
+    /// or template (default: the `dotfiles.default_mode` setting)
     #[usage(long, short)]
     mode: Option<String>,
 
@@ -47,7 +59,8 @@ pub(crate) struct DotfilesEdit {
     #[usage(long, value_name = "NAME", conflicts = ["source"])]
     group: Option<String>,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     prompt_secrets: bool,
 }
@@ -69,9 +82,8 @@ impl DotfilesEdit {
         }
 
         let group = self.group.as_deref();
-        if let Some(path) = source_for_target(&config, &target, &self.target, group)? {
-            open_or_create(&path)?;
-            crate::cli::editor::open_in_editor(&path)?;
+        if let Some(edit) = source_for_target(&config, &target, &self.target, group)? {
+            edit.open()?;
             if self.apply {
                 apply_target(&self.target, group, self.prompt_secrets).await?;
             }
@@ -107,11 +119,10 @@ impl DotfilesEdit {
         .await?;
 
         config = Config::reset().await?;
-        let Some(path) = source_for_target(&config, &target, &self.target, group)? else {
+        let Some(edit) = source_for_target(&config, &target, &self.target, group)? else {
             bail!("failed to add {}", self.target);
         };
-        open_or_create(&path)?;
-        crate::cli::editor::open_in_editor(&path)?;
+        edit.open()?;
         if self.apply {
             apply_target(&self.target, group, self.prompt_secrets).await?;
         }
@@ -119,12 +130,55 @@ impl DotfilesEdit {
     }
 }
 
+/// What `mise dot edit` opens for a target
+enum EditTarget {
+    /// A file, opened in the editor
+    File(PathBuf),
+    /// The file fnox stores for this target, which fnox edits
+    Fnox(PathBuf),
+}
+
+impl EditTarget {
+    fn open(&self) -> Result<()> {
+        match self {
+            Self::File(path) => {
+                open_or_create(path)?;
+                crate::cli::editor::open_in_editor(path)
+            }
+            Self::Fnox(target) => edit_with_fnox(target),
+        }
+    }
+}
+
+/// `fnox edit --file`: fnox decrypts the file into its own private temporary
+/// copy, opens the editor, and stores the change, so mise never sees the
+/// content.
+fn edit_with_fnox(target: &Path) -> Result<()> {
+    let Some(fnox) = file::which_spawnable("fnox") else {
+        bail!(
+            "{}: mode = \"fnox\" needs fnox 1.44.0 or newer on PATH; install it with `mise use -g fnox`",
+            target.display_user()
+        );
+    };
+    let status = std::process::Command::new(&fnox)
+        .args(["edit", "--file"])
+        .arg(target)
+        .status()?;
+    if !status.success() {
+        bail!(
+            "`fnox edit --file {}` exited with {status}",
+            target.display_user()
+        );
+    }
+    Ok(())
+}
+
 fn source_for_target(
     config: &Config,
     target: &std::path::Path,
     raw: &str,
     group: Option<&str>,
-) -> Result<Option<PathBuf>> {
+) -> Result<Option<EditTarget>> {
     let all_files = system::files::files_from_config(config)?;
     let matching_files = all_files
         .iter()
@@ -160,7 +214,9 @@ fn source_for_target(
         // a tracked file has no source: it stays where it is, so that is
         // what to edit. inline content lives in the config that declares
         // it, like an inline edit entry.
-        return Ok(Some(match req.mode {
+        return Ok(Some(EditTarget::File(match req.mode {
+            // the content lives in fnox, not in a source file
+            FileMode::Fnox => return Ok(Some(EditTarget::Fnox(req.target.clone()))),
             FileMode::Track => {
                 warn_if_the_edit_escapes_history(config, &req.target);
                 req.target.clone()
@@ -179,7 +235,7 @@ fn source_for_target(
                 req.target.clone()
             }
             _ => req.source.clone(),
-        }));
+        })));
     }
     let matching_edits = system::edits::edits_from_config(config)?
         .into_iter()
@@ -188,11 +244,11 @@ fn source_for_target(
     match matching_edits.as_slice() {
         [] => {}
         [req] => {
-            return Ok(Some(
+            return Ok(Some(EditTarget::File(
                 req.op
                     .source_file()
                     .map_or_else(|| req.config_path.clone(), Path::to_path_buf),
-            ));
+            )));
         }
         edits => {
             let keys = edits
@@ -210,7 +266,7 @@ fn source_for_target(
     if let Some(req) = group_route(&all_files, target, group)? {
         let source = group_file_source(req, target)?;
         if source.symlink_metadata().is_ok() {
-            return Ok(Some(source));
+            return Ok(Some(EditTarget::File(source)));
         }
         return Ok(None);
     }
@@ -312,7 +368,7 @@ async fn apply_target(target: &str, group: Option<&str>, prompt_secrets: bool) -
             verbose: false,
             yes: true,
         };
-        system::edits::apply(&config, &edits, &opts, &mut vec![])?;
+        system::edits::apply(&config, &edits, &opts, &secrets, &mut vec![])?;
     }
     Ok(())
 }

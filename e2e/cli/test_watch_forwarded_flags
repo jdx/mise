@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# The watchexec flags `mise watch` accepts must reach the watchexec command
+# line it builds; several used to be parsed and then dropped. We assert on the
+# `$ watchexec ...` line that mise logs (with MISE_DEBUG=1) right before
+# spawning watchexec, and on what the task itself sees.
+#
+# `-E dev` after `watch` is mise's environment flag, not watchexec's `--env`,
+# which is spelled `--watchexec-env` instead.
+
+mise use -g watchexec@latest
+mkdir -p src
+cat <<'EOF' >mise.toml
+[tasks.example]
+run = 'echo "task saw FOO=$FOO MISE_ENV=$MISE_ENV"'
+sources = ["src/**/*.txt"]
+EOF
+
+output_file=.watch_forwarded_output
+
+MISE_DEBUG=1 mise watch -E dev --watchexec-env FOO=bar --watchexec-quiet --timings \
+  --color never --fs-events create,modify --project-origin src --workdir /tmp example >"${output_file}" 2>&1 &
+PID_TO_KILL=$!
+# Stop watchexec as well as mise, also when an assertion below fails.
+stop_watch() {
+  pkill -P "$PID_TO_KILL" 2>/dev/null || true
+  kill "$PID_TO_KILL" 2>/dev/null || true
+}
+trap stop_watch EXIT
+
+runs() { tr -d '\0' <"${output_file}" | grep -c '^task saw FOO=bar' || true; }
+wait_for_runs() {
+  for _ in $(seq 1 40); do
+    [ "$(runs)" -ge "$1" ] && return
+    sleep 0.5
+  done
+}
+wait_for_runs 1
+
+# The filters must match real changes: a new .txt file under the origin
+# reruns the task, and a file the filter excludes does not.
+sleep 1
+touch src/ignored.md
+sleep 2
+[ "$(runs)" = 1 ] || fail "src/ignored.md reran the task: $(tr -d '\0' <"${output_file}")"
+touch src/changed.txt
+wait_for_runs 2
+[ "$(runs)" = 2 ] || fail "src/changed.txt did not rerun the task: $(tr -d '\0' <"${output_file}")"
+
+# Stop watchexec as well as mise; killing mise alone leaves watchexec running.
+stop_watch
+
+assert_contains "cat ${output_file}" "--env FOO=bar"
+assert_contains "cat ${output_file}" "--color never --timings --quiet"
+assert_contains "cat ${output_file}" "--fs-events create,modify"
+assert_contains "cat ${output_file}" "--project-origin $(pwd -P)/src "
+assert_contains "cat ${output_file}" "-f **/*.txt"
+assert_not_contains "cat ${output_file}" "--env dev"
+# --workdir is accepted but not forwarded, so the nested `mise run` still
+# finds the task in this project (the output below).
+assert_contains "cat ${output_file}" "--workdir has no effect"
+assert_not_contains "grep -F '\$ watchexec' ${output_file}" "--workdir"
+assert_contains "cat ${output_file}" "task saw FOO=bar MISE_ENV=dev"
+
+# An origin that does not contain every source is rejected: watchexec would
+# drop the filter for the source outside it.
+mkdir -p shared
+cat <<'EOF' >mise.toml
+[tasks.example]
+run = 'echo ran'
+sources = ["src/**/*.txt", "shared/**/*.txt"]
+EOF
+assert_fail_contains "mise watch --project-origin src example" "does not contain the watched source"
+
+# An exclusion outside the origin excludes nothing inside it, so it is not
+# rejected: the check fails only on the positive source. A gitignore-style
+# exclusion such as `!**/*.tmp` starts above the origin but still matches
+# files inside it, so it is rebased onto the origin and keeps working.
+cat <<'EOF' >mise.toml
+[tasks.example]
+run = 'echo ran'
+sources = ["src/**", "!shared/**", "!**/*.tmp"]
+EOF
+# The `src/**` filter matches any file watchexec sees, so the log goes outside
+# the watched directory or every write to it would retrigger the task.
+output_file="$HOME/.watch_exclusion_output"
+MISE_DEBUG=1 mise watch --project-origin src example >"${output_file}" 2>&1 &
+PID_TO_KILL=$!
+runs() { tr -d '\0' <"${output_file}" | grep -c '^ran$' || true; }
+# `mise run` skips the task when its own sources are unchanged, so count the
+# times watchexec starts it rather than the times the task prints.
+triggers() { tr -d '\0' <"${output_file}" | grep -c '^\[Running: ' || true; }
+wait_for_runs 1
+[ "$(runs)" = 1 ] || fail "the task did not run on start: $(tr -d '\0' <"${output_file}")"
+sleep 1
+touch src/excluded.tmp
+sleep 2
+[ "$(triggers)" = 1 ] || fail "src/excluded.tmp retriggered the task: $(tr -d '\0' <"${output_file}")"
+touch src/included.txt
+wait_for_runs 2
+[ "$(triggers)" = 2 ] || fail "src/included.txt did not rerun the task: $(tr -d '\0' <"${output_file}")"
+stop_watch
+assert_not_contains "cat ${output_file}" "does not contain the watched source"
+assert_contains "grep -F '\$ watchexec' ${output_file}" "--ignore **/*.tmp"
+assert_not_contains "grep -F '\$ watchexec' ${output_file}" "shared"

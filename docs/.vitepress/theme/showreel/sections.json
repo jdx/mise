@@ -1290,19 +1290,13 @@
       }
     ],
     "captures": ["C15", "C16"],
-    "visual": "`~ $ mise dot track ~/.zshrc`, its confirm prompt answered on camera; three lines print; the rail gains checkpoint 1 (baseline). Footnote: \"Autosave needs the history watcher, `mise dot watch`.\" `echo \"alias ll='ls -lah'\" >> ~/.zshrc`; the alias lands in the card and the rail gains checkpoint 2 as the watcher saves the edit, labelled with the real trigger; `mise dot history --path ~/.zshrc` (dimmed) then lists baseline and the watcher's save, confirming it. `mise dot rollback ~/.zshrc` (plan table dimmed, prompt answered) -> `mise history: rolled back ~/.zshrc to checkpoint 1`; the alias leaves the card, and the rail gains the checkpoint the rollback records (its id and trigger from C15's history listing after it, off camera), restored from the baseline; the pointer moves to it. Footnote: \"Share the history with `mise dot origin set`.\" Then the hold under caption 2, the tape-rewind cue on the rollback's checkpoint; the card, the rail (its three checkpoints) and the terminal hold into the Everywhere ticket.",
+    "visual": "`~ $ mise dot track ~/.zshrc`; three lines print; the rail gains checkpoint 1 (baseline). Footnote: \"Autosave needs the history watcher, `mise dot watch`.\" `echo \"alias ll='ls -lah'\" >> ~/.zshrc`; the alias lands in the card and the rail gains checkpoint 2 as the watcher saves the edit, labelled with the real trigger; `mise dot history --path ~/.zshrc` (dimmed) then lists baseline and the watcher's save, confirming it. `mise dot rollback ~/.zshrc` (plan table dimmed) -> `mise history: rolled back ~/.zshrc to checkpoint 1; …`; the alias leaves the card, and the rail gains the checkpoint the rollback records (its id and trigger from C15's history listing after it, off camera), restored from the baseline; the pointer moves to it. Footnote: \"Share the history with `mise dot origin set`.\" Then the hold under caption 2, the tape-rewind cue on the rollback's checkpoint; the card, the rail (its three checkpoints) and the terminal hold into the Everywhere ticket.",
     "plan": [
       {
         "at": 0.5,
-        "end": 3.852,
-        "name": "confirm",
-        "what": "`~ $ mise dot track ~/.zshrc` types; its confirm prompt"
-      },
-      {
-        "at": 5.403,
         "end": 6.394,
         "name": "answer",
-        "what": "the prompt answered on camera (Enter): three lines print"
+        "what": "`~ $ mise dot track ~/.zshrc` types and runs: three lines print"
       },
       {
         "at": 6.895,
@@ -1348,15 +1342,9 @@
       },
       {
         "at": 22.71,
-        "end": 26.391,
-        "name": "rollbackPlan",
-        "what": "`mise dot rollback ~/.zshrc`: its plan table dimmed, the prompt"
-      },
-      {
-        "at": 27.942,
         "end": 29.295,
         "name": "rollback",
-        "what": "the prompt answered -> `mise history: rolled back ~/.zshrc to checkpoint 1`"
+        "what": "`mise dot rollback ~/.zshrc`: its plan table dimmed -> `mise history: rolled back ~/.zshrc to checkpoint 1; …`"
       },
       {
         "at": 29.796,
@@ -1587,13 +1575,13 @@
       }
     ],
     "captures": ["C18"],
-    "visual": "`~ $ mise bootstrap --adopt you/setup` (\"illustration\" badge while you/setup is on screen), at real time across bars 1-3. Real output in order: repository line; two prose paragraphs, dimmed while the tiles take focus; plan table (the `~/.zshrc` card flies in off its create row); prompt answered; `Wrote 2 file(s) from ...` (Dotfiles and Config tiles tick); `mise bootstrap: user services` and its prompt answered (Watcher tile); `mise bootstrap: dotfiles` / `mise files: all files are applied`; `mise bootstrap: tools`. The shot holds there, before the tools step's first progress row (a transfer rate shows within 0.2 s), and the Tools tile shows the step started (a ring, not a tick). Without systemd: no Watcher tile and caption 2 becomes \"Then it installs your global tools.\"",
+    "visual": "`~ $ mise bootstrap --adopt you/setup` (\"illustration\" badge while you/setup is on screen), at real time across bars 1-3. Real output in order: repository line; two prose paragraphs, dimmed while the tiles take focus; plan table (the `~/.zshrc` card flies in off its create row); `Wrote 2 file(s) from ...` (Dotfiles and Config tiles tick); `mise bootstrap: user services` and its prompt answered (Watcher tile); `mise bootstrap: dotfiles` / `mise files: all files are applied`; `mise bootstrap: tools`. The shot holds there, before the tools step's first progress row (a transfer rate shows within 0.2 s), and the Tools tile shows the step started (a ring, not a tick). Without systemd: no Watcher tile and caption 2 becomes \"Then it installs your global tools.\"",
     "plan": [
       {
         "at": 0.5,
         "end": 4.424,
         "name": "adopt",
-        "what": "`~ $ mise bootstrap --adopt you/setup` types (\"illustration\" while you/setup shows): the repository line, the two prose paragraphs dimmed to texture (BOOTSTRAP_DIM), the plan table and its prompt"
+        "what": "`~ $ mise bootstrap --adopt you/setup` types (\"illustration\" while you/setup shows): the repository line, the prose paragraphs dimmed to texture (BOOTSTRAP_DIM), the plan table"
       },
       {
         "at": 4.925,
@@ -1611,7 +1599,7 @@
         "at": 7.487,
         "end": 9.531,
         "name": "yes1",
-        "what": "the prompt answered: `Wrote 2 file(s) from ...`, `mise bootstrap: user services` and its prompt"
+        "what": "`Wrote 2 file(s) from ...`, `mise bootstrap: user services` and its prompt"
       },
       {
         "at": 10.032,

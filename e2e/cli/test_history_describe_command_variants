@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+require_cmd git
+require_cmd jq
+export MISE_ENV=work
+
+cat >"$HOME/describe-helper" <<'SH'
+cat >"$1"
+if test -f "$HOME/describe-response"; then
+  cat "$HOME/describe-response"
+fi
+SH
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[settings.history]
+describe_command = "sh $HOME/describe-helper $HOME/variant-input"
+[dotfiles]
+"~/variant.conf" = { mode = "track", variants = [{ profile = "work" }] }
+"~/variant-dir" = { mode = "track", variants = [{ profile = "work" }] }
+"$MISE_CONFIG_DIR/variant.conf" = { mode = "track", variants = [{ profile = "work" }] }
+"~/plain.conf" = { mode = "track" }
+TOML
+mkdir -p "$HOME/variant-dir/nested"
+echo variant-file-before >"$HOME/variant.conf"
+echo nested-before >"$HOME/variant-dir/nested/modified"
+echo nested-removed >"$HOME/variant-dir/nested/removed"
+echo config-before >"$MISE_CONFIG_DIR/variant.conf"
+echo plain-before >"$HOME/plain.conf"
+assert_succeed "mise dot save"
+
+echo variant-file-after >"$HOME/variant.conf"
+echo nested-after >"$HOME/variant-dir/nested/modified"
+echo nested-added >"$HOME/variant-dir/nested/added"
+rm "$HOME/variant-dir/nested/removed"
+echo config-after >"$MISE_CONFIG_DIR/variant.conf"
+echo plain-after >"$HOME/plain.conf"
+echo "describe saved variant changes" >"$HOME/describe-response"
+assert_succeed "mise dot watch --once"
+assert_succeed "test -s '$HOME/variant-input'"
+assert "jq -r '.modified | index(\"~/variant.conf\") != null' '$HOME/variant-input'" "true"
+assert "jq -r '.modified | index(\"~/variant-dir/nested/modified\") != null' '$HOME/variant-input'" "true"
+assert "jq -r '.added | index(\"~/variant-dir/nested/added\") != null' '$HOME/variant-input'" "true"
+assert "jq -r '.removed | index(\"~/variant-dir/nested/removed\") != null' '$HOME/variant-input'" "true"
+for marker in -variant-file-before +variant-file-after -nested-before +nested-after +nested-added -nested-removed -config-before +config-after -plain-before +plain-after; do
+  assert_contains "jq -r .diff '$HOME/variant-input'" "$marker"
+done
+assert "jq -r .diff_truncated '$HOME/variant-input'" "false"
+assert "mise dot history --json | jq -r '.[0].description_source'" "command"
+assert "mise dot history --json | jq -r '.[0].description'" "describe saved variant changes"
+
+export MISE_STATE_DIR="$MISE_STATE_DIR/privacy"
+export MISE_AGE_KEY=AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[settings.history]
+describe_command = "sh $HOME/describe-helper $HOME/privacy-input"
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+[dotfiles]
+"~/transition.conf" = { mode = "track", encrypt = true, variants = [{ profile = "work" }] }
+"~/privacy-plain.conf" = { mode = "track" }
+TOML
+echo previous-encrypted-secret >"$HOME/transition.conf"
+echo privacy-plain-before >"$HOME/privacy-plain.conf"
+assert_succeed "mise dot save"
+sed -i.bak 's/encrypt = true/encrypt = false/' "$MISE_CONFIG_DIR/config.toml"
+echo current-secret >"$HOME/transition.conf"
+echo privacy-plain-after >"$HOME/privacy-plain.conf"
+echo "describe without encrypted contents" >"$HOME/describe-response"
+assert_succeed "mise dot watch --once"
+assert_succeed "test -s '$HOME/privacy-input'"
+assert "jq -r '.modified | index(\"~/transition.conf\") != null' '$HOME/privacy-input'" "true"
+assert_contains "jq -r .diff '$HOME/privacy-input'" "-privacy-plain-before"
+assert_contains "jq -r .diff '$HOME/privacy-input'" "+privacy-plain-after"
+assert_not_contains "jq -r .diff '$HOME/privacy-input'" "previous-encrypted-secret"
+assert_not_contains "jq -r .diff '$HOME/privacy-input'" "current-secret"
+assert_not_contains "jq -r .diff '$HOME/privacy-input'" "mise-encrypted-file"
+assert "mise dot history --json | jq -r '.[0].description_source'" "command"
+assert "mise dot history --json | jq -r '.[0].description'" "describe without encrypted contents"

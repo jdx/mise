@@ -6,13 +6,26 @@ impl Vfox {
         sdk: &str,
         tool: &str,
         options: IndexMap<String, toml::Value>,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<BackendVersion>> {
+        self.backend_list_versions_and_aliases(sdk, tool, options)
+            .await
+            .map(|r| r.versions)
+    }
+
+    /// Like [`Self::backend_list_versions`], with the version aliases the
+    /// plugin reports.
+    pub async fn backend_list_versions_and_aliases(
+        &self,
+        sdk: &str,
+        tool: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<BackendListVersionsResponse> {
         let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
             options,
         };
-        plugin.backend_list_versions(ctx).await.map(|r| r.versions)
+        plugin.backend_list_versions(ctx).await
     }
 
     pub async fn backend_search_tools(
@@ -108,7 +121,15 @@ impl Vfox {
             install_path,
             options,
         };
-        plugin.backend_exec_env(ctx).await.map(|r| r.env_vars)
+        let response = plugin.backend_exec_env(ctx).await?;
+        if let Some(recorder) = &self.hook_dependencies {
+            let mut deps = recorder.lock().unwrap();
+            if response.cacheable == Some(false) {
+                deps.cacheable = false;
+            }
+            deps.watch(response.watch_files);
+        }
+        Ok(response.env_vars)
     }
 
     pub async fn package_installed(

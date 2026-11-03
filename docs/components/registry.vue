@@ -2,7 +2,8 @@
   <input
     class="filter"
     type="text"
-    placeholder="Filter by Short or Full"
+    placeholder="Filter by tool, alias, or backend"
+    aria-label="Filter tools"
     v-model="filter"
     autofocus="autofocus"
   />
@@ -13,9 +14,9 @@
   <table class="full-width">
     <thead>
       <tr>
-        <th>Short</th>
-        <th>Full</th>
-        <th>OS</th>
+        <th>Tool</th>
+        <th>Backends (preferred first)</th>
+        <th>Platforms</th>
       </tr>
     </thead>
     <tbody>
@@ -34,6 +35,11 @@
             v-html="highlightMatches(entry.short)"
           ></a>
           <span v-else v-html="highlightMatches(entry.short)"></span>
+          <span
+            v-if="entry.aliases.length > 0"
+            class="aliases"
+            v-html="`also: ${highlightMatches(entry.aliases.join(', '))}`"
+          ></span>
           <a
             class="mise-versions"
             :href="`https://mise-versions.jdx.dev/tools/${encodeURIComponent(entry.short)}`"
@@ -44,9 +50,11 @@
         <td>
           <span v-for="(backend, index) in entry.backends">
             <a
-              :href="`${backend.url}`"
+              v-if="backend.url"
+              :href="backend.url"
               v-html="highlightMatches(backend.name)"
             ></a>
+            <span v-else v-html="highlightMatches(backend.name)"></span>
             <span
               v-for="feature in backend.verification"
               :key="feature"
@@ -58,6 +66,7 @@
           </span>
         </td>
         <td>
+          <span v-if="entry.os.length === 0">any</span>
           <span v-for="(os, index) in entry.os"
             >{{ os }}<span v-if="index < entry.os.length - 1">, </span>
           </span>
@@ -108,6 +117,7 @@ export default {
 
         return (
           short.includes(searchTerm) ||
+          entry.aliases.some((a) => a.toLowerCase().includes(searchTerm)) ||
           entry.backends.some((b) => b.name.toLowerCase().includes(searchTerm))
         );
       });
@@ -153,7 +163,11 @@ export default {
         .includes(this.filter.toLowerCase());
       if (!matchExists) return text;
 
-      const re = new RegExp(this.filter, "ig");
+      // Escape the filter: names contain regex metacharacters such as ".".
+      const re = new RegExp(
+        this.filter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "ig",
+      );
       return text.replace(
         re,
         (matchedText) =>
@@ -207,6 +221,12 @@ export default {
   display: block;
   margin-bottom: 10px;
   font-size: 14px;
+  color: var(--vp-c-text-2);
+}
+
+.aliases {
+  display: block;
+  font-size: 12px;
   color: var(--vp-c-text-2);
 }
 

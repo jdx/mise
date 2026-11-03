@@ -1,0 +1,5 @@
+backends = ["npm:rea-agents"]
+bins = ["rea", "rea-agents"]
+description = "Reverse engineer anything with agents, from app behavior down to native binaries"
+test = { cmd = "rea --version", expected = "{{version}}" }
+version_order = "semver"

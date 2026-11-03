@@ -1,7 +1,10 @@
 //! Running mise as a shim: find which tool the shim stands for and hand off to `mise exec`.
 
 use crate::cli::exec::Exec;
-use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
+use crate::config::{
+    CommandWrapper, CommandWrapperOptions, Config, Settings, command_wrapper_source,
+    insert_config_file_template_vars, load_command_wrappers,
+};
 use crate::file::display_path;
 use crate::request_exit;
 use crate::shims::*;
@@ -12,9 +15,18 @@ use itertools::Itertools;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+
+#[cfg(unix)]
+mod fallback;
+
+enum ShimCommand {
+    Tool(PathBuf),
+    Wrapper(CommandWrapper),
+    SystemFallback(PathBuf),
+}
 
 pub(crate) async fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
@@ -42,12 +54,13 @@ pub(crate) async fn handle_shim() -> Result<()> {
         *env::MISE_SHIM_PATH.write().unwrap() = Some(shim_path.clone());
         env::set_var(env::MISE_SHIM_PATH_ENV, &shim_path);
     }
+    #[cfg(unix)]
+    let fallback_chain = fallback::Chain::take_inherited();
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    let (mut bin, mut ts, mut wrapper) =
-        which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+    let (mut command, mut ts) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
     // A due `auto_update` upgrades this shim's tool before it runs, so look
     // the binary up again to launch the new version. Never while completing.
     let shim_name = command_name_without_exe_suffix(&env::MISE_BIN_NAME);
@@ -55,8 +68,17 @@ pub(crate) async fn handle_shim() -> Result<()> {
         && super::tool_update::update_before_launch(&config, &ts, shim_name).await
     {
         config = Config::reset().await?;
-        (bin, ts, wrapper) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+        (command, ts) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
     }
+    let (bin, wrapper) = match command {
+        ShimCommand::Tool(bin) => (bin, None),
+        ShimCommand::Wrapper(wrapper) => (PathBuf::from(wrapper.command()), Some(wrapper)),
+        ShimCommand::SystemFallback(bin) => {
+            #[cfg(unix)]
+            fallback_chain.record(bin_name, &file::canonicalize_or_self(&bin))?;
+            (bin, None)
+        }
+    };
     args[0] = bin.to_string_lossy().to_string();
     if let Some(wrapper) = &wrapper {
         args.splice(1..1, wrapper.args().iter().cloned());
@@ -87,11 +109,14 @@ pub(crate) async fn handle_shim() -> Result<()> {
         exec.run_with_command_wrapper(
             config,
             ts,
-            wrapper
-                .env()
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
+            with_active_command_wrapper(
+                shim_name,
+                wrapper
+                    .env()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            ),
         )
         .await?;
     } else {
@@ -116,6 +141,56 @@ fn invoked_shim_path() -> PathBuf {
         .ok()
         .or_else(|| std::env::current_exe().ok())
         .unwrap_or(argv0)
+}
+
+/// Whether a selected but uninstalled tool version may provide `shim_name`: it is named after the
+/// command, the registry lists the command as one of its bins, or another installed version of
+/// the same tool provides it. Lookup errors count as "no" so a leftover wrapper still falls
+/// through.
+async fn missing_version_may_provide(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    shim_name: &str,
+    bin_name: &str,
+) -> bool {
+    let missing = ts.list_missing_versions(config).await;
+    if missing.is_empty() {
+        return false;
+    }
+    let installed = ts.list_installed_versions(config).await.unwrap_or_default();
+    for tv in &missing {
+        if tv.ba().matches_bin_name(shim_name)
+            || crate::registry::REGISTRY
+                .get(&tv.ba().short)
+                .is_some_and(|tool| tool.provides_bin(shim_name))
+        {
+            return true;
+        }
+        for (p, installed_tv) in installed.iter().filter(|(p, _)| **p.ba() == *tv.ba()) {
+            for name in [shim_name, bin_name].into_iter().unique() {
+                if matches!(p.which(config, installed_tv, name).await, Ok(Some(_))) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Whether this process was started through a shim in the command-wrappers dir: by its path when
+/// it has one, otherwise the first `PATH` entry that holds `bin_name`.
+fn invoked_from_wrapper_dir(bin_name: &str) -> bool {
+    let argv0 = Path::new(&*env::ARGV0);
+    if let Some(dir) = argv0.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        return file::is_command_wrapper_dir(dir);
+    }
+    env::PATH
+        .iter()
+        .find(|dir| {
+            let bin = dir.join(bin_name);
+            bin.is_file() && file::is_executable(&bin)
+        })
+        .is_some_and(|dir| file::is_command_wrapper_dir(dir))
 }
 
 /// Apply the command wrapper for `mise x -- <name>` run by a native Windows shim.
@@ -150,55 +225,129 @@ pub(crate) async fn apply_native_shim_command_wrapper(
     trace!("shim[{shim_name}] WRAPPER command: {}", wrapper.command());
     command[0] = wrapper.command().to_string();
     command.splice(1..1, wrapper.args().iter().cloned());
-    Ok(Some(
+    Ok(Some(with_active_command_wrapper(
+        shim_name,
         wrapper
             .env()
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
-    ))
+    )))
 }
 
 /// The command wrapper configured for `shim_name`, with its command installed first when
-/// `install_command` is set and a tool provides it.
+/// `install_command` is set and a tool provides it. None while that wrapper's own command is
+/// running, so the command finds the real tool instead of the wrapper again.
 async fn command_wrapper_for(
     config: &mut Arc<Config>,
     ts: &mut Toolset,
     shim_name: &str,
     install_command: bool,
 ) -> Result<Option<CommandWrapper>> {
+    if is_active_command_wrapper(shim_name) {
+        return Ok(None);
+    }
     let wrappers = load_command_wrappers(
         &config.config_files,
         ts.versions.values().flat_map(|versions| &versions.requests),
     )?;
     validate_wrapper_names(wrappers.keys())?;
     // An exact match wins. macOS collisions are rejected above; Windows ones cannot both be shims.
-    let wrapper = wrappers.get(shim_name).or_else(|| {
+    let wrapper = wrappers.get_key_value(shim_name).or_else(|| {
         wrappers
             .iter()
             .find(|(name, _)| same_command_name(name, shim_name))
-            .map(|(_, wrapper)| wrapper)
     });
-    let Some(wrapper) = wrapper else {
+    let Some((name, wrapper)) = wrapper else {
         return Ok(None);
     };
-    if same_command_name(wrapper.command(), shim_name) {
+    // Like the file's other values, a wrapper renders with its file's `config_root` and resolves
+    // relative paths from the file's directory.
+    let source = command_wrapper_source(&config.config_files, name)?;
+    let dir = match source.as_deref().and_then(Path::parent) {
+        Some(dir) => dir.to_path_buf(),
+        None => env::current_dir()?,
+    };
+    let with_source = |ctx: &tera::Context| {
+        let mut ctx = ctx.clone();
+        if let Some(source) = &source {
+            insert_config_file_template_vars(&mut ctx, source);
+        }
+        ctx
+    };
+    // `command` renders from `vars` and the process environment only: the full toolset context
+    // needs the project's tools installed, and the command may be what installs them.
+    let command = render_template(
+        wrapper.command(),
+        &with_source(&config.tera_ctx),
+        &dir,
+        source.as_deref(),
+    )?;
+    if command.trim().is_empty() {
+        bail!(
+            "command wrapper command rendered blank: {:?}",
+            wrapper.command()
+        );
+    }
+    if same_command_name(&command, shim_name) {
         bail!("command wrapper for {shim_name} cannot delegate to itself");
     }
     if install_command {
-        install_missing_wrapper_command(config, ts, wrapper.command()).await?;
+        install_missing_wrapper_command(config, ts, &command).await?;
     }
-    Ok(Some(wrapper.clone()))
+    let templated = wrapper
+        .args()
+        .iter()
+        .chain(wrapper.env().values())
+        .any(|value| crate::tera::contains_template_syntax(value));
+    if !templated {
+        return Ok(Some(CommandWrapper::Detailed(CommandWrapperOptions {
+            command,
+            args: wrapper.args().to_vec(),
+            env: wrapper.env().clone(),
+        })));
+    }
+    // The toolset context carries the resolved project `[env]`, which `config.tera_ctx` lacks.
+    let ctx = with_source(ts.tera_ctx(config).await?);
+    let args = wrapper
+        .args()
+        .iter()
+        .map(|arg| render_template(arg, &ctx, &dir, source.as_deref()))
+        .collect::<Result<Vec<_>>>()?;
+    let env = wrapper
+        .env()
+        .iter()
+        .map(|(key, value)| {
+            Ok((
+                key.clone(),
+                render_template(value, &ctx, &dir, source.as_deref())?,
+            ))
+        })
+        .collect::<Result<_>>()?;
+    Ok(Some(CommandWrapper::Detailed(CommandWrapperOptions {
+        command,
+        args,
+        env,
+    })))
 }
 
-/// Whether two command names find the same shim. Windows file names are case-insensitive, so a
-/// shim can be invoked as `Cargo` for `[wrappers.cargo]`.
-fn same_command_name(a: &str, b: &str) -> bool {
-    if cfg!(windows) {
-        a.eq_ignore_ascii_case(b)
-    } else {
-        command_names_eq(a, b)
+/// Render a wrapper value as a template, so a wrapper can use `vars` and the path functions
+/// like a task. Values without template syntax are left untouched. `source` is the file that
+/// declares the wrapper; one from global or system config keeps `env` in safe mode.
+fn render_template(
+    input: &str,
+    ctx: &tera::Context,
+    dir: &Path,
+    source: Option<&Path>,
+) -> Result<String> {
+    if !crate::tera::contains_template_syntax(input) {
+        return Ok(input.to_string());
     }
+    let mut tera = crate::tera::get_tera(Some(dir));
+    Ok(match source {
+        Some(source) => crate::tera::render_config_str(&mut tera, input, ctx, source)?,
+        None => crate::tera::render_str(&mut tera, input, ctx)?,
+    })
 }
 
 /// Shell completion invokes `usage complete-word` through the `usage` shim. It
@@ -218,7 +367,7 @@ async fn which_shim(
     config: &mut Arc<Config>,
     bin_name: &str,
     args: &[String],
-) -> Result<(PathBuf, Toolset, Option<CommandWrapper>)> {
+) -> Result<(ShimCommand, Toolset)> {
     let shim_name = command_name_without_exe_suffix(bin_name);
     let completion_offline = is_offline_completion(shim_name, args);
     let resolve_options = if completion_offline {
@@ -240,7 +389,7 @@ async fn which_shim(
         command_wrapper_for(config, &mut ts, shim_name, !completion_offline).await?
     {
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
-        return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper)));
+        return Ok((ShimCommand::Wrapper(wrapper), ts));
     }
     // A configured tool may intentionally override an executable bundled by another installed
     // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
@@ -264,7 +413,7 @@ async fn which_shim(
                     "shim[{bin_name}] REGISTRY ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok((bin, ts, None));
+                return Ok((ShimCommand::Tool(bin), ts));
             }
         }
     }
@@ -276,7 +425,7 @@ async fn which_shim(
                 "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
                 bin = display_path(&bin)
             );
-            return Ok((bin, ts, None));
+            return Ok((ShimCommand::Tool(bin), ts));
         }
     }
     // Lazy tools are explicit fallback providers. They install on first shim use even when
@@ -296,7 +445,7 @@ async fn which_shim(
                     "shim[{bin_name}] LAZY ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok((bin, ts, None));
+                return Ok((ShimCommand::Tool(bin), ts));
             }
         }
     }
@@ -316,12 +465,17 @@ async fn which_shim(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok((bin, ts, None));
+                return Ok((ShimCommand::Tool(bin), ts));
             }
         }
     }
     // fallback for "system"
-    if Settings::get().not_found_system_fallback {
+    // A wrapper shim left by another project must not turn a plain command into an error.
+    // Only when no missing tool version could provide this command: that must still fail.
+    // Installed tools were tried above.
+    let inactive_wrapper = invoked_from_wrapper_dir(bin_name)
+        && !missing_version_may_provide(config, &ts, shim_name, bin_name).await;
+    if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
             if file::is_mise_shims_dir(path) || file::is_command_wrapper_dir(path) {
@@ -337,7 +491,7 @@ async fn which_shim(
                     continue;
                 }
                 trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-                return Ok((bin, ts, None));
+                return Ok((ShimCommand::SystemFallback(bin), ts));
             }
         }
     }

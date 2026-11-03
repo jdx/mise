@@ -3,6 +3,8 @@
 assert "mise tasks add xxx -- echo 'running xxx'"
 assert "mise generate task-stubs"
 assert "./bin/xxx" "running xxx"
+# Committed like the install script, so it ends in a newline for the same reason.
+assert "tail -c 1 ./bin/xxx | wc -l | tr -d ' '" "1"
 
 # Windows cannot execute the `#!/bin/sh` stub, so a launcher is written beside it. Generated here
 # too, not only on Windows: stubs are committed, and the contributor who runs one on Windows is not

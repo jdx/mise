@@ -4,8 +4,8 @@
 // (kit/pace.ts Pace), whatever is not the focus dimmed, and never the
 // terminal while its output is read:
 //
-// `mise dot track ~/.zshrc` types at TYPE_RATE and its confirm prompt is
-// answered on camera; once `saved baseline checkpoint 1` has printed, the
+// `mise dot track ~/.zshrc` types at TYPE_RATE and runs (mise applies it
+// without asking); once `saved baseline checkpoint 1` has printed, the
 // rail's first node snaps in and the pointer drops onto it, and caption 1
 // follows it. Its footnote (the watcher) writes on under it. `echo "alias
 // …" >> ~/.zshrc` types; once it has run, a copy of the quoted line lifts
@@ -15,9 +15,9 @@
 // pointer steps to it, still under caption 1, which holds until the save
 // has played. `mise dot history` lists the baseline and the watcher's
 // save, confirming it, and dims. `mise dot rollback ~/.zshrc` prints its
-// plan (dimmed) and its prompt, answered on camera; once `rolled back` has
-// printed, the alias's row (its seat mark held, still, since it landed)
-// folds back out of the card, and then the rail rewinds: the pointer goes
+// plan (dimmed); once `rolled back` has printed, the alias's row (its seat
+// mark held, still, since it landed) folds back out of the card, and then
+// the rail rewinds: the pointer goes
 // back to the baseline, the dashed arc draws from it, the rollback's
 // checkpoint snaps in at its end (the id and trigger mise recorded for it:
 // C15's history after the rollback, off camera) and the pointer rides the
@@ -70,6 +70,7 @@ import {
   OPENS,
   RAIL,
   scrollOf,
+  TRACK_SCREEN,
   ZSHRC,
   zshrcLines,
 } from "../kit/rest";
@@ -100,7 +101,7 @@ import {
 } from "./g5-dotfiles-lock/zshrc";
 
 /** Soft wraps joined to their line, cropped with it by the pane's fade. */
-const SCREEN = { joinWraps: true } as const;
+const SCREEN = TRACK_SCREEN;
 
 /** A history listing's rows, and a rollback plan's, which dim while the rail carries them. */
 const HISTORY_ROW = /^(ID\s+When\s+Trigger|\d+\s+\d{4}-\d\d-\d\d \d\d:\d\d\s)/;
@@ -141,7 +142,6 @@ const schedule = perFacts((d: ReelData | null) => {
   const p = new Pace("track", { d });
   const act = (name: string, stepName: string, lines: number) =>
     termAct(p, name, c, (c, at) => [step(c, stepName, at)], { lines });
-  const confirm = act("confirm", "confirm", 2);
   const answer = act("answer", "track", 4);
   const cp1 = moveOr(p, c, "cp1", MOVES.first);
   p.caption(0);
@@ -150,15 +150,14 @@ const schedule = perFacts((d: ReelData | null) => {
   const alias = moveOr(p, c, "alias", MOVES.alias);
   const cp2 = moveOr(p, c, "cp2", MOVES.next);
   const history = act("history", "history", 1);
-  const plan = act("rollbackPlan", "confirm-rollback", 1);
-  const rollback = act("rollback", "rollback", 1);
+  const rollback = act("rollback", "rollback", 3);
   const aliasOut = moveOr(p, c, "aliasOut", MOVES.aliasOut);
   const cp3 = moveOr(p, c, "cp3", MOVES.rollback);
   p.caption(1);
   const foot2 = moveOr(p, c, "foot2", MOVES.footnote);
   // The dimmed tables brighten back and the focus lets go, for the rest.
   const undim = moveOr(p, c, "undim", DUR.dim);
-  const acts = [confirm, answer, edit, history, plan, rollback];
+  const acts = [answer, edit, history, rollback];
   const plays: Play[] = c
     ? [cut(0, OPENS.C15!(c)), ...acts.flatMap((a) => a.plays)]
     : [];
@@ -181,8 +180,8 @@ const schedule = perFacts((d: ReelData | null) => {
       : history.end,
     /** The rollback's plan table prints. */
     plan: c
-      ? at(firstWith(c, /^Path\s+Action/, stepOf(c, "confirm-rollback").enter))
-      : plan.end,
+      ? at(firstWith(c, /^Path\s+Action/, stepOf(c, "rollback").enter))
+      : rollback.end,
     /** The alias's row takes a seat mark, and folds out a quarter beat later. */
     mark: aliasOut.at,
     fold: aliasOut.at + DUR.tick,
@@ -196,7 +195,7 @@ const schedule = perFacts((d: ReelData | null) => {
     undim: undim.at,
     focus: focusPlan(
       [
-        [confirm.at, "term"],
+        [answer.at, "term"],
         [cp1.at, "rail"],
         [edit.at, "term"],
         [alias.at, "card"],

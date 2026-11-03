@@ -98,7 +98,7 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
             "the history watcher is declared but not running: run `mise bootstrap services apply`"
         }
         Watcher::NotDeclared => {
-            "automatic capture is inactive: declare `[bootstrap.services.mise-history] builtin = \"history-watch\"` and run `mise bootstrap`; until then edits are saved by `mise dot save` or `mise dot watch --once`"
+            "automatic capture is inactive: declare `[bootstrap.services.mise-history] builtin = \"history-watch\"` and run `mise bootstrap` (track your mise config so other machines get it too); until then edits are saved by `mise dot save` or `mise dot watch --once`"
         }
     }
 }

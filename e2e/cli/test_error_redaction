@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# The detailed error report, the rendered config diagnostic and `mise doctor`
+# are written without passing through the logger. They must hide what the log
+# lines of the same run hide: `redact = true` values and credentials embedded
+# in URLs.
+
+export NO_COLOR=1 MISE_HTTP_RETRIES=0 MISE_USE_VERSIONS_HOST=0
+
+# serves neither the archive nor the repository, so both tools fail with a 404
+start_http_server
+
+cat >mise.toml <<EOF
+[env]
+DOWNLOAD_KEY = { value = "dk_s3cr3t-marker", redact = true }
+
+[tools]
+"http:internal-cli" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/cli.tar.gz?key={{ env.DOWNLOAD_KEY }}" }
+EOF
+
+install="mise install http:internal-cli pipx:git+http://x-access-token:ghs_s3cr3t-marker@127.0.0.1:$HTTP_PORT/acme/tool.git@1.0.0"
+
+# MISE_VERBOSE=1 selects the detailed report in release builds too
+for mode in MISE_FRIENDLY_ERROR=1 MISE_FRIENDLY_ERROR=0 MISE_VERBOSE=1; do
+  out="$(env "$mode" RUST_BACKTRACE=0 bash -c "$install" 2>&1)" && fail "[$mode $install] expected failure"
+  assert_contains_text "$out" "pipx:git+http://[redacted]@127.0.0.1:$HTTP_PORT/acme/tool.git@1.0.0"
+  assert_not_contains_text "$out" "s3cr3t-marker"
+done
+
+# mise doctor prints the configured tools and env, outside the logger
+cat >mise.toml <<EOF
+[env]
+DOWNLOAD_KEY = { value = "dk_s3cr3t-marker", redact = true }
+
+[tools]
+"pipx:git+http://x-access-token:ghs_s3cr3t-marker@127.0.0.1:$HTTP_PORT/acme/tool.git" = "1.0.0"
+EOF
+assert_not_contains "mise doctor 2>&1 || true" "s3cr3t-marker"
+assert_not_contains "mise doctor -J 2>&1 || true" "s3cr3t-marker"
+assert_contains "mise doctor 2>&1 || true" "pipx:git+http://[redacted]@127.0.0.1"
+
+# a parse error quotes the offending line of the config, URL and all
+cat >mise.toml <<'EOF'
+[tools]
+"pipx:git+https://x-access-token:ghs_s3cr3t-marker@git.example.com/acme/tool.git" = 1.0.0.0
+EOF
+out="$(mise ls 2>&1)" && fail "[mise ls] expected failure"
+assert_contains_text "$out" "mise::config::parse_error"
+assert_contains_text "$out" "pipx:git+https://[redacted]@git.example.com/acme/tool.git"
+assert_not_contains_text "$out" "s3cr3t-marker"
+
+# `mise doctor project` prints check names, descriptions and hints from config.
+cat >mise.toml <<'EOF'
+[doctor.checks.registry]
+description = "Reach https://ci:s3cr3t-marker@registry.example.com"
+run = "exit 1"
+hint = "Log in to https://ci:s3cr3t-marker@registry.example.com"
+EOF
+assert_not_contains "mise doctor project 2>&1 || true" "s3cr3t-marker"
+assert_contains "mise doctor project 2>&1 || true" "https://[redacted]@registry.example.com"
+assert_not_contains "mise doctor project --json 2>&1 || true" "s3cr3t-marker"
+
+# `mise tool` prints the backend, which a URL-named tool spells with its
+# credentials, and options under secret-shaped names.
+tool="pipx:git+https://ci:s3cr3t-marker@git.example.com/acme/tool.git"
+cat >mise.toml <<EOF
+[tools."$tool"]
+version = "1.0.0"
+api_token = "plain-s3cr3t-marker"
+install_env = { NPM_TOKEN = "plain-s3cr3t-marker" }
+EOF
+assert_not_contains "MISE_OFFLINE=1 mise tool --backend '$tool' 2>&1 || true" "s3cr3t-marker"
+assert_not_contains "MISE_OFFLINE=1 mise tool --json '$tool' 2>&1 || true" "s3cr3t-marker"
+assert_contains "MISE_OFFLINE=1 mise tool --backend '$tool' 2>&1 || true" "git.example.com"
+assert_contains "MISE_OFFLINE=1 mise tool --json '$tool' 2>&1 || true" '"NPM_TOKEN": "[redacted]"'

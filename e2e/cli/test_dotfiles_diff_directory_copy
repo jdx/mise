@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# `mise dot diff` shows per-file hunks for a directory copy entry.
+
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/home/dot-config/app"
+echo "one" >"$DOTS/home/dot-zshrc"
+echo "alpha" >"$DOTS/home/dot-config/app/a.conf"
+
+cat <<EOF2 >mise.toml
+[dotfile_groups.home]
+root = "home"
+dot_prefix = true
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+assert_not_contains "mise dot diff" "content differs"
+
+echo "changed" >"$HOME/.config/app/a.conf"
+assert_contains "mise dot diff" "content differs"
+assert_contains "mise dot diff" "-changed"
+assert_contains "mise dot diff" "+alpha"
+assert_not_contains "mise dot diff" ".zshrc (current)"
+
+rm "$HOME/.zshrc"
+assert_contains "mise dot diff" "missing: ~/.zshrc"
+
+# an unreadable target file is reported by name rather than failing the diff
+if [ "$(id -u)" != 0 ]; then
+  echo "one" >"$HOME/.zshrc"
+  chmod 000 "$HOME/.zshrc"
+  assert_contains "mise dot diff" ".zshrc is not readable"
+  chmod 644 "$HOME/.zshrc"
+fi
+
+# a directory that does not exist yet lists every file as missing
+rm -rf "$HOME/.config/app"
+assert_contains "mise dot diff" "missing: ~/.config/app/a.conf"
+
+# a symlinked target directory is compared like a real one
+mkdir -p "$HOME/real-app"
+echo "drifted" >"$HOME/real-app/a.conf"
+ln -s "$HOME/real-app" "$HOME/.config/app"
+assert_contains "mise dot diff" "-drifted"
+
+# files behind a directory that denies access are not reported as missing
+if [ "$(id -u)" != 0 ]; then
+  rm "$HOME/.config/app"
+  mkdir -p "$HOME/.config/app"
+  echo "alpha" >"$HOME/.config/app/a.conf"
+  chmod 000 "$HOME/.config/app"
+  assert_not_contains "mise dot diff" "missing: ~/.config/app/a.conf"
+  chmod 755 "$HOME/.config/app"
+fi
+
+# a file where a source subdirectory belongs is reported, not a failure
+rm -rf "$HOME/.config/app"
+echo "blocker" >"$HOME/.config/app"
+assert_contains "mise dot diff" "a parent of ~/.config/app/a.conf is a file"

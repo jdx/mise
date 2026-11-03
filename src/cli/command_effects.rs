@@ -89,7 +89,9 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap systemd apply", Write),
     ("bootstrap systemd status", Read),
     ("bootstrap dotfiles add", Write),
-    ("bootstrap dotfiles apply", Write),
+    // Removes `mode = "absent"` targets, `--prune` orphans and empty
+    // `remove_empty` templates, and can replace modified copies.
+    ("bootstrap dotfiles apply", Destructive),
     ("bootstrap dotfiles conflicts", Read),
     ("bootstrap dotfiles diff", Read),
     ("bootstrap dotfiles edit", Write),
@@ -98,6 +100,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap dotfiles history describe", Write),
     ("bootstrap dotfiles history diff", Read),
     ("bootstrap dotfiles history ls", Read),
+    ("bootstrap dotfiles history purge", Destructive),
     ("bootstrap dotfiles history show", Read),
     ("bootstrap dotfiles include", Write),
     ("bootstrap dotfiles notify", Write),
@@ -167,6 +170,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("cache task", Read),
     ("completion", Read),
     ("config", Read),
+    ("config explain", Read),
     ("config get", Read),
     ("config ls", Read),
     ("config set", Write),
@@ -196,7 +200,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("doctor path", Read),
     ("dotfiles", Read),
     ("dotfiles add", Write),
-    ("dotfiles apply", Write),
+    // Same as `bootstrap dotfiles apply`: it can delete and replace files.
+    ("dotfiles apply", Destructive),
     ("dotfiles conflicts", Read),
     ("dotfiles diff", Read),
     ("dotfiles edit", Write),
@@ -205,6 +210,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("dotfiles history describe", Write),
     ("dotfiles history diff", Read),
     ("dotfiles history ls", Read),
+    ("dotfiles history purge", Destructive),
     ("dotfiles history show", Read),
     ("dotfiles include", Write),
     ("dotfiles notify", Write),
@@ -222,13 +228,16 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("dotfiles undo", Destructive),
     ("dotfiles untrack", Write),
     ("dotfiles watch", Write),
-    ("edit", Write),
+    // Without a terminal, or with --yes, it writes a starter template; --force
+    // lets that template replace an existing config.
+    ("edit", Destructive),
     ("env", Read),
     ("fmt", Write),
     ("generate", Read),
     // Deprecated spelling of `generate install-script`.
     ("generate bootstrap", Write),
-    ("generate config", Write),
+    // Runs `mise edit`, so --force can replace an existing config the same way.
+    ("generate config", Destructive),
     ("generate devcontainer", Write),
     ("generate git-pre-commit", Write),
     ("generate github-action", Write),
@@ -236,7 +245,6 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("generate task-docs", Write),
     ("generate task-stubs", Write),
     ("generate tool-stub", Write),
-    // Removes the mise CLI and every tool, plugin and cache it owns.
     ("github", Read),
     ("github token", Read),
     // Writes the global config after setting the version.
@@ -250,7 +258,9 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     // Removes the mise CLI and every tool, plugin and cache it owns.
     ("implode", Destructive),
     ("install", Write),
-    ("install-into", Write),
+    // Deletes the contents of a non-empty destination after a confirmation,
+    // which can be any files the user put there.
+    ("install-into", Destructive),
     ("installs", Read),
     ("installs ls", Read),
     ("installs migrate", Write),
@@ -261,6 +271,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("local", Write),
     ("ls", Read),
     ("ls-remote", Read),
+    ("lsp", Read),
     ("oci", Read),
     ("oci build", Write),
     ("oci push", Write),
@@ -322,6 +333,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("tasks graph", Read),
     ("tasks info", Read),
     ("tasks ls", Read),
+    ("tasks rm", Destructive),
+    ("tasks set", Write),
     ("tasks validate", Read),
     ("token", Read),
     ("token forgejo", Read),
@@ -340,6 +353,10 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("unuse", Destructive),
     ("upgrade", Write),
     ("usage", Read),
+    ("vars", Write),
+    ("vars ls", Read),
+    ("vars prompt", Write),
+    ("vars unset", Write),
     ("use", Write),
     ("version", Read),
     ("where", Read),

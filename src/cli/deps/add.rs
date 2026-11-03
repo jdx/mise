@@ -8,14 +8,22 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 use super::parse_package_spec;
 
-/// Add a dependency
+/// Add packages to the project's dependencies
 ///
-/// Adds one or more packages to the project using the appropriate package manager.
-/// Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@types/react@19`.
+/// Runs the package manager's own add command, which updates the project's
+/// manifest (for npm, package.json) and its lockfile, not mise.toml. To install a
+/// CLI tool from npm for mise to manage, use `mise use npm:<package>` instead.
+/// Name each package as `<ecosystem>:<package>`, such as `npm:react` or
+/// `npm:@types/react@19`. See
+/// https://mise.jdx.dev/dev-tools/deps.html#adding-and-removing-packages.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example("mise deps add npm:react", help = "Add react to package.json"),
+    example("mise deps add -D npm:vitest", help = "Add vitest as a dev dependency")
+)]
 pub(super) struct DepsAdd {
-    /// Package(s) to add (e.g., npm:react, npm:@types/react@19)
+    /// Packages to add, such as `npm:react` or `npm:@types/react@19`
     #[usage(required = true)]
     pub packages: Vec<String>,
 

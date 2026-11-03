@@ -43,3 +43,10 @@ assert_not_contains "mise x dotnet@8.0.408 -- dotnet --list-runtimes" "Microsoft
 # Prepare by removing any stale install and test (uncached) invalid runtime option returns a validation error
 mise uninstall "dotnet[runtime=invalid]@8.0.12" 2>/dev/null || mise uninstall "dotnet@8.0.12" 2>/dev/null || true
 assert_fail_contains "mise x dotnet[runtime=invalid]@8.0.12 -- true" "Invalid runtime option"
+
+# An already-active SDK ahead of the shims must not shadow the SDK being validated.
+rm -f global.json
+export MISE_DOTNET_ISOLATED=1 MISE_ACTIVATE_AGGRESSIVE=0
+mise install dotnet@8.0.408
+sdk8="$(mise where dotnet@8.0.408)"
+PATH="$sdk8:$MISE_DATA_DIR/shims:$PATH" DOTNET_ROOT="$sdk8" assert_contains "mise install dotnet@9.0.100 && mise x dotnet@9.0.100 -- dotnet --version" "9.0.100"

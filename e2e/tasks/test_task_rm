@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tools]
+
+[tasks]
+short = "echo short"
+
+[tasks.build]
+run = "cargo build"
+
+[tasks.test]
+run = "cargo test"
+EOF
+mise tasks add --file scripted -- echo hi
+mise tasks add --global everywhere -- echo everywhere
+
+echo "=== asks first ==="
+assert_fail_contains "MISE_YES=0 mise tasks rm build" "mise tasks rm requires confirmation"
+assert_contains "cat mise.toml" "[tasks.build]"
+
+echo "=== TOML and file tasks ==="
+mise tasks rm build scripted
+assert "cat mise.toml" '[tools]
+
+[tasks]
+short = "echo short"
+
+[tasks.test]
+run = "cargo test"'
+assert_fail "test -e mise-tasks/scripted"
+mise tasks remove short
+assert "cat mise.toml" '[tools]
+
+[tasks.test]
+run = "cargo test"'
+mise tasks rm everywhere
+assert "cat $MISE_CONFIG_DIR/config.toml" ''
+
+echo "=== --json and --dry-run ==="
+assert_json "mise tasks rm --json --dry-run test" "[{
+  \"task\": \"test\",
+  \"action\": \"removed\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"cargo test\"},
+  \"newly_trusted\": false,
+  \"dry_run\": true
+}]"
+assert_contains "cat mise.toml" "[tasks.test]"
+assert_json "mise tasks rm --json test" "[{
+  \"task\": \"test\",
+  \"action\": \"removed\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"cargo test\"},
+  \"newly_trusted\": false,
+  \"dry_run\": false
+}]"
+assert "cat mise.toml" '[tools]'
+
+echo "=== choosing the file ==="
+mise tasks add lint -- echo shared
+mise tasks add --env local lint -- echo mine
+assert_fail_contains "mise tasks rm lint" "task lint is defined in several files"
+mise tasks rm --env local lint
+assert "cat mise.local.toml" ''
+assert_contains "cat mise.toml" "[tasks.lint]"
+assert_fail_contains "mise tasks rm --env local lint" "no task named lint in"
+mise tasks add --file scripted -- echo hi
+mise tasks rm --path mise-tasks/scripted scripted
+assert_fail "test -e mise-tasks/scripted"
+echo "keep me" >notes.txt
+assert_fail_contains "mise tasks rm --path notes.txt lint" "is neither a TOML config file nor the script of task lint"
+assert "cat notes.txt" "keep me"
+
+echo "=== nothing changes when one task cannot be removed ==="
+assert_fail_contains "mise tasks rm lint nope" "no task named nope"
+assert_contains "cat mise.toml" "[tasks.lint]"
+
+echo "=== a script a TOML task shadows is still a definition ==="
+mise tasks add --file shadowed -- echo script
+mise tasks add shadowed -- echo toml
+assert_fail_contains "mise tasks rm shadowed" "task shadowed is defined in several files"
+assert_fail_contains "mise tasks rm shadowed" "mise-tasks/shadowed"
+mise tasks rm --path mise.toml shadowed
+assert_not_contains "cat mise.toml" "shadowed"
+mise tasks rm shadowed
+assert_fail "test -e mise-tasks/shadowed"
+
+echo "=== files task discovery skips are not definitions ==="
+mkdir -p mise-tasks/skipped
+printf '#!/usr/bin/env bash\necho plain\n' >mise-tasks/plain
+printf '#!/usr/bin/env bash\necho excluded\n' >mise-tasks/skipped/excluded
+printf '#!/usr/bin/env bash\necho disabled\n' >mise-tasks/disabled
+chmod +x mise-tasks/skipped/excluded mise-tasks/disabled
+mise tasks add plain -- echo toml
+mise tasks add skipped:excluded -- echo toml
+mise tasks add disabled -- echo toml
+cat <<'EOF' >>mise.toml
+
+[task_config]
+excludes = ["mise-tasks/skipped"]
+EOF
+export MISE_TASK_DISABLE_PATHS="$PWD/mise-tasks/disabled"
+assert_fail_contains "mise tasks rm --path mise-tasks/plain plain" "is neither a TOML config file nor the script of task plain"
+assert_fail_contains "mise tasks rm --path mise-tasks/disabled disabled" "is neither a TOML config file nor the script of task disabled"
+mise tasks rm plain skipped:excluded disabled
+assert_not_contains "cat mise.toml" "echo toml"
+assert "cat mise-tasks/plain mise-tasks/skipped/excluded mise-tasks/disabled" '#!/usr/bin/env bash
+echo plain
+#!/usr/bin/env bash
+echo excluded
+#!/usr/bin/env bash
+echo disabled'
+unset MISE_TASK_DISABLE_PATHS
+
+echo "=== a script is named without its extension ==="
+printf '#!/usr/bin/env bash\necho sh\n' >mise-tasks/withext.sh
+chmod +x mise-tasks/withext.sh
+assert_contains "mise tasks ls" "withext"
+mise tasks add withext -- echo toml
+assert_fail_contains "mise tasks rm withext" "mise-tasks/withext.sh"
+mise tasks rm --path mise.toml withext
+mise tasks rm withext
+assert_fail "test -e mise-tasks/withext.sh"
+
+echo "=== a name cannot reach outside the task directory ==="
+printf '#!/usr/bin/env bash\necho victim\n' >victim
+chmod +x victim
+cat <<'EOF' >>mise.toml
+
+[tasks."..:victim"]
+run = "echo toml"
+EOF
+mise tasks rm '..:victim'
+assert_not_contains "cat mise.toml" "victim"
+assert "cat victim" '#!/usr/bin/env bash
+echo victim'
+assert_fail_contains "mise tasks rm --path victim '..:victim'" "is neither a TOML config file nor the script of task"
+
+echo "=== two same-named scripts in one root are both definitions ==="
+mkdir -p .mise-tasks
+printf '#!/usr/bin/env bash\necho one\n' >mise-tasks/twin
+printf '#!/usr/bin/env bash\necho two\n' >.mise-tasks/twin
+chmod +x mise-tasks/twin .mise-tasks/twin
+assert_fail_contains "mise tasks rm twin" "task twin is defined in several files"
+mise tasks rm --path .mise-tasks/twin twin
+assert_fail "test -e .mise-tasks/twin"
+mise tasks rm twin
+assert_fail "test -e mise-tasks/twin"
+
+echo "=== a script two names select is removed once ==="
+printf '#!/usr/bin/env bash\necho sh\n' >mise-tasks/both.sh
+chmod +x mise-tasks/both.sh
+mise tasks add other -- echo other
+assert_json "mise tasks rm --json both both.sh other | jq -c '[.[] | [.task, .kind]]'" '[["both","file"],["other","toml"]]'
+assert_fail "test -e mise-tasks/both.sh"
+assert_not_contains "cat mise.toml" "[tasks.other]"

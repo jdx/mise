@@ -20,11 +20,17 @@ def run(binary, args, env, cwd):
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=240,
     )
     print(result.stdout, flush=True)
+    if result.returncode != 0:
+        # Pester drops a native command's stdout and shows only stderr, so a
+        # Windows failure would otherwise say nothing about why mise failed.
+        print(result.stdout, file=sys.stderr, flush=True)
     assert result.returncode == 0, f"{args} failed ({result.returncode})"
     return result.stdout
 
 
 def main():
+    # Windows runners default stdout to cp1252, which cannot print the updater's checkmarks.
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     source = Path(sys.argv[1]).resolve()
     original = digest(source)
     # Each case starts with the newly built updater, never the release installed
@@ -52,8 +58,12 @@ def main():
             })
             (root / "home").mkdir()
             print(f"Testing real self-update to {version}", flush=True)
-            output = run(binary, ["self-update", version, "--force", "--yes", "--no-plugins"], env, root)
+            # Debug logs show every request; mise's own releases come from
+            # mise-versions and github.com downloads, not the rate-limited API.
+            output = run(binary, ["self-update", version, "--force", "--yes", "--no-plugins"],
+                         {**env, "MISE_LOG_LEVEL": "debug"}, root)
             assert f"Updated mise to {version}" in output
+            assert "GET https://api.github.com/" not in output, "self-update asked api.github.com"
             assert "Failed to update mise-shim.exe" not in output
             assert digest(binary) != original, "self-update did not replace the binary"
             installed = run(binary, ["--version"], env, root).split()[0]

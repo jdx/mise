@@ -8,6 +8,7 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
@@ -86,8 +87,10 @@ impl ZigPlugin {
             None
         };
 
+        // The same checksum names the archive whichever host serves it.
+        let pinned = lock_checksum(tv, &self.get_platform_key(), &url);
         if settings.zig.use_community_mirrors
-            && let Some(mirrors) = community_mirrors
+            && let Some(mirrors) = community_mirrors.as_ref()
         {
             for i in 0..mirrors.len() {
                 let disp_i = i + 1;
@@ -98,9 +101,10 @@ impl ZigPlugin {
                 used_url = format!("{mirror_url}/{filename}");
 
                 if HTTP
-                    .download_file(
+                    .download_file_stored(
                         format!("{used_url}{REQUEST_SUFFIX}"),
                         &tarball_path,
+                        pinned.as_deref(),
                         Some(pr),
                     )
                     .await
@@ -116,30 +120,65 @@ impl ZigPlugin {
             // Try the usual ziglang.org or machengine.org download
             pr.set_message(format!("download {filename}"));
             used_url = url.clone();
-            HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+            HTTP.download_file_stored(&url, &tarball_path, pinned.as_deref(), Some(pr))
+                .await?;
             // If this was ziglang.org and error is not 404 and community_mirrors is None,
             // the user might want to place the mirror list in cache dir by hand
         }
 
         pr.set_message(format!("minisign {filename}"));
         let tarball_data = file::read(&tarball_path)?;
-        let sig = HTTP
-            .get_text(format!("{used_url}.minisig{REQUEST_SUFFIX}"))
-            .await?;
-        minisign::verify(ZIG_MINISIGN_KEY, &tarball_data, &sig)?;
+        // The archive may have come from the download store without contacting
+        // `used_url`, so the signature is looked for there first, then on the
+        // other hosts. The key is fixed, so any host's signature is checked the
+        // same way.
+        let mut sig_bases = vec![used_url.clone()];
+        if !sig_bases.contains(&url) {
+            sig_bases.push(url.clone());
+        }
+        for mirror in community_mirrors.iter().flatten() {
+            let base = format!("{mirror}/{filename}");
+            if !sig_bases.contains(&base) {
+                sig_bases.push(base);
+            }
+        }
+        // A host only counts once its signature verifies this file, so a stale or
+        // broken `.minisig` on one mirror falls through to the next host.
+        let mut last_err = None;
+        for base in sig_bases {
+            let sig = match HTTP
+                .get_text(format!("{base}.minisig{REQUEST_SUFFIX}"))
+                .await
+            {
+                Ok(text) => text,
+                Err(err) => {
+                    last_err = Some(err);
+                    continue;
+                }
+            };
+            match Self::verify_signature(&tarball_data, &sig, filename, &base) {
+                Ok(()) => return Ok(tarball_path),
+                Err(err) => last_err = Some(err),
+            }
+        }
+        Err(last_err.expect("at least one signature host was tried"))
+    }
+
+    /// Check `sig` against the archive and that it is the signature for `filename`.
+    fn verify_signature(data: &[u8], sig: &str, filename: &str, base: &str) -> Result<()> {
+        minisign::verify(ZIG_MINISIGN_KEY, data, sig)?;
         // Since this passed the verify step, the format is guaranteed to be correct
-        let trusted_comment = sig.split('\n').nth(2).unwrap().to_string();
+        let trusted_comment = sig.split('\n').nth(2).unwrap_or_default();
         // Verify that this is the desired version using trusted comment to prevent downgrade attacks
         if !trusted_comment.contains(&format!("file:{filename}")) {
             return Err(eyre::eyre!(
                 "Expected {}, but signature {}.minisig had:\n{}",
                 filename,
-                used_url,
+                base,
                 trusted_comment
             ));
         }
-
-        Ok(tarball_path)
+        Ok(())
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {

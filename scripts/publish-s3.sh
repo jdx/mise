@@ -1,6 +1,7 @@
 #!/usr/bin/env -S mise x aws-cli@2.22.35 -- bash
 set -euxo pipefail
 
+cache_short="max-age=300,s-maxage=300,public"
 cache_hour="max-age=3600,s-maxage=3600,public"
 cache_day="max-age=86400,s-maxage=86400,public,immutable"
 cache_week="max-age=604800,s-maxage=604800,public,immutable"
@@ -57,7 +58,13 @@ aws s3 cp artifacts/rpm/repodata/ "s3://$AWS_S3_BUCKET/rpm/repodata/" --cache-co
 aws s3 cp artifacts/rpm/repodata/ "s3://$AWS_S3_BUCKET/rpm/repodata/" --cache-control "$cache_week" --no-progress --recursive --exclude "repomd.xml*"
 
 aws s3 cp artifacts/deb/pool/ "s3://$AWS_S3_BUCKET/deb/pool/" --cache-control "$cache_week" --no-progress --recursive
-aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control "$cache_day" --no-progress --no-progress --recursive
+# The dists/ files live at fixed URLs and are replaced on every release, so they
+# must not be cached for a day or marked immutable: a CDN that kept an old
+# Packages.gz after InRelease was republished makes apt fail with "File has
+# unexpected size". Upload the indexes before the Release files that hash them,
+# so a client never sees a new InRelease whose Packages.gz is not live yet.
+aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control "$cache_short" --no-progress --recursive --exclude "*/Release" --exclude "*/Release.gpg" --exclude "*/InRelease"
+aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control "$cache_short" --no-progress --recursive --exclude "*" --include "*/Release" --include "*/Release.gpg" --include "*/InRelease"
 
 # delete ancient CLIs
 # since=`date --date '-3 years' +%F 2>/dev/null`

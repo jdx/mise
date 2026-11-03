@@ -12,13 +12,13 @@ description: "Show whether declared package manager plugins are installed"
 Show whether declared package manager plugins are installed
 
 ## Flags
-- **`--missing`** — Exit with code 1 if a declared plugin is missing
+- **`--missing`** — Exit with status 1 if a declared plugin is not installed
 - **`-h --help`** — Print help
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Package plugins](/bootstrap/packages/plugins.html).
+- [Package manager plugins](/bootstrap/packages/plugins.html).
 - [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

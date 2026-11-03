@@ -169,3 +169,66 @@ async fn test_download_file_creates_parent_dirs() {
     let content = tokio::fs::read_to_string(&file_path).await.unwrap();
     assert_eq!(content, test_content);
 }
+
+#[tokio::test]
+async fn test_failed_download_keeps_the_existing_file() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/missing"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let lua = Lua::new();
+    mod_http(&lua).unwrap();
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let path = temp_dir.path().join("existing.txt");
+    std::fs::write(&path, "kept").unwrap();
+    let path_str = path.to_string_lossy().to_string();
+    let url = server.uri() + "/missing";
+
+    lua.load(mlua::chunk! {
+        local http = require("http")
+        local ok, err = http.try_download_file({ url = $url }, $path_str)
+        assert(ok == nil)
+        assert(err ~= nil)
+    })
+    .exec_async()
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "kept");
+    // Nothing else was left beside it.
+    assert_eq!(std::fs::read_dir(temp_dir.path()).unwrap().count(), 1);
+}
+
+#[tokio::test]
+async fn test_download_replaces_the_existing_file() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/new"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("new"))
+        .mount(&server)
+        .await;
+
+    let lua = Lua::new();
+    mod_http(&lua).unwrap();
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let path = temp_dir.path().join("existing.txt");
+    std::fs::write(&path, "old").unwrap();
+    let path_str = path.to_string_lossy().to_string();
+    let url = server.uri() + "/new";
+
+    lua.load(mlua::chunk! {
+        local http = require("http")
+        http.download_file({ url = $url }, $path_str)
+    })
+    .exec_async()
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+    assert_eq!(std::fs::read_dir(temp_dir.path()).unwrap().count(), 1);
+}

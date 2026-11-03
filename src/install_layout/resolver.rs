@@ -5,8 +5,9 @@
 //! (without writing anything), allocates one when installing, and keeps the
 //! compatibility links, receipt and unlocked selection in step.
 //!
-//! The layout is gated behind `experimental`. With it off nothing here is
-//! consulted and every path is the legacy `installs/<short>/<version>`.
+//! The layout is gated behind `experimental`, and on Windows `experimental`
+//! turns it on unless `install_layout` says otherwise. With it off nothing here
+//! is consulted and every path is the legacy `installs/<short>/<version>`.
 //! Legacy installations stay where they are and keep working: a version that
 //! exists in the legacy location and has no identity-layout counterpart is used
 //! in place, never moved.
@@ -246,7 +247,7 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     if let Some(graph) = tv.uv_install_identity() {
         inputs.insert("uv".to_string(), graph);
     }
-    let platform = backend.get_platform_key();
+    let platform = backend.get_platform_key_for(tv);
     let mut mode = Mode::Fallback;
     if tv.resolved_from_lockfile()
         && let Some(checksum) = tv

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# The word `trust` on the command line never lets an untrusted config load: as a
+# shim's argument it belongs to the tool, and `mise trust` is still deciding
+# about the config in front of it.
+
+export MISE_TRUSTED_CONFIG_PATHS="" MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+
+mise use -g dummy@1
+mise uninstall dummy --all
+mise install dummy@1.0.0
+
+mkdir untrusted
+cat <<EOF >untrusted/mise.toml
+[env]
+PAYLOAD = "{{ exec(command='touch $PWD/payload-ran') }}"
+EOF
+
+assert_fail "cd untrusted && dummy version" "not trusted"
+assert_fail "cd untrusted && dummy trust inspect" "not trusted"
+assert_fail "test -e payload-ran"
+
+# A version `mise upgrade` replaced is pruned by the next ordinary command, and
+# that cleanup loads the config of whatever directory the command runs in.
+MISE_UPGRADE_PRUNE_AFTER=0s mise upgrade dummy
+assert_fail "cd untrusted && mise ls" "not trusted"
+assert_contains "cd untrusted && mise trust --show" "untrusted"
+assert_contains "cd untrusted && mise untrust 2>&1" "untrusted"
+assert_contains "cd untrusted && mise trust --ignore 2>&1" "ignored"
+assert_fail "test -e payload-ran"
+assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
+
+# The cleanup is left for a command that may load the config.
+assert "mise ls >/dev/null"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"

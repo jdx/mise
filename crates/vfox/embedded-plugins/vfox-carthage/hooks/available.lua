@@ -3,7 +3,7 @@
 --- @return table Array of version objects with 'version' field
 function PLUGIN:Available(ctx)
     local util = require("util")
-    local versions = util.get_versions()
+    local versions, dates = util.get_versions()
 
     -- Sort versions (newest first)
     table.sort(versions, util.version_compare)
@@ -11,7 +11,7 @@ function PLUGIN:Available(ctx)
     -- Convert to vfox format
     local result = {}
     for _, v in ipairs(versions) do
-        table.insert(result, { version = v })
+        table.insert(result, { version = v, created_at = dates[v] })
     end
 
     return result

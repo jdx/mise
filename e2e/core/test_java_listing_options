@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# Inline `release_type` selects the early-access metadata, as it does in mise.toml.
+assert_contains "mise latest 'java[release_type=ea]@openjdk'" "-ea"
+
+# Changing java.shorthand_vendor must not reuse the previous vendor's shorthand
+# versions from the metadata cache.
+export MISE_JAVA_SHORTHAND_VENDOR=openjdk
+mise latest java@21 >/dev/null
+temurin_latest="$(mise latest java temurin-21)"
+export MISE_JAVA_SHORTHAND_VENDOR=temurin
+assert "mise latest java@21" "${temurin_latest#temurin-}"
+
+# An alias of core:java keeps inline options as well.
+cat >mise.toml <<'TOML'
+[tool_alias]
+myjava = "core:java"
+TOML
+assert_contains "mise latest 'myjava[release_type=ea]@openjdk'" "-ea"

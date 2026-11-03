@@ -1,5 +1,5 @@
 backends = [
-  { full = "packslip:github.com/helmfile/helmfile", min_version = "1.8.1" },
+  { full = "packslip:github.com/helmfile/helmfile", min_version = "1.8.1", options = { workflow = "releaser.yaml" } },
   "aqua:helmfile/helmfile",
   "asdf:feniix/asdf-helmfile",
 ]

@@ -1,4 +1,4 @@
-FROM ubuntu:resolute-20260912@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+FROM ubuntu:resolute-20261006@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
 
 LABEL maintainer="jdx"
 LABEL org.opencontainers.image.source=https://github.com/jdx/mise
@@ -24,7 +24,6 @@ apt-get update && apt-get install -y --no-install-recommends \
     cargo \
     curl \
     default-jdk-headless \
-    direnv \
     fish \
     git \
     jq \

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# A project's enter and leave hooks and its watch_files commands run in the
+# project root, so a relative path names the project's own file even when the
+# shell enters the project through a subdirectory or leaves it. cd hooks and
+# global hooks run in the directory the shell changed to.
+
+project_root="$PWD"
+mkdir -p bin scripts vendor/widget/bin vendor/widget/scripts
+for dir in "$project_root" "$project_root/vendor/widget"; do
+  name=PROJECT
+  [[ $dir == */vendor/widget ]] && name=VENDORED
+  printf '#!/usr/bin/env bash\necho %s-SETUP\n' "$name" >"$dir/bin/setup"
+  printf '#!/usr/bin/env bash\necho %s-SYNC\n' "$name" >"$dir/scripts/sync"
+  chmod +x "$dir/bin/setup" "$dir/scripts/sync"
+done
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[hooks]
+enter = 'echo GLOBAL-ENTER:$(pwd):'
+EOF
+
+cat >mise.toml <<'EOF'
+[hooks]
+enter = ["./bin/setup", 'echo HOOK-ENTER:$(pwd):']
+leave = 'echo HOOK-LEAVE:$(pwd):'
+cd = 'echo HOOK-CD:$(pwd):'
+
+[[watch_files]]
+patterns = ["**/uv.lock"]
+run = "./scripts/sync"
+EOF
+touch vendor/widget/uv.lock
+
+cd ~ || exit 1
+eval "$(mise hook-env)"
+
+# entering through a subdirectory (the trailing `:` keeps a subdirectory from
+# satisfying the assertion)
+cd "$project_root/vendor/widget" || exit 1
+output="$(mise hook-env 2>&1)"
+assert_contains_text "$output" "PROJECT-SETUP"
+assert_not_contains_text "$output" "VENDORED-SETUP"
+assert_contains_text "$output" "HOOK-ENTER:$project_root:"
+assert_contains_text "$output" "HOOK-CD:$project_root/vendor/widget:"
+assert_contains_text "$output" "GLOBAL-ENTER:$project_root/vendor/widget:"
+eval "$(mise hook-env)"
+
+# a watched file changing while the shell is in a subdirectory
+sleep 1
+echo changed >>uv.lock
+output="$(mise hook-env 2>&1)"
+assert_contains_text "$output" "PROJECT-SYNC"
+assert_not_contains_text "$output" "VENDORED-SYNC"
+eval "$(mise hook-env)"
+
+# leaving the project for another directory
+cd ~ || exit 1
+assert_contains "mise hook-env 2>&1" "HOOK-LEAVE:$project_root:"

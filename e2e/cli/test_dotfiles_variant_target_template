@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+mkdir -p dotfiles/examplectl
+echo hello >dotfiles/examplectl/config
+
+export XDG_CONFIG_HOME="$HOME/custom-config"
+cat >mise.toml <<'TOML'
+[dotfiles.examplectl]
+source = "dotfiles/examplectl"
+mode = "symlink"
+variants = [{ default = true, target = "{{ xdg_config_home }}/examplectl" }]
+TOML
+mise bootstrap dotfiles apply
+assert "readlink ~/custom-config/examplectl" "$PWD/dotfiles/examplectl"
+
+# a template that does not render to a destination is ignored with a reason
+cat >mise.toml <<'TOML'
+[dotfiles.relative]
+source = "dotfiles/examplectl"
+mode = "symlink"
+variants = [{ default = true, target = "{{ 'relative' }}/examplectl" }]
+TOML
+assert_contains "mise bootstrap dotfiles status 2>&1" "variant target must be absolute or start with ~/"
+
+# a failed render says why
+cat >mise.toml <<'TOML'
+[dotfiles.undefined]
+source = "dotfiles/examplectl"
+mode = "symlink"
+variants = [{ default = true, target = "{{ no_such_variable }}/examplectl" }]
+TOML
+assert_contains "mise bootstrap dotfiles status 2>&1" "is not defined. Available variables"
+
+# a template with brackets is not mistaken for a wildcard before it renders
+cat >mise.toml <<'TOML'
+[dotfiles.gone]
+mode = "absent"
+variants = [{ default = true, target = '{{ env["HOME"] }}/.gone-by-template' }]
+TOML
+touch ~/.gone-by-template
+mise bootstrap dotfiles apply --yes
+assert_fail "test -e ~/.gone-by-template"
+
+# incoming-config preflight rejects what can never render to a destination
+cat >mise.toml <<'TOML'
+[dotfiles.badsyntax]
+source = "dotfiles/examplectl"
+mode = "symlink"
+variants = [{ default = true, target = "{{" }]
+
+[dotfiles.wild]
+mode = "absent"
+variants = [{ default = true, target = "{{ xdg_config_home }}/*" }]
+TOML
+assert_contains "mise bootstrap dotfiles status 2>&1" "variant target"
+assert_contains "mise bootstrap dotfiles status 2>&1" "an absent target cannot use wildcards"

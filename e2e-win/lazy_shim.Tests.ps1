@@ -36,6 +36,8 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["JQ.EXE"] }
                 [Environment]::SetEnvironmentVariable($saved.Name, $saved.Value, 'Process')
             }
         }
+        . "$PSScriptRoot\fixture-executables.ps1"
+        Wait-MiseFixtureExecutables -Directory $TestDrive
     }
 
     It 'installs and runs a lazy tool through native and hardlink shims' {

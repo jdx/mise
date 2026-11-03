@@ -196,8 +196,6 @@ Generate man pages
 
 ## `render:schema`
 
-- Depends: docs:setup
-
 - **Usage:** `render:schema`
 
 Render JSON schema

@@ -9,8 +9,8 @@ use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
     fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
-    rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
-    template_string_strict, verify_artifact,
+    pinned_checksum, rename_binary_name, render_bin_path, shasums_has_entries, template_string,
+    template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::config::Config;
@@ -18,6 +18,7 @@ use crate::config::Settings;
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::Platform;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
@@ -27,9 +28,10 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail};
+use mise_util::redactions::strip_url_credentials_in_value;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -276,6 +278,18 @@ impl<'a> HttpOptions<'a> {
         self.values.str("version_expr")
     }
 
+    fn version_date_expr(&self) -> Option<&'a str> {
+        self.values.str("version_date_expr")
+    }
+
+    fn version_date_url(&self) -> Option<&'a str> {
+        self.values.str("version_date_url")
+    }
+
+    fn version_date_next_expr(&self) -> Option<&'a str> {
+        self.values.str("version_date_next_expr")
+    }
+
     fn url_platforms(&self) -> Vec<String> {
         self.values.available_platforms_with_key("url")
     }
@@ -355,11 +369,90 @@ impl HttpBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    /// Whether a configured option calls the template function `name`, which
+    /// makes the artifact depend on a host trait the platform key must carry.
+    /// `request` holds the options a tool request adds on top of the shorthand's
+    /// own, such as a `url` written in `mise.toml`.
+    fn template_uses(&self, request: Option<&ToolVersionOptions>, name: &str) -> bool {
+        // Only URLs are templates that pick an artifact; other options can mention
+        // the function in plain text.
+        fn calls(value: &serde_json::Value, key: &str, call: &regex::Regex) -> bool {
+            match value {
+                serde_json::Value::String(s) => key.ends_with("url") && call.is_match(s),
+                serde_json::Value::Object(map) => map.iter().any(|(k, v)| calls(v, k, call)),
+                _ => false,
+            }
+        }
+        let call =
+            regex::Regex::new(&format!(r"\b{name}\s*\(")).expect("valid template call regex");
+        let uses = |opts: &ToolVersionOptions| {
+            serde_json::to_value(&opts.opts).is_ok_and(|opts| calls(&opts, "", &call))
+        };
+        uses(&self.ba.opts()) || request.is_some_and(uses)
+    }
+
+    /// The platform variants a request locks, for [`Backend::platform_variants`].
+    fn variants_for(
+        &self,
+        request: Option<&ToolVersionOptions>,
+        platform: &Platform,
+    ) -> Vec<Platform> {
+        if let Some(qualifier) = platform.qualifier.as_deref() {
+            // An explicit target keeps its own key. A no-AVX2 host installs the
+            // key `platform_key_for` builds, so lock that one as well.
+            let mut variants = vec![platform.clone()];
+            if platform.arch == "x64"
+                && !qualifier.split('-').any(|part| part == "baseline")
+                && self.template_uses(request, "avx2")
+            {
+                let musl = platform.libc() == Some("musl") && self.template_uses(request, "libc");
+                variants.push(Platform {
+                    qualifier: Some(if musl { "musl-baseline" } else { "baseline" }.to_string()),
+                    ..platform.clone()
+                });
+            }
+            return variants;
+        }
+        let baseline = platform.arch == "x64" && self.template_uses(request, "avx2");
+        let musl = platform.os == "linux" && self.template_uses(request, "libc");
+        let variant = |qualifier: &str| Platform {
+            qualifier: Some(qualifier.to_string()),
+            ..platform.clone()
+        };
+        let mut variants = vec![platform.clone()];
+        if baseline {
+            variants.push(variant("baseline"));
+        }
+        if musl {
+            variants.push(variant("musl"));
+        }
+        if baseline && musl {
+            variants.push(variant("musl-baseline"));
+        }
+        variants
+    }
+
+    /// The platform key, as [`Backend::get_platform_key`] builds it, for a request
+    /// whose own options may also call `avx2()` or `libc()`.
+    fn platform_key_for(&self, request: Option<&ToolVersionOptions>) -> String {
+        let mut platform = Platform::current();
+        if platform.arch == "x64"
+            && !crate::platform::host_has_avx2()
+            && self.template_uses(request, "avx2")
+        {
+            // `platform_variants` lists `musl-baseline` only for a template that
+            // also calls `libc()`, so the key must not claim musl otherwise.
+            let musl = platform.qualifier.is_some() && self.template_uses(request, "libc");
+            platform.qualifier = Some(if musl { "musl-baseline" } else { "baseline" }.to_string());
+        }
+        platform.to_key()
+    }
+
     /// Built in one place so the dry-run check and the install itself cannot drift apart.
     /// Names the platform it looked for and the ones the tool does declare, because the fix is
     /// usually to add that key rather than to pick a different tool.
     fn missing_url_error(&self, opts: &HttpOptions<'_>) -> eyre::Report {
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(opts.raw()));
         let available = opts.url_platforms();
         if available.is_empty() {
             eyre::eyre!("Http backend requires 'url' option")
@@ -415,13 +508,15 @@ impl HttpBackend {
     // Cache key generation
     // -------------------------------------------------------------------------
 
-    /// Generate a cache key based on file content and extraction options
+    /// Generate a cache key based on file content and extraction options.
+    /// `bin_path` is the rendered, checked `bin_path` option.
     fn cache_key(
         &self,
         file_path: &Path,
         opts: &HttpOptions<'_>,
         file_info: &FileInfo,
         strip_components: usize,
+        bin_path: Option<&str>,
     ) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
 
@@ -456,9 +551,12 @@ impl HttpBackend {
         if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
             parts.push(format!("rename_{}", rename_cache_token(rename)));
             // When rename_exe is used, bin_path affects where the rename happens,
-            // so different bin_path values result in different cached content
-            if let Some(bin_path) = opts.bin_path() {
-                parts.push(format!("binpath_{bin_path}"));
+            // so different bin_path values result in different cached content.
+            // The rendered path is what counts (`{{ version }}/bin` differs per
+            // version), and it is hashed like rename_exe, so no path text reaches
+            // the cache directory name.
+            if let Some(bin_path) = bin_path {
+                parts.push(format!("binpath_{}", hash::hash_blake3_to_str(bin_path)));
             }
         }
 
@@ -479,10 +577,11 @@ impl HttpBackend {
         file_path: &Path,
         effective_filename: Option<&str>,
         opts: &HttpOptions<'_>,
+        bin_path: Option<&str>,
     ) -> Result<CachePlan> {
         let file_info = FileInfo::new(file_path, effective_filename, opts);
         let strip_components = self.effective_strip_components(file_path, &file_info, opts)?;
-        let key = self.cache_key(file_path, opts, &file_info, strip_components)?;
+        let key = self.cache_key(file_path, opts, &file_info, strip_components, bin_path)?;
 
         Ok(CachePlan {
             key,
@@ -630,9 +729,9 @@ impl HttpBackend {
             let _ = file::remove_all(&tmp_path);
             return Err(err);
         }
-        if let Err(err) = std::fs::rename(&tmp_path, &cache_path) {
+        if let Err(err) = file::rename(&tmp_path, &cache_path) {
             let _ = file::remove_all(&tmp_path);
-            return Err(err.into());
+            return Err(err);
         }
 
         // Write metadata
@@ -669,7 +768,9 @@ impl HttpBackend {
             || cache_plan.file_info.is_compressed_binary
         {
             opts.bin_path()
-                .map(|path| tmp_path.join(template_string(&path, tv)))
+                .map(|path| render_bin_path(&path, tv))
+                .transpose()?
+                .map(|path| tmp_path.join(path))
                 .unwrap_or_else(|| tmp_path.clone())
         } else {
             tmp_path.clone()
@@ -685,9 +786,9 @@ impl HttpBackend {
             let _ = file::remove_all(&tmp_path);
             return Err(err);
         }
-        if let Err(err) = std::fs::rename(&tmp_path, &install_path) {
+        if let Err(err) = file::rename(&tmp_path, &install_path) {
             let _ = file::remove_all(&tmp_path);
-            return Err(err.into());
+            return Err(err);
         }
         Ok(())
     }
@@ -783,13 +884,16 @@ impl HttpBackend {
         };
 
         file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
+        // rename_exe below renames by name, which would follow a link the
+        // archive shipped out of the extraction directory.
+        file::ensure_symlinks_stay_within(dest)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = opts.bin_path() {
-                let bin_path = template_string(&bin_path_template, tv);
+                let bin_path = render_bin_path(&bin_path_template, tv)?;
                 dest.join(&bin_path)
             } else {
                 let bin_dir = dest.join("bin");
@@ -817,11 +921,11 @@ impl HttpBackend {
         opts: &HttpOptions<'_>,
     ) -> Result<()> {
         let metadata = CacheMetadata {
-            url: url.to_string(),
+            url: strip_url_credentials_in_value(url).into_owned(),
             checksum: opts.checksum(),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
-            platform: self.get_platform_key(),
+            platform: self.platform_key_for(Some(opts.raw())),
         };
 
         let json = serde_json::to_string_pretty(&metadata)?;
@@ -925,7 +1029,7 @@ impl HttpBackend {
         if let ExtractionType::RawFile { filename } = extraction_type
             && let Some(bin_path_template) = opts.bin_path()
         {
-            let bin_path = template_string(&bin_path_template, tv);
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
             let dest_dir = install_path.join(&bin_path);
             file::create_dir_all(&dest_dir)?;
 
@@ -988,7 +1092,7 @@ impl HttpBackend {
         let filename = file_path.file_name().unwrap().to_string_lossy();
         let lockfile_enabled = settings.lockfile_enabled();
 
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(&tv.request.options()));
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
 
         // Verify or generate checksum
@@ -1024,8 +1128,9 @@ impl HttpBackend {
     // Version listing
     // -------------------------------------------------------------------------
 
-    /// Fetch versions from version_list_url if configured
-    async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+    /// Fetch versions from version_list_url if configured, with release dates from
+    /// `version_date_expr` when it is set.
+    async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = HttpOptions::new(&raw_opts);
 
@@ -1039,7 +1144,41 @@ impl HttpBackend {
         let version_expr = opts.version_expr();
 
         let headers = opts.headers(None)?;
-        version_list::fetch_versions(&url, &headers, regex, json_path, version_expr).await
+        let (versions, body) =
+            version_list::fetch_versions_with_body(&url, &headers, regex, json_path, version_expr)
+                .await?;
+
+        let dates = if let Some(date_expr) = opts.version_date_expr() {
+            let bodies = match opts.version_date_url() {
+                Some(date_url) => {
+                    version_list::fetch_date_sources(
+                        date_url,
+                        opts.version_date_next_expr(),
+                        &headers,
+                    )
+                    .await?
+                }
+                None if opts.version_date_next_expr().is_some() => {
+                    bail!("`version_date_next_expr` requires `version_date_url`")
+                }
+                None => vec![body],
+            };
+            version_list::eval_version_dates(date_expr, &bodies, &versions)
+                .wrap_err_with(|| format!("failed to evaluate version_date_expr for {}", self.ba))?
+        } else if opts.version_date_url().is_some() || opts.version_date_next_expr().is_some() {
+            bail!("`version_date_url` and `version_date_next_expr` require `version_date_expr`");
+        } else {
+            HashMap::new()
+        };
+
+        Ok(versions
+            .into_iter()
+            .map(|version| VersionInfo {
+                created_at: dates.get(&version).cloned(),
+                version,
+                ..Default::default()
+            })
+            .collect())
     }
 
     // -------------------------------------------------------------------------
@@ -1179,6 +1318,9 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "version_regex".into(),
         "version_json_path".into(),
         "version_expr".into(),
+        "version_date_url".into(),
+        "version_date_next_expr".into(),
+        "version_date_expr".into(),
         "format".into(),
         "rename_exe".into(),
         "windows_script_interpreter".into(),
@@ -1195,8 +1337,34 @@ impl Backend for HttpBackend {
         VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            &["tool_http_options"],
+            &["tool_http_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Http
+    }
+
+    /// A URL template that picks its build with `avx2()` or `libc()` downloads a
+    /// different artifact on a no-AVX2 host, so the lockfile key carries the
+    /// `baseline` qualifier the way `mise lock` writes it for that variant.
+    fn get_platform_key(&self) -> String {
+        self.platform_key_for(None)
+    }
+
+    fn get_platform_key_for(&self, tv: &ToolVersion) -> String {
+        self.platform_key_for(Some(&tv.request.options()))
+    }
+
+    fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
+        self.variants_for(None, platform)
+    }
+
+    fn platform_variants_for(&self, tv: &ToolVersion, platform: &Platform) -> Vec<Platform> {
+        self.variants_for(Some(&tv.request.options()), platform)
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
@@ -1213,6 +1381,9 @@ impl Backend for HttpBackend {
             "version_regex",
             "version_json_path",
             "version_expr",
+            "version_date_url",
+            "version_date_next_expr",
+            "version_date_expr",
             "headers",
             "headers_forward",
         ]
@@ -1230,6 +1401,9 @@ impl Backend for HttpBackend {
             "version_regex",
             "version_json_path",
             "version_expr",
+            "version_date_url",
+            "version_date_next_expr",
+            "version_date_expr",
             "checksum_url",
             "checksum_expr",
             "headers",
@@ -1240,7 +1414,11 @@ impl Backend for HttpBackend {
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
-        super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
+        super::http_install_operation_count(
+            opts.checksum().is_some(),
+            &self.platform_key_for(Some(&tv.request.options())),
+            tv,
+        )
     }
 
     /// Options that affect which artifact is downloaded, resolved for the target
@@ -1290,7 +1468,7 @@ impl Backend for HttpBackend {
             .into());
         };
 
-        let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
+        let mut checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
 
         // A checksum source was configured but produced nothing for this target
         // (manifest miss, SHASUMS naming mismatch, unreachable file, ...). The
@@ -1311,22 +1489,24 @@ impl Backend for HttpBackend {
             );
         }
 
+        // The lockfile is committed, so it names the artifact without the
+        // credentials that fetch it. Installs take the URL from config.
+        let lock_url = strip_url_credentials_in_value(&url).into_owned();
+        if checksum.is_none() && lock_url != url && Settings::get().generate_lockfiles() {
+            // `generate` would otherwise hash what the recorded URL serves,
+            // which without the credentials is an authentication error.
+            crate::lockfile::generate::download_for_verification(&url, &mut checksum).await?;
+        }
+
         Ok(PlatformInfo {
-            url: Some(url),
+            url: Some(lock_url),
             checksum,
             ..Default::default()
         })
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions(config).await?;
-        Ok(versions
-            .into_iter()
-            .map(|v| VersionInfo {
-                version: v,
-                ..Default::default()
-            })
-            .collect())
+        self.fetch_versions(config).await
     }
 
     /// An http tool with no URL for this platform cannot be installed, and the options say so
@@ -1351,6 +1531,11 @@ impl Backend for HttpBackend {
 
         // Get URL template
         let url_template = opts.url().ok_or_else(|| self.missing_url_error(&opts))?;
+        // Check bin_path before anything is downloaded, extracted or keyed on it.
+        let bin_path = opts
+            .bin_path()
+            .map(|bin_path| render_bin_path(&bin_path, &tv))
+            .transpose()?;
 
         let url = template_string(&url_template, &tv);
 
@@ -1358,12 +1543,12 @@ impl Backend for HttpBackend {
         let filename = get_filename_from_url(&url);
         let file_path = tv.download_path().join(&filename);
 
-        // Record URL in lock platforms
-        let platform_key = self.get_platform_key();
+        // Record URL in lock platforms, without the credentials that fetch it
+        let platform_key = self.platform_key_for(Some(&raw_opts));
         tv.lock_platforms
             .entry(platform_key.clone())
             .or_default()
-            .url = Some(url.clone());
+            .url = Some(strip_url_credentials_in_value(&url).into_owned());
 
         // For lockfile checksum verification
         let settings = Settings::get();
@@ -1373,6 +1558,8 @@ impl Backend for HttpBackend {
             .get(&platform_key)
             .and_then(|p| p.checksum.as_ref())
             .is_some();
+
+        let pinned = pinned_checksum(&tv, &platform_key, opts.raw());
 
         let download = match local_artifact_path(&url)? {
             Some(src) => {
@@ -1387,16 +1574,23 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message(format!("download {filename}"));
                 let headers = opts.headers(Some(tv.version.as_str()))?;
                 if headers.is_empty() {
-                    HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
-                        .await?
+                    HTTP.download_file_linked(
+                        &url,
+                        &file_path,
+                        &crate::http::host_auth_headers(&reqwest::Url::parse(&url)?)?,
+                        pinned.as_deref(),
+                        Some(ctx.pr.as_ref()),
+                    )
+                    .await?
                 } else {
                     // Keep the automatic host token; configured headers override it.
                     let headers =
                         crate::http::with_host_auth(&reqwest::Url::parse(&url)?, &headers)?;
-                    HTTP.download_file_with_headers_metadata(
+                    HTTP.download_file_linked(
                         &url,
                         &file_path,
                         &headers,
+                        pinned.as_deref(),
                         Some(ctx.pr.as_ref()),
                     )
                     .await?
@@ -1410,9 +1604,21 @@ impl Backend for HttpBackend {
         }
         verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
+        // Verify/generate lockfile checksum (before extraction for security). A rejected
+        // download must never reach `install_path_for`, which is not always the
+        // `tv.install_path()` the caller removes when this returns an error.
+        if lockfile_enabled || has_lockfile_checksum {
+            ctx.pr.next_operation();
+        }
+        self.verify_checksum(ctx, &mut tv, &file_path)?;
+
         // Generate cache key
-        let cache_plan =
-            self.cache_plan(&file_path, download.effective_filename.as_deref(), &opts)?;
+        let cache_plan = self.cache_plan(
+            &file_path,
+            download.effective_filename.as_deref(),
+            &opts,
+            bin_path.as_deref(),
+        )?;
         ctx.pr.next_operation();
         // Explicit destinations must remain independent of the user's data dir,
         // even when the tool opts into sharing normal user installations.
@@ -1455,12 +1661,6 @@ impl Backend for HttpBackend {
         self.create_version_alias_symlink(&tv, &cache_plan.key)?;
         tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
 
-        // Verify checksum for lockfile
-        if lockfile_enabled || has_lockfile_checksum {
-            ctx.pr.next_operation();
-        }
-        self.verify_checksum(ctx, &mut tv, &file_path)?;
-
         Ok(tv)
     }
 
@@ -1495,7 +1695,7 @@ impl Backend for HttpBackend {
 
         // Check for explicit bin_path
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, &tv);
+            let bin_path = render_bin_path(&bin_path_template, &tv)?;
             return Ok(vec![runtime_path_for_install_path(
                 &tv,
                 install_path.join(bin_path),
@@ -1546,7 +1746,7 @@ impl Backend for HttpBackend {
 /// The local file a `file://` artifact URL names, so an archive fetched by hand
 /// (or from a mirror mise cannot reach) installs exactly like a downloaded one.
 /// Any other scheme is left to the HTTP client.
-fn local_artifact_path(url: &str) -> Result<Option<PathBuf>> {
+pub(crate) fn local_artifact_path(url: &str) -> Result<Option<PathBuf>> {
     let Ok(parsed) = url::Url::parse(url) else {
         return Ok(None);
     };
@@ -1942,9 +2142,11 @@ mod tests {
         let raw = FileInfo::new(artifact.path(), None, &opts);
         let redirected = FileInfo::new(artifact.path(), Some("tool.tar.gz"), &opts);
 
-        let raw_key = backend.cache_key(artifact.path(), &opts, &raw, 0).unwrap();
+        let raw_key = backend
+            .cache_key(artifact.path(), &opts, &raw, 0, None)
+            .unwrap();
         let redirected_key = backend
-            .cache_key(artifact.path(), &opts, &redirected, 0)
+            .cache_key(artifact.path(), &opts, &redirected, 0, None)
             .unwrap();
 
         assert_ne!(raw_key, redirected_key);
@@ -1970,9 +2172,11 @@ mod tests {
         let beta = FileInfo::new(artifact.path(), Some("beta.gz"), &opts);
 
         let alpha_key = backend
-            .cache_key(artifact.path(), &opts, &alpha, 0)
+            .cache_key(artifact.path(), &opts, &alpha, 0, None)
             .unwrap();
-        let beta_key = backend.cache_key(artifact.path(), &opts, &beta, 0).unwrap();
+        let beta_key = backend
+            .cache_key(artifact.path(), &opts, &beta, 0, None)
+            .unwrap();
 
         assert_ne!(alpha_key, beta_key);
     }
@@ -1990,7 +2194,7 @@ mod tests {
             let key = |options: &str| {
                 let raw_opts = crate::toolset::parse_tool_options(options);
                 backend
-                    .cache_plan(&artifact, None, &HttpOptions::new(&raw_opts))
+                    .cache_plan(&artifact, None, &HttpOptions::new(&raw_opts), None)
                     .unwrap()
                     .key
             };
@@ -2125,7 +2329,10 @@ mod tests {
             let opts = crate::toolset::parse_tool_options(opt);
             let opts = HttpOptions::new(&opts);
             let file_info = FileInfo::new(tmp.path(), None, &opts);
-            backend.cache_key(tmp.path(), &opts, &file_info, 0).unwrap()
+            let bin_path = opts.bin_path();
+            backend
+                .cache_key(tmp.path(), &opts, &file_info, 0, bin_path.as_deref())
+                .unwrap()
         };
 
         // Scalar, table, and adversarial values all yield path-safe keys.
@@ -2150,5 +2357,36 @@ mod tests {
         // Windows would otherwise collapse to the same path component.
         assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool.""#));
         assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool ""#));
+
+        // bin_path joins the key next to rename_exe, so it is hashed too.
+        for bin_path in ["../../evil", "/abs/dir", "a/b"] {
+            let key = key_for(&format!(r#"rename_exe=plz,bin_path="{bin_path}""#));
+            assert!(key.contains("binpath_"), "key: {key}");
+            assert!(
+                !key.contains(illegal),
+                "unsafe cache key for {bin_path}: {key}"
+            );
+            assert!(
+                !key.contains(".."),
+                "unsafe cache key for {bin_path}: {key}"
+            );
+        }
+        assert_ne!(
+            key_for(r#"rename_exe=plz,bin_path="a""#),
+            key_for(r#"rename_exe=plz,bin_path="b""#)
+        );
+
+        // The key follows the rendered bin_path: the same archive installed for
+        // two versions with `bin_path = "{{ version }}/bin"` renames in two
+        // different directories, so it must not share an extraction.
+        let opts = crate::toolset::parse_tool_options(r#"rename_exe=plz"#);
+        let opts = HttpOptions::new(&opts);
+        let file_info = FileInfo::new(tmp.path(), None, &opts);
+        let rendered = |bin_path| {
+            backend
+                .cache_key(tmp.path(), &opts, &file_info, 0, Some(bin_path))
+                .unwrap()
+        };
+        assert_ne!(rendered("1.0.0/bin"), rendered("2.0.0/bin"));
     }
 }

@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::Arc,
 };
 
@@ -25,19 +25,203 @@ struct Env<V> {
     env: IndexMap<String, V>,
 }
 
+/// A YAML env file. Values are read as written, so `VERSION: 1.10` is `1.10`
+/// and `ZIP: 02134` keeps its leading zero; a null, list or mapping value is
+/// an error. `sops` is the encryption metadata of a sops-encrypted file.
+#[derive(Default)]
+struct YamlEnv {
+    sops: bool,
+    env: EnvMap,
+}
+
+impl<'de> serde::Deserialize<'de> for YamlEnv {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        struct EnvVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for EnvVisitor {
+            type Value = YamlEnv;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a mapping of environment variables")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<YamlEnv, A::Error> {
+                let mut out = YamlEnv::default();
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "sops" {
+                        let sops: IndexMap<String, mise_util::yaml::Value> = map.next_value()?;
+                        out.sops = !sops.is_empty();
+                    } else {
+                        let value: YamlEnvValue = map.next_value()?;
+                        out.env.insert(key, value.0);
+                    }
+                }
+                Ok(out)
+            }
+        }
+
+        deserializer.deserialize_map(EnvVisitor)
+    }
+}
+
+/// An env value asked for as a string, so the parser hands over the scalar's
+/// text instead of guessing a number or boolean from it.
+struct YamlEnvValue(String);
+
+impl<'de> serde::Deserialize<'de> for YamlEnvValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        struct ValueVisitor;
+
+        impl serde::de::Visitor<'_> for ValueVisitor {
+            type Value = YamlEnvValue;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a string, number or boolean")
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self,
+                v: &str,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_bool<E: serde::de::Error>(
+                self,
+                v: bool,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_i64<E: serde::de::Error>(
+                self,
+                v: i64,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_u64<E: serde::de::Error>(
+                self,
+                v: u64,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_f64<E: serde::de::Error>(
+                self,
+                v: f64,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(mise_util::yaml::Number::from(v).to_string()))
+            }
+        }
+
+        deserializer.deserialize_str(ValueVisitor)
+    }
+}
+
+/// Resolves `.` and `..` components lexically, so the parents of `/repo/pkg/..` are those of
+/// `/repo`, not `/repo/pkg`.
+fn normalize_dots(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 impl EnvResults {
     pub(super) async fn file(
         ctx: &mut EnvDirectiveContext<'_>,
-        input: String,
+        inputs: Vec<String>,
         expand: bool,
+        find_up: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
-        let s = ctx.parse_template("_.file", &input)?;
+        let mut patterns = Vec::with_capacity(inputs.len());
+        for input in &inputs {
+            patterns.push(PathBuf::from(ctx.parse_template("_.file", input)?));
+        }
+        let has_glob = patterns
+            .iter()
+            .any(|pattern| crate::config::is_glob_pattern(&pattern.to_string_lossy()));
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
         let mut acc: TeraEnvMap = ctx.exec_env.clone();
-        for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
+        let paths: Vec<PathBuf> = if find_up {
+            // A file turning up in a parent directory is not in the env cache key.
+            ctx.results.has_uncacheable = true;
+            // A relative name starts at the config root, like every other relative path in a
+            // config. An absolute path, such as `{{cwd}}/.env`, starts at its own directory and
+            // searches for its file name. Consecutive names with the same start are searched
+            // together, directory by directory, and groups apply in the order written.
+            let mut groups: Vec<(PathBuf, Vec<PathBuf>)> = Vec::new();
+            for pattern in &patterns {
+                let pattern = file::replace_path(pattern);
+                let (start, name) = if pattern.is_absolute() {
+                    match (pattern.parent(), pattern.file_name()) {
+                        (Some(dir), Some(name)) => (normalize_dots(dir), PathBuf::from(name)),
+                        _ => continue,
+                    }
+                } else {
+                    (ctx.config_root.to_path_buf(), pattern)
+                };
+                match groups.last_mut() {
+                    Some((dir, names)) if *dir == start => names.push(name),
+                    _ => groups.push((start, vec![name])),
+                }
+            }
+            let mut paths = Vec::new();
+            for (start, names) in groups {
+                // Walk the nearest directory first and the later name first, then reverse, so the
+                // loader sees the farthest directory first, and within one directory the names in
+                // the order written. The file nearest the start then wins, and within one
+                // directory a later name wins. A single name is the same walk with one name.
+                let mut nearest_first = Vec::new();
+                for dir in start.ancestors() {
+                    for name in names.iter().rev() {
+                        let mut matches = xx::file::glob(dir.join(name)).unwrap_or_default();
+                        matches.reverse();
+                        nearest_first.extend(matches);
+                    }
+                }
+                paths.extend(nearest_first.into_iter().rev());
+            }
+            paths
+        } else {
+            patterns
+                .into_iter()
+                .flat_map(|pattern| xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default())
+                .collect()
+        };
+        // A global entry that names its file outright is the operator's own choice. One that
+        // searches upward, or a glob, can find files in repositories, so those need approval like
+        // project config.
+        let operator_owned = !find_up && !has_glob && crate::config::is_global_config(ctx.source);
+        for p in paths {
+            if !operator_owned
+                && !crate::config::config_file::env_file_trust_check_from(&p, Some(ctx.source))?
+            {
+                // Trusting the file later changes nothing the cache key sees. A file that is not
+                // there has nothing to trust.
+                if p.exists() {
+                    ctx.results.has_uncacheable = true;
+                }
+                continue;
+            }
             let config = ctx.config;
             let exec_env = ctx.exec_env;
             // The loaders expand templates in values read from the file and do
@@ -75,6 +259,10 @@ impl EnvResults {
                     acc.insert(k.clone(), v.clone());
                 }
             }
+            // A file named twice, or matched by overlapping globs, loads each time so that a file
+            // between the two can still expand values from it, but it ends up at its last position.
+            // The result is keyed by path, so a plain insert would keep its first place.
+            out.shift_remove(&p);
             out.insert(p, loaded);
         }
         Ok(out)
@@ -144,8 +332,13 @@ impl EnvResults {
     {
         let errfn = || eyre!("failed to parse yaml file: {}", display_path(p));
         if let Ok(raw) = file::read_to_string(p) {
-            let mut f: Env<serde_yaml::Value> = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
-            if !f.sops.is_empty() {
+            let parse = |text: &str| {
+                mise_util::yaml::from_str::<Option<YamlEnv>>(text)
+                    .map(Option::unwrap_or_default)
+                    .wrap_err_with(errfn)
+            };
+            let mut f = parse(&raw)?;
+            if f.sops {
                 *sops_used = true;
                 let decrypted = sops::decrypt::<_, YamlFileFormat>(
                     config,
@@ -156,25 +349,12 @@ impl EnvResults {
                 )
                 .await?;
                 if !decrypted.is_empty() {
-                    f = serde_yaml::from_str(&decrypted).wrap_err_with(errfn)?;
+                    f = parse(&decrypted)?;
                 } else {
                     return Ok(EnvMap::new());
                 }
             }
-            f.env
-                .into_iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k,
-                        match v {
-                            serde_yaml::Value::String(s) => s,
-                            serde_yaml::Value::Number(n) => n.to_string(),
-                            serde_yaml::Value::Bool(b) => b.to_string(),
-                            _ => bail!("unsupported yaml value: {v:?}"),
-                        },
-                    ))
-                })
-                .collect()
+            Ok(f.env)
         } else {
             Ok(EnvMap::new())
         }

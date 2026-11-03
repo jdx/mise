@@ -132,21 +132,73 @@ pub(crate) static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 /// `Settings::reset`, minus config files.
 #[cfg(test)]
 pub(crate) fn reset_settings(overrides: Option<mise_settings::SettingsPartial>) {
-    use confique::Config;
-    let mut builder = mise_settings::Settings::builder().env();
-    if let Some(overrides) = overrides {
-        builder = builder.preloaded(overrides);
-    }
+    use confique::{Config, Layer};
+    let mut overrides = overrides.unwrap_or_else(mise_settings::SettingsPartial::empty);
+    overrides
+        .lockfile_mode
+        .get_or_insert_with(|| "merge".into());
+    let builder = mise_settings::Settings::builder()
+        .env()
+        .preloaded(overrides);
     mise_settings::store(std::sync::Arc::new(builder.load().unwrap()));
 }
+
+/// The `settings.toml` defaults, except `lockfile_mode`: the download tests
+/// count requests and stored files, which generate mode, the default, shares
+/// and skips.
+#[cfg(test)]
+fn load_test_defaults() -> eyre::Result<std::sync::Arc<mise_settings::Settings>> {
+    use confique::{Config, Layer};
+    let mut partial = mise_settings::SettingsPartial::empty();
+    partial.lockfile_mode = Some("merge".into());
+    Ok(std::sync::Arc::new(
+        mise_settings::Settings::builder()
+            .preloaded(partial)
+            .load()?,
+    ))
+}
+
+/// Run `$f` (a `fn()`) before `main`, in a binary that links this crate.
+///
+/// Test harnesses use it to register what the code under test expects `main` to have set up.
+/// It is the part of the `ctor` crate mise needs, minus the trampoline `ctor` puts in
+/// `__TEXT,__text_startup` on Apple targets. That section is laid out after `__text`; once a
+/// debug test binary's `__text` passes 128MB, the trampoline's direct branch into it is out of
+/// arm64 range and ld cannot insert a branch island between sections, so the link fails with
+/// "B/BL out of range". Here the constructor is an ordinary function in `__text`, and only a
+/// pointer to it goes in the platform's initializer section.
+#[macro_export]
+macro_rules! run_before_main {
+    ($f:ident) => {
+        const _: () = {
+            extern "C" fn run_before_main() {
+                $f();
+            }
+
+            #[used]
+            #[cfg_attr(
+                target_vendor = "apple",
+                unsafe(link_section = "__DATA,__mod_init_func,mod_init_funcs")
+            )]
+            #[cfg_attr(windows, unsafe(link_section = ".CRT$XCU"))]
+            #[cfg_attr(
+                not(any(target_vendor = "apple", windows)),
+                unsafe(link_section = ".init_array")
+            )]
+            static RUN_BEFORE_MAIN: extern "C" fn() = run_before_main;
+        };
+    };
+}
+
+#[cfg(test)]
+crate::run_before_main!(register_default_settings);
 
 /// This crate's own unit tests have no mise config system to load settings
 /// from, so they read the `settings.toml` defaults, and no mise build to key
 /// caches on.
 #[cfg(test)]
-#[ctor::ctor(unsafe)]
 fn register_default_settings() {
-    mise_settings::set_loader(mise_settings::load_defaults);
+    mise_settings::set_loader(load_test_defaults);
     crate::cache::set_base_cache_keys(vec!["mise-util-tests".to_string()]);
     crate::user_agent::set("mise-util-tests".to_string());
     crate::deprecation::set_version("0.0.0");

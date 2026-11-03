@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# schema: invalid (deprecated syntax)
 cat <<EOF >mise.toml
 [env]
 mise.file = ['.test-env']
@@ -23,6 +24,7 @@ EOF
 echo 'export A=1' >a
 assert "mise env | grep -v PATH" "export A=1"
 
+# schema: invalid (deprecated syntax)
 cat <<EOF >mise.toml
 [env]
 _.file = { value = 'b.json' }
@@ -31,6 +33,7 @@ echo '{"B": 2}' >b.json
 assert_contains "mise env 2>&1" "deprecated [config.directive.value]"
 assert "mise env | grep -v PATH" "export B=2"
 
+# schema: invalid (deprecated syntax)
 cat <<EOF >mise.toml
 [env]
 _.file = { values = ['a', 'b.json'] }
@@ -51,6 +54,24 @@ EOF
 assert "mise env | grep -v PATH" "export C=see
 export D=2
 export E=true"
+
+# YAML values are read as written; numbers and YAML 1.1 booleans are not reformatted.
+cat <<EOF >mise.toml
+[env]
+_.file = 'd.yaml'
+EOF
+cat <<EOF >d.yaml
+NAME: see
+VERSION: 1.10
+ZIP: 02134
+ENABLED: yes
+FLAG: true
+EOF
+assert "mise env | grep -v PATH" "export ENABLED=yes
+export FLAG=true
+export NAME=see
+export VERSION=1.10
+export ZIP=02134"
 
 cat <<EOF >mise.toml
 [env]
@@ -102,6 +123,7 @@ echo '{"B": 2}' >b.json
 assert "mise env | grep -v PATH" "export A=1
 export B=2"
 
+# schema: invalid (deprecated syntax)
 cat <<EOF >mise.toml
 [env]
 mise.file = ['{{env.HOME}}/.home-test-env']

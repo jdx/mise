@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# override_config_filenames and override_tool_versions_filenames hold filenames,
+# not glob patterns. A project .miserc.toml sets them without trust, and config
+# discovery looks for each name in every ancestor directory, so `**` used to walk
+# the whole filesystem and `*` turned every file on the way up into a config.
+
+echo 'tools.dummy = "1"' >mise.toml
+echo 'dummy 1' >.tool-versions
+
+for setting in override_config_filenames override_tool_versions_filenames; do
+  echo "$setting = [\"**\"]" >.miserc.toml
+  assert_succeed "timeout 30s mise hook-env -s bash"
+  echo "$setting = [\"*\"]" >.miserc.toml
+  assert_succeed "mise hook-env -s bash"
+done
+
+# A wildcard matches no other file...
+echo 'override_config_filenames = ["*.toml"]' >.miserc.toml
+echo 'override_tool_versions_filenames = []' >>.miserc.toml
+assert_empty "mise ls dummy"
+
+# ...only the file that really has that name
+echo 'tools.dummy = "2"' >'*.toml'
+assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/*.toml  2"

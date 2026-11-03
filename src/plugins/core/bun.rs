@@ -9,13 +9,17 @@ use itertools::Itertools;
 use versions::Versioning;
 
 use crate::args::BackendArg;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::static_helpers::fetch_checksum_from_shasums, platform::detect_libc};
+use crate::{
+    backend::static_helpers::{fetch_checksum_from_shasums, fetch_published_checksum_from_shasums},
+    platform::detect_libc,
+};
 use crate::{
     backend::{Backend, GitHubReleaseInfo, VersionInfo, platform_target::PlatformTarget},
     config::{Config, Settings},
@@ -40,6 +44,16 @@ impl BunPlugin {
         }
     }
 
+    /// The release directory for `version`. The version is encoded as part of one path segment:
+    /// it can come from a config file or a version list, and a `/` or `%2e%2e` in it would
+    /// otherwise move the download to another path on github.com.
+    fn release_url(version: &str) -> String {
+        format!(
+            "https://github.com/oven-sh/bun/releases/download/bun-v{}",
+            urlencoding::encode(version)
+        )
+    }
+
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join(bun_bin_name())
     }
@@ -53,10 +67,10 @@ impl BunPlugin {
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = format!(
-            "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
-            tv.version,
+            "{}/bun-{}-{}.zip",
+            Self::release_url(&tv.version),
             os(),
             arch(&tv.version)
         );
@@ -64,7 +78,37 @@ impl BunPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file_stored(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
+            Some(pr),
+        )
+        .await?;
+
+        // Without a checksum in the lockfile, take the one Bun publishes in
+        // SHASUMS256.txt so verify_checksum compares the zip against it instead
+        // of only recording what was downloaded.
+        let shasums_url = format!(
+            "https://github.com/oven-sh/bun/releases/download/bun-v{}/SHASUMS256.txt",
+            tv.version
+        );
+        let platform_info = tv
+            .lock_platforms
+            .entry(self.get_platform_key())
+            .or_default();
+        if platform_info.checksum.is_none() {
+            match fetch_published_checksum_from_shasums(&shasums_url, filename).await? {
+                Some(checksum) => {
+                    platform_info.url = Some(url.clone());
+                    platform_info.checksum = Some(checksum);
+                }
+                // A release that never published SHASUMS256.txt. It would come from the
+                // same host as the zip and is unsigned, so failing here would protect
+                // nothing that host could not also forge.
+                None => warn!("bun: {shasums_url} not found, skipping checksum verification"),
+            }
+        }
 
         Ok(tarball_path)
     }
@@ -201,7 +245,7 @@ impl Backend for BunPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
@@ -226,9 +270,7 @@ impl Backend for BunPlugin {
 
         Ok(Some(GitHubReleaseInfo {
             asset_pattern: Some(asset_pattern),
-            api_url: Some(format!(
-                "https://github.com/oven-sh/bun/releases/download/bun-v{version}"
-            )),
+            api_url: Some(Self::release_url(version)),
         }))
     }
 
@@ -243,13 +285,11 @@ impl Backend for BunPlugin {
         let filename = Self::bun_asset_filename(target, version);
 
         // Build download URL
-        let url =
-            format!("https://github.com/oven-sh/bun/releases/download/bun-v{version}/{filename}");
+        let release_url = Self::release_url(version);
+        let url = format!("{release_url}/{filename}");
 
         // Fetch SHASUMS256.txt to get checksum without downloading the zip
-        let shasums_url = format!(
-            "https://github.com/oven-sh/bun/releases/download/bun-v{version}/SHASUMS256.txt"
-        );
+        let shasums_url = format!("{release_url}/SHASUMS256.txt");
         let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
         Ok(PlatformInfo {
@@ -494,6 +534,23 @@ fn bun_bin_name() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_url_keeps_the_version_in_one_segment() {
+        assert_eq!(
+            BunPlugin::release_url("1.3.0"),
+            "https://github.com/oven-sh/bun/releases/download/bun-v1.3.0"
+        );
+        let url = BunPlugin::release_url("1.3.0/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/evil/payload#");
+        let parsed = url::Url::parse(&format!("{url}/bun-linux-x64.zip")).unwrap();
+        assert!(
+            parsed
+                .path()
+                .starts_with("/oven-sh/bun/releases/download/bun-v1.3.0"),
+            "{parsed}"
+        );
+        assert_eq!(parsed.fragment(), None);
+    }
 
     fn target(platform: &str) -> PlatformTarget {
         PlatformTarget::new(Platform::parse(platform).unwrap())

@@ -85,6 +85,7 @@ proxy_idle_timeout = $value
 TOML
   assert_fail_contains "mise daemons ls 2>&1" '[daemons.api].proxy_idle_timeout'
 done
+# schema: invalid
 cat >mise.toml <<'TOML'
 [daemons.crdb]
 preset = "cockroachdb"

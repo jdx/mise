@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# An apply that fails partway returns normally, so it must not leave an
+# unfinished history record that blocks the next apply until
+# `mise dot recover`, nor links the entry does not know are its own.
+if [ "$(id -u)" = 0 ]; then
+  # root writes through the read-only directory that makes the apply fail
+  echo "skipping: needs a non-root user"
+  exit 0
+fi
+mkdir -p "$MISE_CONFIG_DIR" ~/src
+echo a >~/src/a.txt
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/target" = { source = "~/src", mode = "symlink-each" }
+TOML
+assert_succeed 'mise dot apply --yes'
+
+# c.txt links, then sub/b.txt cannot
+echo c >~/src/c.txt
+mkdir -p ~/src/sub ~/target/sub
+echo b >~/src/sub/b.txt
+chmod 555 ~/target/sub
+assert_fail 'mise dot apply --yes'
+chmod 755 ~/target/sub
+assert 'readlink ~/target/c.txt' "$HOME/src/c.txt"
+assert_fail 'test -e ~/target/sub/b.txt'
+assert 'mise bootstrap dotfiles history --pending --json | jq length' '0'
+
+# the link the failed apply made is the entry's own: unapply removes it too
+assert_succeed 'mise dot unapply ~/target --yes'
+assert_fail 'test -e ~/target/a.txt'
+assert_fail 'test -e ~/target/c.txt'
+
+# and the next apply carries on without a recovery first
+assert_succeed 'mise dot apply --yes'
+assert 'readlink ~/target/sub/b.txt' "$HOME/src/sub/b.txt"

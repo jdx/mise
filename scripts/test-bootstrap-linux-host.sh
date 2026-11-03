@@ -130,7 +130,19 @@ services:
     command: ["sh", "-c", "while true; do sleep 3600; done"]
 YAML
 
-docker build --tag "$image" "$repo_root/test/fixtures/bootstrap-linux-host"
+# Only the image build is retried: it pulls the base image and apt packages, so
+# a registry or builder outage fails it with no bearing on the bootstrap under test.
+for attempt in 1 2 3; do
+	if docker build --tag "$image" "$repo_root/test/fixtures/bootstrap-linux-host"; then
+		break
+	fi
+	if ((attempt == 3)); then
+		echo "docker build failed after $attempt attempts" >&2
+		exit 1
+	fi
+	echo "docker build failed (attempt $attempt of 3); retrying" >&2
+	sleep $((attempt * 15))
+done
 docker run --detach \
 	--name "$container" \
 	--privileged \

@@ -3,30 +3,29 @@ use std::path::PathBuf;
 
 use crate::env;
 
-/// Start a new shell with the mise environment built from the current configuration
+/// Start a subshell with mise's tools and environment
 ///
 /// This is an alternative to `mise activate` for starting a mise session explicitly.
 /// The new shell has the tools and environment variables from the config loaded.
 /// Unlike an activated shell, changing directories does not update the environment.
+/// Type `exit` to leave it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise en .
-node -v"###,
-        help = "Start a shell and check node. Example output: `v20.0.0`."
+        "mise en",
+        help = "Start a shell with the project's tools and environment"
     ),
-    example(r#"mise en -s "bash --norc""#, help = "Skip loading bashrc."),
-    example(r#"mise en -s "zsh -f""#, help = "Skip loading zshrc.")
+    example("mise en ~/work/api", help = "Start the shell in another project"),
+    example(r#"mise en -s "bash --norc""#, help = "Skip loading .bashrc"),
+    example(r#"mise en -s "zsh -f""#, help = "Skip loading .zshrc")
 )]
 pub(crate) struct En {
     /// Directory to start the shell in
     #[usage(default = ".", verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
     pub dir: PathBuf,
 
-    /// Shell to start
-    ///
-    /// Defaults to $SHELL
+    /// Shell to start; defaults to $SHELL
     #[usage(verbatim_doc_comment, long, short = 's')]
     pub shell: Option<String>,
 }

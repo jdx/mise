@@ -1,17 +1,19 @@
 use eyre::Result;
 
-/// Never capture paths matching a glob
+/// Never save paths matching a glob
 ///
-/// Adds a glob to `[history] exclude` in the global configuration. The
-/// rule applies to all tracked paths. Quote the glob to prevent your shell
-/// from expanding it.
+/// Adds a glob to `[history] exclude` in the global config. The rule applies
+/// to every tracked path. Quote the glob so your shell does not expand it.
 ///
-/// Use exclusions for logs, caches, databases, and session state. For
-/// configuration you want to save manually, use `--no-autosave` instead.
-/// To scope selection to one directory, edit that `[dotfiles]` entry's
-/// `exclude` or `include` list.
+/// Use exclusions for logs, caches, databases, and session state. For files
+/// you want to save only on demand, track them with
+/// `mise dot track --no-autosave` instead. To limit what one tracked directory
+/// saves, edit the `exclude` or `include` list of its `[dotfiles]` entry.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(example(
+    "mise dot exclude '~/.codex/sessions/**'",
+    help = "Never save Codex session logs"
+))]
 pub(crate) struct DotfilesExclude {
     /// A glob such as `~/.config/hypr/plugins/**`
     glob: String,
@@ -26,17 +28,15 @@ impl DotfilesExclude {
 
 /// Stop excluding paths matching a glob
 ///
-/// Removes the specified glob from `[history] exclude` in the global
-/// configuration. Pass the same pattern used with `mise dot exclude`:
-///
-///     mise dot exclude '~/.codex/sessions/**'
-///     mise dot include '~/.codex/sessions/**'
-///
-/// Other matching exclusion rules still apply. This command does not edit
-/// a tracked directory's `include` list; change that field in `[dotfiles]`
-/// to select which files the directory saves.
+/// Removes a glob that `mise dot exclude` added to `[history] exclude` in the
+/// global config. Pass the pattern exactly as you excluded it. Other matching
+/// exclusion rules still apply. This command does not edit a tracked
+/// directory's `include` list; change that list in its `[dotfiles]` entry.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(example(
+    "mise dot include '~/.codex/sessions/**'",
+    help = "Save Codex session logs again"
+))]
 pub(crate) struct DotfilesInclude {
     /// The glob as written by `mise dot exclude`
     glob: String,

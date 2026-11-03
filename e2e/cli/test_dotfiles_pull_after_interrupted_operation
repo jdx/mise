@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# A pull after an interrupted operation recovers it before planning. Recovery
+# records the dead operation as a commit; when that happened after planning,
+# the pull read it as saved history changing under its plan and refused, so a
+# pull that followed an interrupted one could never succeed.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+# the assertions read info-level messages, whatever level the runner forwards
+export MISE_LOG_LEVEL=info
+origin="$PWD/interrupted-origin.git"
+git init -q --bare -b main "$origin"
+echo v1 >~/.native
+assert_succeed "mise dot track ~/.native"
+assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export -f b
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+echo v2 >~/.native
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert_contains "b dot sync 2>&1" "1 incoming change(s) pending"
+
+# kill an operation on the second machine while its command runs, leaving its
+# record; the command marks when it started, so no Git write is in flight
+ready="$PWD/ready"
+b dot capture -- sh -c "touch $ready; sleep 60" >/dev/null 2>&1 &
+pid=$!
+for _ in $(seq 300); do
+  [ -e "$ready" ] && break
+  sleep 0.1
+done
+assert_succeed "test -e $ready"
+pending="$second/.local/state/mise/history/index/pending"
+# SIGKILL every process under the job, deepest first, so nothing cleans up
+descendants() {
+  local child
+  for child in $(pgrep -P "$1"); do
+    descendants "$child"
+    echo "$child"
+  done
+}
+victims=()
+while read -r victim; do
+  victims+=("$victim")
+done < <(descendants "$pid")
+kill -KILL "${victims[@]}" "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+assert_succeed "test -n \"\$(ls -A $pending)\""
+
+assert_contains "b dot pull --yes 2>&1" "applied 1 incoming change(s)"
+assert "cat $second/.native" "v2"

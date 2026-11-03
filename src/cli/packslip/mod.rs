@@ -3,13 +3,18 @@ use eyre::Result;
 mod forget;
 mod pins;
 
-/// The signers mise accepts packslips from
+/// Inspect and reset the signers mise has pinned for packslip tools
 ///
-/// A tool installed with the `packslip:` backend is verified against the
-/// identity its project name implies, and mise then remembers which signer
-/// it accepted, the way SSH remembers hosts. A later release from another
-/// signer, a weaker scheme, a repackager where the vendor signed before, or
-/// one that drops build provenance is refused until a person says so.
+/// mise verifies a tool installed with the `packslip:` backend against the
+/// identity its project name implies, then remembers the signer it accepted,
+/// the way SSH remembers host keys. A later release from another signer, a
+/// weaker signing scheme, a repackager where the vendor signed before, or one
+/// that drops build provenance is refused. After you confirm the change with
+/// the publisher, run `mise packslip forget <PROJECT>`, and update mise.lock if
+/// it records the old signer.
+///
+/// With no subcommand, lists the pins (same as `mise packslip pins`).
+/// See https://mise.jdx.dev/dev-tools/backends/packslip.html#pinned-signers
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct Packslip {

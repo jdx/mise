@@ -11,22 +11,29 @@ description: "Symlink ruby versions installed by Homebrew into mise"
 
 Symlink ruby versions installed by Homebrew into mise
 
+Use this to make versions installed by another version manager available to
+mise. It does not overwrite managed installs, runtime aliases, or links from
+other providers. Homebrew is the only source, so --brew is required. mise
+links each <ruby@X.Y> directory under Homebrew's opt directory, not opt/ruby.
+
 ## Flags
 - **`--brew`** — Get tool versions from Homebrew
 - **`-h --help`** — Print help
 
 ## Examples
 
+Link the Homebrew ruby@3.4, then list it with the other installed versions
+
 ```
-brew install ruby
+brew install ruby@3.4
 mise sync ruby --brew
-mise ls ruby --installed # inspect linked versions, then select one with mise use
+mise ls ruby --installed
 ```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Ruby](/lang/ruby.html).
+- [Ruby](/lang/ruby.html#migrating-from-other-ruby-managers).
 - [`mise sync <SUBCOMMAND>`](/cli/sync.html).
 - [Global flags and argument syntax](/cli/#global-flags).

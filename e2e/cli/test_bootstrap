@@ -36,8 +36,8 @@ assert_contains "mise bootstrap status" "installed"
 assert_contains "mise bootstrap status --json" '"dotfiles"'
 assert_contains "mise bootstrap status --json" '"tools"'
 assert_succeed "mise bootstrap status --missing"
-assert_contains "mise bootstrap dotfiles status" "~/.gitconfig"
-assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles status" "~/.gitconfig"
+assert_contains "mise bootstrap dotfiles status --verbose" "~/.gitconfig"
+assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles status --verbose" "~/.gitconfig"
 assert_succeed "mise bootstrap packages apply --dry-run --yes"
 assert_succeed "mise bootstrap packages install --dry-run --yes"
 
@@ -192,6 +192,27 @@ assert_fail "test -f pre_tools_hook"
 assert_fail "test -f post_tools_hook"
 assert_fail "test -f final_hook"
 
+# a hook prints its description, else the first line of its command; --verbose prints it all
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.pre-defaults]
+description = "Tidy the root copy"
+run = """
+echo described_first_line
+echo described_second_line
+"""
+
+[bootstrap.hooks.final]
+run = """
+echo plain_first_line
+echo plain_second_line
+"""
+EOF
+assert_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" "Tidy the root copy"
+assert_not_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" "echo described_first_line"
+assert_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" '$ echo plain_first_line'
+assert_contains "mise --verbose bootstrap --yes --skip packages --skip tools 2>&1" "echo described_second_line"
+assert_contains "mise bootstrap --dry-run --skip packages --skip tools 2>&1" "echo described_second_line"
+
 # bootstrap hook commands render with the declaring config's Tera context
 rm -f "$MISE_CONFIG_DIR/bootstrap-hook-rendered" bootstrap-hook-root-rendered
 cat <<'EOF' >mise.toml
@@ -202,14 +223,74 @@ assert_succeed "mise bootstrap --yes --only packages"
 assert "test -f '$MISE_CONFIG_DIR/bootstrap-hook-rendered'"
 assert "test -f '$PWD/bootstrap-hook-root-rendered'"
 
-# dry-run renders hooks without allowing effectful template functions
+# dry-run shows hooks that use exec() unrendered, with the render error, without running exec()
 rm -f bootstrap-hook-template-effect
 cat <<'EOF' >mise.toml
 [bootstrap.hooks.post-packages]
-run = "{{ exec(command='touch bootstrap-hook-template-effect') }}"
+run = "echo {{ exec(command='touch bootstrap-hook-template-effect') }}"
 EOF
-assert_fail "mise bootstrap --dry-run --only packages" "exec() is disabled during dry run"
+assert_contains "mise bootstrap --dry-run --only packages" "exec(command="
+assert_contains "mise bootstrap --dry-run --only packages 2>&1" "exec() is disabled during dry run"
 assert_fail "test -e bootstrap-hook-template-effect"
+
+# with nothing unresolved and no exec() call, a hook template that cannot render fails the dry run
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.post-packages]
+run = "echo {{ nope() }}"
+EOF
+assert_fail "mise bootstrap --dry-run --only packages" "failed to render template"
+
+# dry-run shows hooks that read vars computed with exec() in config the dotfiles add
+mkdir -p dotfiles-exec-var
+cat <<'EOF' >dotfiles-exec-var/config.toml
+[vars]
+exec_var = "{{ exec(command='touch bootstrap-var-template-effect && echo message.txt') }}"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ vars.exec_var }} > exec_var_hook_ran"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles-exec-var/config.toml"
+EOF
+assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo {{ vars.exec_var }} > exec_var_hook_ran"
+assert_contains "mise bootstrap dotfiles apply --dry-run --force 2>&1" "render error:"
+assert_fail "test -e bootstrap-var-template-effect"
+assert_fail "test -e exec_var_hook_ran"
+
+# however the hook reads the var, it is shown unrendered and does not run
+for read in '{% set v = vars %}{{ v.exec_var }}' '{{ read_file(path=vars.exec_var) }}' '{{ vars.exec_var | hash_file }}' '{{ vars.exec_var | extname }}'; do
+  printf '[vars]\nexec_var = "{{ exec(command=%s) }}"\n\n[bootstrap.hooks.post-dotfiles]\nrun = "echo %s > exec_var_hook_ran"\n' "'echo message.txt'" "$read" >dotfiles-exec-var/config.toml
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo $read > exec_var_hook_ran"
+  assert_fail "test -e exec_var_hook_ran"
+done
+
+# a hook that uses the whole vars map would render without the var, so it is shown unrendered too
+for read in "'{{ vars | json_encode }}'" '{% for k, v in vars %}{{ k }}={{ v }} {% endfor %}'; do
+  printf '[vars]\nexec_var = "{{ exec(command=%s) }}"\n\n[bootstrap.hooks.post-dotfiles]\nrun = "echo %s > exec_var_hook_ran"\n' "'echo message.txt'" "$read" >dotfiles-exec-var/config.toml
+  # the preview shell-quotes the single quotes, so match the template itself
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force" "${read//\'/}"
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force 2>&1" "whole vars map"
+  assert_fail "test -e exec_var_hook_ran"
+done
+
+# a template that is broken anyway is shown unrendered too, and the note carries its error
+sed -i.bak 's/run = .*/run = "echo {{ vars.exec_var }} {{ nope() }}"/' dotfiles-exec-var/config.toml
+assert_matches "mise bootstrap dotfiles apply --dry-run --force 2>&1" "render error:.*nope"
+
+# a hook that reads no unresolved var renders, even with random output
+sed -i.bak "s/run = .*/run = \"echo {{ choice(n=8, alphabet='ab') }}\"/" dotfiles-exec-var/config.toml
+assert_matches "mise bootstrap dotfiles apply --dry-run --force" "echo [ab]{8}"
+
+# vars whose template is broken with nothing unresolved fail the dry run where a hook reads them
+cat <<'EOF' >dotfiles-exec-var/config.toml
+[vars]
+bad_var = "{{ nope() }}"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ vars.bad_var }}"
+EOF
+assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
 
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml
@@ -470,3 +551,33 @@ EOF
 rm -f mise_dir_hook_ran
 assert_contains "mise bootstrap --dry-run" "echo mise-dir > mise_dir_hook_ran"
 assert_fail "cat mise_dir_hook_ran"
+
+# a namespaced `system:bootstrap` task is not the special `bootstrap` task
+cat <<EOF2 >mise.toml
+[tasks."system:bootstrap"]
+run = "touch namespaced_ran"
+EOF2
+assert_succeed "mise bootstrap --dry-run"
+assert_not_contains "mise bootstrap --dry-run 2>&1" "task bootstrap found"
+assert_fail "test -f namespaced_ran"
+
+# a file task named `bootstrap.sh` is the special `bootstrap` task
+rm -f mise.toml
+mkdir -p mise-tasks
+cat <<'EOF2' >mise-tasks/bootstrap.sh
+#!/usr/bin/env bash
+echo file-ran >file_bootstrap_ran
+EOF2
+chmod +x mise-tasks/bootstrap.sh
+assert_succeed "mise bootstrap --yes"
+assert "cat file_bootstrap_ran" "file-ran"
+
+# a task aliased to `bootstrap` is the special `bootstrap` task
+rm -rf mise-tasks
+cat <<EOF2 >mise.toml
+[tasks.setup]
+alias = "bootstrap"
+run = "echo alias-ran > aliased_bootstrap_ran"
+EOF2
+assert_succeed "mise bootstrap --yes"
+assert "cat aliased_bootstrap_ran" "alias-ran"

@@ -1,19 +1,13 @@
 ---
-description: "The aur manager installs packages from the Arch User Repository with yay or paru:"
+description: "Install Arch User Repository packages from mise.toml with the yay or paru AUR helper."
 ---
 
-# Arch User Repository (AUR)
+# Arch User Repository packages (aur)
 
-The `aur` manager installs packages from the
-[Arch User Repository](https://aur.archlinux.org/) with `yay` or `paru`:
-
-::: warning Review AUR packages before installing
-AUR packages are user-submitted build recipes, not packages vetted or supported
-by Arch Linux. A compromised or malicious PKGBUILD can execute code as your user
-during the build. Review the PKGBUILD and related sources before installing a
-package, and review upstream changes before applying upgrades. mise delegates to
-your AUR helper and does not add an independent trust or verification layer.
-:::
+The `aur` manager builds and installs packages from the
+[Arch User Repository](https://aur.archlinux.org/) with the `yay` or `paru`
+helper. For packages from the official Arch repositories, use
+[`pacman`](/bootstrap/packages/pacman.html).
 
 ```toml
 [bootstrap.packages]
@@ -21,36 +15,60 @@ your AUR helper and does not add an independent trust or verification layer.
 "aur:visual-studio-code-bin" = "latest"
 ```
 
-Install a working AUR helper and its build prerequisites before applying this
-configuration. Run as a regular user, not root.
-
-mise prefers `yay` when both helpers are on `PATH`,
-and otherwise uses `paru`. The helper runs as the current user because AUR
-packages are built with `makepkg`; the helper requests elevation from pacman
-when it installs the finished package.
-
-Package state is checked read-only through pacman's local database with its
-foreign-package filter. A same-named package from a configured repository does
-not satisfy an `aur:` declaration. Virtual package names are accepted only when
-their installed provider is also a foreign package. Installs use the helper's
-AUR-only mode with `--noconfirm`, so a repository package with the
-same name is not selected instead. mise intentionally omits `--needed` so the
-helper can replace an installed repository package that has the requested AUR
-package's name. `mise bootstrap packages apply --update`
-additionally asks the helper to refresh repository metadata.
-
-AUR helpers build the current PKGBUILD rather than resolving historical package
-versions, so version pins are status-only. Use `"latest"` for entries mise can
-install automatically.
-
 ```sh
-mise bootstrap packages status
 mise bootstrap packages apply --manager aur --dry-run
 mise bootstrap packages apply --manager aur
-mise bootstrap packages upgrade --manager aur
 ```
 
-`upgrade` rebuilds only the configured AUR packages. It does not upgrade every
-foreign package on the machine. The helper can still resolve dependencies while
-building those packages. A dry run shows the helper invocation; it does not
-fetch and review the PKGBUILD for you.
+::: warning Review AUR packages before installing
+AUR packages are user-submitted build scripts that Arch does not review. A
+malicious PKGBUILD runs code as your user while it builds. mise runs the helper
+with `--noconfirm`, so the helper does not stop to show you the PKGBUILD or its
+diff. Read it yourself, for example on aur.archlinux.org, before the first
+install and before each upgrade.
+:::
+
+## Prerequisites
+
+Install a working AUR helper and `base-devel` first. The manager is available
+on Linux when `pacman` and either `yay` or `paru` are on `PATH`. mise uses
+`yay` if it is on `PATH`, otherwise `paru`.
+
+Run mise as a regular user, not root. The helper builds as your user and calls
+sudo itself to install the result, so mise refuses to run it as root, and it
+needs the same [sudo access](/bootstrap/packages/#sudo) as the other Linux
+managers.
+
+## Package names
+
+Use the AUR package name, such as `visual-studio-code-bin`. Status uses
+`pacman -Qm`, so only packages that are in none of your configured pacman
+repositories count, including an AUR package that provides the requested name.
+A package with the same name from any configured repository, official or
+third-party, does not satisfy an `aur:` entry, and installing the entry
+replaces it.
+
+## Version pins
+
+AUR helpers always build the current PKGBUILD, so mise cannot install a pinned
+version. A pinned entry shows as `version mismatch` while another version is
+installed, and `apply` skips it with a warning. Use `"latest"`.
+
+## What mise runs
+
+| Operation                       | Command                                              |
+| ------------------------------- | ---------------------------------------------------- |
+| Check installed state (no sudo) | `pacman -Qm`                                         |
+| Install                         | `yay -S --aur --noconfirm -- <packages>` (or `paru`) |
+| `apply --update`                | Adds `--refresh` to the helper command               |
+| Upgrade                         | `yay -S --aur --noconfirm --refresh -- <packages>`   |
+
+`upgrade` rebuilds only the configured AUR packages that are installed, not
+every foreign package on the machine. The helper can still install
+dependencies while it builds them. A dry run prints the helper command; it does
+not fetch or review the PKGBUILD for you.
+
+## Remove packages
+
+mise does not remove AUR packages. Deleting an entry leaves the package
+installed; run `pacman -R` yourself.

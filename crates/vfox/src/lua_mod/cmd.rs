@@ -1,3 +1,4 @@
+use crate::hook_dependencies::HookDependencyRecorder;
 use mlua::Table;
 use mlua::prelude::*;
 use std::io::Read;
@@ -433,10 +434,17 @@ fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
 /// keeps in-process env reads consistent with shell-outs from env module hooks
 /// when the user's shell has not run `mise activate`. (#10711)
 fn os_getenv(lua: &Lua, key: String) -> LuaResult<Option<String>> {
-    if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
-        return lookup_env_table(&mise_env, &key);
+    let value = match lua.named_registry_value::<Table>("mise_env") {
+        Ok(mise_env) => lookup_env_table(&mise_env, &key)?,
+        Err(_) => std::env::var(&key).ok(),
+    };
+    // Report the read, so a caller caching the hook's result can tell when
+    // a variable it depends on has changed.
+    if let Some(recorder) = lua.app_data_ref::<HookDependencyRecorder>() {
+        let mut deps = recorder.lock().unwrap();
+        deps.env_reads.entry(key).or_insert_with(|| value.clone());
     }
-    Ok(std::env::var(key).ok())
+    Ok(value)
 }
 
 fn lookup_env_table(env: &Table, key: &str) -> LuaResult<Option<String>> {
@@ -634,6 +642,33 @@ mod tests {
         )
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    fn test_os_getenv_reports_reads() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let env = lua.create_table().unwrap();
+        env.set("MISE_OS_GETENV_MARKER", "yes").unwrap();
+        lua.set_named_registry_value("mise_env", env).unwrap();
+        let recorder = HookDependencyRecorder::default();
+        lua.set_app_data(recorder.clone());
+        lua.load(
+            r#"
+            os.getenv("MISE_OS_GETENV_MARKER")
+            os.getenv("MISE_OS_GETENV_MISSING")
+        "#,
+        )
+        .exec()
+        .unwrap();
+        let reads = recorder.lock().unwrap().env_reads.clone();
+        assert_eq!(
+            reads,
+            std::collections::BTreeMap::from([
+                ("MISE_OS_GETENV_MARKER".to_string(), Some("yes".to_string())),
+                ("MISE_OS_GETENV_MISSING".to_string(), None),
+            ])
+        );
     }
 
     #[test]

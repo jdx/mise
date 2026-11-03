@@ -1,8 +1,9 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use eyre::{Result, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use indoc::formatdoc;
 use mise_interactive_config::{
     BackendInfo, BackendProvider, ConfigResult, InteractiveConfig, ToolInfo, ToolProvider,
@@ -122,15 +123,34 @@ impl BackendProvider for MiseBackendProvider {
 }
 
 /// Edit mise.toml interactively
+///
+/// Opens a terminal editor for PATH (default: mise.toml in the current directory)
+/// where you can add tools from the registry, pick versions, and set environment
+/// variables, tasks, and settings. It pre-fills tools it detects from files in the
+/// current directory, such as `.node-version`.
+///
+/// Without an interactive terminal, or with --yes, it writes a commented starter
+/// template instead. If PATH already exists it stops with an error rather than
+/// replace the file; pass --force to replace it. Use --dry-run to print the result
+/// without writing it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
+    example("mise edit", help = "Edit mise.toml in the current directory"),
+    example("mise edit mise.local.toml", help = "Edit another config file"),
+    example("mise edit -g", help = "Edit the global config"),
     example(
-        r###"mise edit             # edit mise.toml interactively
-mise edit .mise.toml  # edit a specific file
-mise edit -g          # edit the global config file
-mise edit -y          # skip interactive editor
-mise edit -n          # preview without writing"###
+        "mise edit -t .tool-versions",
+        help = "Copy the tools from .tool-versions into mise.toml"
+    ),
+    example("mise edit -n", help = "Print the result instead of writing it"),
+    example(
+        "mise edit -y new.toml",
+        help = "Write a commented starter config to a new file without opening the editor"
+    ),
+    example(
+        "mise edit -y --force",
+        help = "Replace an existing mise.toml with the starter config"
     )
 )]
 pub(crate) struct Edit {
@@ -142,14 +162,17 @@ pub(crate) struct Edit {
     // same way, with `conflicts_with_all` between its own `--global` and `--path`.
     #[usage(long, short = 'g', conflicts = "path")]
     global: bool,
-    /// Show what would be generated without writing to file
+    /// Print the result instead of writing it to the file
     #[usage(long, short = 'n')]
     dry_run: bool,
-    /// Path to the config file to create
+    /// Replace an existing file with the starter template when not opening the editor
+    #[usage(long, short)]
+    force: bool,
+    /// Config file to edit or create; defaults to mise.toml
     #[usage(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
-    /// Path to a .tool-versions file to import tools from
-    #[usage(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    /// Copy the tools from this .tool-versions file into the config, without opening the editor
+    #[usage(long, short, value_name = "FILE", verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     tool_versions: Option<PathBuf>,
 }
 
@@ -170,12 +193,14 @@ impl Edit {
     pub(crate) fn new(
         global: bool,
         dry_run: bool,
+        force: bool,
         path: Option<PathBuf>,
         tool_versions: Option<PathBuf>,
     ) -> Self {
         Self {
             global,
             dry_run,
+            force,
             path,
             tool_versions,
         }
@@ -211,9 +236,12 @@ impl Edit {
             if self.dry_run {
                 info!("would write to {}", display_path(&path));
                 miseprintln!("{doc}");
-            } else {
+            } else if self.force {
                 info!("writing to {}", display_path(&path));
                 write_config(&path, doc)?;
+            } else {
+                info!("writing to {}", display_path(&path));
+                write_new_config(&path, &doc)?;
             }
         }
 
@@ -345,6 +373,64 @@ fn write_config(path: &Path, doc: String) -> Result<()> {
     file::write(path, doc)
 }
 
+/// Write the default template to a config that must not exist yet.
+///
+/// The template is a fresh file, not an edit of the one already there, so writing it over an
+/// existing config would throw that config away. The interactive editor opens an existing file
+/// and `--tool-versions` merges into it; only the template branch replaces it, and it is the
+/// one reached by `-y` or by running without a terminal (a script, CI, an editor's task
+/// runner), where nobody is watching to notice. `create_new` makes the "does it exist" check
+/// and the creation one step, so a config another process writes in between is not replaced.
+fn write_new_config(path: &Path, doc: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
+    // Create the directory of the file a dangling link names, too: the link may point into a
+    // directory that does not exist yet.
+    let target = symlink_target(path);
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let mut f = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
+            "{} already exists; to edit it, run this command in a terminal without --yes, \
+             or pass --force to replace it with the starter template",
+            display_path(path)
+        ),
+        Err(e) => {
+            return Err(e).wrap_err_with(|| format!("failed create: {}", display_path(path)));
+        }
+    };
+    f.write_all(doc.as_bytes())
+        .wrap_err_with(|| format!("failed write: {}", display_path(path)))
+}
+
+/// Follow `path` through any symlinks to the file they finally name, which need not exist.
+///
+/// `create_new` does not follow a symlink in the last component: a link whose target is not
+/// there yet, as a dotfile manager lays down before it writes the file, counts as existing.
+/// Opening the target instead keeps such a link writable, while a link to a real config still
+/// fails because its target exists. A chain longer than the kernel's own limit is left as is,
+/// and `create_new` then reports it as existing.
+fn symlink_target(path: &Path) -> PathBuf {
+    let mut target = path.to_path_buf();
+    for _ in 0..40 {
+        let Ok(link) = std::fs::read_link(&target) else {
+            break;
+        };
+        target = match target.parent() {
+            Some(dir) => dir.join(link),
+            None => link,
+        };
+    }
+    target
+}
+
 // ============================================================================
 // Tool detection
 // ============================================================================
@@ -418,5 +504,79 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
             if v.is_empty() { None } else { Some(v) }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_new_config_keeps_a_file_created_after_the_command_started() {
+        // There is no existence check before the write to race with: whatever is at the path
+        // when the file is opened, even a config another process has just written, is kept.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise.toml");
+        std::fs::write(&path, "[tools]\nnode = \"22\"\n").unwrap();
+
+        let err = write_new_config(&path, "# template\n").unwrap_err();
+        assert!(err.to_string().contains("already exists"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[tools]\nnode = \"22\"\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_new_config_writes_through_a_dangling_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("dotfiles/mise.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let path = dir.path().join("mise.toml");
+        std::os::unix::fs::symlink("dotfiles/mise.toml", &path).unwrap();
+
+        write_new_config(&path, "# template\n").unwrap();
+        assert!(std::fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "# template\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_new_config_creates_the_directory_a_dangling_symlink_points_into() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("dotfiles/mise.toml");
+        let path = dir.path().join("mise.toml");
+        std::os::unix::fs::symlink("dotfiles/mise.toml", &path).unwrap();
+
+        write_new_config(&path, "# template\n").unwrap();
+        assert!(std::fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "# template\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_new_config_keeps_the_target_of_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.toml");
+        std::fs::write(&target, "[tools]\nnode = \"22\"\n").unwrap();
+        let path = dir.path().join("mise.toml");
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+
+        let err = write_new_config(&path, "# template\n").unwrap_err();
+        assert!(err.to_string().contains("already exists"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "[tools]\nnode = \"22\"\n"
+        );
+    }
+
+    #[test]
+    fn write_new_config_creates_a_missing_file_and_its_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh/mise/config.toml");
+
+        write_new_config(&path, "# template\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# template\n");
     }
 }

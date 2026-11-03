@@ -32,7 +32,10 @@ assert "mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua --dry-run |
 assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, alacritty"
 assert "$count" "5"
 echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
-assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua --yes"
+# the version is named by the checkpoint that saved it (the baseline, the
+# one `history --path` lists), not checkpoint 4, which only carried it along;
+# the two checkpoints the rollback takes are named too
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua --yes 2>&1" "rolled back ~/.config/hypr/bindings.lua to checkpoint 1; recorded as checkpoint 7, with checkpoint 6 holding the state before it"
 assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
 # unrelated later work is preserved, the reload hook ran once, and the pair is recorded
 assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-2"
@@ -40,7 +43,8 @@ assert "cat ~/reloads | wc -l | tr -d ' '" "1"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].trigger, .[1].trigger'" $'rollback\nrollback-before'
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation | \"\\(.kind) \\(.status) \\(.affected | join(\",\"))\"'" "rollback completed ~/.config/hypr/bindings.lua"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.to == (.[] | select(.id == 4) | .uuid)'" "true"
-assert_contains "mise bootstrap dotfiles history show latest" "rolled back ~/.config/hypr/bindings.lua to checkpoint 4"
+assert_contains "mise bootstrap dotfiles history show latest" "rolled back ~/.config/hypr/bindings.lua to checkpoint 1"
+assert "mise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua --json | jq -r '[.[].id] | map(select(. < 6)) | join(\",\")'" "5,1"
 # the protective checkpoint holds what was overwritten, including the unsaved edit
 assert "mise bootstrap dotfiles history --json | jq -r '.[1].changes.modified | join(\",\")'" "~/.config/hypr/monitors.lua"
 

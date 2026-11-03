@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# A lock entry whose backend names no tool is ignored, even in a trusted
+# project, instead of crashing every command (and every prompt) there.
+
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
+
+cat >mise.toml <<'EOF'
+[tools]
+shfmt = "3.10.0"
+EOF
+
+for backend in "" "asdf:" ":" "[=]"; do
+  cat >mise.lock <<EOF
+[[tools.shfmt]]
+version = "3.10.0"
+backend = "$backend"
+EOF
+  assert_succeed "mise hook-env -s bash >/dev/null 2>&1"
+  assert_succeed "mise ls >/dev/null 2>&1"
+  assert_contains "mise ls 2>&1" "names no tool"
+done

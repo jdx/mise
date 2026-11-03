@@ -12,13 +12,19 @@ use crate::{
 use super::reconcile;
 
 /// Symlink ruby versions installed by Homebrew into mise
+///
+/// Use this to make versions installed by another version manager available to
+/// mise. It does not overwrite managed installs, runtime aliases, or links from
+/// other providers. Homebrew is the only source, so --brew is required. mise
+/// links each ruby@X.Y directory under Homebrew's opt directory, not opt/ruby.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"brew install ruby
+        r###"brew install ruby@3.4
 mise sync ruby --brew
-mise ls ruby --installed # inspect linked versions, then select one with mise use"###
+mise ls ruby --installed"###,
+        help = "Link the Homebrew ruby@3.4, then list it with the other installed versions"
     )
 )]
 pub(super) struct SyncRuby {

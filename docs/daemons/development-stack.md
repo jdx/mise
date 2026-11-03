@@ -1,27 +1,67 @@
 ---
-description: Set up a development stack with project daemons, shared services, and separate URLs for each worktree.
+description: Set up a development stack with project daemons, a stable URL for each Git worktree, and a supervisor that starts at login.
+socialDescription: Project daemons, a URL per Git worktree, and a supervisor at login.
 ---
 
-# Set up a development stack
+# Set up a development stack <Badge type="warning" text="experimental" />
 
-Keep each application's tools, environment, and daemons in its `mise.toml`.
-Use presets for databases and brokers, `run` for application servers, and
-`depends` for the services a server needs. One Pitchfork supervisor manages
-all the repositories on your machine.
-
-This is the recommended starting point for a stack spread across `~/src`.
-Register each checkout, use hostname requests to start applications, and let
-idle stacks stop automatically. Keep the supervisor available at login. The [daemon reference](/daemons.html) covers
-other declaration forms and all the configuration options.
+This guide sets up a Node.js API and its PostgreSQL database so that opening
+`https://api.shop.localhost` starts both, each Git worktree gets its own
+database and URL, and idle stacks stop on their own. One pitchfork supervisor,
+started at login, runs the daemons of every repository on your machine, and
+each repository keeps its own definitions in `mise.toml`. For every option, see
+the [daemons overview](/daemons.html).
 
 ::: warning Experimental
-Daemon management requires `experimental = true`. Install or update Pitchfork
-before following this guide.
+Daemons are experimental. The config below enables them with
+`experimental = true` in the project's `[settings]`.
 :::
+
+## Before you start
+
+You need:
+
+- A Git repository with a dev server that accepts `--host` and `--port` and
+  serves a `/health` endpoint. The examples use a Node.js application in
+  `~/src/shop`.
+- `curl`, which the example's readiness check uses.
+- pitchfork on your `PATH` for its `proxy` and `supervisor` commands:
+  `mise use -g pitchfork`. Hostnames need pitchfork 2.26.0 or later and idle
+  shutdown needs 2.27.0; see [Requirements](/daemons.html#requirements).
+
+Set up pitchfork's local HTTPS proxy once per machine. Turn it on in
+`~/.config/pitchfork/config.toml`:
+
+```toml
+[settings.proxy]
+enable = true
+```
+
+Then point the machine's DNS, certificate trust, and HTTPS port at the proxy,
+and check the result:
+
+```sh
+pitchfork proxy setup
+pitchfork proxy doctor
+```
+
+`pitchfork proxy setup` prints a plan and asks before it changes anything. It
+uses sudo for the system changes it needs, so the supervisor itself can run as
+your normal user. See pitchfork's
+[local proxy setup](https://pitchfork.jdx.dev/guides/port-management#local-proxy-setup)
+for platform details. The supervisor reads proxy settings when it starts, so
+restart it if it is already running:
+
+```sh
+pitchfork supervisor stop
+pitchfork supervisor start
+```
 
 ## Define one application
 
-For a Node.js application in `~/src/shop`, start with:
+Presets run databases and brokers, `run` runs application servers, and
+`depends` lists the services a server needs. For a Node.js application in
+`~/src/shop`, start with this `mise.toml`:
 
 ```toml
 [settings]
@@ -49,14 +89,16 @@ daemons = ["db"]
 run = "npm test"
 ```
 
-Adapt the server command and `/health` endpoint to your application. The server
-must listen on `API_PORT`; assigning a port in configuration cannot change a
-hardcoded application port. This example also requires `curl`.
+The database preset installs PostgreSQL, checks that it is ready, keeps its
+data, and exports `DATABASE_URL`. The API starts after the database is ready.
+Use the exported connection variables in your application instead of copying
+localhost ports into `.env` files.
 
-The database preset installs PostgreSQL, checks readiness, preserves its data,
-and exports `DATABASE_URL`. The API starts after the database is ready.
-Use the exported connection variables in your application instead of repeating
-localhost ports in `.env` files.
+Adapt the server command and the `/health` endpoint to your application. The
+server must listen on `API_PORT`: a port in mise config cannot move a port the
+application hardcodes.
+
+Trust the config, register the project, and list its URLs:
 
 ```sh
 cd ~/src/shop
@@ -65,51 +107,83 @@ mise daemons register
 mise daemons urls
 ```
 
-`mise daemons register` installs missing tools, validates the definitions and
-dependencies, and registers the project without starting its daemons. Repeat it
-after changing daemon definitions. Listing URLs alone does not register a project
-or install its tools. Configure the proxy below before opening the URL.
+`mise daemons register` installs missing tools, checks the definitions and
+their dependencies, and registers the project with pitchfork without starting
+anything. Run it again after you change a daemon's declaration.
+`mise daemons urls` lists `https://api.shop.localhost` for the API and port
+`5432` for the database. Listing URLs does not register a project or install
+its tools.
 
-Use `mise daemons start api` for an explicit start and `mise daemons logs api` to
-inspect output. `mise run test` starts its required database before running tests.
-Explicitly started services stay running until stopped; they do not become idle
-just because browser traffic ends.
+`mise run test` starts the database before it runs the tests. To start the API
+yourself, run `mise daemons start api`, and read its output with
+`mise daemons logs api`.
 
-For setup such as migrations, add `init = "npm run migrate"` to the API daemon.
-It runs after dependencies are ready, on every start; make it safe to repeat.
-Keep short-lived build and test commands as tasks. Use `task = "dev:api"` only
-when the server command already needs the structure of a mise task.
+## Open it by URL
 
-## Separate worktrees by default
+Open `https://api.shop.localhost`. The request starts the database, waits until
+it is ready, starts the API, and then reaches it. The supervisor and its proxy
+must already be running. A DNS lookup by itself does not start a daemon, and
+visiting an unknown hostname cannot register a checkout.
 
-Keep the default namespace isolation and use automatic ports for each checkout's
-services. A linked worktree gets its own daemon IDs, database data, and ports.
-Custom daemons need an explicit base, as the API above does; presets know their
-default base port.
+Daemons started this way keep running until you stop them. To stop them when
+the stack sits idle, add an idle timeout to `~/.config/pitchfork/config.toml`
+and restart the supervisor:
+
+```toml
+[settings.proxy]
+enable = true
+idle_timeout = "15m"
+```
+
+After 15 minutes without activity, pitchfork stops the proxy-started API and
+then its unused dependencies. An open streaming response or WebSocket keeps the
+API active, and a shared dependency stays running while another running
+consumer needs it. The next request starts the stack again; preset data stays
+on disk.
+
+To set the timeout for one daemon instead of the whole machine, add
+`proxy_idle_timeout = "15m"` to its `[daemons.<name>]` table, or `false` to
+keep it running. See [Stop idle daemons](/daemons/worktrees.html#stop-idle-daemons).
+
+Explicit starts are exempt: `mise daemons start` keeps a daemon and its
+dependencies running until you stop them. If you started the API that way
+earlier, stop the stack once with `mise daemons stop api db` before you try the
+on-demand workflow.
+
+Shell sessions can also keep proxy-started daemons running.
+[Start and stop with your shell](/daemons.html#automatic-start-and-stop) tracks
+shells entering and leaving projects; browser-driven startup does not need it.
+
+## Add a worktree
+
+Because the database and the API use automatic ports, a linked worktree gets
+its own daemon IDs, ports, and database with no extra configuration. A custom
+daemon needs an explicit `base`, as the API has; a preset uses its default port
+as the base.
 
 ```sh
 git worktree add ../shop-feature -b feature
 cd ../shop-feature
 mise trust
 mise daemons register
-mise daemons urls
 ```
 
-With the proxy configured below, the primary API has the hostname
-`api.shop.localhost`; the linked checkout has `api.shop-feature.shop.localhost`.
-Use `API_URL` for HTTP clients and `DATABASE_URL` for the database. An HTTP proxy
-does not carry PostgreSQL or Redis traffic.
+The primary checkout's API is at `https://api.shop.localhost`, and the
+worktree's is at `https://api.shop-feature.shop.localhost`. Use `API_URL` for
+HTTP clients and `DATABASE_URL` for the database. The proxy carries HTTP only,
+not PostgreSQL or Redis traffic.
 
-Presets with several listeners also need separate
-[additional ports](/daemons.html#ports) across worktrees. If a preset option
-contains a literal connection URI, mise does not rewrite its port automatically.
+A preset's extra listeners, such as CockroachDB's HTTP port, move with
+`port = "auto"` too. A connection URI you write into a preset option, such as
+SpiceDB's `datastore_uri`, is not rewritten. See
+[Named ports](/daemons/worktrees.html#named-ports).
 
-## Share a service deliberately
+## Share a service
 
-Put infrastructure shared by several applications in a separate repository,
-for example `~/src/services`. Declare each service there once. Applications
-reference that project rather than copy its configuration or disable worktree
-isolation.
+Put infrastructure that several applications share in its own repository, for
+example `~/src/services`, and declare each service there once. Applications
+reference that project instead of copying its declaration or turning off
+worktree isolation.
 
 In `~/src/services/mise.toml`:
 
@@ -125,12 +199,12 @@ preset = "nats"
 version = "2"
 ```
 
-In `~/src/shop/mise.toml`, add the import and include it in the API's dependencies:
+In `~/src/shop/mise.toml`, add the reference and add `events` to the API's
+`depends`:
 
 ```toml
 [daemons.events]
 project = "../services"
-name = "events"
 
 [daemons.api]
 run = "exec npm run dev -- --host 127.0.0.1 --port $API_PORT"
@@ -142,78 +216,33 @@ depends = ["db", "events"]
 NATS_URL = "nats://127.0.0.1:4222"
 ```
 
-Review and trust `../services`, then run `mise daemons register` again. Mise
-registers the imported dependency too; Pitchfork starts it before the API when
-the application is requested. Relative
-project paths resolve from the declaring configuration: sibling checkouts must
-keep the expected layout, or use an absolute path for an intentionally shared
-checkout.
+Review and trust `../services`, then run `mise daemons register` again. mise
+registers the referenced daemon too, and pitchfork starts `events` before the
+API when the API is requested. `project` paths are relative to this project's
+root, so keep the sibling layout or use an absolute path.
 
-Imports share process ownership, not environment variables. `NATS_URL` above is
-an explicit connection to the shared service's fixed port; the imported preset's
-exports remain in the services project. Stop shared infrastructure from its own
-project when every consumer is finished with it.
+A reference shares the process, not its environment variables. `NATS_URL` above
+connects to the shared service's fixed port, because the preset's exports stay
+in the services project. Stop shared infrastructure from its own project, and
+only when no other consumer needs it.
 
-See the [CockroachDB, SpiceDB, and NATS example](/daemons.html#example-cockroachdb-spicedb-and-nats)
-for an authorization and messaging stack.
+To share one PostgreSQL server across all your checkouts, with a separate
+database for each, use a
+[shared server provider](/daemons/sharing.html#shared-server-providers) instead
+of a database per worktree. For an authorization and messaging stack, see the
+[CockroachDB, SpiceDB, and NATS example](/daemons/presets.html#example-cockroachdb-spicedb-and-nats).
 
-## Start on request and stop when idle
+## Start the supervisor at login {#keep-the-supervisor-available-at-login}
 
-Configure Pitchfork's
-[local HTTPS proxy](https://pitchfork.jdx.dev/guides/port-management#hostname-resolution).
-That setup covers wildcard hostname resolution, certificate trust, and the
-standard HTTPS port. Keep the supervisor running as your normal user; proxy
-setup handles the privileged networking changes separately. Check it with
-`pitchfork proxy doctor`.
-
-Enable idle shutdown in `~/.config/pitchfork/config.toml`:
-
-```toml
-[settings.proxy]
-idle_timeout = "15m"
-```
-
-Restart the supervisor after changing its settings. Then, in each application
-checkout:
-
-```sh
-mise daemons register
-mise daemons urls
-```
-
-Open the API URL. The HTTP request starts its dependencies, waits for readiness,
-and then reaches the API. The supervisor and proxy must already be running.
-A DNS lookup by itself does not start a daemon, and visiting an unknown hostname
-cannot register a checkout.
-
-After 15 minutes without activity, Pitchfork stops the proxy-started API and
-then its unused dependencies. An open streaming response or WebSocket keeps the
-API active. A shared dependency stays running while another running consumer
-needs it. The next request starts the stack again; preset data remains on disk.
-Closing a browser tab does not immediately stop anything: the idle timeout
-controls when shutdown happens. Idle shutdown is disabled unless configured.
-
-To set the timeout for one daemon instead of the whole machine, add
-`proxy_idle_timeout = "15m"` to its `[daemons.<name>]` table, or `false` to keep
-it running. See [Stop idle daemons](/daemons.html#stop-idle-daemons).
-
-Explicit starts claim the daemon and its dependencies, keeping them running
-until you stop them. If you previously ran `mise daemons start api`, stop that
-stack once with `mise daemons stop api db` before trying the on-demand workflow.
-Stop explicitly started shared infrastructure from its own project only when
-its other consumers no longer need it.
-
-Shell sessions can also keep proxy-started daemons active. The separate
-[shell-session lifecycle](/daemons.html#automatic-start-and-stop) tracks shells
-entering and leaving projects; it is not needed for browser-driven startup.
-
-## Keep the supervisor available at login
-
-For a machine managed through mise bootstrap, declare one user service in your
-global mise configuration. Use the permanent absolute path to your installed
-mise binary; replace both occurrences of `/opt/homebrew/bin/mise` below if it is
-installed elsewhere. `PITCHFORK_MISE_BIN` makes daemon commands use that same
-binary, even when multiple mise installations exist.
+On a machine you manage with [mise bootstrap](/bootstrap.html), declare a user
+service in your global config. Use the permanent absolute path to your mise
+binary in both places below. `type -P mise` in Bash, `whence -p mise` in Zsh,
+or `command -s mise` in Fish prints it, for example `/opt/homebrew/bin/mise` on
+macOS with Homebrew, or a path under `~/.local/bin` on Linux. In a Bash or Zsh
+shell where mise is activated, `command -v mise` prints only `mise`, the name
+of the shell function.
+`PITCHFORK_MISE_BIN` makes daemon commands use that same binary, even when
+several mise installations exist.
 
 ```toml
 [tools]
@@ -221,32 +250,45 @@ pitchfork = "latest"
 
 [bootstrap.services.pitchfork]
 scope = "user"
-command = "/opt/homebrew/bin/mise x -- pitchfork supervisor run --boot"
+command = "/opt/homebrew/bin/mise exec -- pitchfork supervisor run --boot"
 environment = { PITCHFORK_MISE_BIN = "/opt/homebrew/bin/mise" }
 working_directory = "~"
 requires_tools = true
 restart = "on-failure"
 ```
 
-Pin a tested Pitchfork version in your machine configuration when you need
-reproducible setup. `requires_tools` makes a full bootstrap install the tool
-before starting the service. The foreground `supervisor run --boot` process is
-what launchd or systemd supervises; `supervisor start` would detach from it.
+Pin a tested pitchfork version in your machine config when you need a
+reproducible setup. `requires_tools` makes a full `mise bootstrap` install the
+tool before it starts the service. The foreground `supervisor run --boot`
+process is what launchd or systemd supervises; `supervisor start` would detach
+from it.
 
-Preview with `mise bootstrap --dry-run`, then apply with `mise bootstrap` and
-check `mise bootstrap services status`. On macOS this is a user LaunchAgent,
-starting at login, not before a user logs in. `--boot` starts daemons marked
-[`boot_start = true`](https://pitchfork.jdx.dev/reference/configuration#boot-start); leave that
-unset on applications you want to start only on demand.
+Preview with `mise bootstrap --dry-run`, apply with `mise bootstrap`, and check
+the result with `mise bootstrap services status`. On macOS the service is a
+user LaunchAgent, `~/Library/LaunchAgents/dev.mise.pitchfork.plist`; on Linux
+it is a systemd user unit, `~/.config/systemd/user/dev.mise.pitchfork.service`.
+Either one starts at login, not before a user logs in. See
+[User services](/bootstrap/services.html#user-services). `--boot` starts daemons
+marked
+[`boot_start = true`](https://pitchfork.jdx.dev/reference/configuration#boot-start);
+leave that unset on applications you want to start only on demand.
 
-Choose one owner for login startup. If you previously used
-`pitchfork boot enable`, disable that registration with `pitchfork boot disable`
-and stop the existing supervisor before applying the bootstrap service. This
-interrupts its running daemons, so do it when the stack can be stopped.
-Do not register the same supervisor with both commands.
+To restart the supervisor after you change its settings:
 
-To prevent CLI commands from starting an unmanaged replacement, set this in
-`~/.config/pitchfork/config.toml` after the managed service works:
+```sh
+systemctl --user restart dev.mise.pitchfork.service       # Linux
+launchctl kickstart -k "gui/$(id -u)/dev.mise.pitchfork"  # macOS
+```
+
+Choose one owner for login startup. Before you apply the bootstrap service,
+stop a supervisor you started by hand, such as the one from
+[Before you start](#before-you-start), with `pitchfork supervisor stop`. If you
+previously used `pitchfork boot enable`, also run `pitchfork boot disable`.
+Stopping the supervisor interrupts its running daemons, so do it when the stack
+can stop. Do not register the same supervisor both ways.
+
+To keep CLI commands from starting an unmanaged replacement supervisor, set
+this in `~/.config/pitchfork/config.toml` once the managed service works:
 
 ```toml
 [settings.supervisor]
@@ -255,5 +297,22 @@ auto_start = false
 
 Without mise bootstrap, use
 [`pitchfork boot enable`](https://pitchfork.jdx.dev/guides/boot-start) instead.
-Both approaches keep the supervisor available; project definitions still belong
-in their repositories.
+Either way, the project definitions stay in their repositories.
+
+## Next steps
+
+- Stop the stack with `mise daemons stop api db`.
+- After `git worktree remove`, run
+  [`mise daemons prune`](/daemons/data.html#clean-up-deleted-projects) to delete
+  that worktree's database.
+- Run migrations before the API starts with
+  [`init`](/daemons.html#setup-before-the-process-starts), for example
+  `init = "npm run migrate"`. It runs after the dependencies are ready, on
+  every start, so make it safe to repeat.
+- Keep short-lived build and test commands as tasks. Run a task as the server
+  only when its command already needs a mise task; see
+  [Run a task as a daemon](/daemons.html#daemons-that-run-a-task).
+- Add a [`default` group](/daemons.html#groups) so `mise daemons start` starts
+  only the daemons you use every day.
+- See [Service presets](/daemons/presets.html) for Redis, CockroachDB, NATS, and
+  SpiceDB.

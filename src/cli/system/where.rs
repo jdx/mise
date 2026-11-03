@@ -3,18 +3,28 @@ use std::path::Path;
 
 use eyre::{Result, WrapErr, bail};
 
-/// Print the stable root of an installed Homebrew formula
+/// Print the `opt` path of an installed Homebrew formula
 ///
-/// Use an explicit brew:<formula> or brew:<owner>/<tap>/<formula> with the
-/// canonical installed formula name. Qualified names use the final component
-/// as the local rack name; aliases and tap provenance are not resolved.
-/// Settings come from environment variables and global CLI options only.
-/// The returned opt path follows upgrades and may change after this lookup.
-/// Missing or invalid installations produce empty stdout and a nonzero exit status.
+/// Prints a path such as /opt/homebrew/opt/openssl@3 that keeps pointing at
+/// the installed version across upgrades. Name the formula as `brew:<formula>`
+/// or `brew:<owner>/<tap>/<formula>`, using its installed name; aliases are not
+/// resolved, and a tap-qualified name matches by formula name only. The
+/// command does not read mise config files, so only environment variables and
+/// global flags apply. If the formula is not installed, it prints nothing and
+/// exits with a nonzero status. Works on macOS on Apple silicon and on Linux
+/// (x86_64 and arm64).
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r#"if root="$(mise bootstrap packages where brew:unzip)"; then
+  export PATH="$root/bin:$PATH"
+fi"#,
+        help = "Put a formula's bin directory on PATH when it is installed"
+    )
+)]
 pub(crate) struct SystemWhere {
-    /// Explicit brew formula to locate
+    /// Formula to locate, as `brew:<formula>` or `brew:<owner>/<tap>/<formula>`
     package: String,
 }
 

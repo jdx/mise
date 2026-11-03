@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt::Debug;
@@ -97,6 +98,13 @@ impl EnvDiff {
         diff
     }
 
+    /// Sources `script` with bash in `dir`, using exactly `env` as the
+    /// environment, and returns the variables the script exported or changed
+    /// relative to `env`. Bash runs with `--noprofile --norc` so the user's
+    /// startup files cannot leak into the result. Keys matched by `opts` are
+    /// skipped. On Windows this needs a POSIX bash (Git Bash / MSYS2) and maps
+    /// PATH back to Windows form. Fails if bash cannot run or the script exits
+    /// non-zero.
     pub fn from_bash_script<T, U, V>(
         script: &Path,
         dir: &Path,
@@ -155,10 +163,18 @@ impl EnvDiff {
         // argument (`$1`, in forward-slash form so MSYS bash reads it verbatim)
         // rather than interpolated into the command, so `$`/backticks in the
         // path are not expanded by bash.
+        //
+        // `--norc` (on every platform): a non-interactive `bash -c` normally
+        // reads no startup files, but bash's "run by rshd/sshd" heuristic
+        // sources ~/.bashrc anyway when stdin is a socket and SHLVL < 2 (e.g.
+        // mise spawned by an editor extension over a Node.js pipe, which is a
+        // socketpair). The user's bashrc would then leak variables into the
+        // diff and can rewrite PATH so the script's PATH prepends are dropped.
         #[cfg(windows)]
         let out = cmd!(
             bash_path,
             "--noprofile",
+            "--norc",
             "-c",
             indoc::indoc! {r#"
                 export -p
@@ -176,6 +192,7 @@ impl EnvDiff {
         let out = cmd!(
             bash_path,
             "--noprofile",
+            "--norc",
             "-c",
             indoc::formatdoc! {"
                 . \"{script}\"
@@ -250,7 +267,7 @@ impl EnvDiff {
             v: u32,
             old: IndexMap<&'a str, &'a str>,
             new: IndexMap<&'a str, String>,
-            path: &'a [PathBuf],
+            path: Vec<Cow<'a, str>>,
         }
         let wire = Wire {
             v: ENV_STATE_VERSION,
@@ -265,7 +282,10 @@ impl EnvDiff {
                 .iter()
                 .map(|(k, v)| (k.as_str(), hash_env_value(v)))
                 .collect(),
-            path: &self.path,
+            // serde refuses a path that is not valid UTF-8. PATH is exported
+            // as a lossy string, so that is also the form the next run has to
+            // find in it.
+            path: self.path.iter().map(|p| p.to_string_lossy()).collect(),
         };
         let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
         gz.write_all(&rmp_serde::to_vec_named(&wire)?)?;
@@ -600,6 +620,19 @@ mod tests {
         let exclude: BTreeSet<String> = ["SECRET".to_string()].into();
         let back = EnvDiff::deserialize(&diff.serialize_excluding(&exclude).unwrap()).unwrap();
         assert!(back.old.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_serialize_path_that_is_not_utf8() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/caf\xe9/bin"));
+        let diff = EnvDiff {
+            path: vec![path.clone()],
+            ..Default::default()
+        };
+        let back = EnvDiff::deserialize(&diff.serialize().unwrap()).unwrap();
+        assert_eq!(back.path, [PathBuf::from(&*path.to_string_lossy())]);
     }
 
     #[test]

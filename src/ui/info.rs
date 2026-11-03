@@ -1,17 +1,22 @@
 use crate::file;
 use console::style;
 use indenter::indented;
+use mise_util::redactions::redact_output;
 use std::fmt::{Display, Write};
 
 pub fn section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
-    let body = file::replace_paths_in_string(body);
+    // Diagnostic output gets pasted into issues and CI logs, and it is printed
+    // to stdout, outside the logger, so it is redacted the way the logger would.
+    let body = redact_output(&file::replace_paths_in_string(body));
     let out = format!("\n{}: \n{}", style(header).bold(), indent_by(body, "  "));
     miseprintln!("{}", trim_line_end_whitespace(&out));
     Ok(())
 }
 
 pub fn inline_section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
-    let body = file::replace_paths_in_string(body);
+    // Diagnostic output gets pasted into issues and CI logs, and it is printed
+    // to stdout, outside the logger, so it is redacted the way the logger would.
+    let body = redact_output(&file::replace_paths_in_string(body));
     let out = format!("{}: {body}", style(header).bold());
     miseprintln!("{}", trim_line_end_whitespace(&out));
     Ok(())

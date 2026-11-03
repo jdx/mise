@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# A vfox plugin's EnvKeys result is cached on disk, so hook-env, which runs on
+# every prompt, doesn't run the plugin each time. An embedded plugin has no
+# directory under plugins/, which must not leave that cache stale forever.
+# (#15225)
+
+# A stand-in for an installed gcloud; its EnvKeys hook only builds paths on Linux.
+mkdir -p "$MISE_DATA_DIR/installs/gcloud/586.0.0/bin"
+assert_fail "test -e '$MISE_DATA_DIR/plugins/gcloud'"
+
+exec_env_cache_log() { # $1 = run number, $2 = tool (default gcloud)
+  MISE_LOG_LEVEL=trace mise hook-env -s bash 2>"$1.log" >/dev/null
+  grep -E " (reading|writing) .*/${2:-gcloud}/[^/]+/exec_env_" "$1.log" | sed -E 's/.* (reading|writing) .*/\1/'
+}
+export -f exec_env_cache_log
+
+cat >mise.toml <<'TOML'
+[tools]
+gcloud = "586.0.0"
+TOML
+assert "exec_env_cache_log 1" "writing"
+assert "exec_env_cache_log 2" "reading"
+assert "exec_env_cache_log 3" "reading"
+
+# An inline table gives every backend lookup its own backend, which must share
+# one cache: the first run calls the hook once, not once per lookup.
+rm -rf "$MISE_CACHE_DIR/gcloud"
+cat >mise.toml <<'TOML'
+[tools]
+gcloud = { version = "586.0.0" }
+TOML
+# A filesystem override replaces the embedded plugin, and removing it brings
+# the embedded one back; each time the cached result is stale. The override is
+# written before the cache, so a link to it is older than the cache.
+OVERRIDE_DIR="$PWD/gcloud-override"
+mkdir -p "$OVERRIDE_DIR/hooks"
+cat >"$OVERRIDE_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "gcloud", version = "0.1.0" }
+LUA
+cat >"$OVERRIDE_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+  return { { key = "GCLOUD_OVERRIDE", value = "1" } }
+end
+LUA
+
+assert "exec_env_cache_log 4" "writing"
+assert "exec_env_cache_log 5" "reading"
+
+mise plugins link gcloud "$OVERRIDE_DIR"
+assert_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+mise plugins uninstall gcloud
+assert_not_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+assert_contains "mise env -s bash" "CLOUDSDK_ROOT_DIR"
+
+# A link whose target is gone leaves the plugins directory as it was.
+mise plugins link gcloud "$OVERRIDE_DIR"
+assert_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+mv "$OVERRIDE_DIR" "$OVERRIDE_DIR.moved"
+assert_not_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+
+# A hook's result depends on the variables it reads, so changing one runs the
+# hook again.
+READER_DIR="$PWD/envreader"
+mkdir -p "$READER_DIR/hooks" "$MISE_DATA_DIR/installs/envreader/1.0.0"
+cat >"$READER_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "envreader", version = "0.1.0" }
+LUA
+cat >"$READER_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+  return { { key = "ENVREADER_SEEN", value = os.getenv("ENVREADER_MODE") or "unset" } }
+end
+LUA
+mise plugins link envreader "$READER_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+envreader = "1.0.0"
+TOML
+assert_contains "mise env -s bash" "ENVREADER_SEEN=unset"
+assert_contains "ENVREADER_MODE=a mise env -s bash" "ENVREADER_SEEN=a"
+assert_contains "ENVREADER_MODE=b mise env -s bash" "ENVREADER_SEEN=b"
+assert "ENVREADER_MODE=b exec_env_cache_log 6 envreader" "reading"
+assert_contains "mise env -s bash" "ENVREADER_SEEN=unset"
+
+# A hook can name files its result depends on with mise.cache.watch_files, and
+# a change to one, including it appearing or going away, runs the hook again.
+WATCHED="$PWD/watched.txt"
+WATCHER_DIR="$PWD/watcher"
+mkdir -p "$WATCHER_DIR/hooks" "$MISE_DATA_DIR/installs/watcher/1.0.0"
+cat >"$WATCHER_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "watcher", version = "0.1.0" }
+LUA
+cat >"$WATCHER_DIR/hooks/env_keys.lua" <<LUA
+function PLUGIN:EnvKeys(ctx)
+  local path = "$WATCHED"
+  local ok, cache = pcall(require, "mise.cache")
+  if ok then
+    cache.watch_files({ path })
+  end
+  local value = "missing"
+  local f = io.open(path, "r")
+  if f then
+    value = f:read("*l")
+    f:close()
+  end
+  return { { key = "WATCHED", value = value } }
+end
+LUA
+mise plugins link watcher "$WATCHER_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+watcher = "1.0.0"
+TOML
+assert_contains "mise env -s bash" "WATCHED=missing"
+echo one >"$WATCHED"
+assert_contains "mise env -s bash" "WATCHED=one"
+assert "exec_env_cache_log 7 watcher" "reading"
+echo two >"$WATCHED"
+assert_contains "mise env -s bash" "WATCHED=two"
+rm "$WATCHED"
+assert_contains "mise env -s bash" "WATCHED=missing"
+
+# mise.cache.disable runs the hook every time.
+VOLATILE_DIR="$PWD/volatile"
+mkdir -p "$VOLATILE_DIR/hooks" "$MISE_DATA_DIR/installs/volatile/1.0.0"
+cat >"$VOLATILE_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "volatile", version = "0.1.0" }
+LUA
+cat >"$VOLATILE_DIR/hooks/env_keys.lua" <<LUA
+function PLUGIN:EnvKeys(ctx)
+  require("mise.cache").disable()
+  local f = io.open("$PWD/volatile.txt", "r")
+  local value = f:read("*l")
+  f:close()
+  return { { key = "VOLATILE", value = value } }
+end
+LUA
+mise plugins link volatile "$VOLATILE_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+volatile = "1.0.0"
+TOML
+echo one >volatile.txt
+assert_contains "mise env -s bash" "VOLATILE=one"
+echo two >volatile.txt
+assert_contains "mise env -s bash" "VOLATILE=two"
+
+# A backend plugin can return watch_files from BackendExecEnv.
+BACKEND_DIR="$PWD/watch-backend"
+mkdir -p "$BACKEND_DIR/hooks"
+cat >"$BACKEND_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "watch-backend", version = "0.1.0" }
+LUA
+cat >"$BACKEND_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return { versions = { "1.0.0" } }
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_exec_env.lua" <<LUA
+function PLUGIN:BackendExecEnv(ctx)
+  local path = "$PWD/backend-watched.txt"
+  local value = "missing"
+  local f = io.open(path, "r")
+  if f then
+    value = f:read("*l")
+    f:close()
+  end
+  return { env_vars = { { key = "BACKEND_WATCHED", value = value } }, watch_files = { path } }
+end
+LUA
+mise plugins link watch-backend "$BACKEND_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+"watch-backend:tool" = "1.0.0"
+TOML
+mise install
+assert_contains "mise env -s bash" "BACKEND_WATCHED=missing"
+echo one >backend-watched.txt
+assert_contains "mise env -s bash" "BACKEND_WATCHED=one"
+
+# A relative watched path names a different file in another directory, so a
+# result that watches one is only used in the directory it came from.
+REL_DIR="$PWD/relwatcher"
+mkdir -p "$REL_DIR/hooks" "$MISE_DATA_DIR/installs/relwatcher/1.0.0" a b
+cat >"$REL_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "relwatcher", version = "0.1.0" }
+LUA
+cat >"$REL_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+  require("mise.cache").watch_files({ "rel.txt" })
+  local f = io.open("rel.txt", "r")
+  local value = f:read("*l")
+  f:close()
+  return { { key = "REL", value = value } }
+end
+LUA
+mise plugins link relwatcher "$REL_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+relwatcher = "1.0.0"
+TOML
+echo in-a >a/rel.txt
+echo in-b >b/rel.txt
+assert_contains "cd a && mise env -s bash" "REL=in-a"
+assert_contains "cd b && mise env -s bash" "REL=in-b"

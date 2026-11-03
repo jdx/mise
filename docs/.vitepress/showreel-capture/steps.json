@@ -406,7 +406,7 @@
         "^--json +-- ",
         "^mise ~/work/api/mise.toml tools: hk@{{hk_new}}$",
         "^--junit-xml +-- Write step results as a JUnit XML report$",
-        "^linked /home/you/work/api/\\.claude/skills/hk-configure -> ",
+        "^linked ~/work/api/\\.claude/skills/hk-configure -> ",
         "^/home/you/\\.local/share/mise/installs/hk/{{hk_new}}/skills/hk-configure$"
       ],
       "shape": {
@@ -660,15 +660,6 @@
       "steps": [
         {
           "type": "mise dot track ~/.zshrc\n",
-          "wait": "screen",
-          "match": "y/n/enter submit",
-          "idle": 0.8,
-          "mark": "confirm",
-          "hold": 1.0
-        },
-        {
-          "key": "enter",
-          "before": 0.3,
           "mark": "track",
           "hold": 1.5
         },
@@ -693,15 +684,6 @@
         },
         {
           "type": "mise dot rollback ~/.zshrc\n",
-          "wait": "screen",
-          "match": "y/n/enter submit",
-          "idle": 0.8,
-          "mark": "confirm-rollback",
-          "hold": 1.0
-        },
-        {
-          "key": "enter",
-          "before": 0.3,
           "mark": "rollback",
           "hold": 1.5
         }
@@ -722,15 +704,13 @@
         }
       ],
       "expect": [
-        "^dotfiles: track ~/\\.zshrc \\(1 file, \\d+ B\\)\\? Yes$",
         "^mise history: saved baseline checkpoint 1$",
         "^mise dotfiles: tracking ~/\\.zshrc \\(1 file, \\d+ B; declared in ~/\\.config/mise/con",
         "^mise history: watcher running; autosave-enabled files are saved automatically$",
         "^2 +\\S+ \\S+ +edit +edited ~/\\.zshrc +1$",
         "^1 +\\S+ \\S+ +baseline +tracked ~/\\.zshrc +1$",
         "^~/\\.zshrc +write ",
-        "^history: apply this plan\\? Yes$",
-        "^mise history: rolled back ~/\\.zshrc to checkpoint 1$"
+        "^mise history: rolled back ~/\\.zshrc to checkpoint 1; recorded as checkpoint \\d+, wi"
       ],
       "shape": {
         "order": true
@@ -890,7 +870,6 @@
         ],
         "expect": [
           "^https://github\\.com/you/setup\\.git is a mise setup repository \\(format 1\\); branch m",
-          "^Set this machine up from the repository\\? Yes$",
           "^Wrote 2 file\\(s\\) from https://github\\.com/you/setup\\.git\\.$",
           {
             "re": "^mise bootstrap: user services$",

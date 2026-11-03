@@ -12,27 +12,41 @@ description: "List configured settings and their sources"
 
 List configured settings and their sources
 
-By default, list explicit settings from loaded TOML files. `--all` also includes
-effective defaults. Use `--local` to restrict output to the selected local file,
-and `--json-extended` to include source information in machine-readable output.
-Use `mise settings get KEY` when you need one effective value.
+By default, lists the settings set in loaded TOML config files. `--all` also
+includes the effective value of every other setting. `--local` lists only the
+nearest project config, and `--json-extended` adds source information to
+JSON output. Use `mise settings get SETTING` for one effective value.
 
 ## Arguments
-- **`[SETTING]`** — Name of setting
+- **`[SETTING]`** — Only show this setting, or the settings under this prefix such as `python`
 
 ## Flags
 - **`-a --all`** — List all settings
 - **`-J --json`** — Output in JSON format
-- **`-l --local`** — Use the local config file instead of the global one
+- **`-l --local`** — Use only the nearest project config
+
+  Reads only its explicit settings, or writes to it instead of the global config.
 - **`-T --toml`** — Output in TOML format
 - **`--json-extended`** — Output in JSON format with sources
 - **`-h --help`** — Print help
 
 ## Examples
 
+List settings set in config files
+
 ```
 mise settings ls
+```
+
+Include settings left at their defaults
+
+```
 mise settings ls --all
+```
+
+Show the python settings as JSON with their sources
+
+```
 mise settings ls python --json-extended
 ```
 

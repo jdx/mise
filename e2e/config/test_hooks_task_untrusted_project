@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+
+# A `mise` that mise starts on the user's behalf is not the user typing it, so
+# it must not trust the config it loads: the `mise x` of a shim that is not mise
+# itself, and the `mise run` of a task hook that fires on `cd`.
+export MISE_TRUSTED_CONFIG_PATHS="" MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+marker="$PWD/payload-ran"
+mkdir -p clone
+cat <<EOF >clone/mise.toml
+[env]
+PAYLOAD = "{{ exec(command='touch $marker') }}"
+EOF
+
+echo "=== a shim's mise x does not trust the project ==="
+assert_fail_contains "cd clone && __MISE_SHIM_PATH='$MISE_DATA_DIR/shims/sh' mise x -- sh -c 'echo ran' 2>&1" "not trusted"
+assert_fail "test -e '$marker'"
+assert_contains "mise -C clone trust --show" "untrusted"
+
+echo "=== a global task hook does not trust the project ==="
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tasks.greet]
+run = 'echo GLOBAL-GREET'
+
+[hooks]
+enter = { task = "greet" }
+EOF
+# loads without trust and makes the clone the active project
+touch clone/.tool-versions
+output="$(cd clone && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "GLOBAL-GREET"
+assert_fail "test -e '$marker'"
+assert_contains "mise -C clone trust --show" "untrusted"
+
+echo "=== an untrusted project cannot replace the global task ==="
+mkdir -p shadow
+cat <<'EOF' >shadow/mise.toml
+[tasks.greet]
+run = 'echo PROJECT-GREET'
+EOF
+output="$(cd shadow && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "GLOBAL-GREET"
+assert_not_contains_text "$output" "PROJECT-GREET"
+
+echo "=== a trusted project runs the hook in the project ==="
+mise trust shadow >/dev/null
+output="$(cd shadow && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "PROJECT-GREET"
+
+echo "=== a project task hook does not trust an untrusted parent ==="
+mkdir -p clone/proj
+cat <<'EOF' >clone/proj/mise.toml
+[tasks.setup]
+run = 'echo PROJECT-SETUP'
+
+[hooks]
+enter = { task = "setup" }
+EOF
+mise trust clone/proj >/dev/null
+rm clone/.tool-versions
+output="$(cd clone/proj && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "not trusted"
+assert_fail "test -e '$marker'"
+assert_contains "mise -C clone trust --show" "untrusted"
+
+echo "=== a project task hook does not run a task an untrusted parent supplies ==="
+# tasks only, so the parent loads without trust
+mkdir -p tasks-parent/proj
+cat <<EOF >tasks-parent/mise.toml
+[tasks.parent-task]
+run = "touch '$marker'"
+EOF
+cat <<'EOF' >tasks-parent/proj/mise.toml
+[tasks.setup]
+depends = ["parent-task"]
+run = 'echo PROJECT-SETUP'
+
+[hooks]
+enter = { task = "setup" }
+EOF
+mise trust tasks-parent/proj >/dev/null
+output="$(cd tasks-parent/proj && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "not trusted"
+assert_not_contains_text "$output" "PROJECT-SETUP"
+assert_fail "test -e '$marker'"
+
+echo "=== untrusted file tasks send a global task hook to the global root ==="
+mkdir -p scripts-only/mise-tasks
+touch scripts-only/.tool-versions
+cat <<EOF >scripts-only/mise-tasks/greet
+#!/bin/sh
+touch '$marker'
+EOF
+chmod +x scripts-only/mise-tasks/greet
+output="$(cd scripts-only && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "GLOBAL-GREET"
+assert_fail "test -e '$marker'"
+
+echo "=== paranoid mode: a project trusted file by file keeps the hook ==="
+# paranoid mode records trust for each file, never for the directory
+mkdir -p paranoid/mise-tasks
+cat <<'EOF' >paranoid/mise.toml
+[tasks.greet]
+run = 'echo PROJECT-GREET'
+EOF
+cat <<'EOF' >paranoid/mise-tasks/other
+#!/bin/sh
+echo other
+EOF
+chmod +x paranoid/mise-tasks/other
+MISE_PARANOID=1 mise trust paranoid/mise.toml >/dev/null
+MISE_PARANOID=1 mise trust paranoid/mise-tasks/other >/dev/null
+output="$(cd paranoid && MISE_PARANOID=1 mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "PROJECT-GREET"
+assert_not_contains_text "$output" "GLOBAL-GREET"
+
+echo "=== an untrusted config fragment cannot change a trusted task ==="
+# a config folder fragment is a trust root of its own; a tasks-only one loads
+# without trust and its block for `build` overlays the project's file task
+mkdir -p overlay/mise-tasks overlay/.config/mise/conf.d/frag
+cat <<'EOF' >overlay/mise.toml
+[hooks]
+enter = { task = "build" }
+EOF
+cat <<'EOF' >overlay/mise-tasks/build
+#!/bin/sh
+echo "BUILD-$OVERLAY"
+EOF
+chmod +x overlay/mise-tasks/build
+cat <<'EOF' >overlay/.config/mise/conf.d/frag/mise.toml
+[tasks.build]
+env = { OVERLAY = "applied" }
+EOF
+mise trust overlay >/dev/null
+output="$(cd overlay && mise hook-env -s bash 2>&1)"
+assert_not_contains_text "$output" "BUILD-applied"
+assert_contains_text "$output" "not trusted"

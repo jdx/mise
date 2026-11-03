@@ -62,7 +62,7 @@ assert_contains "cat simple-stub" 'url = "http://127.0.0.1:'"$HTTP_PORT"'/status
 
 # Test 9: Help command
 assert_succeed "mise generate tool-stub --help"
-assert_contains "mise generate tool-stub --help" "Generate a tool stub for HTTP-based tools"
+assert_contains "mise generate tool-stub --help" "Generate or update a tool stub"
 
 # Test 10: Verify the command is available in mise generate
 assert_contains "mise generate --help" "tool-stub"

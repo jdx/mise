@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# mise asks for `Accept-Encoding: identity` when it downloads a remote task
+# file. A server that sends a compressed body anyway must not get it inflated:
+# 64 KiB of gzip here would otherwise land in the cache as 64 MiB, from a
+# plain `[tasks]` entry that loads without trust.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p srv
+start_http_server --dir "$PWD/srv" --handler - <<'PY'
+import gzip
+import http.server
+
+BODY = gzip.compress(b"#!/usr/bin/env bash\n" + b" " * (64 * 1024 * 1024), 9)
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(BODY)))
+        self.end_headers()
+        self.wfile.write(BODY)
+PY
+
+cat <<EOF >mise.toml
+[tasks.bomb]
+file = "http://localhost:${HTTP_PORT}/bomb.sh"
+EOF
+
+MISE_YES=0 mise tasks ls >/dev/null 2>&1 || true
+
+cache="$MISE_CACHE_DIR/remote-http-tasks-cache"
+[[ -d $cache ]] || fail "the remote task file was not downloaded"
+size=$(du -sk "$cache" | cut -f1)
+((size < 1024)) || fail "remote task cache holds ${size} KiB; the encoded body was inflated"

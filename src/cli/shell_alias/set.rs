@@ -3,17 +3,23 @@ use eyre::{Result, eyre};
 use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 
-/// Add/update a shell alias
+/// Set a shell alias in the global config
 ///
-/// This modifies the contents of ~/.config/mise/config.toml
+/// Writes the global config (~/.config/mise/config.toml by default). To share
+/// an alias with a project, add it under `[shell_alias]` in the project's
+/// mise.toml.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["add", "create"], example(r###"mise shell-alias set ll "ls -la"
-mise shell-alias set gs "git status""###), verbatim_doc_comment)]
+#[usage(
+    visible_aliases = ["add", "create"],
+    example(r###"mise shell-alias set ll "ls -la""###, help = "Define ll in every directory"),
+    example(r###"mise shell-alias set gs="git status""###, help = "Use the ALIAS=COMMAND form"),
+    verbatim_doc_comment
+)]
 pub(super) struct ShellAliasSet {
     /// The alias name
     #[usage(name = "shell_alias")]
     pub alias: String,
-    /// The command to run (optional if provided as ALIAS=COMMAND)
+    /// The command to run (or pass ALIAS=COMMAND)
     pub command: Option<String>,
 }
 

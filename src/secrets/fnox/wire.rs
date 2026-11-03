@@ -1,6 +1,7 @@
 //! fnox `env --json` schema 1. No `deny_unknown_fields`: fnox may add fields.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -42,6 +43,17 @@ pub(super) struct WireKey {
     pub(super) lease: Option<String>,
     #[serde(default)]
     pub(super) injectable: WireInjectable,
+    /// The file that defines the key; absent from an older fnox
+    #[serde(default)]
+    pub(super) source: Option<WireSource>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct WireSource {
+    pub(super) path: PathBuf,
+    /// fnox's global config or a file it imports
+    #[serde(default)]
+    pub(super) global: bool,
 }
 
 #[derive(Deserialize, Default)]

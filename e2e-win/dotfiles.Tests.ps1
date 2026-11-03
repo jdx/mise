@@ -45,7 +45,7 @@ Describe 'dotfiles' {
     }
 
     It 'reports the entry as missing before applying' {
-        $out = mise bootstrap dotfiles status 2>&1 | Out-String
+        $out = mise bootstrap dotfiles status --verbose 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         $out | Should -BeLike '*missing*'
     }
@@ -61,7 +61,7 @@ Describe 'dotfiles' {
         Test-Path $script:Target | Should -BeTrue
         (Get-Content $script:Target -Raw) | Should -Be "gitconfig content"
 
-        $out = mise bootstrap dotfiles status 2>&1 | Out-String
+        $out = mise bootstrap dotfiles status --verbose 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         # Asserting the positive state, not just the absence of "missing": a row reading
         # "differs" would satisfy the weaker check while meaning the entry did not converge.

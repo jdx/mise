@@ -160,8 +160,34 @@ pub static MISE_DATA_DIR: Lazy<PathBuf> =
 pub static MISE_STATE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("mise")));
 
-pub static MISE_TMP_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("MISE_TMP_DIR").unwrap_or_else(|| temp_dir().join("mise")));
+pub static MISE_TMP_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_TMP_DIR").unwrap_or_else(|| default_tmp_dir(&temp_dir(), &MISE_CACHE_DIR))
+});
+
+/// `<temp>/mise`, unless that is inside the cache directory, which `mise cache clear` deletes
+/// wholesale. On Windows the default cache directory is `%TEMP%\mise`, the same path.
+///
+/// The check resolves both paths, so a cache directory spelled differently from the
+/// temporary directory (through a symlink such as macOS `/private/var`, through `..`, or on
+/// Windows in another case) is still seen to contain it.
+fn default_tmp_dir(temp: &Path, cache: &Path) -> PathBuf {
+    let tmp = temp.join("mise");
+    if !is_within(&tmp, cache) {
+        return tmp;
+    }
+    let tmp = temp.join("mise-tmp");
+    if is_within(&tmp, cache) {
+        // The cache directory is the temporary directory itself or one of its parents, so
+        // nothing under it is outside the cache.
+        debug!(
+            "MISE_CACHE_DIR {} contains the temporary directory {}, so `mise cache clear` \
+             deletes mise's temporary files; set MISE_TMP_DIR to a directory outside it",
+            cache.display(),
+            tmp.display()
+        );
+    }
+    tmp
+}
 
 pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_CONFIG_DIR")
@@ -349,6 +375,18 @@ pub const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
 
 pub static MISE_SHIM_PATH: Lazy<RwLock<Option<PathBuf>>> =
     Lazy::new(|| RwLock::new(var_path(MISE_SHIM_PATH_ENV)));
+
+/// Set by `mise mcp` on the `mise run` it starts for a client: the run's arguments name tasks
+/// only, never the path of a script to run. Read once, then kept out of the environment the run
+/// gives its tasks (see `get_pristine_env`), so a `mise run ./script` that a task itself makes
+/// keeps working.
+pub const MISE_TASK_NAMES_ONLY_ENV: &str = "__MISE_TASK_NAMES_ONLY";
+
+pub static MISE_TASK_NAMES_ONLY: Lazy<bool> = Lazy::new(|| {
+    let set = var_os(MISE_TASK_NAMES_ONLY_ENV).is_some_and(|v| !v.is_empty());
+    remove_var(MISE_TASK_NAMES_ONLY_ENV);
+    set
+});
 
 /// What `mise x` resolved a shim's tool to. A native shim that finds its own path here was picked
 /// instead of the tool, so it stops rather than dispatching back to `mise x`.
@@ -963,20 +1001,34 @@ fn get_env_diff() -> EnvDiff {
 /// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
 fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
+    let orig_path: HashSet<PathBuf> = orig_env
+        .get("__MISE_ORIG_PATH")
+        .map(|p| split_paths(p).collect())
+        .unwrap_or_default();
     let mut env = reverse_diff_preserving_overrides(mise_diff, orig_env);
+    // meant for this process only, not for the commands it starts
+    env.remove(MISE_TASK_NAMES_ONLY_ENV);
 
     // get the current path as a vector
-    let path = match env.get(&*PATH_KEY) {
+    let path: Vec<PathBuf> = match env.get(&*PATH_KEY) {
         Some(path) => split_paths(path).collect(),
         None => vec![],
     };
     // get the paths that were removed by mise as a hashset
     let mut to_remove = mise_diff.path.iter().collect::<HashSet<_>>();
 
-    // remove those paths that were added by mise, but only once (the first time)
+    // remove those paths that were added by mise, but only once (the first time).
+    // A directory that was already on PATH before activation appears twice unless the
+    // shell deduplicates PATH (e.g. zsh `typeset -U path`); with a single occurrence it
+    // is the pre-activation entry, so keep it.
+    let counts = path.iter().counts();
     let path = path
-        .into_iter()
-        .filter(|p| !to_remove.remove(p))
+        .iter()
+        .filter(|p| {
+            let single_orig = orig_path.contains(*p) && counts.get(p) == Some(&1);
+            single_orig || !to_remove.remove(p)
+        })
+        .cloned()
         .collect_vec();
 
     // put the pristine PATH back into the environment
@@ -1300,9 +1352,12 @@ const PREFER_OFFLINE_COMMANDS: &[&str] = &[
     "activate", "current", "direnv", "env", "exec", "hook-env", "ls", "where", "which", "x",
 ];
 
-/// Commands whose whole purpose is to enumerate remote versions. See
-/// [`REMOTE_FETCH_COMMAND`].
+/// Commands whose whole purpose is to enumerate remote versions, or to report
+/// the newest one. See [`REMOTE_FETCH_COMMAND`]. They also keep a cached version
+/// list for only `fetch_remote_versions_cache`, never for a tool's release-age
+/// window (`crate::network::release_age_list_window_applies`).
 const REMOTE_FETCH_COMMANDS: &[&str] = &[
+    "latest",
     "lock",
     "ls-remote",
     "list-all",
@@ -1370,6 +1425,17 @@ static MISE_ENV: std::sync::OnceLock<fn() -> &'static [String]> = std::sync::Onc
 /// command-line flags, the environment and `.miserc.toml`, which mise resolves.
 pub fn set_mise_env(f: fn() -> &'static [String]) {
     let _ = MISE_ENV.set(f);
+}
+
+/// The prefix mise's built-in Homebrew support installs into: the platform
+/// default, unless the undocumented `MISE_SYSTEM_BREW_PREFIX` override (used
+/// to test the pour pipeline without touching the real prefix) is set.
+pub fn system_brew_prefix() -> PathBuf {
+    match var("MISE_SYSTEM_BREW_PREFIX") {
+        Ok(p) if !p.is_empty() => PathBuf::from(p),
+        _ if cfg!(target_os = "macos") => PathBuf::from("/opt/homebrew"),
+        _ => PathBuf::from("/home/linuxbrew/.linuxbrew"),
+    }
 }
 
 /// The active `MISE_ENV` environments. See [`set_mise_env`].
@@ -1542,6 +1608,59 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn default_tmp_dir_stays_out_of_the_cache_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let temp = dunce::canonicalize(tmp.path()).unwrap();
+        // The Windows default: `%TEMP%\mise` for both.
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise")),
+            temp.join("mise-tmp")
+        );
+        // The same cache directory with a trailing separator, or spelled through `..`.
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise").join("")),
+            temp.join("mise-tmp")
+        );
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("x").join("..").join("mise")),
+            temp.join("mise-tmp")
+        );
+        // Unix and macOS defaults keep the cache elsewhere, so the path is unchanged.
+        let home_cache = temp.join("home").join(".cache").join("mise");
+        assert_eq!(default_tmp_dir(&temp, &home_cache), temp.join("mise"));
+        // A cache inside the temporary directory does not contain it.
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise").join("cache")),
+            temp.join("mise")
+        );
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise-cache")),
+            temp.join("mise")
+        );
+        // A cache directory that is the temporary directory itself has no default outside it.
+        assert_eq!(default_tmp_dir(&temp, &temp), temp.join("mise-tmp"));
+        if cfg!(windows) {
+            // `TEMP` and `TMP` differing only in case.
+            let upper = PathBuf::from(temp.to_string_lossy().to_uppercase());
+            assert_eq!(
+                default_tmp_dir(&temp, &upper.join("mise")),
+                temp.join("mise-tmp")
+            );
+        }
+        #[cfg(unix)]
+        {
+            // The cache directory written through a symlink to the temporary directory, as
+            // macOS `/private/var/folders/...` is to `/var/folders/...`.
+            let link = temp.join("link");
+            std::os::unix::fs::symlink(&temp, &link).unwrap();
+            assert_eq!(
+                default_tmp_dir(&temp, &link.join("mise")),
+                temp.join("mise-tmp")
+            );
+        }
+    }
 
     fn keys(names: &[&str]) -> BTreeSet<String> {
         names.iter().map(|k| k.to_string()).collect()
@@ -1858,6 +1977,38 @@ mod tests {
         );
     }
 
+    /// A directory on PATH before activation that mise also added stays in the pristine PATH
+    /// when the shell deduplicated PATH, and loses only mise's copy when it did not.
+    #[test]
+    fn test_pristine_path_keeps_deduplicated_orig_entry() {
+        let diff = EnvDiff {
+            path: vec![PathBuf::from("/x/bin")],
+            ..Default::default()
+        };
+        let join = |dirs: &[&str]| {
+            join_paths(dirs.iter().map(PathBuf::from))
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        };
+        let pristine_path = |dirs: &[&str]| {
+            let orig = [
+                (PATH_KEY.to_string(), join(dirs)),
+                ("__MISE_ORIG_PATH".into(), join(&["/usr/bin", "/x/bin"])),
+            ]
+            .into();
+            get_pristine_env(&diff, orig)[&*PATH_KEY].clone()
+        };
+        assert_eq!(
+            pristine_path(&["/x/bin", "/usr/bin"]),
+            join(&["/x/bin", "/usr/bin"])
+        );
+        assert_eq!(
+            pristine_path(&["/x/bin", "/usr/bin", "/x/bin"]),
+            join(&["/usr/bin", "/x/bin"])
+        );
+    }
+
     /// The pristine env derived from a version 1 diff must not keep managed values: a changed
     /// variable's previous value would otherwise be recorded as `old` in the next diff.
     #[test]
@@ -1994,6 +2145,8 @@ mod tests {
             "--profile=development",
             "outdated",
         ])));
+        assert!(remote_fetch_command(&args(&["mise", "latest", "node"])));
+        assert!(!remote_fetch_command(&args(&["mise", "install", "node"])));
     }
     #[test]
     fn test_prefer_offline_command_skips_global_option_values() {

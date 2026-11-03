@@ -6,35 +6,35 @@ use crate::backend::Backend;
 use crate::config::Config;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
-/// Shows current active and installed runtime versions
+/// Show the active tool versions
 ///
-/// This is similar to `mise ls --current`, but this only shows the runtime
-/// and/or version. It's designed to fit into scripts more easily.
+/// Similar to `mise ls --current`, but prints only the tool and its versions, which
+/// is easier to use in scripts. Versions that are not installed are printed too;
+/// when listing every tool, mise also warns about them.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     hide = true,
     example(
         r###"mise current
-python 3.11.0 3.10.0
-shfmt 3.6.0
-shellcheck 0.9.0
-node 20.0.0"###,
-        help = r###"outputs `.tool-versions` compatible format"###
+python 3.13.1 3.12.8
+shfmt 3.10.0
+node 24.11.0"###,
+        help = r###"Print every active tool in `.tool-versions` format"###
     ),
     example(
         r###"mise current node
-20.0.0"###
+24.11.0"###,
+        help = r###"Print the active node version"###
     ),
     example(
         r###"mise current python
-3.11.0 3.10.0"###,
-        help = r###"can output multiple versions"###
+3.13.1 3.12.8"###,
+        help = r###"A tool can have several active versions"###
     )
 )]
 pub(crate) struct Current {
-    /// Plugin to show versions of
-    /// e.g.: ruby, node, cargo:eza, npm:prettier, etc.
+    /// Only show this tool, such as `node` or `npm:prettier`
     #[usage()]
     plugin: Option<BackendArg>,
 }

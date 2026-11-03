@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# A config selects a version that is installed but does not provide an executable
+# another installed version does (e.g. a gem executable after a Ruby upgrade). The
+# shim error must name the active version, not claim that no version is set or
+# suggest changing the global config.
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+export MISE_NOT_FOUND_AUTO_INSTALL=0
+
+mise install tiny@1.0.1 tiny@3.1.0
+printf '%s\n' '#!/bin/sh' 'echo extra' >"$MISE_DATA_DIR/installs/tiny/1.0.1/bin/extra"
+chmod +x "$MISE_DATA_DIR/installs/tiny/1.0.1/bin/extra"
+mise reshim
+
+mkdir project && cd project || exit 1
+printf '[tools]\ntiny = "3.1.0"\n' >mise.toml
+mise trust
+
+output="$(extra 2>&1 || true)"
+assert_contains "echo '$output'" "extra is not provided by the active tiny@3.1.0 (set by ~/workdir/project/mise.toml)"
+assert_contains "echo '$output'" "extra is provided by: tiny@1.0.1"
+assert_not_contains "echo '$output'" "No version is set"
+assert_not_contains "echo '$output'" "mise use -g"

@@ -1,4 +1,5 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::redactions::strip_url_credentials_in_arg;
 use crate::tokens;
 use crate::{dirs, env};
 use eyre::Result;
@@ -100,7 +101,7 @@ const MAX_RELEASE_FALLBACK_PAGES: usize = 3;
 fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
     format!(
         "{}-{}",
-        format!("{api_url}-{repo}").to_kebab_case(),
+        format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case(),
         crate::hash::hash_to_str(&(api_url, repo, require_assets))
     )
 }
@@ -152,8 +153,21 @@ fn is_published_release(release: &ForgejoRelease) -> bool {
     !release.draft
 }
 
+/// Key of one release's persisted cache entry. Kebab-casing alone is lossy, so
+/// the exact tuple is hashed in too: `owner/a-b` and `owner-a/b` (or a moved
+/// repo/tag boundary) would otherwise answer for each other.
+fn release_cache_key(api_url: &str, repo: &str, tag: &str) -> String {
+    let api_url = strip_url_credentials_in_arg(api_url);
+    let api_url = api_url.as_ref();
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}-{tag}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, tag))
+    )
+}
+
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
-    let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
+    let key = release_cache_key(api_url, repo, tag);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -162,12 +176,22 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
         .clone())
 }
 
-async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
-    let url = if tag == "latest" {
+fn release_url(api_url: &str, repo: &str, tag: &str) -> String {
+    if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
-        format!("{api_url}/repos/{repo}/releases/tags/{tag}")
-    };
+        // As one path segment, like the GitHub and GitLab lookups: the tag comes from the
+        // requested version, and a `/`, `#` or `%2e%2e` in it would otherwise reach another
+        // repository's release.
+        format!(
+            "{api_url}/repos/{repo}/releases/tags/{}",
+            urlencoding::encode(tag)
+        )
+    }
+}
+
+async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
+    let url = release_url(api_url, repo, tag);
     let headers = get_headers(&url, api_url)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
@@ -265,6 +289,10 @@ pub mod test_support {
 /// 5. fj CLI token (from `keys.json`)
 /// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    // A host that project config named in safe mode; see `untrusted_hosts`.
+    if crate::untrusted_hosts::forge_token_denied(host) {
+        return None;
+    }
     if crate::testing::in_tests()
         && let Some(token) = test_support::lookup_tokens_file_override(host)
     {
@@ -406,6 +434,32 @@ fn parse_fj_keys(contents: &str) -> Option<HashMap<String, String>> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn release_url_keeps_the_tag_in_one_segment() {
+        let api = "https://codeberg.org/api/v1";
+        assert_eq!(
+            release_url(api, "acme/tool", "v1.2.3"),
+            "https://codeberg.org/api/v1/repos/acme/tool/releases/tags/v1.2.3"
+        );
+        assert_eq!(
+            release_url(api, "acme/tool", "latest"),
+            "https://codeberg.org/api/v1/repos/acme/tool/releases/latest"
+        );
+        let url = release_url(
+            api,
+            "acme/tool",
+            "1/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/attacker/evil/releases/tags/v1.0.0",
+        );
+        let parsed = url::Url::parse(&url).unwrap();
+        assert!(
+            parsed
+                .path()
+                .starts_with("/api/v1/repos/acme/tool/releases/tags/"),
+            "{parsed}"
+        );
+        assert_eq!(parsed.path_segments().unwrap().count(), 8, "{parsed}");
+    }
+
     fn release(tag_name: &str, draft: bool, prerelease: bool) -> ForgejoRelease {
         ForgejoRelease {
             id: 1,
@@ -415,6 +469,29 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".to_string(),
             assets: vec![],
         }
+    }
+
+    #[test]
+    fn release_cache_key_separates_names_kebab_case_collapses() {
+        let api = "https://codeberg.org/api/v1";
+        let key = release_cache_key(api, "hasura/graphql-engine", "v2.40.0");
+        assert_ne!(
+            key,
+            release_cache_key(api, "hasura-graphql/engine", "v2.40.0")
+        );
+        assert_ne!(
+            key,
+            release_cache_key(api, "hasura/graphqlEngine", "v2.40.0")
+        );
+        // the repo/tag boundary moved
+        assert_ne!(
+            release_cache_key(api, "owner/tool", "v1-0"),
+            release_cache_key(api, "owner/tool-v1", "0")
+        );
+        assert_eq!(
+            key,
+            release_cache_key(api, "hasura/graphql-engine", "v2.40.0")
+        );
     }
 
     #[test]

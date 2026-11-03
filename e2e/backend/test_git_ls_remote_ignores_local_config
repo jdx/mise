@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Backends that ask a remote for its refs run `git ls-remote <url>`, which
+# needs no repository. Git must not obey the config of the repository mise
+# happens to run in (`core.sshCommand` is a shell command, and the project may
+# be untrusted), and a tool name must never be read as a git option.
+export MISE_USE_VERSIONS_HOST=0
+export MISE_GO_REPO="ssh://git@example.invalid/x/go.git"
+
+# stands in for ssh, so nothing here reaches the network
+git config --global core.sshCommand "echo ran >>'$HOME/user-ssh-command-ran'; false"
+
+git init -q .
+git config core.sshCommand "echo ran >>'$HOME/local-ssh-command-ran'; false"
+
+cat >mise.toml <<EOF
+[tools]
+go = "latest"
+"npm:git+ssh://git@example.invalid/x/y.git" = "latest"
+"pipx:git+ssh://git@example.invalid/x/y.git" = "latest"
+"pipx:git+--upload-pack=id>$HOME/upload-pack-ran;.git" = "latest"
+"npm:git+--upload-pack=id>$HOME/upload-pack-ran;" = "latest"
+EOF
+
+mise ls || true
+GIT_DIR="$PWD/.git" mise ls || true
+assert_fail "test -e '$HOME/local-ssh-command-ran'"
+assert_fail "test -e '$HOME/upload-pack-ran'"
+# the user's own git config still applies
+assert "sort -u '$HOME/user-ssh-command-ran'" "ran"

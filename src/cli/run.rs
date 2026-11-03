@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::args::ToolArg;
 use crate::cli::{render_subcommand_help, unescape_task_args};
-use crate::config::{Config, Settings, SettingsExt};
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
 use crate::env;
@@ -35,16 +35,14 @@ use tokio::sync::Mutex;
 
 /// Run tasks and their dependencies
 ///
-/// Use `mise run TASK [ARGS...]` for one task, or separate task invocations with `:::`
-/// to schedule several. Put mise flags before the task name; following arguments are
-/// passed to that task. With no task, mise runs `default` when defined or opens the
-/// task selector in an interactive terminal.
+/// Run one task with `mise run TASK [ARGS...]`, or several with `:::` between
+/// them. Put mise flags before the task name; everything after it goes to the
+/// task. With no task, mise runs the `default` task if there is one, or opens a
+/// task picker in an interactive terminal.
 ///
-/// Tasks are defined in `mise.toml` or task directories. A task with `sources` and
-/// `outputs` can skip execution when its outputs are fresh. `--force` bypasses
-/// freshness checks; task output caching has separate `--task-cache` controls.
-///
-/// For a project that already has npm build scripts and its dependencies installed:
+/// Tasks come from `[tasks]` in `mise.toml` and from task directories such as
+/// `mise-tasks/`. A task with `sources` and `outputs` is skipped while its
+/// outputs are up to date; `--force` runs it anyway. For example:
 ///
 /// ```toml
 /// [tasks.build]
@@ -53,112 +51,143 @@ use tokio::sync::Mutex;
 /// outputs = ["dist/**/*.js"]
 /// ```
 ///
-/// To create a standalone script task, use `mise tasks add --file hello -- echo hello`.
-/// Then run `mise run hello`. See https://mise.jdx.dev/tasks/ for task directories,
-/// arguments, caching, and dependency configuration.
+/// The experimental artifact cache (a task's `cache` field) has separate
+/// `--task-cache` controls.
+///
+/// To create a script task, run `mise tasks add --file hello -- echo hello`,
+/// then `mise run hello`. See https://mise.jdx.dev/tasks/running-tasks.html
 #[derive(usage_rs::Args)]
 #[usage(
     visible_alias = "r",
-    verbatim_doc_comment,
     disable_help_flag = true,
     example(
         r###"mise run lint"###,
-        help = r###"Run the "lint" task, defined either in mise.toml or as a standalone script."###
+        help = r###"Run the "lint" task, defined in mise.toml or as a script"###
     ),
     example(
         r###"mise run --force build"###,
-        help = r###"Force the "build" task to run even if its sources are up to date."###
+        help = r###"Run "build" even if its outputs are up to date"###
     ),
     example(
         r###"mise run --raw test"###,
-        help = r###"Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."###
-    ),
-    example(
-        r###"mise run --secrets DEPLOY_KEY deploy"###,
-        help = r###"Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it."###
+        help = r###"Run "test" connected directly to the terminal, one task at a time"###
     ),
     example(
         r###"mise run lint ::: test ::: check"###,
-        help = r###"Run the "lint", "test", and "check" tasks in parallel."###
+        help = r###"Run the "lint", "test", and "check" tasks in parallel"###
     ),
     example(
         r###"mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2"###,
-        help = r###"Run multiple tasks, each with its own arguments."###
+        help = r###"Run several tasks, each with its own arguments"###
+    ),
+    example(
+        r###"mise run -j 1 lint ::: test"###,
+        help = r###"Run tasks one at a time"###
+    ),
+    example(
+        r###"mise run 'test:*'"###,
+        help = r###"Run every task that matches a pattern"###
+    ),
+    example(
+        r###"mise run //services/api:build"###,
+        help = r###"Run a task in a monorepo project"###
+    ),
+    example(
+        r###"mise run --secrets DEPLOY_KEY deploy"###,
+        help = r###"Give "deploy" the DEPLOY_KEY secret (experimental); its dependencies do not get it"###
     ),
     unknown_flags = "value"
 )]
 pub(crate) struct Run {
-    /// Tasks to run
-    /// Can specify multiple tasks by separating with `:::`
-    /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-    /// Defaults to `default` when omitted
-    #[usage(double_dash = "automatic", verbatim_doc_comment)]
+    /// Task to run (default: `default`); separate several tasks with `:::`
+    #[usage(double_dash = "automatic")]
     pub task: Option<String>,
 
-    /// Arguments to pass to the tasks. Use ":::" to separate tasks.
+    /// Arguments for the task; `:::` starts the next task
     #[usage()]
     pub args: Vec<String>,
 
-    /// Arguments to pass to the tasks. Use ":::" to separate tasks.
+    /// Arguments for the task; `:::` starts the next task
     #[usage(hide = true, double_dash = "required")]
     pub args_last: Vec<String>,
 
-    /// Run matching tasks only for projects affected by Git changes
-    #[usage(long, verbatim_doc_comment)]
+    /// Run matching tasks only in projects affected by Git changes
+    ///
+    /// Counts committed changes between the base and head revisions, plus staged,
+    /// unstaged, and untracked changes in the working tree when the head revision
+    /// is the checked-out commit. Requires a monorepo root (`monorepo_root = true`).
+    #[usage(long)]
     pub affected: bool,
 
-    /// Git base revision for --affected
-    /// Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
-    #[usage(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    /// Git base revision for `--affected`
+    ///
+    /// Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
+    #[usage(long, requires = "affected", value_name = "REV")]
     pub affected_base: Option<String>,
 
-    /// Explain why projects and tasks were selected by --affected
-    #[usage(
-        long,
-        requires = "affected",
-        conflicts = "affected_json",
-        verbatim_doc_comment
-    )]
+    /// Count committed changes between the base and head revisions
+    ///
+    /// Alone, ignores the working tree. Combines with `--affected-uncommitted`
+    /// and `--affected-untracked`. With none of the three, every source counts (the working-tree sources only
+    /// when the head revision is the checked-out commit).
+    /// Also set by `MISE_AFFECTED_COMMITTED`.
+    #[usage(long, requires = "affected")]
+    pub affected_committed: bool,
+
+    /// Explain why `--affected` selected each project and task
+    #[usage(long, requires = "affected", conflicts = "affected_json")]
     pub affected_explain: bool,
 
-    /// Git head revision for --affected
-    /// Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
-    #[usage(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    /// Git head revision for `--affected`
+    ///
+    /// Defaults to `MISE_AFFECTED_HEAD`, CI metadata, or `HEAD`.
+    #[usage(long, requires = "affected", value_name = "REV")]
     pub affected_head: Option<String>,
 
-    /// Output affected projects and tasks as JSON without running tasks
-    #[usage(
-        long,
-        requires = "affected",
-        conflicts = "affected_explain",
-        verbatim_doc_comment
-    )]
+    /// Print the affected projects and tasks as JSON without running tasks
+    #[usage(long, requires = "affected", conflicts = "affected_explain")]
     pub affected_json: bool,
 
-    /// Open the interactive selector with all tasks from the entire monorepo
-    #[usage(long, conflicts = ["task", "affected"], verbatim_doc_comment)]
+    /// Count staged and unstaged changes to tracked files
+    ///
+    /// Combines with the other source flags. Alone, ignores committed changes.
+    /// Needs the head revision to be the current checkout. Also set by
+    /// `MISE_AFFECTED_UNCOMMITTED`.
+    #[usage(long, requires = "affected")]
+    pub affected_uncommitted: bool,
+
+    /// Count untracked files that Git does not ignore
+    ///
+    /// Combines with the other source flags. Alone, ignores committed changes.
+    /// Needs the head revision to be the current checkout. Also set by
+    /// `MISE_AFFECTED_UNTRACKED`.
+    #[usage(long, requires = "affected")]
+    pub affected_untracked: bool,
+
+    /// Open the task picker with tasks from every project in the monorepo
+    #[usage(long, conflicts = ["task", "affected"])]
     pub all: bool,
 
     /// Continue running tasks even if one fails
-    #[usage(long, short = 'c', verbatim_doc_comment)]
+    #[usage(long, short = 'c')]
     pub continue_on_error: bool,
 
-    /// Change to this directory before executing the command
-    #[usage(short = 'C', long, value_hint = ValueHint::DirPath)]
+    /// Change to this directory before running the tasks
+    #[usage(short = 'C', long, value_name = "DIR", value_hint = ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
 
-    /// Force the tasks to run even if outputs are up to date
-    #[usage(long, short, verbatim_doc_comment)]
+    /// Run the tasks even if their outputs are up to date
+    #[usage(long, short)]
     pub force: bool,
 
-    /// Number of tasks to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting or the `MISE_JOBS` env var
-    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    /// Number of tasks to run in parallel (default: the `jobs` setting)
+    ///
+    /// Values below 1 are treated as 1.
+    #[usage(long, short, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
 
-    /// Don't actually run the task(s), just print them in order of execution
-    #[usage(long, short = 'n', verbatim_doc_comment)]
+    /// Print the tasks in the order they would run, without running them
+    #[usage(long, short = 'n')]
     pub dry_run: bool,
 
     /// How task output is displayed
@@ -168,132 +197,147 @@ pub(crate) struct Run {
     /// - `replacing` - Stdout is replaced each time, stderr is printed as is
     /// - `timed` - Only show stdout lines if they are displayed for more than 1 second
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
-    /// - `quiet` - Don't show extra output
-    /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
+    /// - `quiet` - Deprecated; use `--output interleave --quiet`
+    /// - `silent` - Do not show any output, including the task's stdout and stderr, except errors
     #[usage(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
 
-    /// Don't show extra output
-    #[usage(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
+    /// Do not show extra output
+    #[usage(long, short, env = "MISE_QUIET")]
     pub quiet: bool,
 
-    /// Read/write directly to stdin/stdout/stderr instead of by line
-    /// Redactions are not applied with this option
-    /// Configure with `raw` config or `MISE_RAW` env var
-    #[usage(long, short, verbatim_doc_comment)]
+    /// Connect the tasks directly to stdin, stdout, and stderr instead of
+    /// reading their output by line
+    ///
+    /// Redactions are not applied, and tasks run one at a time. Set the `raw`
+    /// setting to make this the default.
+    #[usage(long, short)]
     pub raw: bool,
 
-    /// Give the tasks named on the command line these secrets (comma-separated)
-    /// Their dependencies and subtasks do not receive them. Put this flag before the task name.
-    #[usage(long, value_name = "SECRET", delimiter = ',', conflicts = ["affected"], verbatim_doc_comment)]
+    /// [experimental] Give the named tasks these secrets (comma-separated); their
+    /// dependencies and subtasks do not get them
+    ///
+    /// Put this flag before the task name. Not allowed in safe mode.
+    #[usage(long, value_name = "SECRET", delimiter = ',', conflicts = ["affected"])]
     pub secrets: Vec<String>,
 
-    /// Give the tasks named on the command line every secret the project can inject
-    /// (fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
-    #[usage(long, conflicts = ["secrets", "affected"], verbatim_doc_comment)]
+    /// [experimental] Give the named tasks every secret the project can inject;
+    /// their dependencies and subtasks do not get them
+    ///
+    /// Covers the fnox secrets with `env = true` or `env = "exec"`, never those
+    /// with `env = false`. Put this flag before the task name. Not allowed in
+    /// safe mode.
+    #[usage(long, conflicts = ["secrets", "affected"])]
     pub secrets_all: bool,
 
-    /// Shell to use to run toml tasks
+    /// Shell used to run TOML tasks that do not set their own `shell`
     ///
-    /// Defaults to `sh -o errexit -c` on unix, and `cmd /c` on Windows
-    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
-    /// Or it can be overridden with the `shell` property on a task.
-    #[usage(long, short, verbatim_doc_comment)]
+    /// Defaults to `sh -o errexit -c` on Unix and `cmd /c` on Windows, from the
+    /// `unix_default_inline_shell_args` or `windows_default_inline_shell_args`
+    /// setting. A task's `shell` property takes precedence over this flag.
+    #[usage(long, short)]
     pub shell: Option<String>,
 
-    /// Don't show any output except for errors
-    #[usage(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    /// Do not show any output except for errors
+    #[usage(long, short = 'S', env = "MISE_SILENT")]
     pub silent: bool,
 
-    /// Tool(s) to run in addition to what is in mise.toml files
-    /// e.g.: node@20 python@3.10
+    /// Extra tools to use with the tasks, e.g. node@24 python@3.13
     #[usage(short, long, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
     #[usage(skip)]
     pub is_linear: bool,
 
-    /// Allow specific env var through (implies --deny-env for everything else)
-    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
-    #[usage(long, value_name = "VAR", verbatim_doc_comment)]
+    /// Allow a specific env var through (implies `--deny-env` for everything
+    /// else)
+    ///
+    /// Supports wildcards, such as `--allow-env='MYAPP_*'`.
+    #[usage(long, value_name = "VAR")]
     pub allow_env: Vec<String>,
 
-    /// Allow network to specific host (implies --deny-net for everything else)
-    /// Per-host filtering is unsupported on Linux and returns an error.
-    /// See the sandboxing guide for current macOS host-filter limitations.
-    /// On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
-    #[usage(long, value_name = "HOST", verbatim_doc_comment)]
+    /// Allow network access only to HOST (not supported on any platform)
+    ///
+    /// Per-host filtering does not work: Linux and macOS exit with an error,
+    /// and Windows runs the task without network restrictions. See
+    /// https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
+    #[usage(long, value_name = "HOST")]
     pub allow_net: Vec<String>,
 
-    /// Allow reads from specific path (implies --deny-read for everything else)
-    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
+    /// Allow reads from a specific path (implies `--deny-read` for everything
+    /// else)
+    #[usage(long, value_name = "PATH")]
     pub allow_read: Vec<std::path::PathBuf>,
 
-    /// Allow writes to specific path (implies --deny-write for everything else)
-    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
+    /// Allow writes to a specific path (implies `--deny-write` for everything
+    /// else)
+    #[usage(long, value_name = "PATH")]
     pub allow_write: Vec<std::path::PathBuf>,
 
     /// Block reads, writes, network, and env vars
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub deny_all: bool,
 
-    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
-    #[usage(long, verbatim_doc_comment)]
+    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM,
+    /// and LANG
+    ///
+    /// On Windows it also keeps the variables programs need to start, such as
+    /// `SystemRoot` and `TEMP`.
+    #[usage(long)]
     pub deny_env: bool,
 
     /// Block all network access
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub deny_net: bool,
 
-    /// Block filesystem reads (system libs and tool dirs still accessible)
-    #[usage(long, verbatim_doc_comment)]
+    /// Block filesystem reads (system libraries and tool directories stay
+    /// readable)
+    #[usage(long)]
     pub deny_read: bool,
 
-    /// Block all filesystem writes
-    #[usage(long, verbatim_doc_comment)]
+    /// Block filesystem writes except temporary and device paths (/tmp, /dev)
+    #[usage(long)]
     pub deny_write: bool,
 
     /// Bypass the environment cache and recompute the environment
     #[usage(long)]
     pub fresh_env: bool,
 
-    /// Do not use cache on remote tasks
+    /// Do not use the cache for remote tasks
     #[usage(
         long,
-        verbatim_doc_comment,
         env = "MISE_TASK_REMOTE_NO_CACHE",
         setting = "task.remote_no_cache"
     )]
     pub no_cache: bool,
 
-    /// Skip automatic dependency preparation
+    /// Do not run `[deps]` providers that have `auto = true` before the tasks
     #[usage(long)]
     pub no_deps: bool,
 
     /// Hide the elapsed time printed after each task completes
     ///
-    /// Set `MISE_TASK_TIMINGS=0` to hide it by default
-    #[usage(long, alias = "no-timing", verbatim_doc_comment)]
+    /// Set `task.timings = false` to hide it by default.
+    #[usage(long, alias = "no-timing")]
     pub no_timings: bool,
 
-    /// Run only the specified tasks skipping all dependencies
-    #[usage(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
+    /// Run only the named tasks, not the tasks they depend on
+    #[usage(long, env = "MISE_TASK_SKIP_DEPENDS")]
     pub skip_deps: bool,
 
-    /// Skip installing tools before running tasks
+    /// Do not install missing tools before running the tasks
     ///
-    /// Can also be set persistently with the `task.run_auto_install` setting
-    /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
-    #[usage(long, verbatim_doc_comment)]
+    /// Set `task.run_auto_install = false` to make this the default.
+    #[usage(long)]
     pub skip_tools: bool,
 
-    /// Set task output cache access for this run
+    /// [experimental] Set artifact cache access for this run
     ///
     /// - `read-write` - Read cached results and write new results
     /// - `read-only` - Read cached results without writing new results
     /// - `write-only` - Write new results without reading cached results
-    /// - `off` - Disable task output caching
-    /// - `local-only` - Read and write only the local cache; currently equivalent to `read-write`
+    /// - `off` - Disable the artifact cache
+    /// - `local-only` - Read and write only the local cache, skipping any remote cache
     #[usage(
         long,
         value_enum,
@@ -303,32 +347,37 @@ pub(crate) struct Run {
     )]
     pub task_cache: TaskCacheMode,
 
-    /// Explain the inputs that produced each task's output cache key
-    #[usage(long, verbatim_doc_comment)]
+    /// [experimental] Explain the inputs that produced each task's artifact
+    /// cache key
+    #[usage(long)]
     pub task_cache_explain: bool,
 
-    /// Output cache-key input details as JSON Lines without running tasks
-    #[usage(
-        long,
-        requires = "dry_run",
-        conflicts = "task_cache_explain",
-        verbatim_doc_comment
-    )]
+    /// [experimental] Print cache-key input details as JSON Lines without running
+    /// tasks (requires `--dry-run`)
+    #[usage(long, requires = "dry_run", conflicts = "task_cache_explain")]
     pub task_cache_explain_json: bool,
 
-    /// Report task output cache hits, restored bytes, and time saved
-    #[usage(long, conflicts = "dry_run", verbatim_doc_comment)]
+    /// [experimental] Report artifact cache hits, restored bytes, and time
+    /// saved
+    #[usage(long, conflicts = "dry_run")]
     pub task_cache_stats: bool,
 
-    /// Timeout for the task to complete
-    /// e.g.: 30s, 5m
-    #[usage(long, verbatim_doc_comment)]
+    /// Stop the run if it takes longer than this, e.g. 30s or 5m
+    ///
+    /// Overrides the `task.timeout` setting.
+    #[usage(long)]
     pub timeout: Option<String>,
+
+    /// Fail a task that waits longer than this for a lock, e.g. 30s or 5m
+    ///
+    /// Overrides the `task.lock_timeout` setting.
+    #[usage(long)]
+    pub lock_timeout: Option<String>,
 
     /// Show the elapsed time after each task completes
     ///
-    /// Set `MISE_TASK_TIMINGS=1` to show it by default
-    #[usage(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    /// Set `task.timings = true` to show it by default.
+    #[usage(long, alias = "timing", hide = true)]
     pub timings: bool,
 
     #[usage(skip)]
@@ -400,30 +449,28 @@ async fn get_affected_task_list(
     config: &Arc<Config>,
     args: &[String],
     only: bool,
-    base: Option<&str>,
-    head: Option<&str>,
+    revisions: crate::task::workspace::git::WorkspaceGitRevisions,
     explain: bool,
     json: bool,
 ) -> Result<Vec<Task>> {
-    Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
         .monorepo_root()
         .ok_or_else(|| eyre!("--affected requires a monorepo root configuration"))?;
     let graph = config.workspace_project_graph()?;
-    let revisions = crate::task::workspace::git::WorkspaceGitRevisions::resolve(base, head);
-    let changed_paths = revisions.changed_paths(&workspace_root)?;
+    let changes = revisions.changed_paths(&workspace_root)?;
     let global_inputs = config.monorepo_global_task_inputs().await?;
     let git = crate::git::Git::new(&workspace_root);
     let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
     let go = crate::task::workspace::go::GoWorkspaceProvider;
+    let gradle = crate::task::workspace::gradle::GradleWorkspaceProvider;
     let node = crate::task::workspace::node::NodeWorkspaceProvider;
     let uv = crate::task::workspace::uv::UvWorkspaceProvider;
-    let providers: [&dyn crate::task::workspace::WorkspaceProvider; 4] = [&cargo, &go, &node, &uv];
+    let providers: [&dyn crate::task::workspace::WorkspaceProvider; 5] =
+        [&cargo, &go, &gradle, &node, &uv];
     let mut regular_paths = BTreeSet::new();
     let mut lockfile_projects = BTreeMap::<PathBuf, BTreeSet<_>>::new();
-    let mut comparison_base: Option<String> = None;
 
-    for path in changed_paths {
+    for path in changes.paths.iter().cloned() {
         let Some(lockfile_candidates) =
             graph.affected_projects_for_lockfile(&providers, &path, None, None)?
         else {
@@ -434,23 +481,18 @@ async fn get_affected_task_list(
             regular_paths.insert(path);
             continue;
         }
-        let comparison_base = match &comparison_base {
-            Some(base) => base.clone(),
-            None => {
-                let base = git.merge_base(&revisions.base, &revisions.head)?;
-                comparison_base = Some(base.clone());
-                base
+        for (before, after) in changes.file_versions(&git, &path)? {
+            if let Some(projects) = graph.affected_projects_for_lockfile(
+                &providers,
+                &path,
+                before.as_deref(),
+                after.as_deref(),
+            )? {
+                lockfile_projects
+                    .entry(path.clone())
+                    .or_default()
+                    .extend(projects);
             }
-        };
-        let before = git.file_at_revision(&comparison_base, &path)?;
-        let after = git.file_at_revision(&revisions.head, &path)?;
-        if let Some(projects) = graph.affected_projects_for_lockfile(
-            &providers,
-            &path,
-            before.as_deref(),
-            after.as_deref(),
-        )? {
-            lockfile_projects.entry(path).or_default().extend(projects);
         }
     }
 
@@ -629,6 +671,12 @@ fn display_affected_text(text: &str) -> String {
 }
 
 impl Run {
+    /// The parser leaves `--help` to the task, so `mise run --help` arrives here as a task name.
+    /// It prints this command's own help and runs nothing the project defines.
+    pub(crate) fn only_prints_help(&self) -> bool {
+        matches!(self.task.as_deref(), Some("-h" | "--help"))
+    }
+
     pub(crate) async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
@@ -719,8 +767,15 @@ impl Run {
                 &config,
                 &args,
                 self.skip_deps,
-                self.affected_base.as_deref(),
-                self.affected_head.as_deref(),
+                crate::task::workspace::git::WorkspaceGitRevisions::resolve(
+                    self.affected_base.as_deref(),
+                    self.affected_head.as_deref(),
+                    crate::task::workspace::git::AffectedSources {
+                        committed: self.affected_committed,
+                        uncommitted: self.affected_uncommitted,
+                        untracked: self.affected_untracked,
+                    },
+                ),
                 self.affected_explain,
                 self.affected_json,
             )
@@ -753,7 +808,7 @@ impl Run {
         // output and must not take the stream over from an ancestor.
         let captures_output = !(self.raw || Settings::get().raw);
         let telemetry =
-            otel::TaskRunTelemetry::init_if_enabled(&requested_task_names, captures_output);
+            otel::TaskRunTelemetry::init_if_enabled(&requested_task_names, captures_output)?;
 
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.
@@ -783,6 +838,19 @@ impl Run {
                         .await?;
                 }
             }
+        }
+        // A process that requires explicit trust (a task hook, an MCP request) has no typed
+        // `mise run` behind it. Task files already need trust there, but the inline tasks of a
+        // tasks-only `mise.toml` load without it, so check every task this run would reach. The
+        // tasks carry the caller's arguments by now, so dependencies named from usage values
+        // resolve as they will when the run starts. The executor checks each task again as it
+        // schedules it.
+        if config_file::requires_explicit_trust()
+            && let Some(task) =
+                crate::config::untrusted_task_reached(&config, task_list.clone(), self.skip_deps)
+                    .await?
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
         }
         time!("run get_task_lists");
 
@@ -904,7 +972,7 @@ impl Run {
             // only works if their bootstrap shims exist. A hand-edited `lazy = true`
             // entry has none until the farm is rebuilt (discussion #12678).
             if !self.dry_run
-                && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
+                && let Err(err) = crate::shims::ensure_lazy_shims(&missing).await
             {
                 warn!("failed to create shims for lazy tools: {err:#}");
             }
@@ -1070,7 +1138,7 @@ impl Run {
                     on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
                     continue_on_error: this.continue_on_error,
                 },
-                |task, deps_for_remove, allow_during_interruption, injected| {
+                |task, deps_for_remove, allow_during_interruption, injected, covered| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
@@ -1080,6 +1148,7 @@ impl Run {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                             spawn_context,
                         )
                         .await
@@ -1124,6 +1193,7 @@ impl Run {
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
         injected: bool,
+        covered: crate::task::task_scheduler::Cover,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -1141,9 +1211,10 @@ impl Run {
             );
             return Ok(());
         }
-        let needs_task_permit = task_needs_permit(&task);
+        // A covered task runs under the slot of the locked task that started it.
+        let needs_task_permit = task_needs_permit(&task) && !covered.is_covered();
         let needs_install = injected && !this.skip_tools;
-        let mut permit_opt = if needs_task_permit || needs_install {
+        let mut permit_opt = if needs_task_permit || (needs_install && !covered.is_covered()) {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(
@@ -1256,6 +1327,7 @@ impl Run {
                 allow_during_interruption,
                 otel_span_cx,
                 injected,
+                covered,
             }))
             .catch_unwind()
             .await
@@ -1551,6 +1623,10 @@ impl Run {
             task_cache: self.task_cache,
             task_cache_explain: self.task_cache_explain,
             task_cache_explain_json: self.task_cache_explain_json,
+            lock_timeout: match &self.lock_timeout {
+                Some(value) => Some(duration::parse_duration(value)?),
+                None => Settings::get().task_lock_timeout_duration(),
+            },
             secrets_file_dir: self.tmpdir.join("secrets"),
             secrets_denied: self.secrets_denied,
             cli_secrets: self.cli_secrets.take(),

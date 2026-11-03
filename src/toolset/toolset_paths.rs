@@ -57,7 +57,17 @@ impl Toolset {
 
         let installed_strs: Vec<String> = installed
             .iter()
-            .map(|(p, tv)| format!("{}@{}={}", p.id(), tv.request.version(), tv.version))
+            .map(|(p, tv)| {
+                // runtime_path differs between a locked and a fuzzy tool version
+                // (the latter follows a runtime symlink that may be stale)
+                format!(
+                    "{}@{}={}:{}",
+                    p.id(),
+                    tv.request.version(),
+                    tv.version,
+                    tv.runtime_path().display()
+                )
+            })
             .sorted()
             .collect();
         key_parts.extend(installed_strs);
@@ -71,10 +81,12 @@ impl Toolset {
         Self::sort_by_overrides(&mut installed).unwrap();
 
         let mut paths: Vec<PathBuf> = Vec::new();
+        let mut had_error = false;
         for (p, tv) in installed {
             let start = std::time::Instant::now();
             let new_paths = p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {tv}: {e:#}");
+                had_error = true;
                 Vec::new()
             });
             trace!(
@@ -85,7 +97,9 @@ impl Toolset {
             );
             paths.extend(new_paths);
         }
-        LIST_PATHS_CACHE.insert(cache_key, paths.clone());
+        if !had_error {
+            LIST_PATHS_CACHE.insert(cache_key, paths.clone());
+        }
         paths
             .into_iter()
             .filter(|p| p.parent().is_some()) // TODO: why?
@@ -117,7 +131,11 @@ impl Toolset {
         // 5. Tool paths
         paths.extend(self.list_paths(config).await);
 
-        // 6. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
+        // 6. `_.path` entries with `position = "append"` go after the tool paths
+        paths.extend(env_results.env_paths_append);
+        paths.extend(config.path_dirs_append().await?.clone());
+
+        // 7. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
         let mut paths = env_results.env_paths.into_iter().chain(paths).collect();
         self.apply_command_wrapper_paths(config, &mut paths)?;
         Ok(paths)
@@ -153,6 +171,12 @@ impl Toolset {
 
         // Tool installation paths
         tool_paths.extend(self.list_paths(config).await);
+
+        // `_.path` entries with `position = "append"` follow the tool paths. They are filtered
+        // against the original PATH like tool paths, so one the shell already has stays where
+        // the shell put it.
+        tool_paths.extend(env_results.env_paths_append);
+        tool_paths.extend(config.path_dirs_append().await?.clone());
 
         Ok((user_paths, tool_paths))
     }

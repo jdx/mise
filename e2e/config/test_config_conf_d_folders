@@ -213,6 +213,19 @@ assert_contains "mise bootstrap --dry-run" "conf.d/dev-git/gitconfig"
 assert_not_contains "mise bootstrap --dry-run" "zshrc"
 assert_contains "MISE_ENV=dev mise bootstrap --dry-run" "shell-zsh/zshrc"
 
+# A project folder fragment that is a symlink to global config is that global
+# config, so it keeps the global root and does not load the project folder's tasks.
+mkdir -p linked/.mise/conf.d/config/mise-tasks linked/.mise/conf.d/dev-git/mise-tasks
+echo 'env.GLOBAL_ROOT = "{{ config_root }}"' >"$MISE_CONFIG_DIR/config.toml"
+ln -s "$MISE_CONFIG_DIR/config.toml" linked/.mise/conf.d/config/mise.toml
+ln -s "$MISE_CONFIG_DIR/conf.d/dev-git/mise.toml" linked/.mise/conf.d/dev-git/mise.toml
+printf '#!/usr/bin/env bash\n' | tee linked/.mise/conf.d/{config,dev-git}/mise-tasks/linked-task >/dev/null
+chmod +x linked/.mise/conf.d/{config,dev-git}/mise-tasks/linked-task
+assert "mise -C linked env --json | jq -r .GLOBAL_ROOT" "$HOME"
+assert_contains "mise -C linked env -s bash" "DEV_GIT_ROOT=$MISE_CONFIG_DIR/conf.d/dev-git"
+assert_contains "mise -C linked tasks" "dev-git-file"
+assert_not_contains "mise -C linked tasks" "linked-task"
+
 # Folder fragments are never write targets, just like single-file fragments.
 mise set -g WRITE_TARGET=global
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" "WRITE_TARGET"

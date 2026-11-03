@@ -13,3 +13,13 @@ fi
 # MISE_DEBUG=1 forces log output to stderr; the subshell keeps stderr pointed
 # at /dev/full since the assert helpers append their own 2>&1
 assert "(MISE_DEBUG=1 mise version >/dev/null 2>/dev/full && echo ok)" "ok"
+
+# The run above has nothing to migrate, so migrate.rs never prints. Leave a
+# legacy directory for it to move: it announces that, and used to abort here.
+# An existing destination would skip the move, so make sure there is none.
+rm -rf "$MISE_STATE_DIR/tracked-configs"
+mkdir -p "$MISE_DATA_DIR/tracked-config-files"
+assert "(mise version >/dev/null 2>/dev/full && echo ok)" "ok"
+# The move happened, so the message was reached rather than skipped.
+assert_fail "test -e '$MISE_DATA_DIR/tracked-config-files'"
+assert "test -d '$MISE_STATE_DIR/tracked-configs' && echo moved" "moved"

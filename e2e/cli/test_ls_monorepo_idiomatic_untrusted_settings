@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Monorepo-wide commands resolve each config root's idiomatic version file
+# settings from that root's own config hierarchy. Like the main settings load,
+# that resolution skips the [settings] of untrusted project configs, so a
+# directory between the monorepo root and a config root cannot turn on
+# idiomatic version files for it. A trusted monorepo root trusts every config
+# below it, so paranoid mode, where each config is trusted on its own, is what
+# leaves `packages/mise.toml` untrusted here.
+export MISE_EXPERIMENTAL=1
+export MISE_PARANOID=1
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION
+
+mise plugin install tiny
+
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+
+mkdir -p packages/app1
+cat <<EOF >packages/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["tiny"]
+EOF
+echo "1.0.1" >packages/app1/.tiny-version
+cat <<EOF >packages/app1/mise.toml
+[env]
+APP = "app1"
+EOF
+
+export MISE_TRUSTED_CONFIG_PATHS="$PWD/mise.toml:$PWD/packages/app1"
+assert_not_contains "mise ls --monorepo tiny 2>&1 || true" "1.0.1"
+
+# Once the config holding the setting is trusted, it applies.
+export MISE_TRUSTED_CONFIG_PATHS="$PWD/mise.toml:$PWD/packages/app1:$PWD/packages/mise.toml"
+assert_contains "mise ls --monorepo tiny 2>&1" "1.0.1"

@@ -47,4 +47,52 @@ mod tests {
         assert!(decoded.private);
         assert_eq!(decoded.vars[0].default.as_deref(), Some("beta"));
     }
+
+    // The baked registry is a build script output that mbx and Cargo key caches
+    // on, so the same package must always encode to the same bytes.
+    #[test]
+    fn test_rkyv_encoding_does_not_depend_on_map_insertion_order() {
+        let encode = |keys: Vec<usize>| {
+            let mut package = AquaPackage::default();
+            package.repo_owner = "owner".into();
+            package.repo_name = "repo".into();
+            for key in keys {
+                package
+                    .replacements
+                    .insert(format!("os-{key}"), format!("value-{key}"));
+            }
+            encode_package_rkyv(&package).unwrap()
+        };
+
+        let forward = encode((0..64).collect());
+        for _ in 0..8 {
+            assert_eq!(forward, encode((0..64).rev().collect()));
+            assert_eq!(forward, encode((0..64).collect()));
+        }
+    }
+
+    // `checksum.replacements` is a separate map from the package's own, so the
+    // test above does not cover it.
+    #[test]
+    fn test_rkyv_encoding_of_checksum_replacements_does_not_depend_on_key_order() {
+        let encode = |keys: Vec<usize>| {
+            let entries = keys
+                .iter()
+                .map(|key| format!("        os-{key}: value-{key}\n"))
+                .collect::<String>();
+            let yaml = format!(
+                "packages:\n  - type: github_release\n    repo_owner: owner\n    repo_name: repo\n    checksum:\n      type: github_release\n      asset: checksums.txt\n      algorithm: sha256\n      replacements:\n{entries}"
+            );
+            let registry = crate::types::RegistryYaml::from_yaml(&yaml).unwrap();
+            encode_package_rkyv(&registry.packages[0].package).unwrap()
+        };
+
+        let forward = encode((0..64).collect());
+        // The map must reach the encoding at all, or the check below is vacuous.
+        assert_ne!(forward, encode((0..63).collect()));
+        for _ in 0..8 {
+            assert_eq!(forward, encode((0..64).rev().collect()));
+            assert_eq!(forward, encode((0..64).collect()));
+        }
+    }
 }

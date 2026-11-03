@@ -1,4 +1,5 @@
-//! Set some keys of a JSON, TOML, or YAML file and leave the rest alone.
+//! Set some keys of a JSON, JSONC, TOML, YAML, or INI file and leave the rest
+//! alone.
 //!
 //! This is for files an application also writes: the caller owns the keys in
 //! `source`, the application owns everything else. [`merge`] returns the
@@ -8,26 +9,36 @@
 //! caller tells "in sync" from "drifted" without being bothered by keys it
 //! does not own.
 //!
-//! Semantics, identical for all three formats:
+//! Semantics, identical for every format but INI, whose sections hold only
+//! strings and do not nest (see [`ini_merge`](crate::ini_merge)):
 //! - A key present on both sides whose values are both tables/objects merges
 //!   recursively.
 //! - Any other value, including an array, is replaced by the source's.
 //! - Keys only the target has are never touched, and nothing is ever removed.
 //! - An empty target is an empty table.
 
-use crate::yaml_merge::{mapping_subset, merge_yaml};
-use eyre::{Result, eyre};
+use crate::ini_merge;
+use crate::yaml;
+use crate::yaml_merge::{mapping_subset, merge_yaml, root_mapping};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
+use jsonc_parser::ParseOptions;
+use jsonc_parser::cst::{CstInputValue, CstObject, CstObjectProp, CstRootNode};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::path::Path;
+use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, TableLike};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Format {
     Json,
+    /// JSON with comments and trailing commas, as VS Code's `settings.json`
+    Jsonc,
     Toml,
     Yaml,
+    /// sections of `key = value` lines, as Python's `configparser` reads
+    Ini,
 }
 
 impl Format {
@@ -35,8 +46,22 @@ impl Format {
     pub fn from_path(path: &Path) -> Option<Self> {
         match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
             "json" => Some(Self::Json),
+            "jsonc" => Some(Self::Jsonc),
             "toml" => Some(Self::Toml),
             "yaml" | "yml" => Some(Self::Yaml),
+            "ini" => Some(Self::Ini),
+            _ => None,
+        }
+    }
+
+    /// The format a user names explicitly, such as an entry's `format` key.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "json" => Some(Self::Json),
+            "jsonc" => Some(Self::Jsonc),
+            "toml" => Some(Self::Toml),
+            "yaml" | "yml" => Some(Self::Yaml),
+            "ini" => Some(Self::Ini),
             _ => None,
         }
     }
@@ -44,31 +69,51 @@ impl Format {
     fn name(self) -> &'static str {
         match self {
             Self::Json => "JSON",
+            Self::Jsonc => "JSONC",
             Self::Toml => "TOML",
             Self::Yaml => "YAML",
+            Self::Ini => "INI",
         }
     }
 }
 
 /// A parsed document in its format's own value type. JSON's cannot hold TOML
 /// datetimes or YAML's non-string keys, so each format is compared as itself.
+///
+/// YAML comes in two forms, and both documents of a pair use the same one.
+/// The lossless syntax tree keeps tags such as `!include`, so they take part
+/// in comparisons and survive into [`missing`]'s output, but it does not
+/// resolve anchors, aliases or `<<` merge keys. Parsed values resolve those
+/// and drop tags. A pair that uses both is an error rather than a guess.
 enum Doc {
     Json(Value),
     Toml(toml::Table),
-    Yaml(serde_yaml::Mapping),
+    /// `None` for an empty document.
+    YamlTree(Option<YamlTree>),
+    YamlValues(yaml::Mapping),
+}
+
+struct YamlTree {
+    file: yaml_edit::YamlFile,
+    root: yaml_edit::Mapping,
 }
 
 /// Whether every key in `source` is already set to the same value in
 /// `target`.
 pub fn contains(format: Format, target: &str, source: &str) -> Result<bool> {
+    if format == Format::Ini {
+        return ini_merge::contains(target, source);
+    }
     Ok(
-        match (
-            parse(format, target, "target")?,
-            parse(format, source, "source")?,
-        ) {
+        match parse_pair(format, (target, "target"), (source, "source"))? {
             (Doc::Json(target), Doc::Json(source)) => json_subset(&source, &target),
             (Doc::Toml(target), Doc::Toml(source)) => toml_subset(&source, &target),
-            (Doc::Yaml(target), Doc::Yaml(source)) => mapping_subset(&source, &target),
+            (Doc::YamlTree(target), Doc::YamlTree(source)) => match (source, target) {
+                (None, _) => true,
+                (Some(_), None) => false,
+                (Some(source), Some(target)) => yaml_subset(&source.root, &target.root),
+            },
+            (Doc::YamlValues(target), Doc::YamlValues(source)) => mapping_subset(&source, &target),
             _ => unreachable!("both sides are parsed as the same format"),
         },
     )
@@ -82,14 +127,204 @@ pub fn merge(format: Format, target: &str, source: &str) -> Result<String> {
     }
     match format {
         Format::Json => merge_json(target, source),
+        Format::Jsonc => merge_jsonc(target, source),
         Format::Toml => merge_toml(target, source),
         Format::Yaml => merge_yaml(target, source),
+        Format::Ini => ini_merge::merge(target, source),
     }
 }
 
-fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
+/// The part of `source` that `target` has no value for, as text in the same
+/// format, or `None` when the target has a value for every key in `source`. A
+/// key the target holds counts as present whatever its value, and a table both
+/// sides hold is compared key by key.
+pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<String>> {
+    if format == Format::Ini {
+        return ini_merge::missing(target, source);
+    }
+    Ok(
+        match parse_pair(format, (target, "target"), (source, "source"))? {
+            (Doc::Json(Value::Object(target)), Doc::Json(Value::Object(source))) => {
+                let missing = json_missing(&source, &target);
+                (!missing.is_empty())
+                    .then(|| serde_json::to_string(&Value::Object(missing)))
+                    .transpose()?
+            }
+            (Doc::Toml(target), Doc::Toml(source)) => {
+                let missing = toml_missing(&source, &target);
+                (!missing.is_empty())
+                    .then(|| toml::to_string(&missing))
+                    .transpose()?
+            }
+            (Doc::YamlTree(target), Doc::YamlTree(source)) => match (source, target) {
+                (None, _) => None,
+                (Some(source), None) => Some(source.file.to_string()),
+                (Some(source), Some(target)) => {
+                    yaml_remove_present(&source.root, &target.root);
+                    (!source.root.is_empty()).then(|| source.file.to_string())
+                }
+            },
+            // written from parsed values, so no alias is left without its anchor
+            (Doc::YamlValues(target), Doc::YamlValues(source)) => {
+                let missing = yaml_values_missing(&source, &target);
+                (!missing.is_empty())
+                    .then(|| yaml::to_string(&missing))
+                    .transpose()?
+            }
+            _ => unreachable!("both sides are parsed as the same format"),
+        },
+    )
+}
+
+/// Set only the keys of `source` that `target` has no value for and return the
+/// new text. Existing values are never changed, so a value the application
+/// rewrote stays, and a key it removed comes back.
+pub fn fill_missing(format: Format, target: &str, source: &str) -> Result<String> {
+    match missing(format, target, source)? {
+        Some(missing) => merge(format, target, &missing),
+        None => Ok(target.to_string()),
+    }
+}
+
+fn json_missing(source: &Map<String, Value>, target: &Map<String, Value>) -> Map<String, Value> {
+    let mut out = Map::new();
+    for (key, sv) in source {
+        match (sv, target.get(key)) {
+            (_, None) => {
+                out.insert(key.clone(), sv.clone());
+            }
+            (Value::Object(s), Some(Value::Object(t))) => {
+                let inner = json_missing(s, t);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), Value::Object(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn toml_missing(source: &toml::Table, target: &toml::Table) -> toml::Table {
+    let mut out = toml::Table::new();
+    for (key, sv) in source {
+        match (sv, target.get(key)) {
+            (_, None) => {
+                out.insert(key.clone(), sv.clone());
+            }
+            (toml::Value::Table(s), Some(toml::Value::Table(t))) => {
+                let inner = toml_missing(s, t);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), toml::Value::Table(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Remove from `source` every key `target` already has a value for. A mapping
+/// both hold keeps only its missing keys and goes when none are left. Working
+/// on the source's own syntax tree keeps its tags and comments.
+fn yaml_remove_present(source: &yaml_edit::Mapping, target: &yaml_edit::Mapping) {
+    let keys: Vec<_> = source.keys().collect();
+    for key in keys {
+        let (Some(sv), Some(tv)) = (source.get(&key), target.get(&key)) else {
+            continue;
+        };
+        match (sv.as_mapping(), tv.as_mapping()) {
+            (Some(s), Some(t)) => {
+                yaml_remove_present(s, t);
+                if s.is_empty() {
+                    source.remove(&key);
+                }
+            }
+            _ => {
+                source.remove(&key);
+            }
+        }
+    }
+}
+
+fn yaml_values_missing(source: &yaml::Mapping, target: &yaml::Mapping) -> yaml::Mapping {
+    let mut out = yaml::Mapping::new();
+    for (key, sv) in source {
+        match (sv, target.get(key)) {
+            (_, None) => {
+                out.insert(key.clone(), sv.clone());
+            }
+            (yaml::Value::Mapping(s), Some(yaml::Value::Mapping(t))) => {
+                let inner = yaml_values_missing(s, t);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), yaml::Value::Mapping(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether every key of `source` is set to the same value in `target`,
+/// mappings compared recursively. Values compare by YAML type, tag and value,
+/// not by spelling.
+fn yaml_subset(source: &yaml_edit::Mapping, target: &yaml_edit::Mapping) -> bool {
+    source.iter().all(|(key, sv)| match target.get(&key) {
+        None => false,
+        Some(tv) => match (sv.as_mapping(), tv.as_mapping()) {
+            (Some(s), Some(t)) => yaml_subset(s, t),
+            _ => sv.yaml_eq(&tv),
+        },
+    })
+}
+
+/// Parse two documents of one format. A YAML pair is read as syntax trees
+/// unless either document uses anchors, aliases or merge keys; see [`Doc`].
+fn parse_pair(format: Format, a: (&str, &str), b: (&str, &str)) -> Result<(Doc, Doc)> {
+    if format != Format::Yaml {
+        return Ok((
+            parse(format, a.0, a.1, false)?,
+            parse(format, b.0, b.1, false)?,
+        ));
+    }
+    let (a_tags, a_aliases) = yaml_features(a.0);
+    let (b_tags, b_aliases) = yaml_features(b.0);
+    let values = a_aliases || b_aliases;
+    if values && (a_tags || b_tags) {
+        bail!(
+            "YAML that uses both tags and anchors or aliases cannot be merged; \
+             expand the aliases in the {} or the {}",
+            a.1,
+            b.1
+        );
+    }
+    Ok((
+        parse(format, a.0, a.1, values)?,
+        parse(format, b.0, b.1, values)?,
+    ))
+}
+
+/// Whether a YAML text uses tags, and whether it uses anchors, aliases or
+/// `<<` merge keys.
+fn yaml_features(text: &str) -> (bool, bool) {
+    use yaml_edit::SyntaxKind;
+    let tokens = yaml_edit::lex(text);
+    let has = |kinds: &[SyntaxKind]| tokens.iter().any(|(kind, _)| kinds.contains(kind));
+    (
+        has(&[SyntaxKind::TAG]),
+        has(&[
+            SyntaxKind::ANCHOR,
+            SyntaxKind::REFERENCE,
+            SyntaxKind::MERGE_KEY,
+        ]),
+    )
+}
+
+fn parse(format: Format, text: &str, what: &str, yaml_values: bool) -> Result<Doc> {
     // an empty file, or one holding only comments, is an empty table
-    let blank = text.trim().is_empty() || (format != Format::Json && is_comments_only(text));
+    let blank = text.trim().is_empty()
+        || (matches!(format, Format::Toml | Format::Yaml) && is_comments_only(text));
     let fail =
         |e: &dyn std::fmt::Display| eyre!("failed to parse the {} {what}: {e}", format.name());
     let not_a_table = || {
@@ -104,13 +339,33 @@ fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
             value @ Value::Object(_) => Doc::Json(value),
             _ => return Err(not_a_table()),
         },
+        Format::Jsonc if blank => Doc::Json(Value::Object(Map::new())),
+        Format::Jsonc => match parse_jsonc(text).map_err(|e| fail(&e))?.value() {
+            // only comments
+            None => Doc::Json(Value::Object(Map::new())),
+            Some(node) => match node.to_serde_value() {
+                Some(value @ Value::Object(_)) => Doc::Json(value),
+                _ => return Err(not_a_table()),
+            },
+        },
         Format::Toml if blank => Doc::Toml(toml::Table::new()),
         Format::Toml => Doc::Toml(toml::from_str(text).map_err(|e| fail(&e))?),
-        Format::Yaml if blank => Doc::Yaml(serde_yaml::Mapping::new()),
-        Format::Yaml => match serde_yaml::from_str(text).map_err(|e| fail(&e))? {
-            serde_yaml::Value::Mapping(map) => Doc::Yaml(map),
-            _ => return Err(not_a_table()),
-        },
+        Format::Yaml if blank && yaml_values => Doc::YamlValues(yaml::Mapping::new()),
+        Format::Yaml if blank => Doc::YamlTree(None),
+        Format::Yaml => {
+            // serde-saphyr checks the syntax; yaml-edit is lenient about errors
+            let yaml::Value::Mapping(map) = yaml::from_str(text).map_err(|e| fail(&e))? else {
+                return Err(not_a_table());
+            };
+            if yaml_values {
+                Doc::YamlValues(map)
+            } else {
+                let file = yaml_edit::YamlFile::from_str(text).map_err(|e| fail(&e))?;
+                let root = root_mapping(&file, what, false)?.ok_or_else(not_a_table)?;
+                Doc::YamlTree(Some(YamlTree { file, root }))
+            }
+        }
+        Format::Ini => unreachable!("INI is read by ini_merge"),
     })
 }
 
@@ -118,11 +373,18 @@ fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
 /// that agree on a key, or that set different keys of the same table, do not
 /// conflict.
 pub fn conflicts(format: Format, a: &str, b: &str) -> Result<Vec<String>> {
+    if format == Format::Ini {
+        return ini_merge::conflicts(a, b);
+    }
     let mut paths = vec![];
-    match (parse(format, a, "source")?, parse(format, b, "source")?) {
+    match parse_pair(format, (a, "source"), (b, "source"))? {
         (Doc::Json(a), Doc::Json(b)) => json_conflicts(&a, &b, "", &mut paths),
         (Doc::Toml(a), Doc::Toml(b)) => toml_conflicts(&a, &b, "", &mut paths),
-        (Doc::Yaml(a), Doc::Yaml(b)) => yaml_conflicts(&a, &b, "", &mut paths),
+        (Doc::YamlTree(Some(a)), Doc::YamlTree(Some(b))) => {
+            yaml_conflicts(&a.root, &b.root, "", &mut paths)
+        }
+        (Doc::YamlTree(_), Doc::YamlTree(_)) => {}
+        (Doc::YamlValues(a), Doc::YamlValues(b)) => yaml_values_conflicts(&a, &b, "", &mut paths),
         _ => unreachable!("both sides are parsed as the same format"),
     }
     Ok(paths)
@@ -166,24 +428,45 @@ fn toml_conflicts(a: &toml::Table, b: &toml::Table, prefix: &str, paths: &mut Ve
 }
 
 fn yaml_conflicts(
-    a: &serde_yaml::Mapping,
-    b: &serde_yaml::Mapping,
+    a: &yaml_edit::Mapping,
+    b: &yaml_edit::Mapping,
+    prefix: &str,
+    paths: &mut Vec<String>,
+) {
+    for (key, av) in a.iter() {
+        let Some(bv) = b.get(&key) else { continue };
+        let name = match key.as_scalar() {
+            Some(scalar) => scalar.as_string(),
+            None => key.to_string().trim().to_string(),
+        };
+        let path = child_path(prefix, &name);
+        match (av.as_mapping(), bv.as_mapping()) {
+            (Some(av), Some(bv)) => yaml_conflicts(av, bv, &path, paths),
+            _ if !av.yaml_eq(&bv) => paths.push(path),
+            _ => {}
+        }
+    }
+}
+
+fn yaml_values_conflicts(
+    a: &yaml::Mapping,
+    b: &yaml::Mapping,
     prefix: &str,
     paths: &mut Vec<String>,
 ) {
     for (key, av) in a {
         let Some(bv) = b.get(key) else { continue };
         let name = match key {
-            serde_yaml::Value::String(name) => name.clone(),
-            other => serde_yaml::to_string(other)
+            yaml::Value::String(name) => name.clone(),
+            other => yaml::to_string(other)
                 .unwrap_or_default()
                 .trim()
                 .to_string(),
         };
         let path = child_path(prefix, &name);
         match (av, bv) {
-            (serde_yaml::Value::Mapping(av), serde_yaml::Value::Mapping(bv)) => {
-                yaml_conflicts(av, bv, &path, paths);
+            (yaml::Value::Mapping(av), yaml::Value::Mapping(bv)) => {
+                yaml_values_conflicts(av, bv, &path, paths);
             }
             _ if av != bv => paths.push(path),
             _ => {}
@@ -214,7 +497,7 @@ fn toml_subset(source: &toml::Table, target: &toml::Table) -> bool {
 }
 
 fn merge_json(target: &str, source: &str) -> Result<String> {
-    let Doc::Json(Value::Object(source)) = parse(Format::Json, source, "source")? else {
+    let Doc::Json(Value::Object(source)) = parse(Format::Json, source, "source", false)? else {
         unreachable!("parsed as a JSON object");
     };
     // Values the source does not touch stay as the exact text they were parsed
@@ -233,6 +516,147 @@ fn merge_json(target: &str, source: &str) -> Result<String> {
         out.push('\n');
     }
     Ok(out)
+}
+
+/// What a JSONC document may hold beyond JSON: comments and trailing commas,
+/// and nothing of JSON5.
+fn jsonc_options() -> ParseOptions {
+    ParseOptions {
+        allow_comments: true,
+        allow_trailing_commas: true,
+        allow_loose_object_property_names: false,
+        allow_missing_commas: false,
+        allow_single_quoted_strings: false,
+        allow_hexadecimal_numbers: false,
+        allow_unary_plus_numbers: false,
+        allow_bare_decimal_point_numbers: false,
+        allow_non_finite_numbers: false,
+        allow_extended_string_escapes: false,
+    }
+}
+
+/// Deserializes a JSONC document: JSON plus comments and trailing commas.
+pub fn from_jsonc_str<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    Ok(jsonc_parser::parse_to_serde_value(text, &jsonc_options())?)
+}
+
+/// Deserializes JSON that allows comments but, unlike JSONC, not trailing
+/// commas or non-JSON whitespace, as the .NET host reads `global.json`.
+pub fn from_json_with_comments_str<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    if let Some(c) = non_json_whitespace(text) {
+        bail!("invalid whitespace {c:?}: JSON allows only space, tab, CR and LF");
+    }
+    let options = ParseOptions {
+        allow_trailing_commas: false,
+        ..jsonc_options()
+    };
+    Ok(jsonc_parser::parse_to_serde_value(text, &options)?)
+}
+
+/// The first whitespace character outside strings and comments that JSON does
+/// not allow between tokens, which `jsonc-parser` accepts (U+00A0, U+2028, ...).
+fn non_json_whitespace(text: &str) -> Option<char> {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                while let Some(c) = chars.next() {
+                    match c {
+                        '\\' => {
+                            chars.next();
+                        }
+                        '"' => break,
+                        _ => {}
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'/') => {
+                for c in chars.by_ref() {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                while let Some(c) = chars.next() {
+                    if c == '*' && chars.peek() == Some(&'/') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            ' ' | '\t' | '\n' | '\r' => {}
+            c if c.is_whitespace() => return Some(c),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_jsonc(text: &str) -> Result<CstRootNode> {
+    Ok(CstRootNode::parse(text, &jsonc_options())?)
+}
+
+/// Edits the target's syntax tree, so its comments, indentation, trailing
+/// commas and every key the source does not set stay as written.
+fn merge_jsonc(target: &str, source: &str) -> Result<String> {
+    let Doc::Json(Value::Object(source)) = parse(Format::Jsonc, source, "source", false)? else {
+        unreachable!("parsed as a JSON object");
+    };
+    let blank = target.trim().is_empty();
+    let root = parse_jsonc(if blank { "{}" } else { target })
+        .map_err(|e| eyre!("failed to parse the JSONC target: {e}"))?;
+    merge_jsonc_object(&root.object_value_or_set(), source);
+    let mut out = root.to_string();
+    if blank {
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+/// The property a parser reads for `key`: with a repeated key the last one wins,
+/// as it does for [`contains`], which compares parsed values.
+fn effective_jsonc_prop(object: &CstObject, key: &str) -> Option<CstObjectProp> {
+    object
+        .properties()
+        .into_iter()
+        .rev()
+        .find(|prop| prop.decoded_name().as_deref() == Some(key))
+}
+
+fn merge_jsonc_object(target: &CstObject, source: Map<String, Value>) {
+    for (key, value) in source {
+        let Some(prop) = effective_jsonc_prop(target, &key) else {
+            target.append(&key, jsonc_input(value));
+            continue;
+        };
+        let existing = prop.value();
+        match (value, existing.as_ref().and_then(|node| node.as_object())) {
+            (Value::Object(source_child), Some(target_child)) => {
+                merge_jsonc_object(&target_child, source_child);
+            }
+            // an equal value keeps its own text, comments inside it included
+            (value, _)
+                if existing.and_then(|node| node.to_serde_value()).as_ref() == Some(&value) => {}
+            (value, _) => prop.set_value(jsonc_input(value)),
+        }
+    }
+}
+
+fn jsonc_input(value: Value) -> CstInputValue {
+    match value {
+        Value::Null => CstInputValue::Null,
+        Value::Bool(b) => CstInputValue::Bool(b),
+        Value::Number(n) => CstInputValue::Number(n.to_string()),
+        Value::String(s) => CstInputValue::String(s),
+        Value::Array(items) => CstInputValue::Array(items.into_iter().map(jsonc_input).collect()),
+        Value::Object(map) => CstInputValue::Object(
+            map.into_iter()
+                .map(|(key, value)| (key, jsonc_input(value)))
+                .collect(),
+        ),
+    }
 }
 
 /// A JSON value on its way back to text: either the exact source text it came
@@ -384,7 +808,9 @@ mod tests {
             ("a.TOML", Some(Format::Toml)),
             ("a.yaml", Some(Format::Yaml)),
             ("a.yml", Some(Format::Yaml)),
-            ("a.jsonc", None),
+            ("a.jsonc", Some(Format::Jsonc)),
+            ("a.INI", Some(Format::Ini)),
+            ("a.cfg", None),
             ("a", None),
         ] {
             assert_eq!(Format::from_path(Path::new(path)), format, "{path}");
@@ -399,6 +825,78 @@ mod tests {
             merge(Format::Json, target, source).unwrap(),
             "{\n    \"z\": 1,\n    \"model\": \"new\",\n    \"a\": {\n        \"x\": 1,\n        \"y\": 2\n    },\n    \"n\": [\n        1,\n        2\n    ]\n}\n"
         );
+    }
+
+    #[test]
+    fn jsonc_keeps_comments_and_trailing_commas() {
+        let target = "{\n    // editor\n    \"editor.fontSize\": 14, // px\n    \"files.exclude\": {\n        \"a\": true, /* x */\n    },\n    \"keep\": [1, 2,],\n}\n";
+        let source = r#"{"editor.fontSize": 16, "files.exclude": {"b": true}, "new": {"k": [1]}}"#;
+        assert_eq!(
+            merge(Format::Jsonc, target, source).unwrap(),
+            "{\n    // editor\n    \"editor.fontSize\": 16, // px\n    \"files.exclude\": {\n        \"a\": true, /* x */\n        \"b\": true,\n    },\n    \"keep\": [1, 2,],\n    \"new\": {\n        \"k\": [1],\n    },\n}\n"
+        );
+    }
+
+    #[test]
+    fn jsonc_repeated_target_key_merges_into_the_effective_value() {
+        let merged = merge(Format::Jsonc, r#"{"a": 1, "a": 2}"#, r#"{"a": 1}"#).unwrap();
+        assert!(
+            contains(Format::Jsonc, &merged, r#"{"a": 1}"#).unwrap(),
+            "{merged}"
+        );
+    }
+
+    #[test]
+    fn jsonc_satisfied_target_comes_back_untouched() {
+        let target = "{\n  // c\n  \"a\": 1, \"b\": 2,\n}";
+        assert_eq!(merge(Format::Jsonc, target, r#"{"a": 1}"#).unwrap(), target);
+        assert!(contains(Format::Jsonc, target, "// s\n{\"a\": 1,}").unwrap());
+        assert!(!contains(Format::Jsonc, target, r#"{"a": 2}"#).unwrap());
+    }
+
+    #[test]
+    fn jsonc_creates_or_fills_an_empty_target() {
+        assert_eq!(
+            merge(Format::Jsonc, "", r#"{"a": 1}"#).unwrap(),
+            "{\n  \"a\": 1\n}\n"
+        );
+        assert_eq!(
+            merge(Format::Jsonc, "// only a comment\n", r#"{"a": 1}"#).unwrap(),
+            "// only a comment\n{\n  \"a\": 1\n}\n"
+        );
+    }
+
+    #[test]
+    fn jsonc_fill_missing_keeps_existing_values() {
+        let merged = fill_missing(
+            Format::Jsonc,
+            "{\n  // mine\n  \"a\": 1,\n}\n",
+            r#"{"a": 2, "b": 3}"#,
+        )
+        .unwrap();
+        assert_eq!(merged, "{\n  // mine\n  \"a\": 1,\n  \"b\": 3,\n}\n");
+    }
+
+    #[test]
+    fn jsonc_rejects_what_is_not_jsonc() {
+        for text in [
+            "{'a': 1}",
+            "{a: 1}",
+            "{\"a\": 0x1}",
+            "{\"a\": 1 \"b\": 2}",
+            "[1]",
+        ] {
+            assert!(merge(Format::Jsonc, text, "{}").is_err(), "{text}");
+            assert!(merge(Format::Jsonc, "{}", text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn formats_come_from_names() {
+        assert_eq!(Format::from_name("JSONC"), Some(Format::Jsonc));
+        assert_eq!(Format::from_name("yml"), Some(Format::Yaml));
+        assert_eq!(Format::from_name("ini"), Some(Format::Ini));
+        assert_eq!(Format::from_name("xml"), None);
     }
 
     #[test]
@@ -462,6 +960,45 @@ path = \"/Applications/X.app\"
             merge(Format::Yaml, "# c\na: 1\nb: 2\n", "a: 5\n").unwrap(),
             "# c\na: 5\nb: 2\n"
         );
+    }
+
+    #[test]
+    fn fill_missing_keeps_existing_values_and_adds_absent_keys() {
+        let target = "# app\nmodel = \"mine\"\n\n[tui]\ntheme = \"dark\"\n";
+        let source =
+            "model = \"default\"\neffort = \"high\"\n\n[tui]\ntheme = \"light\"\nsize = 3\n";
+        assert_eq!(
+            fill_missing(Format::Toml, target, source).unwrap(),
+            "# app\nmodel = \"mine\"\neffort = \"high\"\n\n[tui]\ntheme = \"dark\"\nsize = 3\n"
+        );
+        let json = fill_missing(
+            Format::Json,
+            r#"{"model": "mine"}"#,
+            r#"{"model": "d", "e": 1}"#,
+        )
+        .unwrap();
+        assert_eq!(json, "{\n  \"model\": \"mine\",\n  \"e\": 1\n}");
+        assert_eq!(
+            fill_missing(Format::Yaml, "a: 1\n", "a: 2\nb: 3\n").unwrap(),
+            "a: 1\nb: 3\n"
+        );
+    }
+
+    #[test]
+    fn nothing_is_missing_when_every_key_has_a_value() {
+        // a different value, or a non-table where the source has a table, is still present
+        for (format, target, source) in [
+            (
+                Format::Json,
+                r#"{"a": {"b": 2}, "c": 1}"#,
+                r#"{"a": {"b": 1}, "c": {"d": 1}}"#,
+            ),
+            (Format::Toml, "a = 1\n", "a = 2\n"),
+            (Format::Yaml, "a: 1\n", "a: {b: 1}\n"),
+        ] {
+            assert_eq!(missing(format, target, source).unwrap(), None, "{format:?}");
+            assert_eq!(fill_missing(format, target, source).unwrap(), target);
+        }
     }
 
     #[test]
@@ -562,6 +1099,50 @@ path = \"/Applications/X.app\"
         assert_eq!(
             conflicts(Format::Yaml, "a:\n  b: 1\n1: x\n", "a:\n  b: 2\n1: y\n").unwrap(),
             vec!["a.b".to_string(), "1".to_string()]
+        );
+    }
+
+    #[test]
+    fn yaml_tags_are_part_of_the_value() {
+        let target = "path: !include settings.yaml\n";
+        assert!(!contains(Format::Yaml, target, "path: settings.yaml\n").unwrap());
+        assert_eq!(
+            merge(Format::Yaml, target, "path: settings.yaml\n").unwrap(),
+            "path: settings.yaml\n"
+        );
+        assert_eq!(
+            fill_missing(Format::Yaml, "a: 1\n", "a: 2\nkey: !secret api_key\n").unwrap(),
+            "a: 1\nkey: !secret api_key\n"
+        );
+        assert_eq!(
+            conflicts(Format::Yaml, "a: !secret x\n", "a: x\n").unwrap(),
+            vec!["a".to_string()]
+        );
+    }
+
+    #[test]
+    fn yaml_punctuation_in_text_is_not_a_tag_or_anchor() {
+        let text = "a: 'x!y'\nb: hi!\nc: \"&x *y\"\nd: a&b # !c &d *e\n";
+        assert_eq!(yaml_features(text), (false, false));
+        assert_eq!(yaml_features("a: !t x\n"), (true, false));
+        assert_eq!(yaml_features("a: &x 1\nb: *x\n"), (false, true));
+    }
+
+    #[test]
+    fn yaml_aliases_resolve_against_their_anchors() {
+        let source = "a: &v default\nb: *v\n";
+        assert_eq!(
+            fill_missing(Format::Yaml, "a: mine\n", source).unwrap(),
+            "a: mine\nb: default\n"
+        );
+        assert!(contains(Format::Yaml, "a: default\nb: default\n", source).unwrap());
+        let merged = "base: &b {x: 1}\nkid:\n  <<: *b\n";
+        assert!(contains(Format::Yaml, "base: {x: 1}\nkid: {x: 1}\n", merged).unwrap());
+        assert!(
+            fill_missing(Format::Yaml, "a: 1\n", "a: &v !secret x\nb: *v\n")
+                .unwrap_err()
+                .to_string()
+                .contains("both tags and anchors")
         );
     }
 

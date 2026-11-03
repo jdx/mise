@@ -471,7 +471,7 @@ a:hover > div + .card-link::after {
 .pantry-stat small {
   display: block;
   margin-top: 8px;
-  font-family: "Roc Grotesk", sans-serif;
+  font-family: var(--mise-font-brand);
   font-size: 1rem;
   line-height: 1.5;
   color: var(--vp-c-text-2);
@@ -548,6 +548,9 @@ a:hover > div + .card-link::after {
   transition: border-color 0.2s ease;
 }
 
+.landing-special.landing-related {
+  margin-bottom: 64px;
+}
 .landing-special:hover {
   border-color: var(--pillar-tasks);
 }
@@ -850,6 +853,7 @@ a:hover > div + .card-link::after {
 .hero-title {
   margin: 0;
   color: var(--vp-c-brand-1);
+  font-family: var(--mise-font-brand);
   font-size: clamp(2.5rem, 4.5vw, 3.75rem);
   font-weight: 700;
   letter-spacing: -0.05em;
@@ -1122,7 +1126,7 @@ a:hover > div + .card-link::after {
 .landing-page .landing-stations h2 {
   max-width: 24ch;
 }
-.landing-page .migration-note {
+.landing-page .version-files-note {
   margin-top: 32px;
   padding-top: 20px;
   border-top: 1px solid var(--vp-c-divider);

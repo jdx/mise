@@ -11,29 +11,55 @@ description: "Update mise itself"
 
 Update mise itself
 
-Selects the newest stable release satisfying the minimum release age (24h by default).
-Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
-By default, this will also update any installed plugins.
-Uses mise's GitHub token resolution chain for authenticated requests.
+Installs the newest stable release, or VERSION, from GitHub Releases and
+verifies its signature before replacing the running binary. Without VERSION,
+releases younger than the minimum release age are skipped: the
+`self_update.minimum_release_age` setting, then `minimum_release_age`, else
+24h. Installed plugins are updated too unless you pass `--no-plugins`. Set
+`self_update.auto` to update automatically.
 
-Packagers can disable this command so that mise is updated through the
-package manager instead. See
-<https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions>
+If a package manager such as Homebrew or apt installed mise, update it with
+that package manager instead: <https://mise.jdx.dev/installing-mise.html#updating>
+Packagers can disable this command: <https://mise.jdx.dev/packaging.html>
 
 ## Arguments
-- **`[VERSION]`** — Update to a specific version
+- **`[VERSION]`** — Update to a specific version, skipping the minimum release age
 
 ## Flags
-- **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Override the minimum release age for unpinned updates (default: 24h)
+- **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Minimum release age for this update, such as 7d
+
+  Defaults to the self_update.minimum_release_age setting, then the minimum_release_age setting, else 24h.
 - **`-f --force`** — Update even if already up to date
+
+  Also updates when the package that installed mise has disabled self-update.
 - **`-y --yes`** — Skip confirmation prompt
-- **`--no-plugins`** — Disable auto-updating plugins
+- **`--no-plugins`** — Do not update installed plugins
 - **`-h --help`** — Print help
+
+## Examples
+
+Update to the newest eligible release
+
+```
+mise self-update
+```
+
+Install a specific release
+
+```
+mise self-update 2026.10.4
+```
+
+Update without prompting or touching plugins
+
+```
+mise self-update -y --no-plugins
+```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Installing and updating mise](/installing-mise.html).
+- [Updating mise](/installing-mise.html#updating).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

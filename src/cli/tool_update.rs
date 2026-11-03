@@ -1,5 +1,5 @@
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use eyre::{Result, bail};
@@ -43,9 +43,88 @@ pub(crate) struct ToolUpdate {
     /// there, so `mise doctor` finds it under the same id
     #[usage(long, hide = true)]
     id: Option<String>,
+
+    /// Started detached from a shell prompt: stop the update if it runs longer
+    /// than a service pass may
+    #[usage(long, hide = true, conflicts = "watch", conflicts = "due")]
+    background: bool,
+}
+
+/// At a prompt, start a detached update of each opted-in tool in `ts` whose
+/// check is due, so activated shells, where tools run straight from `PATH`,
+/// stay current without the `tool-update` service. The prompt never waits: the
+/// update runs on its own, and the new version is picked up once the shell
+/// re-resolves its environment. Output is discarded; a failure is recorded for
+/// `mise doctor`.
+pub(crate) fn update_in_background(config: &Arc<Config>, ts: &Toolset) {
+    if tool_update::any_opted_in(ts) {
+        start_due_updates(ts);
+    }
+    // Prompts that change nothing exit before loading config, so they go
+    // through the full path again only once a check is due.
+    tool_update::record_prompt_check(config);
+}
+
+fn start_due_updates(ts: &Toolset) {
+    // Versions of one tool share a check marker. Movable ones go first, so a
+    // pin beside them does not claim the check and leave them waiting.
+    let mut versions = ts.list_current_versions();
+    versions.sort_by_key(|(_, tv)| !tool_update::updatable(tv));
+    for (backend, tv) in versions {
+        // An update moves an installed tool forward. A missing one, lazy or not,
+        // is left to the install paths: like the rest of hook-env, a prompt
+        // never installs. Skipped before the claim, so no process or lookup starts.
+        if backend.list_installed_versions().is_empty() {
+            continue;
+        }
+        if !tool_update::is_due(&tv.request, Updater::Launch) {
+            continue;
+        }
+        let Some(tool_id) = tool_update::claim_due_request(&tv.request, Updater::Launch) else {
+            continue;
+        };
+        // An exact pin is checked all the same, so it does not stay due and
+        // send every hour's prompt through the full path.
+        if !tool_update::updatable(&tv) {
+            continue;
+        }
+        if let Err(err) = spawn_detached(&tv.ba().short, &tool_id) {
+            // The claim stays, so a failure that persists (resource limits, a
+            // moved executable) warns once per interval, not at every prompt.
+            warn!("could not start an update of {tool_id}: {err}");
+            tool_update::record_result(&tool_id, &Err(eyre::eyre!("could not start it: {err}")));
+        }
+    }
+}
+
+/// Start `mise __tool-update` in its own process group (a detached process on
+/// Windows) with no output, so the shell neither lists it as a job nor waits
+/// for it.
+fn spawn_detached(tool: &str, tool_id: &str) -> std::io::Result<()> {
+    let mut command = update_command(&[tool, "--id", tool_id, "--background"]);
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
+    }
+    command.spawn().map(drop)
 }
 
 impl ToolUpdate {
+    /// The watcher, which runs as a service and has no terminal reading it.
+    pub(crate) fn is_watch(&self) -> bool {
+        self.watch
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         if self.watch {
             return watch().await;
@@ -57,8 +136,38 @@ impl ToolUpdate {
             bail!("pass a tool or --watch");
         };
         let tool_id = self.id.unwrap_or_else(|| tool.ba.full_without_opts());
+        if self.background {
+            return update_in_background_process(tool, tool_id).await;
+        }
         update_tool(tool, tool_id, false).await
     }
+}
+
+/// The detached process a prompt started. Nothing else supervises the update,
+/// and it holds the update lock every launch's update waits on, so this process
+/// runs the update as a child the way a service pass does: in its own process
+/// group (a job object on Windows), stopped with everything it started, hooks
+/// and downloads too, after the time a pass gets. That releases the lock and
+/// records the failure for `mise doctor`; blocking waits inside the child can't
+/// outlast it.
+async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<()> {
+    // One at a time, and the clock starts after the wait: every due tool gets a
+    // process, and they would otherwise spend each other's time.
+    let _queue = tool_update::lock_background_update()?;
+    let started = std::time::Instant::now();
+    let mut update =
+        Tick::start(update_command(&[&tool.ba.short, "--id", &tool_id])).inspect_err(|err| {
+            tool_update::record_result(&tool_id, &Err(eyre::eyre!("could not start it: {err:#}")))
+        })?;
+    let result = update.wait(TICK_TIMEOUT).await;
+    // The child records its own failures; only a stop it could not report is
+    // recorded here.
+    if let Err(err) = &result
+        && started.elapsed() >= TICK_TIMEOUT
+    {
+        tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err:#}")));
+    }
+    result
 }
 
 async fn update_tool(tool: ToolArg, tool_id: String, in_pass: bool) -> Result<()> {
@@ -216,16 +325,19 @@ async fn update_due_tools() -> Result<()> {
     Ok(())
 }
 
-/// `mise __tool-update <args>` with the environment mise's activation started
-/// from, run from the filesystem root so no project config (not even one in
-/// $HOME) is above it: it loads only global config, so a project's config,
-/// lockfile, and `[env]` (PATH included) can't steer or be rewritten by the
-/// upgrade. The current environments (`-E`) carry over, since they choose
-/// which global files apply. Launches inside its hooks skip their own updates.
-fn update_command(args: &[&str]) -> Command {
+/// Set in the environment of a command [`global_scope_command`] started, so
+/// a `--global` command run that way doesn't start itself again.
+const GLOBAL_SCOPE_ENV: &str = "__MISE_GLOBAL_SCOPE";
+
+/// `mise <args>` with the environment mise's activation started from, run from
+/// the filesystem root so no project config (not even one in $HOME) is above
+/// it: it loads only global and system config, so a project's config,
+/// lockfile, and `[env]` (PATH included) can't steer or be rewritten by it.
+/// The current environments (`-E`) carry over, since they choose which global
+/// files apply.
+fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
     let mut command = Command::new(&*env::MISE_BIN);
     command
-        .arg("__tool-update")
         .args(args)
         .env_clear()
         .envs(
@@ -233,15 +345,88 @@ fn update_command(args: &[&str]) -> Command {
                 .iter()
                 .filter(|(key, _)| !key.starts_with("__MISE_")),
         )
-        .env(tool_update::UPDATING_ENV, "1")
+        // `MISE_CD`, like `--cd`, would put it back in the directory it left.
+        .env_remove("MISE_CD")
+        .env(GLOBAL_SCOPE_ENV, "1")
         .env("MISE_ENV", env::mise_env().join(","))
-        .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME))
-        .stdin(Stdio::null());
-    // `--no-hooks` on the launch or watcher applies to its updates too.
+        .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME));
+    // `--no-hooks` on the command applies to the one it starts too.
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         command.env("MISE_NO_HOOKS", "1");
     }
     command
+}
+
+/// `mise __tool-update <args>` in the global scope. Launches inside its hooks
+/// skip their own updates.
+fn update_command(args: &[&str]) -> Command {
+    let mut command = global_scope_command(&[&["__tool-update"], args].concat());
+    command
+        .env(tool_update::UPDATING_ENV, "1")
+        .stdin(Stdio::null());
+    command
+}
+
+/// Whether a `--global` command has to start itself again in the global
+/// scope, which it does unless it is that command.
+pub(super) fn needs_global_scope() -> bool {
+    !*IN_GLOBAL_SCOPE
+}
+
+/// Whether this process is the command [`rerun_in_global_scope`] started. The
+/// marker is removed once read, so a command its hooks run starts in the
+/// global scope itself rather than running where the hook did.
+static IN_GLOBAL_SCOPE: LazyLock<bool> = LazyLock::new(|| {
+    let set = std::env::var_os(GLOBAL_SCOPE_ENV).is_some();
+    env::remove_var(GLOBAL_SCOPE_ENV);
+    set
+});
+
+/// Whether this command runs inside a mise update (`auto_update`, the
+/// `tool-update` service, or `mise upgrade --global`), which holds the update
+/// lock until this command, one of its hooks, finishes.
+pub(super) fn inside_update() -> bool {
+    std::env::var_os(tool_update::UPDATING_ENV).is_some()
+}
+
+/// Run this mise command again in the global scope, with the same arguments
+/// except `--cd`, and exit as it does. `mise upgrade --global` and
+/// `mise outdated --global` work this way, like an `auto_update` upgrade.
+pub(super) fn rerun_in_global_scope() -> Result<()> {
+    let args = without_cd(env::ARGS.read().unwrap().iter().skip(1).cloned());
+    // A global upgrade holds the update lock, so launches inside its hooks
+    // skip their own updates, as they do inside an `auto_update` one.
+    let status = global_scope_command(&args)
+        .env(tool_update::UPDATING_ENV, "1")
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(crate::exit::request(status.code().unwrap_or(1)))
+    }
+}
+
+/// `args` without `-C`/`--cd`, which would put the command back in the
+/// directory it left.
+fn without_cd(args: impl Iterator<Item = String>) -> Vec<String> {
+    let mut kept = vec![];
+    let mut args = args.peekable();
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            kept.push(arg);
+            kept.extend(args);
+            break;
+        }
+        if arg == "-C" || arg == "--cd" {
+            args.next();
+            continue;
+        }
+        if arg.starts_with("--cd=") || (arg.starts_with("-C") && arg.len() > 2) {
+            continue;
+        }
+        kept.push(arg);
+    }
+    kept
 }
 
 /// The config's spelling selects the request to upgrade; `tool_id`, the id

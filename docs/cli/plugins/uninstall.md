@@ -12,27 +12,37 @@ description: "Remove an installed plugin"
 
 Remove an installed plugin
 
-Tool installations are retained by default. Pass `--purge` to also remove
-installs, downloads, and cache associated with the selected plugins.
+Installed tool versions are kept unless you pass `--purge`, which also
+removes a tool plugin's installs, downloads, and cache. `--purge` does not
+remove the tools of a backend plugin (`<plugin>:<tool>`); uninstall those
+first with `mise uninstall --all <plugin>:<tool>`.
 
 ## Arguments
-- **`[PLUGIN]…`** — Plugin(s) to remove
+- **`[PLUGIN]…`** — Plugins to remove
 
 ## Flags
 - **`-a --all`** — Remove all plugins
-- **`-p --purge`** — Also remove the plugin's installs, downloads, and cache
+- **`-p --purge`** — Also remove a tool plugin's installs, downloads, and cache
 - **`-h --help`** — Print help
 
 ## Examples
 
+Remove the plugin and keep the versions it installed
+
 ```
 mise plugins uninstall my-tool
+```
+
+Also delete the versions it installed
+
+```
+mise plugins uninstall --purge my-tool
 ```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Plugin selection and maintenance](/plugin-usage.html).
+- [Removing plugins](/plugins.html#remove-plugins).
 - [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

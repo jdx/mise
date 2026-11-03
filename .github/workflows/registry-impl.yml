@@ -11,9 +11,8 @@ on:
       MISE_VERSIONS_API_SECRET:
         required: false
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.number || github.event.pull_request.number || 'push' }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 env:
   MBX_DISABLE: "1"
@@ -37,6 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: check
         env:
@@ -65,6 +65,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
         if: inputs.trusted
         with:
@@ -72,12 +74,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: build
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release') }}
       - run: cargo build --all-features --ignore-rust-version
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mise
           path: target/debug/mise
@@ -97,6 +99,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: workflow-check
         env:
@@ -151,6 +154,8 @@ jobs:
       needs.list-changed-tools.outputs.new_tools != ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Check new tools have tests
         run: |
           missing_tests=""
@@ -163,7 +168,7 @@ jobs:
             echo "::error::New tools missing required 'test' field:$missing_tests"
             echo ""
             echo "All new tools must include a test field, e.g.:"
-            echo '  test = ["mytool --version", "v{{version}}"]'
+            echo '  test = { cmd = "mytool --version", expected = "{{version}}" }'
             exit 1
           fi
           echo "All new tools have tests"
@@ -205,13 +210,15 @@ jobs:
             echo "MISE_GITHUB_TOKEN=${{ steps.token.outputs.token }}"
             echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}"
           } >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mise
           path: target/debug
       - run: chmod +x target/debug/mise
       - run: echo target/debug >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
+      # our own e2e image, the e2e tag moves on purpose
+      # jactionlint ignore=unpinned-images
       - name: Pull e2e Docker image
         run: docker pull ghcr.io/jdx/mise:e2e
       - name: Set test-tool jobs
@@ -221,6 +228,8 @@ jobs:
             jobs=4
           fi
           echo "TEST_TOOL_JOBS=$jobs" >> "$GITHUB_ENV"
+      # our own e2e image, the e2e tag moves on purpose
+      # jactionlint ignore=unpinned-images
       - id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
@@ -285,6 +294,8 @@ jobs:
             echo "::error::mise test-tool exited with status $test_tool_status without reporting failed tools"
             exit "$test_tool_status"
           fi
+      # our own e2e image, the e2e tag moves on purpose
+      # jactionlint ignore=unpinned-images
       - name: Retry failed tools
         id: retry
         if: steps.test-tools.outputs.failed_tools != ''

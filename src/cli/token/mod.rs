@@ -3,7 +3,11 @@ pub(super) mod git_credential;
 pub(crate) mod github;
 mod gitlab;
 
-/// Display git provider tokens mise will use
+/// Show which Git provider token mise uses
+///
+/// Shows the token mise would send to a GitHub, GitLab, or Forgejo host and
+/// where it came from, to debug authentication.
+/// See https://mise.jdx.dev/dev-tools/github-tokens.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct Token {
@@ -13,11 +17,8 @@ pub(crate) struct Token {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    /// Show the Forgejo token mise will use
     Forgejo(forgejo::Forgejo),
-    /// Show the GitHub token mise will use
     Github(github::Github),
-    /// Show the GitLab token mise will use
     Gitlab(gitlab::Gitlab),
 }
 

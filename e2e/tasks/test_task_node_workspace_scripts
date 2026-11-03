@@ -225,8 +225,7 @@ assert "cat packages/core/explicit-result.txt" "explicit-upstream"
 mise -q run //packages/app:lint
 assert "cat packages/app/executable-default.txt" "from-executable-default"
 
-assert_not_contains "MISE_EXPERIMENTAL=0 mise tasks --all" "node:@scope/app#test:unit"
-assert_fail_contains "MISE_EXPERIMENTAL=0 mise run 'node:@scope/missing#build'" "no task"
+assert_fail_contains "mise run 'node:@scope/missing#build'" "no task"
 
 mkdir -p packages/bad
 printf '{' >packages/bad/package.json

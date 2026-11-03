@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# doctor reports why config failed to load, not just which file
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset MISE_YES
+printf '[env]\nFOO = "bar"\n' >mise.toml
+assert_contains "mise doctor 2>&1 || true" "failed to load config: error parsing config file"
+assert_contains "mise doctor 2>&1 || true" "are not trusted"

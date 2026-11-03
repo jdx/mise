@@ -224,7 +224,7 @@ test("the Environments ticket takes down the registry's card, not packslip's sta
   // Just into the ticket: the inherited stage is still up, leaving.
   const film = inked(createFilm(f, "tour"), env.start + 0.1);
   assert.match(film, /jq = "latest"/, "the registry's card is on the frame");
-  assert.doesNotMatch(film, /hk = "/, "packslip's card is not");
+  assert.doesNotMatch(film, /hk = /, "packslip's card is not");
   assert.doesNotMatch(
     film,
     /linked ~\/work\/api/,
@@ -233,6 +233,6 @@ test("the Environments ticket takes down the registry's card, not packslip's sta
   assert.match(film, /ACT II/, "the ticket is numbered in film order");
   // The source reel's own env ticket still takes packslip's stage down.
   const source = inked(createReel(f), sec("env").start + 0.1);
-  assert.match(source, /hk = "/);
+  assert.match(source, /hk = /);
   assert.match(source, /ACT III/);
 });

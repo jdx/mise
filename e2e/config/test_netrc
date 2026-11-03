@@ -273,4 +273,40 @@ rm -f mise.toml
 rm -f "$CUSTOM_NETRC_PATH"
 mise uninstall --all >/dev/null 2>&1 || true
 
+# Test 13: Verify comment lines in netrc do not stop credential lookup
+cat >"$HOME/.netrc" <<EOF
+#stepsecurity-package-config-credential-dmg-begin
+machine 127.0.0.1
+  login comment-user
+  password comment-pass
+#stepsecurity-package-config-credential-dmg-end
+EOF
+chmod 600 "$HOME/.netrc"
+
+rm -f "$HEADERS_LOG_DIR"/request_*.json
+
+cat >mise.toml <<EOF
+[tools]
+"http:netrc-comment-test" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/tool.tar.gz" }
+EOF
+
+output=$(mise install 2>&1 || true)
+
+if echo "$output" | grep -q "Failed to parse netrc"; then
+  echo "FAIL: netrc with comment lines did not parse"
+  echo "Output: $output"
+  exit 1
+fi
+
+if grep -qi '"authorization"' "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null; then
+  echo "PASS: Authorization header sent with comment lines in netrc"
+else
+  echo "FAIL: No Authorization header found when netrc has comment lines"
+  cat "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null || echo "No request logs found"
+  exit 1
+fi
+
+rm -f mise.toml
+mise uninstall --all >/dev/null 2>&1 || true
+
 echo "All netrc tests passed!"

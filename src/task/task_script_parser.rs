@@ -378,6 +378,52 @@ impl TaskScriptParser {
         });
     }
 
+    /// Render a file task's inherited `usage` (the one from a template it extends), which no
+    /// other step renders for a file task. The script's own `#USAGE` lines are left alone.
+    pub(crate) async fn render_inherited_usage(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        preflight: bool,
+        env: Option<&EnvMap>,
+    ) -> Result<String> {
+        // A workspace default also fills `usage`, but it only fills what a task leaves unset,
+        // and a file task's `#USAGE` lines already set it.
+        if task.extends.is_none() {
+            return Ok(String::new());
+        }
+        if !contains_template_syntax(&task.usage) {
+            return Ok(task.usage.clone());
+        }
+        let (mut tera, _, _, _) = self.setup_tera_for_spec_parsing(task);
+        let mut tera_ctx = if preflight {
+            task.tera_ctx_for_usage_preflight(config)
+        } else {
+            task.tera_ctx_for_usage(config).await?
+        };
+        if let Some(env) = env {
+            tera_ctx.insert("env", env);
+        }
+        // A malformed expression fails whatever the env is, so validation still catches it.
+        tera.validate_template_syntax("__mise_inherited_usage", &task.usage)
+            .map_err(Self::task_script_tera_error)
+            .with_context(|| format!("Failed to render task usage: {}", task.usage))?;
+        let rendered = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx);
+        // Without the resolved task env (help, validation, preflight), a template that reads it
+        // cannot render. That must not take the task's own flags down with it.
+        if env.is_none()
+            && let Err(err) = &rendered
+            && is_missing_env_field(&format!("{err:#}"))
+        {
+            warn!(
+                "ignoring the usage task '{}' inherits from its template: {err:#}",
+                task.name
+            );
+            return Ok(String::new());
+        }
+        rendered
+    }
+
     fn setup_tera_for_spec_parsing(&self, task: &Task) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
@@ -1084,6 +1130,11 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
     let shell = parts.next()?;
     let args = parts.map(|s| s.to_string()).collect_vec();
     Some(once(shell.to_string()).chain(args).collect())
+}
+
+/// Whether a render error is a template reading a field of `env` that the context lacks.
+fn is_missing_env_field(err: &str) -> bool {
+    err.contains("is not defined") && (err.contains("env.") || err.contains("env["))
 }
 
 #[cfg(test)]

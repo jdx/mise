@@ -128,3 +128,18 @@ cat >mise.toml <<'EOF'
 dummy = "1.0.0"
 EOF
 assert_not_contains "mise env -s bash" "$MISE_SHIMS_DIR"
+
+# Installing an unrelated tool inside a task reshims in a child process. That
+# reshim must keep the bootstrap shim for the task's own lazy tool (#14522).
+mise uninstall --all dummy
+rm -f "$MISE_SHIMS_DIR/dummy"
+cat >mise.toml <<'EOF2'
+[tasks.nested-install]
+tools = { dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] } }
+run = """
+mise install tiny@1.0.0
+dummy --version
+"""
+EOF2
+mise uninstall --all tiny
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise run nested-install" "This is Dummy 1.0.0"

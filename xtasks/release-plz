@@ -381,19 +381,35 @@ if [[ $cur_version != "$latest_version" ]]; then
 	INTERACTIVE_CONFIG_VERSION=""
 	MISE_SIGSTORE_VERSION=""
 	MISE_CACHE_CORE_VERSION=""
+	MISE_TLS_VERSION=""
 	MISE_BREW_RELOCATION_VERSION=""
 	MISE_DOTENV_VERSION=""
 	MISE_AGENT_ENV_VERSION=""
 	MISE_SETTINGS_VERSION=""
 	MISE_UTIL_VERSION=""
+	MISE_UI_VERSION=""
+	MISE_SYSTEM_PACKAGES_VERSION=""
+	MISE_CONFIG_VERSION=""
+	MISE_SYSTEM_VERSION=""
+	MISE_OCI_VERSION=""
+	MISE_DAEMONS_VERSION=""
 	MISE_BREW_METADATA_VERSION=""
 	MISE_BOOTSTRAP_VERSION=""
+	MISE_LSP_VERSION=""
 
-	# Publish in dependency order: mise-settings needs mise-cache-core, and
+	# Publish in dependency order: mise-cache-core, mise-sigstore, vfox and
+	# mise-util need mise-tls, mise-settings needs mise-cache-core, and
 	# mise-util needs mise-agent-env, mise-cache-core, mise-settings and
-	# mise-sigstore.
+	# mise-sigstore, and mise-ui needs mise-settings and mise-util.
 	bump_and_publish_subcrate "mise-agent-env" "crates/mise-agent-env" "MISE_AGENT_ENV_VERSION"
 	cargo add -p mise-util "mise-agent-env@$MISE_AGENT_ENV_VERSION"
+
+	bump_and_publish_subcrate "mise-tls" "crates/mise-tls" "MISE_TLS_VERSION"
+	cargo add -p mise "mise-tls@$MISE_TLS_VERSION" --no-default-features
+	cargo add -p mise-cache-core "mise-tls@$MISE_TLS_VERSION" --no-default-features
+	cargo add -p mise-sigstore "mise-tls@$MISE_TLS_VERSION" --no-default-features
+	cargo add -p mise-util "mise-tls@$MISE_TLS_VERSION" --no-default-features
+	cargo add -p vfox "mise-tls@$MISE_TLS_VERSION" --no-default-features
 
 	bump_and_publish_subcrate "mise-cache-core" "crates/mise-cache-core" "MISE_CACHE_CORE_VERSION"
 	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
@@ -401,10 +417,24 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise-util "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
 
 	bump_and_publish_subcrate "mise-brew-relocation" "crates/mise-brew-relocation" "MISE_BREW_RELOCATION_VERSION"
-	cargo add -p mise --target 'cfg(unix)' "mise-brew-relocation@$MISE_BREW_RELOCATION_VERSION"
+	cargo add -p mise-system-packages --target 'cfg(unix)' "mise-brew-relocation@$MISE_BREW_RELOCATION_VERSION"
 
 	bump_and_publish_subcrate "mise-dotenv" "crates/mise-dotenv" "MISE_DOTENV_VERSION"
 	cargo add -p mise "mise-dotenv@$MISE_DOTENV_VERSION"
+
+	# mise-lsp has no workspace dependencies: mise hands it the schema at run time.
+	bump_and_publish_subcrate "mise-lsp" "crates/mise-lsp" "MISE_LSP_VERSION"
+	cargo add -p mise "mise-lsp@$MISE_LSP_VERSION"
+
+	# mise-settings re-exports TaskOutput from mise-config, so mise-config and its only
+	# workspace dependency, mise-bootstrap, publish first.
+	bump_and_publish_subcrate "mise-bootstrap" "crates/mise-bootstrap" "MISE_BOOTSTRAP_VERSION"
+	cargo add -p mise "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
+	cargo add -p mise-config "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
+
+	bump_and_publish_subcrate "mise-config" "crates/mise-config" "MISE_CONFIG_VERSION"
+	cargo add -p mise "mise-config@$MISE_CONFIG_VERSION"
+	cargo add -p mise-settings "mise-config@$MISE_CONFIG_VERSION"
 
 	# Copy settings.toml into the crate directory so the published package includes it.
 	cp settings.toml crates/mise-settings/settings.toml
@@ -412,6 +442,9 @@ if [[ $cur_version != "$latest_version" ]]; then
 	rm -f crates/mise-settings/settings.toml
 	cargo add -p mise "mise-settings@$MISE_SETTINGS_VERSION"
 	cargo add -p mise-util "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-util "mise-config@$MISE_CONFIG_VERSION"
+	cargo add -p mise-ui "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-system-packages "mise-settings@$MISE_SETTINGS_VERSION"
 
 	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
 	cargo add -p mise-util "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
@@ -419,13 +452,45 @@ if [[ $cur_version != "$latest_version" ]]; then
 
 	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
 	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
+	cargo add -p mise-ui "mise-util@$MISE_UTIL_VERSION"
+	cargo add -p mise-system-packages "mise-util@$MISE_UTIL_VERSION"
+	bump_and_publish_subcrate "mise-ui" "crates/mise-ui" "MISE_UI_VERSION"
+	cargo add -p mise "mise-ui@$MISE_UI_VERSION"
+	cargo add -p mise-system-packages "mise-ui@$MISE_UI_VERSION"
 	bump_and_publish_subcrate "mise-brew-metadata" "crates/mise-brew-metadata" "MISE_BREW_METADATA_VERSION"
-	cargo add -p mise "mise-brew-metadata@$MISE_BREW_METADATA_VERSION"
-	bump_and_publish_subcrate "mise-bootstrap" "crates/mise-bootstrap" "MISE_BOOTSTRAP_VERSION"
-	cargo add -p mise "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
+	cargo add -p mise-system-packages --target 'cfg(unix)' "mise-brew-metadata@$MISE_BREW_METADATA_VERSION"
+	bump_and_publish_subcrate "mise-system-packages" "crates/mise-system-packages" "MISE_SYSTEM_PACKAGES_VERSION"
+	cargo add -p mise "mise-system-packages@$MISE_SYSTEM_PACKAGES_VERSION"
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"
+
+	# mise-system sits above everything else published here.
+	cargo add -p mise-system "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-system "mise-util@$MISE_UTIL_VERSION"
+	cargo add -p mise-system "mise-ui@$MISE_UI_VERSION"
+	cargo add -p mise-system "mise-system-packages@$MISE_SYSTEM_PACKAGES_VERSION"
+	cargo add -p mise-system "mise-config@$MISE_CONFIG_VERSION"
+	cargo add -p mise-system "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
+	cargo add -p mise-system "vfox@$VFOX_VERSION"
+	bump_and_publish_subcrate "mise-system" "crates/mise-system" "MISE_SYSTEM_VERSION"
+	cargo add -p mise "mise-system@$MISE_SYSTEM_VERSION"
+
+	# mise-oci builds on mise-system's package and file types.
+	cargo add -p mise-oci "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-oci "mise-util@$MISE_UTIL_VERSION"
+	cargo add -p mise-oci "mise-ui@$MISE_UI_VERSION"
+	cargo add -p mise-oci "mise-system@$MISE_SYSTEM_VERSION"
+	cargo add -p mise-oci "mise-config@$MISE_CONFIG_VERSION"
+	bump_and_publish_subcrate "mise-oci" "crates/mise-oci" "MISE_OCI_VERSION"
+	cargo add -p mise "mise-oci@$MISE_OCI_VERSION"
+
+	# mise-daemons sits on settings, util, and the mise.toml declaration types.
+	cargo add -p mise-daemons "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-daemons "mise-config@$MISE_CONFIG_VERSION"
+	cargo add -p mise-daemons "mise-util@$MISE_UTIL_VERSION"
+	bump_and_publish_subcrate "mise-daemons" "crates/mise-daemons" "MISE_DAEMONS_VERSION"
+	cargo add -p mise "mise-daemons@$MISE_DAEMONS_VERSION"
 
 	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
 	use_published_aqua_registry "$AQUA_REGISTRY_VERSION"

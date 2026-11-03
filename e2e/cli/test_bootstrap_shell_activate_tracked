@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# shellcheck disable=SC2016
+
+# Tracking a shell startup file only records its history; bootstrap still
+# writes the mise activation block into it.
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[bootstrap.mise_shell_activate]
+zsh = true
+
+[dotfiles]
+"~/.zshrc" = { mode = "track" }
+EOF
+echo "# my zshrc" >~/.zshrc
+
+status_json="$(mise bootstrap mise-shell-activate status --json)"
+assert_contains_text "$status_json" '"target": "zprofile"'
+assert_contains_text "$status_json" '"target": "zshrc"'
+assert_contains_text "$status_json" '"path": "~/.zshrc"'
+
+bootstrap_dry_run="$(mise bootstrap --dry-run --yes)"
+assert_contains_text "$bootstrap_dry_run" "edit ~/.zprofile (block:activate)"
+assert_contains_text "$bootstrap_dry_run" "edit ~/.zshrc (block:activate)"
+
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
+assert_contains "cat ~/.zshrc" "# my zshrc"
+assert_contains "cat ~/.zshrc" 'eval "$(mise activate zsh)"'
+assert_contains "cat ~/.zprofile" 'eval "$(mise activate zsh --shims)"'

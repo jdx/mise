@@ -19,6 +19,30 @@ pub struct SchedMsg {
     /// that tools are installed for it just before it starts, and that it receives no
     /// command-line secrets.
     pub injected: bool,
+    /// Whether it runs under the `--jobs` slot and terminal of a locked task whose run entry
+    /// started it.
+    pub covered: Cover,
+}
+
+/// Whether a task runs under the `--jobs` slot and terminal of the locked task whose run
+/// entry started it, instead of taking its own. A task that holds task locks keeps its slot
+/// and terminal, with its locks, until it ends, so the tasks it starts use them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Cover {
+    /// It takes its own slot and terminal.
+    #[default]
+    Own,
+    /// The parent shares the terminal with other tasks, so this task may neither prompt nor
+    /// take the terminal for itself.
+    Shared,
+    /// The parent holds the terminal for itself, so this task may use it.
+    Exclusive,
+}
+
+impl Cover {
+    pub fn is_covered(self) -> bool {
+        self != Cover::Own
+    }
 }
 
 impl SchedMsg {
@@ -28,6 +52,7 @@ impl SchedMsg {
             deps,
             allow_during_interruption,
             injected: false,
+            covered: Cover::Own,
         }
     }
 
@@ -35,9 +60,11 @@ impl SchedMsg {
         task: Task,
         deps: Arc<Mutex<Deps>>,
         allow_during_interruption: bool,
+        covered: Cover,
     ) -> Self {
         Self {
             injected: true,
+            covered,
             ..Self::new(task, deps, allow_during_interruption)
         }
     }
@@ -73,24 +100,50 @@ pub struct RunLoopHooks<S, I, D> {
 /// Returns true when the task was dropped, so the caller must not spawn it.
 /// Both receive paths go through this: they carried the same logic inline, and
 /// the copy in the `select!` arm was missed when the drop callback was added.
-async fn drop_while_stopping(
+async fn drop_while_stopping<Fut>(
     task: &Task,
     deps_for_remove: &Arc<Mutex<Deps>>,
     allow_during_interruption: bool,
     on_task_dropped: &mut impl FnMut(&Task),
-) -> bool {
-    let mut deps = deps_for_remove.lock().await;
+    pending_jobs: &mut FuturesUnordered<Fut>,
+) -> Result<bool>
+where
+    Fut: Future<Output = Result<()>>,
+{
+    let mut deps = lock_driving(deps_for_remove, pending_jobs).await?;
     // Post-dep (cleanup) tasks still run on failure, but only if their parent
     // actually started.
     if allow_during_interruption || deps.is_runnable_post_dep(task) {
-        return false;
+        return Ok(false);
     }
     deps.remove(task);
     drop(deps);
     // Nothing else reports this task: the completion path runs inside the job,
     // which it never reaches.
     on_task_dropped(task);
-    true
+    Ok(true)
+}
+
+/// Lock `mutex` while still polling `pending_jobs`.
+///
+/// A pending spawn future can already be queued on the same tokio mutex, and
+/// tokio hands the lock to the oldest waiter. Awaiting the lock without polling
+/// that future would wait forever.
+async fn lock_driving<'a, T, Fut>(
+    mutex: &'a Mutex<T>,
+    pending_jobs: &mut FuturesUnordered<Fut>,
+) -> Result<tokio::sync::MutexGuard<'a, T>>
+where
+    Fut: Future<Output = Result<()>>,
+{
+    let lock = mutex.lock();
+    tokio::pin!(lock);
+    loop {
+        tokio::select! {
+            guard = &mut lock => return Ok(guard),
+            Some(result) = pending_jobs.next(), if !pending_jobs.is_empty() => result?,
+        }
+    }
 }
 
 impl Scheduler {
@@ -233,7 +286,7 @@ impl Scheduler {
         mut spawn_job: F,
     ) -> Result<()>
     where
-        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool) -> Fut,
+        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool, Cover) -> Fut,
         Fut: std::future::Future<Output = Result<()>>,
         S: Fn() -> bool,
         I: Fn() -> bool,
@@ -259,6 +312,7 @@ impl Scheduler {
                         deps: deps_for_remove,
                         allow_during_interruption,
                         injected,
+                        covered,
                     }) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
@@ -268,8 +322,9 @@ impl Scheduler {
                                 &deps_for_remove,
                                 allow_during_interruption,
                                 &mut on_task_dropped,
+                                &mut pending_jobs,
                             )
-                            .await;
+                            .await?;
                             if dropped {
                                 continue;
                             }
@@ -279,6 +334,7 @@ impl Scheduler {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                         ));
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
@@ -294,7 +350,7 @@ impl Scheduler {
                 // Clean up tasks that shouldn't run: non-post-deps and post-deps whose
                 // parent was never started. Use batch removal so intermediate emit_leaves
                 // calls don't schedule post-deps of never-started tasks.
-                let mut deps = main_deps.lock().await;
+                let mut deps = lock_driving(&main_deps, &mut pending_jobs).await?;
                 let tasks_to_remove: Vec<Task> = deps
                     .all()
                     .filter(|t| !deps.is_runnable_post_dep(t))
@@ -338,6 +394,7 @@ impl Scheduler {
                         deps: deps_for_remove,
                         allow_during_interruption,
                         injected,
+                        covered,
                     }) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && (!continue_on_error || was_interrupted()) {
@@ -346,8 +403,9 @@ impl Scheduler {
                                 &deps_for_remove,
                                 allow_during_interruption,
                                 &mut on_task_dropped,
+                            &mut pending_jobs,
                             )
-                            .await;
+                            .await?;
                             if dropped {
                                 continue;
                             }
@@ -357,6 +415,7 @@ impl Scheduler {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                         ));
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon
@@ -395,6 +454,32 @@ mod tests {
             0,
             "in_flight should start at 0"
         );
+    }
+
+    /// A pending job already queued on the mutex gets the lock first (tokio's
+    /// mutex is fair), so the loop body must keep polling it while it waits.
+    #[tokio::test]
+    async fn test_lock_driving_polls_queued_job() {
+        use futures_util::FutureExt;
+        let mutex = Arc::new(Mutex::new(()));
+        let held = mutex.lock().await;
+        let mut pending_jobs = FuturesUnordered::new();
+        let job_mutex = mutex.clone();
+        pending_jobs.push(async move {
+            drop(job_mutex.lock().await);
+            Ok::<(), eyre::Report>(())
+        });
+        // Poll once so the job is queued on the mutex ahead of the loop body.
+        assert!(pending_jobs.next().now_or_never().is_none());
+        drop(held);
+        let guard = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            lock_driving(&mutex, &mut pending_jobs),
+        )
+        .await
+        .expect("lock_driving deadlocked")
+        .unwrap();
+        drop(guard);
     }
 
     #[tokio::test]

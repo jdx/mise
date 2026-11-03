@@ -1,5 +1,21 @@
 local http = require("http")
 
+--- Release dates from a product_history page, keyed by version. Each entry is
+--- <h3>VERSION <span>... &ndash; released YYYY-MM-DD</span></h3>; an entry
+--- without that text stays undated.
+--- @param body string
+--- @return table
+local function release_dates(body)
+	local dates = {}
+	for version, inner in body:gmatch("<h3>%s*([%d%.%-beta]+)%s*<span[^>]*>(.-)</span>") do
+		local day = inner:match("released%s+(%d%d%d%d%-%d%d%-%d%d)")
+		if day then
+			dates[version] = day .. "T00:00:00Z"
+		end
+	end
+	return dates
+end
+
 --- Get the available version list.
 --- @param ctx table Empty table, no data provided. Always {}.
 --- @return table Version list
@@ -10,7 +26,9 @@ function PLUGIN:Available(ctx)
 	local resp2 = http.get({
 		url = "https://app-updates.agilebits.com/product_history/CLI2",
 	})
+	local dates2 = {}
 	if resp2.status_code == 200 then
+		dates2 = release_dates(resp2.body)
 		-- Versions appear on lines after <h3> tags
 		-- Pattern: <h3>\n\t\t\t\tVERSION
 		for version in resp2.body:gmatch("<h3>[^<]*</h3>%s*([%d%.%-beta]+)") do
@@ -19,6 +37,7 @@ function PLUGIN:Available(ctx)
 				table.insert(result, {
 					version = clean_version,
 					note = "CLI v2",
+					created_at = dates2[clean_version],
 				})
 			end
 		end
@@ -30,6 +49,7 @@ function PLUGIN:Available(ctx)
 					table.insert(result, {
 						version = clean_version,
 						note = "CLI v2",
+						created_at = dates2[clean_version],
 					})
 				end
 			end
@@ -46,6 +66,7 @@ function PLUGIN:Available(ctx)
 						table.insert(result, {
 							version = version,
 							note = "CLI v2",
+							created_at = dates2[version],
 						})
 					end
 					in_h3 = false
@@ -58,7 +79,9 @@ function PLUGIN:Available(ctx)
 	local resp1 = http.get({
 		url = "https://app-updates.agilebits.com/product_history/CLI",
 	})
+	local dates1 = {}
 	if resp1.status_code == 200 then
+		dates1 = release_dates(resp1.body)
 		local in_h3 = false
 		for line in resp1.body:gmatch("[^\r\n]+") do
 			if line:match("<h3>") then
@@ -69,6 +92,7 @@ function PLUGIN:Available(ctx)
 					table.insert(result, {
 						version = version,
 						note = "CLI v1",
+						created_at = dates1[version],
 					})
 				end
 				in_h3 = false

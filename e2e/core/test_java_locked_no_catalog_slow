@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# A locked java install must not fetch the mise-java catalog: the lockfile
+# already has the url and checksum.
+export MISE_LOCKFILE=1
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+if [[ $MISE_PLATFORM_OS == "linux" ]] && type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  CURRENT_PLATFORM="$CURRENT_PLATFORM-musl"
+fi
+
+cat <<'TOML' >mise.toml
+[tools]
+java = "corretto-17.0.2.8.1"
+TOML
+
+mise lock --platform "$CURRENT_PLATFORM"
+assert_contains "cat mise.lock" 'url = "https://'
+
+# `mise lock` warmed the catalog cache; use a fresh one so any catalog request reaches
+# the dead address below.
+export MISE_CACHE_DIR="$PWD/fresh-cache"
+
+# Point the catalog at a dead address; only the lockfile can satisfy the install.
+export MISE_URL_REPLACEMENTS='{"https://mise-java.jdx.dev/":"http://127.0.0.1:1/"}'
+assert "mise install --locked java"
+assert_contains "mise x -- java -version 2>&1" "17.0.2"

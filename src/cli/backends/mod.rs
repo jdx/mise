@@ -6,6 +6,7 @@ mod switch;
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     about = "Manage backends",
+    long_about = LONG_ABOUT,
     aliases = ["b", "backend", "backend-list"],
     after_long_help = AFTER_LONG_HELP
 )]
@@ -14,11 +15,19 @@ pub(crate) struct Backends {
     command: Option<Commands>,
 }
 
+static LONG_ABOUT: &str = "Manage backends
+
+A backend is where mise installs a tool from: a package registry such as npm or
+cargo, a release host such as GitHub, or a plugin. Each tool uses one, either
+written as a prefix (`npm:prettier`) or chosen by the registry. With no
+subcommand, lists the built-in backends. See
+https://mise.jdx.dev/dev-tools/backends/.";
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Deprecation:</underline></bold>
 
-The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
-Use `mise backends` instead.
+The `mise b` alias is deprecated and will be removed in mise 2027.4.0; use
+`mise backends`.
 "#
 );
 

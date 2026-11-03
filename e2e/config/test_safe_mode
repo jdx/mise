@@ -95,6 +95,30 @@ assert_fail "MISE_SAFE=1 mise latest dummy" "executing asdf plugin scripts is di
 # without safe mode the same command works
 assert "mise latest dummy" "2.0.0"
 
+# bin/exec-env is sourced by bash rather than executed, with the tool's
+# install_env applied, so BASH_ENV would run a file of the project
+mkdir -p exec-env-plugin/bin
+cp "$ROOT"/test/data/plugins/dummy/bin/{install,list-all} exec-env-plugin/bin
+cat <<'EOF' >exec-env-plugin/bin/exec-env
+export FROM_EXEC_ENV="$ASDF_INSTALL_VERSION"
+EOF
+mise plugins link exec-env-dummy exec-env-plugin
+mise install exec-env-dummy@1.0.0
+cat <<'EOF' >untrusted.sh
+touch "$MISE_PROJECT_ROOT/bash-env-ran"
+EOF
+cat <<'EOF' >mise.toml
+[tools]
+exec-env-dummy = { version = "1.0.0", install_env = { BASH_ENV = "$MISE_PROJECT_ROOT/untrusted.sh" } }
+EOF
+assert_not_contains "MISE_SAFE=1 mise env </dev/null" "FROM_EXEC_ENV"
+assert_fail "test -e bash-env-ran"
+# without safe mode the same command works, and caches the result
+assert_contains "mise env </dev/null" "export FROM_EXEC_ENV=1.0.0"
+# safe mode does not serve the cached result either
+assert_not_contains "MISE_SAFE=1 mise env </dev/null" "FROM_EXEC_ENV"
+rm -f mise.toml untrusted.sh bash-env-ran
+
 echo "=== plugin installation is refused ==="
 assert_fail "MISE_SAFE=1 mise plugins install tiny https://github.com/jdx/vfox-tiny" "installing plugins is disabled in safe mode (MISE_SAFE=1)"
 

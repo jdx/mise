@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# spm's install_command is a shell command that replaces `swift build`. Safe
+# mode refuses it before anything is resolved or fetched, as it refuses the
+# postinstall and install_env tool options.
+
+cat <<'EOF' >mise.toml
+[tools]
+"spm:owner/safe-install" = { version = "1.0.0", api_url = "https://example.invalid", artifactbundle = false, install_command = "touch install-command-ran" }
+EOF
+refused="running tool-level install_command for spm:owner/safe-install is disabled in safe mode (MISE_SAFE=1)"
+assert_fail "MISE_SAFE=1 mise install --force" "$refused"
+assert_fail "test -e install-command-ran"

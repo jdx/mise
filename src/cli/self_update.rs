@@ -22,6 +22,13 @@ use std::time::Duration;
 
 const AUTO_UPDATE_REEXEC_ENV: &str = "__MISE_AUTO_UPDATE_REEXEC";
 
+// Ceilings for what self-update reads from the release host before any
+// signature is checked, so that host cannot fill memory or the temp directory.
+// A release archive of mise is a few tens of MiB.
+const MAX_RELEASE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PACKSLIP_BYTES: usize = 4 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+
 fn release_archive_name(version: &str, os: &str, arch: &str, build_target: &str) -> String {
     // Rust reports every 32-bit ARM target as `arm`, but our releases use `armv7`.
     // Preserve the build's ARM variant rather than upgrading an unsupported ARM CPU to v7.
@@ -61,7 +68,7 @@ pub(crate) async fn maybe_auto_update(
         return Ok(());
     };
     if !auto_update_eligible(AutoUpdateContext {
-        enabled: settings.self_update.auto,
+        enabled: settings.self_update.auto.is_on(),
         offline: settings.offline(),
         prefer_offline: settings.prefer_offline(),
         ci: settings.ci || ci_info::is_ci(),
@@ -193,25 +200,47 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 
 /// Update mise itself
 ///
-/// Selects the newest stable release satisfying the minimum release age (24h by default).
-/// Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
-/// By default, this will also update any installed plugins.
-/// Uses mise's GitHub token resolution chain for authenticated requests.
+/// Installs the newest stable release, or VERSION, from GitHub Releases and
+/// verifies its signature before replacing the running binary. Without VERSION,
+/// releases younger than the minimum release age are skipped: the
+/// `self_update.minimum_release_age` setting, then `minimum_release_age`, else
+/// 24h. Installed plugins are updated too unless you pass `--no-plugins`. Set
+/// `self_update.auto` to update automatically.
 ///
-/// Packagers can disable this command so that mise is updated through the
-/// package manager instead. See
-/// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
+/// If a package manager such as Homebrew or apt installed mise, update it with
+/// that package manager instead: https://mise.jdx.dev/installing-mise.html#updating
+/// Packagers can disable this command: https://mise.jdx.dev/packaging.html
 #[derive(Debug, Default, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise self-update"###,
+        help = "Update to the newest eligible release"
+    ),
+    example(
+        r###"mise self-update 2026.10.4"###,
+        help = "Install a specific release"
+    ),
+    example(
+        r###"mise self-update -y --no-plugins"###,
+        help = "Update without prompting or touching plugins"
+    )
+)]
 pub(crate) struct SelfUpdate {
-    /// Update to a specific version
+    /// Update to a specific version, skipping the minimum release age
     version: Option<String>,
 
-    /// Override the minimum release age for unpinned updates (default: 24h)
+    /// Minimum release age for this update, such as 7d
+    ///
+    /// Defaults to the self_update.minimum_release_age setting, then the
+    /// minimum_release_age setting, else 24h.
     #[usage(long)]
     minimum_release_age: Option<String>,
 
     /// Update even if already up to date
+    ///
+    /// Also updates when the package that installed mise has disabled
+    /// self-update.
     #[usage(long, short)]
     force: bool,
 
@@ -219,7 +248,7 @@ pub(crate) struct SelfUpdate {
     #[usage(long, short)]
     yes: bool,
 
-    /// Disable auto-updating plugins
+    /// Do not update installed plugins
     #[usage(long)]
     no_plugins: bool,
 }
@@ -339,6 +368,102 @@ fn ends_with_separator(path: &std::path::Path) -> bool {
 fn current_exe_stem() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     exe.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
+}
+
+/// Put `new_binary` in place of the running mise.exe.
+///
+/// Antivirus briefly holds a binary that was just written or just started, so a step of
+/// `self-replace` can fail with `ERROR_ACCESS_DENIED` (5) or `ERROR_SHARING_VIOLATION` (32) that
+/// would succeed a moment later. Its first step renames the running mise.exe aside and nothing
+/// after it puts the binary back, so trying again is only safe while mise.exe is still at its
+/// path: then nothing has moved. A failure after the move has left no mise.exe at all, so the new
+/// one is put there instead, which is what the update was about to leave there anyway.
+#[cfg(windows)]
+fn replace_running_binary(new_binary: &Path) -> Result<()> {
+    let exe = std::env::current_exe()?.canonicalize()?;
+    replace_binary_at(
+        &exe,
+        new_binary,
+        || self_replace::self_replace(new_binary),
+        &LOCK_RETRY_DELAYS,
+    )
+}
+
+/// [`replace_running_binary`] with the swap and its delays passed in, so a test can make the swap
+/// fail before or after it moves `exe` aside.
+#[cfg(windows)]
+fn replace_binary_at(
+    exe: &Path,
+    new_binary: &Path,
+    swap: impl FnMut() -> std::io::Result<()>,
+    delays: &[Duration],
+) -> Result<()> {
+    use color_eyre::eyre::WrapErr;
+
+    let result = retry_while_locked(swap, || exe.exists(), delays);
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) if exe.exists() => Err(err.into()),
+        Err(err) => {
+            warn!(
+                "replacing {} failed after moving it aside ({err}); copying the new binary there",
+                exe.display()
+            );
+            restore_binary_at(exe, new_binary, delays)
+                .wrap_err_with(|| format!("failed to put the new mise at {}", exe.display()))
+        }
+    }
+}
+
+/// Copy `new_binary` beside `exe` and rename it into place, so `exe` never holds a partial copy.
+#[cfg(windows)]
+fn restore_binary_at(exe: &Path, new_binary: &Path, delays: &[Duration]) -> std::io::Result<()> {
+    let staged = exe.with_file_name(format!(
+        ".{}.{}.__restore__.exe",
+        exe.file_stem().and_then(|s| s.to_str()).unwrap_or("mise"),
+        std::process::id()
+    ));
+    let result = retry_while_locked(|| fs::copy(new_binary, &staged), || true, delays)
+        .and_then(|_| retry_while_locked(|| fs::rename(&staged, exe), || true, delays));
+    if result.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    result
+}
+
+/// How long to wait before each retry of a step Windows refused with a transient lock: about six
+/// seconds in all, which covers an antivirus scan of mise.exe.
+#[cfg(windows)]
+const LOCK_RETRY_DELAYS: [Duration; 6] = [
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+    Duration::from_millis(400),
+    Duration::from_millis(800),
+    Duration::from_millis(1600),
+    Duration::from_millis(3200),
+];
+
+/// Run `op`, and again after each of `delays` while it fails with `ERROR_ACCESS_DENIED` (5) or
+/// `ERROR_SHARING_VIOLATION` (32) and `can_retry` says running it again is safe.
+#[cfg(windows)]
+fn retry_while_locked<T>(
+    mut op: impl FnMut() -> std::io::Result<T>,
+    can_retry: impl Fn() -> bool,
+    delays: &[Duration],
+) -> std::io::Result<T> {
+    let mut delays = delays.iter();
+    loop {
+        match op() {
+            Err(err) if matches!(err.raw_os_error(), Some(5) | Some(32)) && can_retry() => {
+                let Some(delay) = delays.next() else {
+                    return Err(err);
+                };
+                debug!("{err}; retrying in {delay:?}");
+                std::thread::sleep(*delay);
+            }
+            result => return result,
+        }
+    }
 }
 
 /// Refresh the installed plugins, best effort.
@@ -688,22 +813,7 @@ impl SelfUpdate {
         }
         Self::ensure_install_dir_writable()?;
         let client = Self::http_client()?;
-        let mut url = url::Url::parse(&format!(
-            "{}/repos/{}/releases/tags/",
-            source.api_url, source.repository
-        ))?;
-        url.path_segments_mut()
-            .map_err(|()| eyre::eyre!("invalid release API URL"))?
-            .pop_if_empty()
-            .push(&format!("v{version}"));
-        let release: crate::github::GithubRelease = client
-            .get(url.clone())
-            .headers(Self::request_headers(&source, url.as_str())?)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        let release = Self::fetch_release(&client, &source, &version).await?;
         let manifest = Self::release_packslip(&client, &source, &release, &version).await?;
         let before = enforce_age
             .then(|| {
@@ -730,7 +840,7 @@ impl SelfUpdate {
         }
         let dir = tempfile::tempdir()?;
         let archive_path = dir.path().join(&archive_name);
-        Self::download_archive(&client, &source, &asset.url, &archive_path).await?;
+        Self::download_archive(&client, &source, source.asset_url(&asset), &archive_path).await?;
         let binary = dir
             .path()
             .join(if cfg!(windows) { "mise.exe" } else { "mise" });
@@ -749,6 +859,9 @@ impl SelfUpdate {
             )?;
             #[cfg(target_os = "macos")]
             Self::verify_macos_signature(&new_binary)?;
+            #[cfg(windows)]
+            replace_running_binary(&new_binary)?;
+            #[cfg(not(windows))]
             self_replace::self_replace(&new_binary)?;
             Ok(())
         })
@@ -756,19 +869,44 @@ impl SelfUpdate {
         Ok(Some(version))
     }
 
-    fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
-        let mut headers = crate::github::get_headers(url)?;
-        // A configured API may use any HTTPS host/path. Resolve its token
-        // explicitly, but never send it to an asset on another origin.
-        if url::Url::parse(url)?.origin() == url::Url::parse(&source.api_url)?.origin()
-            && let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url)
-        {
-            headers.insert(
-                reqwest::header::AUTHORIZATION,
-                crate::tokens::bearer_header("GitHub", &token)?,
-            );
+    /// Release `v{version}` of the source repository. For mise's own releases
+    /// it comes from mise-versions, so updating doesn't spend the GitHub API's
+    /// rate limit (60 requests an hour without a token). The release data
+    /// needn't be trusted: the archive is checked against its packslip and its
+    /// zipsign signature, and mise-versions' download URLs are pinned to
+    /// github.com/jdx/mise. A configured `self_update.api_url` or `repository`
+    /// is asked directly, since it may be private or not on github.com.
+    async fn fetch_release(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        version: &str,
+    ) -> Result<crate::github::GithubRelease> {
+        let tag = format!("v{version}");
+        if source.uses_versions_host() {
+            return crate::github::get_release_with_versions_host(&source.repository, &tag, true)
+                .await;
         }
-        Ok(headers)
+        let mut url = url::Url::parse(&format!(
+            "{}/repos/{}/releases/tags/",
+            source.api_url, source.repository
+        ))?;
+        url.path_segments_mut()
+            .map_err(|()| eyre::eyre!("invalid release API URL"))?
+            .pop_if_empty()
+            .push(&tag);
+        let response = client
+            .get(url.clone())
+            .headers(Self::request_headers(source, url.as_str())?)
+            .send()
+            .await?
+            .error_for_status()?;
+        let body = Self::read_body_limited(response, MAX_RELEASE_BYTES, "release").await?;
+        serde_json::from_slice(&body)
+            .map_err(|err| eyre::eyre!("error decoding release {tag} from {url}: {err}"))
+    }
+
+    fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
+        source.request_headers(url)
     }
 
     async fn release_packslip(
@@ -783,7 +921,7 @@ impl SelfUpdate {
             .find(|asset| asset.name == "packslip.sigstore.json")
         {
             Some(asset) => Ok(Some(
-                Self::download_packslip(client, source, &asset.url).await?,
+                Self::download_packslip(client, source, source.asset_url(asset)).await?,
             )),
             None if packslip::required(version)? => {
                 bail!("release v{version} is missing its required packslip.sigstore.json")
@@ -797,37 +935,60 @@ impl SelfUpdate {
         source: &SelfUpdateSource,
         url: &str,
     ) -> Result<String> {
+        debug!("GET {url}");
         let mut headers = Self::request_headers(source, url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
-        let mut response = client
+        let response = client
             .get(url)
             .headers(headers)
             .send()
             .await?
             .error_for_status()?;
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await? {
-            eyre::ensure!(
-                bytes.len() + chunk.len() <= 4 * 1024 * 1024,
-                "self-update packslip exceeds 4 MiB"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
+        let bytes = Self::read_body_limited(response, MAX_PACKSLIP_BYTES, "packslip").await?;
         Ok(String::from_utf8(bytes)?)
     }
 
+    /// Buffers a body that must stay small. The release host decides how much
+    /// it sends, so stop at `limit` bytes instead of trusting it.
+    async fn read_body_limited(
+        mut response: reqwest::Response,
+        limit: usize,
+        what: &str,
+    ) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            eyre::ensure!(
+                bytes.len() + chunk.len() <= limit,
+                "self-update {what} exceeds {} MiB",
+                limit / (1024 * 1024)
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+
     fn http_client() -> Result<reqwest::Client> {
+        Ok(mise_tls::build_client(Self::http_client_builder)?)
+    }
+
+    fn http_client_builder() -> reqwest::ClientBuilder {
         let settings = Settings::get();
-        Ok(reqwest::Client::builder()
+        reqwest::Client::builder()
             .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
             .https_only(true)
             .redirect(Self::redirect_policy())
             .connect_timeout(settings.http_timeout())
             .read_timeout(settings.http_timeout())
             .timeout(settings.http_download_timeout())
+            // Every decoder, not only the two mise's own Cargo.toml asks reqwest
+            // for: other dependencies enable brotli and deflate, and a decoder
+            // that is compiled in is on by default. A few hundred bytes from the
+            // host would otherwise inflate to gigabytes before any signature is
+            // checked.
             .no_gzip()
             .no_zstd()
-            .build()?)
+            .no_brotli()
+            .no_deflate()
     }
 
     async fn download_archive(
@@ -837,6 +998,7 @@ impl SelfUpdate {
         path: &Path,
     ) -> Result<()> {
         use tokio::io::AsyncWriteExt;
+        debug!("GET {url}");
         let mut headers = Self::request_headers(source, url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
         let mut response = client
@@ -851,8 +1013,25 @@ impl SelfUpdate {
         if let Some(length) = response.content_length() {
             progress.set_length(length);
         }
+        let too_large = || {
+            eyre::eyre!(
+                "self-update archive exceeds {} MiB",
+                MAX_ARCHIVE_BYTES / (1024 * 1024)
+            )
+        };
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_ARCHIVE_BYTES)
+        {
+            return Err(too_large());
+        }
         let mut file = tokio::fs::File::create(path).await?;
+        let mut written = 0u64;
         while let Some(chunk) = response.chunk().await? {
+            written += chunk.len() as u64;
+            if written > MAX_ARCHIVE_BYTES {
+                return Err(too_large());
+            }
             file.write_all(&chunk).await?;
             progress.inc(chunk.len() as u64);
         }
@@ -900,13 +1079,8 @@ impl SelfUpdate {
         source.validate()?;
         let version = version.strip_prefix('v').unwrap_or(version);
         let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
-        let release = crate::github::get_release_for_url_with_versions_host(
-            &source.api_url,
-            &source.repository,
-            &format!("v{version}"),
-            false,
-        )
-        .await?;
+        let client = Self::http_client()?;
+        let release = Self::fetch_release(&client, source, version).await?;
         let asset = release
             .assets
             .iter()
@@ -917,36 +1091,16 @@ impl SelfUpdate {
                     source.repository
                 )
             })?;
-        // Use the API asset endpoint directly so every redirect is governed by
-        // the downgrade-rejecting client below. This also supports private releases.
-        let url = asset.url.clone();
+        // Every redirect is governed by the downgrade-rejecting self-update client.
+        let url = source.asset_url(asset).to_string();
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;
         // Use the real archive name so zipsign context matches the release signature
         let zip_path = temp_dir.path().join(&archive_name);
-        let headers = crate::github::get_headers(&url)?;
-        let settings = Settings::get();
-        let request_timeout = settings.http_timeout();
-        let archive = reqwest::Client::builder()
-            .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
-            .https_only(true)
-            .redirect(Self::redirect_policy())
-            .connect_timeout(request_timeout)
-            .read_timeout(request_timeout)
-            .timeout(settings.http_download_timeout())
-            .build()?
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?;
-        fs::write(&zip_path, archive)?;
+        Self::download_archive(&client, source, &url, &zip_path).await?;
 
-        let manifest =
-            Self::release_packslip(&Self::http_client()?, source, &release, version).await?;
+        let manifest = Self::release_packslip(&client, source, &release, version).await?;
         if let Some(manifest) = manifest {
             // The main executable already enforced age for this exact release.
             crate::file::run_blocking(|| packslip::verify(&manifest, version, &zip_path, None))?;
@@ -966,7 +1120,12 @@ impl SelfUpdate {
             }
         };
 
-        let dest = env::MISE_BIN
+        // mise-shim.exe ships beside the real mise.exe. MISE_BIN may be a link to it (winget puts
+        // one in WinGet/Links), and renaming over a link beside it would replace the link with a
+        // copy and leave the real mise-shim.exe stale.
+        let real_bin =
+            dunce::canonicalize(&*env::MISE_BIN).unwrap_or_else(|_| env::MISE_BIN.clone());
+        let dest = real_bin
             .parent()
             .expect("MISE_BIN should have a parent directory")
             .join("mise-shim.exe");
@@ -1287,6 +1446,66 @@ mod archive_tests {
     }
 
     #[tokio::test]
+    async fn limited_body_reads_stop_at_the_limit() {
+        let response =
+            |body: Vec<u8>| reqwest::Response::from(http::Response::builder().body(body).unwrap());
+        assert_eq!(
+            SelfUpdate::read_body_limited(response(vec![b' '; 8]), 8, "release")
+                .await
+                .unwrap(),
+            vec![b' '; 8]
+        );
+        let err = SelfUpdate::read_body_limited(response(vec![b' '; 9]), 8, "release")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("self-update release exceeds"));
+    }
+
+    #[tokio::test]
+    async fn self_update_transport_takes_bodies_as_sent() {
+        // A body labelled with an encoding mise never asked for. Decoded, these
+        // bytes would be a decompression bomb, or here a decoding error.
+        let body = b"not compressed".to_vec();
+        let mut server = mockito::Server::new_async().await;
+        let mut mocks = vec![];
+        for encoding in ["gzip", "zstd", "br", "deflate"] {
+            mocks.push(
+                server
+                    .mock("GET", format!("/{encoding}").as_str())
+                    .match_header("accept-encoding", mockito::Matcher::Missing)
+                    .with_header("content-encoding", encoding)
+                    .with_body(&body)
+                    .create_async()
+                    .await,
+            );
+        }
+        // The real client is HTTPS-only; the mock server is not.
+        let client = SelfUpdate::http_client_builder()
+            .https_only(false)
+            .build()
+            .unwrap();
+        for encoding in ["gzip", "zstd", "br", "deflate"] {
+            let response = client
+                .get(format!("{}/{encoding}", server.url()))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+            assert_eq!(
+                SelfUpdate::read_body_limited(response, 1024, "release")
+                    .await
+                    .unwrap(),
+                body,
+                "{encoding}"
+            );
+        }
+        for mock in mocks {
+            mock.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
     async fn self_update_transport_requires_https() {
         assert!(
             SelfUpdate::http_client()
@@ -1547,6 +1766,146 @@ mod tests {
 
     fn breaks(len: usize) -> bool {
         temp_dir_breaks_self_replace(&temp_dir_of_len(len), Some("mise"))
+    }
+
+    /// Runs `retry_while_locked` over `errors`, one per call and `Ok` once they run out, and
+    /// returns the result and how many calls it made.
+    fn retried(errors: &[i32], can_retry: bool, delays: usize) -> (std::io::Result<()>, usize) {
+        let mut calls = 0;
+        let delays = vec![Duration::ZERO; delays];
+        let result = retry_while_locked(
+            || {
+                calls += 1;
+                match errors.get(calls - 1) {
+                    Some(&code) => Err(std::io::Error::from_raw_os_error(code)),
+                    None => Ok(()),
+                }
+            },
+            || can_retry,
+            &delays,
+        );
+        (result, calls)
+    }
+
+    #[test]
+    fn a_transient_lock_is_retried_until_it_clears() {
+        let (result, calls) = retried(&[32, 5, 32], true, 6);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(calls, 4);
+    }
+
+    #[test]
+    fn a_lock_that_outlasts_the_delays_is_returned() {
+        let (result, calls) = retried(&[32; 10], true, 2);
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(32));
+        assert_eq!(calls, 3);
+    }
+
+    /// The case that matters: once mise.exe has been moved aside, running `self-replace` again
+    /// would move nothing back, so the first error has to come out.
+    #[test]
+    fn a_lock_is_not_retried_once_retrying_is_unsafe() {
+        let (result, calls) = retried(&[32], false, 6);
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(32));
+        assert_eq!(calls, 1);
+    }
+
+    /// A directory holding `mise.exe` with `old` in it and a staged `new.exe` with `new`.
+    fn install_dir(old: &[u8], new: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("mise.exe");
+        let new_binary = dir.path().join("new.exe");
+        fs::write(&exe, old).unwrap();
+        fs::write(&new_binary, new).unwrap();
+        (dir, exe, new_binary)
+    }
+
+    /// A swap that moves `exe` aside, as `self-replace` does first, and then fails on a lock.
+    fn moves_aside_then_locks(exe: &Path) -> impl FnMut() -> std::io::Result<()> {
+        let exe = exe.to_path_buf();
+        move || {
+            fs::rename(&exe, exe.with_extension("relocated"))?;
+            Err(std::io::Error::from_raw_os_error(32))
+        }
+    }
+
+    #[test]
+    fn a_failure_after_the_move_leaves_the_new_binary_in_place() {
+        let (_dir, exe, new_binary) = install_dir(b"old", b"new");
+        replace_binary_at(
+            &exe,
+            &new_binary,
+            moves_aside_then_locks(&exe),
+            &[Duration::ZERO; 2],
+        )
+        .unwrap();
+        assert_eq!(fs::read(&exe).unwrap(), b"new");
+        assert_eq!(
+            staged_copies(&exe),
+            0,
+            "the staged copy was renamed, not left behind"
+        );
+    }
+
+    /// The `__restore__` copies `restore_binary_at` staged beside `exe`.
+    fn staged_copies(exe: &Path) -> usize {
+        fs::read_dir(exe.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .ends_with(".__restore__.exe")
+            })
+            .count()
+    }
+
+    #[test]
+    fn a_failed_recovery_copy_is_reported() {
+        let (_dir, exe, new_binary) = install_dir(b"old", b"new");
+        fs::remove_file(&new_binary).unwrap();
+        let err = replace_binary_at(
+            &exe,
+            &new_binary,
+            moves_aside_then_locks(&exe),
+            &[Duration::ZERO],
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err}").contains("failed to put the new mise at"),
+            "{err}"
+        );
+        assert!(!exe.exists());
+        assert_eq!(staged_copies(&exe), 0);
+    }
+
+    /// While `exe` is still in place nothing has moved, so the swap's own error comes out and the
+    /// old binary is left alone.
+    #[test]
+    fn a_failure_before_the_move_leaves_the_old_binary_alone() {
+        let (_dir, exe, new_binary) = install_dir(b"old", b"new");
+        let mut calls = 0;
+        let err = replace_binary_at(
+            &exe,
+            &new_binary,
+            || {
+                calls += 1;
+                Err(std::io::Error::from_raw_os_error(32))
+            },
+            &[Duration::ZERO; 2],
+        )
+        .unwrap_err();
+        assert_eq!(calls, 3, "a lock while mise.exe is in place is retried");
+        assert!(format!("{err}").contains("os error 32"), "{err}");
+        assert_eq!(fs::read(&exe).unwrap(), b"old");
+    }
+
+    #[test]
+    fn other_errors_are_not_retried() {
+        // ERROR_FILE_NOT_FOUND
+        let (result, calls) = retried(&[2], true, 6);
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(2));
+        assert_eq!(calls, 1);
     }
 
     #[test]

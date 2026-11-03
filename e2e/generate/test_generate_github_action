@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+git init -q -b main .
+
+assert_contains "mise generate github-action" "uses: actions/checkout@v7"
+assert_contains "mise generate github-action" "uses: jdx/mise-action@v5"
+assert_contains "mise generate github-action --task=build" "run: mise run build"
+assert_contains "mise generate github-action" 'branches: ["main"]'
+assert_not_contains "mise generate github-action" "MISE_EXPERIMENTAL"
+
+assert_contains "mise generate github-action --write --name=lint --task=lint" "Wrote to"
+assert_contains "cat .github/workflows/lint.yml" "  lint:"
+assert_not_contains "cat .github/workflows/lint.yml" "env:"

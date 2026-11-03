@@ -3,7 +3,7 @@
 
 # Default devcontainer
 
-assert_json_partial_object "mise generate devcontainer" "name,description,features,mounts,containerEnv,customizations" '
+assert_json_partial_object "mise generate devcontainer" "name,image,features,mounts,containerEnv,customizations,postCreateCommand" '
   {
     "name": "mise",
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
@@ -18,12 +18,13 @@ assert_json_partial_object "mise generate devcontainer" "name,description,featur
       }
     },
     "mounts": [],
-    "containerEnv": {}
+    "containerEnv": {},
+    "postCreateCommand": "mise install"
   }
 '
 
 # With custom name and image
-assert_json_partial_object "mise generate devcontainer --name test --image testimage:latest" "name,description" '
+assert_json_partial_object "mise generate devcontainer --name test --image testimage:latest" "name,image" '
   {
     "name": "test",
     "image": "testimage:latest"
@@ -31,7 +32,7 @@ assert_json_partial_object "mise generate devcontainer --name test --image testi
 '
 
 # With mount
-assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,description,features,mounts,containerEnv,postCreateCommand" '
+assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,image,features,mounts,containerEnv,remoteEnv,postCreateCommand" '
   {
     "name": "mise",
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
@@ -51,6 +52,6 @@ assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,
     "remoteEnv": {
       "PATH": "${containerEnv:PATH}:/mnt/mise-data/shims"
     },
-    "postCreateCommand": "sudo chown -R vscode:vscode /mnt/mise-data"
+    "postCreateCommand": "sudo chown -R vscode:vscode /mnt/mise-data && mise install"
   }
 '

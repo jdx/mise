@@ -17,6 +17,12 @@ on:
       MISE_VERSIONS_API_SECRET:
         required: false
 
+# Held by the caller, which only calls test-impl.yml: a group set inside the
+# called workflow would use this workflow's name too and wait for this run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
 permissions: {}
 
 jobs:
@@ -39,6 +45,51 @@ jobs:
     uses: $/.github/workflows/test-impl.yml
     with:
       trusted: false
+
+  # Pushes the timings that the unit job recorded on main. It is its own job so
+  # the test jobs, which run pull request code, never hold a write token, and
+  # nothing waits on it.
+  jouet-cost:
+    name: jouet-cost
+    needs: [trusted]
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false # the token reaches only the push step
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install_args: jouet
+          github_token: "" # the job token can write, so the install gets none
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: jouet-cost-*
+          merge-multiple: true
+          path: jouet-cost-bundles
+      - name: Merge and push the timings
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $auth"
+          n=0
+          for b in jouet-cost-bundles/*.bundle; do
+            [ -e "$b" ] || continue
+            jouet cost fetch "./$b"
+            n=$((n + 1))
+          done
+          if [ "$n" -eq 0 ]; then
+            echo "No timing bundles were uploaded; nothing to push."
+            exit 0
+          fi
+          jouet cost push
 
   test-ci:
     name: test-ci

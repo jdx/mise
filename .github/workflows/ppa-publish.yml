@@ -26,6 +26,13 @@ on:
         default: ""
         type: string
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 env:
   MBX_DISABLE: "1"
   DEBIAN_FRONTEND: noninteractive
@@ -40,6 +47,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up environment variables
@@ -53,6 +61,7 @@ jobs:
           PPA_MAINTAINER_EMAIL_INPUT: ${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}
           PPA_NAME_INPUT: ${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}
         run: |
+          set -o pipefail
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
           if [ "$EVENT_NAME" = "release" ]; then
@@ -123,6 +132,7 @@ jobs:
 
       - name: Install mise
         run: |
+          set -o pipefail
           curl https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
@@ -153,7 +163,7 @@ jobs:
           git config --global user.email "${{ env.MAINTAINER_EMAIL }}"
 
       - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        uses: jdx/workflows/gpg-import@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true

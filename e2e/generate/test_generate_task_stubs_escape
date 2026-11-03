@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# A stub is named after its task, and a task name is a key in mise.toml. A name that leaves the stub
+# directory must be refused, or the config chooses where an executable file gets written: a git
+# hook in the checkout, a shell profile, or an absolute path.
+mkdir -p .git/hooks outside
+
+for name in "../.git/hooks/pre-commit" "x/../../.git/hooks/pre-commit" "x:..:..:.git:hooks:pre-commit" "$PWD/outside/abs"; do
+  cat >mise.toml <<EOF
+[tasks."$name"]
+run = "echo escaped"
+
+[tasks.ok]
+run = "echo ok"
+EOF
+  assert_fail "mise generate task-stubs" "does not stay inside the stub directory"
+  assert_fail "test -e .git/hooks/pre-commit"
+  assert_fail "test -e outside/abs"
+  # The run stops before anything is written, the legitimate stub included.
+  assert_fail "test -e bin/ok"
+done
+
+# Nested names that stay inside the directory still work.
+cat >mise.toml <<'EOF'
+[tasks."lint:js"]
+run = "echo linting"
+EOF
+assert "mise generate task-stubs"
+assert "./bin/lint/js" "linting"

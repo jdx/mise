@@ -374,6 +374,52 @@ export function lastBefore(
   return Math.min(c.frames[i].t, t - 1e-4);
 }
 
+/** Timing text on a progress row (elapsed time, a transfer rate): what test/timing.test.ts keeps from standing still. */
+const TIMED = /\b\d+(?:\.\d+)?\s?(?:ms|s)\b|\d\s?[kKMGT]?i?B\/s\b/;
+const SPINNERS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏◜◠◝◞◡◟";
+/** The longest a timing row's text stays the same on screen, shown at rate 1. */
+const TIMING_HOLD = 0.09;
+
+/**
+ * The rate to play take time `from` to `to` at, at least `base`, so no timing
+ * text stays up past TIMING_HOLD: mise ticks an elapsed time every 250-300 ms,
+ * but a recording can go quiet for longer between two frames, and a time-lapse
+ * only shortens that by its rate.
+ */
+export function lapseRate(
+  c: Capture,
+  base: number,
+  from: number,
+  to: number,
+): number {
+  let longest = 0;
+  const since = new Map<string, number>();
+  for (const f of c.frames) {
+    if (f.t < from) continue;
+    const here = new Set<string>();
+    if (f.t <= to)
+      for (const r of f.rows) {
+        const text = rowText(c, r);
+        if (!TIMED.test(text)) continue;
+        here.add(
+          Array.from(text)
+            .filter((ch) => !SPINNERS.includes(ch))
+            .join("")
+            .trimEnd(),
+        );
+      }
+    for (const [key, t] of since)
+      if (!here.has(key)) {
+        longest = Math.max(longest, f.t - t);
+        since.delete(key);
+      }
+    for (const key of here) if (!since.has(key)) since.set(key, f.t);
+    if (f.t > to) break;
+  }
+  for (const t of since.values()) longest = Math.max(longest, to - t);
+  return Math.max(base, longest / TIMING_HOLD);
+}
+
 /** The first frame after the moment `t`: the screen once a key has landed. */
 export function frameAfter(c: Capture, t: number): number {
   const f = c.frames.find((x) => x.t > t);

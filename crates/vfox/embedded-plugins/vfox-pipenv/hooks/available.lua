@@ -60,9 +60,20 @@ function PLUGIN:Available(ctx)
             if version:match("[abrc]%d*$") or version:match("%.dev%d*$") then
                 note = "pre-release"
             end
+            -- The release date is when its first file was uploaded.
+            local created_at
+            for _, file in ipairs(release_info) do
+                local t = type(file) == "table" and file.upload_time_iso_8601
+                if type(t) == "string" and t:match("^%d%d%d%d%-%d%d%-%d%dT") then
+                    if created_at == nil or t < created_at then
+                        created_at = t
+                    end
+                end
+            end
             table.insert(result, {
                 version = version,
                 note = note,
+                created_at = created_at,
             })
         end
     end

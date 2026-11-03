@@ -1,5 +1,21 @@
 pub use mise_util::tera::*;
 
+/// [`render_str`] for a template in the config file at `path`. Safe mode loads
+/// project config without trust, so its templates get an empty `env`; global
+/// and system config is operator-owned and keeps the real one.
+pub fn render_config_str(
+    tera: &mut TeraEngine,
+    input: &str,
+    context: &::tera::Context,
+    path: &std::path::Path,
+) -> ::tera::TeraResult<String> {
+    if crate::config::is_global_config(path) {
+        render_str_with_env(tera, input, context)
+    } else {
+        render_str(tera, input, context)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,59 @@
+{
+  "printWidth": 80,
+  "ignorePatterns": [
+    "*.rs",
+    "*.snap",
+    ".idea",
+    ".venv",
+    "*.gif",
+    "*.png",
+    "*.lock",
+    "aube-lock.yaml",
+    ".mise/locks/",
+    ".cliffignore",
+    "*.kdl",
+    "CHANGELOG.md",
+    "crates/aqua-registry/aqua-registry/",
+    "docs/.vitepress/cache",
+    "docs/.vitepress/dist",
+    "docs/.vitepress/theme/custom.css",
+    "docs/.vitepress/theme/showreel/test/captures/",
+    "docs/cli",
+    "docs/public/site.webmanifest",
+    "docs/registry.md",
+    "docs/plugin-publishing.md",
+    "docs/contributing.md",
+    "docs/backend-plugin-development.md",
+    "docs/url-replacements.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "CRUSH.md",
+    "e2e",
+    "src/assets/bash_zsh_support/",
+    "tasks.md",
+    "test/data",
+    "tmp",
+    "release-notes/",
+    "**/*.toml",
+    "*.code-workspace",
+    "crates/vfox/plugins/nodejs",
+    "crates/vfox/embedded-plugins",
+    "docs/.vitepress/theme/ProjectSwitchDiagram.vue"
+  ],
+  "overrides": [
+    {
+      "files": ["xtasks/fig/**/*.ts"],
+      "options": {
+        "trailingComma": "es5",
+        "printWidth": 80
+      }
+    },
+    {
+      "files": ["**/*.md"],
+      "options": {
+        "embeddedLanguageFormatting": "off"
+      }
+    }
+  ],
+  "sortPackageJson": false
+}

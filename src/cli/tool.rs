@@ -6,25 +6,38 @@ use serde::Serialize;
 
 use crate::args::BackendArg;
 use crate::config::Config;
-use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
+use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder, redact_tool_options};
 use crate::ui::table;
+use mise_util::redactions::redact_url_userinfo_in_arg;
 
 /// Show information about a tool
+///
+/// Shows the tool's backend, its description and project URL when known, the
+/// installed, active, and requested versions, the config file that requests it,
+/// its tool options, and the backend's security features. Pass a field flag
+/// such as `--backend` to print one field, or `--json` for all of them.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise tool node
-Backend:            core
-Installed Versions: 20.0.0 22.0.0
-Active Version:     20.0.0
-Requested Version:  20
-Config Source:      ~/.config/mise/mise.toml
-Tool Options:       [none]"###
+Backend:            core:node
+Installed Versions: 22.0.0 24.0.0
+Active Version:     24.0.0
+Requested Version:  24
+Config Source:      ~/.config/mise/config.toml
+Tool Options:       [none]
+Security:           checksum (sha256), gpg"###,
+        help = "Show everything mise knows about node"
+    ),
+    example(
+        r###"mise tool node --backend
+core:node"###,
+        help = "Print only the backend"
     )
 )]
 pub(crate) struct Tool {
-    /// Tool name to get information about
+    /// The tool, such as `node` or `aqua:jqlang/jq`
     tool: BackendArg,
     /// Output in JSON format
     #[usage(long, short = 'J')]
@@ -96,31 +109,33 @@ impl Tool {
         } else {
             (None, vec![])
         };
+        // Printed outside the logger, and the tool's spelling, its backend and
+        // its options can carry credentials.
+        let redact = |s: &str| config.redact(&redact_url_userinfo_in_arg(s));
+        let redact_all = |v: Vec<String>| v.iter().map(|s| redact(s)).collect::<Vec<_>>();
         let info = ToolInfo {
-            backend: ba.full(),
-            description,
+            backend: redact(&ba.full()),
+            description: description.map(|d| redact(&d)),
             url: ba.registry_tool().and_then(|rt| rt.url).map(str::to_string),
             installed_versions: ts
                 .list_installed_versions(&config)
                 .await?
                 .into_iter()
                 .filter(|(b, _)| b.ba().as_ref() == ba)
-                .map(|(_, tv)| tv.version)
+                .map(|(_, tv)| redact(&tv.version))
                 .unique()
                 .collect::<Vec<_>>(),
             active_versions: tvl.map(|tvl| {
-                tvl.os_supported_versions()
-                    .map(|tv| tv.version.clone())
-                    .collect::<Vec<_>>()
+                redact_all(
+                    tvl.os_supported_versions()
+                        .map(|tv| tv.version.clone())
+                        .collect(),
+                )
             }),
-            requested_versions: tvl.map(|tvl| {
-                tvl.requests
-                    .iter()
-                    .map(|tr| tr.version())
-                    .collect::<Vec<_>>()
-            }),
+            requested_versions: tvl
+                .map(|tvl| redact_all(tvl.requests.iter().map(|tr| tr.version()).collect())),
             config_source: tvl.map(|tvl| tvl.source.clone()),
-            tool_options: ba.opts(),
+            tool_options: redact_tool_options(ba.opts(), &redact),
             security,
         };
 

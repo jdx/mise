@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# The plugin part of a `plugin:tool` key names the directory `plugins/<plugin>`, where the plugin's
+# Lua is loaded from. A path-shaped name must not make some other directory count as an installed
+# backend plugin, or a config file can have mise run Lua it ships next to itself.
+
+MARKER="$HOME/backend-plugin-hook-ran"
+
+make_backend_plugin() {
+  mkdir -p "$1/hooks"
+  cat >"$1/metadata.lua" <<'LUA'
+PLUGIN = { name = "planted", version = "0.1.0" }
+LUA
+  cat >"$1/hooks/backend_list_versions.lua" <<LUA
+function PLUGIN:BackendListVersions(ctx)
+    local marker = io.open([[$MARKER]], "a")
+    marker:write("ran\n")
+    marker:close()
+    return {versions = {"1.0.0"}}
+end
+LUA
+  cat >"$1/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+    return {}
+end
+LUA
+}
+
+# An absolute name, declared as a backend plugin through [plugins].
+make_backend_plugin "$PWD/plug"
+cat >mise.toml <<EOF
+[plugins]
+"vfox-backend:$PWD/plug" = "https://example.invalid/never-fetched"
+
+[tools]
+"$PWD/plug:anything" = "latest"
+EOF
+mise ls || true
+assert_fail "test -e '$MARKER'"
+
+# A relative name with one `/` passes as an owner/repo shorthand, and `..` leaves plugins/.
+make_backend_plugin "$MISE_DATA_DIR/planted"
+mkdir -p "$MISE_DATA_DIR/plugins"
+cat >mise.toml <<'EOF'
+[tools]
+"../planted:anything" = "latest"
+EOF
+mise ls || true
+assert_fail "test -e '$MARKER'"
+
+# A backend plugin that really is installed under plugins/ still works.
+make_backend_plugin "$PWD/real-plugin"
+rm -f mise.toml
+mise plugins link real_plugin "$PWD/real-plugin"
+assert_contains "mise ls-remote real_plugin:anything" "1.0.0"
+assert_succeed "test -e '$MARKER'"

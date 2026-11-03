@@ -1,3 +1,4 @@
+mod keyring;
 mod lock;
 
 use crate::args::BackendArg;
@@ -16,6 +17,7 @@ use crate::file;
 use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
+use crate::install_before::release_age_list_window_for_cutoff;
 use crate::install_context::InstallContext;
 use crate::plugins::is_python_prerelease;
 use crate::semver::semver_is_older_than;
@@ -29,6 +31,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use jiff::Timestamp;
 use regex::Regex;
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -41,6 +44,48 @@ use xx::regex;
 
 const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
 const UV_WITH_EXECUTABLES_FROM_VERSION: &str = "0.8.5";
+
+/// A portable, mise-owned CPython selector for one PyPI tool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SelectedPython {
+    Minor(String),
+    Exact(String),
+}
+
+impl SelectedPython {
+    fn parse(value: &str) -> Result<Self> {
+        let parts = value.split('.').collect::<Vec<_>>();
+        let numeric = |part: &str| !part.is_empty() && part.bytes().all(|c| c.is_ascii_digit());
+        match parts.as_slice() {
+            [major, minor] if numeric(major) && numeric(minor) => {
+                Ok(Self::Minor(format!("{major}.{minor}")))
+            }
+            [major, minor, patch] if numeric(major) && numeric(minor) && numeric(patch) => {
+                Ok(Self::Exact(format!("{major}.{minor}.{patch}")))
+            }
+            _ => bail!(
+                "python must be a numeric CPython minor (for example 3.12) or exact patch (for example 3.12.12)"
+            ),
+        }
+    }
+
+    pub(crate) fn request_version(&self) -> &str {
+        match self {
+            Self::Minor(version) | Self::Exact(version) => version,
+        }
+    }
+
+    pub(crate) fn requires_python(&self) -> String {
+        match self {
+            Self::Minor(version) => {
+                let (major, minor) = version.split_once('.').expect("validated minor");
+                let next_minor = minor.parse::<u32>().expect("validated minor") + 1;
+                format!(">={major}.{minor},<{major}.{next_minor}")
+            }
+            Self::Exact(version) => format!("=={version}"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct PIPXBackend {
@@ -146,6 +191,14 @@ impl<'a> PipxOptions<'a> {
         self.with()?;
         self.exposed_package_names()?;
         self.dependency_prereleases()?;
+        self.registry_index_priority()?;
+        if self.selected_python()?.is_some() {
+            for args in [self.uvx_args(), self.pipx_args()].into_iter().flatten() {
+                if uv_args_select_python(&shell_words::split(args)?) {
+                    bail!("python cannot be combined with --python or -p in uvx_args or pipx_args");
+                }
+            }
+        }
         if self.has_uv_only_options()? && self.uvx_disabled() {
             bail!("with, expose, and dependency_prereleases cannot be combined with uvx = false");
         }
@@ -178,12 +231,31 @@ impl<'a> PipxOptions<'a> {
         self.values.str("registry_url")
     }
 
+    /// Whether `registry_url` is searched ahead of the default index instead of
+    /// replacing it when locking (`registry_index = "priority"`).
+    fn registry_index_priority(&self) -> Result<bool> {
+        match self.values.raw().opts.get("registry_index") {
+            None => Ok(false),
+            Some(toml::Value::String(value)) if value == "default" => Ok(false),
+            Some(toml::Value::String(value)) if value == "priority" => Ok(true),
+            Some(_) => bail!("registry_index must be default or priority"),
+        }
+    }
+
     fn uvx_args(&self) -> Option<&'a str> {
         self.values.str("uvx_args")
     }
 
     fn uvx_disabled(&self) -> bool {
         self.values.raw().get_string("uvx").as_deref() == Some("false")
+    }
+
+    pub(crate) fn selected_python(&self) -> Result<Option<SelectedPython>> {
+        match self.values.raw().opts.get("python") {
+            Some(toml::Value::String(value)) => SelectedPython::parse(value).map(Some),
+            Some(_) => bail!("python must be a string"),
+            None => Ok(None),
+        }
     }
 
     fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
@@ -210,8 +282,74 @@ impl<'a> PipxOptions<'a> {
     }
 }
 
+/// Build the dependency request for an explicitly selected interpreter.  This
+/// keeps the request anchored to the PyPI tool's source, so its lockfile is
+/// consulted instead of whichever Python happens to be active in the shell.
+pub fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+    if request.ba().backend_type() != BackendType::Pipx {
+        return Ok(None);
+    }
+    let options = request.options();
+    let options = PipxOptions::new(&options);
+    options.validate_semantic()?;
+    let Some(selector) = options.selected_python()? else {
+        return Ok(None);
+    };
+    let mut dependency = ToolRequest::new(
+        Arc::new(BackendArg::from("python")),
+        selector.request_version(),
+        request.source().clone(),
+    )?;
+    dependency.set_lockfile_scope(request.lockfile_scope().clone());
+    Ok(Some(dependency))
+}
+
+pub(crate) fn has_selected_python(tv: &ToolVersion) -> Result<bool> {
+    let options = tv.request.options();
+    Ok(PipxOptions::new(&options).selected_python()?.is_some())
+}
+
+/// A version resolved from an existing legacy `~uv~` directory keeps that
+/// directory in `install_path`. A selected interpreter is part of the
+/// environment identity, though, so a replacement must never reuse a path
+/// whose identity or receipt belongs to another interpreter. Otherwise a
+/// failed replacement would clean up the still-working environment.
+fn reset_selected_python_install_path(tv: &mut ToolVersion) -> Result<()> {
+    if tv.install_path_is_explicit {
+        return Ok(());
+    }
+    let Some(install_path) = tv.install_path.as_ref() else {
+        return Ok(());
+    };
+    let Some((_, expected_identity)) = tv.uv_python.as_ref() else {
+        return Ok(());
+    };
+
+    let has_target_name = install_path
+        .file_name()
+        .is_some_and(|name| name == std::ffi::OsStr::new(&tv.tv_pathname()));
+    let has_expected_receipt =
+        crate::file::read_to_string(install_path.join(".mise-uv/python.json"))
+            .ok()
+            .and_then(|contents| serde_json::from_str::<(PathBuf, String)>(&contents).ok())
+            .is_some_and(|(_, installed_identity)| installed_identity == *expected_identity);
+    if !has_target_name {
+        tv.install_path = None;
+    } else if !has_expected_receipt {
+        bail!(
+            "cannot safely replace {}: the existing environment has no matching Python receipt",
+            tv.style()
+        );
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl Backend for PIPXBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_pypi_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Pipx
     }
@@ -259,7 +397,10 @@ impl Backend for PIPXBackend {
 
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         match self.tool_name().parse()? {
-            PipxRequest::Pypi(_) => self.get_registry_url(config).await.map(Some),
+            PipxRequest::Pypi(_) => {
+                let registry_url = self.get_registry_url(config).await?;
+                Ok((registry_url != DEFAULT_REGISTRY_URL).then_some(registry_url))
+            }
             PipxRequest::Git(_) => Ok(None),
         }
     }
@@ -270,68 +411,93 @@ impl Backend for PIPXBackend {
                 let registry_url = self.get_registry_url(config).await?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
-                    let url = registry_url.replace("{}", &package);
-                    let data: PypiPackage = HTTP_FETCH.json(url).await?;
+                    let (url, headers) = keyring::index_request(
+                        &registry_url,
+                        &registry_url.replace("{}", &package),
+                    )
+                    .await?;
+                    let data: PypiPackage = HTTP_FETCH.json_with_headers(url, &headers).await?;
 
                     Self::versions_from_pypi_package(data)
                 } else {
-                    debug!("Fetching HTML for {}", package);
+                    debug!("Fetching simple index for {}", package);
                     let url = registry_url.replace("{}", &package);
-                    let html = HTTP_FETCH.get_html(url).await?;
-
-                    // PEP-0503 (HTML format doesn't include timestamps)
-                    Self::versions_from_simple_index(&package, &html)
-                        .into_iter()
-                        .map(|version| VersionInfo {
-                            version,
-                            ..Default::default()
-                        })
-                        .sorted_by_cached_key(|v| Versioning::new(&v.version))
-                        .collect()
+                    Self::fetch_simple_index(&registry_url, &package, url).await?
                 }
             }
-            PipxRequest::Git(source) => match PipxRequest::github_repo(&source.repo) {
-                Some(repo) => {
-                    let data = github::list_releases(&repo).await?;
-                    Self::versions_from_github_releases(data)
-                }
-                None => Self::versions_from_git_tags(&source.remote()).await?,
-            },
+            PipxRequest::Git(source) => {
+                Self::git_source_versions(
+                    &source,
+                    async |repo| {
+                        Ok(Self::versions_from_github_releases(
+                            github::list_releases(repo).await?,
+                        ))
+                    },
+                    Self::versions_from_git_tags,
+                )
+                .await?
+            }
         };
         Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+    // No `latest_stable_version` override: the trait asks this first and only
+    // falls back to the string variant on `None`, which would repeat the
+    // registry request for a package with no stable release.
+    //
+    // The registry answer already dates every release, and the date has to
+    // travel with the version: without it, `minimum_release_age` (on by
+    // default) can only check the candidate by listing every version, which
+    // fetches the same document a second time.
+    async fn latest_stable_version_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Option<VersionInfo>> {
+        self.latest_stable_version_info_before(config, None).await
+    }
+
+    async fn latest_stable_version_info_before(
+        &self,
+        config: &Arc<Config>,
+        before: Option<Timestamp>,
+    ) -> eyre::Result<Option<VersionInfo>> {
         let package = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => package,
             PipxRequest::Git(source) => {
                 return if PipxRequest::github_repo(&source.repo).is_some() {
                     Ok(None)
                 } else {
-                    Self::git_head(&source.remote()).await.map(Some)
+                    Self::git_head(&source.remote()).await.map(|version| {
+                        Some(VersionInfo {
+                            version,
+                            ..Default::default()
+                        })
+                    })
                 };
             }
         };
         let registry_url = self.get_registry_url(config).await?;
-        let latest_version_cache = self.latest_version_cache(&registry_url);
+        let mut latest_version_cache = self.latest_version_cache(&registry_url);
+        if adopt_latest_within_release_age(&mut latest_version_cache, before) {
+            debug!("Using the cached latest release of {package}, within its release-age window");
+        }
         timeout::run_with_timeout_async(
             async || {
                 latest_version_cache
                     .get_or_try_init_async(async || {
-                        if registry_url.contains("/json") {
+                        let url = registry_url.replace("{}", &package);
+                        let versions = if registry_url.contains("/json") {
                             debug!("Fetching JSON for {}", package);
-                            let url = registry_url.replace("{}", &package);
-                            let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
-                            Ok(Self::latest_stable_from_pypi_package(pkg))
+                            let (url, headers) =
+                                keyring::index_request(&registry_url, &url).await?;
+                            let pkg: PypiPackage =
+                                HTTP_FETCH.json_with_headers(url, &headers).await?;
+                            Self::versions_from_pypi_package(pkg)
                         } else {
-                            debug!("Fetching HTML for {}", package);
-                            let url = registry_url.replace("{}", &package);
-                            let html = HTTP_FETCH.get_html(url).await?;
-
-                            Ok(Self::latest_stable_from_simple_index(
-                                Self::versions_from_simple_index(&package, &html),
-                            ))
-                        }
+                            debug!("Fetching simple index for {}", package);
+                            Self::fetch_simple_index(&registry_url, &package, url).await?
+                        };
+                        Ok(Self::latest_stable(versions))
                     })
                     .await
             },
@@ -413,6 +579,16 @@ impl Backend for PIPXBackend {
     ) -> Result<ToolVersion> {
         let request_options = tv.request.options();
         PipxOptions::new(&request_options).validate_semantic()?;
+        // An explicit selector is never a graph-only preference. Bind it
+        // before any branch that may fall back to version-only uv or pipx so
+        // every installer receives the same exact mise-managed executable.
+        if PipxOptions::new(&request_options)
+            .selected_python()?
+            .is_some()
+        {
+            self.bind_uv_python(ctx, &mut tv).await?;
+            reset_selected_python_install_path(&mut tv)?;
+        }
         if let Some(lock) = &tv.uv_lock {
             let lock = if !ctx.locked && lock.load().is_err() {
                 lock.refresh()?
@@ -422,11 +598,7 @@ impl Backend for PIPXBackend {
             self.validate_uv_lock(&tv, lock.load()?)?;
             tv.uv_lock = Some(lock);
         } else if self.uv_lock_allowed(&tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(&ctx.config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(&ctx.config, &tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             if graph_required {
@@ -468,9 +640,33 @@ impl Backend for PIPXBackend {
                 }
             }
         }
-        if tv.uv_lock.is_some() {
-            self.bind_uv_python(&ctx.config, &mut tv).await?;
+        // A restored identity carries an empty path placeholder; bind the real
+        // interpreter so `uv sync --python` never receives an empty argument.
+        if tv.uv_lock.is_some()
+            && tv
+                .uv_python
+                .as_ref()
+                .is_none_or(|(python, _)| python.as_os_str().is_empty() || !python.exists())
+        {
+            let selected = PipxOptions::new(&request_options)
+                .selected_python()?
+                .is_some();
+            if let Err(error) = self.bind_uv_python(ctx, &mut tv).await {
+                // Resolving the graph lets uv download an interpreter, but replaying it
+                // needs one mise can hand to `uv sync`. Without one, an install that
+                // is not `--locked` can still proceed from the version alone.
+                if selected || ctx.locked {
+                    return Err(error);
+                }
+                warn!(
+                    "{} dependency graph skipped; installing with version-only resolution: {error}",
+                    self.ba.short
+                );
+                tv.uv_lock = None;
+                tv.uv_python = None;
+            }
         }
+        reset_selected_python_install_path(&mut tv)?;
         Ok(tv)
     }
 
@@ -480,33 +676,64 @@ impl Backend for PIPXBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
+        let selected_python = PipxOptions::new(&tv.request.options())
+            .selected_python()?
+            .is_some();
         if tv.uv_lock.is_some() {
             if tv.uv_python.is_none() {
-                return Ok(false);
+                // No interpreter to replay the graph with: an install made from the
+                // version alone is as good as it gets, so do not retry it every time.
+                let locked = config
+                    .invocation_locked_for(tv.request.source(), Settings::get().locked)
+                    || tv.request.tool_config_locked(config, true);
+                return Ok(!selected_python
+                    && !locked
+                    && self.is_version_installed(config, tv, check_symlink));
             }
         } else if self.uv_lock_allowed(tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(config, tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
                 || tv.request.tool_config_locked(config, true);
             if graph_required {
-                if !locked && self.is_version_installed(config, tv, check_symlink) {
+                if !selected_python
+                    && !locked
+                    && self.is_version_installed(config, tv, check_symlink)
+                {
                     return Ok(true);
                 }
+                // Installer arguments which uv cannot lock deliberately use
+                // version-only installation. A selected runtime still needs
+                // its receipt checked below, but must not be forced to
+                // reinstall once that receipt matches.
+                let version_only_fallback = !self.uv_lock_options_supported(tv);
                 if locked
-                    || (!self.uv_lock_options_supported(tv)
-                        || self
+                    || (!version_only_fallback
+                        && self
                             .spawnable_dependency(config, None, "uv")
                             .await
                             .is_some())
                 {
                     return Ok(false);
                 }
+            }
+        }
+        if selected_python {
+            let Some((_, expected_identity)) = &tv.uv_python else {
+                return Ok(false);
+            };
+            let Ok(contents) =
+                crate::file::read_to_string(tv.install_path().join(".mise-uv/python.json"))
+            else {
+                return Ok(false);
+            };
+            let Ok((_, installed_identity)) = serde_json::from_str::<(PathBuf, String)>(&contents)
+            else {
+                return Ok(false);
+            };
+            if &installed_identity != expected_identity {
+                return Ok(false);
             }
         }
         Ok(self.is_version_installed(config, tv, check_symlink))
@@ -631,7 +858,9 @@ impl Backend for PIPXBackend {
             // uv prefers a Python it downloaded earlier over the one on PATH, which would
             // tie the tool's venv to an interpreter outside the mise data dir. Bind it to
             // mise's Python so a cached data dir restores a working tool.
-            if !uv_args_select_python(&user_args)
+            if let Some((python, _)) = &tv.uv_python {
+                cmd = cmd.arg("--python").arg(python);
+            } else if !uv_args_select_python(&user_args)
                 && let Some(python) = self.mise_managed_python(&ctx.config, &ctx.ts).await
             {
                 cmd = cmd.arg("--python").arg(python);
@@ -678,6 +907,9 @@ impl Backend for PIPXBackend {
             )
             .await?;
             cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
+            if let Some((python, _)) = &tv.uv_python {
+                cmd = cmd.arg("--python").arg(python);
+            }
             if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -697,9 +929,22 @@ impl Backend for PIPXBackend {
             }
         }
 
-        // Fix venv Python symlink to use minor version path
-        // This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
-        fix_venv_python_symlink(&tv.install_path())?;
+        // A selector also gives version-only installs an immutable runtime
+        // identity. Keep the provenance beside the environment so future
+        // resolution can verify that a matching directory was built with the
+        // same interpreter rather than adopting an old legacy install.
+        if let Some(python) = &tv.uv_python {
+            let metadata = tv.install_path().join(".mise-uv");
+            crate::file::create_dir_all(&metadata)?;
+            crate::file::write(metadata.join("python.json"), serde_json::to_string(python)?)?;
+        }
+
+        // Legacy environments retain their mutable-minor compatibility link.
+        // Selector-owned environments are instead named by a concrete runtime
+        // identity and must never be rebound by a later Python patch upgrade.
+        if options.selected_python()?.is_none() {
+            fix_venv_python_symlink(&tv.install_path())?;
+        }
 
         Ok(tv)
     }
@@ -749,6 +994,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "pipx_args".into(),
         "uvx_args".into(),
         "uvx".into(),
+        "python".into(),
     ]
 }
 
@@ -757,12 +1003,7 @@ impl PIPXBackend {
     async fn git_head(remote: &str) -> Result<String> {
         timeout::run_with_timeout_async(
             async || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    "git",
-                    &["ls-remote", remote, "HEAD"],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
-                )
-                .await?;
+                let output = crate::git::ls_remote(&[], remote, &["HEAD"]).await?;
                 Self::git_head_from_ls_remote(&output)
                     .ok_or_else(|| eyre!("no HEAD found for {remote}"))
             },
@@ -779,16 +1020,39 @@ impl PIPXBackend {
         })
     }
 
+    /// Lists the versions of a Git source: GitHub releases for a github.com
+    /// remote, Git tags otherwise. A private repository is invisible to the
+    /// versions host and the API without a token, but an SSH remote already
+    /// shows the user can reach it with their key, so only that case falls
+    /// back to Git tags when GitHub cannot list it. With a token GitHub can
+    /// see the repository but may hold no releases for its tags, so an empty
+    /// release list falls back the same way.
+    async fn git_source_versions(
+        source: &GitSource,
+        github_releases: impl AsyncFnOnce(&str) -> Result<Vec<VersionInfo>>,
+        git_tags: impl AsyncFnOnce(&str) -> Result<Vec<VersionInfo>>,
+    ) -> Result<Vec<VersionInfo>> {
+        let Some(repo) = PipxRequest::github_repo(&source.repo) else {
+            return git_tags(&source.remote()).await;
+        };
+        match github_releases(&repo).await {
+            Err(err) if PipxRequest::is_ssh_remote(&source.repo) => {
+                debug!("{repo} not listed by GitHub ({err}), trying git ls-remote");
+                git_tags(&source.remote()).await
+            }
+            Ok(releases) if releases.is_empty() && PipxRequest::is_ssh_remote(&source.repo) => {
+                debug!("{repo} has no GitHub releases, trying git ls-remote");
+                git_tags(&source.remote()).await
+            }
+            result => result,
+        }
+    }
+
     /// Lists tags from a Git remote while preserving Git's source ordering.
     async fn versions_from_git_tags(remote: &str) -> Result<Vec<VersionInfo>> {
         timeout::run_with_timeout_async(
             async || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    "git",
-                    &["ls-remote", "--tags", "--refs", remote],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
-                )
-                .await?;
+                let output = crate::git::ls_remote(&["--tags", "--refs"], remote, &[]).await?;
                 Ok(Self::versions_from_git_ls_remote(&output))
             },
             Settings::get().fetch_remote_versions_timeout(),
@@ -806,6 +1070,84 @@ impl PIPXBackend {
             .unique()
             .map(|version| VersionInfo {
                 version: version.to_string(),
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    /// Lists versions from a PEP 503/691 simple index. Asks for the PEP 691 JSON
+    /// form so PEP 700's `upload-time` is available for `minimum_release_age`,
+    /// and falls back to parsing HTML for indexes that only serve PEP 503.
+    async fn fetch_simple_index(
+        registry: &str,
+        package: &str,
+        url: String,
+    ) -> Result<Vec<VersionInfo>> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static(
+                "application/vnd.pypi.simple.v1+json, application/vnd.pypi.simple.v1+html;q=0.2, text/html;q=0.01",
+            ),
+        );
+        let (url, auth) = keyring::index_request(registry, &url).await?;
+        headers.extend(auth);
+        let resp =
+            crate::http::buffer_body(HTTP_FETCH.get_async_with_headers(url, &headers).await?)
+                .await?;
+        let content_type = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase())
+            .unwrap_or_default();
+        let versions = if content_type.ends_with("+json") || content_type == "application/json" {
+            Self::versions_from_simple_json(package, resp.json().await?)
+        } else if content_type == "text/html" || content_type.ends_with("+html") {
+            // PEP-0503 (HTML format doesn't include timestamps)
+            let html = resp.text().await?;
+            Self::versions_from_simple_index(package, &html)
+                .into_iter()
+                .map(|version| VersionInfo {
+                    version,
+                    ..Default::default()
+                })
+                .collect()
+        } else {
+            bail!("Got unexpected content type {content_type:?} from simple index for {package}");
+        };
+        Ok(versions
+            .into_iter()
+            .sorted_by_cached_key(|v| Versioning::new(&v.version))
+            .collect())
+    }
+
+    fn versions_from_simple_json(package: &str, index: SimpleIndex) -> Vec<VersionInfo> {
+        let mut versions: IndexMap<String, Option<String>> = IndexMap::new();
+        for file in index.files.into_iter().filter(|f| !f.yanked) {
+            let Some(version) = Self::version_from_distribution_filename(package, &file.filename)
+            else {
+                continue;
+            };
+            let entry = versions.entry(version).or_default();
+            // Keep the earliest upload as a parsed instant, since RFC3339 strings
+            // with different offsets don't sort chronologically.
+            let Some(new) = file.upload_time else {
+                continue;
+            };
+            let is_earlier = entry.as_deref().is_none_or(|cur| {
+                parse_into_timestamp(&new).unwrap_or(Timestamp::MAX)
+                    < parse_into_timestamp(cur).unwrap_or(Timestamp::MAX)
+            });
+            if is_earlier {
+                *entry = Some(new);
+            }
+        }
+        versions
+            .into_iter()
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at,
                 ..Default::default()
             })
             .collect()
@@ -845,11 +1187,31 @@ impl PIPXBackend {
             return Some(fields[1].to_string());
         }
 
+        // The name ends at the first `-` whose prefix normalizes to the package.
+        // Normalizing the prefix anew at every `-` is quadratic in the filename,
+        // which the index controls, so normalize the stem in one pass (mirroring
+        // `normalize_package_name`) and stop as soon as it diverges from the
+        // package: normalization only appends, so no longer prefix can match.
         let stem = filename.strip_suffix(".tar.gz")?;
-        stem.match_indices('-').find_map(|(index, _)| {
-            (Self::normalize_package_name(&stem[..index]) == normalized_package)
-                .then(|| stem[index + 1..].to_string())
-        })
+        let mut rest = normalized_package.as_str();
+        let mut separator = false;
+        for (index, c) in stem.char_indices() {
+            if c == '-' && rest.is_empty() {
+                return Some(stem[index + 1..].to_string());
+            }
+            if matches!(c, '-' | '_' | '.') {
+                if !separator {
+                    rest = rest.strip_prefix('-')?;
+                    separator = true;
+                }
+            } else {
+                for c in c.to_lowercase() {
+                    rest = rest.strip_prefix(c)?;
+                }
+                separator = false;
+            }
+        }
+        None
     }
 
     fn normalize_package_name(package: &str) -> String {
@@ -908,19 +1270,12 @@ impl PIPXBackend {
             .collect()
     }
 
-    fn latest_stable_from_pypi_package(data: PypiPackage) -> Option<String> {
-        Self::versions_from_pypi_package(data)
-            .into_iter()
-            .rev()
-            .find(|v| !is_python_prerelease(&v.version))
-            .map(|v| v.version)
-    }
-
-    fn latest_stable_from_simple_index(versions: Vec<String>) -> Option<String> {
+    /// The newest release that is not a PEP 440 pre-release, with its date.
+    fn latest_stable(versions: Vec<VersionInfo>) -> Option<VersionInfo> {
         versions
             .into_iter()
-            .filter(|v| !is_python_prerelease(v))
-            .sorted_by_cached_key(|v| Versioning::new(v))
+            .filter(|v| !is_python_prerelease(&v.version))
+            .sorted_by_cached_key(|v| Versioning::new(&v.version))
             .next_back()
     }
 
@@ -966,13 +1321,16 @@ impl PIPXBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    fn latest_version_cache(&self, registry_url: &str) -> CacheManager<Option<String>> {
+    fn latest_version_cache(&self, registry_url: &str) -> CacheManager<Option<VersionInfo>> {
         let registry_hash = hash_to_str(&registry_url);
         CacheManagerBuilder::new(
             self.ba
                 .cache_path()
-                .join(format!("latest_version_{registry_hash}.msgpack.z")),
+                .join(format!("latest_version_info_{registry_hash}.msgpack.z")),
         )
+        // The directory is named by the kebab-cased short name, which two
+        // packages can share.
+        .with_cache_key(self.ba.full())
         .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
         .build()
     }
@@ -982,7 +1340,7 @@ impl PIPXBackend {
             .pypi
             .registry_url
             .clone()
-            .unwrap_or_else(|| "https://pypi.org/pypi/{}/json".to_string());
+            .unwrap_or_else(|| DEFAULT_REGISTRY_URL.to_string());
 
         // Remove {} placeholders and trailing slashes
         let mut url = registry_url
@@ -1210,8 +1568,12 @@ enum PipxRequest {
 
 /// Whether user-supplied `uv tool install` arguments already pick an interpreter.
 fn uv_args_select_python(args: &[String]) -> bool {
-    args.iter()
-        .any(|a| a == "-p" || a == "--python" || a.starts_with("--python="))
+    args.iter().any(|a| {
+        a == "-p"
+            || a == "--python"
+            || a.starts_with("--python=")
+            || (a.starts_with("-p") && !a.starts_with("--") && a.len() > 2)
+    })
 }
 
 /// A Git source split into its repository and any pip/uv URL fragment
@@ -1311,6 +1673,10 @@ impl PipxRequest {
         (!repo.is_empty()).then(|| repo.to_string())
     }
 
+    fn is_ssh_remote(url: &str) -> bool {
+        url::Url::parse(url).is_ok_and(|url| url.scheme() == "ssh")
+    }
+
     fn extras_from_opts(&self, opts: &PipxOptions<'_>) -> String {
         match opts.extras() {
             Some(extras) => format!("[{extras}]"),
@@ -1362,6 +1728,22 @@ impl PipxRequest {
             PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
         }
     }
+}
+
+/// PEP 691 project detail, with PEP 700's `upload-time`.
+#[derive(serde::Deserialize)]
+struct SimpleIndex {
+    #[serde(default)]
+    files: Vec<SimpleIndexFile>,
+}
+
+#[derive(serde::Deserialize)]
+struct SimpleIndexFile {
+    filename: String,
+    #[serde(rename = "upload-time")]
+    upload_time: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_pypi_yanked")]
+    yanked: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -1576,6 +1958,34 @@ fn fix_venv_python_symlink(_install_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Load a cached latest release that is past `fetch_remote_versions_cache` but
+/// within the release-age window of the cutoff `before`, when it is dated, and
+/// say whether it did.
+///
+/// It is the newest stable release in the registry's list, not a tag a
+/// maintainer can move. It changes when a newer version is uploaded, which the
+/// cutoff hides for the window, and resolution then takes the newest release
+/// past the cutoff, which is this one again when it qualifies. Or when it is
+/// yanked, which a version list cached for the same window shows as late.
+/// Without a date, a new upload would pass the cutoff at once.
+fn adopt_latest_within_release_age(
+    cache: &mut CacheManager<Option<VersionInfo>>,
+    before: Option<Timestamp>,
+) -> bool {
+    if cache.has_fresh_value() {
+        return false;
+    }
+    let Some(window) = before.and_then(release_age_list_window_for_cutoff) else {
+        return false;
+    };
+    cache.adopt_file_if_fresh_for(Some(window), |_, latest| {
+        latest
+            .as_ref()
+            .and_then(|latest| latest.created_at.as_deref())
+            .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
+    })
+}
+
 /// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
 /// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
 /// the rule stays scoped to Python — hex commit hashes used by other
@@ -1594,17 +2004,287 @@ fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
 #[cfg(test)]
 mod tests {
     use super::{
-        GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease,
-        UV_EXCLUDE_NEWER_VERSION,
+        GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, SelectedPython,
+        UV_EXCLUDE_NEWER_VERSION, uv_args_select_python,
     };
-    use crate::backend::Backend;
+    use crate::args::BackendArg;
+    use crate::backend::{Backend, VersionInfo};
+    use crate::config::Config;
     #[cfg(unix)]
     use crate::file;
     use crate::github::GithubRelease;
-    use crate::toolset::ToolVersionOptions;
+    use crate::install_context::InstallContext;
+    use crate::toolset::tool_request::LockfileScope;
+    use crate::toolset::{
+        ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset, parse_tool_options,
+    };
+    use crate::ui::progress_report::QuietReport;
+    use async_trait::async_trait;
+    use std::path::PathBuf;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tempfile::tempdir;
+
+    #[test]
+    fn selected_python_accepts_numeric_minor_and_exact_patch() {
+        assert_eq!(
+            SelectedPython::parse("3.12").unwrap().requires_python(),
+            ">=3.12,<3.13"
+        );
+        assert_eq!(
+            SelectedPython::parse("3.12.12").unwrap().requires_python(),
+            "==3.12.12"
+        );
+    }
+
+    #[test]
+    fn selected_python_rejects_nonportable_selectors() {
+        for selector in ["latest", "3.12.*", "cpython@3.12", "/usr/bin/python3"] {
+            assert!(SelectedPython::parse(selector).is_err(), "{selector}");
+        }
+    }
+
+    #[test]
+    fn selected_python_dependency_keeps_its_lockfile_scope() {
+        let owner = ToolSource::MiseToml("/project/mise.toml".into());
+        let mut request = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("pypi:demo")),
+            "latest",
+            parse_tool_options(r#"python = "3.12""#),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        request.set_lockfile_scope(LockfileScope::Source(owner.clone()));
+
+        let dependency = super::selected_python_dependency(&request)
+            .unwrap()
+            .unwrap();
+        assert_eq!(dependency.lockfile_scope(), &LockfileScope::Source(owner));
+    }
+
+    #[test]
+    fn selected_python_rejects_installer_python_arguments() {
+        for (key, value) in [
+            ("uvx_args", "--python 3.13"),
+            ("uvx_args", "-p3.13"),
+            ("pipx_args", "-p=python3"),
+            ("pipx_args", "-p python3"),
+        ] {
+            let options = parse_tool_options(&format!("python = \"3.12\", {key} = \"{value}\""));
+            assert!(
+                PipxOptions::new(&options).validate_semantic().is_err(),
+                "{key}"
+            );
+        }
+    }
+
+    fn selected_python_tool_version(identity: &str) -> ToolVersion {
+        selected_python_tool_version_for("pypi:demo", identity)
+    }
+
+    fn selected_python_tool_version_for(backend: &str, identity: &str) -> ToolVersion {
+        let request = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from(backend)),
+            "1.0.0",
+            parse_tool_options(r#"python = "3.13""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".into());
+        tv.uv_python = Some((
+            PathBuf::from("/data/installs/python/3.13.0/bin/python"),
+            identity.into(),
+        ));
+        tv
+    }
+
+    fn write_python_receipt(path: &std::path::Path, identity: &str) {
+        std::fs::create_dir_all(path.join(".mise-uv")).unwrap();
+        std::fs::write(
+            path.join(".mise-uv/python.json"),
+            serde_json::to_string(&(PathBuf::from("/data/installs/python/bin/python"), identity))
+                .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[derive(Debug)]
+    struct FailingInstallBackend {
+        ba: Arc<BackendArg>,
+        attempts: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Backend for FailingInstallBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(vec![])
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            _tv: ToolVersion,
+        ) -> eyre::Result<ToolVersion> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            eyre::bail!("controlled installer failure")
+        }
+    }
+
+    fn lifecycle_context(config: Arc<Config>) -> InstallContext {
+        InstallContext {
+            config,
+            ts: Arc::new(Toolset::default()),
+            pr: Arc::new(QuietReport::new()),
+            force: false,
+            dry_run: false,
+            explicit_yes: true,
+            locked: false,
+            before_date: None,
+            dependency_context: Default::default(),
+        }
+    }
+
+    #[test]
+    fn selected_python_same_identity_keeps_discovered_environment() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:same");
+        let old = temp.path().join(tv.tv_pathname());
+        write_python_receipt(&old, "core:python:3.13.0:same");
+        tv.install_path = Some(old.clone());
+
+        super::reset_selected_python_install_path(&mut tv).unwrap();
+
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+    }
+
+    #[test]
+    fn selected_python_missing_receipt_fails_without_removing_environment() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        let old = temp.path().join(tv.tv_pathname());
+        std::fs::create_dir_all(&old).unwrap();
+        tv.install_path = Some(old.clone());
+
+        assert!(super::reset_selected_python_install_path(&mut tv).is_err());
+
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+        assert!(old.is_dir());
+    }
+
+    #[tokio::test]
+    async fn selected_python_replacement_keeps_old_environment_when_install_lifecycle_fails() {
+        let config = Config::get().await.unwrap();
+        let temp = tempdir().unwrap();
+        // The controlled backend has no declared dependencies, so this reaches the
+        // generic installation lifecycle rather than attempting a real Python install.
+        let mut tv = selected_python_tool_version_for("node", "core:python:3.13.0:new");
+        let old = temp.path().join("1.0.0~uv~old");
+        write_python_receipt(&old, "core:python:3.12.0:old");
+        tv.install_path = Some(old.clone());
+
+        super::reset_selected_python_install_path(&mut tv).unwrap();
+        assert!(tv.install_path.is_none());
+
+        let replacement = temp.path().join(tv.tv_pathname());
+        assert_ne!(replacement, old);
+        tv.install_path = Some(replacement.clone());
+        tv.install_path_is_explicit = true;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let backend = FailingInstallBackend {
+            ba: tv.ba().clone().into(),
+            attempts: attempts.clone(),
+        };
+
+        let error = backend
+            .install_version(lifecycle_context(config), tv)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("controlled installer failure"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(
+            replacement.exists(),
+            "the controlled installer created only the new target"
+        );
+        assert!(old.join(".mise-uv/python.json").is_file());
+    }
+
+    #[test]
+    fn selected_python_stale_same_destination_rejects_before_install_cleanup() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        let old = temp.path().join(tv.tv_pathname());
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("working-tool"), "preserve me").unwrap();
+        tv.install_path = Some(old.clone());
+
+        let error = super::reset_selected_python_install_path(&mut tv).unwrap_err();
+
+        assert!(error.to_string().contains("cannot safely replace"));
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(old.join("working-tool")).unwrap(),
+            "preserve me"
+        );
+    }
+
+    #[test]
+    fn uv_args_detect_every_python_flag_spelling() {
+        for args in [
+            vec!["--python".into(), "3.12".into()],
+            vec!["--python=3.12".into()],
+            vec!["-p".into(), "3.12".into()],
+            vec!["-p3.12".into()],
+            vec!["-p=3.12".into()],
+        ] {
+            assert!(uv_args_select_python(&args), "{args:?}");
+        }
+        for args in [
+            vec!["--resolution".into(), "lowest".into()],
+            vec!["--prerelease".into(), "allow".into()],
+            vec!["--pip-args".into(), "--pre".into()],
+            vec!["--python-preference".into(), "system".into()],
+        ] {
+            assert!(!uv_args_select_python(&args), "{args:?}");
+        }
+    }
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+
+    #[test]
+    fn parses_versions_from_simple_json_with_upload_times() {
+        let index: super::SimpleIndex = serde_json::from_str(
+            r#"{"meta":{"api-version":"1.1"},"name":"demo-pkg","files":[
+              {"filename":"demo_pkg-1.0.0-py3-none-any.whl","upload-time":"2024-01-01T23:00:00-05:00","yanked":false},
+              {"filename":"demo-pkg-1.0.0.tar.gz","upload-time":"2024-01-02T01:00:00+00:00"},
+              {"filename":"demo-pkg-2.0.0.tar.gz","upload-time":"2024-02-01T00:00:00Z","yanked":"broken"},
+              {"filename":"demo-pkg-3.0.0.tar.gz"}]}"#,
+        )
+        .unwrap();
+        let versions = PIPXBackend::versions_from_simple_json("demo-pkg", index);
+        let got = versions
+            .iter()
+            .map(|v| (v.version.as_str(), v.created_at.as_deref()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            got,
+            vec![
+                // the sdist is earlier as an instant although it sorts later as a string
+                ("1.0.0", Some("2024-01-02T01:00:00+00:00")),
+                ("3.0.0", None)
+            ]
+        );
+    }
 
     #[test]
     fn parses_versions_from_simple_index_artifacts() {
@@ -1624,7 +2304,7 @@ mod tests {
     }
 
     #[test]
-    fn test_latest_stable_from_simple_index_uses_python_prerelease_rule() {
+    fn test_latest_stable_uses_python_prerelease_rule() {
         let versions = [
             "1.0",
             "1.1+gpu.dev0",
@@ -1636,7 +2316,17 @@ mod tests {
         .map(String::from)
         .to_vec();
         assert_eq!(
-            PIPXBackend::latest_stable_from_simple_index(versions).as_deref(),
+            PIPXBackend::latest_stable(
+                versions
+                    .into_iter()
+                    .map(|version| VersionInfo {
+                        version,
+                        ..Default::default()
+                    })
+                    .collect()
+            )
+            .map(|v| v.version)
+            .as_deref(),
             Some("1.1+gpu.dev0")
         );
     }
@@ -1652,6 +2342,41 @@ mod tests {
             PIPXBackend::versions_from_simple_index("Demo_Pkg", html),
             vec!["1.0+cpu", "2.0+cpu"]
         );
+    }
+
+    #[test]
+    fn splits_sdist_filenames_at_the_end_of_the_package_name() {
+        for (package, filename, version) in [
+            ("demo", "demo-1.0.tar.gz", Some("1.0")),
+            ("demo-pkg", "demo-pkg-1.0.tar.gz", Some("1.0")),
+            ("demo-pkg", "Demo._-PKG-1.0.tar.gz", Some("1.0")),
+            ("demo", "demo-pkg-1.0.tar.gz", Some("pkg-1.0")),
+            ("demo", "demo--1.0.tar.gz", Some("-1.0")),
+            ("demo", "demo_1.0.tar.gz", None),
+            ("demo", "demos-1.0.tar.gz", None),
+            ("demo-pkg", "demo-1.0.tar.gz", None),
+            ("demo", "demo.tar.gz", None),
+        ] {
+            assert_eq!(
+                PIPXBackend::version_from_distribution_filename(package, filename).as_deref(),
+                version,
+                "{package} {filename}"
+            );
+        }
+    }
+
+    #[test]
+    fn sdist_filename_parsing_is_linear_in_the_filename() {
+        // Quadratic work on names this long does not finish in a test run.
+        for (package, stem) in [
+            ("demo", "x-".repeat(2_000_000)),
+            ("demo-pkg", format!("demo{}", "-".repeat(4_000_000))),
+        ] {
+            assert_eq!(
+                PIPXBackend::version_from_distribution_filename(package, &format!("{stem}.tar.gz")),
+                None
+            );
+        }
     }
 
     #[test]
@@ -1714,11 +2439,56 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         );
         assert_eq!(
             backend
-                .latest_stable_version(&config)
+                .latest_stable_version_info(&config)
                 .await
                 .unwrap()
+                .map(|v| v.version)
                 .as_deref(),
             Some("2.0.0")
+        );
+        index.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn simple_index_json_preserves_upload_times() {
+        use crate::backend::Backend;
+
+        let mut server = mockito::Server::new_async().await;
+        let index = server
+            .mock("GET", "/simple/json-tool/")
+            .match_header(
+                "accept",
+                mockito::Matcher::Regex("application/vnd.pypi.simple.v1\\+json".into()),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/vnd.pypi.simple.v1+json")
+            .with_body(
+                r#"{"meta":{"api-version":"1.1"},"name":"json-tool","files":[
+                  {"filename":"json_tool-1.0.0-py3-none-any.whl","upload-time":"2024-01-01T00:00:00Z"},
+                  {"filename":"json_tool-2.0.0-py3-none-any.whl","upload-time":"2024-02-01T00:00:00Z"}]}"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:json-tool[registry_url='{}/simple/{{}}/']",
+                server.url()
+            )
+            .into(),
+        );
+
+        let versions = backend._list_remote_versions(&config).await.unwrap();
+        assert_eq!(
+            versions
+                .iter()
+                .map(|v| (v.version.as_str(), v.created_at.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("1.0.0", Some("2024-01-01T00:00:00Z")),
+                ("2.0.0", Some("2024-02-01T00:00:00Z"))
+            ]
         );
         index.assert_async().await;
     }
@@ -1773,13 +2543,225 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
 
         assert_eq!(
             backend
-                .latest_stable_version(&config)
+                .latest_stable_version_info(&config)
+                .await
+                .unwrap()
+                .map(|v| v.version)
+                .as_deref(),
+            Some("1.0.0")
+        );
+        registry.assert_async().await;
+    }
+
+    /// Mocks a JSON registry serving `1.0.0` (January) and `2.0.0` (March)
+    /// that expects `hits` requests.
+    async fn dated_registry(
+        server: &mut mockito::Server,
+        package: &str,
+        hits: usize,
+    ) -> mockito::Mock {
+        server
+            .mock("GET", format!("/pypi/{package}/json").as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "releases": {
+                        "1.0.0": [{
+                            "upload_time_iso_8601": "2026-01-01T00:00:00Z",
+                            "yanked": false
+                        }],
+                        "2.0.0": [{
+                            "upload_time_iso_8601": "2026-03-01T00:00:00Z",
+                            "yanked": false
+                        }]
+                    }
+                })
+                .to_string(),
+            )
+            .expect(hits)
+            .create_async()
+            .await
+    }
+
+    /// `minimum_release_age` is on by default, so resolving `latest` has to
+    /// date its candidate. The registry document the shortcut reads already
+    /// does, so a candidate older than the cutoff costs that one request, not
+    /// a second fetch of the same document to list versions.
+    #[tokio::test]
+    async fn latest_older_than_cutoff_reads_registry_once() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut server = mockito::Server::new_async().await;
+        let registry = dated_registry(&mut server, "dated-old", 1).await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:dated-old[registry_url='{}/pypi/{{}}/json']",
+                server.url()
+            )
+            .into(),
+        );
+        let _ = std::fs::remove_dir_all(backend.ba().cache_path());
+        let before = crate::duration::parse_into_timestamp("2026-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".into()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
+        );
+        registry.assert_async().await;
+    }
+
+    /// A candidate newer than the cutoff still falls back to the full list,
+    /// which is what picks the older release.
+    #[tokio::test]
+    async fn latest_newer_than_cutoff_falls_back_to_listing() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut server = mockito::Server::new_async().await;
+        let registry = dated_registry(&mut server, "dated-new", 2).await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:dated-new[registry_url='{}/pypi/{{}}/json']",
+                server.url()
+            )
+            .into(),
+        );
+        let _ = std::fs::remove_dir_all(backend.ba().cache_path());
+        let before = crate::duration::parse_into_timestamp("2026-02-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".into()), Some(before))
                 .await
                 .unwrap()
                 .as_deref(),
             Some("1.0.0")
         );
         registry.assert_async().await;
+    }
+
+    /// Set the modified time of `backend`'s cached latest releases to `secs` ago.
+    fn backdate_cached_latest(backend: &PIPXBackend, secs: u64) {
+        let then = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(secs),
+        );
+        for entry in std::fs::read_dir(backend.ba().cache_path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("latest_version_info_") {
+                filetime::set_file_mtime(&path, then).unwrap();
+            }
+        }
+    }
+
+    /// Past `fetch_remote_versions_cache`, resolving `latest` under a cutoff
+    /// keeps the cached, dated latest release for the cutoff's release-age
+    /// window instead of fetching the registry document again, unless the user
+    /// set `fetch_remote_versions_cache`.
+    #[tokio::test]
+    async fn latest_within_release_age_window_reads_registry_once() {
+        use crate::config::settings::SettingsPartial;
+        use crate::config::{Settings, SettingsExt};
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let mut server = mockito::Server::new_async().await;
+        let registry = dated_registry(&mut server, "dated-window", 2).await;
+        let config = crate::config::Config::get().await.unwrap();
+        let tool = format!(
+            "pipx:dated-window[registry_url='{}/pypi/{{}}/json']",
+            server.url()
+        );
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        let _ = std::fs::remove_dir_all(backend.ba().cache_path());
+        let before = crate::duration::parse_into_timestamp("2026-06-01").unwrap();
+        let latest = async |backend: &PIPXBackend| {
+            backend
+                .latest_version(&config, Some("latest".into()), Some(before))
+                .await
+                .unwrap()
+        };
+
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+        backdate_cached_latest(&backend, 2 * 60 * 60);
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+
+        let mut partial = SettingsPartial::empty();
+        partial.fetch_remote_versions_cache = Some("1h".to_string());
+        Settings::reset(Some(partial));
+        backdate_cached_latest(&backend, 2 * 60 * 60);
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+        Settings::reset(None);
+        registry.assert_async().await;
+    }
+
+    /// Only a dated latest release is kept for the window, and only under a
+    /// cutoff.
+    #[test]
+    fn adopt_latest_within_release_age_needs_a_date_and_a_cutoff() {
+        use crate::cache::{CacheManager, CacheManagerBuilder};
+        use crate::config::{Settings, SettingsExt};
+
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("latest.msgpack.z");
+        let cache = || -> CacheManager<Option<VersionInfo>> {
+            CacheManagerBuilder::new(path.clone())
+                .with_fresh_duration(Some(std::time::Duration::from_secs(60 * 60)))
+                .build()
+        };
+        let write = |created_at: Option<&str>| {
+            cache()
+                .write(&Some(VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: created_at.map(str::to_string),
+                    ..Default::default()
+                }))
+                .unwrap();
+            let then = filetime::FileTime::from_system_time(
+                std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
+            );
+            for entry in std::fs::read_dir(dir.path()).unwrap() {
+                filetime::set_file_mtime(entry.unwrap().path(), then).unwrap();
+            }
+        };
+        let day_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24));
+        let six_hours_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(6));
+        let ninety_minutes_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_mins(90));
+
+        write(Some("2026-01-01T00:00:00Z"));
+        assert!(super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
+        assert!(super::adopt_latest_within_release_age(
+            &mut cache(),
+            six_hours_ago
+        ));
+        // A 90 minute cutoff keeps it for 90 minutes, not two hours.
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            ninety_minutes_ago
+        ));
+        assert!(!super::adopt_latest_within_release_age(&mut cache(), None));
+
+        write(None);
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
+        write(Some("not a date"));
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
     }
 
     #[tokio::test]
@@ -1912,6 +2894,74 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             PipxRequest::github_repo("ssh://git@github.com/psf/black"),
             Some("psf/black".to_string())
         );
+        assert!(PipxRequest::is_ssh_remote("ssh://git@github.com/psf/black"));
+        assert!(!PipxRequest::is_ssh_remote("https://github.com/psf/black"));
+    }
+
+    fn git_source(repo: &str) -> GitSource {
+        GitSource::new(repo, None)
+    }
+
+    fn tag_versions() -> Vec<VersionInfo> {
+        PIPXBackend::versions_from_git_ls_remote("abc\trefs/tags/v1.0.0\n")
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_falls_back_to_git_tags_when_github_cannot_list_it() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Err(eyre::eyre!("404")),
+            async |remote| {
+                assert_eq!(remote, "ssh://git@github.com/owner/private");
+                Ok(tag_versions())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_falls_back_to_git_tags_when_github_has_no_releases() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Ok(vec![]),
+            async |remote| {
+                assert_eq!(remote, "ssh://git@github.com/owner/private");
+                Ok(tag_versions())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_keeps_github_releases_without_calling_git() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Ok(tag_versions()),
+            async |_| panic!("git must not be called"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn https_github_source_keeps_the_github_error_without_calling_git() {
+        let source = git_source("https://github.com/owner/private");
+        let err = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Err(eyre::eyre!("404")),
+            async |_| panic!("git must not be called"),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.to_string(), "404");
     }
 
     #[tokio::test]
@@ -2030,6 +3080,32 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         opts.opts.insert(
             "with".to_string(),
             toml::Value::Array(vec![toml::Value::Integer(1)]),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+    }
+
+    #[test]
+    fn registry_index_selects_priority_only_when_asked() {
+        let mut opts = ToolVersionOptions::default();
+        assert!(!PipxOptions::new(&opts).registry_index_priority().unwrap());
+        for (value, priority) in [("default", false), ("priority", true)] {
+            opts.opts.insert(
+                "registry_index".to_string(),
+                toml::Value::String(value.to_string()),
+            );
+            assert_eq!(
+                PipxOptions::new(&opts).registry_index_priority().unwrap(),
+                priority
+            );
+        }
+        opts.opts.insert(
+            "registry_index".to_string(),
+            toml::Value::String("sideways".to_string()),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+        opts.opts.insert(
+            "registry_index".to_string(),
+            toml::Value::Array(vec![toml::Value::String("priority".to_string())]),
         );
         assert!(PipxOptions::new(&opts).validate_semantic().is_err());
     }
@@ -2592,8 +3668,8 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
     }
 
     #[test]
-    fn test_latest_stable_from_pypi_package_skips_yanked_and_prerelease() {
-        let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
+    fn test_latest_stable_of_pypi_package_skips_yanked_and_prerelease() {
+        let version = latest_stable_of_pypi_package(pypi_package(vec![
             (
                 "1.0.0",
                 vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
@@ -2625,7 +3701,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
 
     #[test]
     fn test_pep440_local_label_does_not_mark_prerelease() {
-        let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
+        let version = latest_stable_of_pypi_package(pypi_package(vec![
             (
                 "1.0.0",
                 vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
@@ -2810,6 +3886,10 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             published_at: None,
             assets: vec![],
         }
+    }
+
+    fn latest_stable_of_pypi_package(data: PypiPackage) -> Option<String> {
+        PIPXBackend::latest_stable(PIPXBackend::versions_from_pypi_package(data)).map(|v| v.version)
     }
 
     fn pypi_package(releases: Vec<(&str, Vec<PypiRelease>)>) -> PypiPackage {

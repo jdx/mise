@@ -110,28 +110,18 @@ pub(super) fn normalize_libc(libc: Option<&str>) -> Option<&str> {
 }
 /// splits a version number into an optional prefix and the remaining version string
 pub(super) fn split_version_prefix(version: &str) -> (String, String) {
-    version
-        .char_indices()
-        .find_map(|(i, c)| {
-            if c.is_ascii_digit() {
-                if i == 0 {
-                    return Some(i);
-                }
-                // If the previous char is a delimiter or 'v', we found a split point.
-                let prev_char = version.chars().nth(i - 1).unwrap();
-                if ['-', '_', '/', '.', 'v', 'V'].contains(&prev_char) {
-                    return Some(i);
-                }
-            }
-            None
-        })
-        .map_or_else(
-            || ("".into(), version.into()),
-            |i| {
-                let (prefix, version) = version.split_at(i);
-                (prefix.into(), version.into())
-            },
-        )
+    let mut prev_char = None;
+    for (i, c) in version.char_indices() {
+        // If the previous char is a delimiter or 'v', we found a split point.
+        if c.is_ascii_digit()
+            && (i == 0 || prev_char.is_some_and(|c| ['-', '_', '/', '.', 'v', 'V'].contains(&c)))
+        {
+            let (prefix, version) = version.split_at(i);
+            return (prefix.into(), version.into());
+        }
+        prev_char = Some(c);
+    }
+    ("".into(), version.into())
 }
 
 pub(super) const AQUA_ASSET_FORMATS: &[&str] = &[

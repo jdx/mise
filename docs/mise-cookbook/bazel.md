@@ -1,24 +1,29 @@
 ---
-description: "Use mise to select Bazel from a project's .bazelversion file."
+description: "Install the Bazel version a project pins in .bazelversion, or run Bazelisk, with mise."
 ---
 
-# Bazel Cookbook
+# Bazel
 
-Use mise to install the Bazel version declared in a project's `.bazelversion` file.
-This avoids repeating the version in `mise.toml`.
+Install the Bazel version declared in a project's `.bazelversion` file, so the
+version is not repeated in `mise.toml`.
 
-## Use a project's `.bazelversion`
+## Use a project's `.bazelversion` {#use-a-project-s-bazelversion}
 
-Enable [idiomatic version files](/configuration.html#idiomatic-version-files) for `bazel`:
+Enable [idiomatic version files](/dev-tools/versions.html#idiomatic-version-files)
+for `bazel` in the project:
 
 ```sh
-mise settings add idiomatic_version_file_enable_tools bazel
+mise settings add --local idiomatic_version_file_enable_tools bazel
 ```
 
-For example, a project can select Bazel 7.2.1 with this file:
+`--local` writes the setting to the project's `mise.toml`, so everyone who
+clones the project reads `.bazelversion`. Drop `--local` to enable it for all
+your projects in your global config instead.
+
+For example, a project selects Bazel 9.2.0 with this file:
 
 ```text [.bazelversion]
-7.2.1
+9.2.0
 ```
 
 From that project, install the selected tools and check Bazel:
@@ -28,14 +33,14 @@ mise install
 mise exec -- bazel --version
 ```
 
-Use `mise tool bazel --requested` to inspect the version request read by mise.
-If the project also configures Bazel in `mise.toml`, remove that duplicate entry to let
-`.bazelversion` select the version.
+`mise tool bazel --requested` shows the version request mise read. If the
+project also sets Bazel in `mise.toml`, remove that entry so `.bazelversion`
+selects the version.
 
-## Supported values
+## Check which values mise reads {#supported-values}
 
-mise reads only the first line of `.bazelversion`. It accepts concrete release versions,
-including release candidates and prereleases:
+mise reads only the first line of `.bazelversion`. It accepts concrete release
+versions, including release candidates and prereleases:
 
 | Value                                                    | Read by mise? |
 | -------------------------------------------------------- | ------------- |
@@ -46,23 +51,24 @@ including release candidates and prereleases:
 | `8.x`, `8.*`                                             | No            |
 | A commit hash or `<FORK>/<VERSION>`                      | No            |
 
-Unsupported values supply no version request, even if a later line contains a supported version.
-To select Bazel independently of such a file, configure it explicitly:
+An unsupported value gives no version request, even if a later line contains a
+supported version. To select Bazel independently of such a file, set it in
+`mise.toml`:
 
 ```sh
-mise use bazel@7.2.1
+mise use bazel@9.2.0
 ```
 
-## Using Bazelisk instead
+## Use Bazelisk instead {#using-bazelisk-instead}
 
-Bazelisk is a launcher that reads `.bazelversion` itself and manages the corresponding Bazel
-installation. If your project relies on Bazelisk's version selectors, install Bazelisk with mise
-and let it interpret the file:
+Bazelisk is a launcher that reads `.bazelversion` itself and downloads the
+Bazel release it names. If your project relies on Bazelisk's version selectors,
+such as `last_green`, install Bazelisk with mise and let it read the file:
 
 ```sh
 mise use bazelisk
 mise exec -- bazelisk --version
 ```
 
-The version in `.bazelversion` applies to **Bazel**, not Bazelisk. Enabling idiomatic version
-files for `bazelisk` does not select a Bazelisk version from that file.
+`.bazelversion` selects the Bazel version, not the Bazelisk version, so enabling
+idiomatic version files for `bazelisk` has no effect.

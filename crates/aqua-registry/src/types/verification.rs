@@ -73,10 +73,10 @@ impl AquaChecksum {
         }
         if let Some(replacements) = other.replacements {
             if replacements.is_empty() {
-                self.replacements = Some(HashMap::new());
+                self.replacements = Some(BTreeMap::new());
             } else {
                 self.replacements
-                    .get_or_insert_with(HashMap::new)
+                    .get_or_insert_with(BTreeMap::new)
                     .extend(replacements);
             }
         }
@@ -117,10 +117,10 @@ impl AquaChecksum {
         Ok(ctx)
     }
 
-    fn effective_replacements(&self, pkg: &AquaPackage) -> HashMap<String, String> {
+    fn effective_replacements(&self, pkg: &AquaPackage) -> BTreeMap<String, String> {
         match &self.replacements {
             None => pkg.replacements.clone(),
-            Some(replacements) if replacements.is_empty() => HashMap::new(),
+            Some(replacements) if replacements.is_empty() => BTreeMap::new(),
             Some(replacements) => {
                 let mut merged = pkg.replacements.clone();
                 merged.extend(replacements.clone());

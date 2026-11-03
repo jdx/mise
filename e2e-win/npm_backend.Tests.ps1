@@ -1,7 +1,16 @@
 Describe 'npm_backend' {
+    BeforeAll {
+        # Every case runs in a directory of its own, never the checkout. Run there, the cases that
+        # set MISE_NPM_PACKAGE_MANAGER also resolve the checkout's npm tools under that package
+        # manager and relock them, which changes which of them later suites see installed.
+        function New-CaseDir([string]$name) {
+            (New-Item -ItemType Directory -Path (Join-Path $TestDrive $name) -Force).FullName
+        }
+    }
     It 'installs npm:prettier 3.6.2 with aube' {
-        mise -C $TestDrive use node@24.4.1 aube@1.1.0 npm:prettier@3.6.2 | Out-Null
-        $node = mise -C $TestDrive which node
+        $dir = New-CaseDir 'aube'
+        mise -C $dir use node@24.4.1 aube@1.1.0 npm:prettier@3.6.2 | Out-Null
+        $node = mise -C $dir which node
         $prettierInstall = (mise ls npm:prettier --json | Out-String | ConvertFrom-Json |
             Where-Object { $_.version -eq '3.6.2' }).install_path
         $prettier = Join-Path $prettierInstall 'node_modules/prettier/bin/prettier.cjs'
@@ -10,7 +19,8 @@ Describe 'npm_backend' {
     It 'installs npm:cowsay 1.6.0 with bun' {
         $env:MISE_NPM_PACKAGE_MANAGER = "bun"
         try {
-            mise x node@24.4.1 bun@1.2.19 npm:cowsay@1.6.0 -- cowsay --version | Should -be "1.6.0"
+            mise -C (New-CaseDir 'bun') x node@24.4.1 bun@1.2.19 npm:cowsay@1.6.0 -- cowsay --version |
+                Should -be "1.6.0"
         }
         finally {
             Remove-Item Env:MISE_NPM_PACKAGE_MANAGER -ErrorAction SilentlyContinue
@@ -32,14 +42,15 @@ Describe 'npm_backend' {
             'MISE_NPM_PACKAGE_MANAGER', 'Process'
         )
         $env:MISE_NPM_PACKAGE_MANAGER = "npm"
+        $dir = New-CaseDir 'npm'
         try {
-            $out = mise install node@24.4.1 npm:prettier@3.5.3 2>&1 | Out-String
+            $out = mise -C $dir install node@24.4.1 npm:prettier@3.5.3 2>&1 | Out-String
             $LASTEXITCODE | Should -Be 0
             # The pre-fix failure mode, from std only ever appending .exe to a bare name.
             $out | Should -Not -Match 'program not found'
             # Assert the result of that install, not just its exit code: the binary npm
             # placed has to be the requested version.
-            mise x node@24.4.1 npm:prettier@3.5.3 -- prettier --version | Should -be "3.5.3"
+            mise -C $dir x node@24.4.1 npm:prettier@3.5.3 -- prettier --version | Should -be "3.5.3"
         }
         finally {
             # Restore rather than remove -- Pester shares one runspace, and $null does not

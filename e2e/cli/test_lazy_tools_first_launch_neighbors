@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# Installing a lazy tool on its first launch resolves only that tool. The other
+# lazy tools that aren't installed stay unresolved, so the launch doesn't list
+# their remote versions (offline, each lookup waited for a timeout).
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'CONFIG'
+[tools]
+dummy = { version = "latest", lazy = true, lazy_bins = ["dummy"] }
+"aqua:jdx/mise-test-missing-lazy-tool" = { version = "latest", lazy = true, lazy_bins = ["missing-lazy-tool"] }
+CONFIG
+mise reshim
+assert_not_contains "$MISE_DATA_DIR/shims/dummy --version 2>&1" "Failed to resolve tool version list"
+assert_contains "mise ls --installed dummy 2>/dev/null" "2.0.0"
+assert_not_contains "mise ls --installed dummy 2>/dev/null" "latest  "

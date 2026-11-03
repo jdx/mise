@@ -28,11 +28,11 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml", "mise-backend-options.toml"]
+include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml", "mise-vars-directives.toml", "mise-backend-options.toml", "mise-task-array.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
-include = ["mise-task-os.toml"]
+include = ["mise-task-os.toml", "mise-task-deps.toml"]
 
 [[schemas]]
 path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
@@ -58,6 +58,7 @@ allow_env = ["CI"]
 description = "Build the project"
 depends = ["lint"]
 run = "cargo build"
+outputs = { auto = false }
 dir = "{{config_root}}"
 quiet = true
 usage = "build [args]"
@@ -68,6 +69,9 @@ allow_read = ["."]
 extends = "base"
 run = "cargo clippy"
 description = "Lint the project"
+depends = { task = "fmt", optional = true }
+depends_post = { task = "build", args = ["--release"], env = { CI = "1" } }
+wait_for = { task = "build", optional = true }
 
 [vars]
 e2e_args = { default = "--headless", redact = true }
@@ -122,6 +126,9 @@ persistent = true
 unit = "dev.mise.sync.service"
 wanted_by = ["timers.target"]
 
+[bootstrap.linux.systemd.units.old-sync]
+state = "absent"
+
 [bootstrap.mise_shell_activate]
 bash = true
 zsh = false
@@ -134,6 +141,19 @@ zshrc = true
 
 [bootstrap.packages]
 "pacman:libreoffice-fresh" = { state = "absent" }
+
+[bootstrap.secrets]
+github_token = "GITHUB_TOKEN"
+"deploy.key" = { env = "DEPLOY_KEY", description = "Deploy key", allow_empty = true }
+
+[bootstrap.groups]
+deploy = { gid = 2000 }
+ops = {}
+old-team = { state = "absent" }
+
+[bootstrap.users]
+deploy = { group = "deploy", groups = ["ops"], exclusive_groups = true, home = "/srv/deploy", move_home = true, shell = "/bin/bash", comment = "Deploy user", create_home = true }
+olduser = { state = "absent", remove_home = true }
 
 [[oci.copy]]
 host = "dist/my-app"
@@ -148,8 +168,9 @@ TOML
 # placeholder values while running tombi through `mise x`.
 cat >"$HOME/workdir/mise-age.toml" <<'TOML'
 [env]
-VALUE_OBJECT = { value = 123, tools = true, redact = true, required = "set VALUE_OBJECT" }
+VALUE_OBJECT = { value = 123, tools = true, redact = true, required = false }
 VALUE_DEFAULT = { default = 123, tools = true, redact = true }
+REQUIRED_HELP = { required = "set REQUIRED_HELP", tools = true }
 SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
 TOML
@@ -159,6 +180,7 @@ cat >"$HOME/workdir/mise-env-directives.toml" <<'TOML'
 _.file = { path = ".env", tools = true, redact = true, required = true, expand = true }
 _.source = [{ path = "env.sh", tools = true, redact = true, required = "source env.sh" }]
 _.path = { paths = ["./bin", "./scripts"], tools = true }
+_.python = { venv = { path = ".venv", create = true, python = "3.12", uv_create_args = ["--seed"], python_create_args = ["--without-pip"] } }
 TOML
 
 cat >"$HOME/workdir/mise-vars.toml" <<'TOML'
@@ -176,6 +198,13 @@ SECRET_SIMPLE = { age = "AGE-SECRET", redact = false }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", redact = true } }
 _.file = ".env"
 _.source = ["env.sh"]
+TOML
+
+# The directive forms `[env]` accepts: a table, and an array that holds tables.
+cat >"$HOME/workdir/mise-vars-directives.toml" <<'TOML'
+[vars]
+_.file = { path = ".env", redact = true }
+_.source = [{ path = "env.sh" }, "more.sh"]
 TOML
 
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
@@ -197,6 +226,24 @@ run = "echo ok"
 node = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", matching = ["node", "npm"], platforms = { linux-x64 = { bin = ["node", "npm"], env = { NODE_ENV = "test" } } } }
 TOML
 
+# A task array holds scripts and task references, as the parser accepts.
+cat >"$HOME/workdir/mise-task-array.toml" <<'TOML'
+[tasks]
+lint = "cargo clippy"
+build = "cargo build"
+ci = ["cargo fmt --check", { task = "lint" }, { task = "build", args = ["--release"], env = { CI = "1" } }, { tasks = ["lint", "build"] }]
+TOML
+
+# A task file accepts the same dependency shapes as mise.toml.
+cat >"$HOME/workdir/mise-task-deps.toml" <<'TOML'
+[build]
+run = "echo ok"
+depends = { task = "lint", optional = true }
+depends_post = [["build", "--release"]]
+wait_for = { task = "lint" }
+outputs = { auto = false }
+TOML
+
 cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
 backends = [
   { full = "aqua:ImageMagick/ImageMagick", platforms = ["windows-x64"] },
@@ -213,9 +260,12 @@ assert_succeed "$TOMBI_LINT mise.toml"
 assert_succeed "$TOMBI_LINT mise-age.toml"
 assert_succeed "$TOMBI_LINT mise-env-directives.toml"
 assert_succeed "$TOMBI_LINT mise-vars.toml"
+assert_succeed "$TOMBI_LINT mise-vars-directives.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
+assert_succeed "$TOMBI_LINT mise-task-deps.toml"
 assert_succeed "$TOMBI_LINT mise-registry-tool.toml"
+assert_succeed "$TOMBI_LINT mise-task-array.toml"
 
 # Verify that invalid properties on tasks are rejected
 cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
@@ -234,11 +284,11 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-python-venv.toml", "mise-bad-env-python.toml", "mise-bad-env-value-required.toml", "mise-bad-env-value-required-help.toml", "mise-bad-env-required-false.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-bootstrap-absent-group-gid.toml", "mise-bad-bootstrap-user-no-group.toml", "mise-bad-bootstrap-user-remove-home.toml", "mise-bad-bootstrap-absent-user-uid.toml", "mise-bad-bootstrap-exclusive-groups.toml", "mise-bad-bootstrap-move-home.toml", "mise-bad-bootstrap-relative-home.toml", "mise-bad-bootstrap-user-name.toml", "mise-bad-bootstrap-secret-key.toml", "mise-bad-bootstrap-secret-env.toml", "mise-bad-bootstrap-secret-name.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
-include = ["mise-bad-task-os.toml", "mise-bad-task-install-env-float.toml", "mise-bad-task-postinstall.toml"]
+include = ["mise-bad-task-os.toml", "mise-bad-task-install-env-float.toml", "mise-bad-task-postinstall.toml", "mise-bad-task-file-deps-empty.toml", "mise-bad-task-env-python-venv.toml", "mise-bad-task-env-python.toml"]
 
 [[schemas]]
 path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
@@ -363,6 +413,27 @@ _.file = { path = ".env", required = 123 }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
+
+# mise rejects a variable that has its own value and is also required, and one
+# with neither a value nor `required = true`. One case per file, so each must fail
+# on its own.
+cat >"$HOME/workdir/mise-bad-env-value-required.toml" <<'TOML'
+[env]
+X = { value = "x", required = true }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-value-required.toml"
+
+cat >"$HOME/workdir/mise-bad-env-value-required-help.toml" <<'TOML'
+[env]
+X = { value = "x", required = "set X" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-value-required-help.toml"
+
+cat >"$HOME/workdir/mise-bad-env-required-false.toml" <<'TOML'
+[env]
+X = { required = false }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-required-false.toml"
 
 cat >"$HOME/workdir/mise-bad-env-float.toml" <<'TOML'
 [env]
@@ -516,7 +587,8 @@ for unit in \
   '{ exec_start = "/bin/true", on_boot_sec = "1min" }' \
   '{ exec_start = "/bin/true", nice = 20 }' \
   '{ exec_start = "/bin/true", umask = "0888" }' \
-  '{ exec_start = "/bin/true", type = "daemon" }'; do
+  '{ exec_start = "/bin/true", type = "daemon" }' \
+  '{ exec_start = "/bin/true", state = "removed" }'; do
   cat >"$HOME/workdir/mise-bad-systemd.toml" <<TOML
 [bootstrap.linux.systemd.units]
 invalid = $unit
@@ -625,3 +697,87 @@ java = { version = "21", release_type = "stable" }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-core-options.toml"
+
+# A nested dependency array needs a task name, as the parser requires.
+cat >"$HOME/workdir/mise-bad-task-deps-empty.toml" <<'TOML'
+[tasks.main]
+depends = [[]]
+run = "echo main"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-deps-empty.toml"
+
+cat >"$HOME/workdir/mise-bad-task-file-deps-empty.toml" <<'TOML'
+[main]
+depends = [[]]
+run = "echo main"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-file-deps-empty.toml"
+
+# mise rejects unknown keys in the Python venv options and in `_.python`. Strict
+# mode already flags any key the schema does not list, so these are checked
+# without it, the way an editor's JSON Schema validation sees them.
+cat >"$HOME/workdir/mise-bad-env-python-venv.toml" <<'TOML'
+#:tombi schema.strict = false
+[env]
+_.python = { venv = { path = ".venv", bogus = 1 } }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-python-venv.toml"
+
+cat >"$HOME/workdir/mise-bad-env-python.toml" <<'TOML'
+#:tombi schema.strict = false
+[env]
+_.python = { venv = ".venv", bogus = 1 }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-python.toml"
+
+cat >"$HOME/workdir/mise-bad-task-env-python-venv.toml" <<'TOML'
+#:tombi schema.strict = false
+[build]
+run = "echo ok"
+env._.python = { venv = { path = ".venv", bogus = 1 } }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-task-env-python-venv.toml"
+
+cat >"$HOME/workdir/mise-bad-task-env-python.toml" <<'TOML'
+#:tombi schema.strict = false
+[build]
+run = "echo ok"
+env._.python = { venv = ".venv", bogus = 1 }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-task-env-python.toml"
+
+# Bootstrap secrets follow the runtime's name rules, and the table form rejects
+# unknown keys, since mise ignores a misspelled option such as `allow_emty`.
+cat >"$HOME/workdir/mise-bad-bootstrap-secret-key.toml" <<'TOML'
+[bootstrap.secrets]
+token = { env = "TOKEN", allow_emty = true }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-bootstrap-secret-key.toml"
+
+cat >"$HOME/workdir/mise-bad-bootstrap-secret-env.toml" <<'TOML'
+[bootstrap.secrets]
+token = "1BAD"
+TOML
+assert_fail "$TOMBI_LINT mise-bad-bootstrap-secret-env.toml"
+
+cat >"$HOME/workdir/mise-bad-bootstrap-secret-name.toml" <<'TOML'
+[bootstrap.secrets]
+"bad name" = "TOKEN"
+TOML
+assert_fail "$TOMBI_LINT mise-bad-bootstrap-secret-name.toml"
+
+# Bootstrap accounts follow the rules mise applies when it reads them.
+bad_account() {
+  printf '%s\n' "$2" >"$HOME/workdir/mise-bad-bootstrap-$1.toml"
+  assert_fail "$TOMBI_LINT mise-bad-bootstrap-$1.toml"
+}
+bad_account absent-group-gid $'[bootstrap.groups]\nold = { state = "absent", gid = 2000 }'
+bad_account user-no-group $'[bootstrap.users]\ndeploy = { home = "/srv/deploy" }'
+bad_account user-remove-home $'[bootstrap.users]\ndeploy = { group = "deploy", remove_home = true }'
+bad_account absent-user-uid $'[bootstrap.users]\nold = { state = "absent", uid = 2000 }'
+bad_account exclusive-groups $'[bootstrap.users]\ndeploy = { group = "deploy", exclusive_groups = true }'
+bad_account move-home $'[bootstrap.users]\ndeploy = { group = "deploy", move_home = true }'
+bad_account relative-home $'[bootstrap.users]\ndeploy = { group = "deploy", home = "srv/deploy" }'
+bad_account user-name $'[bootstrap.users]\n"bad name" = { group = "deploy" }'

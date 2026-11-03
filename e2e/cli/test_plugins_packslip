@@ -54,12 +54,14 @@ wait "$second_install"
 mise plugins update bfs
 cp "$plugin/.mise-packslip-plugin.json" before.json
 
-# A corrupt download must not remove or replace the working plugin.
+# A corrupt download must not remove or replace the working plugin. The download
+# cache would serve the verified copy kept earlier without asking the server, so
+# it is off here to exercise the corrupt response.
 printf yes >server-state/corrupt
-assert_fail "mise plugins update bfs"
+assert_fail "MISE_DOWNLOAD_CACHE=0 mise plugins update bfs"
 assert "cmp before.json '$plugin/.mise-packslip-plugin.json'"
 assert "test -f '$plugin/metadata.lua'"
-assert_fail "mise plugins install --force vfox:bfs '$source_url'"
+assert_fail "MISE_DOWNLOAD_CACHE=0 mise plugins install --force vfox:bfs '$source_url'"
 assert "test -f '$plugin/metadata.lua'"
 
 # A signature from the pilot repository cannot authorize a different source.

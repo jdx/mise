@@ -4,41 +4,42 @@ use crate::config::Settings;
 use crate::file;
 use crate::git::Git;
 
-/// Generate a git pre-commit hook
+/// Generate a git hook that runs a mise task
 ///
-/// This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
-/// when you commit changes to your repository.
+/// The hook runs `mise run <TASK>` (default `pre-commit`) with the staged file names
+/// in the STAGED environment variable. It prints the hook unless you pass --write,
+/// which saves it in the repository's hooks directory and makes it executable.
 ///
-/// Staged files are passed to the task as `STAGED`.
+/// For hooks that git gives a message file (commit-msg, prepare-commit-msg,
+/// applypatch-msg, sendemail-validate), the task gets that file as an argument.
+/// Other hook arguments, such as a pre-push hook's remote name and URL, are not
+/// passed on.
 ///
-/// Hooks that git hands a message file — `commit-msg`, `prepare-commit-msg`,
-/// `applypatch-msg` and `sendemail-validate` — pass that file to the task. git's other
-/// arguments are not forwarded, so a `pre-push` hook's remote name and URL are not
-/// appended to the task's command.
-///
-/// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
+/// For a full git hook manager, see hk: https://hk.jdx.dev
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     visible_alias = "pre-commit",
     example(
-        r###"mise generate git-pre-commit --write --task=pre-commit
-git commit -m "feat: add new feature""###,
-        help = "Install the hook; committing then runs `mise run pre-commit`."
+        "mise generate git-pre-commit --write --task=pre-commit",
+        help = "Install the hook; each commit then runs `mise run pre-commit`"
     ),
     example(
-        r###"mise generate git-pre-commit --write -- -C subdir"###,
-        help = r###"config lives in a subdirectory, so the hook has to change into it first"###
+        "mise generate git-pre-commit --write -- -C subdir",
+        help = "Use the config in subdir, since git runs hooks from the repository root"
     )
 )]
 pub(super) struct GitPreCommit {
-    /// The task to run when the pre-commit hook is triggered
+    /// The task to run when the hook is triggered
     #[usage(long, short, default = "pre-commit")]
     task: String,
-    /// Write to .git/hooks/pre-commit and make it executable
+    /// Write the hook to the hooks directory and make it executable
+    ///
+    /// The hooks directory is `.git/hooks`, or `core.hooksPath` when it is set. An
+    /// existing hook of the same name is moved to `<HOOK>.old`.
     #[usage(long, short)]
     write: bool,
-    /// Which hook to generate (saves to .git/hooks/$hook)
+    /// Which git hook to write, such as pre-push
     #[usage(long, default = "pre-commit")]
     hook: String,
     /// mise flags to embed in the generated hook, given after `--`

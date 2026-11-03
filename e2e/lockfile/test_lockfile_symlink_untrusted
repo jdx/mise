@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# A checkout can ship mise.lock as a symlink to any file of the user. Writing the
+# lockfile must not replace a file outside the lockfile's directory unless the
+# user vouches for the link: global config, or trusted config outside safe mode.
+
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+paranoid = false
+EOF
+cp "$MISE_CONFIG_DIR/config.toml" global-config.bak
+
+mkdir -p proj dotfiles
+cat >proj/mise.toml <<'EOF'
+[tools]
+node = "20.0.0"
+EOF
+ln -s "$MISE_CONFIG_DIR/config.toml" proj/mise.lock
+
+lock="mise -C proj lock --platform linux-x64"
+assert_fail_contains "MISE_SAFE=1 $lock 2>&1" "refusing to write lockfile"
+assert_fail_contains "MISE_YES=0 $lock 2>&1" "refusing to write lockfile"
+assert_succeed "cmp global-config.bak '$MISE_CONFIG_DIR/config.toml'"
+assert_succeed "test -L proj/mise.lock"
+assert_contains "MISE_YES=0 mise -C proj trust --show" "untrusted"
+
+# Trust does not lift the refusal in safe mode.
+touch dotfiles/mise.lock
+ln -sf "$PWD/dotfiles/mise.lock" proj/mise.lock
+mise trust proj/mise.toml
+assert_fail_contains "MISE_SAFE=1 $lock 2>&1" "refusing to write lockfile"
+assert_succeed "test ! -s dotfiles/mise.lock"
+
+# Outside safe mode a trusted project keeps its dotfiles-style link.
+assert_succeed "$lock"
+assert_succeed "test -L proj/mise.lock"
+assert_contains "cat dotfiles/mise.lock" "@generated"
+mise trust --untrust proj/mise.toml
+
+# A link that stays in the lockfile's directory needs no trust.
+mkdir proj/locks
+touch proj/locks/mise.lock
+ln -sf locks/mise.lock proj/mise.lock
+assert_succeed "MISE_SAFE=1 $lock"
+assert_succeed "test -L proj/mise.lock"
+assert_contains "cat proj/locks/mise.lock" "@generated"
+
+# The global lockfile is the operator's own, in safe mode too.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+node = "20.0.0"
+EOF
+: >dotfiles/mise.lock
+ln -s "$PWD/dotfiles/mise.lock" "$MISE_CONFIG_DIR/mise.lock"
+assert_succeed "MISE_SAFE=1 mise lock --global --platform linux-x64"
+assert_succeed "test -L '$MISE_CONFIG_DIR/mise.lock'"
+assert_contains "cat dotfiles/mise.lock" "@generated"

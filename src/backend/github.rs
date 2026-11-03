@@ -5,16 +5,16 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, get_filename_from_url, install_artifact, lookup_platform_key,
-    lookup_with_fallback, template_string, try_with_v_prefix, try_with_v_prefix_and_repo,
-    verify_artifact,
+    ArchiveLayout, VerifiableError, ensure_plain_asset_name, get_filename_from_url,
+    install_artifact, lookup_platform_key, lookup_with_fallback, pinned_checksum, render_bin_path,
+    tag_candidates, template_string, try_allowed_release_tags, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{ArtifactInfo, PlatformInfo, ProvenanceType};
+use crate::lockfile::{ArtifactInfo, ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, forgejo, github, gitlab};
@@ -38,6 +38,10 @@ struct ReleaseAsset {
     url: String,
     url_api: String,
     digest: Option<String>,
+    /// The GitHub release tag the asset was picked from, so provenance is
+    /// looked up on that same release. `None` when it came from elsewhere (a
+    /// lockfile URL, a direct `url`, GitLab or Forgejo).
+    release_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -109,7 +113,12 @@ impl<'a> GitBackendOptions<'a> {
             .values
             .str("slsa_signer_issuer")
             .filter(|s| !s.is_empty())?;
-        Some(crate::github::sigstore::SlsaSignerIdentity { identity, issuer })
+        Some(crate::github::sigstore::SlsaSignerIdentity {
+            identity,
+            issuer,
+            source_repository: None,
+            source_tag: None,
+        })
     }
 
     fn slsa_signer_for(&self, tv: &ToolVersion) -> Option<(String, String)> {
@@ -124,8 +133,21 @@ impl<'a> GitBackendOptions<'a> {
         self.values.str("version_prefix")
     }
 
-    fn checksum(&self) -> Option<String> {
-        self.values.platform_string("checksum")
+    /// The release tags this tool lists. An invalid `version_regex` is an
+    /// error rather than a filter that lists nothing.
+    fn tag_filter(&self) -> Result<TagFilter<'a>> {
+        let regex = self
+            .values
+            .str("version_regex")
+            .map(|pattern| {
+                Regex::new(pattern)
+                    .map_err(|e| eyre::eyre!("invalid version_regex {pattern:?}: {e}"))
+            })
+            .transpose()?;
+        Ok(TagFilter {
+            prefix: self.version_prefix(),
+            regex,
+        })
     }
 
     fn bin_path(&self) -> Option<String> {
@@ -303,6 +325,9 @@ impl<'a> GitBackendOptions<'a> {
         if let Some(value) = self.version_prefix() {
             result.insert("version_prefix".to_string(), value.to_string());
         }
+        if let Some(value) = self.values.str("version_regex") {
+            result.insert("version_regex".to_string(), value.to_string());
+        }
         if let Some(value) = self.asset_pattern_for_target(target) {
             result.insert("asset_pattern".to_string(), value);
         }
@@ -373,6 +398,78 @@ fn ensure_registry_provenance(
     }
 }
 
+/// Where to download a release asset from: its browser URL on the public
+/// forges, which isn't API-rate-limited (60 requests an hour without a token
+/// on GitHub), with the API endpoint only when the browser URL can't serve it
+/// (a private repository). A custom API (GitHub Enterprise, a self-hosted
+/// GitLab or Forgejo) is used directly.
+async fn asset_download_url(asset: &ReleaseAsset) -> String {
+    if asset.url_api.is_empty() {
+        asset.url.clone()
+    } else if is_public_forge_api_url(&asset.url_api) {
+        github::pick_reachable_asset_url(&asset.url, &asset.url_api).await
+    } else {
+        debug!(
+            "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
+            asset.url_api
+        );
+        asset.url_api.clone()
+    }
+}
+
+/// How `mise lock` marks `asset`'s digest in the lockfile: one from a release
+/// mise-versions served, not checked against a download at lock time, is only
+/// compared after a real download and never reuses a kept one.
+fn locked_digest_source(asset: &ReleaseAsset, downloaded: bool) -> Option<ChecksumSource> {
+    (asset.digest.is_some()
+        && !downloaded
+        && crate::versions_host::is_mirrored_asset_api_url(&asset.url_api))
+    .then_some(ChecksumSource::VersionsHost)
+}
+
+/// Record `asset` in its lockfile entry, its digest as the checksum when the
+/// entry has none, and return the checksum that may pick a kept download with
+/// no request: `pinned` (the tool's or the lockfile's, read before this) or else
+/// the asset's digest. A digest mise-versions supplied is not used that way, or
+/// it could choose which kept file is installed; it is only compared with the
+/// file after the download.
+fn record_release_asset(
+    platform_info: &mut PlatformInfo,
+    asset: &ReleaseAsset,
+    pinned: Option<String>,
+) -> Option<String> {
+    platform_info.url = Some(asset.url.clone());
+    platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
+    if let Some(digest) = &asset.digest
+        && platform_info.checksum.is_none()
+    {
+        debug!("using GitHub API digest for checksum verification");
+        platform_info.checksum = Some(digest.clone());
+    }
+    pinned.or_else(|| {
+        crate::versions_host::digest_download_pin(asset.digest.as_deref(), Some(&asset.url_api))
+    })
+}
+
+/// Whether `url` is under one of the public forges' API base URLs. Compared on
+/// the parsed URL, because the parser also accepts other spellings of the same
+/// host (`HTTPS://`, a leading space, userinfo) that a prefix test would take
+/// for a custom API, downloading the URL as given and skipping the browser URL
+/// and the asset-ID check.
+fn is_public_forge_api_url(url: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    [
+        DEFAULT_GITHUB_API_BASE_URL,
+        DEFAULT_GITLAB_API_BASE_URL,
+        DEFAULT_FORGEJO_API_BASE_URL,
+    ]
+    .iter()
+    .filter_map(|base| url::Url::parse(base).ok())
+    .any(|base| base.origin() == url.origin() && url.path().starts_with(base.path()))
+}
+
 fn attestations_supported(api_url: &str) -> bool {
     api_url.trim_end_matches('/') == DEFAULT_GITHUB_API_BASE_URL
 }
@@ -390,6 +487,18 @@ fn slsa_signer_missing_error(tv: &ToolVersion) -> eyre::Report {
         "Lockfile requires SLSA provenance for {tv}, but this tool has no expected signer. \
          Set slsa_signer_identity and slsa_signer_issuer in the tool options, \
          or refresh the lockfile after choosing another verification method."
+    )
+}
+
+/// A tool that names its SLSA signer has asked for that check, so a release
+/// without provenance it can verify is refused rather than installed unchecked:
+/// replacing the binary and deleting (or emptying) its provenance is exactly
+/// what the signer is there to catch.
+fn slsa_provenance_missing_error(tv: &ToolVersion, asset_name: &str) -> eyre::Report {
+    eyre::eyre!(
+        "slsa_signer_identity is set for {tv} but the release has no verifiable SLSA \
+         provenance for {asset_name}. Remove the slsa_signer options if the tool does \
+         not publish SLSA provenance."
     )
 }
 
@@ -436,6 +545,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "additional_asset_patterns".into(),
         "url".into(),
         "version_prefix".into(),
+        "version_regex".into(),
         "no_app".into(),
         "matching".into(),
         "matching_regex".into(),
@@ -481,6 +591,30 @@ fn direct_url_cache_context(effective: bool, registry_default: bool) -> Option<S
     (effective != registry_default).then(|| crate::hash::hash_to_str(&effective))
 }
 
+/// Which release tags a tool lists: those that start with `version_prefix`
+/// and match `version_regex`, when they are set.
+///
+/// The regex only filters. A listed tag still becomes a version by the usual
+/// prefix stripping, so the install path finds the tag again the same way.
+struct TagFilter<'a> {
+    prefix: Option<&'a str>,
+    regex: Option<Regex>,
+}
+
+impl TagFilter<'_> {
+    fn lists(&self, tag: &str) -> bool {
+        self.prefix.is_none_or(|p| tag.starts_with(p)) && self.allows(tag)
+    }
+
+    /// Whether a tag may be installed from. Installing still tries the tag
+    /// spellings without `version_prefix`, for tags written out by hand, but
+    /// never one `version_regex` leaves out: a repository with both `1.2.3`
+    /// and `v1.2.3` would otherwise install the release the listing excluded.
+    fn allows(&self, tag: &str) -> bool {
+        self.regex.as_ref().is_none_or(|re| re.is_match(tag))
+    }
+}
+
 /// Whether a release has anything mise could install from.
 ///
 /// A release with nothing attached has no source at all: mise never falls back
@@ -516,6 +650,23 @@ impl Backend for UnifiedGitBackend {
         VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            if self.is_gitlab() {
+                &["tool_gitlab_options", "tool_forge_options"]
+            } else if self.is_forgejo() {
+                &["tool_forgejo_options", "tool_forge_options"]
+            } else {
+                &["tool_github_options", "tool_forge_options"]
+            },
+            &["tool_forge_platforms"],
+        ))
+    }
+
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        true
+    }
+
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab
@@ -539,25 +690,15 @@ impl Backend for UnifiedGitBackend {
         if !self.is_version_installed(config, tv, check_symlink) {
             return Ok(false);
         }
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_opts = tv.request.options();
         let patterns = self
             .options(&raw_opts)
             .additional_asset_patterns_for_target(&PlatformTarget::from_current());
         Ok(self.additional_assets_install_state_matches(tv, &patterns))
     }
 
-    async fn install_operation_count(&self, tv: &ToolVersion, ctx: &InstallContext) -> usize {
-        let raw_opts = ctx
-            .config
-            .get_tool_opts_with_overrides(&self.ba)
-            .await
-            .unwrap_or_else(|err| {
-                debug!(
-                    "failed to resolve merged options while counting install operations for {}: {err:#}",
-                    tv.style()
-                );
-                tv.request.options()
-            });
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         3 + opts
             .additional_asset_patterns_for_target(&PlatformTarget::from_current())
@@ -643,7 +784,7 @@ impl Backend for UnifiedGitBackend {
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        &["api_url", "version_prefix"]
+        &["api_url", "version_prefix", "version_regex"]
     }
 
     /// The registry baseline is read straight off the registry entry, not
@@ -679,7 +820,7 @@ impl Backend for UnifiedGitBackend {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
-        let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
 
         // A tool with a `url` option never selects an asset, so its releases
         // must not be judged on having one.
@@ -692,11 +833,11 @@ impl Backend for UnifiedGitBackend {
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
-                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .filter(|r| tags.lists(&r.tag_name))
                 .filter(|r| skip_asset_check || gitlab_release_has_assets(r))
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: r.released_at,
+                    created_at: r.published_at().map(str::to_string),
                     release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
                     ..Default::default()
                 })
@@ -709,7 +850,7 @@ impl Backend for UnifiedGitBackend {
             )
             .await?
             .into_iter()
-            .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+            .filter(|r| tags.lists(&r.tag_name))
             .filter(|r| skip_asset_check || forgejo_release_has_assets(r))
             .map(|r| VersionInfo {
                 version: self.strip_version_prefix(&r.tag_name, &opts),
@@ -725,26 +866,24 @@ impl Backend for UnifiedGitBackend {
             // so flipping the `prerelease` tool option (e.g. via a project
             // override) is correct without invalidating the cache; the read
             // path filters on `prerelease` according to the current opts.
-            github::list_releases_including_prereleases_from_url(
-                api_url.as_str(),
-                &repo,
-                !skip_asset_check,
-            )
-            .await?
-            .into_iter()
-            .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-            .filter(|r| skip_asset_check || github_release_has_assets(r))
-            .map(|r| {
-                let created_at = Some(r.released_at().to_string());
-                VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at,
-                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    prerelease: Some(r.prerelease),
-                    ..Default::default()
-                }
-            })
-            .collect()
+            // Version-level data only: from mise-versions' whole list, one
+            // request however many releases the repository has.
+            github::list_release_versions(api_url.as_str(), &repo, !skip_asset_check)
+                .await?
+                .into_iter()
+                .filter(|r| tags.lists(&r.tag_name))
+                .filter(|r| skip_asset_check || r.has_assets)
+                .map(|r| {
+                    let created_at = r.released_at.clone();
+                    VersionInfo {
+                        version: self.strip_version_prefix(&r.tag_name, &opts),
+                        created_at,
+                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                        prerelease: Some(r.prerelease),
+                        ..Default::default()
+                    }
+                })
+                .collect()
         };
 
         // Apply common validation and reverse order
@@ -776,7 +915,7 @@ impl Backend for UnifiedGitBackend {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
-        let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
 
         // When `prerelease = true`, skip the `/releases/latest` shortcut
         // (which returns whichever release the repo owner marked as "Latest",
@@ -830,9 +969,8 @@ impl Backend for UnifiedGitBackend {
         };
 
         let web_url_base = self.web_url_base(&api_url, &repo);
-        Ok(latest_release
-            .filter(|(tag, _, _)| version_prefix.is_none_or(|p| tag.starts_with(p)))
-            .map(|(tag, created_at, prerelease)| VersionInfo {
+        Ok(latest_release.filter(|(tag, _, _)| tags.lists(tag)).map(
+            |(tag, created_at, prerelease)| VersionInfo {
                 version: self.strip_version_prefix(&tag, &opts),
                 created_at: Some(created_at),
                 prerelease: Some(prerelease),
@@ -844,7 +982,8 @@ impl Backend for UnifiedGitBackend {
                 // so this is the GitHub/Forgejo tag form.
                 release_url: Some(format!("{web_url_base}/releases/tag/{tag}")),
                 ..Default::default()
-            }))
+            },
+        ))
     }
 
     async fn resolve_exact_version(
@@ -861,15 +1000,27 @@ impl Backend for UnifiedGitBackend {
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
+        let listed_tag = self.listed_release_tag(&opts, version).await;
 
-        match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-            let api_url = api_url.clone();
-            let repo = repo.clone();
-            async move {
-                github::get_release_for_url_with_versions_host(&api_url, &repo, &candidate, true)
+        match try_allowed_release_tags(
+            version,
+            version_prefix,
+            Some(&repo),
+            Some(&api_url),
+            listed_tag.as_deref(),
+            |tag| tags.allows(tag),
+            |candidate| {
+                let api_url = api_url.clone();
+                let repo = repo.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(
+                        &api_url, &repo, &candidate, true,
+                    )
                     .await
-            }
-        })
+                }
+            },
+        )
         .await
         {
             Ok(release) => Ok(Some(self.strip_version_prefix(&release.tag_name, &opts))),
@@ -886,7 +1037,9 @@ impl Backend for UnifiedGitBackend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let repo = self.repo();
-        let raw_opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
+        // the version's own request options: the config's are the first
+        // entry's, which a later entry of the same tool must not inherit
+        let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         let current_target = PlatformTarget::from_current();
         let additional_patterns = opts.additional_asset_patterns_for_target(&current_target);
@@ -928,6 +1081,7 @@ impl Backend for UnifiedGitBackend {
                 url: existing_platform.url.clone().unwrap_or_default(),
                 url_api: existing_platform.url_api.clone().unwrap_or_default(),
                 digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
+                release_tag: None,
             }
         } else {
             // Find the asset URL for this specific version
@@ -938,6 +1092,18 @@ impl Backend for UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|platform| !platform.additional_artifacts.is_empty());
+        // A lockfile that is not trusted loses its artifact URLs but keeps the
+        // checksums (see `Lockfile::drop_what_needs_trust`). The main asset is
+        // then resolved from the release, and so are the extra ones, each still
+        // verified against the checksum kept at its position.
+        let locked_additional_urls_dropped =
+            tv.lock_platforms.get(&platform_key).is_some_and(|p| {
+                !p.additional_artifacts.is_empty()
+                    && p.additional_artifacts.len() == additional_patterns.len()
+                    && p.additional_artifacts
+                        .iter()
+                        .all(|a| a.url.is_empty() && a.checksum.is_some())
+            });
         let additional_assets = match tv.lock_platforms.get(&platform_key) {
             Some(platform)
                 if self.additional_artifacts_match_patterns(
@@ -955,11 +1121,13 @@ impl Backend for UnifiedGitBackend {
                         url: artifact.url.clone(),
                         url_api: artifact.url_api.clone().unwrap_or_default(),
                         digest: None,
+                        release_tag: None,
                     })
                     .collect()
             }
             _ if ctx.locked
-                && (!additional_patterns.is_empty() || locked_additional_artifacts_present) =>
+                && (!additional_patterns.is_empty() || locked_additional_artifacts_present)
+                && !locked_additional_urls_dropped =>
             {
                 eyre::bail!(
                     "No matching complete lockfile artifact list found for {} on platform {} (--locked mode)",
@@ -1076,6 +1244,8 @@ impl Backend for UnifiedGitBackend {
                 };
                 // Every recorded provenance claim must be verified, including
                 // artifacts for platforms other than the host running mise lock.
+                // That downloads the artifact and checks its digest.
+                let primary_downloaded = provenance.is_some();
                 if provenance.is_some() {
                     match self
                         .verify_provenance_at_lock_time(
@@ -1116,6 +1286,7 @@ impl Backend for UnifiedGitBackend {
                     } else {
                         None
                     };
+                    let additional_downloaded = additional_provenance.is_some();
                     if additional_provenance.is_some() {
                         additional_provenance = self
                             .verify_provenance_at_lock_time(
@@ -1133,6 +1304,7 @@ impl Backend for UnifiedGitBackend {
                         additional_provenance.as_ref(),
                     )?;
                     additional_artifacts.push(ArtifactInfo {
+                        checksum_source: locked_digest_source(&additional, additional_downloaded),
                         checksum: additional.digest,
                         url: additional.url,
                         url_api: (!additional.url_api.is_empty()).then_some(additional.url_api),
@@ -1142,6 +1314,7 @@ impl Backend for UnifiedGitBackend {
                 }
 
                 Ok(PlatformInfo {
+                    checksum_source: locked_digest_source(&asset, primary_downloaded),
                     url: Some(asset.url),
                     url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
                     checksum: asset.digest,
@@ -1152,12 +1325,12 @@ impl Backend for UnifiedGitBackend {
                 })
             }
             Err(e) => {
-                if Settings::get().generate_lockfiles()
-                    && !matches!(
-                        e.downcast_ref::<crate::errors::Error>(),
-                        Some(crate::errors::Error::UnsupportedTarget(_))
-                    )
-                {
+                // An unsupported target is reported to the lock command as such.
+                let unsupported = matches!(
+                    e.downcast_ref::<crate::errors::Error>(),
+                    Some(crate::errors::Error::UnsupportedTarget(_))
+                );
+                if unsupported || Settings::get().generate_lockfiles() {
                     return Err(e);
                 }
                 debug!(
@@ -1276,6 +1449,59 @@ impl UnifiedGitBackend {
         github::get_release_for_url_with_versions_host(api_url, repo, tag, true).await
     }
 
+    /// The release provenance for an asset lives on: the one the asset was
+    /// picked from, or for an asset reused from a lockfile, the one its
+    /// download URL names.
+    ///
+    /// Never the tag remembered for the version (`RESOLVED_TAGS`): `mise lock`
+    /// selects assets for several platforms at once, and an install resolves
+    /// its additional assets before the main one, so where two tags spell one
+    /// version (`1.2.3`, `v1.2.3`) with different assets, the remembered tag
+    /// can be the other release. An asset whose release can't be named either
+    /// way is looked up without that memory, preferring the release that
+    /// holds it.
+    async fn release_for_asset(
+        &self,
+        api_url: &str,
+        repo: &str,
+        version: &str,
+        opts: &GitBackendOptions<'_>,
+        asset: &ReleaseAsset,
+    ) -> Result<github::GithubRelease> {
+        let tag = asset.release_tag.clone().or_else(|| {
+            crate::backend::release_tag_from_download_url(
+                &asset.url,
+                &self.web_url_base(api_url, repo),
+            )
+        });
+        if let Some(tag) = tag {
+            return github::get_release_for_url_with_versions_host(api_url, repo, &tag, true).await;
+        }
+        let tags = opts.tag_filter()?;
+        let mut first_release = None;
+        let mut not_found = None;
+        for candidate in tag_candidates(version, opts.version_prefix(), Some(repo))
+            .into_iter()
+            .filter(|candidate| tags.allows(candidate))
+        {
+            match github::get_release_for_url_with_versions_host(api_url, repo, &candidate, true)
+                .await
+            {
+                Ok(release) if release.assets.iter().any(|a| a.name == asset.name) => {
+                    return Ok(release);
+                }
+                Ok(release) => {
+                    first_release.get_or_insert(release);
+                }
+                Err(e) if e.is_not_found() => not_found = Some(e),
+                Err(e) => return first_release.ok_or(e),
+            }
+        }
+        first_release.ok_or_else(|| {
+            not_found.unwrap_or_else(|| eyre::eyre!("No matching release found for {version}"))
+        })
+    }
+
     /// Detect what provenance type is available for a release by checking its assets
     /// and querying the GitHub attestation API.
     async fn detect_provenance_type(
@@ -1290,23 +1516,22 @@ impl UnifiedGitBackend {
         let api_url = opts.api_url();
         let settings = Settings::get();
         let version = &tv.version;
-        let version_prefix = opts.version_prefix();
 
-        let release =
-            try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                let api_url = api_url.to_string();
-                let repo = repo.to_string();
-                async move {
-                    github::get_release_for_url_with_versions_host(
-                        &api_url, &repo, &candidate, true,
-                    )
-                    .await
-                }
-            })
+        let signer_pinned = settings.slsa && settings.github.slsa && opts.slsa_signer().is_some();
+        let release = match self
+            .release_for_asset(&api_url, &repo, version, opts, asset)
             .await
-            .ok();
-        let Some(release) = release else {
-            return Ok(None);
+        {
+            Ok(release) => release,
+            // A tool that names its SLSA signer keeps that requirement when the
+            // release can't be looked up (a direct `url` skips the lookup during
+            // asset selection): lock-time verification then has to succeed, instead
+            // of a checksum-only entry that later installs would trust.
+            Err(e) if signer_pinned => {
+                debug!("release lookup failed for {tv}, still requiring SLSA provenance: {e}");
+                return Ok(Some(ProvenanceType::Slsa { url: None }));
+            }
+            Err(_) => return Ok(None),
         };
 
         // Check github-attestations first (higher priority, matching install verification order)
@@ -1360,7 +1585,7 @@ impl UnifiedGitBackend {
         // Check for SLSA provenance from release assets using the same platform-aware
         // picker as install-time verification. This ensures we only record SLSA provenance
         // when a matching provenance file exists for the target platform.
-        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
+        if signer_pinned {
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Narrow provenance the same way the binary is narrowed, so a
             // multi-binary release's per-binary provenance files don't
@@ -1383,6 +1608,11 @@ impl UnifiedGitBackend {
                     .map(|a| a.browser_download_url.clone());
                 return Ok(Some(ProvenanceType::Slsa { url }));
             }
+            // The tool names its signer, so a release without provenance must not be
+            // locked on its checksum alone (a later install would trust that entry).
+            // Let lock-time verification decide: it still accepts GitHub attestations
+            // the digest lookup above could not see, and refuses everything else.
+            return Ok(Some(ProvenanceType::Slsa { url: None }));
         }
 
         Ok(None)
@@ -1410,18 +1640,13 @@ impl UnifiedGitBackend {
             filename
         );
 
-        // Use the API URL with appropriate headers for downloading
-        let download_url = if self.is_gitlab() {
-            asset.url.clone()
-        } else {
-            asset.url_api.clone()
-        };
+        let download_url = asset_download_url(asset).await;
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&download_url, &api_url)?
         } else if self.is_forgejo() {
             forgejo::get_headers(&download_url, &api_url)?
         } else {
-            github::get_headers(&download_url)?
+            github::get_headers(&download_url, &api_url)?
         };
         HTTP.download_file_with_headers(&download_url, &artifact_path, &headers, None)
             .await?;
@@ -1485,24 +1710,16 @@ impl UnifiedGitBackend {
             && settings.github.slsa
             && let Some((identity, issuer)) = opts.slsa_signer_for(tv)
         {
+            let version = &tv.version;
+            let release = self
+                .release_for_asset(&api_url, &repo, version, opts, asset)
+                .await?;
             let signer = crate::github::sigstore::SlsaSignerIdentity {
                 identity: &identity,
                 issuer: &issuer,
+                source_repository: Some(&repo),
+                source_tag: self.slsa_source_tag(tv, opts, &release),
             };
-            let version = &tv.version;
-            let version_prefix = opts.version_prefix();
-            let release =
-                try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                    let api_url = api_url.to_string();
-                    let repo = repo.to_string();
-                    async move {
-                        github::get_release_for_url_with_versions_host(
-                            &api_url, &repo, &candidate, true,
-                        )
-                        .await
-                    }
-                })
-                .await?;
 
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Keep provenance aligned with the matching-selected binary, unless
@@ -1525,7 +1742,10 @@ impl UnifiedGitBackend {
                     .find(|a| a.name == provenance_name)
                     .expect("provenance asset should exist since we found its name");
 
-                let provenance_path = tmp_dir.path().join(&provenance_asset.name);
+                // Under a fixed name in a directory of its own: the release chooses the
+                // asset's name, which may equal the artifact's or climb out with `..`.
+                let provenance_dir = tempfile::tempdir_in(tmp_dir.path())?;
+                let provenance_path = provenance_dir.path().join("provenance");
                 HTTP.download_file(
                     &provenance_asset.browser_download_url,
                     &provenance_path,
@@ -1597,6 +1817,9 @@ impl UnifiedGitBackend {
             }
         }
 
+        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
+            return Err(slsa_provenance_missing_error(tv, &asset.name));
+        }
         Err(eyre::eyre!(
             "provenance was detected but could not be verified at lock time"
         ))
@@ -1649,6 +1872,26 @@ impl UnifiedGitBackend {
         self.ba.tool_name()
     }
 
+    /// The tag the versions host's list records for `version`, tried before
+    /// any guessed spelling: `cli-2.6.0` is not `vcli-2.6.0`, and `6.6.2` is
+    /// not `v6.6.2`. Accepted only when these options list the tag as
+    /// `version`, which is how `_list_remote_versions` names its releases.
+    async fn listed_release_tag(
+        &self,
+        opts: &GitBackendOptions<'_>,
+        version: &str,
+    ) -> Option<String> {
+        if self.is_gitlab() || self.is_forgejo() {
+            return None;
+        }
+        let config = Config::get().await.ok()?;
+        let url = self.listed_release_url(&config, version).await?;
+        let web_url_base = self.web_url_base(&opts.api_url(), &self.repo());
+        let tag = crate::backend::release_tag_from_url(&url, &web_url_base)?;
+        let listed = opts.tag_filter().ok()?.lists(&tag);
+        (listed && self.strip_version_prefix(&tag, opts) == version).then_some(tag)
+    }
+
     fn preferred_asset_name(&self) -> String {
         self.repo()
             .rsplit('/')
@@ -1674,10 +1917,8 @@ impl UnifiedGitBackend {
         opts: &GitBackendOptions<'_>,
     ) -> Result<()> {
         let filename = asset.name.clone();
+        ensure_plain_asset_name(&filename)?;
         let file_path = tv.download_path().join(&filename);
-
-        // Check if we'll verify checksum
-        let has_checksum = opts.checksum().is_some();
 
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
@@ -1685,51 +1926,36 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|p| p.checksum.is_some());
+        // Read before the asset's digest is recorded below.
+        let pinned = pinned_checksum(tv, &platform_key, opts.raw());
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.url = Some(asset.url.clone());
-        platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
-        if let Some(digest) = &asset.digest
-            && !lockfile_has_checksum
-        {
-            debug!("using GitHub API digest for checksum verification");
-            platform_info.checksum = Some(digest.clone());
-        }
+        let pinned = record_release_asset(platform_info, asset, pinned);
 
-        let url = if asset.url_api.is_empty() {
-            asset.url.clone()
-        } else {
-            match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-                || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
-                || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
-            {
-                true => github::pick_reachable_asset_url(&asset.url, &asset.url_api).await,
-                false => {
-                    debug!(
-                        "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
-                        asset.url_api
-                    );
-                    asset.url_api.clone()
-                }
-            }
-        };
+        let url = asset_download_url(asset).await;
 
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&url, &opts.api_url())?
         } else if self.is_forgejo() {
             forgejo::get_headers(&url, &opts.api_url())?
         } else {
-            github::get_headers(&url)?
+            github::get_headers(&url, &opts.api_url())?
         };
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(url, &file_path, &headers, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_linked(
+            url,
+            &file_path,
+            &headers,
+            pinned.as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
         // Verify and install
         ctx.pr.next_operation();
-        if has_checksum {
-            verify_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
-        }
+        // Keep this unconditional: verify_artifact checks the `checksum` and
+        // `size` options independently, so gating it on one skips the other.
+        verify_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         // Check before verify_checksum, which may generate a new checksum from the
         // downloaded file. Reuse non-SLSA provenance only when the lockfile had
@@ -1777,7 +2003,7 @@ impl UnifiedGitBackend {
                     ctx,
                     tv,
                     &file_path,
-                    &asset.name,
+                    asset,
                     locked_provenance.as_ref(),
                     AssetVerification::primary(
                         opts.asset_pattern_for_target(&PlatformTarget::from_current())
@@ -1819,6 +2045,7 @@ impl UnifiedGitBackend {
         index: usize,
     ) -> Result<()> {
         let filename = asset.name.clone();
+        ensure_plain_asset_name(&filename)?;
         let file_path = tv.download_path().join(&filename);
         let platform_key = self.get_platform_key();
         let mut artifact_info = tv
@@ -1839,22 +2066,13 @@ impl UnifiedGitBackend {
             artifact_info.checksum = Some(digest.clone());
         }
 
-        let url = if asset.url_api.is_empty() {
-            asset.url.clone()
-        } else if asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-            || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
-            || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
-        {
-            github::pick_reachable_asset_url(&asset.url, &asset.url_api).await
-        } else {
-            asset.url_api.clone()
-        };
+        let url = asset_download_url(asset).await;
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&url, &opts.api_url())?
         } else if self.is_forgejo() {
             forgejo::get_headers(&url, &opts.api_url())?
         } else {
-            github::get_headers(&url)?
+            github::get_headers(&url, &opts.api_url())?
         };
 
         ctx.pr.set_message(format!("download {filename}"));
@@ -1894,7 +2112,7 @@ impl UnifiedGitBackend {
                     ctx,
                     tv,
                     &file_path,
-                    &asset.name,
+                    asset,
                     expected_provenance.as_ref(),
                     AssetVerification::ADDITIONAL,
                 )
@@ -1975,7 +2193,8 @@ impl UnifiedGitBackend {
             pr,
             ..Default::default()
         };
-        file::extract_archive(file_path, install_path, format, &extract_opts)
+        file::extract_archive(file_path, install_path, format, &extract_opts)?;
+        file::ensure_symlinks_stay_within(install_path)
     }
 
     /// Discovers bin paths in the installation directory
@@ -1983,7 +2202,7 @@ impl UnifiedGitBackend {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, tv);
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
             return Ok(vec![tv.install_path().join(&bin_path)]);
         }
 
@@ -2095,43 +2314,67 @@ impl UnifiedGitBackend {
                 url: direct_url.clone(),
                 url_api: direct_url.clone(),
                 digest: None, // Direct URLs don't have API digest
+                release_tag: None,
             });
         }
 
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
+        let allowed = |tag: &str| tags.allows(tag);
         if self.is_gitlab() {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_gitlab_asset_url_for_target(
-                    tv,
-                    opts,
-                    repo,
-                    &candidate,
-                    target,
-                    asset_pattern,
-                )
-                .await
-            })
+            try_allowed_release_tags(
+                version,
+                version_prefix,
+                None,
+                None,
+                None,
+                allowed,
+                |candidate| async move {
+                    self.resolve_gitlab_asset_url_for_target(
+                        tv,
+                        opts,
+                        repo,
+                        &candidate,
+                        target,
+                        asset_pattern,
+                    )
+                    .await
+                },
+            )
             .await
         } else if self.is_forgejo() {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_forgejo_asset_url_for_target(
-                    tv,
-                    opts,
-                    repo,
-                    &candidate,
-                    target,
-                    asset_pattern,
-                )
-                .await
-            })
+            try_allowed_release_tags(
+                version,
+                version_prefix,
+                None,
+                None,
+                None,
+                allowed,
+                |candidate| async move {
+                    self.resolve_forgejo_asset_url_for_target(
+                        tv,
+                        opts,
+                        repo,
+                        &candidate,
+                        target,
+                        asset_pattern,
+                    )
+                    .await
+                },
+            )
             .await
         } else {
             // Pass full repo for trying reponame@version formats
-            try_with_v_prefix_and_repo(
+            let listed_tag = self.listed_release_tag(opts, version).await;
+            let api_url = opts.api_url();
+            try_allowed_release_tags(
                 version,
                 version_prefix,
                 Some(repo),
+                Some(&api_url),
+                listed_tag.as_deref(),
+                allowed,
                 |candidate| async move {
                     self.resolve_github_asset_url_for_target(
                         tv,
@@ -2205,6 +2448,7 @@ impl UnifiedGitBackend {
                 url: asset.browser_download_url,
                 url_api: asset.url,
                 digest,
+                release_tag: Some(version.to_string()),
             });
         }
 
@@ -2240,6 +2484,7 @@ impl UnifiedGitBackend {
             url: asset.browser_download_url.clone(),
             url_api: asset.url.clone(),
             digest,
+            release_tag: Some(version.to_string()),
         })
     }
 
@@ -2301,6 +2546,7 @@ impl UnifiedGitBackend {
                 url: asset.direct_asset_url.clone(),
                 url_api: asset.url,
                 digest,
+                release_tag: None,
             });
         }
 
@@ -2333,6 +2579,7 @@ impl UnifiedGitBackend {
             url: asset.direct_asset_url.clone(),
             url_api: asset.url.clone(),
             digest,
+            release_tag: None,
         })
     }
 
@@ -2397,6 +2644,7 @@ impl UnifiedGitBackend {
                 url: asset.browser_download_url,
                 url_api: asset_url_api(&asset.uuid),
                 digest,
+                release_tag: None,
             });
         }
 
@@ -2429,6 +2677,7 @@ impl UnifiedGitBackend {
             url: asset.browser_download_url.clone(),
             url_api: asset_url_api(&asset.uuid),
             digest,
+            release_tag: None,
         })
     }
 
@@ -2483,6 +2732,28 @@ impl UnifiedGitBackend {
                 let nb = name_of(b);
                 na.len().cmp(&nb.len()).then_with(|| na.cmp(nb))
             })
+    }
+
+    /// The tag SLSA provenance for `tv` must have been built from: the tag of
+    /// the release its asset came from, when that tag spells `tv`'s version.
+    /// The release comes from the API, which can't vouch for itself: a tag
+    /// that names another version would let that version's provenance pass.
+    fn slsa_source_tag<'r>(
+        &self,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+        release: &'r github::GithubRelease,
+    ) -> Option<&'r str> {
+        let tag = release.tag_name.as_str();
+        if self.strip_version_prefix(tag, opts) == tv.version
+            || tag_candidates(&tv.version, opts.version_prefix(), Some(&self.repo()))
+                .iter()
+                .any(|candidate| candidate == tag)
+        {
+            return Some(tag);
+        }
+        debug!("release tag {tag} does not name {tv}; not checking the SLSA provenance's tag");
+        None
     }
 
     fn strip_version_prefix(&self, tag_name: &str, opts: &GitBackendOptions<'_>) -> String {
@@ -2578,7 +2849,7 @@ impl UnifiedGitBackend {
                 if src.exists() {
                     let dst = symlink_dir.join(&bin_name);
                     if !dst.exists() {
-                        file::make_symlink_or_copy(&src, &dst)?;
+                        super::mise_bins::link(&src, &dst)?;
                     }
                     found = true;
                     break;
@@ -2674,7 +2945,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
-        asset_name: &str,
+        asset: &ReleaseAsset,
         expected_provenance: Option<&ProvenanceType>,
         verification: AssetVerification,
     ) -> Result<Option<ProvenanceType>> {
@@ -2776,7 +3047,7 @@ impl UnifiedGitBackend {
         // Fall back to SLSA provenance (if enabled globally and for github backend)
         if !skip_slsa && settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
             match self
-                .try_verify_slsa(ctx, tv, file_path, asset_name, &api_url, verification)
+                .try_verify_slsa(ctx, tv, file_path, asset, &api_url, verification)
                 .await
             {
                 Ok((true, provenance_url)) => {
@@ -2798,8 +3069,10 @@ impl UnifiedGitBackend {
                     return Err(eyre::eyre!("SLSA provenance verification failed for {tv}"));
                 }
                 Err(VerificationStatus::NoAttestations) => {
-                    // No provenance found - this is fine
-                    debug!("No SLSA provenance found for {tv}");
+                    // The signer is only set by a tool that publishes SLSA provenance,
+                    // so a missing or unverifiable provenance file is a failure, not a
+                    // release that has none.
+                    return Err(slsa_provenance_missing_error(tv, &asset.name));
                 }
                 Err(VerificationStatus::ApiError(e)) => {
                     if expected_provenance.is_some() || settings.provenance_api_failures_fatal {
@@ -2950,10 +3223,11 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
-        asset_name: &str,
+        asset: &ReleaseAsset,
         api_url: &str,
         verification: AssetVerification,
     ) -> std::result::Result<(bool, Option<String>), VerificationStatus> {
+        let asset_name = asset.name.as_str();
         if self.is_gitlab() || self.is_forgejo() {
             return Err(VerificationStatus::NoAttestations);
         }
@@ -2967,34 +3241,26 @@ impl UnifiedGitBackend {
         let (identity, issuer) = opts.slsa_signer_for(tv).ok_or_else(|| {
             VerificationStatus::Error("SLSA signer identity and issuer are missing".to_string())
         })?;
-        let signer = crate::github::sigstore::SlsaSignerIdentity {
-            identity: &identity,
-            issuer: &issuer,
-        };
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
-        let version_prefix = opts.version_prefix();
-        let release =
-            match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                let api_url = api_url.to_string();
-                let repo = repo.clone();
-                async move {
-                    github::get_release_for_url_with_versions_host(
-                        &api_url, &repo, &candidate, true,
-                    )
-                    .await
-                }
-            })
+        let release = match self
+            .release_for_asset(api_url, &repo, version, &opts, asset)
             .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    return Err(VerificationStatus::ApiError(format!(
-                        "Failed to get release: {e}"
-                    )));
-                }
-            };
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(VerificationStatus::ApiError(format!(
+                    "Failed to get release: {e}"
+                )));
+            }
+        };
+        let signer = crate::github::sigstore::SlsaSignerIdentity {
+            identity: &identity,
+            issuer: &issuer,
+            source_repository: Some(&repo),
+            source_tag: self.slsa_source_tag(tv, &opts, &release),
+        };
 
         // Find the best provenance asset for the current platform
         let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
@@ -3023,9 +3289,15 @@ impl UnifiedGitBackend {
             .find(|a| a.name == provenance_name)
             .expect("provenance asset should exist since we found its name");
 
-        // Download the provenance file
-        let download_dir = tv.download_path();
-        let provenance_path = download_dir.join(&provenance_asset.name);
+        // Download the provenance file under a fixed name in a directory of its own.
+        // The release chooses the asset's name: next to the artifact, a name equal to
+        // the artifact's (or `provenance/../<artifact>`) would replace the file whose
+        // checksum was just verified, and more `..` would write outside the download
+        // directory.
+        let provenance_dir = tempfile::tempdir_in(tv.download_path()).map_err(|e| {
+            VerificationStatus::Error(format!("Failed to create provenance directory: {e}"))
+        })?;
+        let provenance_path = provenance_dir.path().join("provenance");
 
         ctx.pr
             .set_message(format!("download {}", provenance_asset.name));
@@ -3100,7 +3372,8 @@ impl UnifiedGitBackend {
 /// Prefer provenance explicitly attached to the selected release asset. This is
 /// important when `asset_pattern` intentionally selects an asset for a platform
 /// other than the host. Fall back to the existing platform-aware picker for
-/// shared provenance files and releases without an exact sidecar.
+/// shared provenance files and releases without an exact sidecar. The selected
+/// asset is never its own provenance, even when its name looks like one.
 fn pick_slsa_provenance(
     picker: &AssetPicker,
     assets: &[String],
@@ -3111,7 +3384,14 @@ fn pick_slsa_provenance(
         .iter()
         .find(|asset| asset.eq_ignore_ascii_case(&sidecar))
         .cloned()
-        .or_else(|| picker.pick_best_provenance(assets))
+        .or_else(|| {
+            let others = assets
+                .iter()
+                .filter(|asset| !asset.eq_ignore_ascii_case(selected_asset))
+                .cloned()
+                .collect::<Vec<_>>();
+            picker.pick_best_provenance(&others)
+        })
 }
 
 /// Templates a string pattern with version and target platform values
@@ -3209,6 +3489,95 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::static_helpers::try_release_tags;
+
+    #[test]
+    fn test_mirrored_digest_is_recorded_but_not_a_download_pin() {
+        let asset = |url_api: &str| ReleaseAsset {
+            name: "b.tar.gz".to_string(),
+            url: "https://github.com/acme/b/releases/download/v1/b.tar.gz".to_string(),
+            url_api: url_api.to_string(),
+            digest: Some("sha256:aaaa".to_string()),
+            release_tag: Some("v1".to_string()),
+        };
+
+        // mise-versions supplied this asset, digest included: the digest is
+        // still compared after the download, but a kept file is not served by it.
+        let mirrored = "https://api.github.com/repos/acme/b/releases/assets/9001";
+        crate::versions_host::remember_mirrored_asset_api_url(mirrored);
+        let mut info = PlatformInfo::default();
+        assert_eq!(
+            record_release_asset(&mut info, &asset(mirrored), None),
+            None
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:aaaa"));
+
+        // GitHub's own digest (private repos, `use_versions_host = false`) is.
+        let direct = "https://api.github.com/repos/acme/b/releases/assets/9002";
+        let mut info = PlatformInfo::default();
+        assert_eq!(
+            record_release_asset(&mut info, &asset(direct), None).as_deref(),
+            Some("sha256:aaaa")
+        );
+
+        // A tool option or lockfile checksum wins, and the lockfile's is kept.
+        let mut info = PlatformInfo {
+            checksum: Some("sha256:bbbb".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            record_release_asset(&mut info, &asset(mirrored), Some("sha256:bbbb".into()))
+                .as_deref(),
+            Some("sha256:bbbb")
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:bbbb"));
+    }
+
+    #[test]
+    fn test_lock_marks_a_mise_versions_digest() {
+        let asset = |url_api: &str| ReleaseAsset {
+            name: "c.tar.gz".to_string(),
+            url: "https://github.com/acme/c/releases/download/v1/c.tar.gz".to_string(),
+            url_api: url_api.to_string(),
+            digest: Some("sha256:cccc".to_string()),
+            release_tag: Some("v1".to_string()),
+        };
+        let mirrored = "https://api.github.com/repos/acme/c/releases/assets/9101";
+        crate::versions_host::remember_mirrored_asset_api_url(mirrored);
+        assert_eq!(
+            locked_digest_source(&asset(mirrored), false),
+            Some(ChecksumSource::VersionsHost)
+        );
+        // Lock-time provenance verification downloaded it and checked it.
+        assert_eq!(locked_digest_source(&asset(mirrored), true), None);
+        // GitHub's own digest.
+        let direct = "https://api.github.com/repos/acme/c/releases/assets/9102";
+        assert_eq!(locked_digest_source(&asset(direct), false), None);
+    }
+
+    #[test]
+    fn test_public_forge_api_url_is_compared_parsed() {
+        for url in [
+            "https://api.github.com/repos/o/r/releases/assets/1",
+            "HTTPS://api.github.com/repos/o/r/releases/assets/1",
+            " https://api.github.com/repos/o/r/releases/assets/1",
+            "https://API.github.com/repos/o/r/releases/assets/1",
+            "https://x@api.github.com/repos/o/r/releases/assets/1",
+            "https://gitlab.com/api/v4/projects/1/packages/generic/x",
+            "https://codeberg.org/api/v1/repos/o/r/releases/assets/1",
+        ] {
+            assert!(is_public_forge_api_url(url), "{url:?}");
+        }
+        for url in [
+            "https://github.example.com/api/v3/repos/o/r/releases/assets/1",
+            "https://api.github.com.evil.example/repos/o/r/releases/assets/1",
+            "http://api.github.com/repos/o/r/releases/assets/1",
+            "https://gitlab.com/o/r/-/releases",
+            "not a url",
+        ] {
+            assert!(!is_public_forge_api_url(url), "{url:?}");
+        }
+    }
 
     #[test]
     fn test_registry_required_provenance_overrides_the_lockfile() {
@@ -3294,6 +3663,211 @@ mod tests {
         ));
     }
     use crate::args::BackendArg;
+
+    fn release_json(tag: &str, asset: &str) -> String {
+        serde_json::json!({
+            "tag_name": tag,
+            "draft": false,
+            "prerelease": false,
+            "created_at": "2026-01-01T00:00:00Z",
+            "assets": [{
+                "name": asset,
+                "browser_download_url": format!("https://example.com/{tag}/{asset}"),
+                "url": format!("https://example.com/assets/{asset}"),
+            }],
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_install_never_resolves_a_tag_version_regex_excludes() {
+        // `v1.2.3` and `1.2.3` both name version 1.2.3. With a regex that lists
+        // only the bare tag, installing 1.2.3 must not pick `v1.2.3`, which
+        // mise would otherwise try first.
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/two-tags-regex";
+        let v_tag = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/v1.2.3").as_str(),
+            )
+            .with_header("content-type", "application/json")
+            .with_body(release_json("v1.2.3", "tool-darwin.tar.gz"))
+            .expect(0)
+            .create_async()
+            .await;
+        let bare_tag = server
+            .mock("GET", format!("/repos/{repo}/releases/tags/1.2.3").as_str())
+            .with_header("content-type", "application/json")
+            .with_body(release_json("1.2.3", "tool-linux.tar.gz"))
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let api_url = server.url();
+
+        let backend = create_test_backend();
+        let mut raw = ToolVersionOptions::default();
+        raw.opts
+            .insert("version_regex".into(), toml::Value::String("^[0-9]".into()));
+        let opts = backend.options(&raw);
+        let tags = opts.tag_filter().unwrap();
+
+        let release = try_allowed_release_tags(
+            "1.2.3",
+            None,
+            Some(repo),
+            Some(&api_url),
+            None,
+            |tag| tags.allows(tag),
+            |candidate| {
+                let api_url = api_url.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(&api_url, repo, &candidate, true)
+                        .await
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(release.tag_name, "1.2.3");
+
+        let unplaced = ReleaseAsset {
+            name: "tool-linux.tar.gz".to_string(),
+            url: "https://example.com/tool-linux.tar.gz".to_string(),
+            url_api: String::new(),
+            digest: None,
+            release_tag: None,
+        };
+        let release = backend
+            .release_for_asset(&api_url, repo, "1.2.3", &opts, &unplaced)
+            .await
+            .unwrap();
+        assert_eq!(release.tag_name, "1.2.3");
+
+        v_tag.assert_async().await;
+        bare_tag.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_provenance_release_is_the_one_the_asset_came_from() {
+        // `1.2.3` and `v1.2.3` both name version 1.2.3, with different assets,
+        // and `v1.2.3` is the tag remembered for the version. An asset from
+        // `1.2.3` must have its provenance looked up on `1.2.3`, whether it
+        // was just selected, reused from a lockfile URL, or can't be placed.
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/two-tags-provenance";
+        let v_tag = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/v1.2.3").as_str(),
+            )
+            .with_header("content-type", "application/json")
+            .with_body(release_json("v1.2.3", "tool-darwin.tar.gz"))
+            .expect(1)
+            .create_async()
+            .await;
+        let bare_tag = server
+            .mock("GET", format!("/repos/{repo}/releases/tags/1.2.3").as_str())
+            .with_header("content-type", "application/json")
+            .with_body(release_json("1.2.3", "tool-linux.tar.gz"))
+            .expect(1)
+            .create_async()
+            .await;
+        let api_url = server.url();
+
+        let remembered = try_release_tags(
+            "1.2.3",
+            None,
+            Some(repo),
+            Some(&api_url),
+            None,
+            |candidate| {
+                let api_url = api_url.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(&api_url, repo, &candidate, true)
+                        .await
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(remembered.tag_name, "v1.2.3");
+
+        let backend = create_test_backend();
+        let linux_asset = |url: String, release_tag: Option<&str>| ReleaseAsset {
+            name: "tool-linux.tar.gz".to_string(),
+            url,
+            url_api: String::new(),
+            digest: None,
+            release_tag: release_tag.map(str::to_string),
+        };
+        for (case, asset) in [
+            (
+                "selected",
+                linux_asset(
+                    "https://example.com/tool-linux.tar.gz".into(),
+                    Some("1.2.3"),
+                ),
+            ),
+            (
+                "lockfile URL",
+                linux_asset(
+                    format!("{api_url}/{repo}/releases/download/1.2.3/tool-linux.tar.gz"),
+                    None,
+                ),
+            ),
+            (
+                "unplaced",
+                linux_asset("https://example.com/tool-linux.tar.gz".into(), None),
+            ),
+        ] {
+            let release = backend
+                .release_for_asset(
+                    &api_url,
+                    repo,
+                    "1.2.3",
+                    &backend.options(&ToolVersionOptions::default()),
+                    &asset,
+                )
+                .await
+                .unwrap();
+            assert_eq!(release.tag_name, "1.2.3", "{case}");
+        }
+        v_tag.assert_async().await;
+        bare_tag.assert_async().await;
+    }
+
+    #[test]
+    fn test_release_tag_from_download_url() {
+        let repo = "https://github.com/kubernetes-sigs/kustomize";
+        assert_eq!(
+            crate::backend::release_tag_from_download_url(
+                "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz",
+                repo
+            )
+            .as_deref(),
+            Some("kustomize/v5.8.1")
+        );
+        assert_eq!(
+            crate::backend::release_tag_from_download_url(
+                "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/k.tar.gz",
+                repo
+            )
+            .as_deref(),
+            Some("kustomize/v5.8.1")
+        );
+        for url in [
+            "https://github.com/someone/kustomize/releases/download/v1/k.tar.gz",
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/k.tar.gz",
+            "https://api.github.com/repos/kubernetes-sigs/kustomize/releases/assets/1",
+        ] {
+            assert_eq!(
+                crate::backend::release_tag_from_download_url(url, repo),
+                None,
+                "{url}"
+            );
+        }
+    }
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(
@@ -3458,6 +4032,53 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     }
 
     #[test]
+    fn test_tag_filter_lists_tags_matching_prefix_and_regex() {
+        let backend = create_test_backend();
+        let filter = |options: &[(&str, &str)]| {
+            let mut opts = ToolVersionOptions::default();
+            for (key, value) in options {
+                opts.opts
+                    .insert(key.to_string(), toml::Value::String(value.to_string()));
+            }
+            let tags = backend.options(&opts).tag_filter().unwrap();
+            ["v1.2.3", "nightly", "pgo-profiles", "release-1.0.0"]
+                .into_iter()
+                .filter(|tag| tags.lists(tag))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            filter(&[]),
+            ["v1.2.3", "nightly", "pgo-profiles", "release-1.0.0"]
+        );
+        assert_eq!(
+            filter(&[("version_regex", r"^(v\d+\.\d+\.\d+|nightly)$")]),
+            ["v1.2.3", "nightly"]
+        );
+        // Unanchored, the pattern matches anywhere in the tag.
+        assert_eq!(
+            filter(&[("version_regex", "1")]),
+            ["v1.2.3", "release-1.0.0"]
+        );
+        // With both set, a tag has to pass both.
+        assert_eq!(
+            filter(&[("version_prefix", "release-"), ("version_regex", r"\.0$")]),
+            ["release-1.0.0"]
+        );
+        assert!(filter(&[("version_prefix", "v"), ("version_regex", "nightly")]).is_empty());
+    }
+
+    #[test]
+    fn test_invalid_version_regex_is_an_error() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("version_regex".into(), toml::Value::String("(".into()));
+        let err = backend.options(&opts).tag_filter().err().unwrap();
+        assert!(err.to_string().contains("invalid version_regex"), "{err}");
+    }
+
+    #[test]
     fn test_identity_options_keep_the_signer_and_the_release_selection() {
         use crate::backend::static_helpers::test_identity_options;
         let backend = create_test_backend();
@@ -3483,6 +4104,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         // Each of these selects a different release or a different layout.
         for (key, value) in [
             ("version_prefix", "release-"),
+            ("version_regex", "^v"),
             ("api_url", "https://ghe.example.com/api/v3"),
             ("asset_pattern", "tool-*.tar.gz"),
             ("bin_path", "tool/bin"),
@@ -3717,6 +4339,27 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         );
     }
 
+    /// An artifact whose name looks like provenance must not be offered as its own
+    /// provenance: downloading it a second time would replace the verified file.
+    #[test]
+    fn test_pick_slsa_provenance_never_returns_selected_asset() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec!["tool-linux-x64-provenance".to_string()];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-x64-provenance"),
+            None
+        );
+
+        let assets = vec![
+            "tool-linux-x64-provenance".to_string(),
+            "tool-linux-x64.provenance.json".to_string(),
+        ];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-x64-provenance").as_deref(),
+            Some("tool-linux-x64.provenance.json")
+        );
+    }
+
     fn github_release(assets: Vec<&str>) -> github::GithubRelease {
         github::GithubRelease {
             tag_name: "v1.0.0".into(),
@@ -3742,6 +4385,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         gitlab::GitlabRelease {
             tag_name: "v1.0.0".into(),
             description: None,
+            created_at: None,
             released_at: None,
             assets: gitlab::GitlabAssets {
                 sources: sources
@@ -4111,6 +4755,37 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     }
 
     #[test]
+    fn test_slsa_source_tag_must_name_the_version() {
+        let backend = create_test_backend();
+        let backend_arg = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend_arg, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+        let raw_opts = ToolVersionOptions::default();
+        let opts = backend.options(&raw_opts);
+        let release = |tag: &str| github::GithubRelease {
+            tag_name: tag.into(),
+            ..github_release(vec![])
+        };
+
+        for tag in ["v1.0.0", "1.0.0", "repo@1.0.0"] {
+            assert_eq!(
+                backend.slsa_source_tag(&tv, &opts, &release(tag)),
+                Some(tag)
+            );
+        }
+        // A release tagged for another version names no tag for 1.0.0:
+        // checking against it would let 0.9.0's provenance pass.
+        assert_eq!(
+            backend.slsa_source_tag(&tv, &opts, &release("v0.9.0")),
+            None
+        );
+    }
+
+    #[test]
     fn test_matching_options_are_install_time_keys() {
         // `matching`/`matching_regex` must be install-time-only keys so a stale
         // cached filter from a prior install can't silently override what's in
@@ -4125,6 +4800,28 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     #[test]
     fn test_additional_asset_patterns_is_an_install_time_key() {
         assert!(install_time_option_keys().contains(&"additional_asset_patterns".to_string()));
+    }
+
+    #[test]
+    fn test_discover_bin_paths_keeps_bin_path_in_install_dir() {
+        use crate::backend::static_helpers::test_tool_version;
+        let backend = create_test_backend();
+
+        let tv = test_tool_version(&backend, "1.0.0", &[("bin_path", "t-{{ version }}/bin")]);
+        assert_eq!(
+            backend.discover_bin_paths(&tv).unwrap(),
+            vec![tv.install_path().join("t-1.0.0/bin")]
+        );
+
+        // The rendered value is what gets checked, not the template.
+        for bin_path in ["/proc/self/cwd/evil", "../../evil", "{{ '..' }}/evil"] {
+            let tv = test_tool_version(&backend, "1.0.0", &[("bin_path", bin_path)]);
+            let err = backend.discover_bin_paths(&tv).unwrap_err();
+            assert!(
+                err.to_string().contains("inside the install directory"),
+                "unexpected error for {bin_path:?}: {err}"
+            );
+        }
     }
 
     #[test]
@@ -4154,6 +4851,10 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         opts.opts.insert(
             "version_prefix".to_string(),
             toml::Value::String("release-".to_string()),
+        );
+        opts.opts.insert(
+            "version_regex".to_string(),
+            toml::Value::String(r"^release-\d".to_string()),
         );
         // matching/matching_regex are top-level (not per-platform) options; they
         // must round-trip into lockfile_options for every target so a relock on
@@ -4200,6 +4901,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 ("matching".to_string(), "tool".to_string()),
                 ("matching_regex".to_string(), "^tool-".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
+                ("version_regex".to_string(), r"^release-\d".to_string()),
             ])
         );
         assert_eq!(
@@ -4217,6 +4919,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 ("matching_regex".to_string(), "^tool-".to_string()),
                 ("no_app".to_string(), "true".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
+                ("version_regex".to_string(), r"^release-\d".to_string()),
             ])
         );
     }

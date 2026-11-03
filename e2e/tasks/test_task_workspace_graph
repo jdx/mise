@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-export MISE_EXPERIMENTAL=1
-
 cat <<'EOF' >mise.toml
 monorepo_root = true
 
@@ -68,4 +66,4 @@ mkdir -p apps/app
   assert_contains "mise tasks graph" "node:app"
 )
 
-assert_fail_contains "MISE_EXPERIMENTAL=0 mise tasks graph" "experimental"
+assert_contains "MISE_EXPERIMENTAL=0 mise tasks graph" "node:app"

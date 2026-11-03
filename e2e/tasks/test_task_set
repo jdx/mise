@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+# project tasks
+[tasks]
+short = "echo short"
+
+[tasks.build]
+description = "Build" # keep this comment
+run = "cargo build"
+hide = true
+env = { A = "1" }
+
+[tasks.test.env]
+B = "2"
+EOF
+cat <<'EOF' >>mise.toml
+[tasks.test]
+run = "cargo test"
+EOF
+
+echo "=== only the given fields change ==="
+mise tasks set build --description "Build it" --unset hide --env-var C=3 --tools jq@1.7 -- cargo build --release
+assert "cat mise.toml" '# project tasks
+[tasks]
+short = "echo short"
+
+[tasks.build]
+description = "Build it" # keep this comment
+run = "cargo build --release"
+env = { A = "1", C = "3" }
+tools = { jq = "1.7" }
+
+[tasks.test.env]
+B = "2"
+[tasks.test]
+run = "cargo test"'
+
+echo "=== shorthand tasks become tables ==="
+# the emptied [tasks] header keeps its comment; test_task_rm covers one without
+mise tasks set short --depends build --depends test
+assert "cat mise.toml" '# project tasks
+[tasks]
+
+[tasks.short]
+run = "echo short"
+depends = ["build", "test"]
+
+[tasks.build]
+description = "Build it" # keep this comment
+run = "cargo build --release"
+env = { A = "1", C = "3" }
+tools = { jq = "1.7" }
+
+[tasks.test.env]
+B = "2"
+[tasks.test]
+run = "cargo test"'
+
+echo "=== env tables written as sections are merged ==="
+mise tasks set test --env-var B=20 --env-var D=4 --usage 'flag "--fast"' --confirm "Run tests?"
+assert_contains "cat mise.toml" '[tasks.test.env]
+B = "20"
+D = "4"
+[tasks.test]
+run = "cargo test"
+confirm = "Run tests?"
+usage = '"'"'flag "--fast"'"'"''
+
+echo "=== --json and --dry-run ==="
+assert_json "mise tasks set --json --dry-run short --hide" "{
+  \"task\": \"short\",
+  \"action\": \"updated\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"echo short\", \"depends\": [\"build\", \"test\"], \"hide\": true},
+  \"newly_trusted\": false,
+  \"dry_run\": true
+}"
+assert_not_contains "cat mise.toml" "hide"
+assert_json "mise tasks set --json short --depends build --depends test" "{
+  \"task\": \"short\",
+  \"action\": \"unchanged\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"echo short\", \"depends\": [\"build\", \"test\"]},
+  \"newly_trusted\": false,
+  \"dry_run\": false
+}"
+
+echo "=== choosing the file ==="
+cat <<'EOF' >mise.local.toml
+[tasks.build]
+run = "cargo build --profile local"
+EOF
+assert_fail_contains "mise tasks set build --hide" "task build is defined in several files"
+assert_fail_contains "mise tasks set build --hide" "choose one with --path, --env or --global"
+mise tasks set --env local build --hide
+assert "cat mise.local.toml" '[tasks.build]
+run = "cargo build --profile local"
+hide = true'
+mise tasks set --path mise.toml build --quiet
+assert_contains "cat mise.toml" '[tasks.build]
+description = "Build it" # keep this comment
+run = "cargo build --release"
+env = { A = "1", C = "3" }
+tools = { jq = "1.7" }
+quiet = true'
+assert_fail_contains "mise tasks set --env local test --hide" "no task named test in"
+
+echo "=== refusals ==="
+assert_fail_contains "mise tasks set nope --hide" "no task named nope"
+assert_fail_contains "mise tasks set short" "nothing to change"
+assert_fail_contains "mise tasks set short --unset bogus" "bogus is not a task field"
+mise tasks add --file scripted -- echo hi
+assert_fail_contains "mise tasks set scripted --hide" "task scripted is a file task"

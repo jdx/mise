@@ -9,18 +9,18 @@ use crate::{dirs, duration, file};
 
 /// Show the individuals supporting mise as Patron-tier members
 ///
-/// Lists the individuals on the Patron tier from https://jdx.dev/patrons.json.
-/// The list refreshes daily; supporting terminals will render each patron's
-/// name as a clickable link via OSC 8 hyperlinks.
+/// Fetches the list from https://jdx.dev/patrons.json and caches it for a day;
+/// pass `--refresh` to fetch it now. If the fetch fails, the cached list is used.
+/// Terminals that support OSC 8 hyperlinks show each name as a link.
 ///
 /// To appear here, become a patron at https://jdx.dev/sponsors.html.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
+    example(r###"mise patrons"###, help = "List the patrons"),
     example(
-        r###"mise patrons
-mise patrons -J
-mise patrons --refresh"###
+        r###"mise patrons --refresh -J"###,
+        help = "Fetch the list now and print it as JSON"
     )
 )]
 pub(crate) struct Patrons {
@@ -28,7 +28,7 @@ pub(crate) struct Patrons {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Bypass the local cache and re-fetch
+    /// Fetch the list now instead of using the cached copy
     #[usage(long)]
     refresh: bool,
 }

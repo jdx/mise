@@ -4,43 +4,65 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::system;
 use crate::system::history::OperationScope;
+use crate::system::package_plugin::PackagePluginManager;
 #[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
 use crate::system::packages::brew;
-use crate::system::packages::plugin::PackagePluginManager;
 use crate::ui::prompt;
 
-/// Prune installed system packages no longer declared in `[bootstrap.packages]`
+/// Uninstall packages that no config declares
 ///
-/// Supports Homebrew formulae, conservatively removable mise-owned casks, and
-/// packages installed by package plugins that implement `PackageUninstall`.
-/// Pruning keeps packages needed by the current config or by trusted, loadable
-/// tracked configs. Plugin packages that were already installed before mise
-/// first applied them are never claimed or removed.
+/// For `brew` (the default), removes every linked formula that is neither
+/// declared nor needed by a declared formula or cask, including formulae you
+/// installed with Homebrew itself. Run with `--dry-run` first, or record
+/// existing formulae with `mise bootstrap packages import`.
+///
+/// For `brew-cask`, removes only casks mise installed and can prove are
+/// unchanged. For a package plugin that supports uninstalling, removes only
+/// packages mise installed. A package is kept while the current config, or any
+/// trusted config mise has tracked, still declares it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages prune --manager brew
-mise bootstrap packages prune --manager brew --dry-run
-mise bootstrap packages prune --manager brew --yes
-mise bootstrap packages prune --manager brew-cask --dry-run
-mise bootstrap packages prune --manager vscode --dry-run"###
+        "mise bootstrap packages prune --dry-run",
+        help = "Preview which Homebrew formulae would be removed"
+    ),
+    example(
+        "mise bootstrap packages prune --yes",
+        help = "Remove them without a prompt"
+    ),
+    example(
+        "mise bootstrap packages prune --manager brew-cask --dry-run",
+        help = "Preview which casks would be removed"
+    ),
+    example(
+        "mise bootstrap packages prune --manager vscode --dry-run",
+        help = "Preview removals for a package plugin named vscode"
     )
 )]
 pub(crate) struct SystemPrune {
-    /// Only prune packages for this manager
+    /// Package manager to prune: `brew`, `brew-cask`, or a package plugin
     #[usage(long, short, default = "brew")]
     manager: String,
 
-    /// Print what would be removed without deleting anything
+    /// Show what would be removed without removing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Remove `brew-cask` casks that mise installed even when it cannot prove
+    /// they are unchanged, such as self-updating apps or casks with install
+    /// scripts
+    ///
+    /// mise removes the files it recorded installing that are still in place,
+    /// but not what a cask's own install scripts created.
+    #[usage(long)]
+    force: bool,
 }
 
 impl SystemPrune {
@@ -59,6 +81,9 @@ impl SystemPrune {
                 "manager '{}' is excluded by the system_packages.managers setting",
                 self.manager
             );
+        }
+        if self.force && self.manager != "brew-cask" {
+            bail!("--force only applies to --manager brew-cask");
         }
         match self.manager.as_str() {
             "brew" => self.run_brew().await,
@@ -192,9 +217,26 @@ impl SystemPrune {
             .find(|mp| mp.manager.name() == "brew-cask")
             .map(|mp| mp.requests)
             .unwrap_or_default();
-        let plan = brew::cask_prune_plan(&configured).await?;
+        let plan = brew::cask_prune_plan(&configured, self.force).await?;
         for skipped in &plan.skipped {
             warn!("brew-cask:{}: skipped: {}", skipped.token, skipped.reason);
+        }
+        let forceable = plan
+            .skipped
+            .iter()
+            .filter(|skipped| skipped.forceable)
+            .map(|skipped| skipped.token.as_str())
+            .collect::<Vec<_>>();
+        if !forceable.is_empty() {
+            info!(
+                "brew-cask: to remove {} anyway, run again with --force",
+                forceable.join(", ")
+            );
+        }
+        for candidate in &plan.remove {
+            if let Some(reason) = &candidate.forced {
+                warn!("brew-cask:{}: forcing removal: {reason}", candidate.token);
+            }
         }
         if plan.is_empty() {
             info!("brew-cask: nothing to prune");

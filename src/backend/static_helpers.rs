@@ -6,12 +6,13 @@ use crate::http::HTTP;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use indexmap::IndexSet;
 use reqwest::header::HeaderMap;
+use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 
 use super::platform_tokens::{
     BINARY_ARCH_TOKENS, BINARY_OS_TOKENS, is_arch_token, is_os_token, is_platform_or_version_token,
@@ -120,6 +121,72 @@ pub(crate) async fn fetch_checksum_from_shasums(
 /// [`fetch_checksum_from_file_with_headers`] without extra request headers.
 pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
     fetch_checksum_from_file_with_headers(checksum_url, algo, &HeaderMap::new()).await
+}
+
+/// The checksum a publisher lists for `filename` in the SHASUMS-style file at `shasums_url`,
+/// for an install that has no checksum pinned. See [`fetch_published_checksum`].
+pub(crate) async fn fetch_published_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+) -> Result<Option<String>> {
+    let algo = crate::backend::asset_matcher::detect_checksum_algorithm(&get_filename_from_url(
+        shasums_url,
+    ));
+    fetch_published_checksum(shasums_url, |content| {
+        hash::parse_shasums(content)
+            .get(filename)
+            .map(|h| format!("{algo}:{h}"))
+    })
+    .await
+}
+
+/// The checksum a publisher lists in the individual checksum file at `checksum_url`, for an
+/// install that has no checksum pinned. See [`fetch_published_checksum`].
+pub(crate) async fn fetch_published_checksum_from_file(
+    checksum_url: &str,
+    algo: &str,
+) -> Result<Option<String>> {
+    fetch_published_checksum(checksum_url, |content| {
+        parse_checksum_file_content(content, algo)
+    })
+    .await
+}
+
+/// Unlike the `fetch_checksum_from_*` helpers, which treat every failure as "no checksum",
+/// this fails unless the answer is clear: a checksum file that exists must list the artifact,
+/// and a failed request other than a 404 is an error, so a flaky or interfered-with request
+/// cannot turn the check off. Only a 404, a release that never published the file, gives
+/// `Ok(None)`.
+///
+/// This uses the uncached `get_text`: the in-process cache keeps only the message of a failed
+/// request, and recognizing a 404 by its message would also match a URL or version that
+/// happens to contain "404".
+async fn fetch_published_checksum(
+    checksum_url: &str,
+    parse: impl FnOnce(&str) -> Option<String>,
+) -> Result<Option<String>> {
+    let content = match HTTP.get_text(checksum_url).await {
+        Ok(content) => content,
+        Err(e) if is_not_found(&e) => return Ok(None),
+        Err(e) => {
+            return Err(e)
+                .wrap_err_with(|| format!("failed to fetch checksum from {checksum_url}"));
+        }
+    };
+    match parse(&content) {
+        Some(checksum) => Ok(Some(checksum)),
+        None => bail!("{checksum_url} does not list a checksum for this archive"),
+    }
+}
+
+/// Whether `e` is an HTTP 404 response, by its status rather than its message.
+fn is_not_found(e: &eyre::Report) -> bool {
+    e.chain().any(|cause| {
+        cause
+            .downcast_ref::<reqwest::Error>()
+            .and_then(reqwest::Error::status)
+            == Some(reqwest::StatusCode::NOT_FOUND)
+    })
 }
 
 fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
@@ -266,7 +333,16 @@ where
 /// version mise listed always round-trips to its own tag; the version is still
 /// tried unprefixed afterwards for users who spell out a tag by hand, down to
 /// the bare version with every copy of the prefix removed.
-fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str>) -> Vec<String> {
+///
+/// Without a prefix, `v` goes first only for a version that starts with a
+/// digit. Any other version already carries its tag's own decoration
+/// (`cli-2.6.0`, `kustomize/v5.8.1`), and guessing `vcli-2.6.0` first costs a
+/// 404 from mise-versions and another from GitHub before the real tag is tried.
+pub(crate) fn tag_candidates(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+) -> Vec<String> {
     let mut candidates = if let Some(prefix) = version_prefix {
         // If a custom prefix is configured, try both prefixed and non-prefixed versions
         let mut candidates = vec![format!("{prefix}{version}"), version.to_string()];
@@ -288,8 +364,10 @@ fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str
             version.to_string(),
             version.trim_start_matches('v').to_string(),
         ]
-    } else {
+    } else if version.starts_with(|c: char| c.is_ascii_digit()) {
         vec![format!("v{version}"), version.to_string()]
+    } else {
+        vec![version.to_string(), format!("v{version}")]
     };
 
     // Also try repo@version formats (e.g., tectonic@0.15.0) when no prefix is configured
@@ -316,6 +394,36 @@ fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str
         .collect()
 }
 
+/// The tag a release lookup resolved to earlier in this process, per
+/// `(api_url, repo, version, version_prefix)`. The API URL keeps a
+/// repository on github.com apart from one of the same name on an enterprise
+/// host.
+///
+/// One command looks the same release up several times -- to resolve an exact
+/// version, to select its asset, to detect and to verify its provenance, and
+/// again for every lockfile platform -- and a tag that 404s is not cached, so
+/// without this every lookup repeats each wrong guess against mise-versions
+/// and then GitHub. Only a tag the resolver accepted is recorded, and it is
+/// tried first rather than alone, so a stale entry costs a request, not a
+/// result.
+type ResolvedTagKey = (String, String, String, Option<String>);
+static RESOLVED_TAGS: LazyLock<Mutex<HashMap<ResolvedTagKey, String>>> =
+    LazyLock::new(Default::default);
+
+fn resolved_tag_key(
+    api_url: &str,
+    repo: &str,
+    version: &str,
+    version_prefix: Option<&str>,
+) -> ResolvedTagKey {
+    (
+        api_url.trim_end_matches('/').to_ascii_lowercase(),
+        repo.to_ascii_lowercase(),
+        version.to_string(),
+        version_prefix.map(str::to_string),
+    )
+}
+
 /// Helper to try various tag formats for a resolver function
 /// Tries version_prefix (if set), v prefix, and optionally repo@version formats
 pub(crate) async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
@@ -329,19 +437,99 @@ where
     Fut: Future<Output = std::result::Result<T, E>>,
     E: VerifiableError,
 {
-    let mut errors = vec![];
+    try_release_tags(version, version_prefix, repo, None, None, resolver).await
+}
 
-    for candidate in tag_candidates(version, version_prefix, repo) {
-        match resolver(candidate).await {
-            Ok(res) => return Ok(res),
-            Err(e) => {
-                if e.is_not_found() {
-                    errors.push(e.into_eyre());
-                } else {
-                    return Err(e.into_eyre());
+/// [`try_with_v_prefix_and_repo`], trying `known_tag` -- the tag a version
+/// list recorded for `version` -- before guessing at spellings. With the
+/// `api_url` that `repo` lives on, a tag that already resolved for this
+/// release earlier in the process goes first.
+///
+/// Those two are hints, not answers: one that fails for any reason -- say its
+/// release lacks the asset this resolver wants -- moves on to the generated
+/// spellings, which keep the old rule of stopping at anything but a 404. If
+/// nothing resolves, the hint's own error is the one reported.
+pub(crate) async fn try_release_tags<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+    api_url: Option<&str>,
+    known_tag: Option<&str>,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
+    try_allowed_release_tags(
+        version,
+        version_prefix,
+        repo,
+        api_url,
+        known_tag,
+        |_| true,
+        resolver,
+    )
+    .await
+}
+
+/// [`try_release_tags`] over only the tags `allowed` accepts, hints included,
+/// for a tool whose options leave some of a version's spellings unlisted.
+pub(crate) async fn try_allowed_release_tags<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+    api_url: Option<&str>,
+    known_tag: Option<&str>,
+    allowed: impl Fn(&str) -> bool,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
+    let key = repo
+        .zip(api_url)
+        .map(|(repo, api_url)| resolved_tag_key(api_url, repo, version, version_prefix));
+    let resolved = key
+        .as_ref()
+        .and_then(|key| RESOLVED_TAGS.lock().unwrap().get(key).cloned());
+    let hints: IndexSet<String> = resolved
+        .into_iter()
+        .chain(known_tag.map(str::to_string))
+        .filter(|tag| allowed(tag))
+        .collect();
+    let generated = tag_candidates(version, version_prefix, repo)
+        .into_iter()
+        .filter(|tag| allowed(tag) && !hints.contains(tag))
+        .map(|tag| (tag, false));
+    let candidates = hints
+        .iter()
+        .cloned()
+        .map(|tag| (tag, true))
+        .chain(generated);
+
+    let mut errors = vec![];
+    let mut hint_error = None;
+    for (candidate, is_hint) in candidates {
+        match resolver(candidate.clone()).await {
+            Ok(res) => {
+                if let Some(key) = key {
+                    RESOLVED_TAGS.lock().unwrap().insert(key, candidate);
                 }
+                return Ok(res);
             }
+            Err(e) if e.is_not_found() => errors.push(e.into_eyre()),
+            Err(e) if is_hint => {
+                hint_error.get_or_insert(e.into_eyre());
+            }
+            Err(e) => return Err(e.into_eyre()),
         }
+    }
+    if let Some(err) = hint_error {
+        return Err(err);
     }
     Err(errors
         .pop()
@@ -610,7 +798,12 @@ pub(crate) fn template_string_for_target(
     render_template(
         template,
         &tv.version,
-        crate::tera::get_tera_for_target(None, target.os_name(), target.arch_name()),
+        crate::tera::get_tera_for_target(
+            None,
+            target.os_name(),
+            target.arch_name(),
+            target.qualifier(),
+        ),
     )
 }
 
@@ -676,9 +869,39 @@ pub fn get_filename_from_url(url_str: &str) -> String {
             .unwrap_or(url_str)
             .to_string()
     };
-    urlencoding::decode(&filename)
-        .map(|s| s.to_string())
-        .unwrap_or(filename)
+    // Callers join this under a download directory. Decoding can turn `%2F` or
+    // `%2E%2E` into path syntax, so an unusable result keeps the encoded name,
+    // which stays a single inert component (as brew casks do). A raw name that
+    // would itself leave the directory, such as a literal `C:x` on Windows, is
+    // not used at all.
+    match urlencoding::decode(&filename) {
+        Ok(decoded) if !is_unusable_file_name(&decoded) => decoded.into_owned(),
+        _ if !escapes_directory(&filename) => filename,
+        _ => "download".to_string(),
+    }
+}
+
+/// Whether `name` joined under a directory would name something other than a
+/// file in it. On Windows a `:` makes it a drive or a stream.
+fn escapes_directory(name: &str) -> bool {
+    name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains(['/', '\0'])
+        || (cfg!(windows) && name.contains(['\\', ':']))
+}
+
+/// Whether `name` cannot stand as a single path component under a directory.
+/// The Windows-only rules are path syntax there and ordinary names elsewhere.
+fn is_unusable_file_name(name: &str) -> bool {
+    if escapes_directory(name) {
+        return true;
+    }
+    cfg!(windows)
+        && (name.ends_with([' ', '.'])
+            || name
+                .chars()
+                .any(|c| c.is_control() || matches!(c, '<' | '>' | '"' | '|' | '?' | '*')))
 }
 
 /// Whether anything describes what is inside the archive.
@@ -714,6 +937,9 @@ pub(crate) fn install_artifact(
     if let Some(name) = lookup_with_fallback(opts, "rename_exe") {
         ensure_plain_bin_name("rename_exe", &name)?;
     }
+    let bin_path = lookup_with_fallback(opts, "bin_path")
+        .map(|template| render_bin_path(&template, tv))
+        .transpose()?;
 
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
@@ -742,9 +968,8 @@ pub(crate) fn install_artifact(
 
         // Determine the destination path with support for bin_path
         let rename_exe = lookup_with_fallback(opts, "rename_exe");
-        let dest = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
-            let bin_path = template_string(&bin_path_template, tv);
-            let bin_dir = install_path.join(&bin_path);
+        let dest = if let Some(bin_path) = &bin_path {
+            let bin_dir = install_path.join(bin_path);
             file::create_dir_all(&bin_dir)?;
             if let Some(rename_to) = rename_exe {
                 bin_dir.join(rename_binary_name(decompressed_name, &rename_to))
@@ -766,9 +991,8 @@ pub(crate) fn install_artifact(
         file::make_executable(&dest)?;
     } else if format == file::ExtractionFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
-        if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
-            let bin_path = template_string(&bin_path_template, tv);
-            let bin_dir = install_path.join(&bin_path);
+        if let Some(bin_path) = &bin_path {
+            let bin_dir = install_path.join(bin_path);
             file::create_dir_all(&bin_dir)?;
             let original_name = file_path.file_name().unwrap().to_string_lossy();
             let dest_name = lookup_with_fallback(opts, "rename_exe")
@@ -801,7 +1025,7 @@ pub(crate) fn install_artifact(
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
         if strip_components.is_none()
-            && lookup_with_fallback(opts, "bin_path").is_none()
+            && bin_path.is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
             && should_strip
         {
@@ -816,14 +1040,16 @@ pub(crate) fn install_artifact(
 
         // Extract with determined strip_components
         file::extract_archive(file_path, &install_path, format, &extract_opts)?;
+        // The steps below rename, chmod and link paths under the install
+        // directory by name, so a link the archive shipped must not lead out.
+        file::ensure_symlinks_stay_within(&install_path)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();
         let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
 
         // Determine search directory based on bin_path option
-        let explicit_bin_path = lookup_with_fallback(opts, "bin_path")
-            .map(|t| install_path.join(template_string(&t, tv)));
+        let explicit_bin_path = bin_path.as_ref().map(|p| install_path.join(p));
 
         // Handle bin= option for archives (renames executable to specified name)
         // bin= values are relative to install_path, so always use install_path or explicit bin_path
@@ -932,6 +1158,37 @@ fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<(
     Ok(())
 }
 
+/// The checksum the lockfile records for this platform, if the entry describes
+/// the download of `url`. It names a kept download that can be reused, and is
+/// still checked after the download. An entry written for another URL, such as
+/// before a setting changed where the tool is fetched from, pins nothing, and
+/// neither does a checksum no download has confirmed (`checksum_source`).
+pub(crate) fn lock_checksum(
+    tv: &crate::toolset::ToolVersion,
+    platform_key: &str,
+    url: &str,
+) -> Option<String> {
+    let info = tv.lock_platforms.get(platform_key)?;
+    if info.url.as_deref().is_some_and(|locked| locked != url) {
+        return None;
+    }
+    info.pin_checksum().cloned()
+}
+
+/// The checksum a tool pinned for this platform, in its options or in the
+/// lockfile.
+pub(crate) fn pinned_checksum(
+    tv: &crate::toolset::ToolVersion,
+    platform_key: &str,
+    opts: &crate::toolset::ToolVersionOptions,
+) -> Option<String> {
+    lookup_with_fallback(opts, "checksum").or_else(|| {
+        tv.lock_platforms
+            .get(platform_key)
+            .and_then(|platform| platform.pin_checksum().cloned())
+    })
+}
+
 pub(crate) fn verify_artifact(
     _tv: &crate::toolset::ToolVersion,
     file_path: &Path,
@@ -949,7 +1206,9 @@ pub(crate) fn verify_artifact(
     let size_str = lookup_with_fallback(opts, "size");
 
     if let Some(size_str) = size_str {
-        let expected_size: u64 = size_str.parse()?;
+        let expected_size: u64 = size_str
+            .parse()
+            .wrap_err_with(|| format!("invalid size option: {size_str}"))?;
         let actual_size = file_path.metadata()?.len();
         if actual_size != expected_size {
             bail!(
@@ -1271,6 +1530,20 @@ pub(crate) fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()
     Ok(())
 }
 
+/// Rejects a release asset name that is not a plain file name. The name comes
+/// from the forge's release JSON (a GitLab link label is free text) and is
+/// joined onto a download directory, so `../tool` or `/abs/tool` would
+/// otherwise write the download outside it.
+pub(crate) fn ensure_plain_asset_name(name: &str) -> eyre::Result<()> {
+    if !file::is_plain_file_name(name) {
+        bail!(
+            "release asset name {name:?} must be a plain file name \
+             (no path separators or parent directories)"
+        );
+    }
+    Ok(())
+}
+
 /// Rejects a configured binary path that is absolute or contains parent
 /// components, while preserving the established `bin = "bin/tool"` form.
 pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::Result<()> {
@@ -1281,6 +1554,31 @@ pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::R
         );
     }
     Ok(())
+}
+
+/// Rejects a configured `bin_path` that is absolute or contains parent
+/// components. It is joined onto the install directory and the result goes on
+/// PATH, so `/abs/dir` or `../dir` would otherwise put any directory there.
+/// Unlike `bin` it names a directory, so `.` (the install directory itself) and
+/// a leading `./` are allowed.
+pub(crate) fn ensure_safe_relative_bin_dir(option: &str, path: &str) -> eyre::Result<()> {
+    let normalized = path.replace('\\', "/");
+    let rest = normalized.trim_start_matches("./");
+    if !rest.is_empty() && rest != "." && !file::is_safe_relative_path(rest) {
+        bail!(
+            "{option}: '{path}' must be a directory inside the install directory \
+             (no absolute paths or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Renders the `bin_path` option, checking what it rendered to rather than the
+/// template. See [`ensure_safe_relative_bin_dir`].
+pub(crate) fn render_bin_path(template: &str, tv: &ToolVersion) -> eyre::Result<String> {
+    let bin_path = template_string(template, tv);
+    ensure_safe_relative_bin_dir("bin_path", &bin_path)?;
+    Ok(bin_path)
 }
 
 /// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
@@ -1990,6 +2288,25 @@ mod tests {
     }
 
     #[test]
+    fn test_ensure_plain_asset_name() {
+        for ok in ["tool-linux-x64", "tool-1.0.0.tar.gz", "my tool.zip"] {
+            assert!(ensure_plain_asset_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../../.config/mise/conf.d/tool-linux-x64.toml",
+            "/abs/tool-linux-x64",
+            "sub/tool-linux-x64",
+            "..\\tool-linux-x64",
+        ] {
+            let err = ensure_plain_asset_name(bad).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
     fn test_get_filename_from_url() {
         for (url, expected) in [
             ("https://example.com/download/?file=muse", "download"),
@@ -1998,7 +2315,35 @@ mod tests {
             ("https://example.com/muse.tar.gz?token=value", "muse.tar.gz"),
             ("https://example.com/my%20tool.zip", "my tool.zip"),
             ("tool.tar.gz", "tool.tar.gz"),
+            // Decoding that would leave the download directory keeps the
+            // encoded segment, which is a single inert path component.
+            (
+                "https://example.com/tool%2F..%2Fpwned.tar.gz",
+                "tool%2F..%2Fpwned.tar.gz",
+            ),
+            // A URL parser drops an encoded dot segment itself; a bare name does not.
+            ("%2E%2E", "%2E%2E"),
+            ("https://example.com/pkg%00x.tar.gz", "pkg%00x.tar.gz"),
+            (
+                "https://example.com/We%2DAre%2DThe%2DChampions.zip",
+                "We-Are-The-Champions.zip",
+            ),
         ] {
+            assert_eq!(get_filename_from_url(url), expected, "{url}");
+        }
+        // A raw name that would itself leave the directory is not used.
+        assert_eq!(get_filename_from_url(".."), "download");
+        // `:` is path syntax only on Windows, where a literal one would name a
+        // drive and discard the download directory when joined.
+        for (url, windows, elsewhere) in [
+            (
+                "https://example.com/C%3Atool.zip",
+                "C%3Atool.zip",
+                "C:tool.zip",
+            ),
+            ("https://example.com/C:payload", "download", "C:payload"),
+        ] {
+            let expected = if cfg!(windows) { windows } else { elsewhere };
             assert_eq!(get_filename_from_url(url), expected, "{url}");
         }
     }
@@ -2622,6 +2967,37 @@ size = "5120"
         // since the function should handle missing platform-specific values gracefully
         assert!(checksum.is_some());
         assert!(size.is_some());
+    }
+
+    #[test]
+    fn test_verify_artifact_checks_size_without_a_checksum() {
+        let backend = crate::backend::gem::GemBackend::from_arg("gem:rubocop".into());
+        let tv = test_tool_version(&backend, "1.0.0", &[]);
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("tool.tar.gz");
+        std::fs::write(&file_path, b"12345").unwrap();
+        let size_opts = |size: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert("size".to_string(), toml::Value::String(size.to_string()));
+            opts
+        };
+
+        let err = verify_artifact(&tv, &file_path, &size_opts("4"), None)
+            .expect_err("a size mismatch must fail even without a checksum");
+        assert!(
+            err.to_string().contains("Size mismatch"),
+            "unexpected error: {err}"
+        );
+
+        let err = verify_artifact(&tv, &file_path, &size_opts("big"), None)
+            .expect_err("a non-numeric size must fail");
+        assert!(
+            err.to_string().contains("invalid size option: big"),
+            "unexpected error: {err}"
+        );
+
+        verify_artifact(&tv, &file_path, &size_opts("5"), None).unwrap();
     }
 
     #[test]
@@ -3344,6 +3720,157 @@ bin = "tool.exe"
         );
     }
 
+    #[test]
+    fn test_tag_candidates_try_a_decorated_version_as_written_first() {
+        // `cli-2.6.0` and `kustomize/v5.8.1` already are their tags; a `v` in
+        // front of them is a guess that 404s twice before the real tag is tried.
+        assert_eq!(
+            tag_candidates("cli-2.6.0", None, Some("mobile-dev-inc/maestro")),
+            vec![
+                "cli-2.6.0".to_string(),
+                "vcli-2.6.0".to_string(),
+                "maestro@cli-2.6.0".to_string(),
+                "mobile-dev-inc/maestro@cli-2.6.0".to_string(),
+            ],
+        );
+        assert_eq!(
+            tag_candidates("kustomize/v5.8.1", None, None),
+            vec![
+                "kustomize/v5.8.1".to_string(),
+                "vkustomize/v5.8.1".to_string()
+            ],
+        );
+    }
+
+    const GITHUB_API: &str = "https://api.github.com";
+
+    async fn resolve_tags(
+        version: &str,
+        repo: &str,
+        known_tag: Option<&str>,
+        real_tag: &str,
+    ) -> (String, Vec<String>) {
+        resolve_tags_on(GITHUB_API, version, repo, known_tag, real_tag).await
+    }
+
+    async fn resolve_tags_on(
+        api_url: &str,
+        version: &str,
+        repo: &str,
+        known_tag: Option<&str>,
+        real_tag: &str,
+    ) -> (String, Vec<String>) {
+        let tried = std::sync::Mutex::new(vec![]);
+        let resolved = try_release_tags(
+            version,
+            None,
+            Some(repo),
+            Some(api_url),
+            known_tag,
+            |candidate| {
+                tried.lock().unwrap().push(candidate.clone());
+                let found = candidate == real_tag;
+                async move {
+                    if found {
+                        Ok(candidate)
+                    } else {
+                        Err(eyre::eyre!("404 Not Found"))
+                    }
+                }
+            },
+        )
+        .await
+        .unwrap();
+        (resolved, tried.into_inner().unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_try_release_tags_tries_the_listed_tag_before_guessing() {
+        let (resolved, tried) =
+            resolve_tags("4.210.0", "test/listed-tag", Some("4.210.0"), "4.210.0").await;
+        assert_eq!(resolved, "4.210.0");
+        assert_eq!(tried, vec!["4.210.0".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_try_release_tags_remembers_the_tag_that_resolved() {
+        // The first lookup has to guess its way past `v6.6.2`; later lookups of
+        // the same release in this process go straight to the tag that worked.
+        let (_, tried) = resolve_tags("6.6.2", "test/remembered-tag", None, "6.6.2").await;
+        assert_eq!(tried, vec!["v6.6.2".to_string(), "6.6.2".to_string()]);
+        let (resolved, tried) = resolve_tags("6.6.2", "Test/Remembered-Tag", None, "6.6.2").await;
+        assert_eq!(resolved, "6.6.2");
+        assert_eq!(tried, vec!["6.6.2".to_string()]);
+    }
+
+    /// A resolver whose `1.2.3` release exists but lacks the wanted asset.
+    async fn resolve_without_asset_on_listed_tag(
+        repo: &str,
+        working_tag: Option<&str>,
+    ) -> (Result<String>, Vec<String>) {
+        let tried = std::sync::Mutex::new(vec![]);
+        let resolved = try_release_tags(
+            "1.2.3",
+            None,
+            Some(repo),
+            Some(GITHUB_API),
+            Some("1.2.3"),
+            |candidate| {
+                tried.lock().unwrap().push(candidate.clone());
+                let result = if candidate == "1.2.3" {
+                    Err(eyre::eyre!("no asset found for linux-x64"))
+                } else if Some(candidate.as_str()) == working_tag {
+                    Ok(candidate)
+                } else {
+                    Err(eyre::eyre!("404 Not Found"))
+                };
+                async move { result }
+            },
+        )
+        .await;
+        (resolved, tried.into_inner().unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_try_release_tags_moves_past_a_listed_tag_without_the_asset() {
+        // The listed tag's release exists but is the wrong one for this
+        // lookup; the generated `v1.2.3` must still get its turn.
+        let (resolved, tried) =
+            resolve_without_asset_on_listed_tag("test/listed-no-asset", Some("v1.2.3")).await;
+        assert_eq!(resolved.unwrap(), "v1.2.3");
+        assert_eq!(tried, vec!["1.2.3".to_string(), "v1.2.3".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_try_release_tags_reports_the_listed_tags_error_when_nothing_resolves() {
+        // Every generated spelling 404s, so the useful error is the listed
+        // tag's, not the last 404.
+        let (resolved, _) =
+            resolve_without_asset_on_listed_tag("test/listed-no-asset-only", None).await;
+        assert!(
+            resolved.unwrap_err().to_string().contains("no asset found"),
+            "the listed tag's error should be reported"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_try_release_tags_keeps_enterprise_hosts_apart() {
+        // The same owner/repo on github.com and on an enterprise host are
+        // different repositories; a tag one resolved says nothing about the other.
+        let (_, tried) = resolve_tags("1.0.0", "test/same-name", None, "1.0.0").await;
+        assert_eq!(tried, vec!["v1.0.0".to_string(), "1.0.0".to_string()]);
+        let (resolved, tried) = resolve_tags_on(
+            "https://ghe.example.com/api/v3",
+            "1.0.0",
+            "test/same-name",
+            None,
+            "v1.0.0",
+        )
+        .await;
+        assert_eq!(resolved, "v1.0.0");
+        assert_eq!(tried, vec!["v1.0.0".to_string()]);
+    }
+
     #[tokio::test]
     async fn test_try_with_v_prefix_finds_a_tag_that_repeats_the_version_prefix() {
         // End to end through the resolver: only the real tag resolves, and the
@@ -3395,6 +3922,35 @@ bin = "tool.exe"
         );
         // Another tool's files are not rewritten as python's.
         assert_eq!(tool_link_path(&installs, &python, "ruby"), None);
+    }
+
+    #[test]
+    fn test_ensure_safe_relative_bin_dir() {
+        for ok in ["bin", "a/bin", "bin/", ".", "./", "./bin", ".\\bin", ""] {
+            assert!(
+                ensure_safe_relative_bin_dir("bin_path", ok).is_ok(),
+                "should accept {ok:?}"
+            );
+        }
+        for bad in [
+            "/abs/dir",
+            "/proc/self/cwd/evil",
+            "..",
+            "../evil",
+            "bin/../../evil",
+            "./../evil",
+            ".//abs/dir",
+            "..\\evil",
+            "\\abs\\dir",
+            "C:\\evil",
+            "C:evil",
+        ] {
+            let err = ensure_safe_relative_bin_dir("bin_path", bad).unwrap_err();
+            assert!(
+                err.to_string().contains("inside the install directory"),
+                "unexpected error for {bad:?}: {err}"
+            );
+        }
     }
 
     #[cfg(unix)]

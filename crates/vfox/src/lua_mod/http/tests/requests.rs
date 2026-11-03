@@ -230,3 +230,45 @@ async fn test_try_head_failure() {
     .await
     .unwrap();
 }
+
+/// Serves one response whose body is `len` spaces, sent without a
+/// Content-Length so only the bytes read can stop the client.
+fn spawn_endless_body_server(len: usize) -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0_u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n");
+        let chunk = [b' '; 64 * 1024];
+        let mut sent = 0;
+        while sent < len {
+            let n = chunk.len().min(len - sent);
+            if stream.write_all(&chunk[..n]).is_err() {
+                break;
+            }
+            sent += n;
+        }
+    });
+    addr
+}
+
+#[tokio::test]
+async fn test_try_get_refuses_an_oversized_body() {
+    let addr = spawn_endless_body_server(crate::http::MAX_BODY_BYTES + 1);
+    let lua = Lua::new();
+    mod_http(&lua).unwrap();
+
+    let url = format!("http://{addr}/huge");
+    lua.load(mlua::chunk! {
+        local http = require("http")
+        local resp, err = http.try_get({ url = $url })
+        assert(resp == nil)
+        assert(string.find(err, "larger than", 1, true), err)
+    })
+    .exec_async()
+    .await
+    .unwrap();
+}

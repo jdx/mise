@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# A pull whose plan goes stale before it writes anything is planned again; it
+# does not pause sharing. Here another operation saves while the pull waits
+# for it, and the watcher's automatic apply must still go through afterwards.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+# the assertions read info-level messages, whatever level the runner forwards
+export MISE_LOG_LEVEL=info
+origin="$PWD/stale-origin.git"
+git init -q --bare -b main "$origin"
+echo v1 >~/.native
+echo v1 >~/.other
+assert_succeed "mise dot track ~/.native ~/.other"
+assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export -f b
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+echo v2 >~/.native
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert_contains "b dot sync 2>&1" "1 incoming change(s) pending"
+
+# an operation on the second machine saves an edit while the pull waits for
+# it; the edit waits for the pull to be waiting, so the order is not a race
+go="$PWD/go"
+b dot capture -- sh -c "while [ ! -e $go ]; do sleep 0.1; done; echo edited >$second/.other" >/dev/null 2>&1 &
+capture=$!
+pending="$second/.local/state/mise/history/index/pending"
+for _ in $(seq 100); do
+  [ -n "$(ls -A "$pending" 2>/dev/null)" ] && break
+  sleep 0.1
+done
+pulled="$PWD/pull.out"
+b dot pull --yes >"$pulled" 2>&1 &
+pull=$!
+for _ in $(seq 300); do
+  grep -q "waiting for another history operation" "$pulled" && break
+  sleep 0.1
+done
+# release the capture before asserting, so a failure cannot leave it waiting
+touch "$go"
+assert_contains "cat $pulled" "waiting for another history operation"
+wait "$capture"
+status=0
+wait "$pull" || status=$?
+assert_not "echo $status" "0"
+assert_contains "cat $pulled" "changed since planning"
+
+assert "cat $second/.native" "v1"
+assert_succeed "b dot watch --once"
+assert "cat $second/.native" "v2"

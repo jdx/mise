@@ -1,102 +1,206 @@
 ---
-description: "Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content, and rechecks supported provenance during installation."
+description: "Require content-bound trust for project config and env files, refuse unregistered plugins, and re-verify provenance, each selectable on its own."
+socialDescription: "Pick which paranoid protections to turn on: config trust, env files, plugins, provenance."
 ---
 
-# Paranoid
+# Paranoid mode
 
-Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content,
-and rechecks supported provenance during installation. Configurations accepted through
-`trusted_config_paths` or inherited monorepo-root trust remain path-based exceptions. It does not
-sandbox a command after you approve it; see [Security](/security.html) for the scope of each control.
+Paranoid mode makes mise ask before it trusts things it would normally load on
+its own. It has four categories, and you can turn on all of them or only the ones
+you need:
 
-Enable it for one invocation with `MISE_PARANOID=1`, or persist it globally:
+| Category     | What it requires                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| `config`     | Approval of every project config file, bound to its content. No automatic trust, including in CI. |
+| `env_files`  | Approval of the files that `env._.file`, `env._.source` and the `env_file` setting load.          |
+| `plugins`    | Refuses to install an unregistered community plugin by short name.                                |
+| `provenance` | Re-verifies provenance on every install and confirms a mise-versions "no attestations" answer.    |
+
+Paranoid mode does not sandbox the commands you approve; see
+[Sandboxing](/sandboxing.html).
+
+Turn on every category for one command with `MISE_PARANOID=1`, or for every
+command:
 
 ```sh
-mise settings set paranoid true
+mise settings paranoid=true
 ```
 
-To restore normal mode, run `mise settings set paranoid false`. The setting is global-only;
-a project cannot enable or disable it for itself.
+`mise settings paranoid=false` turns it all off. Name categories to turn on only
+those:
 
-## Config files
+```sh
+mise settings paranoid=env_files,plugins
+```
 
-In normal mode, simple configuration can load without trust, and execution commands such
-as `mise run`, `mise install`, and `mise exec` automatically trust their active configuration.
-Other commands may prompt, fail, or skip an untrusted file depending on how they discover it.
-See [`mise trust`](/cli/trust.html) for normal-mode rules.
+```toml
+# ~/.config/mise/config.toml
+[settings]
+paranoid = ["env_files", "plugins"]
+```
 
-Paranoid mode requires explicit trust for non-global config files, including formats that normally
-do not need it. Direct file approval hashes the contents, so editing the file requires renewed trust.
-Automatic trust for execution commands and the usual CI trust exemption are disabled. Trust is not
-shared between Git worktrees in this mode.
+`MISE_PARANOID=config,env_files` selects categories from the environment. An
+unknown name is an error that lists the valid ones. The
+[`paranoid`](/configuration/settings.html#paranoid) setting is global-only, so a
+project cannot change it.
 
-`--yes`, `MISE_YES=1`, and CI auto-confirmation do not approve configuration trust in paranoid mode.
-For unattended runs, review the configuration and run `mise trust` explicitly before loading it.
+## Approving only dotenv files {#approving-only-env-files}
 
-Inspect the file before accepting it:
+A global `find_up` entry loads a dotenv file from whichever repository you are
+in. To approve those files without changing how project config is trusted, turn
+on `env_files` alone:
+
+```toml
+# ~/.config/mise/config.toml
+[settings]
+paranoid = ["env_files"]
+
+[env]
+_.file = [{ path = ".env", find_up = true }]
+```
+
+In a repository with a `.env`, mise now refuses to load it until you approve its
+current contents, and again after every edit:
+
+```sh
+mise trust .env
+```
+
+Project config, CI, plugins and provenance behave as they do without paranoid
+mode.
+
+## Config files {#config}
+
+The `config` category changes the [normal trust rules](/security.html#configuration-trust)
+in these ways:
+
+- Every config file outside global and system config needs trust, including
+  files that normally load without it: `.tool-versions`, idiomatic version files
+  such as `.nvmrc`, task files, and a `mise.toml` that only lists tools. The
+  exception is `.miserc.toml`, which still loads without trust: it can only
+  choose which config files load, and those files need trust.
+- Trust is bound to content. `mise trust` stores a hash of the file, and any edit
+  makes it untrusted again.
+- Each file is trusted on its own. Trusting `mise.toml` does not trust
+  `mise.local.toml` beside it, the task files beside it, or a local
+  [`aqua.registries`](/dev-tools/backends/aqua.html) file it names. Run
+  `mise trust <file>` for each of those.
+- `mise run`, `mise install`, `mise exec`, `mise watch` and the `mise daemons`
+  start, restart and register commands do not trust the config they load.
+- CI does not make config trusted, and `--yes`, `MISE_YES=1` and `CI` do not
+  answer the trust prompt. In a terminal, mise still asks.
+- Trust is not shared between git worktrees.
+- Trusting a monorepo root trusts only that file. Trust each subproject's config
+  separately.
+
+Read each file, then approve it. `mise trust --show` lists the config files from
+the current directory up and whether each is trusted:
 
 ```sh
 mise trust --show
 mise trust path/to/mise.toml
 ```
 
-Replace the path with the configuration you reviewed. Paths allowed by the global
-`trusted_config_paths` setting and descendants covered by trusted monorepo roots bypass the
-content-hash check, so changes there do not require renewed approval. Global and system
-configuration is operator-owned and remains exempt, allowing paranoid mode itself to be set globally.
+For unattended runs, review the config and run `mise trust` before the job loads
+it.
 
-[Safe mode](/security.html#safe-mode) takes precedence if both modes are enabled. It suppresses
-project execution and environment injection, so the configuration can load without a trust
-prompt; syntax errors and refused operations still fail. Loading in safe mode does not grant
-trust for a later normal or paranoid-mode invocation.
+These stay trusted by path, without a hash, so editing them needs no new
+approval:
 
-## Community plugins
+- configs under [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths)
+- global and system config, which is where you turn paranoid mode on
 
-Paranoid mode refuses to install an untrusted community plugin by short name
-unless automatic confirmation is enabled with `--yes` or `MISE_YES=1`, mise is
-running in CI, or the installation uses `--force`. A short-name plugin is trusted
-when its resolved URL matches an asdf or vfox remote in mise's built-in registry,
-or when it is maintained under the `mise-plugins` GitHub organization.
+If [safe mode](/security.html#safe-mode) is also on, it takes precedence: project
+config loads without a trust prompt because it cannot run code, and nothing is
+marked trusted.
 
-To install any other community plugin, specify its full Git repository URL on the
-command line or in `[plugins]` configuration. Explicitly providing the URL bypasses
-the registry trust check because you are choosing and trusting that source:
+### Remote includes
 
-```sh
-mise plugin install example https://github.com/example/asdf-example
+A remote [`include`](/configuration.html#include) must be pinned to a full
+lowercase commit sha (`?ref=` followed by 40 or 64 hex digits) or to an OCI
+digest (`@sha256:` followed by 64 lowercase hex digits), so that the hash of the
+trusted file covers what it pulls in. A branch, a tag or a missing ref fails to
+load:
+
+```toml
+include = [
+  "git::https://github.com/myorg/platform.git//mise.toml?ref=0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c",
+]
 ```
 
-In normal mode, mise may instead warn and ask for confirmation before installing
-an untrusted community plugin by short name.
+### Environment files {#environment-files}
 
-## Provenance re-verification
+The `env_files` category applies to this. A file that [`env._.file`](/environments/#env-file) loads, or a script that
+[`env._.source`](/environments/#env-source) runs, is not covered by the trust of
+the config that names it, because an edit to it changes the environment of every
+command. Each existing file needs its own trust, bound to its content, and fails
+with an error that names the path and prints none of its values until you
+approve it. An edit makes it untrusted again:
 
-A supported backend can reuse a lockfile's recorded provenance when installing an artifact
-whose checksum matches. This avoids repeating checks and API calls, and relies on the
-lockfile having been generated correctly.
+```sh
+mise trust
+```
 
-In paranoid mode, supported and enabled provenance methods (such as SLSA, Cosign, Minisign,
-and GitHub attestations) run again during installation instead of being skipped because a
-provenance entry exists. This can require network access. It does not add verification that
-the backend does not support, or rescan an already-installed tool that mise skips.
+`mise trust` with no path trusts the nearest untrusted config and every env file
+and script that config reads, and again after an edit. `mise trust .env` trusts
+only that file.
 
-This behavior can also be enabled independently via the
-[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
+This applies to every `_.file` format, to `_.source` scripts, and to the files the
+[`env_file`](/configuration/settings.html#env_file) setting finds. It includes a
+file that a global `find_up = true` entry or a glob finds in a repository. It
+does not apply to a global `_.file` or `_.source` entry that names one file
+without a glob, which you chose.
+
+Approval is bound to the file's content whether or not `config` is on. To load a file without approving each change, put it under
+[`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).
+Like the other settings that stay trusted by path, it is global-only, so a
+project cannot opt its own files out.
+
+## Community plugins {#plugins}
+
+The `plugins` category changes this. In normal mode, installing a community plugin by short name asks for
+confirmation. Paranoid mode refuses instead. Unlike config trust, `--yes`,
+`MISE_YES=1`, CI and `--force` still allow the install.
+
+A short name counts as trusted when its URL matches an asdf or vfox plugin in
+mise's registry, or when the plugin is in the `mise-plugins` GitHub
+organization. To install any other plugin, give its full Git URL on the command
+line or in `[plugins]`. Naming the URL is your decision to trust that source:
+
+```sh
+mise plugins install example https://github.com/example/asdf-example
+```
+
+## Provenance re-verification {#provenance}
+
+The `provenance` category turns on
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance).
+Each install runs the backend's provenance checks again, such as SLSA, Cosign,
+Minisign and GitHub attestations, instead of reusing the result recorded in
+[`mise.lock`](/dev-tools/mise-lock.html#provenance-and-security). This can need
+network access. It adds no check the backend does not support, and it does not
+re-check a tool that is already installed.
 
 ## Attestations from mise-versions
 
-mise asks [mise-versions](/configuration/settings.html#use_versions_host) whether a public GitHub release artifact has
-GitHub attestations, so installs don't spend your GitHub API rate limit. The attestations it returns are
-verified cryptographically and must name the artifact's repository, so mise-versions cannot vouch
-for an artifact on its own. It can, however, answer that an artifact has no attestations. That
-answer is trusted in normal mode, and a lockfile written afterwards records no provenance.
+mise asks [mise-versions](/configuration/settings.html#use_versions_host)
+whether a public GitHub release artifact has GitHub attestations, so installs do
+not spend your GitHub API rate limit. mise verifies any attestation it returns
+and requires it to name the artifact's repository, so mise-versions cannot vouch
+for an artifact. It can, however, answer that an artifact has none. Normal mode
+accepts that answer, and a lockfile written afterwards records no provenance.
 
-In paranoid mode, mise confirms that answer with GitHub before skipping verification. This costs
-one GitHub API request per artifact without attestations.
+The `provenance` category confirms a "none" answer with GitHub before it skips verification.
+This costs one GitHub API request per artifact without attestations.
 
-## See also
+Neither mode accepts "none" for a release the mise registry says must have
+attestations: a `github:` backend, or an `aqua:` backend whose recipe declares
+them, at or after the backend's
+[`attestations_since`](/contributing/registry.html#required-attestations)
+version. There a missing attestation fails the install and `mise lock`.
 
-- [Safe mode](/security.html#safe-mode) for processing untrusted project metadata.
-- [Sandboxing](/sandboxing.html) for restrictions on executed commands.
-- [Lockfiles](/dev-tools/mise-lock.html) for checksums, provenance, and backend coverage.
-- [Contact](/contact.html) to suggest improvements or report unexpected behavior.
+In either mode, when mise-versions fails to answer (a timeout, a lost
+connection, or a `429` or `5xx` response), mise asks GitHub's attestation API
+instead and verifies what GitHub returns the same way.
+[`provenance_api_failures_fatal`](/configuration/settings.html#provenance_api_failures_fatal)
+then decides what happens if GitHub fails too.

@@ -102,6 +102,7 @@ function PLUGIN:Available(ctx)
                 note = release.name or "",
                 rolling = rolling,
                 checksum = checksum,
+                created_at = type(release.published_at) == "string" and release.published_at or nil,
             })
         end
     end

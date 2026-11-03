@@ -10,45 +10,48 @@ use crate::registry::full_to_url;
 use crate::toolset::install_state;
 use crate::ui::table;
 
-/// List installed external plugins
+/// List installed plugins
 ///
-/// Use `--core` for built-in runtimes or `--core --user` for both groups. `--outdated`
-/// queries Git remotes for plugin updates; it does not compare installed tool versions.
-/// Use `mise plugins ls-remote` for registry plugin sources and `mise ls` for tools.
+/// Use `--core` to list the core tools built into mise instead, or
+/// `--core --user` for both. `--outdated` checks each plugin's Git remote for
+/// newer plugin code; it does not compare tool versions. Use `mise ls` for
+/// installed tool versions and `mise registry` for tools you can install.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "list",
+    example(r###"mise plugins ls"###, help = "List installed plugins"),
     example(
-        r###"mise plugins ls
-mise plugins ls --urls
-mise plugins ls --core --user
-mise plugins ls --outdated"###
+        r###"mise plugins ls --urls"###,
+        help = "Show each plugin's Git URL, ref, and commit"
+    ),
+    example(
+        r###"mise plugins ls --core --user"###,
+        help = "List core tools and installed plugins"
+    ),
+    example(
+        r###"mise plugins ls --outdated"###,
+        help = "List plugins whose Git remote has newer commits"
     ),
     verbatim_doc_comment
 )]
 pub(super) struct PluginsLs {
-    /// List all available remote plugins
-    /// Same as `mise plugins ls-remote`
+    /// List all available remote plugins (same as `mise plugins ls-remote`)
     #[usage(short, long, hide = true, verbatim_doc_comment)]
     pub all: bool,
 
-    /// Only show built-in (core) plugins
-    /// These are hidden by default
+    /// List the core tools built into mise instead of installed plugins
     #[usage(short, long, verbatim_doc_comment, conflicts = "all")]
     pub core: bool,
 
-    /// Show plugins with available updates
-    /// Checks the remote for newer versions and only displays plugins that are outdated
+    /// Only show plugins whose Git remote has newer commits
     #[usage(short, long, verbatim_doc_comment)]
     pub outdated: bool,
 
-    /// Show the git url for each plugin
-    /// e.g.: https://github.com/jdx/vfox-cmake.git
+    /// Show each plugin's Git URL, ref, and commit
     #[usage(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
-    /// Show the git refs for each plugin
-    /// e.g.: main 1234abc
+    /// Show each plugin's Git ref and commit, such as `main 1234abc`
     #[usage(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 

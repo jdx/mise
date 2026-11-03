@@ -1,7 +1,8 @@
-# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 # Runnable mise image on Debian slim: the glibc release binary plus the
-# packages most tool installs need (CA roots, curl, git). Nothing is
-# preinstalled through mise; `mise install` does that for the project.
+# packages most tool installs need (CA roots, curl, git, and libatomic1, which
+# Node.js 26 and later link against). Nothing is preinstalled through mise;
+# `mise install` does that for the project.
 #
 # Built by .github/workflows/docker.yml from the signed release assets. The
 # build context holds the verified binaries at linux-amd64/mise and
@@ -15,7 +16,7 @@ LABEL org.opencontainers.image.licenses=MIT
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git \
+    && apt-get install -y --no-install-recommends ca-certificates curl git libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV MISE_DATA_DIR="/mise"

@@ -42,6 +42,8 @@ EXTENDS_TASK_SCRIPT = (
     '#MISE extends="shared"\n'
     'echo "extends-task FOO=$FOO"\n'
 )
+# A remote task that reports its own `env`, to check that the value reaches it
+ENV_TASK_SCRIPT = '#!/usr/bin/env bash\necho "env-task FOO=$FOO"\n'
 SLIDESHOW_JSON = json.dumps(
     {
         "slideshow": {
@@ -58,6 +60,7 @@ class TestHandler(http.server.SimpleHTTPRequestHandler):
     ROUTES = {
         "/test/mytask": (200, "text/plain", TASK_SCRIPT.encode()),
         "/test/extends-task": (200, "text/plain", EXTENDS_TASK_SCRIPT.encode()),
+        "/test/env-task": (200, "text/plain", ENV_TASK_SCRIPT.encode()),
         "/status/200": (200, "text/plain", b"OK"),
         "/status/201": (201, "text/plain", b"Created"),
         "/status/202": (202, "text/plain", b"Accepted"),

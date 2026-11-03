@@ -57,9 +57,36 @@ local function version_gte(version, min_version)
   return true
 end
 
+--- Map of version -> release date from Elastic's official product_versions API.
+--- A failure only means no dates are reported.
+local function release_dates()
+  local dates = {}
+  local resp, err = http.try_get({ url = "https://www.elastic.co/api/product_versions" })
+  if err ~= nil or resp.status_code ~= 200 then
+    return dates
+  end
+  local ok, data = pcall(json.decode, resp.body)
+  if not ok or type(data) ~= "table" or type(data[1]) ~= "table" then
+    return dates
+  end
+  for _, entry in ipairs(data[1]) do
+    local date = entry.date
+    if type(entry.title) == "string" and entry.title:match("^Elasticsearch ") and entry.version_number and type(date) == "string" then
+      if date:match("^%d%d%d%d%-%d%d%-%d%d$") then
+        date = date .. "T00:00:00Z"
+      end
+      if date:match("^%d%d%d%d%-%d%d%-%d%dT") then
+        dates[entry.version_number] = date
+      end
+    end
+  end
+  return dates
+end
+
 function util.get_versions()
   local versions = {}
   local seen = {}
+  local dates = release_dates()
   for page = 1, 5 do
     local resp, err = http.get({
       url = "https://api.github.com/repos/elastic/elasticsearch/tags?per_page=100&page=" .. page,
@@ -79,7 +106,7 @@ function util.get_versions()
       local version = tag.name:match("^v(%d+%.%d+%.%d+)$")
       if version and not seen[version] then
         seen[version] = true
-        table.insert(versions, { version = version })
+        table.insert(versions, { version = version, created_at = dates[version] })
       end
     end
   end

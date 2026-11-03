@@ -8,7 +8,12 @@ pub(crate) async fn maybe_auto_update(
     Ok(())
 }
 
+/// Update mise itself
+///
+/// This build of mise has self-update disabled. Update it with the package
+/// manager that installed it.
 #[derive(Debug, Default, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
@@ -21,7 +26,7 @@ pub(crate) struct SelfUpdate {
     #[usage(long, short)]
     yes: bool,
 
-    /// Disable auto-updating plugins
+    /// Do not update installed plugins
     #[usage(long)]
     no_plugins: bool,
 }

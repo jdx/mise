@@ -1,9 +1,10 @@
 use crate::cli::token::github::Github;
 
-/// Display the GitHub token mise will use for a given host
+/// Show the GitHub token for a host (deprecated)
 ///
-/// Shows which token source mise would use, useful for debugging
-/// authentication issues. The token is masked by default.
+/// Shows which token source mise would use, to debug authentication problems.
+/// The token is masked unless you pass --unmask. This command is deprecated; use
+/// `mise token github` instead.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

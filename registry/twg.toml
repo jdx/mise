@@ -12,6 +12,7 @@ bin = "twg"
 checksum_url = "https://teamwork-graph.atlassian.com/cli/SHA256SUMS-v{{ version }}"
 url = 'https://teamwork-graph.atlassian.com/cli/twg-{{ os(macos="darwin") }}-{{ arch() }}-v{{ version }}'
 # Per-version manifest published alongside the binaries; .version tracks the latest stable release
+version_date_expr = '[[fromJSON(body).version, fromJSON(body).publishedAt]]'
 version_json_path = ".version"
 version_list_url = "https://teamwork-graph.atlassian.com/cli/manifest.json"
 

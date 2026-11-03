@@ -1275,6 +1275,12 @@ export interface CardOptions {
   unfold?: Readonly<Record<string, number>>;
   /** Lines of an open table folded to a count instead (a line too long for the card). */
   hide?: RegExp;
+  /**
+   * Lines kept though they are wider than the card, their tail faded off its
+   * right edge like a terminal's (default: PIN_ROW, a tool's pin as `mise
+   * use` writes it with options).
+   */
+  keep?: RegExp;
   /** How lit each table's header is, by header prefix (in its pillar's colour). */
   lit?: Readonly<Record<string, number>>;
   /** The ignite pulse at a header's bar as it lights, 0 to 1, by header prefix. */
@@ -1382,6 +1388,9 @@ function cardRows(text: string, o: CardOptions, cols: number): CardRow[] {
   });
 }
 
+/** A tool pinned as an inline table (`hk = { version = "…", workflow = "release.yml" }`): the version stays on the card, the options fade off. */
+const PIN_ROW = /^\S+\s*=\s*\{\s*version\s*=/;
+
 /** A card's rows: open tables line by line, folded tables as a header and a count. */
 function cardRowsAt(text: string, o: CardOptions, cols: number): CardRow[] {
   const rows: CardRow[] = [];
@@ -1399,7 +1408,9 @@ function cardRowsAt(text: string, o: CardOptions, cols: number): CardRow[] {
     const k = openK(blk.header);
     if (k > 0) {
       const hidden = blk.body.filter(
-        (l) => Array.from(l).length > cols || (o.hide ? o.hide.test(l) : false),
+        (l) =>
+          (Array.from(l).length > cols && !(o.keep ?? PIN_ROW).test(l)) ||
+          (o.hide ? o.hide.test(l) : false),
       );
       rows.push({
         kind: "header",
@@ -1453,7 +1464,7 @@ function cardRowsAt(text: string, o: CardOptions, cols: number): CardRow[] {
  * the tables the act needs. A raised surface with a tab strip holding the
  * file's path; rows in the file syntax on the 0.6 em grid; a folded table
  * is its header and an annotation pill ("4 lines", "3 more tables"); a line
- * wider than the card folds to "1 more line". A lit header gets its
+ * wider than the card folds to "1 more line", unless `keep` names it. A lit header gets its
  * pillar's band sweeping in, a bar down its left edge and its text in the
  * pillar's colour; a seated line its seat mark. `[daemons]` carries its
  * pilot light. Returns where it set its rows.

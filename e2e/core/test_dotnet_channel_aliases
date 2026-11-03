@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# `lts` and `sts` follow Microsoft's release index, so the answer moves with each
+# release. Assert the shape: an SDK version in a supported channel.
+assert_matches "mise latest dotnet@lts" '^[0-9]+\.[0-9]+\.[0-9]+$'
+assert_matches "mise latest dotnet@sts" '^[0-9]+\.[0-9]+\.[0-9]+$'
+
+# The listing is limited to the resolved channel.
+lts="$(mise latest dotnet@lts)"
+channel="${lts%.*}"
+assert_contains "mise ls-remote dotnet lts" "$channel."
+assert "mise ls-remote dotnet lts | awk -v c=\"$channel.\" 'index(\$0, c) != 1 { n++ } END { print n + 0 }'" "0"
+
+# Offline, the cached channel list still resolves the alias.
+assert "MISE_OFFLINE=1 mise latest dotnet@lts" "$lts"
+
+# An alias in mise.toml takes precedence over the built-in one.
+cat >mise.toml <<'TOML'
+[tool_alias.dotnet.versions]
+lts = "8.0"
+TOML
+assert_matches "mise latest dotnet@lts" '^8\.0\.[0-9]+$'

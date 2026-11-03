@@ -1,11 +1,20 @@
 import { socialCard, writeSocialCard } from "./social-images.mjs";
 import { pageDescription } from "./social-descriptions.mjs";
 import { showreelFiles } from "./showreel.data";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type MarkdownIt from "markdown-it";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
+import { referenceKeys, referenceMarkdown } from "../config-reference.data";
+import { pageRedirects, redirectStub, stubFile } from "./redirects.mjs";
 import { releaseNotesPlugin } from "@jdxcode/docs-releases/vitepress";
 import {
   groupIconMdPlugin,
@@ -30,7 +39,7 @@ const siteUrl = "https://mise.jdx.dev";
 // public/site.webmanifest so browser chrome matches the installed-app chrome.
 const brandColor = "#8B2252";
 const siteDescription =
-  "mise manages developer tools, environment variables, tasks, packages, and dotfiles in one project configuration for macOS, Linux, and Windows.";
+  "mise installs a project's tools, sets its environment variables, and runs its tasks from one mise.toml, and can set up whole machines with packages and dotfiles.";
 
 // `foo/index.md` publishes as `foo/`, everything else as `foo/bar.html`. Anchor
 // the index match on the leading slash so `guide/myindex.md` keeps its name.
@@ -113,12 +122,83 @@ function assertNoEmptyDocPages(outDir: string) {
   }
 }
 
+/** Write a stub at each removed page's URL that sends readers to its new home. */
+function writeRedirectStubs(outDir: string) {
+  for (const [from, redirect] of Object.entries(pageRedirects)) {
+    const file = join(outDir, stubFile(from));
+    if (existsSync(file)) {
+      throw new Error(`${from} is both a documentation page and a redirect`);
+    }
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, redirectStub(redirect, siteUrl));
+  }
+}
+
 // https://vitepress.dev/reference/site-config
+/** Whether a file at this path is read as a mise config (mirrors `path_is_config` in the schema conformance test). */
+function pathIsConfig(path: string): boolean {
+  const name = path.split("/").pop()!;
+  if (!name.endsWith(".toml")) return false;
+  let stem = name.slice(0, -".toml".length);
+  if (stem.startsWith(".")) stem = stem.slice(1);
+  if (stem === "mise" || stem.startsWith("mise."))
+    return stem !== "mise.plugin";
+  const inConfigDir =
+    path.includes("mise/") || path.includes("MISE_CONFIG_DIR");
+  return (
+    inConfigDir &&
+    (stem === "config" ||
+      stem.startsWith("config.") ||
+      path.includes("conf.d/"))
+  );
+}
+
+/**
+ * Every ```` ```toml ```` or ```` ```mise-toml ```` block that shows a mise config (no title, a label, or a title naming a
+ * mise config file) is shown in a mise.toml editor that knows the schema: hovering a key says
+ * what it is. It is read-only unless the fence says ```` ```toml editor ````, which also lets the
+ * reader try changes; `share` keeps the config in the URL. A `<!-- schema: skip -->` or
+ * `<!-- schema: invalid -->` line above a block leaves it a plain code block, as the schema
+ * conformance test treats it. A `plain` flag does the same.
+ */
+function miseTomlEditorFence(md: MarkdownIt) {
+  const fence = md.renderer.rules.fence!;
+  md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+    const info = tokens[idx].info.trim();
+    const [lang, ...flags] = info.split(/\s+/);
+    if (!["toml", "mise-toml"].includes(lang) || flags.includes("plain")) {
+      return fence(tokens, idx, options, env, self);
+    }
+    const explicit = flags.includes("editor");
+    const title = /\[([^\]]*)\]/.exec(info)?.[1];
+    const isConfig =
+      title === undefined || !/[./]/.test(title) || pathIsConfig(title);
+    const above = tokens[idx - 1];
+    const marked =
+      above?.type === "html_block" &&
+      /^\s*<!--\s*schema:\s*(skip|invalid)\b/.test(above.content);
+    if (!explicit && (!isConfig || marked)) {
+      return fence(tokens, idx, options, env, self);
+    }
+    const code = md.utils.escapeHtml(tokens[idx].content);
+    const readonly = explicit && !flags.includes("readonly") ? "" : " readonly";
+    const share = flags.includes("share") ? " share" : "";
+    const compact = explicit ? "" : " compact";
+    const label = title ? ` title="${md.utils.escapeHtml(title)}"` : "";
+    // VitePress's code groups show and hide their blocks by this wrapper's `language-*` and
+    // `active` classes, so a config inside a group keeps them.
+    const active = flags.includes("active") ? " active" : "";
+    return `<div class="language-toml${active}"><MiseTomlEditor code="${code}"${readonly}${share}${compact}${label} /></div>\n`;
+  };
+}
+
 export default withMermaid(
   defineConfig({
     title: "mise-en-place",
     description: siteDescription,
     lang: "en-US",
+    // The contributor guide in docs/README.md is for GitHub, not the site.
+    srcExclude: ["README.md"],
     lastUpdated: true,
     appearance: true,
     mermaid: {},
@@ -130,10 +210,51 @@ export default withMermaid(
       logo: { light: "/logo-light.svg", dark: "/logo-dark.svg" },
       outline: "deep",
       nav: [
+        {
+          text: "Dev tools",
+          link: "/dev-tools/",
+          activeMatch: "^/(dev-tools|lang|core-tools|registry)",
+        },
+        {
+          text: "Environments",
+          link: "/environments/",
+          activeMatch: "^/(environments|shell-aliases|hooks|direnv)",
+        },
+        { text: "Tasks", link: "/tasks/", activeMatch: "^/(tasks|daemons)" },
+        {
+          text: "Bootstrap",
+          link: "/bootstrap",
+          activeMatch: "^/(bootstrap|dotfiles)",
+        },
+        {
+          text: "Reference",
+          items: [
+            {
+              items: [
+                { text: "CLI commands", link: "/cli/" },
+                { text: "mise.toml", link: "/configuration" },
+                { text: "Settings", link: "/configuration/settings" },
+                {
+                  text: "MISE_* variables",
+                  link: "/configuration/environment-variables",
+                },
+                {
+                  text: "Task configuration",
+                  link: "/tasks/task-configuration",
+                },
+                { text: "Tool registry", link: "/registry" },
+              ],
+            },
+            {
+              items: [
+                { text: "Troubleshooting", link: "/troubleshooting" },
+                { text: "Error messages", link: "/errors" },
+                { text: "Glossary", link: "/glossary" },
+              ],
+            },
+          ],
+        },
         { text: "mise-versions", link: "https://mise-versions.jdx.dev/" },
-        { text: "Dev Tools", link: "/dev-tools/" },
-        { text: "Environments", link: "/environments/" },
-        { text: "Tasks", link: "/tasks/" },
         {
           text: `v${latestVersion}`,
           // The releases page opens the release named in the hash.
@@ -144,7 +265,7 @@ export default withMermaid(
 
       socialLinks: [
         { icon: "github", link: "https://github.com/jdx/mise" },
-        { icon: "discord", link: "https://discord.gg/UBa7pJUN7Z" },
+        { icon: "discord", link: "https://discord.gg/mABnUDvP57" },
       ],
 
       editLink: {
@@ -189,6 +310,7 @@ export default withMermaid(
       config(md) {
         md.use(groupIconMdPlugin);
         md.use(tabsMarkdownPlugin);
+        md.use(miseTomlEditorFence);
       },
     },
     vite: {
@@ -301,7 +423,19 @@ export default withMermaid(
           sizes: "180x180",
         },
       ],
-      // Google Fonts
+      // Body text on every page; the other self-hosted faces load when used.
+      [
+        "link",
+        {
+          rel: "preload",
+          href: "/fonts/dmsans-latin.woff2",
+          as: "font",
+          type: "font/woff2",
+          crossorigin: "",
+        },
+      ],
+      // Google Fonts (Cormorant Garamond only; see custom.css for why the
+      // others are self-hosted)
       [
         "link",
         {
@@ -320,7 +454,7 @@ export default withMermaid(
       [
         "link",
         {
-          href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500;600;700&display=swap",
+          href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap",
           rel: "stylesheet",
         },
       ],
@@ -353,7 +487,7 @@ export default withMermaid(
     transformHead({ pageData, title, description, siteConfig }) {
       const heading =
         pageData.relativePath === "index.md"
-          ? "Dev tools, environments, and tasks"
+          ? "Dev tools, env vars, and tasks in one CLI"
           : pageData.title || "mise";
       const card = socialCard(
         heading,
@@ -437,6 +571,16 @@ export default withMermaid(
     },
     buildEnd(siteConfig) {
       assertNoEmptyDocPages(siteConfig.outDir);
+      writeRedirectStubs(siteConfig.outDir);
+      // The mise.toml reference page shows most keys only once its script runs;
+      // these files have all of them as plain Markdown.
+      for (const [path, content] of referenceMarkdown(
+        referenceKeys((s) => s),
+      )) {
+        const file = join(siteConfig.outDir, path);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, content);
+      }
     },
   }),
 );

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A url_replacements rule for a repository's contents API makes it the source
+# of a packslip skill's directory listing; mise-versions is not asked.
+
+HEADERS_LOG_DIR="$TMPDIR/github_contents_replacement_logs"
+mkdir -p "$HEADERS_LOG_DIR"
+start_http_server --headers-log "$HEADERS_LOG_DIR"
+
+cat <<EOF >mise.toml
+[settings]
+url_replacements = { "https://api.github.com/repos/jdx/fnox/contents" = "http://127.0.0.1:$HTTP_PORT/fnox-contents" }
+EOF
+
+# The stand-in server has no listing, so the skill can't be fetched; what
+# matters is where the request went.
+output="$(MISE_DEBUG=1 mise install fnox@1.39.0 2>&1 || true)"
+
+if [[ $output == *"mise-versions.jdx.dev/api/github/repos/jdx/fnox/contents"* ]]; then
+  echo "$output"
+  fail "mise-versions was asked for the skill listing although its URL is rerouted"
+fi
+if ! grep -rqs "fnox-contents" "$HEADERS_LOG_DIR"; then
+  echo "$output"
+  fail "the url_replacements endpoint was not used"
+fi

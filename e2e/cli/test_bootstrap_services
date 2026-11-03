@@ -40,3 +40,28 @@ assert_not_contains "mise bootstrap plan" "not inspected"
 assert_contains "mise bootstrap services apply --dry-run --yes 2>&1" "manual action required"
 assert_fail "mise bootstrap services apply --yes" "refusing unsafe change"
 assert_succeed "mise bootstrap --only services --dry-run --yes"
+
+# scope = "user" without command or builtin manages a unit that already exists
+# in the systemd user manager. A unit that is not there fails closed, the same
+# as a system unit.
+cat <<EOF2 >mise.toml
+[bootstrap.services.$missing_service]
+scope = "user"
+state = "stopped"
+enabled = false
+EOF2
+
+assert_contains "mise bootstrap services status" "$missing_service"
+assert_contains "mise bootstrap services status" "unknown"
+assert_contains "mise bootstrap plan" "service:$missing_service"
+assert_fail "mise bootstrap services apply --yes" "refusing unsafe change"
+assert_not_contains "mise bootstrap services status" "dev.mise.$missing_service"
+assert_fail "test -e $HOME/.config/systemd/user/dev.mise.$missing_service.service"
+
+# The options that define a service have nothing to change on an existing unit.
+cat <<EOF2 >mise.toml
+[bootstrap.services.$missing_service]
+scope = "user"
+restart = "always"
+EOF2
+assert_fail "mise bootstrap services status" "manages an existing systemd user unit"

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A tool's selected Python is pinned to a patch release in the lockfile that is
+# not installed. `mise lock` still resolves against the installed interpreter of
+# that minor version instead of asking uv to download one.
+mise install uv@0.12.10 python@3.12.11
+python3 "$ROOT/e2e/fixtures/pypi/server.py" "$PWD/index" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in {1..100}; do
+  [[ -s index/port ]] && break
+  sleep 0.1
+done
+port=$(cat index/port)
+mkdir -p nopython
+ln -s "$(command -v mise)" nopython/mise
+cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+"pipx:mise-lock-cli" = { version = "1.0.0", python = "3.12" }
+[settings]
+lockfile = true
+minimum_release_age = "0"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
+EOF_CONFIG
+mise trust
+cat >mise.lock <<'EOF_LOCK'
+lockfile_version = 3
+
+[[tools.python]]
+version = "3.12.10"
+backend = "core:python"
+EOF_LOCK
+# uv has nowhere to find or download Python 3.12 except through mise.
+export UV_PYTHON_DOWNLOADS=never
+export UV_PYTHON_INSTALL_DIR="$PWD/uv-python"
+PATH="$PWD/nopython" "$PWD/nopython/mise" lock
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name uv.lock -exec cat {} +" 'mise-lock-dep'

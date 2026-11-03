@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+# Exercise the real CLI and subprocess boundary without changing host packages.
+mkdir -p "$HOME/zypper-bin"
+export PATH="$HOME/zypper-bin:$PATH"
+export MISE_SYSTEM_PACKAGES_SUDO=true
+touch "$HOME/rpm-state" "$HOME/zypper-log"
+cat >"$HOME/zypper-bin/rpm" <<'SH'
+#!/bin/sh
+[ "$1" = -q ] && [ "$2" = --qf ] && [ "$4" = -- ] || exit 2
+[ "$LC_ALL" = C ] || exit 2
+if [ -f "$HOME/rpm-error" ]; then
+  echo 'error: cannot open Packages database' >&2
+  exit 1
+fi
+cat "$HOME/rpm-state"
+# Mixed installed/missing queries return nonzero, too.
+exit 1
+SH
+cat >"$HOME/zypper-bin/zypper" <<'SH'
+#!/bin/sh
+echo "$*" >> "$HOME/zypper-log"
+if [ "$2" = refresh ]; then
+  exit "${ZYPPER_REFRESH_EXIT:-0}"
+fi
+if [ -f "$HOME/zypper-restart" ]; then
+  rm "$HOME/zypper-restart"
+  exit 103
+fi
+exit "${ZYPPER_EXIT:-0}"
+SH
+cat >"$HOME/zypper-bin/sudo" <<'SH'
+#!/bin/sh
+if [ "$1" = -n ] && [ "$2" = true ]; then
+  exit 0
+fi
+[ "$1" = zypper ] || exit 99
+shift
+exec "$HOME/zypper-bin/zypper" "$@"
+SH
+chmod +x "$HOME/zypper-bin/"*
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"zypper:git" = "latest"
+"zypper:ripgrep" = "latest"
+
+[tools]
+tiny = "1"
+TOML
+printf 'git\t2.49.0-1.1\n' >"$HOME/rpm-state"
+assert_succeed "mise install tiny@1.0.0"
+
+# without --upgrade, bootstrap only installs what is missing
+assert_succeed "mise bootstrap --yes"
+assert_contains "mise ls --installed tiny" "1.0.0"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
+assert "cat '$HOME/zypper-log'" '--non-interactive install -- ripgrep'
+
+# --upgrade installs missing packages, then upgrades installed ones
+: >"$HOME/zypper-log"
+assert_succeed "mise bootstrap --yes --upgrade --skip tools"
+assert "cat '$HOME/zypper-log'" $'--non-interactive install -- ripgrep\n--non-interactive refresh\n--non-interactive install -- git'
+
+# a real run still warns about a package that stayed missing after the install
+# (the fake rpm never reports ripgrep as installed)
+assert_contains "mise bootstrap --yes --upgrade --skip tools 2>&1" "not installed"
+
+# --dry-run previews without running the package manager
+: >"$HOME/zypper-log"
+assert_contains "mise bootstrap --yes --upgrade --dry-run 2>&1" "install -- git"
+assert_not_contains "mise bootstrap --yes --upgrade --dry-run 2>&1" "not installed"
+assert_succeed "test ! -s '$HOME/zypper-log'"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
+
+# --skip tools leaves the older tool alone
+assert_succeed "mise bootstrap --yes --upgrade --skip tools"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
+
+# --skip packages leaves packages alone, but the tool is upgraded within its range
+: >"$HOME/zypper-log"
+assert_succeed "mise bootstrap --yes --upgrade --skip packages"
+assert_succeed "test ! -s '$HOME/zypper-log'"
+assert_contains "mise ls --installed tiny" "1.1.0"

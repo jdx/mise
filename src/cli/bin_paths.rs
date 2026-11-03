@@ -6,20 +6,34 @@ use eyre::Result;
 use serde::Serialize;
 use std::path::PathBuf;
 
-/// List all the active runtime bin paths
+/// List the bin directories of the active tools
+///
+/// Prints the bin directories of the tool versions the current config selects. It
+/// does not include `_.path` entries from [env]; `mise doctor path` lists everything
+/// mise adds to PATH.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bin-paths",
+        help = "Print the bin directory of every active tool"
+    ),
+    example("mise bin-paths node", help = "Print only node's bin directory"),
+    example(
+        "mise bin-paths --bin-names",
+        help = "List the executables the active tools provide"
+    )
+)]
 pub(crate) struct BinPaths {
-    /// Tool(s) to look up
-    /// e.g.: ruby@3
-    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    /// Only list these tools, such as `ruby@3`
+    #[usage(value_name = "TOOL@VERSION")]
     tool: Option<Vec<ToolArg>>,
 
-    /// Output executable names instead of bin directories
+    /// Print executable names instead of bin directories
     #[usage(long)]
     bin_names: bool,
 
-    /// Output executable entries in JSON format (implies --bin-names)
+    /// Print executables as JSON objects with `name`, `path`, and `symlink` (implies --bin-names)
     #[usage(long, short = 'J')]
     json: bool,
 }

@@ -7,6 +7,7 @@ cat <<'EOF' >mise.toml
 config_roots = ["bundles/*"]
 EOF
 
+# schema: invalid
 cat <<'EOF' >bundles/a/mise.toml
 [bootstrap.packages]
 "apt:jq" = "latest"

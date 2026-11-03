@@ -1,6 +1,9 @@
 use crate::Result;
+use crate::args::ToolArg;
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
-use crate::config::{Config, SettingsExt};
+use crate::config::config_file::{REQUIRE_EXPLICIT_TRUST_ENV, config_trust_root, is_path_trusted};
+use crate::config::{self, Config, SettingsExt};
+use itertools::Itertools;
 use rmcp::{
     RoleServer, ServiceExt,
     handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},
@@ -18,39 +21,40 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// Run the Model Context Protocol server over stdin/stdout
 ///
 /// Exposes project tools, tasks, environment, and configuration to an MCP client.
-/// Resources use `mise://tools`, `mise://tasks`, `mise://env`, and `mise://config`.
-/// `mise://tools?include_inactive=true` also includes inactive installations.
+/// The client, such as an AI coding assistant, starts this command and exchanges
+/// messages with it. Start it in the project directory or pass `--cd`: the
+/// resources describe that project.
 ///
-/// The `list_commands` tool describes commands and their declared effects. `run_task`
-/// executes project tasks with the user's permissions and can change files or invoke
-/// external services. `install_tool` is advertised but currently returns an error.
+/// Resources (JSON):
+/// - mise://tools: active tool versions (?include_inactive=true adds the rest)
+/// - mise://tasks: task definitions, including monorepo subproject tasks
+/// - mise://env: environment variables
+/// - mise://config: loaded config files and the project root
+///
 /// Environment resources contain real values, including secrets.
 ///
-/// Resources available:
-/// - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
-/// - mise://tasks - List all tasks with their configurations
-/// - mise://env - List all environment variables
-/// - mise://config - Show configuration files and project root
+/// Tools:
+/// - list_commands: every mise command and its declared effect
+/// - run_task: run a task with your permissions; it can change files and call
+///   external services
+/// - install_tool: install a tool version, as `mise install` does
 ///
-/// Tools available:
-/// - list_commands - Every mise command, with its declared effect on the world
-/// - install_tool - Install a tool with an optional version (not yet implemented)
-/// - run_task - Execute a mise task with optional arguments
+/// run_task and install_tool refuse a project whose config files are not
+/// trusted; run `mise trust` there after reviewing them.
 ///
-/// Note: This is primarily intended for integration with AI assistants like Claude,
-/// Cursor, or other tools that support the Model Context Protocol.
 /// See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise -C /path/to/project mcp"###,
-        help = r###"Start from the project directory; an MCP client handles the protocol exchange"###
+        r###"mise --cd /path/to/project mcp"###,
+        help = r###"Serve a project from another directory, as an MCP client config does"###
     )
 )]
 pub(crate) struct Mcp {}
@@ -69,7 +73,8 @@ struct MiseServer {
 struct InstallToolParams {
     /// Tool name (e.g. "node", "python", "go")
     tool: String,
-    /// Optional version to install (e.g. "20", "3.12"). Defaults to latest.
+    /// Optional version to install (e.g. "20", "3.12"). Defaults to the
+    /// configured version, or latest if the tool is not configured.
     #[serde(default)]
     version: Option<String>,
 }
@@ -105,6 +110,127 @@ fn json_result(value: Value) -> std::result::Result<CallToolResult, ErrorData> {
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
+/// A child `mise` with no terminal: output is captured, and the child is
+/// killed if the request is dropped. The child trusts no config on its own
+/// (see [`REQUIRE_EXPLICIT_TRUST_ENV`]), so config the user has not trusted
+/// fails to load rather than being trusted on a client's behalf.
+fn mise_child<S: AsRef<std::ffi::OsStr>>(
+    args: &[S],
+) -> std::result::Result<tokio::process::Command, ErrorData> {
+    let exe = std::env::current_exe().map_err(|e| ErrorData {
+        code: ErrorCode::INTERNAL_ERROR,
+        message: Cow::Owned(format!("Failed to get current exe: {e}")),
+        data: None,
+    })?;
+    let mut command = tokio::process::Command::new(exe);
+    command
+        .args(args)
+        .env("NO_COLOR", "1")
+        .env(REQUIRE_EXPLICIT_TRUST_ENV, "1")
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    prepare_noninteractive_child(command.as_std_mut());
+    Ok(command)
+}
+
+async fn run_mise(args: &[&str]) -> std::result::Result<std::process::Output, ErrorData> {
+    let error = |e: std::io::Error| ErrorData {
+        code: ErrorCode::INTERNAL_ERROR,
+        message: Cow::Owned(format!("Failed to execute mise {}: {e}", args.join(" "))),
+        data: None,
+    };
+    let child = mise_child(args)?.spawn().map_err(error)?;
+    // The child runs in its own process group; registering it lets Ctrl-C
+    // stop an install's compilers and plugins, not just the child.
+    let _running_pid = RunningPidGuard::new(child.id());
+    child.wait_with_output().await.map_err(error)
+}
+
+/// The version `mise ls` reports for the installation at `install_path`. An
+/// installation directory is not always named after its version.
+async fn installed_version(spec: &str, install_path: &str) -> Option<String> {
+    let tool = ToolArg::from_str(spec).ok()?.ba.short.clone();
+    let output = run_mise(&["ls", "--json", "--installed", &tool])
+        .await
+        .ok()?;
+    let versions: Vec<Value> = serde_json::from_slice(&output.stdout).ok()?;
+    versions
+        .iter()
+        .find(|v| v["install_path"] == install_path)
+        .and_then(|v| v["version"].as_str())
+        .map(str::to_string)
+}
+
+fn combined_output(output: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    [stderr.trim_end(), stdout.trim_end()]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .join("\n")
+}
+
+/// The refusal to act on a project whose config is not trusted, if it is not.
+///
+/// `mise run` and `mise install` trust the project config they load: typing
+/// either command is the user's consent to it. A request from an MCP client is
+/// not, so the child cannot trust anything (see [`mise_child`]). This check of
+/// the files `trust_active_config` would trust gives the client an early,
+/// actionable answer; the child still refuses any other untrusted config it
+/// reaches, such as a monorepo subproject's.
+fn untrusted_project_refusal() -> Option<CallToolResult> {
+    let untrusted = config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, false)
+        .into_iter()
+        .filter(|path| !config::is_global_config(path) && !is_path_trusted(path))
+        .map(|path| config_trust_root(&path))
+        .unique()
+        .collect_vec();
+    if untrusted.is_empty() {
+        return None;
+    }
+    let commands = untrusted
+        .iter()
+        .map(|root| {
+            format!(
+                "  mise trust {}",
+                shell_words::quote(&root.to_string_lossy())
+            )
+        })
+        .join("\n");
+    Some(CallToolResult::error(vec![ContentBlock::text(format!(
+        "Refusing to act on untrusted config. The MCP server does not trust config on a \
+         client's behalf. Ask the user to review it and run:\n{commands}"
+    ))]))
+}
+
+/// `tool@version` for `mise install`, refusing a tool it would parse as a flag
+/// or as `tool[option=value]`: options such as `postinstall` are commands, which
+/// come from config the user trusts and not from a client.
+fn tool_spec(tool: &str, version: Option<&str>) -> std::result::Result<String, ErrorData> {
+    let spec = match version.filter(|v| !v.is_empty()) {
+        Some(version) => format!("{tool}@{version}"),
+        None => tool.to_string(),
+    };
+    let message = if tool.is_empty() {
+        "invalid tool '': a tool name is required".to_string()
+    } else if tool.starts_with('-') {
+        format!("invalid tool '{tool}': tool names cannot start with '-'")
+    } else if spec.contains('[') {
+        // The version counts too: `npm:` and `pkg[option=value]` join into a
+        // scoped package name with options.
+        format!("invalid tool '{spec}': tool options are not accepted")
+    } else {
+        return Ok(spec);
+    };
+    Err(ErrorData {
+        code: ErrorCode::INVALID_PARAMS,
+        message: message.into(),
+        data: None,
+    })
+}
+
 #[tool_router]
 impl MiseServer {
     fn new() -> Self {
@@ -116,7 +242,7 @@ impl MiseServer {
 
     /// Every mise command, with what running it does to the world
     #[tool(
-        description = "Every mise command, with what running it does: `read` only inspects state, `write` changes it, `destructive` removes something that is work to get back. A command with no effect listed is unclassified — treat it as needing confirmation, not as safe. Call this before running an unfamiliar mise command."
+        description = "Every mise command, with what running it does: `read` only inspects state, `write` changes it, `destructive` removes something that is work to get back. A command with no effect listed is unclassified: treat it as needing confirmation, not as safe. Call this before running an unfamiliar mise command."
     )]
     async fn list_commands(
         &self,
@@ -156,11 +282,41 @@ impl MiseServer {
     #[tool(description = "Install a tool with an optional version (e.g. node@20, python@3.12)")]
     async fn install_tool(
         &self,
-        Parameters(_params): Parameters<InstallToolParams>,
+        Parameters(InstallToolParams { tool, version }): Parameters<InstallToolParams>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
-        Ok(CallToolResult::error(vec![ContentBlock::text(
-            "Tool installation not yet implemented",
-        )]))
+        let spec = tool_spec(&tool, version.as_deref())?;
+
+        if let Some(refusal) = untrusted_project_refusal() {
+            return Ok(refusal);
+        }
+
+        // A child `mise install` keeps backend and hook output off this
+        // process's stdout, which carries the protocol.
+        let output = run_mise(&["install", &spec]).await?;
+        let log = combined_output(&output);
+        if !output.status.success() {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "Installing {spec} failed with exit code {}:\n{log}",
+                output.status.code().unwrap_or(1),
+            ))]));
+        }
+
+        // `mise where` resolves the request as `mise install` did, now against
+        // what is installed, so it finds what was just installed.
+        let location = run_mise(&["where", &spec]).await?;
+        if !location.status.success() {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "Installed {spec}, but could not locate it:\n{}",
+                combined_output(&location),
+            ))]));
+        }
+        let install_path = String::from_utf8_lossy(&location.stdout).trim().to_string();
+        json_result(json!({
+            "tool": spec,
+            "version": installed_version(&spec, &install_path).await,
+            "install_path": install_path,
+            "output": log,
+        }))
     }
 
     /// Execute a mise task with optional arguments
@@ -171,11 +327,9 @@ impl MiseServer {
     ) -> std::result::Result<CallToolResult, ErrorData> {
         validate_task_name(&task)?;
 
-        let exe = std::env::current_exe().map_err(|e| ErrorData {
-            code: ErrorCode::INTERNAL_ERROR,
-            message: Cow::Owned(format!("Failed to get current exe: {e}")),
-            data: None,
-        })?;
+        if let Some(refusal) = untrusted_project_refusal() {
+            return Ok(refusal);
+        }
 
         let mut cmd_args = vec!["run".to_string(), task.clone()];
         if !args.is_empty() {
@@ -183,16 +337,13 @@ impl MiseServer {
             cmd_args.extend(args);
         }
 
-        let mut command = tokio::process::Command::new(exe);
-        command
-            .args(&cmd_args)
-            .env("NO_COLOR", "1")
-            .env("MISE_YES", "1")
-            .kill_on_drop(true)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        prepare_noninteractive_child(command.as_std_mut());
+        let mut command = mise_child(&cmd_args)?;
+        // The child looks the name up as a task only, never as the path of a script: the check in
+        // `validate_task_name` cannot see a file that appears before the child starts.
+        command.env(crate::env::MISE_TASK_NAMES_ONLY_ENV, "1");
+        // Answers a task's `confirm` prompt. It cannot grant trust: the child
+        // requires explicit trust, which ignores `yes`.
+        command.env("MISE_YES", "1");
         let child = command.spawn().map_err(|e| ErrorData {
             code: ErrorCode::INTERNAL_ERROR,
             message: Cow::Owned(format!("Failed to spawn mise run: {e}")),
@@ -252,7 +403,7 @@ impl ServerHandler for MiseServer {
             .with_protocol_version(ProtocolVersion::V_2025_03_26)
             .with_server_info(Implementation::new("mise", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Mise MCP server provides access to tools, tasks, environment variables, and \
+                "The mise MCP server provides access to tools, tasks, environment variables, and \
                  configuration. Call list_commands before running an unfamiliar mise command: \
                  every command declares its effect on the world (`read`, `write`, \
                  `destructive`), and a command with no effect listed is unclassified rather \
@@ -301,7 +452,7 @@ impl ServerHandler for MiseServer {
                 // With ?include_inactive=true, shows all installed tools
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 
@@ -311,7 +462,7 @@ impl ServerHandler for MiseServer {
                     .await
                     .map_err(|e| ErrorData {
                         code: ErrorCode::INTERNAL_ERROR,
-                        message: Cow::Owned(format!("Failed to get tool request set: {e}")),
+                        message: Cow::Owned(format!("Failed to get tool request set: {e:#}")),
                         data: None,
                     })?
                     .clone();
@@ -319,7 +470,7 @@ impl ServerHandler for MiseServer {
                 let mut ts = crate::toolset::Toolset::from(trs);
                 ts.resolve(&config).await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to resolve toolset: {e}")),
+                    message: Cow::Owned(format!("Failed to resolve toolset: {e:#}")),
                     data: None,
                 })?;
 
@@ -335,7 +486,7 @@ impl ServerHandler for MiseServer {
                     // Include all versions (active + installed)
                     ts.list_all_versions(&config).await.map_err(|e| ErrorData {
                         code: ErrorCode::INTERNAL_ERROR,
-                        message: Cow::Owned(format!("Failed to list tool versions: {e}")),
+                        message: Cow::Owned(format!("Failed to list tool versions: {e:#}")),
                         data: None,
                     })?
                 } else {
@@ -377,7 +528,7 @@ impl ServerHandler for MiseServer {
             ("mise", Some("tasks")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 
@@ -388,7 +539,7 @@ impl ServerHandler for MiseServer {
                     .await
                     .map_err(|e| ErrorData {
                         code: ErrorCode::INTERNAL_ERROR,
-                        message: Cow::Owned(format!("Failed to load tasks: {e}")),
+                        message: Cow::Owned(format!("Failed to load tasks: {e:#}")),
                         data: None,
                     })?;
 
@@ -408,7 +559,13 @@ impl ServerHandler for MiseServer {
                         "secrets": task.secrets.as_ref().map(|s| s.names()).unwrap_or_default(),
                         "depends_post": task.depends_post.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "wait_for": task.wait_for.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
-                        "env": json!({}), // EnvList is not directly iterable, keeping empty for now
+                        "env": task
+                            .env
+                            .0
+                            .iter()
+                            .chain(task.overlay_env.iter().map(|(d, _)| d))
+                            .map(|d| d.to_string())
+                            .collect::<Vec<_>>(),
                         "dir": task.dir.clone(),
                         "hide": task.hide,
                         "raw": task.raw,
@@ -437,13 +594,13 @@ impl ServerHandler for MiseServer {
             ("mise", Some("env")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 
                 let env_template = config.env().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load env: {e}")),
+                    message: Cow::Owned(format!("Failed to load env: {e:#}")),
                     data: None,
                 })?;
 
@@ -465,12 +622,16 @@ impl ServerHandler for MiseServer {
             ("mise", Some("config")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 
                 let config_info = json!({
-                    "config_files": config.config_files.keys().collect::<Vec<_>>(),
+                    "config_files": config
+                        .config_files
+                        .keys()
+                        .map(|p| p.to_string_lossy())
+                        .collect::<Vec<_>>(),
                     "project_root": config.project_root.as_ref().map(|p| p.to_string_lossy()),
                 });
 
@@ -534,12 +695,16 @@ impl Mcp {
 }
 
 /// `task` is handed to `mise run` as an argument, so a leading dash would be
-/// parsed as a flag (`--raw`, `--cd=...`) instead of naming a task.
+/// parsed as a flag (`--raw`, `--cd=...`) instead of naming a task, and the
+/// path of an existing file would run that file, which no project config names
+/// and no trust check covers.
 fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
     let message = if task.is_empty() {
         "invalid task name '': a task name is required".to_string()
     } else if task.starts_with('-') {
         format!("invalid task name '{task}': task names cannot start with '-'")
+    } else if is_path_like(task) {
+        format!("invalid task name '{task}': only the project's tasks can be run, not a file path")
     } else {
         return Ok(());
     };
@@ -548,6 +713,22 @@ fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
         message: message.into(),
         data: None,
     })
+}
+
+/// Whether `mise run` could take `task` for the path of a script rather than a task name.
+///
+/// Decided by its shape, not by whether the file exists: the child looks again when it starts,
+/// and a file that appears in between must not turn a refused name into a script. Relative
+/// (`./`, `../`, `~/`, `.\`), absolute (`/x`, `\x`, UNC `\\host\share`) and drive (`C:\`,
+/// `C:/`) paths all count, and none of them is a task name. A leading `//` is the monorepo
+/// spelling (`//packages/app:build`), which names a task by its `:`; without one there is no
+/// task in it, only the path `mise run` makes of it by dropping a `/`. A monorepo name that is
+/// also the path of a file is no risk: the child `run_task` starts resolves names as tasks only.
+fn is_path_like(task: &str) -> bool {
+    if task.starts_with("//") {
+        return !task.contains(':');
+    }
+    xx::regex!(r"^((\.*|~)[/\\]|\w:[/\\])").is_match(task)
 }
 
 #[cfg(test)]
@@ -567,10 +748,97 @@ mod tests {
     }
 
     #[test]
+    fn validate_task_name_rejects_file_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("build.sh");
+        std::fs::write(&script, "#!/bin/sh\n").unwrap();
+        let script = script.to_string_lossy().to_string();
+        let mut tasks = vec![script.clone()];
+        // `mise run` strips one `/` from a leading `//`, so on Unix `//abs/path` runs
+        // `/abs/path`. A Windows absolute path starts with a drive letter, so a `/` in front of
+        // it is no path to `mise run` either.
+        if cfg!(unix) {
+            tasks.push(format!("/{script}"));
+        }
+        for task in tasks {
+            // The validator refuses exactly what `mise run` would run as a script.
+            assert!(
+                crate::task::task_list::script_path_arg(&task).is_some(),
+                "{task:?}"
+            );
+            let err = validate_task_name(&task).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
+            assert!(err.message.contains("not a file path"), "{task:?}");
+        }
+    }
+
+    #[test]
+    fn validate_task_name_rejects_path_shapes_whether_or_not_they_exist() {
+        for task in [
+            "./build.sh",
+            "../clone/build.sh",
+            "~/build.sh",
+            "/does/not/exist/build.sh",
+            "//does/not/exist/build.sh",
+            r".\build.cmd",
+            r"..\clone\build.cmd",
+            r"\does\not\exist.cmd",
+            r"\\server\share\build.cmd",
+            r"C:\build.cmd",
+            "C:/build.cmd",
+        ] {
+            let err = validate_task_name(task).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
+            assert!(err.message.contains("not a file path"), "{task:?}");
+        }
+    }
+
+    #[test]
     fn validate_task_name_accepts_task_names() {
-        for task in ["build", "//sub:build", "lint:fix", "a-b", "test:e2e"] {
+        for task in [
+            "build",
+            "//sub:build",
+            "//packages/app:build",
+            "lint:fix",
+            "a-b",
+            "test:e2e",
+            "test/e2e",
+            "a/b:c",
+            "docs:build/site",
+            ".hidden",
+        ] {
             validate_task_name(task).unwrap_or_else(|_| panic!("{task:?} should be accepted"));
         }
+    }
+
+    #[test]
+    fn tool_spec_joins_the_version_and_rejects_flags() {
+        assert_eq!(tool_spec("node", Some("20")).unwrap(), "node@20");
+        assert_eq!(tool_spec("node", None).unwrap(), "node");
+        assert_eq!(tool_spec("node", Some("")).unwrap(), "node");
+        for tool in ["", "-f", "--system"] {
+            let err = tool_spec(tool, Some("1")).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{tool:?}");
+        }
+    }
+
+    #[test]
+    fn tool_spec_rejects_tool_options() {
+        for (tool, version) in [
+            ("node[postinstall=touch x]", None),
+            ("node[postinstall=touch x]", Some("20")),
+            ("node[postinstall=touch x", Some("]")),
+            ("npm:", Some("pkg[postinstall=touch x]")),
+        ] {
+            let err = tool_spec(tool, version).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{tool:?} {version:?}");
+        }
+        assert_eq!(
+            tool_spec("node[postinstall=touch x]", Some("20"))
+                .unwrap_err()
+                .message,
+            "invalid tool 'node[postinstall=touch x]@20': tool options are not accepted"
+        );
     }
 
     /// The text of every command row `list_commands` returns.
@@ -603,10 +871,7 @@ mod tests {
         assert_eq!(find(&commands, "ls")["effect"], "read");
         assert_eq!(find(&commands, "install")["effect"], "write");
         assert_eq!(find(&commands, "prune")["effect"], "destructive");
-        assert_eq!(
-            find(&commands, "bootstrap dotfiles origin")["effect"],
-            "destructive"
-        );
+        assert_eq!(find(&commands, "dotfiles origin")["effect"], "destructive");
     }
 
     #[tokio::test]
@@ -632,6 +897,11 @@ mod tests {
     #[tokio::test]
     async fn hidden_subtrees_are_included_when_requested() {
         let all = commands(true).await;
+        // Hidden aliases keep the effect of the command they mount.
+        assert_eq!(
+            find(&all, "bootstrap dotfiles origin")["effect"],
+            "destructive"
+        );
         assert!(all.iter().any(|c| c["command"] == "bootstrap launchd"));
         assert!(
             all.iter()

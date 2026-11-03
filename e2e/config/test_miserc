@@ -52,20 +52,42 @@ unset MISE_CEILING_PATHS
 cd ../../.. || exit 1
 
 # Test Tera template support in .miserc.toml
-# ceiling_paths with {{ env.HOME }} should expand and stop config traversal
+# ceiling_paths with {{ env.HOME }} in the global miserc should expand and stop
+# config traversal
 rm -f .miserc.toml
-echo 'ceiling_paths = ["{{ env.HOME }}"]' >.miserc.toml
+echo 'ceiling_paths = ["{{ env.HOME }}"]' >"$MISE_CONFIG_DIR/miserc.toml"
 
 # mise.toml exists here; from a subdir, it should still be found (we're within HOME)
 mkdir -p subdir2
 cd subdir2 || exit 1
 assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
 cd .. || exit 1
+rm -f "$MISE_CONFIG_DIR/miserc.toml"
 
-# Test os() function in .miserc.toml - template should render (no raw {{ }} in result)
-rm -f .miserc.toml
-echo 'ceiling_paths = ["{{ env.HOME }}/{{ os() }}-work"]' >.miserc.toml
-# Rendered path won't match HOME exactly, so ceiling won't block — config still found
-assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
+# Templates in a project .miserc.toml render with a limited set of functions
+# and filters
+echo 'env = ["{% if os() %}{{ config_root | basename }}{% endif %}"]' >.miserc.toml
+echo "tools.dummy = '2'" >mise.workdir.toml
+assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.workdir.toml  2"
+rm -f mise.workdir.toml
+
+# A project .miserc.toml loads without trust, so its templates see no
+# environment, and mise does not render one that could run unbounded (a loop
+# here would never finish).
+cat >.miserc.toml <<'EOF'
+env = ["{{ env.MISERC_TEST_ENV | default(value='none') }}"]
+EOF
+echo "tools.dummy = '2'" >mise.none.toml
+assert "MISERC_TEST_ENV=test mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.none.toml  2"
+rm -f mise.none.toml
+cat >.miserc.toml <<'EOF'
+env = ["{% for a in range(end=100000) %}{% for b in range(end=100000) %}{% for c in range(end=100000) %}{% endfor %}{% endfor %}{% endfor %}test"]
+EOF
+assert "timeout 60 mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
+assert_contains "timeout 60 mise ls dummy 2>&1" "statement is not allowed"
+cat >.miserc.toml <<'EOF'
+env = ["{{ get_env(name='MISERC_TEST_ENV') }}"]
+EOF
+assert "MISERC_TEST_ENV=test mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
 
 rm -f .miserc.toml

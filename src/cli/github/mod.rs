@@ -1,6 +1,6 @@
 mod token;
 
-/// GitHub related commands
+/// GitHub commands (deprecated; use `mise token github`)
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, hide = true)]
 pub(crate) struct Github {

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Parallel tasks that share a tool must not deadlock while reshimming after
+# the install (mise#14526).
+cat <<EOF >mise.toml
+[tasks.a]
+tools.tiny = "3.1.0"
+run = "echo ok"
+
+[tasks.b]
+tools.tiny = "3.1.0"
+run = "echo ok"
+
+[tasks.c]
+run = "sleep 1"
+
+[tasks.all]
+run = [{ tasks = ["a", "b", "c"] }]
+EOF
+
+for _ in 1 2 3; do
+  rm -rf "$MISE_DATA_DIR/installs" "$MISE_DATA_DIR/shims"
+  timeout 120 mise run all || fail "mise run all hung or failed"
+done

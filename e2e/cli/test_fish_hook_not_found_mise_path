@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Test that fish's fish_command_not_found handler ignores a full path to mise.
+# After `mise implode`, fish passes the removed binary's absolute path to the handler;
+# calling `mise hook-not-found` on it re-entered the handler until fish hit its call stack limit.
+# https://github.com/jdx/mise/issues/14590
+
+if ! command -v fish >/dev/null; then
+  echo "fish not installed, skipping"
+  exit 0
+fi
+
+mkdir -p stub
+cat >stub/mise <<EOF
+#!/usr/bin/env bash
+echo "\$@" >>"$PWD/calls.log"
+exit 1
+EOF
+chmod +x stub/mise
+
+MISE_NOT_FOUND_AUTO_INSTALL=1 mise activate fish --no-hook-env | sed "s#'\\?$(command -v mise)'\\?#$PWD/stub/mise#g" >activate.fish
+assert_contains "cat activate.fish" "$PWD/stub/mise hook-not-found"
+
+# a path to mise must return without calling hook-not-found, and without recursing
+fish -c "source activate.fish; fish_command_not_found /nonexistent/bin/mise; fish_command_not_found /nonexistent/bin/mise-foo; true" 2>&1
+assert_not_contains "cat calls.log 2>/dev/null || true" "hook-not-found"
+
+# any other command still reaches hook-not-found
+fish -c "source activate.fish; fish_command_not_found some-missing-tool; fish_command_not_found /nonexistent/mise-tools/node; true" >/dev/null 2>&1
+assert_contains "cat calls.log" "hook-not-found -s fish -- some-missing-tool"
+assert_contains "cat calls.log" "hook-not-found -s fish -- /nonexistent/mise-tools/node"

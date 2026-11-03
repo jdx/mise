@@ -11,23 +11,34 @@ description: "Recover an interrupted dotfile operation"
 
 Recover an interrupted dotfile operation
 
-Retries safe recovery without overwriting later edits. If recovery cannot
-determine what is safe, inspect the listed files first. `--keep-current`
-explicitly accepts their live contents and discards only the selected
-operation's temporary recovery copies; it does not erase Git history.
+Finishes recovering from an operation that was interrupted, for example by a crash or Ctrl-C. With no argument, recovers every interrupted operation. mise restores files from the operation's recovery copies unless you have edited them since. When it cannot tell which version is safe, it lists the files: check them, then rerun with `--keep-current` to keep what is on disk and discard the operation's recovery copies. When several operations were interrupted, `--keep-current` needs the ID of one. Git history is not changed.
 
 ## Arguments
-- **`[OPERATION]`** — Pending numeric ID or an unambiguous operation UUID prefix
+- **`[OPERATION]`** — The operation's checkpoint ID (see `mise dot history --pending`) or a unique prefix of its UUID
 
 ## Flags
-- **`--keep-current`** — Accept live files instead of restoring temporary recovery copies
-- **`-y --yes`** — Confirm discarding the selected operation's temporary recovery copies
+- **`--keep-current`** — Keep the files on disk instead of restoring the recovery copies
+- **`-y --yes`** — Discard the operation's recovery copies without prompting
 - **`-h --help`** — Print help
+
+## Examples
+
+Recover every interrupted operation
+
+```
+mise dot recover
+```
+
+Keep the files on disk for operation 42
+
+```
+mise dot recover 42 --keep-current --yes
+```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
-- [`mise dotfiles <SUBCOMMAND>`](/cli/dotfiles.html).
+- [Dotfiles history](/dotfiles/history.html).
+- [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

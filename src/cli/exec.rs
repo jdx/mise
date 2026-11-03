@@ -20,41 +20,44 @@ use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
 
-/// Execute a command with tool(s) set
+/// Run a command with mise's tools and environment
 ///
-/// Use this to run a command with mise's tools and environment without modifying the shell
-/// session, or to run ad-hoc commands with tools that are not in the config.
+/// Loads the tools and [env] from your config into one child process without
+/// changing the current shell. Use it in scripts and CI, or to run a tool that is
+/// not in the config.
 ///
-/// Tools are loaded from mise.toml and can be overridden with <TOOL@VERSION> args. Only the
-/// tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
-/// `mise exec python@3.11 -- python -V`, node@20 is still loaded.
+/// TOOL@VERSION arguments add tools or override the configured version of that
+/// tool only: with `node = "24"` in mise.toml, `mise exec python@3.13 -- python -V`
+/// still has node 24 on PATH.
 ///
-/// The "--" separates tools from the command to pass along to the subprocess.
+/// Put the command after `--`, or pass a shell command string with `-c`. Missing
+/// tools are installed first unless the `exec_auto_install` or `auto_install`
+/// setting is off; when you name tools, only those are installed. The --allow-* and
+/// --deny-* flags sandbox the command; see https://mise.jdx.dev/sandboxing.html.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "x",
     verbatim_doc_comment,
+    example("mise exec node@24 -- node ./app.js", help = "Run app.js with node 24"),
     example(
-        r###"mise exec node@20 -- node ./app.js
-mise x node@20 -- node ./app.js"###,
-        help = "Launch app.js using node-20.x, with the full command or its shorter alias."
+        r###"mise x node@24 python@3.13 -c "node -v && python -V""###,
+        help = "Run a shell command string"
     ),
     example(
-        r###"mise exec node@20 python@3.11 --command "node -v && python -V""###,
-        help = r###"Specify command as a string:"###
+        "mise x -C ~/work/api -- npm test",
+        help = "Run in another project's directory"
     ),
     example(
-        r###"mise x --secrets GH_TOKEN -- gh release list"###,
-        help = "Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none."
+        "mise x --deny-net -- npm run build",
+        help = "Run without network access"
     ),
     example(
-        r###"mise x -C /path/to/project node@20 -- node ./app.js"###,
-        help = r###"Run a command in a different directory:"###
+        "mise x --secrets GH_TOKEN -- gh release list",
+        help = "[experimental] Pass one secret from the project's secrets source"
     )
 )]
 pub(crate) struct Exec {
-    /// Tool(s) to load
-    /// e.g.: node@20 python@3.10
+    /// Tools to add or override, such as `node@24 python@3.13`
     #[usage(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
@@ -62,33 +65,35 @@ pub(crate) struct Exec {
     #[usage(conflicts = "c", required_unless = "c", double_dash = "required")]
     pub command: Option<Vec<String>>,
 
-    /// Command string to execute through a shell (supports pipes and redirection)
+    /// Command string to run through a shell (supports pipes and redirection)
     #[usage(short, long = "command", value_hint = usage_rs::ValueHint::CommandString, conflicts = "command")]
     pub c: Option<String>,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting
+    /// How many tools to install in parallel; defaults to the `jobs` setting
+    ///
+    /// Values below 1 are treated as 1.
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Allow specific env var through (implies --deny-env for everything else)
-    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
+    /// Pass only VAR through from the environment (implies --deny-env)
+    ///
+    /// Supports wildcards, such as --allow-env='MYAPP_*'.
     #[usage(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
-    /// Allow network to specific host (implies --deny-net for everything else)
-    /// Per-host filtering is unsupported on Linux and returns an error.
-    /// See the sandboxing guide for current macOS host-filter limitations.
-    /// On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
+    /// Allow network access only to HOST (not supported on any platform)
+    ///
+    /// Per-host filtering does not work: Linux and macOS exit with an error,
+    /// and Windows runs the command without network restrictions. See
+    /// https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
-    /// Allow reads from specific path (implies --deny-read for everything else)
+    /// Allow reads from PATH (implies --deny-read for everything else)
     #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
-    /// Allow writes to specific path (implies --deny-write for everything else)
+    /// Allow writes to PATH (implies --deny-write for everything else)
     #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
@@ -97,6 +102,9 @@ pub(crate) struct Exec {
     pub deny_all: bool,
 
     /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
+    ///
+    /// On Windows it also keeps the variables programs need to start, such as
+    /// SystemRoot and TEMP.
     #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
@@ -108,7 +116,7 @@ pub(crate) struct Exec {
     #[usage(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
-    /// Block all filesystem writes
+    /// Block filesystem writes except temporary and device paths (/tmp, /dev)
     #[usage(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
@@ -120,16 +128,15 @@ pub(crate) struct Exec {
     #[usage(long)]
     pub no_deps: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
-    /// Implies `--jobs=1`
+    /// Connect install commands directly to the terminal; implies --jobs=1
     #[usage(long, overrides = "jobs")]
     pub raw: bool,
 
-    /// Give the command these secrets (comma-separated); by default it gets none
+    /// [experimental] Give the command these secrets (comma-separated); by default it gets none
     #[usage(long, value_name = "SECRET", delimiter = ',', verbatim_doc_comment)]
     pub secrets: Vec<String>,
 
-    /// Give the command every secret the project can inject, except file secrets
+    /// [experimental] Give the command every secret the project can inject, except file secrets
     #[usage(long, conflicts = "secrets", verbatim_doc_comment)]
     pub secrets_all: bool,
 }
@@ -273,7 +280,7 @@ impl Exec {
         resolve_options: ResolveOptions,
         has_explicit_latest: bool,
         wrapper_env: BTreeMap<String, String>,
-        strip_dispatch_dirs: bool,
+        wrapper_dispatch: bool,
     ) -> eyre::Result<()> {
         let opts = InstallOptions {
             force: false,
@@ -287,6 +294,11 @@ impl Exec {
                 || *env::__MISE_SHIM,
             skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
             resolve_options,
+            // Running a tool doesn't need the other missing lazy tools resolved after an install.
+            after_install_resolve: ResolveOptions {
+                defer_missing_lazy_tools: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let (_, mut missing) = measure!("install_arg_versions", {
@@ -334,22 +346,14 @@ impl Exec {
         }
         if ts.has_lazy_declarations()
             && !opts.dry_run
-            && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
+            && let Err(err) = crate::shims::ensure_lazy_shims(&missing).await
         {
             // Commands started by the child (a shell, a script) reach lazy tools
             // through their bootstrap shims, which a hand-edited declaration lacks.
             warn!("failed to create shims for lazy tools: {err:#}");
         }
 
-        let warned = warn_if_command_falls_back(
-            &config,
-            &ts,
-            &opts,
-            &missing,
-            &program,
-            strip_dispatch_dirs,
-        )
-        .await?;
+        let warned = warn_if_command_falls_back(&config, &ts, &opts, &missing, &program).await?;
         // Those were just named; the generic notice below would repeat them.
         missing.retain(|tv| !warned.contains(tv));
 
@@ -380,8 +384,10 @@ impl Exec {
                 env.insert(crate::shims::TASK_TOOL_ARGS_ENV.into(), value);
             }
         }
-        if strip_dispatch_dirs && let Some(path) = env.get_mut(&*env::PATH_KEY) {
-            *path = crate::file::strip_dispatch_dirs_from_path(path);
+        // The wrapper directory stays: a wrapper this command runs still applies, and one that is
+        // already running is skipped by name.
+        if wrapper_dispatch && let Some(path) = env.get_mut(&*env::PATH_KEY) {
+            *path = crate::file::strip_shims_dir_from_path(path);
         }
 
         // Run auto-enabled deps steps (unless --no-deps)
@@ -422,6 +428,9 @@ impl Exec {
             None
         };
         env.remove("__MISE_DIFF");
+        // Not mise-managed env: a hook-env in the child would revert it from the diff and the
+        // child's descendants would apply the running wrapper again.
+        let active_wrappers_marker = env.remove(crate::shims::ACTIVE_WRAPPERS_ENV);
         let mut final_env = env::PRISTINE_ENV.clone();
         for key in &env_remove {
             final_env.remove(key);
@@ -430,6 +439,9 @@ impl Exec {
         let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env).serialize();
         if let Some(mise_env) = removed_mise_env {
             env.insert("MISE_ENV".to_string(), mise_env);
+        }
+        if let Some(marker) = active_wrappers_marker {
+            env.insert(crate::shims::ACTIVE_WRAPPERS_ENV.to_string(), marker);
         }
         if let Ok(serialized) = serialized {
             env.insert("__MISE_DIFF".to_string(), serialized);
@@ -455,7 +467,9 @@ impl Exec {
                 symlinked_allow_paths: vec![],
             },
         );
-        sandbox.resolve_paths();
+        let project_roots: Vec<&std::path::Path> =
+            config.project_root.as_deref().into_iter().collect();
+        sandbox.resolve_paths(&project_roots)?;
 
         // Only when asked: `mise x` hands the command nothing by default, and fnox never
         // runs. This sees the unfiltered env, which G11 compares against; G13 and the
@@ -471,8 +485,18 @@ impl Exec {
         )
         .await?;
 
+        // A sandbox that denies env would drop the marker that makes a wrapper's command skip
+        // that wrapper, so its descendants would reach the wrapper again. A wrapper dispatch sets
+        // it; a command that skipped its wrapper only inherits it.
+        let active_wrappers = env
+            .get(crate::shims::ACTIVE_WRAPPERS_ENV)
+            .cloned()
+            .or_else(|| env::var(crate::shims::ACTIVE_WRAPPERS_ENV).ok());
         if sandbox.is_active() {
             env = sandbox.filter_env(&env);
+            if let Some(active_wrappers) = active_wrappers {
+                env.insert(crate::shims::ACTIVE_WRAPPERS_ENV.into(), active_wrappers);
+            }
         }
         // The grants go in after the sandbox filter: under deny-env it copies allow_env names
         // back in from mise's own environment, which would undo a key fnox asked to remove.
@@ -509,7 +533,7 @@ impl Exec {
                 }
                 cmd.push(format!(
                     "set -gx {} \"${tmp}\"; set -e {tmp}",
-                    shell_escape::escape(k.as_str().into()),
+                    crate::shell::fish_escape(k.as_str().into()),
                 ));
                 env.insert(tmp, v);
             }
@@ -525,9 +549,11 @@ impl Exec {
                 // each call prepends, so sequential calls reversed the order
                 // `list_final_paths` returns, pushing `env._.path` entries and
                 // command wrappers behind every tool directory.
+                // fish's own quoting, not POSIX: in fish `\'` inside single quotes is an
+                // escaped quote, so a directory name holding one ended the string early.
                 let paths = paths
                     .iter()
-                    .map(|p| shell_escape::escape(p.to_string_lossy()))
+                    .map(|p| crate::shell::fish_escape(p.to_string_lossy()))
                     .join(" ");
                 cmd.push(format!("fish_add_path -gm {paths}"));
             }
@@ -622,7 +648,6 @@ async fn warn_if_command_falls_back(
     opts: &InstallOptions,
     missing: &[ToolVersion],
     program: &str,
-    strip_dispatch_dirs: bool,
 ) -> Result<Vec<ToolVersion>> {
     // A path names its binary directly; there is no lookup to fall through.
     if program.contains(['/', '\\']) {
@@ -650,10 +675,10 @@ async fn warn_if_command_falls_back(
         return Ok(vec![]);
     }
     // A command wrapper configured for this command runs in place of any tool's binary. Its
-    // shim may not exist yet, so read the configuration. A wrapper dispatch resolves its own
-    // command with the wrapper directories stripped, so no wrapper applies there.
-    if !strip_dispatch_dirs {
-        let name = crate::shims::command_name_without_exe_suffix(program);
+    // shim may not exist yet, so read the configuration. The wrapper of a command that is
+    // already running does not apply: that command runs the real tool.
+    let name = crate::shims::command_name_without_exe_suffix(program);
+    if !crate::shims::is_active_command_wrapper(name) {
         let wrappers = crate::config::load_command_wrappers(
             &config.config_files,
             ts.versions.values().flat_map(|versions| &versions.requests),
@@ -938,11 +963,32 @@ where
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
-    if sandbox.is_active() {
-        warn!("sandbox is not supported on Windows, running unsandboxed");
+    if sandbox.restricts_more_than_env() {
+        warn!(
+            "sandbox file, network and process restrictions are not supported on Windows, running without them"
+        );
     }
+    // Capture the marker before deny-env removes variables from the process.
+    // The lazy state must retain the dispatching shim for candidate filtering.
+    drop(env::MISE_SHIM_PATH.read().unwrap());
     for key in env_remove {
         env::remove_var(key);
+    }
+    if sandbox.effective_deny_env() {
+        // The child inherits mise's environment, so, as on unix, everything `env` does not
+        // name leaves it. `env` already holds what a Windows process needs to start
+        // (`SystemRoot`, `ComSpec`, `PATHEXT`, `TEMP`, ...; see `SandboxConfig::filter_env`).
+        // Names are case-insensitive here, so `Path` in mise's environment is `PATH` in `env`.
+        // The hidden `=C:`-style entries hold cmd's per-drive current directories, not
+        // variables, and `remove_var` panics on a name containing `=`, so they stay.
+        for (k, _) in std::env::vars_os() {
+            let keep = k.to_string_lossy().starts_with('=')
+                || k.to_str()
+                    .is_some_and(|key| env.keys().any(|name| name.eq_ignore_ascii_case(key)));
+            if !keep {
+                env::remove_var(&k);
+            }
+        }
     }
     for (k, v) in env.iter() {
         env::set_var(k, v);
@@ -1041,6 +1087,9 @@ where
             return Err(err_cannot_find_binary_path(&program_name).await);
         }
     };
+    // A `.mise-bins` entry is a copy on Windows. Run the file it was copied from, so the program
+    // finds the DLLs and data beside it.
+    let program = crate::backend::mise_bins::source_of(&program).unwrap_or(program);
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     if is_shim_dispatch {
         // A native shim that finds its own path here was picked instead of the tool.

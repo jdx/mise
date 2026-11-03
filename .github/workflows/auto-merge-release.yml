@@ -1,6 +1,8 @@
 name: auto-merge-release
 
-on: # zizmor: ignore[dangerous-triggers] reads metadata only; never checks out PR code
+# reads metadata only; never checks out PR code
+# jactionlint ignore=dangerous-triggers
+on:
   # A draft release PR is an explicit hold. This event disarms a release PR
   # that was armed earlier in the day.
   pull_request_target:
@@ -12,10 +14,15 @@ on: # zizmor: ignore[dangerous-triggers] reads metadata only; never checks out P
     - cron: "15,30,45 20,21 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   merge:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:

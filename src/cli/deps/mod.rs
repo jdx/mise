@@ -6,27 +6,28 @@ mod remove;
 
 /// [experimental] Manage project dependencies
 ///
-/// With no subcommand, runs dependency installation for the current project, the same
-/// as `mise deps install`. Providers detect their inputs and installed outputs to
-/// decide whether work is needed; use `--explain PROVIDER` to inspect that decision.
+/// Installs project dependencies such as node_modules, separately from the tools
+/// `mise install` manages. Each provider is one package-manager step: a built-in
+/// one such as npm or uv, or a custom `[deps.<name>]` command. A provider runs only
+/// when its inputs changed or its outputs are missing; `--explain` shows why.
 ///
-/// Providers with `auto = true` run before `mise exec` and `mise run` unless `--no-deps`
-/// is passed. These install project dependencies, such as node_modules, separately
-/// from versioned tools managed by `mise install`.
+/// With no subcommand, runs `mise deps install`. Providers with `auto = true` also
+/// run before `mise exec` and `mise run` unless you pass --no-deps.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "dep",
     alias = "prepare",
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP,
-    example(r###"mise deps                    # Install all project dependencies
-mise deps install            # Same as bare `mise deps`
-mise deps install --force    # Force reinstall even if fresh
-mise deps install --dry-run  # Show what would run
-mise deps --monorepo         # Install deps from explicit monorepo config roots
-mise deps add npm:react      # Add a dependency
-mise deps add -D npm:vitest  # Add a dev dependency
-mise deps remove npm:lodash  # Remove a dependency"###)
+    example("mise deps", help = "Run every provider that is out of date"),
+    example(
+        "mise deps install npm --explain",
+        help = "Show why the npm provider would or would not run"
+    ),
+    example(
+        "mise deps --monorepo",
+        help = "Include providers from every monorepo config root"
+    )
 )]
 pub(crate) struct Deps {
     #[usage(subcommand)]
@@ -74,9 +75,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r###"<bold><underline>Configuration:</underline></bold>
 
 ```toml
-# Built-in npm provider (auto-detects lockfile)
+# Built-in npm provider; needs package.json and package-lock.json
 [deps.npm]
-auto = true              # Auto-run before mise x/run
+auto = true              # run before mise exec and mise run
 
 # Custom provider
 [deps.codegen]
@@ -84,7 +85,7 @@ auto = true
 sources = ["schema/*.graphql"]
 outputs = ["src/generated/"]
 run = "npm run codegen"
+```
 
-# To disable npm instead, add `disable = ["npm"]` under [deps].
-```"###
+See https://mise.jdx.dev/dev-tools/deps.html."###
 );

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-mise use dummy@latest
+mise use dummy@1.0.0
 
 shim_dir="$MISE_DATA_DIR/shims"
 shadow_dir="$PWD/shadow-bin"
@@ -18,3 +18,17 @@ assert_contains_text "$output" "shadow-bin/dummy"
 # No warning is needed when the mise shim wins command resolution.
 output="$(PATH="$shim_dir:$shadow_dir:$PATH" mise doctor 2>&1 || true)"
 assert_not_contains_text "$output" "shadow-bin/dummy"
+
+# A tool may provide a command named mise. Its dispatcher symlink in the
+# dedicated farm must be classified using the actual directory lookup.
+mise_bin=$(command -v mise)
+cp "$MISE_DATA_DIR/installs/dummy/1.0.0/bin/dummy" "$MISE_DATA_DIR/installs/dummy/1.0.0/bin/mise"
+"$mise_bin" reshim
+assert_succeed "test -L $shim_dir/mise"
+assert_succeed "test -f $shim_dir/mise"
+assert_succeed "test $shim_dir/mise -ef $mise_bin"
+assert_not_contains "PATH=$shim_dir:$PATH $mise_bin doctor 2>&1 || true" "Missing shims: mise"
+
+# Positive control: a genuinely missing dispatcher must produce the warning.
+rm "$shim_dir/mise"
+assert_contains "PATH=$shim_dir:$PATH $mise_bin doctor 2>&1 || true" "Missing shims: mise"

@@ -80,13 +80,21 @@ cat <<'EOF' >mise.toml
 [bootstrap.services.agent]
 scope = "user"
 EOF
-assert_fail "mise bootstrap services status" 'must set `command` or `builtin`'
+# without `command` or `builtin` the entry manages a unit that already exists
+# in the systemd user manager, which only Linux has
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise bootstrap services status" "service:agent"
+else
+  assert_fail "mise bootstrap services status" "only supported on Linux"
+fi
+# schema: invalid
 cat <<'EOF' >mise.toml
 [bootstrap.services.agent]
 builtin = "history-watch"
 command = "x"
 EOF
 assert_fail "mise bootstrap services status" 'sets both `builtin` and `command`'
+# schema: invalid
 cat <<'EOF' >mise.toml
 [bootstrap.services.agent]
 builtin = "nope"

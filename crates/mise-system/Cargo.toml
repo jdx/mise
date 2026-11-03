@@ -1,0 +1,126 @@
+[package]
+name = "mise-system"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "The bootstrap, dotfiles, and history modules of mise"
+repository = "https://github.com/jdx/mise"
+include = ["src/**/*", "assets/*", "build.rs"]
+
+[dependencies]
+age = { version = "0.12", features = ["ssh", "plugin"] }
+async-trait = "0.1"
+base64 = "0.23"
+blake3 = "1"
+bytesize = "2"
+calm_io = "0.1"
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+] }
+console = "0.16"
+demand = "2"
+diffy = "0.5"
+dunce = "1"
+eyre = "0.6"
+file-id = "0.2"
+fslock = "0.2"
+futures-util = "0.3"
+gix = { version = "<1", default-features = false, features = [
+  "max-performance-safe",
+  "worktree-mutation",
+  "sha1",
+  "sha256",
+  "interrupt",
+  "auto-chain-error",
+] }
+glob = "0.3"
+globset = "0.4"
+hex = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+ipnet = { version = "2", features = ["serde"] }
+itertools = "0.15"
+junction = "2"
+log = "0.4"
+mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
+mise-settings = { path = "../mise-settings", version = "2026" }
+mise-config = { path = "../mise-config", version = "0.1" }
+mise-system-packages = { path = "../mise-system-packages", version = "0.1" }
+mise-ui = { path = "../mise-ui", version = "2026" }
+mise-util = { path = "../mise-util", version = "2026", default-features = false }
+notify-debouncer-full = { version = "0.7", default-features = false }
+once_cell = "1"
+path-absolutize = "4"
+pathdiff = "0.2"
+plist = "1"
+rand = "0.10"
+regex = "1"
+rmp-serde = "1"
+same-file = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+shell-escape = "0.1"
+shell-words = "1"
+strum = { version = "0.28", features = ["derive"] }
+tempfile = "3"
+tera = "2"
+tokio = { version = "1", features = ["full"] }
+toml = { version = "1", features = ["parse", "preserve_order"] }
+toml_edit = { version = "0.25", features = ["parse"] }
+notify = { version = "8", default-features = false, features = [
+  "macos_fsevent",
+] }
+url = "2"
+uuid = { version = "1", features = ["v7"] }
+thiserror = "2"
+tera1 = { package = "tera", version = "1" }
+versions = { version = "8", features = ["serde"] }
+vfox = { path = "../vfox", version = "2026.7", default-features = false }
+walkdir = "2"
+which = "8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = [
+  "dir",
+  "feature",
+  "fs",
+  "hostname",
+  "resource",
+  "signal",
+  "term",
+  "user",
+] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Wdk_System_Threading",
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+cc = "1"
+eyre = "0.6"
+
+[dev-dependencies]
+minisign-verify = "0.3"
+schemars = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[package.metadata.cargo-machete]
+# build.rs builds the macOS notification helper with it; cargo-machete does not scan build scripts.
+ignored = ["cc"]
