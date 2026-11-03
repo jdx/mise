@@ -12,7 +12,6 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
-use crate::platform::{ARCH, OS};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
@@ -1298,6 +1297,9 @@ impl AquaBackend {
     fn to_aqua_platform(target: &PlatformTarget) -> (&str, &str) {
         let target_os = match target.os_name() {
             "macos" => "darwin",
+            // No aqua recipe publishes Android assets. The Linux build is the
+            // closest one, and Android keeps the musl-only preference below.
+            "android" => "linux",
             other => other,
         };
         let target_arch = to_aqua_arch(target.arch_name());
@@ -1330,6 +1332,9 @@ impl AquaBackend {
     /// has no musl build for mise to invent. The tool's `libc` option and `libc = "musl"` in
     /// settings are explicit, so they still select the musl build.
     fn asset_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        if target.os_name() == "android" {
+            return Some("musl".to_string());
+        }
         let libc = Self::target_libc(target, tool_libc)?;
         if libc == "musl" && !Self::musl_requested(tool_libc) {
             return None;
@@ -1342,6 +1347,11 @@ impl AquaBackend {
     }
 
     fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        // Bionic only runs static musl binaries, so an Android target is a musl
+        // target whatever the tool asked for.
+        if target.os_name() == "android" {
+            return Some("musl".to_string());
+        }
         if target.os_name() != "linux" {
             return None;
         }
@@ -4863,6 +4873,11 @@ enum LibcAssetPreference {
 }
 
 fn libc_asset_preference(target: &PlatformTarget, tool_libc: Option<&str>) -> LibcAssetPreference {
+    // A glibc build installs on Android and then fails at exec on bionic, so
+    // take the musl sibling, or the registry's unqualified asset, but never gnu.
+    if target.os_name() == "android" {
+        return LibcAssetPreference::MuslStrict;
+    }
     if target.os_name() != "linux" {
         return LibcAssetPreference::Exact;
     }
@@ -4994,16 +5009,26 @@ fn asset_name_tokens(name: &str) -> Vec<String> {
         .collect()
 }
 
+/// The aqua platform name for the binaries this host should install.
+///
+/// Reads the settings rather than `env::consts`, so `os = "linux"` resolves
+/// Linux assets. Android is reported as `linux`: aqua metadata has no Android
+/// packages, and the Linux build is the one mise installs there.
+static AQUA_OS: LazyLock<String> = LazyLock::new(|| match Settings::get().os() {
+    "macos" => "darwin".to_string(),
+    "android" => "linux".to_string(),
+    other => other.to_string(),
+});
+
 pub(crate) fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        &OS
-    }
+    AQUA_OS.as_str()
 }
 
+static AQUA_ARCH: LazyLock<String> =
+    LazyLock::new(|| to_aqua_arch(Settings::get().arch()).to_string());
+
 pub(crate) fn arch() -> &'static str {
-    to_aqua_arch(&ARCH)
+    AQUA_ARCH.as_str()
 }
 
 fn to_aqua_arch(arch: &str) -> &str {
@@ -5932,6 +5957,35 @@ no_asset: true
             LibcAssetPreference::Exact
         );
         assert_eq!(AquaBackend::target_variant_libc(&macos, Some("musl")), None);
+    }
+
+    #[test]
+    fn test_android_uses_linux_metadata_and_musl_assets() {
+        let android = PlatformTarget::new(Platform::parse("android-arm64").unwrap());
+
+        // No aqua recipe publishes Android assets, so the recipe's Linux
+        // replacements have to supply the asset name.
+        assert_eq!(AquaBackend::to_aqua_platform(&android), ("linux", "arm64"));
+
+        // Bionic only runs static musl builds: a gnu request still resolves to
+        // musl, and a gnu asset is not accepted even when the registry names it.
+        assert_eq!(
+            AquaBackend::target_variant_libc(&android, Some("gnu")).as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            AquaBackend::asset_libc(&android, Some("gnu")).as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            libc_asset_preference(&android, Some("gnu")),
+            LibcAssetPreference::MuslStrict
+        );
+        assert!(is_platform_supported(
+            &["linux".to_string()],
+            AquaBackend::to_aqua_platform(&android).0,
+            AquaBackend::to_aqua_platform(&android).1
+        ));
     }
 
     #[test]
