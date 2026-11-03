@@ -186,8 +186,8 @@ The trust policy reads the shape of a release's attestation metadata but does
 not verify the signed bundle. mise verifies it by default
 ([`npm.provenance`](/configuration/settings.html#npm.provenance); the
 `provenance` category of [`paranoid`](/configuration/settings.html#paranoid)
-turns it on even when that is off). It verifies the Sigstore provenance npm publishes for the tool's own package.
-The attestation must name the same sha512 integrity the install locks, which
+turns it on even when that is off). It verifies the Sigstore provenance npm
+publishes for the tool's own package. The attestation must name the same sha512 integrity the install locks, which
 aube checks every tarball against before it extracts it.
 
 A package that publishes no provenance, and a private registry that serves none,
@@ -197,7 +197,8 @@ embedded aube package manager supports this; with any other
 install is unchecked. A tool with a `checksum` option installs a downloaded
 archive that has no provenance to verify unless it is locked. With the paranoid
 `provenance` category on, both of those installs fail instead of going unchecked.
-Set `npm.provenance = false` to skip verification.
+Set `npm.provenance = false` to skip verification; that does not skip it while the
+paranoid `provenance` category is on.
 
 ### Low-download and new packages
 
