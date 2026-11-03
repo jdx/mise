@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2209
+
+# bootstrap --save-env keeps the -E selection in miserc.local.toml
+
+assert_fail "mise bootstrap --only dotfiles --save-env --yes" "needs the environments"
+
+printf '# mine\nceiling_paths = []\n' >"$MISE_CONFIG_DIR/miserc.local.toml"
+assert_succeed "mise bootstrap --only dotfiles --save-env -E workstation,work --dry-run --yes"
+assert "cat $MISE_CONFIG_DIR/miserc.local.toml" "# mine
+ceiling_paths = []"
+
+assert_succeed "mise bootstrap --only dotfiles --save-env -E workstation,work --yes"
+assert_contains "cat $MISE_CONFIG_DIR/miserc.local.toml" 'env = ["workstation", "work"]'
+assert_contains "cat $MISE_CONFIG_DIR/miserc.local.toml" "# mine"
+assert_contains "cat $MISE_CONFIG_DIR/miserc.local.toml" "ceiling_paths = []"

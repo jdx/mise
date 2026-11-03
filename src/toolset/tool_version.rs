@@ -703,6 +703,7 @@ impl ToolVersion {
             warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
+            keep_moved_alias_pins: base_opts.keep_moved_alias_pins,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -807,6 +808,20 @@ impl ToolVersion {
         };
         Some(pathname.replace([':', '/'], "-"))
     }
+    /// Whether `--locked` (or `locked`) and `tool_config.locked`, in that
+    /// order, forbid resolving this request outside the lockfile.
+    fn locked_by(config: &Config, request: &ToolRequest, opts: &ResolveOptions) -> (bool, bool) {
+        let invocation_locked =
+            config.invocation_locked_for(request.source(), Settings::get().locked);
+        let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
+        (invocation_locked, tool_config_locked)
+    }
+
+    fn resolution_locked(config: &Config, request: &ToolRequest, opts: &ResolveOptions) -> bool {
+        let (invocation_locked, tool_config_locked) = Self::locked_by(config, request, opts);
+        invocation_locked || tool_config_locked
+    }
+
     fn ensure_unlocked_resolution_allowed(
         config: &Config,
         request: &ToolRequest,
@@ -814,8 +829,7 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<()> {
         let settings = Settings::get();
-        let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
-        let invocation_locked = config.invocation_locked_for(request.source(), settings.locked);
+        let (invocation_locked, tool_config_locked) = Self::locked_by(config, request, opts);
         if (invocation_locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
@@ -847,6 +861,7 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
         let backend = request.backend()?;
+        let requested = v;
         let v = config.resolve_alias(&backend, v).await?;
         let request = request.with_registry_version(&v);
         let backend = request.backend()?;
@@ -866,8 +881,14 @@ impl ToolVersion {
         };
         if opts.use_locked_version
             && !has_linked_version(request.ba(), lock_query)
-            && let Some(lt) =
-                request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
+            && let Some(lt) = request.lockfile_resolve_with_prefix(
+                config,
+                lock_query,
+                lock_prefix_boundary,
+                v != requested
+                    && (opts.keep_moved_alias_pins
+                        || Self::resolution_locked(config, &request, opts)),
+            )?
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
@@ -1515,6 +1536,11 @@ pub struct ResolveOptions {
     /// Defer those lazy tools even when not under `prefer_offline`. For a command that
     /// manages one tool's versions and so resolves the others only to look them up.
     pub defer_missing_lazy_online: bool,
+    /// Keep a version 0 lockfile's only entry for a tool whose alias has
+    /// moved (`lts` -> `26` with `24.13.0` locked). `mise lock --upgrade`
+    /// sets it so the upgrade binds the alias to that pin instead of
+    /// re-resolving it.
+    pub keep_moved_alias_pins: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1536,6 +1562,7 @@ impl Default for ResolveOptions {
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
+            keep_moved_alias_pins: false,
         }
     }
 }

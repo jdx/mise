@@ -1,7 +1,5 @@
 --- Post-installation hook that creates a venv and installs pipenv.
---- @param ctx table
---- @field ctx.rootPath string SDK installation root path
---- @field ctx.sdkInfo table SDK info containing version
+--- @param ctx PostInstallCtx
 function PLUGIN:PostInstall(ctx)
     local rootPath = ctx.rootPath
 

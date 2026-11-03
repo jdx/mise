@@ -5489,12 +5489,18 @@ pub(crate) struct AmbiguousRequestBinding(String);
 /// entry written before those options existed. The version pin is honored — it
 /// is the only record of what this project resolved to — but the artifact data
 /// is dropped, since there's no way to tell which variant it describes.
+///
+/// `alias_resolved` marks `prefix` as an alias's current meaning (`lts` ->
+/// `26`). A version 0 lockfile records no request bindings, so once the alias
+/// moves its pin no longer matches; the tool's only entry is then taken as the
+/// pin, as a binding would have recorded it.
 pub(crate) struct LockedVersionQuery<'a> {
     pub(crate) request: &'a ToolRequest,
     pub(crate) short: &'a str,
     pub(crate) specifier: &'a str,
     pub(crate) prefix: &'a str,
     pub(crate) require_prefix_boundary: bool,
+    pub(crate) alias_resolved: bool,
     pub(crate) request_options: &'a BTreeMap<String, String>,
     pub(crate) legacy_options_fallback: bool,
     pub(crate) backend: Option<&'a dyn Backend>,
@@ -5511,6 +5517,7 @@ pub(crate) fn get_locked_version(
         specifier,
         prefix,
         require_prefix_boundary,
+        alias_resolved,
         request_options,
         legacy_options_fallback,
         backend,
@@ -5525,6 +5532,7 @@ pub(crate) fn get_locked_version(
         return Ok(None);
     };
     let mut merged = false;
+    let shared_lockfile = reads_shared_monorepo_lockfile(config, source);
     let lockfile = match source {
         ToolSource::MiseToml(path) => {
             trace!(
@@ -5733,6 +5741,50 @@ pub(crate) fn get_locked_version(
                     )));
                 }
             }
+
+            // A merged view or a shared lockfile mixes other configs' pins,
+            // so only a lockfile of the request's own config can say its lone
+            // entry is this pin.
+            if alias_resolved && !merged && !shared_lockfile {
+                // As with bindings, a request naming its backend only takes
+                // that backend's entry
+                let backend_matches = |v: &LockfileTool| {
+                    !request.ba().has_explicit_backend()
+                        || v.backend
+                            .as_ref()
+                            .is_none_or(|b| *b == request.ba().stored_full())
+                };
+                let exact = tools
+                    .iter()
+                    .filter(|v| backend_matches(v) && &v.options == request_options)
+                    .collect_vec();
+                if let [found] = exact.as_slice() {
+                    trace!(
+                        "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {}",
+                        found.version
+                    );
+                    return Ok(Some((*found).clone()));
+                }
+                // Several exact entries already leave the alias ambiguous
+                if exact.is_empty()
+                    && legacy_options_fallback
+                    && !request_options.is_empty()
+                    && let [found] = tools
+                        .iter()
+                        .filter(|v| backend_matches(v) && v.options.is_empty())
+                        .collect_vec()
+                        .as_slice()
+                {
+                    trace!(
+                        "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {} without options and dropping its artifact data",
+                        found.version
+                    );
+                    return Ok(Some(lockfile_tool_with_request_options(
+                        found,
+                        request_options,
+                    )));
+                }
+            }
         }
         Ok(None)
     };
@@ -5751,6 +5803,35 @@ pub(crate) fn get_locked_version(
         }
         result => result,
     }
+}
+
+/// Whether `source` reads a monorepo root lockfile, which holds every
+/// subproject's pins. A tool stub uses its own monorepo root, not the one of
+/// the directory it runs from.
+fn reads_shared_monorepo_lockfile(config: &Config, source: &ToolSource) -> bool {
+    let (lockfile_path, monorepo_root) = match source {
+        ToolSource::ToolStub(stub) => {
+            let Some((config_path, root)) = tool_stub_config(stub) else {
+                return false;
+            };
+            (
+                lockfile_path_for_config(&config_path, root.as_deref()).0,
+                root,
+            )
+        }
+        _ => {
+            let root = config.monorepo_lockfile_root();
+            let Some((path, _)) =
+                lockfile_path_for_tool_source_with_root(config, source, root.as_deref())
+            else {
+                return false;
+            };
+            (path, root)
+        }
+    };
+    monorepo_root.is_some_and(|root| {
+        lockfile_path.parent() == Some(&crate::config::monorepo_lockfile_dir(&root))
+    })
 }
 
 /// The first lockfile, nearest config first, whose lookup decides the request.
