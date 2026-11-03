@@ -6,34 +6,37 @@
 # provenance from GitHub Actions.
 
 for mode in generate merge; do
-	mkdir "$mode"
-	cat >"$mode/mise.toml" <<'TOML'
+  mkdir "$mode"
+  cat >"$mode/mise.toml" <<'TOML'
 [tools]
 node = "20.11.1"
 "npm:@sigstore/bundle" = "3.1.0"
 TOML
-	touch "$mode/mise.lock"
-	export MISE_LOCKFILE_MODE="$mode"
+  touch "$mode/mise.lock"
+  export MISE_LOCKFILE_MODE="$mode"
+  # Each mode starts without the package, or its first install would return
+  # "already installed" without running the verifier.
+  mise -C "$mode" uninstall npm:@sigstore/bundle@3.1.0 >/dev/null 2>&1 || true
 
-	assert "mise -C $mode settings get npm.provenance" "true"
-	assert_succeed "mise -C $mode install"
-	assert_contains "cat $mode/mise.lock" "lockfile_version = 4"
-	assert_contains "cat $mode/mise.lock" 'repository = "github.com/sigstore/sigstore-js"'
+  assert "mise -C $mode settings get npm.provenance" "true"
+  assert_succeed "mise -C $mode install"
+  assert_contains "cat $mode/mise.lock" "lockfile_version = 4"
+  assert_contains "cat $mode/mise.lock" 'repository = "github.com/sigstore/sigstore-js"'
 
-	# A reinstall verifies against the recorded repository and keeps the pin,
-	# and so does a full re-lock.
-	assert_succeed "mise -C $mode uninstall npm:@sigstore/bundle@3.1.0"
-	assert_succeed "mise -C $mode install"
-	assert_succeed "mise -C $mode lock"
-	assert_contains "cat $mode/mise.lock" 'repository = "github.com/sigstore/sigstore-js"'
+  # A reinstall verifies against the recorded repository and keeps the pin,
+  # and so does a full re-lock.
+  assert_succeed "mise -C $mode uninstall npm:@sigstore/bundle@3.1.0"
+  assert_succeed "mise -C $mode install"
+  assert_succeed "mise -C $mode lock"
+  assert_contains "cat $mode/mise.lock" 'repository = "github.com/sigstore/sigstore-js"'
 
-	# A pin to another repository refuses the install.
-	sed -i.bak 's#github.com/sigstore/sigstore-js#github.com/example/other#' "$mode/mise.lock"
-	assert_succeed "mise -C $mode uninstall npm:@sigstore/bundle@3.1.0"
-	assert_fail_contains "mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
+  # A pin to another repository refuses the install.
+  sed -i.bak 's#github.com/sigstore/sigstore-js#github.com/example/other#' "$mode/mise.lock"
+  assert_succeed "mise -C $mode uninstall npm:@sigstore/bundle@3.1.0"
+  assert_fail_contains "mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
 
-	# Turning the setting off skips the check, but the paranoid provenance
-	# category does the check on its own.
-	assert_fail_contains "MISE_NPM_PROVENANCE=0 MISE_PARANOID=provenance mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
-	assert_succeed "MISE_NPM_PROVENANCE=0 mise -C $mode install"
+  # Turning the setting off skips the check, but the paranoid provenance
+  # category does the check on its own.
+  assert_fail_contains "MISE_NPM_PROVENANCE=0 MISE_PARANOID=provenance mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
+  assert_succeed "MISE_NPM_PROVENANCE=0 mise -C $mode install"
 done
