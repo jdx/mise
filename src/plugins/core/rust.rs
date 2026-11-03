@@ -131,20 +131,10 @@ fn apply_rustup_mirror_env<'a>(
     cmd.envs(rustup_mirror_env(config_env))
 }
 
-/// A mirror can serve the channels without GitHub being reachable (an offline
-/// network), so a failed release listing then only loses the numbered releases.
-/// The flag says the listing is degraded, so it must not be cached as complete.
-fn releases_or_channels_only<T>(
-    releases: Result<Vec<T>>,
-    mirrored: bool,
-) -> Result<(Vec<T>, bool)> {
-    match releases {
-        Err(err) if mirrored => {
-            warn!("failed to list rust releases from GitHub, using channels only: {err:#}");
-            Ok((vec![], true))
-        }
-        other => other.map(|releases| (releases, false)),
-    }
+/// The manifest rustup publishes for a numbered release, which a mirror carries
+/// whenever it carries the release.
+fn release_manifest_url_for(dist_server: Option<&str>, version: &str) -> String {
+    channel_manifest_url_for(dist_server, version)
 }
 
 fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
@@ -711,16 +701,13 @@ impl Backend for RustPlugin {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        Ok(self._list_remote_versions_checked(config).await?.0)
-    }
-
-    async fn _list_remote_versions_checked(
-        &self,
-        config: &Arc<Config>,
-    ) -> Result<(Vec<VersionInfo>, bool)> {
-        let mirrored = rustup_dist_server(&config.env().await?).is_some();
-        let (releases, degraded) =
-            releases_or_channels_only(github::list_releases("rust-lang/rust").await, mirrored)?;
+        // A mirror is the user's source for toolchains, so GitHub is not asked for the
+        // numbered releases. They resolve through the mirror's manifests instead.
+        let releases = if rustup_dist_server(&config.env().await?).is_some() {
+            vec![]
+        } else {
+            github::list_releases("rust-lang/rust").await?
+        };
         let mut versions: Vec<VersionInfo> = releases
             .into_iter()
             .map(|r| {
@@ -774,7 +761,35 @@ impl Backend for RustPlugin {
                 ..Default::default()
             },
         ]);
-        Ok((versions, degraded))
+        Ok(versions)
+    }
+
+    /// Behind a mirror `latest` is the `stable` channel, which the mirror serves
+    /// without a release listing.
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        Ok(rustup_dist_server(&config.env().await?).map(|_| "stable".to_string()))
+    }
+
+    /// Behind a mirror a numbered release is proven by its manifest, so it needs
+    /// no GitHub listing.
+    async fn resolve_exact_version(
+        &self,
+        config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if is_dated_nightly(version) || is_dated_beta(version) {
+            return Ok(Some(version.to_string()));
+        }
+        let server = rustup_dist_server(&config.env().await?);
+        if server.is_none() || !regex!(r"^\d+\.\d+\.\d+$").is_match(version) {
+            return Ok(None);
+        }
+        let url = release_manifest_url_for(server.as_deref(), version);
+        Ok(HTTP_FETCH
+            .head(&url)
+            .await
+            .is_ok_and(|rsp| rsp.status().is_success())
+            .then(|| version.to_string()))
     }
 
     async fn channel_for_cutoff(
@@ -853,14 +868,6 @@ impl Backend for RustPlugin {
 
     fn is_exact_version(&self, version: &str) -> bool {
         is_dated_nightly(version) || is_dated_beta(version)
-    }
-
-    async fn resolve_exact_version(
-        &self,
-        _config: &Arc<Config>,
-        version: &str,
-    ) -> Result<Option<String>> {
-        Ok((is_dated_nightly(version) || is_dated_beta(version)).then(|| version.to_string()))
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
@@ -1866,16 +1873,10 @@ mod tests {
     use confique::Layer;
 
     #[test]
-    fn test_releases_or_channels_only() {
-        let fail = || Err(eyre::eyre!("dns error"));
+    fn test_release_manifest_url_for_mirror() {
         assert_eq!(
-            releases_or_channels_only::<u8>(fail(), true).unwrap(),
-            (vec![], true)
-        );
-        assert!(releases_or_channels_only::<u8>(fail(), false).is_err());
-        assert_eq!(
-            releases_or_channels_only(Ok(vec![1u8]), true).unwrap(),
-            (vec![1], false)
+            release_manifest_url_for(Some("https://m.example.com/"), "1.80.0"),
+            "https://m.example.com/dist/channel-rust-1.80.0.toml"
         );
     }
 
