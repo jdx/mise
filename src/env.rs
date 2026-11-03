@@ -262,6 +262,16 @@ pub fn should_truncate() -> bool {
 // python
 
 fn environment(args: &[String]) -> Vec<String> {
+    let mut names = explicit_environment(args);
+    if names.is_empty() {
+        names = miserc::get_env().cloned().unwrap_or_default();
+    }
+    miserc::expand_env_sets(names)
+}
+
+/// The environments named by `-E` or `MISE_ENV`, before set names expand.
+/// Empty when neither is given.
+pub fn explicit_environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
     // Get environment value from args or env vars
@@ -332,7 +342,6 @@ fn environment(args: &[String]) -> Vec<String> {
                 .map(String::from)
                 .collect()
         })
-        .or_else(|| miserc::get_env().cloned())
         .unwrap_or_default()
 }
 

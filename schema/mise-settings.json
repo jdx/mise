@@ -170,6 +170,7 @@
             "ListPath",
             "SetString",
             "IndexMap<String, String>",
+            "IndexMap<String, Vec<String>>",
             "BoolOrString",
             "BoolOrList"
           ],
@@ -211,7 +212,8 @@
                   "ListString",
                   "ListPath",
                   "SetString",
-                  "IndexMap<String, String>"
+                  "IndexMap<String, String>",
+                  "IndexMap<String, Vec<String>>"
                 ]
               }
             },
