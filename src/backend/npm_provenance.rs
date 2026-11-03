@@ -21,6 +21,7 @@ use base64::Engine as _;
 use miette::miette;
 
 use crate::backend::npm_registry;
+use crate::config::Settings;
 use crate::github::sigstore::{Attestation, verify_forge_attestation_sources_for_sha512};
 use crate::http::HTTP;
 
@@ -151,9 +152,18 @@ async fn verify_subject(
             return unverified(pinned, name, version, "publishes no attestations");
         }
         Err(err) => {
-            return Err(err.wrap_err(format!(
-                "failed to fetch npm attestations for {name}@{version}"
-            )));
+            // As for the other provenance lookups, an unreachable API is
+            // `provenance_api_failures_fatal`'s to say, unless the lockfile
+            // pins a repository, which only a lookup can satisfy.
+            if pinned.is_some() || Settings::get().provenance_api_failures_fatal {
+                return Err(err.wrap_err(format!(
+                    "failed to fetch npm attestations for {name}@{version}"
+                )));
+            }
+            warn!(
+                "failed to fetch npm attestations for {name}@{version}, installing without verifying its provenance: {err:#}"
+            );
+            return Ok(None);
         }
     };
     // npm also returns its own publish attestation, which names no repository
