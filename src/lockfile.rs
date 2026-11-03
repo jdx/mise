@@ -6184,7 +6184,7 @@ pub(crate) fn get_locked_backend_for_version(
     let usable = |tool: &&LockfileTool| {
         tool.backend.as_ref().is_some_and(|full| {
             backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
-                .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
+                .is_some_and(|backend| backend::is_usable_backend_type(&backend.get_type()))
         })
     };
     // The lockfile with the highest precedence that locks the tool decides

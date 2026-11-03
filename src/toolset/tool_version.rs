@@ -324,7 +324,13 @@ impl ToolVersion {
     }
 
     fn from_lockfile(mut request: ToolRequest, lt: LockfileTool) -> Self {
-        if let Some(backend_full) = &lt.backend {
+        // A locked backend mise cannot use here, one in `disable_backends` or
+        // asdf on Windows (a lockfile written on Linux or macOS can lock one),
+        // is not restored: the locked version still applies, and the shorthand
+        // resolves to a backend that can install it.
+        if let Some(backend_full) = lt.backend.as_ref().filter(|full| {
+            backend::is_usable_backend_type(&backend::backend_type::BackendType::guess(full))
+        }) {
             let backend = Arc::new(BackendArg::new(
                 request.ba().short.clone(),
                 Some(backend_full.clone()),
@@ -1957,6 +1963,59 @@ mod tests {
             !restore("packslip:github.com/other/hk")
                 .opts
                 .contains_key("workflow")
+        );
+    }
+
+    #[test]
+    fn from_lockfile_keeps_the_version_but_not_a_backend_mise_cannot_use_here() {
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+        let _settings = crate::test::SettingsGuard::lock();
+        let restore = |backend: &str| {
+            let request = ToolRequest::new(
+                Arc::new(BackendArg::new("yarn".to_string(), None)),
+                "4",
+                ToolSource::Argument,
+            )
+            .unwrap();
+            let lt = LockfileTool {
+                version: "4.9.1".to_string(),
+                backend: Some(backend.to_string()),
+                specifiers: Default::default(),
+                options: Default::default(),
+                platforms: Default::default(),
+                aube: None,
+                uv: None,
+            };
+            let tv = ToolVersion::from_lockfile(request, lt);
+            (tv.version.clone(), tv.ba().full())
+        };
+
+        let mut partial = SettingsPartial::empty();
+        partial.disable_backends = Some(vec!["asdf".to_string()]);
+        Settings::reset(Some(partial));
+        let disabled = restore("asdf:yarn");
+        let enabled = restore("npm:@yarnpkg/cli-dist");
+        Settings::reset(None);
+        let native = restore("asdf:yarn");
+
+        assert_eq!(disabled.0, "4.9.1", "the locked version still applies");
+        assert!(
+            !disabled.1.starts_with("asdf:"),
+            "a disabled locked backend must not be restored, got {}",
+            disabled.1
+        );
+        assert_eq!(
+            enabled,
+            ("4.9.1".to_string(), "npm:@yarnpkg/cli-dist".to_string())
+        );
+        // mise never runs asdf plugins on Windows, so a lock written elsewhere
+        // must not route the tool there.
+        assert_eq!(
+            native.1.starts_with("asdf:"),
+            !cfg!(windows),
+            "{}",
+            native.1
         );
     }
 

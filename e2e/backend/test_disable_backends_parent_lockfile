@@ -60,3 +60,23 @@ assert "mise tool yarn --backend" "npm:@yarnpkg/cli-dist"
 mise lock --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" 'backend = "npm:@yarnpkg/cli-dist"'
 assert_not_contains "cat mise.lock" 'asdf:'
+
+# The project's own lockfile, in the format before lockfile_version, locks a
+# backend disabled here, as asdf always is on Windows. The tool still installs:
+# the locked version applies, the locked backend does not.
+cd ..
+mkdir legacy
+cd legacy
+cat >mise.toml <<'EOF'
+[tools]
+yarn = "4"
+EOF
+cat >mise.lock <<'EOF'
+[[tools.yarn]]
+version = "4.16.0"
+backend = "asdf:yarn"
+EOF
+assert "mise tool yarn --backend" "aqua:yarnpkg/berry"
+mise install
+assert "mise ls --installed --json yarn | jq -r '.[].version'" "4.16.0"
+assert_not_contains "cat mise.lock" 'asdf:'
