@@ -5073,30 +5073,29 @@ fn elf_interpreter(path: &Path) -> Option<String> {
     if phentsize == 0 || phnum == 0 {
         return None;
     }
-    // A downloaded file is untrusted: bound every read by the file's own length
-    // so a bogus header cannot ask for a huge allocation.
+    // A downloaded file is untrusted. Read one program header at a time into a
+    // buffer whose size comes from an ELF header field's own width (at most
+    // 64 KiB), so no read allocates more than the file can justify, and bound
+    // the interpreter by the file's length and the length a path can have.
     let file_len = file.metadata().ok()?.len();
-    let table_len = u64::try_from(phentsize)
-        .ok()?
-        .checked_mul(u64::try_from(phnum).ok()?)?;
-    if phoff.checked_add(table_len)? > file_len {
-        return None;
-    }
-    file.seek(SeekFrom::Start(phoff)).ok()?;
-    let mut table = vec![0u8; phentsize * phnum];
-    file.read_exact(&mut table).ok()?;
+    let mut entry = vec![0u8; phentsize];
     for index in 0..phnum {
-        let entry = table.get(index * phentsize..(index + 1) * phentsize)?;
-        if le_u32(entry, 0)? != 3 {
+        let phdr_offset = phoff.checked_add(u64::try_from(index * phentsize).ok()?)?;
+        file.seek(SeekFrom::Start(phdr_offset)).ok()?;
+        if file.read_exact(&mut entry).is_err() {
+            return None;
+        }
+        if le_u32(&entry, 0)? != 3 {
             continue; // not PT_INTERP
         }
         let (offset, size) = if is_64 {
-            (le_u64(entry, 8)?, le_u64(entry, 32)?)
+            (le_u64(&entry, 8)?, le_u64(&entry, 32)?)
         } else {
-            (u64::from(le_u32(entry, 4)?), u64::from(le_u32(entry, 16)?))
+            (
+                u64::from(le_u32(&entry, 4)?),
+                u64::from(le_u32(&entry, 16)?),
+            )
         };
-        // PT_INTERP is a path. Anything much longer is not one, and the bound
-        // also keeps the allocation below a size a bad file could inflate.
         let size = usize::try_from(size).ok()?;
         if size == 0 || size > 4096 || offset.checked_add(size as u64)? > file_len {
             return None;
