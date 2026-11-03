@@ -379,8 +379,13 @@ directory on `Path` for cmd.exe as described in
 winget install jdx.mise
 ```
 
-winget builds can trail a release, and mise turns self-update off for them; upgrade with
-`winget upgrade jdx.mise`.
+::: warning winget can lag behind releases
+The winget package is not maintained by the mise project, so new releases can
+take days or longer to appear. mise also turns self-update off for winget
+installs; upgrade with `winget upgrade jdx.mise`. To get releases promptly, use
+the [PowerShell script](#windows-script).
+:::
+
 [winget manifest](https://github.com/microsoft/winget-pkgs/tree/master/manifests/j/jdx/mise)
 
 ### PowerShell script {#windows-script}
