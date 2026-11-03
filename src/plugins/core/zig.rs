@@ -58,6 +58,63 @@ impl ZigPlugin {
         format!("https://ziglang.org/builds/zig-{arch}-{os}-{version}.{ext}")
     }
 
+    /// The release URL for a numbered version, for when the download index
+    /// cannot be read. Zig named archives `zig-{os}-{arch}-...` up to 0.14.0
+    /// and `zig-{arch}-{os}-...` from 0.14.1 on. (#15349)
+    fn release_tarball_url(arch: &str, os: &str, version: &str) -> String {
+        let name = Self::archive_name(arch, os, version);
+        format!("https://ziglang.org/download/{version}/{name}")
+    }
+
+    /// The file name of `version`'s archive for this arch and os.
+    fn archive_name(arch: &str, os: &str, version: &str) -> String {
+        let ext = if os == "windows" { "zip" } else { "tar.xz" };
+        if Self::arch_first(version) {
+            format!("zig-{arch}-{os}-{version}.{ext}")
+        } else {
+            format!("zig-{os}-{arch}-{version}.{ext}")
+        }
+    }
+
+    /// Whether `version`'s archives put the arch before the os (0.14.1 on).
+    fn arch_first(version: &str) -> bool {
+        let parts: Vec<u64> = version.split('.').filter_map(|p| p.parse().ok()).collect();
+        parts.as_slice() >= [0, 14, 1].as_slice()
+    }
+
+    /// Whether a locked `url` can be downloaded for `version` without the
+    /// index. The signature only proves the archive matches its own file name,
+    /// so that name must be this version's archive for this platform, with no
+    /// query or fragment to change it. Older mise wrote `zig-{os}-...` names for 0.14.1 and
+    /// later, and `.tar.xz` on Windows, when the index was unreadable; those
+    /// files do not exist, so the index resolves them.
+    fn usable_locked_url(url: &str, version: &str, arch: &str, os: &str) -> bool {
+        !url.contains(['?', '#'])
+            && url
+                .rsplit('/')
+                .next()
+                .is_some_and(|filename| filename == Self::archive_name(arch, os, version))
+    }
+
+    /// The (arch, os) pair the download index and archive names use.
+    fn index_platform(target: &PlatformTarget) -> (&str, &'static str) {
+        let arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            "arm" => "armv7a",
+            "riscv64" => "riscv64",
+            other => other,
+        };
+        let os = match target.os_name() {
+            "macos" => "macos",
+            "linux" => "linux",
+            "freebsd" => "freebsd",
+            "windows" => "windows",
+            _ => "linux",
+        };
+        (arch, os)
+    }
+
     fn test_zig(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("zig version".into());
         CmdLineRunner::new(self.zig_bin(tv))
@@ -69,10 +126,22 @@ impl ZigPlugin {
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let settings = Settings::get();
-        let url = self
-            .get_tarball_url(tv, &PlatformTarget::from_current())
-            .await?
-            .ok_or_else(|| eyre::eyre!("Failed to resolve zig tarball URL for {}", tv.version))?;
+        // A URL the lockfile pins needs no download index, which can be
+        // unavailable or unparseable. Minisign still checks the archive. (#15349)
+        let target = PlatformTarget::from_current();
+        let (arch, os) = Self::index_platform(&target);
+        let locked_url = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|pi| pi.url.as_deref())
+            .filter(|url| Self::usable_locked_url(url, &tv.version, arch, os))
+            .map(str::to_string);
+        let url = match locked_url {
+            Some(url) => url,
+            None => self.get_tarball_url(tv, &target).await?.ok_or_else(|| {
+                eyre::eyre!("Failed to resolve zig tarball URL for {}", tv.version)
+            })?,
+        };
 
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -453,20 +522,7 @@ impl Backend for ZigPlugin {
             ("mach", "https://machengine.org/zig/index.json"),
         ]);
 
-        let arch = match target.arch_name() {
-            "x64" => "x86_64",
-            "arm64" => "aarch64",
-            "arm" => "armv7a",
-            "riscv64" => "riscv64",
-            other => other,
-        };
-        let os = match target.os_name() {
-            "macos" => "macos",
-            "linux" => "linux",
-            "freebsd" => "freebsd",
-            "windows" => "windows",
-            _ => "linux",
-        };
+        let (arch, os) = Self::index_platform(target);
 
         let (json_url, version) = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
             (indexes["mach"], tv.version.as_str())
@@ -479,12 +535,10 @@ impl Backend for ZigPlugin {
             .await
         {
             Ok(url) => Ok(Some(url)),
-            Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
+            Err(err) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
                 // Fallback: construct URL directly for numbered versions
-                Ok(Some(format!(
-                    "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
-                    tv.version, os, arch, tv.version
-                )))
+                warn!("zig: {err:#}; building the {version} URL without the download index");
+                Ok(Some(Self::release_tarball_url(arch, os, &tv.version)))
             }
             Err(_) if tv.version.contains("-dev.") => {
                 // Resolved from a rolling channel (e.g. "master"): nightly builds
@@ -505,20 +559,7 @@ impl Backend for ZigPlugin {
             ("mach", "https://machengine.org/zig/index.json"),
         ]);
 
-        let arch = match target.arch_name() {
-            "x64" => "x86_64",
-            "arm64" => "aarch64",
-            "arm" => "armv7a",
-            "riscv64" => "riscv64",
-            other => other,
-        };
-        let os = match target.os_name() {
-            "macos" => "macos",
-            "linux" => "linux",
-            "freebsd" => "freebsd",
-            "windows" => "windows",
-            _ => "linux",
-        };
+        let (arch, os) = Self::index_platform(target);
 
         let (json_url, version) = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
             (indexes["mach"], tv.version.as_str())
@@ -540,15 +581,13 @@ impl Backend for ZigPlugin {
                 size,
                 ..Default::default()
             }),
-            Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
+            Err(err) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
                 // Fallback: construct URL directly for numbered versions (no checksum available)
                 // Don't pre-set provenance here — record it only after download() confirms
                 // minisign verification succeeded during install
+                warn!("zig: {err:#}; locking the {version} URL without a checksum");
                 Ok(PlatformInfo {
-                    url: Some(format!(
-                        "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
-                        tv.version, os, arch, tv.version
-                    )),
+                    url: Some(Self::release_tarball_url(arch, os, &tv.version)),
                     ..Default::default()
                 })
             }
@@ -562,5 +601,57 @@ impl Backend for ZigPlugin {
             }
             Err(_) => Ok(PlatformInfo::default()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ZigPlugin;
+
+    #[test]
+    fn test_release_tarball_url_follows_the_naming_change() {
+        assert_eq!(
+            ZigPlugin::release_tarball_url("x86_64", "linux", "0.17.0"),
+            "https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz"
+        );
+        assert_eq!(
+            ZigPlugin::release_tarball_url("x86_64", "linux", "0.14.1"),
+            "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+        );
+        assert_eq!(
+            ZigPlugin::release_tarball_url("aarch64", "macos", "0.14.0"),
+            "https://ziglang.org/download/0.14.0/zig-macos-aarch64-0.14.0.tar.xz"
+        );
+        assert_eq!(
+            ZigPlugin::release_tarball_url("x86_64", "windows", "0.17.0"),
+            "https://ziglang.org/download/0.17.0/zig-x86_64-windows-0.17.0.zip"
+        );
+        assert_eq!(
+            ZigPlugin::release_tarball_url("x86_64", "windows", "0.13.0"),
+            "https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.zip"
+        );
+    }
+
+    #[test]
+    fn test_locked_url_must_name_the_version_and_platform() {
+        let url = ZigPlugin::release_tarball_url("x86_64", "linux", "0.15.1");
+        let usable = ZigPlugin::usable_locked_url;
+        assert!(usable(&url, "0.15.1", "x86_64", "linux"));
+        assert!(!usable(&url, "0.14.1", "x86_64", "linux"));
+        assert!(!usable(&url, "5.1", "x86_64", "linux"));
+        assert!(!usable(&url, "0.15.1", "aarch64", "linux"));
+        assert!(!usable(&url, "0.15.1", "x86_64", "macos"));
+        assert!(!usable(&format!("{url}?x=1"), "0.15.1", "x86_64", "linux"));
+        let fragment = "https://example.com/archive#x/zig-x86_64-linux-0.15.1.tar.xz";
+        assert!(!usable(fragment, "0.15.1", "x86_64", "linux"));
+        let windows = ZigPlugin::release_tarball_url("x86_64", "windows", "0.13.0");
+        assert!(usable(&windows, "0.13.0", "x86_64", "windows"));
+        let nightly = ZigPlugin::nightly_tarball_url("aarch64", "macos", "0.16.0-dev.1+abc");
+        assert!(usable(&nightly, "0.16.0-dev.1+abc", "aarch64", "macos"));
+        // What the old fallback wrote for releases that use the new order.
+        let old_fallback = "https://ziglang.org/download/0.17.0/zig-linux-x86_64-0.17.0.tar.xz";
+        assert!(!usable(old_fallback, "0.17.0", "x86_64", "linux"));
+        let old_windows = "https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.tar.xz";
+        assert!(!usable(old_windows, "0.13.0", "x86_64", "windows"));
     }
 }
