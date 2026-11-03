@@ -131,11 +131,13 @@ you set it.
 
 With `RUSTUP_DIST_SERVER` set, mise does not query GitHub for rust versions. A
 mirror has no release index, so `latest` resolves to the release its `stable`
-channel points at, and an exact version such as `1.80.0` is accepted when the
-mirror serves `dist/channel-rust-1.80.0.toml`. Older releases cannot be
-discovered, so prefix selectors such as `1.80` and a
-[`minimum_release_age`](/configuration/settings.html#minimum_release_age) cutoff older than the
-current stable build only match that stable release.
+channel points at. If the mirror does not serve that release's manifest, `latest`
+falls back to the `stable` channel. An exact version such as `1.80.0` is accepted
+when the mirror serves `dist/channel-rust-1.80.0.toml`. Older releases cannot be
+discovered, so a prefix selector such as `1.80` matches only the current stable
+release, and a [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
+cutoff older than that build fails to resolve instead of selecting an older
+release.
 
 ## Cache Cargo builds with Mr Boxington {#share-cargo-builds-with-mr-boxington}
 
