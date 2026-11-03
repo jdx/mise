@@ -1339,8 +1339,9 @@ impl Backend for NPMBackend {
                 .prepend_path(vec![bin_dir.clone()])?
                 // pnpm 11+ links packages through a global virtual store outside the
                 // install dir by default, which breaks a restored MISE_DATA_DIR cache.
-                // Older versions ignore this setting.
-                .env("PNPM_CONFIG_VIRTUAL_STORE_TYPE", "project");
+                // `virtualStoreType` only exists in newer pnpm, so use the setting
+                // every pnpm 11+ honors. pnpm 10 and older have no global store.
+                .env("PNPM_CONFIG_ENABLE_GLOBAL_VIRTUAL_STORE", "false");
                 if use_global_dir_env {
                     // pnpm 12's replacement Rust CLI does not accept both path settings
                     // as flags, but reads them from PNPM_CONFIG_* environment variables.
