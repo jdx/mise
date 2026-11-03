@@ -1279,8 +1279,20 @@ impl Backend for NPMBackend {
                 let verifier = self.provenance_verifier(&tv);
                 self.install_via_aube_embed(ctx, &tv, &options, &package, verifier.as_ref())
                     .await?;
-                if let Some(repository) = verifier.and_then(|v| v.verified_repository()) {
-                    tv.npm_provenance = Some(PackageProvenance { repository });
+                if let Some(verifier) = verifier {
+                    match verifier.verified_repository() {
+                        Some(repository) => {
+                            tv.npm_provenance = Some(PackageProvenance { repository })
+                        }
+                        // A source the verifier is never shown, such as a git
+                        // spec, cannot satisfy a pin.
+                        None if tv.npm_provenance.is_some() => eyre::bail!(
+                            "npm:{} is pinned to a provenance repository in mise.lock, but its install has no provenance to verify; \
+                             remove the pin or turn off npm.provenance",
+                            self.display_tool_name()
+                        ),
+                        None => {}
+                    }
                 }
             }
             NpmPackageManager::AubeCli => {

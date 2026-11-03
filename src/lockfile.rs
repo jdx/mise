@@ -5103,6 +5103,9 @@ where
                     uv: existing_tool.uv.clone(),
                     provenance: existing_tool.provenance.clone(),
                 });
+                if target.provenance.is_none() {
+                    target.provenance = existing_tool.provenance.clone();
+                }
                 target
                     .specifiers
                     .extend(existing_tool.specifiers.iter().cloned());
@@ -5412,7 +5415,6 @@ impl Lockfile {
                 }
                 entry.uv = None;
                 entry.aube = None;
-                entry.provenance = None;
                 for info in entry.platforms.values_mut() {
                     info.url = None;
                     info.url_api = None;
