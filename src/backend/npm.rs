@@ -1252,6 +1252,7 @@ impl Backend for NPMBackend {
         if Self::provenance_enabled() && tv.npm_provenance.is_none() {
             tv.npm_provenance = crate::lockfile::get_locked_npm_provenance(
                 &ctx.config,
+                &tv.request,
                 &crate::toolset::install_state::state_short(&tv.ba().short),
                 &tv.version,
                 &tv.ba().stored_full(),
