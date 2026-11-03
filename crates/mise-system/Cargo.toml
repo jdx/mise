@@ -74,7 +74,7 @@ notify = { version = "8", default-features = false, features = [
 url = "2"
 uuid = { version = "1", features = ["v7"] }
 thiserror = "2"
-tera1 = { package = "tera", version = "1" }
+tera1 = { package = "tera", version = "2" }
 versions = { version = "8", features = ["serde"] }
 vfox = { path = "../vfox", version = "2026.7", default-features = false }
 walkdir = "2"

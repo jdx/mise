@@ -250,7 +250,7 @@ tabled = { version = "0.22", features = ["ansi"] }
 taplo = "0.14"
 tempfile = "3"
 tera = "2"
-tera1 = { package = "tera", version = "1" }
+tera1 = { package = "tera", version = "2" }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }

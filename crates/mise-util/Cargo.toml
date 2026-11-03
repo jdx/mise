@@ -110,7 +110,7 @@ tera-contrib = { version = "0.3", features = [
   "slug",
   "urlencode",
 ] }
-tera1 = { package = "tera", version = "1" }
+tera1 = { package = "tera", version = "2" }
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
