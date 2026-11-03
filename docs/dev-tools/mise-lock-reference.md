@@ -193,7 +193,9 @@ another repository fails. A package that stops publishing provenance fails too,
 rather than installing unchecked. The entry is recorded by `mise install`, not by
 `mise lock`, and only while `npm.provenance` or the paranoid `provenance`
 category is on. A version that is already
-installed is not verified again; reinstall it to check it against the entry.
+installed is not verified again; reinstall it to check it against the entry. To add
+the pin to an existing revision 3 lockfile, run `mise lock --upgrade` and then
+`mise install --force`.
 
 ## Platform keys
 
