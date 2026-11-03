@@ -5489,12 +5489,18 @@ pub(crate) struct AmbiguousRequestBinding(String);
 /// entry written before those options existed. The version pin is honored — it
 /// is the only record of what this project resolved to — but the artifact data
 /// is dropped, since there's no way to tell which variant it describes.
+///
+/// `alias_resolved` marks `prefix` as an alias's current meaning (`lts` ->
+/// `26`). A version 0 lockfile records no request bindings, so once the alias
+/// moves its pin no longer matches; the tool's only entry is then taken as the
+/// pin, as a binding would have recorded it.
 pub(crate) struct LockedVersionQuery<'a> {
     pub(crate) request: &'a ToolRequest,
     pub(crate) short: &'a str,
     pub(crate) specifier: &'a str,
     pub(crate) prefix: &'a str,
     pub(crate) require_prefix_boundary: bool,
+    pub(crate) alias_resolved: bool,
     pub(crate) request_options: &'a BTreeMap<String, String>,
     pub(crate) legacy_options_fallback: bool,
     pub(crate) backend: Option<&'a dyn Backend>,
@@ -5511,6 +5517,7 @@ pub(crate) fn get_locked_version(
         specifier,
         prefix,
         require_prefix_boundary,
+        alias_resolved,
         request_options,
         legacy_options_fallback,
         backend,
@@ -5708,6 +5715,23 @@ pub(crate) fn get_locked_version(
                         request_options,
                     )));
                 }
+            }
+
+            // A merged view mixes other configs' pins, so only a lockfile of
+            // the request's own config can say its lone entry is this pin.
+            if alias_resolved
+                && !merged
+                && let [found] = tools
+                    .iter()
+                    .filter(|v| &v.options == request_options)
+                    .collect_vec()
+                    .as_slice()
+            {
+                trace!(
+                    "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {}",
+                    found.version
+                );
+                return Ok(Some((*found).clone()));
             }
         }
         Ok(None)
