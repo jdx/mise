@@ -1119,6 +1119,17 @@ pub async fn verify_github_attestation_sources_for_sha512(
     .await
 }
 
+/// [`verify_github_attestation_sources_for_sha512`] for GitHub Actions or
+/// gitlab.com CI provenance; each source is `github.com/owner/repo` or
+/// `gitlab.com/group/project`.
+pub async fn verify_forge_attestation_sources_for_sha512(
+    sha512: &[u8],
+    attestations: &[Attestation],
+) -> AttestationResult<Vec<String>> {
+    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::verify_forge_attestation_sources_for_sha512(sha512, attestations).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

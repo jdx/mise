@@ -43,7 +43,8 @@ pub use cosign::{verify_cosign_signature, verify_cosign_signature_with_key};
 pub use cosign_identity::CosignIdentity;
 pub use digest::calculate_file_digest;
 pub use github::{
-    GithubAttestationRequest, verify_github_attestation, verify_github_attestation_sources,
+    GithubAttestationRequest, verify_forge_attestation_sources_for_sha512,
+    verify_github_attestation, verify_github_attestation_sources,
     verify_github_attestation_sources_for_sha512, verify_github_attestation_with_attestations,
     verify_github_attestation_with_base_url, verify_github_attestation_with_base_url_and_digest,
 };
