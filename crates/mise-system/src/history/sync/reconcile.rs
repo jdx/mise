@@ -54,22 +54,21 @@ pub(crate) fn upstream_with_interaction(
     let mut first_locked = None;
     if let Some(commit) = commit {
         for entry in repo.ls_tree(commit)? {
-            if let Some((mode, oid)) = repo.object_at(commit, &entry.path)? {
-                let object = if encrypted.contains(&entry.path) {
-                    match super::files::decrypt(repo, &entry.path, &(mode, oid), interactive) {
-                        Ok(object) => object,
-                        Err(err) if err.downcast_ref::<super::files::Locked>().is_some() => {
-                            locked.push(entry.path);
-                            first_locked.get_or_insert(err);
-                            continue;
-                        }
-                        Err(err) => return Err(err),
+            let object = (entry.mode, entry.oid);
+            let object = if encrypted.contains(&entry.path) {
+                match super::files::decrypt(repo, &entry.path, &object, interactive) {
+                    Ok(object) => object,
+                    Err(err) if err.downcast_ref::<super::files::Locked>().is_some() => {
+                        locked.push(entry.path);
+                        first_locked.get_or_insert(err);
+                        continue;
                     }
-                } else {
-                    (mode, oid)
-                };
-                files.insert(entry.path, object);
-            }
+                    Err(err) => return Err(err),
+                }
+            } else {
+                object
+            };
+            files.insert(entry.path, object);
         }
     }
     if let Some(err) = first_locked {
@@ -472,6 +471,44 @@ mod tests {
 
     fn obj(oid: &str) -> Object {
         ("100644".to_string(), oid.to_string())
+    }
+
+    #[test]
+    fn upstream_preserves_enumerated_paths_modes_and_objects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let blob = repo.hash_blob(b"contents").unwrap();
+        let link = repo.hash_blob(b"../plain").unwrap();
+        let nested_tree = repo.write_tree(&[]).unwrap();
+        let gitlink = repo.commit_tree(&nested_tree, vec![], "nested").unwrap();
+        let mut entries = vec![
+            ("100644".into(), blob.clone(), "home/plain".into()),
+            ("100755".into(), blob.clone(), "home/executable".into()),
+            ("120000".into(), link, "home/nested/link".into()),
+            ("160000".into(), gitlink, "home/repository".into()),
+        ];
+        for index in 0..256 {
+            entries.push((
+                "100644".into(),
+                blob.clone(),
+                format!("home/library/skill-{index}/SKILL.md"),
+            ));
+        }
+        let tree = repo.write_tree(&entries).unwrap();
+        let commit = repo.commit_tree(&tree, vec![], "upstream").unwrap();
+        let expected = entries
+            .into_iter()
+            .map(|(mode, oid, path)| (path, (mode, oid)))
+            .collect::<BTreeMap<_, _>>();
+        for spec in [&tree, &commit] {
+            let actual = upstream(&repo, Some(spec)).unwrap();
+            assert_eq!(actual.commit.as_deref(), Some(spec.as_str()));
+            assert_eq!(actual.files, expected);
+        }
+        let absent = upstream(&repo, None).unwrap();
+        assert!(absent.commit.is_none());
+        assert!(absent.files.is_empty());
+        assert!(upstream(&repo, Some(&"0".repeat(40))).is_err());
     }
 
     #[test]
