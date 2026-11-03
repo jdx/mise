@@ -492,10 +492,8 @@ impl Backend for VfoxBackend {
         vfox.set_download_progress(move |written, total| {
             // The total opens a transfer, so announce it once per attempt (the
             // callback starts each one at 0) and only move the position after.
-            if written == 0
-                && let Some(total) = total
-            {
-                pr.set_length(total);
+            if written == 0 {
+                pr.set_length(total.unwrap_or(0));
             }
             pr.set_position(written);
         });
