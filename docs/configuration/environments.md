@@ -92,8 +92,8 @@ expand the same way. A name that is not a set is an environment, so
 `env = ["workstation", "ci"]` also works. A set expands one level and cannot
 contain another set, and an environment listed twice keeps its first position.
 
-A set from the system or global `miserc.toml` cannot be redefined by a project
-`.miserc.toml`.
+A project `.miserc.toml` cannot define a set named like one the system or global
+`miserc.toml` defines, or like an environment it selects.
 
 ## File names and precedence {#file-names-and-precedence}
 

@@ -902,8 +902,8 @@ environment, so a machine can still list environments one by one. A set expands 
 level: a set cannot contain another set, and a set may list an environment of its
 own name (`server` above). An environment that appears twice keeps its first position.
 
-A set defined in the system or global `miserc.toml` cannot be redefined by a
-project `.miserc.toml`; among the other files, the closest one wins for each name.
+A project `.miserc.toml` cannot define a set named like one the system or global
+`miserc.toml` defines, or like an environment it selects; among the other files, the closest one wins for each name.
 """
 optional = true
 rc = true

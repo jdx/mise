@@ -493,7 +493,9 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
             } else {
                 keep_global_envs(&mut settings, &global_env);
                 if let Some(sets) = settings.env_sets.as_mut() {
-                    sets.retain(|name, _| !global_sets.contains(name));
+                    sets.retain(|name, _| {
+                        !global_sets.contains(name) && !global_env.contains(name)
+                    });
                 }
                 merge_settings(&mut merged, settings);
             }

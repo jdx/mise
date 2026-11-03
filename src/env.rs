@@ -262,16 +262,16 @@ pub fn should_truncate() -> bool {
 // python
 
 fn environment(args: &[String]) -> Vec<String> {
-    let mut names = explicit_environment(args);
-    if names.is_empty() {
-        names = miserc::get_env().cloned().unwrap_or_default();
-    }
+    // an empty MISE_ENV selects nothing, so only an absent selection falls back
+    let names = explicit_environment(args)
+        .or_else(|| miserc::get_env().cloned())
+        .unwrap_or_default();
     miserc::expand_env_sets(names)
 }
 
 /// The environments named by `-E` or `MISE_ENV`, before set names expand.
-/// Empty when neither is given.
-pub fn explicit_environment(args: &[String]) -> Vec<String> {
+/// `None` when neither is given; an empty `MISE_ENV` is `Some` of an empty list.
+pub fn explicit_environment(args: &[String]) -> Option<Vec<String>> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
     // Get environment value from args or env vars
@@ -330,7 +330,7 @@ pub fn explicit_environment(args: &[String]) -> Vec<String> {
             .collect()
     };
     if !from_args.is_empty() {
-        return from_args;
+        return Some(from_args);
     }
     var("MISE_ENV")
         .ok()
@@ -342,7 +342,6 @@ pub fn explicit_environment(args: &[String]) -> Vec<String> {
                 .map(String::from)
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 fn linux_distro() -> Option<String> {

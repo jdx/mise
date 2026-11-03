@@ -2037,7 +2037,10 @@ impl Bootstrap {
         }
         if self.save_env {
             let args = crate::env::ARGS.read().unwrap().clone();
-            save_env(&crate::env::explicit_environment(&args), self.dry_run)?;
+            save_env(
+                &crate::env::explicit_environment(&args).unwrap_or_default(),
+                self.dry_run,
+            )?;
         }
         if self.prompt_vars {
             crate::config::env_directive::prompt::enable();

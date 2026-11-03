@@ -29,3 +29,11 @@ assert "mise -E ssh env --json | jq -r .SELECTED" "ssh"
 rm .miserc.local.toml
 printf '[env_sets]\nserver = ["server"]\n' >"$MISE_CONFIG_DIR/miserc.toml"
 MISE_ENV=server assert "mise env --json | jq -r .SELECTED" "server"
+
+# nor empty a global environment, and an empty MISE_ENV selects nothing
+printf 'env = ["floor"]\n' >"$MISE_CONFIG_DIR/miserc.toml"
+printf '[env_sets]\nfloor = []\n' >.miserc.toml
+assert "mise env --json | jq -r .SELECTED" "floor"
+printf 'env = ["ssh"]\n' >.miserc.toml
+rm "$MISE_CONFIG_DIR/miserc.toml"
+MISE_ENV='' assert "mise env --json | jq -r .SELECTED" ""
