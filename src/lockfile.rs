@@ -6322,6 +6322,7 @@ pub(crate) fn ensure_locked_url_matches_version(
 /// changing an option must not drop the pin before the install is verified.
 pub(crate) fn get_locked_npm_provenance(
     config: &Config,
+    request: &ToolRequest,
     short: &str,
     version: &str,
     backend: &str,
@@ -6329,9 +6330,19 @@ pub(crate) fn get_locked_npm_provenance(
     if !Settings::get().lockfile_enabled() {
         return None;
     }
-    read_lockfiles_by_precedence(config)
-        .iter()
-        .flat_map(|lockfile| lockfile.tools_for(short).into_iter().flatten())
+    // Only the lockfile that owns the request: a tool an override config
+    // declares must not inherit a pin from the project's lockfile.
+    let lockfile = match request.lockfile_source()? {
+        ToolSource::MiseToml(path) => read_lockfile_for(config, path),
+        source if source.path().is_some() => {
+            Arc::new(read_lockfile_for_tool_source(config, source).ok()?)
+        }
+        _ => read_all_lockfiles(config),
+    };
+    lockfile
+        .tools_for(short)
+        .into_iter()
+        .flatten()
         .filter(|tool| tool.version == version && tool.backend.as_deref() == Some(backend))
         .find_map(|tool| tool.provenance.clone())
 }
