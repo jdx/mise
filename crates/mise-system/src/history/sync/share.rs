@@ -51,6 +51,7 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
     let roots = Roots::current();
     let record = crate::history::held::Held::load(repo)?;
     let mut holds: BTreeMap<String, bool> = BTreeMap::new();
+    let encrypted = super::files::encrypted_paths(repo, Some(&head))?;
     for file in repo.ls_tree(&head)? {
         let (local, variant) = match roots.locate(&file.path) {
             Located::Config(path) => (path, None),
@@ -73,16 +74,33 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
                 held
             }
         };
+        let restore_entry =
+            |file: &crate::history::shadow::TreeEntry| -> Result<Option<(String, String)>> {
+                let object = (file.mode.clone(), file.oid.clone());
+                if matches!(object.0.as_str(), "040000" | "160000") {
+                    return Ok(Some(object));
+                }
+                if encrypted.contains(&file.path) {
+                    return super::files::decrypt(
+                        repo,
+                        &file.path,
+                        &object,
+                        console::user_attended_stderr(),
+                    )
+                    .map(Some);
+                }
+                Ok(Some(object))
+            };
         // another machine's version is not this one's to compare against:
         // the live file is what this machine has
         let object = if held {
-            repo.restored_object_at(&head, &file.path)?
+            restore_entry(&file)?
         } else if let Some(live) = usable_live(repo, &local)? {
             // a file missing here while its stream was not selected is not
             // a deletion this machine made: without a base, the pull
             // applies the saved version
             let base = match &live {
-                Some(_) => held_base(repo, &head, &record, &stream, &file.path)?,
+                Some(_) => held_base(repo, &encrypted, &record, &stream, &file.path)?,
                 None => None,
             };
             report.unheld.insert(file.path.clone(), base);
@@ -91,7 +109,7 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
             // a directory or unreadable path where the file belongs is that
             // path's own conflict, decided when the pull plans it, not a
             // reason to stop every other file
-            repo.restored_object_at(&head, &file.path)?
+            restore_entry(&file)?
         };
         let Some((mode, oid)) = object else {
             continue;
@@ -109,7 +127,7 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
 /// decrypted here gives no baseline, so the pull asks rather than guesses.
 fn held_base(
     repo: &HistoryRepo,
-    head: &str,
+    encrypted: &std::collections::BTreeSet<String>,
     held: &crate::history::held::Held,
     stream: &str,
     path: &str,
@@ -131,15 +149,7 @@ fn held_base(
     let Some(object) = object else {
         return Ok(None);
     };
-    let encrypted = crate::history::manifest::Manifest::read(repo, head)?.is_some_and(|manifest| {
-        manifest.encrypted_paths().iter().any(|prefix| {
-            path == prefix
-                || path
-                    .strip_prefix(prefix.as_str())
-                    .is_some_and(|rest| rest.starts_with('/'))
-        })
-    });
-    if !encrypted {
+    if !encrypted.contains(path) {
         return Ok(Some(object));
     }
     Ok(super::files::decrypt(repo, path, &object, console::user_attended_stderr()).ok())

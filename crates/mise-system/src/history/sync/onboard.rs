@@ -98,13 +98,11 @@ fn preview_configuration(store: &Store) -> Result<tempfile::TempDir> {
         .tracking()?;
     for entry in repo.ls_tree(&head)? {
         if let Some(relative) = preview_config_path(&tracked, &entry.path)? {
-            let Some((mode, oid)) = repo.object_at(&head, &entry.path)? else {
-                bail!("configuration disappeared from preview commit");
-            };
+            let object = (entry.mode, entry.oid);
             let (mode, oid) = if encrypted.contains(&entry.path) {
-                super::files::decrypt(repo, &entry.path, &(mode, oid), true)?
+                super::files::decrypt(repo, &entry.path, &object, true)?
             } else {
-                (mode, oid)
+                object
             };
             crate::history::replay::write_path(repo, &temp.path().join(relative), &mode, &oid)?;
         }

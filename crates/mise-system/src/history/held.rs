@@ -223,17 +223,18 @@ fn live_matches_saved(
         .filter(|path| super::tracked::owning_entry_index(&walk.entries, path) == Some(index))
         .collect();
     // only this stream's own files: a directory's subtree, or the one file
-    let paths: Vec<String> = match repo.object_at(head, stream)? {
+    let paths: Vec<(String, String, String)> = match repo.object_at(head, stream)? {
         None => vec![],
         Some((mode, oid)) if mode == "040000" => repo
             .ls_tree(&oid)?
             .into_iter()
-            .map(|file| format!("{stream}/{}", file.path))
+            .map(|file| (format!("{stream}/{}", file.path), file.mode, file.oid))
             .collect(),
-        Some(_) => vec![stream.to_string()],
+        Some((mode, oid)) => vec![(stream.to_string(), mode, oid)],
     };
+    let encrypted = super::sync::files::encrypted_paths(repo, Some(head))?;
     let mut compared = BTreeSet::new();
-    for path in paths {
+    for (path, mode, oid) in paths {
         let Some(local) = roots.locate(&path).path().map(Path::to_path_buf) else {
             return Ok(false);
         };
@@ -248,8 +249,16 @@ fn live_matches_saved(
         let Ok(object) = super::sync::apply::live_object(repo, &local) else {
             return Ok(false);
         };
+        let expected = if matches!(mode.as_str(), "040000" | "160000") {
+            Some((mode, oid))
+        } else if encrypted.contains(&path) {
+            super::sync::files::decrypt(repo, &path, &(mode, oid), console::user_attended_stderr())
+                .ok()
+        } else {
+            Some((mode, oid))
+        };
         // a version this machine cannot decrypt is not one it holds
-        if repo.restored_object_at(head, &path).ok().flatten() != object {
+        if expected != object {
             return Ok(false);
         }
     }
