@@ -2664,10 +2664,10 @@ rust_type = "NpmPackageManager"
 type = "String"
 
 [npm.provenance]
-default = false
+default = true
 description = "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package."
 docs = """
-When on, `mise install` fetches the attestations the public npm registry holds
+On by default. `mise install` fetches the attestations the public npm registry holds
 for the tool's package and requires the SLSA provenance among them to verify
 against the integrity hash the install locks. A package that publishes no
 provenance, or a private registry that serves none, installs as it does with
@@ -2679,8 +2679,14 @@ The first install with this on records the repository the provenance names in
 `mise.lock` (lockfile revision 4). Later installs of that version must show the
 same repository, and a package that has stopped publishing provenance is
 refused.
-[`paranoid`](/configuration/settings.html#paranoid) turns it on for the
-`provenance` category.
+
+Only the embedded aube package manager verifies provenance. An install through
+another [`npm.package_manager`](#npm.package_manager), and one of a local archive
+pinned only by a checksum, installs unchecked. The `provenance` category of
+[`paranoid`](/configuration/settings.html#paranoid) turns verification on even
+when this is off, and makes those installs an error instead. Set this to `false`
+to skip verification, for example behind a network that blocks Sigstore's trust
+roots.
 """
 env = "MISE_NPM_PROVENANCE"
 type = "Bool"
