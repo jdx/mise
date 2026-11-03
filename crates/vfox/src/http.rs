@@ -51,6 +51,11 @@ fn initialized(client: &Result<Client, String>) -> Result<&Client, String> {
         .map_err(|err| format!("Could not initialize the HTTP client: {err}"))
 }
 
+/// Reports a download's progress as bytes written so far and the total from
+/// `Content-Length`, when the server sent one. A retried attempt starts again
+/// from `0`.
+pub(crate) type DownloadProgress = dyn Fn(u64, Option<u64>) + Send + Sync;
+
 pub(crate) const URL_REWRITER_REGISTRY_KEY: &str = "url_rewriter_fn";
 pub(crate) const HTTP_HEADERS_RESOLVER_REGISTRY_KEY: &str = "http_headers_resolver_fn";
 pub(crate) type HttpHeadersResolver = Arc<dyn Fn(&Url) -> HeaderMap + Send + Sync>;
@@ -215,12 +220,22 @@ pub(crate) async fn text_limited(
 pub(crate) async fn write_body(
     mut resp: reqwest::Response,
     file: &mut tokio::fs::File,
+    progress: Option<&DownloadProgress>,
 ) -> Result<std::io::Result<()>, reqwest::Error> {
     use tokio::io::AsyncWriteExt;
 
+    let total = resp.content_length();
+    let mut written = 0u64;
+    if let Some(progress) = progress {
+        progress(0, total);
+    }
     while let Some(chunk) = resp.chunk().await? {
         if let Err(err) = file.write_all(&chunk).await {
             return Ok(Err(err));
+        }
+        written += chunk.len() as u64;
+        if let Some(progress) = progress {
+            progress(written, total);
         }
     }
     Ok(file.sync_all().await)
@@ -238,6 +253,7 @@ pub(crate) async fn write_body(
 pub(crate) async fn download_to_file<F, Fut>(
     url: &str,
     path: &std::path::Path,
+    progress: Option<&DownloadProgress>,
     mut send: F,
 ) -> Result<std::io::Result<Option<()>>, reqwest::Error>
 where
@@ -260,7 +276,7 @@ where
                 Err(err) => return Ok(Err(err)),
             };
             let mut file = tokio::fs::File::from_std(file);
-            let written = write_body(resp, &mut file).await?;
+            let written = write_body(resp, &mut file, progress).await?;
             // Closed before the rename, which Windows refuses on an open file.
             drop(file);
             Ok(written.map(|()| Some(temp)))
