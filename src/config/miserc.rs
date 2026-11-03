@@ -103,6 +103,29 @@ pub(crate) fn get_env() -> Option<&'static Vec<String>> {
     get().env.as_ref()
 }
 
+/// Expand each set name in `names` to the environments of the set, keeping the
+/// order and the first occurrence of an environment. Other names pass through.
+pub(crate) fn expand_env_sets(names: Vec<String>) -> Vec<String> {
+    expand_with(names, get().env_sets.as_ref())
+}
+
+fn expand_with(
+    names: Vec<String>,
+    sets: Option<&indexmap::IndexMap<String, Vec<String>>>,
+) -> Vec<String> {
+    let Some(sets) = sets.filter(|sets| !sets.is_empty()) else {
+        return names;
+    };
+    let expanded: IndexSet<String> = names
+        .into_iter()
+        .flat_map(|name| match sets.get(&name) {
+            Some(members) => members.clone(),
+            None => vec![name],
+        })
+        .collect();
+    expanded.into_iter().collect()
+}
+
 /// Get the auto_env value from miserc, if set.
 pub(crate) fn get_auto_env() -> Option<bool> {
     get().auto_env
@@ -447,6 +470,8 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     // The environments the system and global files select. They load before
     // any project file, so this is complete by the time one merges.
     let mut global_env: Vec<String> = vec![];
+    // The names of the sets they define; a project file cannot redefine one.
+    let mut global_sets: Vec<String> = vec![];
 
     for path in files.into_iter().rev() {
         file::ensure_config_file_size(&path)?;
@@ -460,8 +485,18 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
             if is_global_miserc_dir(config_root) {
                 merge_settings(&mut merged, settings);
                 global_env = merged.env.clone().unwrap_or_default();
+                global_sets = merged
+                    .env_sets
+                    .as_ref()
+                    .map(|sets| sets.keys().cloned().collect())
+                    .unwrap_or_default();
             } else {
                 keep_global_envs(&mut settings, &global_env);
+                if let Some(sets) = settings.env_sets.as_mut() {
+                    sets.retain(|name, _| {
+                        !global_sets.contains(name) && !global_env.contains(name)
+                    });
+                }
                 merge_settings(&mut merged, settings);
             }
         }
@@ -498,6 +533,22 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) 
             if !valid {
                 warn_settings_file_error(format!(
                     "{}: ignoring environment {name:?}: a name cannot contain a path separator",
+                    file::display_path(path)
+                ));
+            }
+            valid
+        });
+    }
+    for members in settings
+        .env_sets
+        .iter_mut()
+        .flat_map(|sets| sets.values_mut())
+    {
+        members.retain(|name| {
+            let valid = !name.contains(['/', '\\']);
+            if !valid {
+                warn_settings_file_error(format!(
+                    "{}: ignoring environment {name:?} in env_sets: a name cannot contain a path separator",
                     file::display_path(path)
                 ));
             }
@@ -549,6 +600,13 @@ pub(crate) fn resolve_ignored_config_path(path: PathBuf, relative_to: &Path) -> 
 fn merge_settings(target: &mut MisercSettings, source: MisercSettings) {
     if source.env.is_some() {
         target.env = source.env;
+    }
+    if let Some(sets) = source.env_sets {
+        // per name, so a layer adds sets without dropping those of another
+        target
+            .env_sets
+            .get_or_insert_with(Default::default)
+            .extend(sets);
     }
     if source.auto_env.is_some() {
         target.auto_env = source.auto_env;
@@ -686,6 +744,40 @@ mod tests {
     }
 
     #[test]
+    fn test_expand_env_sets() {
+        let sets: indexmap::IndexMap<String, Vec<String>> = toml::from_str(
+            r#"
+server = ["server", "ssh", "pac"]
+workstation = ["workstation", "ssh", "raycast"]
+"#,
+        )
+        .unwrap();
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // set members are expanded in order and an environment keeps its first place
+        assert_eq!(
+            expand_with(names(&["server", "workstation", "work"]), Some(&sets)),
+            names(&["server", "ssh", "pac", "workstation", "raycast", "work"])
+        );
+        // not a set: passes through, and sets do not expand recursively
+        assert_eq!(
+            expand_with(names(&["ssh", "dev"]), Some(&sets)),
+            names(&["ssh", "dev"])
+        );
+        assert_eq!(expand_with(names(&["server"]), None), names(&["server"]));
+    }
+
+    #[test]
+    fn test_env_sets_merge_per_name_and_project_cannot_redefine_global() {
+        let mut target = MisercSettings::default();
+        let layer = |s: &str| toml::from_str::<MisercSettings>(s).unwrap();
+        merge_settings(&mut target, layer("[env_sets]\na = [\"1\"]\nb = [\"2\"]"));
+        merge_settings(&mut target, layer("[env_sets]\nb = [\"3\"]"));
+        let sets = target.env_sets.unwrap();
+        assert_eq!(sets["a"], ["1"]);
+        assert_eq!(sets["b"], ["3"]);
+    }
+
+    #[test]
     fn test_parse_miserc() {
         let content = r#"
 env = ["development", "local"]
@@ -745,6 +837,14 @@ ceiling_paths = ["/home/user"]
             settings.override_tool_versions_filenames,
             Some([".tool-versions"].map(String::from).to_vec())
         );
+    }
+
+    #[test]
+    fn test_drop_env_set_members_leaving_the_directory() {
+        let mut settings: MisercSettings =
+            toml::from_str("[env_sets]\nteam = [\"ssh\", \"x/../../other\", \"a\\\\b\"]").unwrap();
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"));
+        assert_eq!(settings.env_sets.unwrap()["team"], ["ssh"]);
     }
 
     #[test]

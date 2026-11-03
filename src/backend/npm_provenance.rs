@@ -19,7 +19,7 @@ use base64::Engine as _;
 use miette::miette;
 
 use crate::backend::npm_registry;
-use crate::github::sigstore::{Attestation, verify_github_attestation_sources_for_sha512};
+use crate::github::sigstore::{Attestation, verify_forge_attestation_sources_for_sha512};
 use crate::http::HTTP;
 
 pub(crate) struct NpmProvenanceVerifier {
@@ -134,7 +134,7 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
         )
     })?;
 
-    let sources = verify_github_attestation_sources_for_sha512(&sha512, &provenance, None)
+    let sources = verify_forge_attestation_sources_for_sha512(&sha512, &provenance)
         .await
         .map_err(|e| eyre::eyre!("npm provenance for {name}@{version} did not verify: {e}"))?;
     debug!(

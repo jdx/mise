@@ -35,7 +35,9 @@ use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
 use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
 use crate::hooks::pre_uninstall::PreUninstallContext;
-use crate::http::{HttpHeadersResolver, client, download_to_file, no_redirect_client};
+use crate::http::{
+    DownloadProgress, HttpHeadersResolver, client, download_to_file, no_redirect_client,
+};
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
 use crate::registry;
@@ -96,6 +98,7 @@ pub struct Vfox {
     pub runtime_env_type: Option<String>,
     url_rewriter: Option<UrlRewriter>,
     http_headers_resolver: Option<HttpHeadersResolver>,
+    download_progress: Option<Arc<DownloadProgress>>,
     log_tx: Option<mpsc::Sender<String>>,
     log_handler: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
@@ -146,6 +149,10 @@ impl std::fmt::Debug for Vfox {
                 &self.http_headers_resolver.as_ref().map(|_| "<closure>"),
             )
             .field(
+                "download_progress",
+                &self.download_progress.as_ref().map(|_| "<closure>"),
+            )
+            .field(
                 "log_handler",
                 &self.log_handler.as_ref().map(|_| "<closure>"),
             )
@@ -183,6 +190,15 @@ impl Vfox {
         F: Fn(&Url) -> HeaderMap + Send + Sync + 'static,
     {
         self.http_headers_resolver = Some(Arc::new(resolver));
+    }
+
+    /// Report the progress of the download an install does for a `PreInstall`
+    /// `url`: bytes written so far and the total, when the server sent one.
+    pub fn set_download_progress<F>(&mut self, handler: F)
+    where
+        F: Fn(u64, Option<u64>) + Send + Sync + 'static,
+    {
+        self.download_progress = Some(Arc::new(handler));
     }
 
     fn rewrite_url(&self, url: &mut Url) {
@@ -419,6 +435,7 @@ impl Default for Vfox {
             runtime_env_type: None,
             url_rewriter: None,
             http_headers_resolver: None,
+            download_progress: None,
             log_tx: None,
             log_handler: None,
         }

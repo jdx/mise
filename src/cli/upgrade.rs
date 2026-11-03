@@ -496,6 +496,7 @@ impl Upgrade {
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
+            keep_moved_alias_pins: false,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -982,6 +983,7 @@ impl Upgrade {
                 warn_not_in_lockfile: true,
                 defer_missing_lazy_tools: false,
                 defer_missing_lazy_online: false,
+                keep_moved_alias_pins: false,
             },
             // What resolves after the install leaves missing lazy tools alone, as the
             // toolset builder did before it.
