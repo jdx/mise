@@ -121,3 +121,11 @@ output=$(MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" MISE_LOG_LEVEL=debug mise 
 assert_contains "echo '$output'" "skipping disabled idiomatic tracked config: ~/workdir/untrusted/package.json"
 assert_not_contains "echo '$output'" "skipping untrusted tracked config: ~/workdir/untrusted/package.json"
 assert_fail "test -e '$marker'"
+
+# A tracked file that no config type claims any more is stale: skip it quietly.
+mkdir -p stale
+echo 'terraform {}' >stale/main.tf
+ln -s "$PWD/stale/main.tf" "$MISE_STATE_DIR/tracked-configs/stale-main-tf"
+output=$(MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping unrecognized tracked config: ~/workdir/stale/main.tf"
+assert_not_contains "echo '$output'" "unknown config file type"
