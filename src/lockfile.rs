@@ -81,14 +81,16 @@ pub fn invalidate_caches() {
     }
 }
 
-pub const CURRENT_LOCKFILE_VERSION: u32 = 3;
+pub const CURRENT_LOCKFILE_VERSION: u32 = 4;
 const FORGE_IDS_LOCKFILE_VERSION: u32 = 3;
+const PACKAGE_PROVENANCE_LOCKFILE_VERSION: u32 = 4;
 // Keep the dates format bumps entered mise here. An older format gets a
 // warning six calendar months after the first newer format was introduced.
 const LOCKFILE_VERSION_DATES: &[(u32, jiff::civil::Date)] = &[
     (1, jiff::civil::date(2026, 8, 23)),
     (2, jiff::civil::date(2026, 9, 13)),
     (3, jiff::civil::date(2026, 9, 27)),
+    (4, jiff::civil::date(2026, 11, 3)),
 ];
 
 fn outdated_lockfile_version(version: u32, today: jiff::civil::Date) -> bool {
@@ -382,6 +384,20 @@ pub struct LockfileTool {
     pub aube: Option<GraphRef<AubeLock>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub uv: Option<GraphRef<UvLock>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provenance: Option<PackageProvenance>,
+}
+
+/// The source repository an `npm:` tool's package was built from, as the
+/// Sigstore provenance npm published for it showed when it was installed with
+/// `npm.provenance` on. A later install must show the same repository, so a
+/// release published from somewhere else is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackageProvenance {
+    /// The repository qualified by its forge: `github.com/owner/repo` or
+    /// `gitlab.com/group/project`. The forge fixes the OIDC issuer.
+    pub repository: String,
 }
 
 /// A native dependency sidecar directory a lockfile entry refers to.
@@ -1677,6 +1693,18 @@ impl Lockfile {
             );
         }
 
+        if lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION
+            && lockfile
+                .tools
+                .values()
+                .flatten()
+                .any(|tool| tool.provenance.is_some())
+        {
+            bail!(
+                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; run `mise lock --upgrade`"
+            );
+        }
+
         if lockfile_version < 2
             && lockfile
                 .tools
@@ -1781,6 +1809,19 @@ impl Lockfile {
             );
         }
 
+        if self.lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION
+            && self
+                .tools
+                .values()
+                .flatten()
+                .any(|tool| tool.provenance.is_some())
+        {
+            warn!(
+                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; omitting it from revision {}. Run `mise lock --upgrade` to record it",
+                self.lockfile_version
+            );
+        }
+
         if self.lockfile_version > 0 {
             lockfile.insert(
                 "lockfile_version".to_string(),
@@ -1865,6 +1906,9 @@ impl Lockfile {
                             platform.repository_id = None;
                             platform.repository_owner_id = None;
                         }
+                    }
+                    if self.lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION {
+                        version.provenance = None;
                     }
                     let mut value = version.into_toml_value(self.lockfile_version > 0);
                     if let Some(uv) = uv {
@@ -2302,6 +2346,7 @@ impl Lockfile {
                 platforms,
                 aube: None,
                 uv: None,
+                provenance: None,
             });
         }
 
@@ -3303,6 +3348,12 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
                     && existing.backend == tool.backend
                 {
                     existing.aube = tool.aube;
+                }
+                if existing.provenance.is_none()
+                    && existing.backend.is_some()
+                    && existing.backend == tool.backend
+                {
+                    existing.provenance = tool.provenance;
                 }
             } else if keys.insert(key) {
                 root_tools.push(tool);
@@ -4952,6 +5003,9 @@ where
         if entry.uv.is_none() {
             entry.uv = tool.uv.clone();
         }
+        if entry.provenance.is_none() {
+            entry.provenance = tool.provenance.clone();
+        }
 
         // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
@@ -4984,6 +5038,9 @@ where
                 }
                 if entry.uv.is_none() {
                     entry.uv = existing_tool.uv.clone();
+                }
+                if entry.provenance.is_none() {
+                    entry.provenance = existing_tool.provenance.clone();
                 }
             }
             if !existing_tool.options.is_empty() {
@@ -5034,6 +5091,7 @@ where
                             platforms: BTreeMap::new(),
                             aube: existing_tool.aube.clone(),
                             uv: existing_tool.uv.clone(),
+                            provenance: existing_tool.provenance.clone(),
                         })
                         .platforms
                         .insert(platform_key.clone(), info.clone());
@@ -5049,6 +5107,7 @@ where
                     platforms: BTreeMap::new(),
                     aube: existing_tool.aube.clone(),
                     uv: existing_tool.uv.clone(),
+                    provenance: existing_tool.provenance.clone(),
                 });
                 target
                     .specifiers
@@ -5359,6 +5418,7 @@ impl Lockfile {
                 }
                 entry.uv = None;
                 entry.aube = None;
+                entry.provenance = None;
                 for info in entry.platforms.values_mut() {
                     info.url = None;
                     info.url_api = None;
@@ -6414,6 +6474,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 platforms: Default::default(),
                 aube: None,
                 uv: None,
+                provenance: None,
             },
             toml::Value::Table(mut t) => {
                 let mut platforms = BTreeMap::new();
@@ -6452,6 +6513,10 @@ impl TryFrom<toml::Value> for LockfileTool {
                     .unwrap_or_default();
                 let aube = t.remove("aube").map(GraphRef::parse).transpose()?;
                 let uv = t.remove("uv").map(GraphRef::parse).transpose()?;
+                let provenance = t
+                    .remove("provenance")
+                    .map(|value| value.try_into())
+                    .transpose()?;
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
                 LockfileTool {
@@ -6470,6 +6535,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                     platforms,
                     aube,
                     uv,
+                    provenance,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -6514,6 +6580,12 @@ impl LockfileTool {
                 toml::Value::try_from(aube).expect("aube graph serialization"),
             );
         }
+        if let Some(provenance) = self.provenance {
+            table.insert(
+                "provenance".to_string(),
+                toml::Value::try_from(provenance).expect("package provenance serialization"),
+            );
+        }
         table.into()
     }
 }
@@ -6542,6 +6614,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
         platforms,
         aube: tv.aube_lock.clone(),
         uv: tv.uv_lock.clone(),
+        provenance: tv.npm_provenance.clone(),
     })
 }
 
