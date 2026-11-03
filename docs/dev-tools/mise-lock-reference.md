@@ -191,7 +191,8 @@ provenance = { repository = "github.com/sigstore/sigstore-js" }
 install must show provenance from that repository, so a release published from
 another repository fails. A package that stops publishing provenance fails too,
 rather than installing unchecked. The entry is recorded by `mise install`, not by
-`mise lock`, and only while `npm.provenance` is on. A version that is already
+`mise lock`, and only while `npm.provenance` or the paranoid `provenance`
+category is on. A version that is already
 installed is not verified again; reinstall it to check it against the entry.
 
 ## Platform keys
