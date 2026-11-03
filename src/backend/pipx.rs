@@ -646,9 +646,25 @@ impl Backend for PIPXBackend {
             && tv
                 .uv_python
                 .as_ref()
-                .is_none_or(|(python, _)| python.as_os_str().is_empty())
+                .is_none_or(|(python, _)| python.as_os_str().is_empty() || !python.exists())
         {
-            self.bind_uv_python(ctx, &mut tv).await?;
+            let selected = PipxOptions::new(&request_options)
+                .selected_python()?
+                .is_some();
+            if let Err(error) = self.bind_uv_python(ctx, &mut tv).await {
+                // Resolving the graph lets uv download an interpreter, but replaying it
+                // needs one mise can hand to `uv sync`. Without one, an install that
+                // is not `--locked` can still proceed from the version alone.
+                if selected || ctx.locked {
+                    return Err(error);
+                }
+                warn!(
+                    "{} dependency graph skipped; installing with version-only resolution: {error}",
+                    self.ba.short
+                );
+                tv.uv_lock = None;
+                tv.uv_python = None;
+            }
         }
         reset_selected_python_install_path(&mut tv)?;
         Ok(tv)
@@ -665,7 +681,14 @@ impl Backend for PIPXBackend {
             .is_some();
         if tv.uv_lock.is_some() {
             if tv.uv_python.is_none() {
-                return Ok(false);
+                // No interpreter to replay the graph with: an install made from the
+                // version alone is as good as it gets, so do not retry it every time.
+                let locked = config
+                    .invocation_locked_for(tv.request.source(), Settings::get().locked)
+                    || tv.request.tool_config_locked(config, true);
+                return Ok(!selected_python
+                    && !locked
+                    && self.is_version_installed(config, tv, check_symlink));
             }
         } else if self.uv_lock_allowed(tv) {
             let revision = self.uv_lockfile_version(config, tv)?;
@@ -1001,7 +1024,9 @@ impl PIPXBackend {
     /// remote, Git tags otherwise. A private repository is invisible to the
     /// versions host and the API without a token, but an SSH remote already
     /// shows the user can reach it with their key, so only that case falls
-    /// back to Git tags when GitHub cannot list it.
+    /// back to Git tags when GitHub cannot list it. With a token GitHub can
+    /// see the repository but may hold no releases for its tags, so an empty
+    /// release list falls back the same way.
     async fn git_source_versions(
         source: &GitSource,
         github_releases: impl AsyncFnOnce(&str) -> Result<Vec<VersionInfo>>,
@@ -1013,6 +1038,10 @@ impl PIPXBackend {
         match github_releases(&repo).await {
             Err(err) if PipxRequest::is_ssh_remote(&source.repo) => {
                 debug!("{repo} not listed by GitHub ({err}), trying git ls-remote");
+                git_tags(&source.remote()).await
+            }
+            Ok(releases) if releases.is_empty() && PipxRequest::is_ssh_remote(&source.repo) => {
+                debug!("{repo} has no GitHub releases, trying git ls-remote");
                 git_tags(&source.remote()).await
             }
             result => result,
@@ -2887,6 +2916,35 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 assert_eq!(remote, "ssh://git@github.com/owner/private");
                 Ok(tag_versions())
             },
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_falls_back_to_git_tags_when_github_has_no_releases() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Ok(vec![]),
+            async |remote| {
+                assert_eq!(remote, "ssh://git@github.com/owner/private");
+                Ok(tag_versions())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_keeps_github_releases_without_calling_git() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Ok(tag_versions()),
+            async |_| panic!("git must not be called"),
         )
         .await
         .unwrap();

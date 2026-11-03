@@ -172,7 +172,7 @@ import { data as showreel } from "./.vitepress/showreel.data";
         <div class="recipe-text">
           <span class="recipe-num">Step 1</span>
           <h3>Install mise</h3>
-          <p>On macOS or Linux, run the installer. It puts mise in <code>~/.local/bin</code>; if that is not on your <code>PATH</code>, type <code>~/.local/bin/mise</code> in the next two steps. On Windows, run <code>winget install jdx.mise</code>. See <a href="/installing-mise.html">Installing mise</a> for other methods.</p>
+          <p>On macOS or Linux, run the installer. It puts mise in <code>~/.local/bin</code>; if that is not on your <code>PATH</code>, type <code>~/.local/bin/mise</code> in the next two steps. On Windows, run <code>irm https://mise.run/powershell | iex</code> in PowerShell. See <a href="/installing-mise.html">Installing mise</a> for other methods.</p>
         </div>
         <div class="recipe-code terminal-lines">
           <div><span class="prompt">$</span> curl -fsSL https://mise.run | sh</div>

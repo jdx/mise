@@ -119,9 +119,19 @@ pub(super) fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) 
 /// version as installed: `.metadata/<version>/<timestamp>/Casks/<token>.json`.
 ///
 /// Homebrew writes `{}` here for a cask it loaded from its API and reads the
-/// definition from the API on demand. Once this exists mise treats the cask as
-/// Homebrew's (see [`homebrew_metadata_present`]), so `brew upgrade` takes over.
-pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &str) -> Result<()> {
+/// definition from the API on demand. Beside the versions it writes
+/// `INSTALL_RECEIPT.json` (Homebrew's `Cask::Tab`), which `brew info` reads for
+/// the install time and whether the cask was installed on request. The receipt
+/// omits `uninstall_artifacts`, so `brew uninstall` still reads the cask
+/// definition, as it does for a cask without that key. Once this exists mise
+/// treats the cask as Homebrew's (see [`homebrew_metadata_present`]), so
+/// `brew upgrade` takes over.
+pub(super) fn write_homebrew_metadata(
+    token_dir: &Path,
+    token: &str,
+    version: &str,
+    on_request: bool,
+) -> Result<()> {
     let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%.3f").to_string();
     // Built beside `.metadata` and renamed into place, so a failed write never
     // leaves a bare `.metadata` that would read as Homebrew ownership.
@@ -135,12 +145,50 @@ pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &s
         .join(timestamp)
         .join("Casks")
         .join(format!("{token}.json"));
+    let receipt = serde_json::to_vec_pretty(&install_receipt(
+        version,
+        on_request,
+        install_time(&token_dir.join(version)),
+    ))?;
     let published = write_durable_file(&record, b"{}")
+        .and_then(|()| write_durable_file(&stage.join("INSTALL_RECEIPT.json"), &receipt))
         .and_then(|()| file::rename(&stage, token_dir.join(".metadata")));
     if published.is_err() {
         let _ = file::remove_all(&stage);
     }
     published
+}
+
+/// When the version directory was created, so a cask handed over on a later
+/// apply keeps its original install date; now when the filesystem has none.
+fn install_time(version_dir: &Path) -> i64 {
+    version_dir
+        .metadata()
+        .and_then(|meta| meta.created().or_else(|_| meta.modified()))
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or_else(
+            || chrono::Utc::now().timestamp(),
+            |age| age.as_secs() as i64,
+        )
+}
+
+/// The `INSTALL_RECEIPT.json` body for an official-tap cask. `on_request` is
+/// false for a cask installed only as another cask's dependency.
+pub(super) fn install_receipt(version: &str, on_request: bool, time: i64) -> serde_json::Value {
+    serde_json::json!({
+        "installed_as_dependency": !on_request,
+        "installed_on_request": on_request,
+        "loaded_from_api": true,
+        "time": time,
+        "source": {
+            "path": null,
+            "tap": "homebrew/cask",
+            "tap_git_head": null,
+            "version": version,
+        },
+        "arch": "arm64",
+    })
 }
 
 /// Whether a requested name resolves from Homebrew's official cask tap.
@@ -169,6 +217,53 @@ pub(super) fn homebrew_handoff_applies(cask: &Cask, request: &PackageRequest) ->
         && is_official_cask_request(&request.name)
         && cask.appdir.is_none()
         && mise_util::env::var(APP_DIR_ENV).map_or(true, |dir| dir.is_empty())
+        && homebrew_recovers_uninstall_safely()
+}
+
+/// Oldest Homebrew that loads the signed cask definition when it recovers
+/// uninstall steps for a receipt without `uninstall_artifacts`
+/// (GHSA-rg9r-ppxp-87hm). 6.0.12 patched the advisory but still falls back to
+/// the unsigned per-cask endpoint; 6.0.22 removed that fallback.
+pub(super) const MIN_SAFE_HOMEBREW: (u64, u64, u64) = (6, 0, 22);
+
+/// Whether the installed Homebrew is new enough to receive a receipt that omits
+/// `uninstall_artifacts`. Older releases recover those directives from an
+/// unsigned endpoint and run them under `sudo` on uninstall, so the handoff
+/// stays off when brew is missing or its version cannot be read.
+fn homebrew_recovers_uninstall_safely() -> bool {
+    static SAFE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SAFE.get_or_init(|| {
+        let brew = super::super::prefix::prefix().join("bin/brew");
+        let Ok(output) = std::process::Command::new(brew)
+            .arg("--version")
+            .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+            .output()
+        else {
+            return false;
+        };
+        homebrew_version_at_least(&String::from_utf8_lossy(&output.stdout), MIN_SAFE_HOMEBREW)
+    })
+}
+
+/// Parses the first line of `brew --version` ("Homebrew 6.0.12-3-gabc"), which
+/// is dotted numerics, not an arbitrary tool version. Unparseable counts as old.
+pub(super) fn homebrew_version_at_least(output: &str, min: (u64, u64, u64)) -> bool {
+    let Some(version) = output
+        .lines()
+        .next()
+        .and_then(|line| line.strip_prefix("Homebrew "))
+    else {
+        return false;
+    };
+    let mut parts = version
+        .split(['.', '-', ' '])
+        .map(|part| part.parse::<u64>().ok());
+    let (Some(Some(major)), Some(Some(minor)), Some(Some(patch))) =
+        (parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    (major, minor, patch) >= min
 }
 
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {

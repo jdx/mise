@@ -670,6 +670,7 @@ impl Lock {
             // Lock moving channels to their current concrete value without making
             // ordinary `latest` requests ignore an installed concrete version.
             resolve_rolling_channels: true,
+            keep_moved_alias_pins: self.upgrade,
             ..Default::default()
         };
         let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
@@ -1188,10 +1189,6 @@ impl Lock {
         } else {
             self.prune_stale_entries_if_needed(&mut lockfile, configured_selectors.as_ref())
         };
-        if !self.upgrade {
-            self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
-        }
-
         // Compute stale versions BEFORE process_tools so provenance checks can
         // compare against old version entries. Actual pruning happens after.
         let stale_versions = self.stale_versions_if_pruned(&lockfile, tools);
@@ -1323,10 +1320,6 @@ impl Lock {
         if !generate {
             self.prune_stale_versions(&mut lockfile, tools)?;
         }
-        if !self.upgrade {
-            self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
-        }
-
         let successful = results
             .iter()
             .filter(|result| matches!(result.status, LockTaskStatus::Updated))
@@ -1346,6 +1339,9 @@ impl Lock {
             // Normal lock runs preserve successful updates even if another
             // target reports a non-regressing resolution error.
             lockfile.write(lockfile_path)?;
+            // Only report a prune once the lockfile is on disk.
+            self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
+            self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
         }
 
         // Print summaries for normal writes now. Upgrade summaries are

@@ -23,7 +23,7 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
 use async_trait::async_trait;
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::Result;
 use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
@@ -800,12 +800,15 @@ fn find_java_metadata<'a>(
     requested_version: &str,
     platform: &Platform,
 ) -> Result<&'a JavaMetadata> {
+    // A version with no build for this platform is an unsupported target, so `mise lock`
+    // skips the platform instead of failing the whole run.
     metadata.get(version).ok_or_else(|| {
-        eyre!(
+        crate::errors::Error::UnsupportedTarget(format!(
             "no metadata found for version {} on {}",
             requested_version,
             platform.to_key()
-        )
+        ))
+        .into()
     })
 }
 
@@ -988,6 +991,22 @@ mod tests {
                 format!("no metadata found for version zulu-8 on {key}")
             );
         }
+    }
+
+    #[test]
+    fn java_missing_metadata_is_an_unsupported_target() {
+        let platform = Platform::parse("linux-arm64-musl").unwrap();
+        let error = find_java_metadata(
+            &HashMap::new(),
+            "oracle-graalvm-25",
+            "oracle-graalvm-25",
+            &platform,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<crate::errors::Error>(),
+            Some(crate::errors::Error::UnsupportedTarget(_))
+        ));
     }
 
     #[test]

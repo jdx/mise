@@ -317,7 +317,7 @@ pub(crate) fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditReque
 }
 
 /// keys that only mean something on a whole-file entry
-const WHOLE_FILE_KEYS: [&str; 16] = [
+const WHOLE_FILE_KEYS: [&str; 17] = [
     "mode",
     "content",
     "permissions",
@@ -334,6 +334,7 @@ const WHOLE_FILE_KEYS: [&str; 16] = [
     "relative",
     "dot_prefix",
     "group",
+    "depends",
 ];
 
 /// the whole-file keys a merge rejects: all but `permissions`, which sets the

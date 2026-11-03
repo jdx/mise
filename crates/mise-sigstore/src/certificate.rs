@@ -14,6 +14,10 @@ pub(crate) const FULCIO_SOURCE_REPOSITORY_URI_OID: &str = "1.3.6.1.4.1.57264.1.1
 /// Fulcio's deprecated GitHub Workflow Repository (`owner/repo`), found on
 /// certificates issued before the one above existed. Raw bytes, not DER.
 pub(crate) const FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID: &str = "1.3.6.1.4.1.57264.1.5";
+/// Fulcio's OIDC issuer: raw UTF-8 on older certificates.
+const FULCIO_OIDC_ISSUER_OID: &str = "1.3.6.1.4.1.57264.1.1";
+/// Fulcio's OIDC issuer as a DER UTF8String, on newer certificates.
+const FULCIO_OIDC_ISSUER_V2_OID: &str = "1.3.6.1.4.1.57264.1.8";
 /// Fulcio's Source Repository Ref: the git ref the signed workflow run
 /// built, such as `refs/tags/v1.2.3`. A DER UTF8String.
 pub(crate) const FULCIO_SOURCE_REPOSITORY_REF_OID: &str = "1.3.6.1.4.1.57264.1.14";
@@ -73,6 +77,63 @@ pub(crate) fn certificate_source_repository(cert: &x509_cert::Certificate) -> Op
     let value = certificate_extension(cert, FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID)?;
     let repository = std::str::from_utf8(value).ok()?;
     valid_github_repository(repository).then(|| repository.to_string())
+}
+
+/// Fulcio's OIDC issuer for a GitHub Actions workflow run.
+const GITHUB_ACTIONS_ISSUER: &str = "https://token.actions.githubusercontent.com";
+/// Fulcio's OIDC issuer for a gitlab.com CI job.
+const GITLAB_ISSUER: &str = "https://gitlab.com";
+
+/// The repository a bundle's certificate vouches for, qualified by its forge:
+/// `github.com/owner/repo` or `gitlab.com/group/project`. Only meaningful for a
+/// bundle that already verified.
+///
+/// The certificate's OIDC issuer decides the forge and the Source Repository
+/// URI must be on that forge's host, so a job on one forge cannot claim a
+/// repository on the other. Any other issuer names no repository.
+pub(crate) fn bundle_forge_source_repository(bundle: &Bundle) -> Option<String> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+    use x509_cert::der::asn1::Utf8StringRef;
+    let cert = Certificate::from_der(bundle.signing_certificate()?.as_bytes()).ok()?;
+    let issuer = crate::cosign_identity::fulcio_string(
+        &cert,
+        FULCIO_OIDC_ISSUER_OID,
+        Some(FULCIO_OIDC_ISSUER_V2_OID),
+    )?;
+    match issuer.as_str() {
+        GITHUB_ACTIONS_ISSUER => certificate_source_repository(&cert)
+            .map(|repository| format!("github.com/{repository}")),
+        GITLAB_ISSUER => {
+            let value = certificate_extension(&cert, FULCIO_SOURCE_REPOSITORY_URI_OID)?;
+            let uri = Utf8StringRef::from_der(value).ok()?;
+            gitlab_project_from_uri(uri.as_str()).map(|project| format!("gitlab.com/{project}"))
+        }
+        _ => None,
+    }
+}
+
+/// `group/project` (with any subgroups) from a `https://gitlab.com/...` URI.
+pub(crate) fn gitlab_project_from_uri(uri: &str) -> Option<String> {
+    let project = uri.strip_prefix("https://gitlab.com/")?;
+    valid_gitlab_project(project).then(|| project.to_string())
+}
+
+fn valid_gitlab_project(project: &str) -> bool {
+    let mut segments = 0;
+    for segment in project.split('/') {
+        let valid = !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
+        if !valid {
+            return false;
+        }
+        segments += 1;
+    }
+    segments >= 2
 }
 
 /// The git ref, such as `refs/tags/v1.2.3`, that a certificate's workflow

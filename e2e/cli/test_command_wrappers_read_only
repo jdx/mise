@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Running a command with its wrapper shims already in place writes nothing, so
+# mise works under a read-only bind mount of the data directory (#15296). The
+# harness runs as root, which a chmod cannot stop, so this checks that the
+# wrapper lock file is never recreated instead.
+
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/real-cmd" <<'EOF'
+#!/usr/bin/env bash
+echo "real:$0"
+EOF
+chmod +x "$fake_bin/real-cmd"
+export PATH="$fake_bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[wrappers]
+wrapped = "real-cmd"
+
+[tasks.t]
+run = "wrapped"
+EOF
+
+mise reshim
+lock="$MISE_DATA_DIR/command-wrappers/bin.lock"
+rm -f "$lock"
+
+assert_contains "mise x -- wrapped" "real:"
+assert_contains "mise run -q t" "real:"
+assert_fail "test -e '$lock'"
+
+# A missing wrapper shim is still written.
+rm "$MISE_DATA_DIR/command-wrappers/bin/wrapped"
+assert_contains "mise x -- wrapped" "real:"
+assert "test -e '$MISE_DATA_DIR/command-wrappers/bin/wrapped' && echo ok" "ok"

@@ -34,16 +34,17 @@ group with the same name, its table replaces the whole group.
 
 ### Group keys {#group-keys}
 
-| Key          | Default        | Meaning                                                                                                                                                             |
-| ------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `root`       | (required)     | The directory tree to deploy. A relative path starts at `dotfiles.root`.                                                                                            |
-| `target`     | `~`            | The directory the tree deploys into.                                                                                                                                |
-| `mode`       | `symlink-each` | `symlink-each` links each file, `copy` copies each file, and `symlink` links the whole tree. `dot_prefix`, `manifest`, and `entries` need `symlink-each` or `copy`. |
-| `exclude`    |                | Paths under the root to skip, using the [pattern syntax](/dotfiles/reference.html#patterns).                                                                        |
-| `dot_prefix` | `false`        | Deploy `dot-<name>` names as `.<name>`, as described in [Visible source names](/dotfiles/managed.html#dot-prefix).                                                  |
-| `manifest`   |                | `"git"` deploys only files in Git's index, as described in [Deploy only files committed to Git](/dotfiles/managed.html#git-tracked-directories).                    |
-| `relative`   |                | Link by relative paths, as described in [Relative symlinks](/dotfiles/managed.html#relative).                                                                       |
-| `entries`    |                | Whole-file entries for parts of the tree; see [Group entries](#group-entries). Requires `symlink-each` or `copy`.                                                   |
+| Key          | Default        | Meaning                                                                                                                                                                           |
+| ------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `root`       | (required)     | The directory tree to deploy. A relative path starts at `dotfiles.root`.                                                                                                          |
+| `target`     | `~`            | The directory the tree deploys into.                                                                                                                                              |
+| `mode`       | `symlink-each` | `symlink-each` links each file, `copy` copies each file, and `symlink` links the whole tree. `dot_prefix`, `manifest`, and `entries` need `symlink-each` or `copy`.               |
+| `exclude`    |                | Paths under the root to skip, using the [pattern syntax](/dotfiles/reference.html#patterns).                                                                                      |
+| `dot_prefix` | `false`        | Deploy `dot-<name>` names as `.<name>`, as described in [Visible source names](/dotfiles/managed.html#dot-prefix).                                                                |
+| `manifest`   |                | `"git"` deploys only files in Git's index, as described in [Deploy only files committed to Git](/dotfiles/managed.html#git-tracked-directories).                                  |
+| `relative`   |                | Link by relative paths, as described in [Relative symlinks](/dotfiles/managed.html#relative).                                                                                     |
+| `depends`    |                | Groups (by name) and whole-file entries (by target path) mise writes before this group and its entries, as described in [Wait for other entries](/dotfiles/managed.html#depends). |
+| `entries`    |                | Whole-file entries for parts of the tree; see [Group entries](#group-entries). Requires `symlink-each` or `copy`.                                                                 |
 
 A group with `mode = "symlink"` and an `entries` table is invalid: mise warns
 and ignores the whole group. With `symlink`, mise also ignores `dot_prefix`

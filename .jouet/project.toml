@@ -1,0 +1,9 @@
+[checks]
+full = "mise run test"
+lint = "mise run lint"
+before_push = [
+  "cargo clippy --workspace --all-features --all-targets -- -D warnings",
+]
+
+[checks.focused]
+e2e = "jouet test --cmd -- mise run test:e2e NAME"

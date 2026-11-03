@@ -66,6 +66,9 @@ struct GroupToml {
     manifest: Option<String>,
     #[serde(default)]
     relative: Option<bool>,
+    /// groups and whole-file entries written before this group is read
+    #[serde(default)]
+    depends: Vec<String>,
     /// whole-file entries keyed by target, cut out of the tree's walk
     #[serde(default)]
     entries: IndexMap<String, toml::Value>,
@@ -275,6 +278,9 @@ fn expand_group(
         bail!("mode must be \"symlink-each\", \"copy\", or \"symlink\", not {mode:?}");
     }
     let mode = FileMode::parse(mode).expect("validated group mode");
+    if group.depends.iter().any(|dep| dep == name) {
+        bail!("depends: a group cannot depend on itself");
+    }
     let Some(root) = group.root.as_deref() else {
         bail!("root is required: the directory tree the group deploys");
     };
@@ -372,7 +378,7 @@ fn expand_group(
     let walks = mode != FileMode::Symlink;
     files::merge_group_entry(
         target_raw.clone(),
-        FileTomlEntry::Table(FileTomlTable {
+        FileTomlEntry::Table(Box::new(FileTomlTable {
             source: Some(root.to_string_lossy().to_string()),
             content: None,
             mode: Some(mode.name().to_string()),
@@ -390,7 +396,8 @@ fn expand_group(
             dot_prefix: (group.dot_prefix && walks).then_some(true),
             relative: group.relative,
             group: Some(name.to_string()),
-        }),
+            depends: (!group.depends.is_empty()).then(|| group.depends.clone()),
+        })),
         base,
         origin,
         &mut merged,
@@ -405,6 +412,21 @@ fn expand_group(
                 .unwrap_or_default();
             exclude.extend(cut.into_iter().map(toml::Value::String));
             table.insert("exclude".into(), toml::Value::Array(exclude));
+        }
+        // the group waits for its dependencies, and so does each of its entries
+        if !group.depends.is_empty() {
+            let mut depends = table
+                .get("depends")
+                .and_then(toml::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for dep in &group.depends {
+                let dep = toml::Value::String(dep.clone());
+                if !depends.contains(&dep) {
+                    depends.push(dep);
+                }
+            }
+            table.insert("depends".into(), toml::Value::Array(depends));
         }
         files::merge_group_toml_entry(
             entry.key,
