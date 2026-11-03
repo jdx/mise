@@ -15,6 +15,9 @@ node = "20.11.1"
 TOML
   touch "$mode/mise.lock"
   export MISE_LOCKFILE_MODE="$mode"
+  # Each mode starts without the package, or its first install would return
+  # "already installed" without running the verifier.
+  mise -C "$mode" uninstall npm:@sigstore/bundle@3.1.0 >/dev/null 2>&1 || true
 
   assert_succeed "mise -C $mode install"
   assert_contains "cat $mode/mise.lock" "lockfile_version = 4"
