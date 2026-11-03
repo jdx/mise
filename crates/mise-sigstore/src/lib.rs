@@ -14,8 +14,8 @@ use sigstore_verify::VerificationPolicy;
 use sigstore_verify::trust_root::{SigstoreInstance, TrustedRoot, TufBootstrap, TufConfig};
 use sigstore_verify::types::bundle::VerificationMaterialContent;
 use sigstore_verify::types::{
-    Artifact, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash, SignatureBytes,
-    SignatureContent,
+    Artifact, ArtifactDigest, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash,
+    SignatureBytes, SignatureContent,
 };
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
@@ -44,8 +44,8 @@ pub use cosign_identity::CosignIdentity;
 pub use digest::calculate_file_digest;
 pub use github::{
     GithubAttestationRequest, verify_github_attestation, verify_github_attestation_sources,
-    verify_github_attestation_with_attestations, verify_github_attestation_with_base_url,
-    verify_github_attestation_with_base_url_and_digest,
+    verify_github_attestation_sources_for_sha512, verify_github_attestation_with_attestations,
+    verify_github_attestation_with_base_url, verify_github_attestation_with_base_url_and_digest,
 };
 pub use model::{
     ArtifactRef, AttestationError, AttestationSource, Result, SlsaArtifact, SlsaSignerIdentity,

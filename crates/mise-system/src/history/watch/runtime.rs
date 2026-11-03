@@ -2091,6 +2091,7 @@ mod tests {
             invalid: vec![],
             invalid_local: vec![],
             local: vec![],
+            private_exclude: vec![],
             unselected: Default::default(),
         };
         capture.health.watcher.last_reconcile = Some("previous success".into());
@@ -2144,6 +2145,7 @@ mod tests {
             invalid: vec![],
             invalid_local: vec![],
             local: vec![],
+            private_exclude: vec![],
             unselected: Default::default(),
         };
         let state = State::from_tracked(tracked.clone()).unwrap();
@@ -2196,6 +2198,7 @@ mod tests {
             invalid: vec![],
             invalid_local: vec![],
             local: vec![],
+            private_exclude: vec![],
             unselected: Default::default(),
         };
         let state = state_of(tracked.clone(), root.join("mise"));

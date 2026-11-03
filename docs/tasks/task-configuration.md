@@ -42,7 +42,7 @@ experimental = true
 | [Ordering](#ordering)                                     | [`depends`](#depends), [`depends_post`](/tasks/task-configuration.html#depends-post), [`wait_for`](/tasks/task-configuration.html#wait-for), [`daemons`](/tasks/task-configuration.html#daemons)                               |
 | [Environment and tools](#environment-and-tools)           | [`env`](#env), [`vars`](#task-vars), [`secrets`](/tasks/task-configuration.html#secrets), [`tools`](#tools)                                                                                                                    |
 | [Skipping work](#skipping-work)                           | [`skip_if`](/tasks/task-configuration.html#skip-if), [`sources`](#sources), [`outputs`](#outputs), [`watch`](#watch), [`cache`](/tasks/task-configuration.html#cache)                                                          |
-| [Execution](#execution)                                   | [`timeout`](#timeout), [`raw`](#raw), [`interactive`](#interactive)                                                                                                                                                            |
+| [Execution](#execution)                                   | [`timeout`](#timeout), [`lock`](#lock), [`raw`](#raw), [`interactive`](#interactive)                                                                                                                                           |
 | [Output](#output-properties)                              | [`output`](#output), [`quiet`](#quiet), [`silent`](#silent)                                                                                                                                                                    |
 | [Sandbox](#sandbox)                                       | `deny_all`, `deny_read`, `deny_write`, `deny_net`, `deny_env`, `allow_read`, `allow_write`, `allow_net`, `allow_env`, `pass_through_env`                                                                                       |
 | [Deprecated](#deprecated)                                 | [`rust_cache`](/tasks/task-configuration.html#rust-cache)                                                                                                                                                                      |
@@ -848,6 +848,80 @@ that ignores Ctrl+C, such as a batch file waiting at
 `Terminate batch job (Y/N)?`. The run-wide timeout ends the process tree on
 Windows at once. The run-wide timeout does not stop the processes of
 [`raw`](#raw) tasks.
+
+### `lock`
+
+- **Type**: `boolean | string | string[]`
+- **Default**: unset
+
+Resources the task holds while its commands run. A run that needs a lock
+another run holds waits until it is free, so tasks that share something take
+turns instead of colliding. This matters most when several agents or terminals
+run the same tasks at once in separate worktrees.
+
+```mise-toml
+[tasks.test]
+run = "pytest"
+lock = "test-db"
+
+[tasks."e2e:ios"]
+run = "./scripts/e2e-ios.sh"
+lock = ["ios-simulator", "test-db"]
+
+[tasks.migrate]
+run = "./scripts/migrate.sh"
+lock = true
+```
+
+- A name is shared by every task on this machine that names it, in any project.
+  Pick a specific name, such as `shop-test-db` rather than `db`.
+- `true` lets one run of the task at a time across every worktree of its
+  repository. Another repository with a task of the same name is not affected.
+- `false` or an empty list takes no lock, for example to turn off a lock a
+  template sets.
+
+A task takes its locks after its dependencies finish and once mise has decided
+it must run: a task skipped by `skip_if` or fresh `sources`, or restored from
+the [cache](/tasks/task-configuration.html#cache), never waits. It holds them until its last command ends,
+including tasks its `run` entries start, and releases them however it ends.
+Several names are taken in sorted order. While a task waits, it gives up its
+`--jobs` slot so other tasks in the run keep going, and mise says who holds the
+lock:
+
+```text
+[test] waiting for lock test-db, held by test in ~/src/shop-pr-42 (pid 4121, for 2m10s)
+[test] got lock test-db after 3m02s
+```
+
+A task holds its locks, its `--jobs` slot and its share of the terminal
+together, taking all of them or none, and keeps them until it ends. Tasks that
+its `{ task = ... }` and `{ tasks = [...] }` entries start run under that slot
+and do not take one of their own. This way a run that holds a lock never waits
+for something another task in the same run is holding while it waits for that
+lock. A locked task that is not [`interactive`](#interactive) shares the
+terminal with other tasks, so the tasks it starts cannot prompt for
+[secrets](/tasks/task-configuration.html#secrets), and an interactive task
+started from it fails; set `interactive = true` on the locked task instead.
+
+Two tasks in the same `mise run` that name the same lock also run one after the
+other. A task's [`timeout`](#timeout) starts once it holds its locks. To limit
+the wait, set
+[`task.lock_timeout`](/configuration/settings.html#task.lock_timeout) or pass
+`mise run --lock-timeout 5m`; the task then fails and names the holder.
+
+The task's commands see the locks it holds in `MISE_TASK_LOCKS`. A task started
+under it, through a nested `mise run` or a `{ task = ... }` entry, already holds
+those locks and does not wait on its parent. It can add locks of its own only if
+they sort after the ones it inherits; otherwise it fails and asks you to add the
+lock to the parent, so two runs can never each hold a lock the other waits for.
+
+Locks are files under `$MISE_STATE_DIR/task-locks` held with an operating-system
+file lock, so a lock is released as soon as the mise process holding it exits,
+even if it is killed. A command the task left running in the background does
+not keep the lock.
+
+If each worktree can have its own copy of a resource, prefer that to a lock:
+[daemons](/daemons/worktrees.html) give each worktree its own ports and data.
 
 ### `raw`
 

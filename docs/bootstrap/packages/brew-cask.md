@@ -215,7 +215,9 @@ homebrew_metadata = true
 
 After mise installs a cask, it then writes the metadata file Homebrew looks for
 (`.metadata/<version>/<timestamp>/Casks/<token>.json`, containing `{}` as for a
-cask Homebrew loaded from its API). Homebrew reads the cask definition from its
+cask Homebrew loaded from its API) and an `INSTALL_RECEIPT.json` beside it, so
+`brew info` shows the install time and that you installed the cask yourself
+rather than as a dependency. Homebrew reads the cask definition from its
 API and takes the installed version from the Caskroom folder name, so
 `brew upgrade`, `brew outdated` and `brew doctor` treat the cask like one it
 installed.
@@ -228,7 +230,11 @@ mise, because Homebrew's record names only the token and would look it up in
 `homebrew/cask`. So do casks installed outside the default application
 directory (an `appdir` entry or `MISE_BREW_CASK_OPT_APPDIR`), which
 `brew upgrade` would reinstall into `/Applications`. The setting applies on
-Apple Silicon Macs only, where mise's Caskroom is Homebrew's.
+Apple Silicon Macs only, where mise's Caskroom is Homebrew's, and only when
+Homebrew is 6.0.22 or newer: older releases recover a cask's uninstall steps
+from an unsigned endpoint when the receipt has none
+([GHSA-rg9r-ppxp-87hm](https://github.com/Homebrew/brew/security/advisories/GHSA-rg9r-ppxp-87hm)),
+so mise leaves the cask alone there.
 
 A cask counts as installed while its app, font, binary, and completion files
 are in place. Changes inside an installed app, such as a self-update, do not

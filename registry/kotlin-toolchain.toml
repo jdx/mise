@@ -1,0 +1,31 @@
+description = "JetBrains' unified command-line entry point for building, running and testing Kotlin JVM, Android, iOS and multiplatform projects from declarative configuration"
+os = ["linux", "macos", "windows"]
+test = { cmd = "kotlin --version", expected = "{{version}}" }
+url = "https://kotlin-toolchain.org"
+version_order = "semver"
+
+bins = ["kotlin"]
+[[backends]]
+full = "http:kotlin-toolchain"
+
+[backends.options]
+bin = "kotlin"
+# The official installer (https://kotl.in/install.sh) puts only this wrapper script on PATH.
+# The wrapper pins the distribution version and its sha256, then downloads the
+# distribution and a JRE into the user's cache on first run. GitHub releases carry
+# no assets, so the wrapper is fetched from the JetBrains Maven repository.
+checksum_url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{ version }}-wrapper.sha256"
+url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{ version }}-wrapper"
+# maven-metadata.xml also lists -dev builds; keep only stable releases.
+version_list_url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/maven-metadata.xml"
+version_regex = '<version>(\d+\.\d+\.\d+)</version>'
+
+[backends.options.platforms.windows-arm64]
+bin = "kotlin.bat"
+checksum_url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{ version }}-wrapper.bat.sha256"
+url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{ version }}-wrapper.bat"
+
+[backends.options.platforms.windows-x64]
+bin = "kotlin.bat"
+checksum_url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{ version }}-wrapper.bat.sha256"
+url = "https://packages.jetbrains.team/maven/p/amper/amper/org/jetbrains/kotlin/kotlin-cli/{{ version }}/kotlin-cli-{{ version }}-wrapper.bat"

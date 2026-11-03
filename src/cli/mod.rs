@@ -430,9 +430,10 @@ impl Commands {
     /// Commands that run as a service, with no terminal reading their output.
     ///
     /// Windows gives a Scheduled Task's console program a console of its own,
-    /// and the watcher would run behind that window until it was hidden. This
-    /// is asked for right after parsing, ahead of the auto-update that could
-    /// otherwise leave the window on screen for a download's worth of time.
+    /// and a watcher would keep its window open for as long as it runs. This
+    /// is checked after invocation validation and before automatic updates,
+    /// so validation errors remain visible without keeping a window open
+    /// throughout an update download.
     fn runs_unattended(&self) -> bool {
         match self {
             Self::Dotfiles(cmd) => cmd.is_watch(),
@@ -949,15 +950,20 @@ pub(crate) fn register_frontend() {
         lockfiles_after_install: |config, installed| {
             Box::pin(async move { lock::Lock::generate_after_install(config, &installed).await })
         },
-        subcommand_names: || {
-            Cli::command()
-                .subcommands
-                .iter()
-                .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
-                .map(str::to_string)
-                .collect()
-        },
+        subcommand_names,
     });
+}
+
+/// Every visible command name and alias, for "did you mean" suggestions.
+fn subcommand_names() -> Vec<String> {
+    self::usage::spec()
+        .cmd
+        .subcommands
+        .iter()
+        .filter(|(_, s)| !s.hide)
+        .flat_map(|(name, s)| std::iter::once(name).chain(s.aliases.iter()))
+        .cloned()
+        .collect()
 }
 
 impl Cli {
@@ -1179,7 +1185,7 @@ impl Cli {
         // land in a console somebody can still read, and before the
         // auto-update that could otherwise leave the window up for a download.
         if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
-            crate::windows_console::hide_if_unattended();
+            crate::windows_console::hide_if_unattended()?;
         }
         let auto_update_command_eligible = !print_version
             && cli
@@ -1316,6 +1322,7 @@ impl Cli {
                         task_cache_explain_json: false,
                         task_cache_stats: false,
                         timeout: None,
+                        lock_timeout: None,
                         skip_deps: false,
                         skip_tools: false,
                         no_deps: false,
@@ -1474,6 +1481,15 @@ fn display_args(args: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suggestion_candidates_leave_out_hidden_commands() {
+        let names = subcommand_names();
+        assert!(names.iter().any(|n| n == "list"), "{names:?}");
+        for hidden in ["__publish-system-install", "hook-env"] {
+            assert!(!names.iter().any(|n| n == hidden), "{hidden} in {names:?}");
+        }
+    }
     use mise_util::args::GLOBAL_FLAGS_WITH_VALUES;
 
     #[test]
@@ -1813,8 +1829,8 @@ mod tests {
         assert!(unattended(&["mise", "bootstrap", "dotfiles", "watch"]));
 
         // the launcher a Windows user service's task starts is handed a
-        // console the same way, and its window has to go before settings,
-        // config, or an auto-update can hold it on screen
+        // console the same way. Validate settings and the invocation first so
+        // errors stay readable, then prepare it before automatic updates.
         assert!(unattended(&[
             "mise",
             "bootstrap",

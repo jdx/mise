@@ -74,6 +74,7 @@ pub(crate) mod http;
 pub(crate) mod jq;
 pub mod mise_bins;
 pub(crate) mod npm;
+pub(crate) mod npm_provenance;
 pub(crate) mod npm_registry;
 pub(crate) mod options;
 pub mod packslip;
@@ -1105,35 +1106,7 @@ fn parse_matching_registry_idiomatic_file(
         .max_by_key(|spec| Path::new(spec.path).components().count())
         .filter(|spec| spec.has_parser())
     {
-        Some(spec) => match spec.deprecated {
-            // The file's only parser reads a value mise should not be installing from.
-            // Opting in early means it yields nothing -- `Some(vec![])` rather than
-            // `None`, so the backend's plain-text fallback doesn't read the whole file.
-            Some(_) if Settings::get().idiomatic_version_file_ignore_minimum_versions => {
-                Ok(Some(vec![]))
-            }
-            Some(reason) => {
-                let versions = parse_registry_idiomatic_file(path, spec)?;
-                // Only warn when the file actually resolved something, so a project
-                // that merely has the file lying around stays quiet.
-                if versions
-                    .as_ref()
-                    .is_some_and(|versions| !versions.is_empty())
-                {
-                    // The path is the id so two deprecated files can't silence each
-                    // other, and it already names the file in the warning.
-                    let id = spec.path;
-                    deprecated_at!(
-                        "2026.8.10",
-                        "2026.11.0",
-                        id,
-                        "{reason} mise will stop reading it as an idiomatic version file; set the version in mise.toml instead."
-                    );
-                }
-                Ok(versions)
-            }
-            None => parse_registry_idiomatic_file(path, spec),
-        },
+        Some(spec) => parse_registry_idiomatic_file(path, spec),
         None => Ok(None),
     }
 }
@@ -1771,7 +1744,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".releases[?channel=stable].version"),
             version_expr: None,
-            deprecated: None,
         };
 
         assert_eq!(
@@ -1791,7 +1763,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".version"),
             version_expr: None,
-            deprecated: None,
         }];
 
         assert_eq!(
@@ -1810,7 +1781,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".tool.version"),
             version_expr: None,
-            deprecated: None,
         }];
 
         assert_eq!(
@@ -1826,7 +1796,6 @@ mod tests {
             version_regex: None,
             version_json_path: None,
             version_expr: None,
-            deprecated: None,
         };
 
         assert_eq!(
@@ -3260,6 +3229,16 @@ pub trait Backend: Debug + Send + Sync {
         true
     }
 
+    /// Whether locked mode may resolve the download URL itself when the
+    /// lockfile pins only a checksum (see
+    /// [`PlatformInfo::is_pinned_without_url`](crate::lockfile::PlatformInfo::is_pinned_without_url)).
+    /// Only a backend that checks the download against the kept checksum may
+    /// say so; one that picks a fresh artifact would install what the lock does
+    /// not pin.
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        false
+    }
+
     /// Whether this backend's artifact-identity options describe the machine
     /// that wrote a lock entry rather than the tool request.
     ///
@@ -4031,9 +4010,16 @@ pub trait Backend: Debug + Send + Sync {
                 if crate::install_layout::resolver::governs(tv) {
                     return check_path(&tv.install_path(), check_symlink);
                 }
-                if let Some(install_path) = tv.request.install_path(config)
-                    && check_path(&install_path, true)
+                // A Version request names its directory after the version as written,
+                // so it is known to differ from the resolved version without the disk.
+                if let ToolRequest::Version { version, .. } = &tv.request
+                    && Path::new(version)
+                        .file_name()
+                        .is_some_and(|f| f.to_string_lossy() != tv.version)
                 {
+                    return check_path(&tv.install_path(), check_symlink);
+                }
+                if let Some(install_path) = tv.request.install_path(config) {
                     // The request's install_path is derived from the REQUEST version
                     // (e.g., "latest" or prefix "1"), which may differ from the resolved
                     // concrete version. If they differ, the request path can refer to a
@@ -4043,6 +4029,9 @@ pub trait Backend: Debug + Send + Sync {
                     // transiently returned None, leaving tv.version="latest"). We must check
                     // the RESOLVED path instead so that `mise upgrade` re-runs the backend's
                     // install hook and writes the new version to `installs/<id>/<new-version>/`.
+                    // The request path decides nothing then, so it is not checked: this runs
+                    // several times per tool on every hook-env. A Version request is caught
+                    // above, before install_path stats its directory.
                     if matches!(
                         &tv.request,
                         ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
@@ -4052,7 +4041,9 @@ pub trait Backend: Debug + Send + Sync {
                     {
                         return check_path(&tv.install_path(), check_symlink);
                     }
-                    return true;
+                    if check_path(&install_path, true) {
+                        return true;
+                    }
                 }
                 check_path(&tv.install_path(), check_symlink)
             }
@@ -4724,7 +4715,10 @@ pub trait Backend: Debug + Send + Sync {
                     .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
                 let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
-                if installed_symlink.exists()
+                // The generated `latest` link leaves pre-releases out, so it
+                // only answers a request that leaves them out too.
+                if filter
+                    && installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
                 {
                     let version = target
@@ -4735,7 +4729,7 @@ pub trait Backend: Debug + Send + Sync {
                     // A `latest` link written before the backend could tell this
                     // version is a pre-release must not keep winning, and neither
                     // may one left pointing into an interrupted install.
-                    if (!filter || !self.is_backend_prerelease(&version))
+                    if !self.is_backend_prerelease(&version)
                         && !install_state::is_incomplete(self.ba(), &version)
                     {
                         return Ok(Some(version));
@@ -4746,7 +4740,17 @@ pub trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::is_incomplete(self.ba(), v))
+                    .filter(|v| {
+                        // An identity-layout version is a link, and its marker is
+                        // keyed by the installation the link names.
+                        let key =
+                            crate::install_layout::resolver::link_target(&installs_path.join(v))
+                                .and_then(|install| {
+                                    install.file_name().map(|n| n.to_string_lossy().to_string())
+                                })
+                                .unwrap_or_else(|| v.clone());
+                        !install_state::is_incomplete(self.ba(), &key)
+                    })
                     .filter(|v| v != "latest")
                     .collect_vec();
                 install_state::sort_versions(&mut installed);
@@ -5178,11 +5182,11 @@ pub trait Backend: Debug + Send + Sync {
         }
         if ctx.locked && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key_for(&tv);
-            let has_lockfile_url = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|p| p.url.as_ref())
-                .is_some();
+            let locked_platform = tv.lock_platforms.get(&platform_key);
+            let has_lockfile_url = locked_platform.is_some_and(|p| {
+                p.url.is_some()
+                    || (self.resolves_locked_url_from_checksum() && p.is_pinned_without_url())
+            });
             if !has_lockfile_url {
                 bail!(
                     "No lockfile URL found for {} on platform {} (--locked mode)\n\
@@ -5190,6 +5194,44 @@ pub trait Backend: Debug + Send + Sync {
                     tv.style(),
                     platform_key
                 );
+            }
+            // Refuse before downloading, so a lockfile with URLs but no
+            // checksums cannot install whatever those URLs serve. Only merge
+            // mode writes such entries, so the setting goes with it.
+            if settings.locked_require_checksum.is_some() {
+                deprecated_at!(
+                    "2027.10.0",
+                    "2028.10.0",
+                    "setting.locked_require_checksum",
+                    "locked_require_checksum is no longer needed: locked mode always requires a lockfile checksum. Remove the setting."
+                );
+            }
+            if settings
+                .locked_require_checksum
+                .unwrap_or(settings.generate_lockfiles())
+                && let Some(p) = locked_platform
+            {
+                let missing = std::iter::once((p.url.as_deref(), &p.checksum))
+                    .chain(
+                        p.additional_artifacts
+                            .iter()
+                            .map(|a| (Some(a.url.as_str()), &a.checksum)),
+                    )
+                    .find(|(_, checksum)| checksum.is_none());
+                if let Some((url, _)) = missing {
+                    bail!(
+                        "No lockfile checksum found for {} on platform {}{} \
+                        (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false",
+                        tv.style(),
+                        platform_key,
+                        url.map(|u| format!(
+                            " ({})",
+                            crate::install_layout::resolver::redact_credentials(u)
+                        ))
+                        .unwrap_or_default(),
+                    );
+                }
             }
         }
 

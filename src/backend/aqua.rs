@@ -280,6 +280,10 @@ impl Backend for AquaBackend {
         VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        true
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Aqua
     }
@@ -571,7 +575,12 @@ impl Backend for AquaBackend {
                 tv.version.clone()
             };
             (url, existing_url_api.clone(), v, filename, None)
-        } else if ctx.locked {
+        } else if ctx.locked
+            && !tv
+                .lock_platforms
+                .get(&platform_key)
+                .is_some_and(PlatformInfo::is_pinned_without_url)
+        {
             bail!(
                 "No lockfile URL found for {} on platform {} (--locked mode requires pre-resolved URLs)",
                 self.id,
@@ -3500,14 +3509,20 @@ impl AquaBackend {
                     self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
                 let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
                 let platform_key = self.get_platform_key();
+                let artifact_path = tv.download_path().join(filename);
                 let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-                if let Some(existing_checksum) = &platform_info.checksum
-                    && same_checksum_algorithm(existing_checksum, &checksum_val)
-                    && existing_checksum != &checksum_val
-                {
-                    bail!(
-                        "verified checksum file digest does not match existing checksum for {filename}"
-                    );
+                if let Some(existing_checksum) = &platform_info.checksum {
+                    if same_checksum_algorithm(existing_checksum, &checksum_val) {
+                        if existing_checksum != &checksum_val {
+                            bail!(
+                                "verified checksum file digest does not match existing checksum for {filename}"
+                            );
+                        }
+                    } else if let Some((algorithm, expected)) = existing_checksum.split_once(':') {
+                        // The signed file uses another algorithm, so replacing the
+                        // pin would drop it unchecked.
+                        crate::hash::ensure_checksum(&artifact_path, expected, None, algorithm)?;
+                    }
                 }
                 platform_info.checksum = Some(checksum_val);
             }

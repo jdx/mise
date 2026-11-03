@@ -55,7 +55,15 @@ impl Store {
         checkpoint.created_at = store::now_rfc3339();
         checkpoint.tree.snapshot = Some(next);
         checkpoint.tree.modes = promotion.modes;
+        // the earlier checkpoint may be any kind: this one is the operation's
+        // protective copy, whatever labels or description that one carried
         checkpoint.operation = None;
+        checkpoint.trigger = Trigger::BootstrapBefore;
+        checkpoint.labels.clear();
+        checkpoint.task = None;
+        checkpoint.description = "before bootstrap".into();
+        checkpoint.summary = checkpoint.description.clone();
+        checkpoint.description_source = DescriptionSource::Computed;
         let mut index = store::load_index_in(&self.state_dir)?;
         if index.entries.last().map(|entry| entry.commit.as_str()) != Some(head.as_str()) {
             index = self.rebuild_index_locked()?;

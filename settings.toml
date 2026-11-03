@@ -1901,22 +1901,6 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
-[idiomatic_version_file_ignore_minimum_versions]
-default = false
-description = "Ignore idiomatic version file fields that only declare a minimum compatible version."
-docs = """
-Affects `go.mod`'s `go X.Y` line (a `toolchain goX.Y.Z` line, or an exact
-`go X.Y.Z` line with no `toolchain` line, is still read) and
-`CMakeLists.txt`'s `cmake_minimum_required`. mise still reads those minimums
-with a deprecation warning; this setting opts into the final behavior now and
-silences the warning. In mise 2026.11.0 that behavior becomes unconditional and
-this setting is removed. See
-[Which fields mise reads](/dev-tools/versions.html#which-fields-mise-reads).
-"""
-env = "MISE_IDIOMATIC_VERSION_FILE_IGNORE_MINIMUM_VERSIONS"
-hide = true
-type = "Bool"
-
 [ignored_config_paths]
 default = []
 description = "Config files and directories mise does not load."
@@ -2094,7 +2078,8 @@ Resolves tools only from lockfile entries, instead of looking versions and URLs
 up through the GitHub API or a registry. A tool with no matching entry is an
 error, both for installs and for lookups such as `mise which`, even when the
 tool is already installed. Backends that lock download URLs must have one for
-the current platform, and recorded dependency graphs must be present and match
+the current platform, with a checksum (see
+[`locked_require_checksum`](#locked_require_checksum)), and recorded dependency graphs must be present and match
 their digest; backends that do not lock URLs, such as `cargo`, `go`, `gem` and
 `asdf`, need only the version. Installs in this mode do not update lockfiles.
 Same as passing `--locked`.
@@ -2109,6 +2094,27 @@ applies to. See
 [Strict lockfile mode](/dev-tools/mise-lock.html#strict-lockfile-mode).
 """
 env = "MISE_LOCKED"
+type = "Bool"
+
+[locked_require_checksum]
+description = "Make locked mode fail when the lockfile has no checksum for a download."
+docs = """
+[`locked`](#locked) mode requires a checksum in the lockfile for every artifact
+it downloads for the current platform, including additional GitHub release
+assets, and fails before downloading when one is missing. Otherwise a lockfile
+entry with a URL but no checksum would install whatever the URL serves. Run
+`mise lock` to fill in missing checksums: it downloads and hashes any artifact
+whose checksum the release does not publish. Backends that do not lock download
+URLs, such as `cargo` and `go`, are not affected.
+
+Unset, this is on, except with
+[`lockfile_mode = "merge"`](#lockfile_mode), which can lock a URL without a
+checksum. Set it to `false` to install such entries anyway, or to `true` to
+require checksums in merge mode too. The setting will be removed after merge
+mode is.
+"""
+env = "MISE_LOCKED_REQUIRE_CHECKSUM"
+optional = true
 type = "Bool"
 
 [locked_scopes]
@@ -2624,6 +2630,22 @@ enum = [
 env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
+
+[npm.provenance]
+default = false
+description = "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package."
+docs = """
+When on, `mise install` fetches the attestations the public npm registry holds
+for the tool's package and requires the SLSA provenance among them to verify
+against the integrity hash the install locks. A package that publishes no
+provenance, or a private registry that serves none, installs as it does with
+this off. Provenance built outside GitHub Actions, such as on GitLab CI, is not
+accepted yet, so such a package fails to install while this is on.
+[`paranoid`](/configuration/settings.html#paranoid) turns it on for the
+`provenance` category.
+"""
+env = "MISE_NPM_PROVENANCE"
+type = "Bool"
 
 [npm.shell_out]
 default = false
@@ -3676,7 +3698,8 @@ mise runs the equivalent of `mise skills sync` after every install, after
 `mise use` changes a version, and after `mise upgrade`, so the links under
 [`skills.dir`](#skills.dir) point at the versions active in the project. Only
 projects with a mise config get links, and nothing is written outside a project
-root. mise touches only links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
+root, except that `mise use --global` links into `skills.dir` under your home
+directory. mise touches only links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
 is on. See
 [Keep project links up to date](/dev-tools/packslip-resources.html#keep-project-links-up-to-date).
 """
@@ -3684,14 +3707,18 @@ env = "MISE_SKILLS_AUTO_SYNC"
 type = "Bool"
 
 [skills.dir]
-default = ".claude/skills"
 description = "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`."
 docs = """
-Set it to the directory the agents you use read, such as `.agents/skills`. An
-absolute path is used as written, and `--dir` overrides it for one run. See
+Set it to the directory the agents you use read, such as `.claude/skills`. An
+absolute path is used as written, and `--dir` overrides it for one run.
+
+Left unset, mise uses `.agents/skills` if it exists, then `.claude/skills` if it
+exists. When neither exists it creates `.agents/skills` and a `.claude/skills`
+symlink to it, so agents that read either path find the skills. See
 [Choose a skill directory](/dev-tools/packslip-resources.html#choose-a-skill-directory).
 """
 env = "MISE_SKILLS_DIR"
+optional = true
 type = "String"
 
 [skills.fetch]
@@ -4260,6 +4287,18 @@ pass. Define arguments in the task's
 """
 env = "MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS"
 type = "Bool"
+
+[task.lock_timeout]
+description = "How long a task waits for a lock another run holds before it fails."
+docs = """
+Applies to tasks that set [`lock`](/tasks/task-configuration.html#lock). Unset,
+a task waits until the lock is free. `mise run --lock-timeout` overrides this
+setting. The task's own [`timeout`](/tasks/task-configuration.html#timeout)
+starts only once it holds the lock.
+"""
+env = "MISE_TASK_LOCK_TIMEOUT"
+optional = true
+type = "Duration"
 
 [task.monorepo_depth]
 default = 5

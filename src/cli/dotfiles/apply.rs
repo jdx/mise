@@ -118,8 +118,10 @@ impl DotfilesApply {
         reload: &IndexMap<String, String>,
         is_config: impl Fn(&Path) -> bool,
     ) -> Result<Option<Vec<String>>> {
-        let (mut files, mut edits) = self.requests(config)?;
-        files.retain(|req| is_config(&req.target));
+        let (files, mut edits) = self.requests(config)?;
+        // what the config entries wait for is written in this pass too, so a
+        // template there reads the files its dependencies created
+        let files = system::files::with_dependencies(&files, |req| is_config(&req.target));
         edits.retain(|req| is_config(&req.path));
         // a dry run reads the live file to check an edit, which the copy
         // about to replace it may have changed; the edits the new config
@@ -140,22 +142,32 @@ impl DotfilesApply {
         let done = write_and_reload_with(reload, self.dry_run, |written| {
             if !files.is_empty() {
                 let opts = self.file_opts();
-                let plan = system::files::plan_apply(config, &files, &opts, &secrets)?;
                 // an applied config reports nothing: the rest of the apply
                 // may still have work, and "all files are applied" would
                 // read as the end of the command
-                if !plan.is_noop() {
-                    handled.extend(
-                        plan.planned_requests()
-                            .into_iter()
-                            .filter(|req| {
-                                self.dry_run || req.mode != system::files::FileMode::Template
-                            })
-                            .map(|req| format!("{req:?}")),
-                    );
-                    if !system::files::execute_apply(config, plan, &opts, written)? {
-                        return Ok(false);
-                    }
+                let applied = system::files::apply_layers(
+                    config,
+                    &files,
+                    &opts,
+                    &secrets,
+                    written,
+                    |plan| {
+                        if plan.is_noop() {
+                            return false;
+                        }
+                        handled.extend(
+                            plan.planned_requests()
+                                .into_iter()
+                                .filter(|req| {
+                                    self.dry_run || req.mode != system::files::FileMode::Template
+                                })
+                                .map(|req| format!("{req:?}")),
+                        );
+                        true
+                    },
+                )?;
+                if !applied {
+                    return Ok(false);
                 }
             }
             if edits.is_empty() {

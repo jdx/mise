@@ -195,6 +195,11 @@ impl Task {
             self.timeout = template.timeout.clone();
         }
 
+        // lock: use template only if local not set
+        if self.lock.is_none() {
+            self.lock = template.lock.clone();
+        }
+
         // skip_if: use template only if local not set
         if self.skip_if.is_none() {
             self.skip_if = template.skip_if.clone();

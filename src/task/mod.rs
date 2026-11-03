@@ -53,6 +53,7 @@ pub(crate) mod task_file_providers;
 pub mod task_helpers;
 pub mod task_list;
 mod task_load_context;
+pub mod task_lock;
 pub mod task_output;
 pub mod task_output_handler;
 pub mod task_results_display;
@@ -124,8 +125,8 @@ use task_sources::TaskOutputs;
 pub use task_sources::{RawOutputTemplates, TaskOutputsExt};
 
 pub use mise_config::task::{
-    RunEntry, Silent, TaskDaemons, TaskDecl, TaskRustCacheConfig, TaskToolValue, TaskToolValueMap,
-    TaskWatchOptions,
+    RunEntry, Silent, TaskDaemons, TaskDecl, TaskLock, TaskRustCacheConfig, TaskToolValue,
+    TaskToolValueMap, TaskWatchOptions,
 };
 
 /// Turning a task's tool declaration into a request, and rendering its templates, needs mise's
@@ -404,6 +405,8 @@ pub struct Task {
     pub tools: IndexMap<String, TaskToolValue>,
     pub usage: String,
     pub timeout: Option<String>,
+    /// The resources this task holds while its commands run; see `task_lock`.
+    pub lock: Option<TaskLock>,
     /// A shell command checked before the task runs; exiting 0 skips the task.
     pub skip_if: Option<String>,
 
@@ -713,9 +716,10 @@ fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
 const FILE_TASK_BODY_KEYS: &[&str] = &["run", "run_windows", "file", "usage"];
 
 /// Header keys whose value guards how a task runs. A bad one fails the task instead of being
-/// skipped, so a typo cannot drop a confirmation prompt or a sandbox restriction.
+/// skipped, so a typo cannot drop a confirmation prompt, a sandbox restriction or a lock.
 const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "confirm",
+    "lock",
     "deny_all",
     "deny_read",
     "deny_write",
@@ -2744,6 +2748,9 @@ impl Task {
         if other.timeout.is_some() {
             self.timeout = other.timeout;
         }
+        if other.lock.is_some() {
+            self.lock = other.lock;
+        }
         if other.skip_if.is_some() {
             self.skip_if = other.skip_if;
         }
@@ -3552,6 +3559,7 @@ impl Task {
             tools: decl.tools,
             usage: decl.usage,
             timeout: decl.timeout,
+            lock: decl.lock,
             skip_if: decl.skip_if,
             run: decl.run,
             run_windows_declared: decl.run_windows.is_some(),
@@ -3632,6 +3640,7 @@ impl Default for Task {
             tools: Default::default(),
             usage: "".to_string(),
             timeout: None,
+            lock: None,
             skip_if: None,
             remote_file_source: None,
             deny_all: false,
@@ -6649,6 +6658,7 @@ echo "hello world"
 #MISE skip_if="test -f done.txt"
 #MISE vars={GREETING="hi"}
 #MISE timeout="5m"
+#MISE lock=["sim", "test-db"]
 #MISE global=true
 #MISE args=["--verbose"]
 #MISE deny_all=true
@@ -6726,6 +6736,10 @@ echo "test"
 
         assert_eq!(task.vars.0.len(), 1);
         assert_eq!(task.timeout, Some("5m".to_string()));
+        assert_eq!(
+            task.lock,
+            Some(super::TaskLock::Names(vec!["sim".into(), "test-db".into()]))
+        );
         // Where a task was loaded from makes it global, never its own header.
         assert!(!task.global);
         assert_eq!(task.args, ["--verbose"]);
@@ -6836,7 +6850,11 @@ echo "test"
         let tasks_dir = temp_dir.path().join("tasks");
         fs::create_dir(&tasks_dir).unwrap();
         let config = Config::get().await.unwrap();
-        for (name, header) in [("confirm", "confirm=1"), ("deny-net", "deny_net=\"yes\"")] {
+        for (name, header) in [
+            ("confirm", "confirm=1"),
+            ("deny-net", "deny_net=\"yes\""),
+            ("lock", "lock=1"),
+        ] {
             let task_file = tasks_dir.join(name);
             fs::write(
                 &task_file,

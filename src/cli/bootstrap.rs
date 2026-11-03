@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use futures_util::future::LocalBoxFuture;
 use heck::ToKebabCase;
 use serde::Serialize;
@@ -226,7 +226,10 @@ pub(crate) struct Bootstrap {
     /// Refresh package metadata and update repositories before applying
     ///
     /// Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without
-    /// `--update`, a reused checkout stays at its current commit.
+    /// either, fast-forwards the global config when it is a Git checkout with
+    /// an upstream, as `--adopt` makes, or links into one, as `--config-dir`
+    /// makes, then bootstraps from the new commit. Without `--update`, a
+    /// checkout stays at its current commit.
     #[usage(long)]
     update: bool,
 
@@ -355,6 +358,74 @@ fn warn_legacy_bootstrap_command(id: &'static str, legacy: &str, replacement: &s
 }
 
 type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
+
+/// Set for a bootstrap that runs after the global config was fast-forwarded,
+/// so that run does not fast-forward it again.
+const CONFIG_UPDATED_ENV: &str = "__MISE_BOOTSTRAP_CONFIG_UPDATED";
+
+/// The Git checkout that `mise bootstrap --update` fast-forwards for the
+/// global config: the config directory itself when it is the top of a
+/// checkout (`--adopt`), or the checkout it links into (`--config-dir`).
+/// A config directory that merely sits inside a larger repository, such as
+/// a home directory kept in Git, is not one. A branch without an upstream,
+/// or a detached HEAD, has nothing to fast-forward from.
+fn global_config_checkout() -> Result<Option<PathBuf>> {
+    let dir = system::history::tracked::global_config_dir();
+    let Ok(resolved) = dunce::canonicalize(&dir) else {
+        return Ok(None);
+    };
+    let Some(top) = git_stdout(&resolved, ["rev-parse", "--show-toplevel"]) else {
+        return Ok(None);
+    };
+    let top = dunce::canonicalize(top)?;
+    if top != resolved && !crate::file::is_symlink_or_junction(&dir) {
+        return Ok(None);
+    }
+    if git_stdout(&top, ["rev-parse", "--symbolic-full-name", "@{upstream}"]).is_none() {
+        debug!(
+            "bootstrap: {} has no upstream to fast-forward from",
+            top.display_user()
+        );
+        return Ok(None);
+    }
+    Ok(Some(top))
+}
+
+/// Runs this `mise bootstrap` again, after the global config moved to a new
+/// commit, so it reads that commit's config from the start. It starts in the
+/// directory this one started in, where a relative `--cd` or `MISE_CD`
+/// resolves as it did here.
+fn rerun_bootstrap_after_config_update() -> Result<()> {
+    let args = crate::env::ARGS.read().unwrap().clone();
+    let mut command = Command::new(std::env::current_exe()?);
+    command
+        .args(args.iter().skip(1))
+        .env(CONFIG_UPDATED_ENV, "1");
+    if let Some(cwd) = crate::env::original_cwd() {
+        command.current_dir(cwd);
+    }
+    let status = command.status()?;
+    if !status.success() {
+        bail!("bootstrap from the updated global config failed with {status}");
+    }
+    Ok(())
+}
+
+/// A git command's trimmed output, or `None` when it fails.
+fn git_stdout<const N: usize>(dir: &Path, args: [&str; N]) -> Option<String> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .stderr(std::process::Stdio::null());
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
 
 fn run_bootstrap_git<const N: usize>(checkout: &Path, args: [&str; N]) -> Result<()> {
     let mut command = Command::new("git");
@@ -1882,6 +1953,20 @@ impl Bootstrap {
         if self.prompt_vars && self.command.is_some() {
             bail!("--prompt-vars only applies to a full `mise bootstrap` run, not a subcommand");
         }
+        // A full run with --update first fast-forwards a global config that is
+        // a Git checkout, or links into one. New commits can change miserc.toml
+        // and the environments, which this process has already read, so the
+        // bootstrap then runs again in a process of its own.
+        if self.update
+            && self.from.is_none()
+            && self.adopt.is_none()
+            && self.command.is_none()
+            && std::env::var_os(CONFIG_UPDATED_ENV).is_none()
+            && let Some(checkout) = global_config_checkout()?
+            && self.update_global_config_checkout(&checkout).await?
+        {
+            return rerun_bootstrap_after_config_update();
+        }
         // Every subcommand, not just the full run, applies less than project
         // config declares in safe mode; say so up front.
         if Settings::safe_mode()
@@ -2665,11 +2750,51 @@ impl Bootstrap {
         self.run_child_bootstrap(checkout).await
     }
 
+    /// Fast-forwards the Git checkout of the global config. Returns whether
+    /// it moved to a new commit.
+    async fn update_global_config_checkout(&self, checkout: &Path) -> Result<bool> {
+        if self.dry_run {
+            miseprintln!(
+                "Would run: git -C {} pull --ff-only",
+                checkout.display_user()
+            );
+            return Ok(false);
+        }
+        let before = git_stdout(checkout, ["rev-parse", "HEAD"]);
+        let generation = OperationScope::begin("bootstrap --update", false).await?;
+        let pulled = run_bootstrap_git(checkout, ["pull", "--ff-only"]);
+        match &pulled {
+            Ok(()) => {
+                journal::note(format!(
+                    "updated the checkout of the global config in {}",
+                    checkout.display_user()
+                ));
+                generation.finish(
+                    None,
+                    Some(Summary {
+                        message: Some("checkout of the global config".into()),
+                    }),
+                );
+            }
+            Err(err) => generation.finish(Some(format!("{err:#}")), None),
+        }
+        pulled.wrap_err_with(|| {
+            format!(
+                "could not fast-forward the global config in {}",
+                checkout.display_user()
+            )
+        })?;
+        Ok(git_stdout(checkout, ["rev-parse", "HEAD"]) != before)
+    }
+
     /// Runs the bootstrap itself as a child process from `checkout` (the
     /// global configuration directory for `--adopt`), trusted for it.
     async fn run_child_bootstrap(&self, checkout: PathBuf) -> Result<()> {
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
+        // the checkout, and with it any config directory inside it, is
+        // already where `--update` wanted it
+        command.env(CONFIG_UPDATED_ENV, "1");
         command.args(bootstrap_from_child_args(
             &checkout,
             &crate::env::ARGS.read().unwrap(),
@@ -2857,6 +2982,7 @@ impl Bootstrap {
             task_cache_explain_json: false,
             task_cache_stats: false,
             timeout: None,
+            lock_timeout: None,
             skip_deps: false,
             // a dry run must not auto-install tools before the (not actually
             // run) task, and --skip tools must keep the task runner from

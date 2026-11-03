@@ -368,6 +368,12 @@ pub(crate) struct Run {
     #[usage(long)]
     pub timeout: Option<String>,
 
+    /// Fail a task that waits longer than this for a lock, e.g. 30s or 5m
+    ///
+    /// Overrides the `task.lock_timeout` setting.
+    #[usage(long)]
+    pub lock_timeout: Option<String>,
+
     /// Show the elapsed time after each task completes
     ///
     /// Set `task.timings = true` to show it by default.
@@ -1132,7 +1138,7 @@ impl Run {
                     on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
                     continue_on_error: this.continue_on_error,
                 },
-                |task, deps_for_remove, allow_during_interruption, injected| {
+                |task, deps_for_remove, allow_during_interruption, injected, covered| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
@@ -1142,6 +1148,7 @@ impl Run {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                             spawn_context,
                         )
                         .await
@@ -1186,6 +1193,7 @@ impl Run {
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
         injected: bool,
+        covered: crate::task::task_scheduler::Cover,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -1203,9 +1211,10 @@ impl Run {
             );
             return Ok(());
         }
-        let needs_task_permit = task_needs_permit(&task);
+        // A covered task runs under the slot of the locked task that started it.
+        let needs_task_permit = task_needs_permit(&task) && !covered.is_covered();
         let needs_install = injected && !this.skip_tools;
-        let mut permit_opt = if needs_task_permit || needs_install {
+        let mut permit_opt = if needs_task_permit || (needs_install && !covered.is_covered()) {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(
@@ -1318,6 +1327,7 @@ impl Run {
                 allow_during_interruption,
                 otel_span_cx,
                 injected,
+                covered,
             }))
             .catch_unwind()
             .await
@@ -1613,6 +1623,10 @@ impl Run {
             task_cache: self.task_cache,
             task_cache_explain: self.task_cache_explain,
             task_cache_explain_json: self.task_cache_explain_json,
+            lock_timeout: match &self.lock_timeout {
+                Some(value) => Some(duration::parse_duration(value)?),
+                None => Settings::get().task_lock_timeout_duration(),
+            },
             secrets_file_dir: self.tmpdir.join("secrets"),
             secrets_denied: self.secrets_denied,
             cli_secrets: self.cli_secrets.take(),
