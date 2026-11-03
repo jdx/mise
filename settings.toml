@@ -877,6 +877,38 @@ parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
+[env_sets]
+description = "Named sets of config environments, which `env` and `-E` can name."
+docs = """
+Defines names that stand for several [config environments](/configuration/environments.html).
+Put them in a shared `miserc.toml` and select them by name:
+
+```toml
+# miserc.toml, in git
+[env_sets]
+server = ["server", "ssh", "pac"]
+workstation = ["workstation", "ssh", "pac", "raycast"]
+```
+
+```toml
+# ~/.config/mise/miserc.local.toml, on this machine
+env = ["workstation"]
+```
+
+`env`, `MISE_ENV` and `-E` expand a set name to its environments, in the order
+the set lists them, before mise reads any config. `{{ mise_env }}` and the
+`MISE_ENV` that mise exports hold the expanded list. A name that is not a set is an
+environment, so a machine can still list environments one by one. A set expands one
+level: a set cannot contain another set, and a set may list an environment of its
+own name (`server` above). An environment that appears twice keeps its first position.
+
+A project `.miserc.toml` cannot define a set named like one the system or global
+`miserc.toml` defines, or like an environment it selects; among the other files, the closest one wins for each name.
+"""
+optional = true
+rc = true
+type = "IndexMap<String, Vec<String>>"
+
 [env_shell_expand]
 default = true
 description = "Expand shell-style variables such as `$FOO` and `${BAR:-default}` in `[env]` values."
@@ -2639,8 +2671,9 @@ When on, `mise install` fetches the attestations the public npm registry holds
 for the tool's package and requires the SLSA provenance among them to verify
 against the integrity hash the install locks. A package that publishes no
 provenance, or a private registry that serves none, installs as it does with
-this off. Provenance built outside GitHub Actions, such as on GitLab CI, is not
-accepted yet, so such a package fails to install while this is on.
+this off. Provenance must come from GitHub Actions or from CI on gitlab.com;
+provenance built anywhere else, such as on a self-hosted GitLab, is not accepted
+yet, so such a package fails to install while this is on.
 [`paranoid`](/configuration/settings.html#paranoid) turns it on for the
 `provenance` category.
 """

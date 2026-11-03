@@ -150,6 +150,31 @@ pub(crate) async fn verify_github_attestation_sources_for_sha512_with_trust_root
     .await
 }
 
+/// [`verify_github_attestation_sources_for_sha512`] for attestations from
+/// GitHub Actions or gitlab.com CI, such as the SLSA provenance npm publishes.
+/// Each verified attestation yields its repository qualified by forge
+/// (`github.com/owner/repo`, `gitlab.com/group/project`); one from any other
+/// issuer names no repository and does not count.
+pub async fn verify_forge_attestation_sources_for_sha512(
+    sha512: &[u8],
+    attestations: &[Attestation],
+) -> Result<Vec<String>> {
+    if attestations.is_empty() {
+        return Err(AttestationError::NoAttestations);
+    }
+
+    let digest = ArtifactDigest::new(HashAlgorithm::Sha2512, sha512)
+        .map_err(|e| AttestationError::Verification(e.to_string()))?;
+    verify_sources(
+        Artifact::from_digest(digest),
+        attestations,
+        None,
+        &mut TrustRoots::default(),
+        bundle_forge_source_repository,
+    )
+    .await
+}
+
 pub(crate) async fn verify_github_attestation_sources_for_artifact(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
@@ -169,6 +194,23 @@ async fn verify_github_attestation_sources_with_trust_roots(
     attestations: &[Attestation],
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
+) -> Result<Vec<String>> {
+    verify_sources(
+        artifact,
+        attestations,
+        signer_workflow,
+        trust_roots,
+        bundle_source_repository,
+    )
+    .await
+}
+
+async fn verify_sources(
+    artifact: Artifact<'_>,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+    trust_roots: &mut TrustRoots,
+    source_of: fn(&Bundle) -> Option<String>,
 ) -> Result<Vec<String>> {
     let mut sources = Vec::new();
     let mut errors = Vec::new();
@@ -195,7 +237,7 @@ async fn verify_github_attestation_sources_with_trust_roots(
         )
         .await
         {
-            Ok(()) => match bundle_source_repository(&bundle) {
+            Ok(()) => match source_of(&bundle) {
                 Some(repository) => sources.push(repository),
                 None => {
                     const ERROR: &str = "verified attestation names no source repository";
