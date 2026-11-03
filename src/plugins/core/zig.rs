@@ -80,17 +80,17 @@ impl ZigPlugin {
     /// Whether a locked `url` can be downloaded for `version` without the
     /// index. The signature only proves the archive matches its own file name,
     /// so that name must be this version's, with no query to change it. Older
-    /// mise wrote `zig-{os}-...` names for 0.14.1 and later when the index was
-    /// unreadable; those files do not exist, so the index resolves them.
+    /// mise wrote `zig-{os}-...` names for 0.14.1 and later, and `.tar.xz` on
+    /// Windows, when the index was unreadable; those files do not exist, so
+    /// the index resolves them.
     fn usable_locked_url(url: &str, version: &str, os: &str) -> bool {
         let Some(filename) = url.rsplit('/').next() else {
             return false;
         };
-        let names_version = [".tar.xz", ".zip"].iter().any(|ext| {
-            filename
-                .strip_suffix(ext)
-                .is_some_and(|stem| stem.ends_with(&format!("-{version}")))
-        });
+        let ext = if os == "windows" { ".zip" } else { ".tar.xz" };
+        let names_version = filename
+            .strip_suffix(ext)
+            .is_some_and(|stem| stem.ends_with(&format!("-{version}")));
         let wrong_order = Self::arch_first(version) && filename.starts_with(&format!("zig-{os}-"));
         !url.contains('?') && names_version && !wrong_order
     }
@@ -650,5 +650,7 @@ mod tests {
         // What the old fallback wrote for releases that use the new order.
         let old_fallback = "https://ziglang.org/download/0.17.0/zig-linux-x86_64-0.17.0.tar.xz";
         assert!(!usable(old_fallback, "0.17.0", "linux"));
+        let old_windows = "https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.tar.xz";
+        assert!(!usable(old_windows, "0.13.0", "windows"));
     }
 }
