@@ -134,7 +134,7 @@ mirror has no release index, so `latest` resolves to the release its `stable`
 channel points at, and an exact version such as `1.80.0` is accepted when the
 mirror serves `dist/channel-rust-1.80.0.toml`. Older releases cannot be
 discovered, so prefix selectors such as `1.80` and a
-[release-age cutoff](/configuration/settings.html#install_before) older than the
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) cutoff older than the
 current stable build only match that stable release.
 
 ## Cache Cargo builds with Mr Boxington {#share-cargo-builds-with-mr-boxington}
