@@ -5532,6 +5532,7 @@ pub(crate) fn get_locked_version(
         return Ok(None);
     };
     let mut merged = false;
+    let monorepo_lockfile = config.monorepo_lockfile_root().is_some();
     let lockfile = match source {
         ToolSource::MiseToml(path) => {
             trace!(
@@ -5717,21 +5718,39 @@ pub(crate) fn get_locked_version(
                 }
             }
 
-            // A merged view mixes other configs' pins, so only a lockfile of
+            // A merged view, or a monorepo root lockfile shared by its
+            // subprojects, mixes other configs' pins, so only a lockfile of
             // the request's own config can say its lone entry is this pin.
-            if alias_resolved
-                && !merged
-                && let [found] = tools
+            if alias_resolved && !merged && !monorepo_lockfile {
+                let only_entry = |options_match: &dyn Fn(&LockfileTool) -> bool| match tools
                     .iter()
-                    .filter(|v| &v.options == request_options)
+                    .filter(|v| options_match(v))
                     .collect_vec()
                     .as_slice()
-            {
-                trace!(
-                    "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {}",
-                    found.version
-                );
-                return Ok(Some((*found).clone()));
+                {
+                    [found] => Some(*found),
+                    _ => None,
+                };
+                if let Some(found) = only_entry(&|v| &v.options == request_options) {
+                    trace!(
+                        "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {}",
+                        found.version
+                    );
+                    return Ok(Some(found.clone()));
+                }
+                if legacy_options_fallback
+                    && !request_options.is_empty()
+                    && let Some(found) = only_entry(&|v| v.options.is_empty())
+                {
+                    trace!(
+                        "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {} without options and dropping its artifact data",
+                        found.version
+                    );
+                    return Ok(Some(lockfile_tool_with_request_options(
+                        found,
+                        request_options,
+                    )));
+                }
             }
         }
         Ok(None)
