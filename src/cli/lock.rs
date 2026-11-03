@@ -790,10 +790,11 @@ impl Lock {
             .chain(setup.tasks.values().filter_map(|task| task.file.as_ref()))
             .map(|path| Ok((path.clone(), read_optional_file(path)?)))
             .collect::<Result<BTreeMap<_, _>>>()?;
-        let scoped_config_paths = if setup.installed.is_some() {
-            setup.effective_config_files.keys().cloned().collect()
-        } else {
-            self.config_paths_in_lock_scope(config, setup.effective_config_files)
+        let scoped_config_paths = match setup.installed {
+            Some(installed) => {
+                self.config_paths_after_install(config, setup.effective_config_files, installed)
+            }
+            None => self.config_paths_in_lock_scope(config, setup.effective_config_files),
         };
         let lockfile_targets =
             self.get_lockfile_targets(config, setup.effective_config_files, &scoped_config_paths);
@@ -2240,6 +2241,46 @@ impl Lock {
             .collect()
     }
 
+    /// The configs whose lockfiles an install regenerates: those of the config
+    /// root plain `mise lock` locks, and those of any other lockfile that a tool
+    /// the command installed or a config it edited writes to. A project install
+    /// therefore leaves the global lockfile alone unless it installed a global
+    /// tool, and `mise use -g` or `mise unuse -g` still update it.
+    fn config_paths_after_install(
+        &self,
+        config: &Config,
+        effective_config_files: &ConfigMap,
+        installed: &[crate::toolset::ToolVersion],
+    ) -> BTreeSet<PathBuf> {
+        let monorepo_root = config.monorepo_lockfile_root();
+        let changed_lockfiles = installed
+            .iter()
+            .filter_map(|tv| lockfile::lockfile_path_for_tool_source(config, tv.request.source()))
+            .map(|(path, _)| path)
+            .chain(
+                crate::config::config_file::saved_configs()
+                    .iter()
+                    .map(|path| {
+                        lockfile::lockfile_path_for_config(path, monorepo_root.as_deref()).0
+                    }),
+            )
+            .collect::<Vec<_>>();
+        let mut scoped = self.config_paths_in_lock_scope(config, effective_config_files);
+        scoped.extend(
+            effective_config_files
+                .keys()
+                .filter(|path| {
+                    let (lockfile_path, _) =
+                        lockfile::lockfile_path_for_config(path, monorepo_root.as_deref());
+                    changed_lockfiles
+                        .iter()
+                        .any(|changed| lockfile::same_file_path(changed, &lockfile_path))
+                })
+                .cloned(),
+        );
+        scoped
+    }
+
     fn target_lock_scope_root(config: &Config) -> Option<PathBuf> {
         config.project_root.clone().or_else(|| {
             config
@@ -2339,6 +2380,7 @@ impl Lock {
         let config = context.config;
         let ts = context.toolset;
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
+        let target_lockfile = Lockfile::read(target_lockfile_path).unwrap_or_default();
 
         let mut all_tools: Vec<LockTool> = Vec::new();
         let locks_here = |source: &ToolSource| {
@@ -2466,6 +2508,24 @@ impl Lock {
                                 });
                             let should_resolve_overridden =
                                 unlock_overridden || requested_tool && shadowed_elsewhere;
+                            // The shared backend follows the lockfile with the highest
+                            // precedence, which is the shadowing config's. Lock this
+                            // request under the backend this lockfile records for it.
+                            let own_backend_request;
+                            let request = match shadowed_elsewhere
+                                .then(|| target_lockfile.locked_backend(&ba.short))
+                                .flatten()
+                            {
+                                Some(locked) if locked != ba.stored_full() => {
+                                    own_backend_request =
+                                        request.clone().with_backend(crate::args::BackendArg::new(
+                                            ba.short.clone(),
+                                            Some(locked),
+                                        ));
+                                    &own_backend_request
+                                }
+                                _ => request,
+                            };
                             if !matched_resolved && should_resolve_overridden {
                                 let mut resolve_options = match request
                                     .resolve_options(context.resolve_options)
@@ -2497,7 +2557,7 @@ impl Lock {
                                     Ok(tv) => {
                                         push_unique_lock_tool(
                                             &mut all_tools,
-                                            (ba.as_ref().clone(), tv),
+                                            (request.ba().as_ref().clone(), tv),
                                         );
                                     }
                                     Err(err) => {

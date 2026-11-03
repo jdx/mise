@@ -1452,6 +1452,12 @@ impl Lockfile {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
+    /// The backend this lockfile locks `short` under; see [`locked_backend`].
+    pub fn locked_backend(&self, short: &str) -> Option<String> {
+        let entries = self.tools_for(short)?.iter().collect::<Vec<_>>();
+        locked_backend(&entries, None)
+    }
+
     /// The version and recorded backend of each of `short`'s entries that
     /// names a backend.
     pub fn locked_backends(&self, short: &str) -> Vec<(String, String)> {

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# Installing in a project rewrites the global lockfile only when the install
+# changed a global tool, and a global request that the project shadows keeps
+# the backend the global lockfile records for it.
+#
+# hk moved from Aqua to Packslip, which serves releases from 1.58.1. The
+# project's lockfile below stands in for one written before that move: it
+# locks the same release under aqua while the global lockfile uses packslip.
+
+export MISE_LOCKFILE_MODE=generate
+export MISE_MINIMUM_RELEASE_AGE=0
+detect_platform
+other_platform=linux-arm64
+if [[ $MISE_PLATFORM == linux-arm64 ]]; then
+  other_platform=linux-x64
+fi
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[settings]
+lockfile = true
+lockfile_platforms = ["$MISE_PLATFORM"]
+
+[tools]
+hk = "latest"
+TOML
+assert_succeed "mise lock --global"
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+cp "$MISE_CONFIG_DIR/mise.lock" global.lock.before
+
+mkdir proj
+cd proj || exit 1
+cat >mise.toml <<TOML
+[settings]
+lockfile = true
+lockfile_platforms = ["$MISE_PLATFORM", "$other_platform"]
+
+[tools]
+hk = "latest"
+TOML
+assert_succeed "mise lock"
+sed -i -e 's|"packslip:github.com/jdx/hk"|"aqua:jdx/hk"|' -e '/^signer = /d' -e '/^repository_ids = /d' mise.lock
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
+
+echo "=== a project install leaves the global lockfile alone ==="
+assert_succeed "mise install"
+assert "diff ../global.lock.before $MISE_CONFIG_DIR/mise.lock && echo same" "same"
+
+echo "=== so does an install with nothing to do ==="
+assert_succeed "mise install"
+assert "diff ../global.lock.before $MISE_CONFIG_DIR/mise.lock && echo same" "same"
+
+echo "=== locking the global config from the project keeps its backend ==="
+assert_succeed "mise lock --global"
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'aqua:'
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
+cd .. || exit 1
+assert_succeed "mise lock --global"
+
+echo "=== editing the global config from the project still updates its lockfile ==="
+cd proj || exit 1
+assert_succeed "mise unuse -g --no-prune hk"
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock 2>/dev/null || true" "tools.hk"
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
