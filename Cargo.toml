@@ -336,7 +336,7 @@ toml = "1"
 
 [dev-dependencies]
 insta = { version = "1", features = ["filters", "json"] }
-jsonschema = { version = "0.59", default-features = false }
+jsonschema = { version = "0.60", default-features = false }
 mockito = "1"
 opentelemetry_sdk = { version = "0.33", default-features = false, features = [
   "testing",
