@@ -680,11 +680,24 @@ pub async fn generate(
             let recorded = previous
                 .tools_for(short)
                 .and_then(|previous_entries| {
-                    previous_entries.iter().find(|previous| {
-                        previous.version == entry.version
-                            && previous.backend == entry.backend
-                            && previous.options == entry.options
-                    })
+                    // The repository is a property of the package, so a pin
+                    // survives a change of install options: prefer the entry
+                    // with the same options, else any of the same version.
+                    let same_package = |previous: &&LockfileTool| {
+                        previous.version == entry.version && previous.backend == entry.backend
+                    };
+                    previous_entries
+                        .iter()
+                        .filter(same_package)
+                        .find(|previous| {
+                            previous.options == entry.options && previous.provenance.is_some()
+                        })
+                        .or_else(|| {
+                            previous_entries
+                                .iter()
+                                .filter(same_package)
+                                .find(|previous| previous.provenance.is_some())
+                        })
                 })
                 .and_then(|previous| previous.provenance.clone());
             if let (Some(verified), Some(recorded)) = (&verified, &recorded)

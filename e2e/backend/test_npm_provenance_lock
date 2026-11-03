@@ -39,4 +39,5 @@ TOML
   # category does the check on its own.
   assert_fail_contains "MISE_NPM_PROVENANCE=0 MISE_PARANOID=provenance mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
   assert_succeed "MISE_NPM_PROVENANCE=0 mise -C $mode install"
+  assert_contains "cat $mode/mise.lock" 'repository = "github.com/example/other"'
 done
