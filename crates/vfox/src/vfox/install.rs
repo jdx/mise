@@ -179,34 +179,39 @@ impl Vfox {
         let no_redirect_client = no_redirect_client()?;
         file::mkdirp(path.parent().unwrap())?;
         // Streamed to the file, so an archive is never held in memory whole.
-        download_to_file(&url_str, path, || async {
-            let resp = match plugin_headers.filter(|h| !h.is_empty()) {
-                Some(plugin_headers) => {
-                    // The headers belong to the plugin's own `url`; a rewritten
-                    // mirror is not trusted with them.
-                    match self
-                        .get_following_redirects(
-                            no_redirect_client,
-                            &request_url,
-                            url,
-                            plugin_headers,
-                        )
-                        .await?
-                    {
-                        Some(resp) => resp,
-                        None => return Ok(None),
+        download_to_file(
+            &url_str,
+            path,
+            self.download_progress.as_deref(),
+            || async {
+                let resp = match plugin_headers.filter(|h| !h.is_empty()) {
+                    Some(plugin_headers) => {
+                        // The headers belong to the plugin's own `url`; a rewritten
+                        // mirror is not trusted with them.
+                        match self
+                            .get_following_redirects(
+                                no_redirect_client,
+                                &request_url,
+                                url,
+                                plugin_headers,
+                            )
+                            .await?
+                        {
+                            Some(resp) => resp,
+                            None => return Ok(None),
+                        }
                     }
-                }
-                None => {
-                    let mut request = client.get(request_url.clone());
-                    if let Some(resolver) = &self.http_headers_resolver {
-                        request = request.headers(resolver(&request_url));
+                    None => {
+                        let mut request = client.get(request_url.clone());
+                        if let Some(resolver) = &self.http_headers_resolver {
+                            request = request.headers(resolver(&request_url));
+                        }
+                        request.send().await?
                     }
-                    request.send().await?
-                }
-            };
-            Ok(Some(resp))
-        })
+                };
+                Ok(Some(resp))
+            },
+        )
         .await??
         .ok_or_else(|| format!("too many redirects downloading {request_url}"))?;
         Ok(())

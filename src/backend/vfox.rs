@@ -488,6 +488,13 @@ impl Backend for VfoxBackend {
         let (mut vfox, _log_rx) = self.plugin.vfox()?;
         let pr = Arc::clone(&ctx.pr);
         vfox.set_log_handler(move |line| pr.set_message(normalize_install_log(&line)));
+        let pr = Arc::clone(&ctx.pr);
+        vfox.set_download_progress(move |written, total| {
+            if let Some(total) = total {
+                pr.set_length(total);
+            }
+            pr.set_position(written);
+        });
         let (cmd_env, tool_options) = self.install_cmd_env(ctx, &tv).await?;
         if !cmd_env.is_empty() {
             vfox.cmd_env = Some(cmd_env);
