@@ -63,7 +63,7 @@ test("the timing patterns catch what they name, and pass what they do not", () =
   ])
     assert.ok(namesPlaceholder(t), t);
   for (const t of [
-    "linked /home/you/work/api/.claude/skills/hk-debug -> /home/you/.local/share/mise",
+    "linked /home/you/work/api/.agents/skills/hk-debug -> /home/you/.local/share/mise",
     "/home/you/.local/share/mise/installs/hk/2.2.0/skills/hk-configure",
   ])
     assert.ok(!namesPlaceholder(t), t);
