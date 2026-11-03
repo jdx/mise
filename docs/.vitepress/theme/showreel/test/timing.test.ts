@@ -69,6 +69,16 @@ test("the timing patterns catch what they name, and pass what they do not", () =
     assert.ok(!namesPlaceholder(t), t);
 });
 
+/**
+ * mise 2026.11.0 draws `lock … ✔` rows in C19's install: `mise install`
+ * prepares the lockfile's other platforms in the background and shows that
+ * as checked rows from the install's first frame, before any cut. A later
+ * release draws none (lockfile/generate.rs `prepare_install`); once the reel
+ * records with one, delete this and its use.
+ */
+const lockPreparedInClone = (section: string, row: string): boolean =>
+  section === "clone" && /^lock\s/.test(row);
+
 const { facts, report } = loadFacts(REPO);
 
 test("at 60 fps, timing text only moves under the time-lapse badge, no progress row is checked, and placeholders are badged", (t) => {
@@ -92,7 +102,11 @@ test("at 60 fps, timing text only moves under the time-lapse badge, no progress 
     const lapse = texts.includes("time-lapse");
     const next = new Map<string, number>();
     for (const row of rows) {
-      if (PROGRESS.test(row) && /[✓✔]/.test(row))
+      if (
+        PROGRESS.test(row) &&
+        /[✓✔]/.test(row) &&
+        !lockPreparedInClone(sectionAt(at), row)
+      )
         flag(at, `a checked progress row: ${JSON.stringify(row)}`);
       if (!TIMING.test(row)) continue;
       timed++;
