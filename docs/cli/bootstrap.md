@@ -73,6 +73,9 @@ resource-level changes.
 - **`--prompt-vars`** — Ask for `[vars]` entries that declare a `prompt` and have no saved answer
 
   mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default. A `--dry-run` still saves the answers it asks for.
+- **`--save-env`** — Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`
+
+  Writes `env` in the `miserc.local.toml` of mise's config directory, so later runs, including `mise bootstrap --update`, select the same environments without `-E`. Names may be sets from `[env_sets]` in `miserc.toml`. Other keys in the file are kept. Needs `-E` or `MISE_ENV`, and a `--dry-run` writes nothing.
 - **`--skip <PART>`** — Skip these parts
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--only`.

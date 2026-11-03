@@ -668,6 +668,13 @@ Ask for `[vars]` entries that declare a `prompt` and have no saved answer
 mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default. A `--dry-run` still saves the answers it asks for.
 """#
     }
+    flag --save-env help="Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`" {
+        long_help #"""
+Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`
+
+Writes `env` in the `miserc.local.toml` of mise's config directory, so later runs, including `mise bootstrap --update`, select the same environments without `-E`. Names may be sets from `[env_sets]` in `miserc.toml`. Other keys in the file are kept. Needs `-E` or `MISE_ENV`, and a `--dry-run` writes nothing.
+"""#
+    }
     flag --skip help="Skip these parts" var=#true {
         long_help #"""
 Skip these parts
@@ -8839,4 +8846,12 @@ node
 mise which node --version
 20.0.0
 """# help="Show the version that provides it"
+}
+config {
+    prop task.remote_no_cache optional=#true type=bool env=MISE_TASK_REMOTE_NO_CACHE help="Do not use the cache for remote tasks" {
+        cli "--no-cache"
+    }
+    prop truncate optional=#true type=bool help="Truncate long terminal output to fit the available width" {
+        cli "--truncate" "--no-truncate"
+    }
 }

@@ -224,6 +224,26 @@ fn github_repository_from_uri_requires_owner_and_repo() {
 }
 
 #[test]
+fn gitlab_project_from_uri_accepts_groups_and_subgroups() {
+    assert_eq!(
+        gitlab_project_from_uri("https://gitlab.com/group/project").as_deref(),
+        Some("group/project")
+    );
+    assert_eq!(
+        gitlab_project_from_uri("https://gitlab.com/group/sub/project").as_deref(),
+        Some("group/sub/project")
+    );
+    assert_eq!(gitlab_project_from_uri("https://gitlab.com/group"), None);
+    assert_eq!(gitlab_project_from_uri("https://gitlab.com/group//x"), None);
+    assert_eq!(gitlab_project_from_uri("https://gitlab.com/a/../b"), None);
+    assert_eq!(gitlab_project_from_uri("https://github.com/jdx/mise"), None);
+    assert_eq!(
+        gitlab_project_from_uri("https://gitlab.example.com/group/project"),
+        None
+    );
+}
+
+#[test]
 fn signer_workflow_requires_identity() {
     let err = verify_signer_workflow_identity(None, Some(".github/workflows/release.yml"))
         .unwrap_err()

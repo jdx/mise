@@ -70,6 +70,31 @@ Use `.miserc.local.toml` (not committed) for a personal choice, and
 [`.miserc.toml`](/configuration.html#miserc) for every location and how the
 files combine.
 
+### Name sets of environments {#env-sets}
+
+When machines select several environments at once, name the groups in a shared
+`miserc.toml` with [`env_sets`](/configuration/settings.html#env_sets) and select
+the names:
+
+```toml [miserc.toml]
+[env_sets]
+server = ["server", "ssh", "pac"]
+workstation = ["workstation", "ssh", "pac", "raycast"]
+```
+
+```toml [~/.config/mise/miserc.local.toml]
+env = ["workstation"]
+```
+
+This machine loads `workstation`, `ssh`, `pac` and `raycast`, in that order, and
+`{{ mise_env }}` holds that list. `-E workstation` and `MISE_ENV=workstation`
+expand the same way. A name that is not a set is an environment, so
+`env = ["workstation", "ci"]` also works. A set expands one level and cannot
+contain another set, and an environment listed twice keeps its first position.
+
+A project `.miserc.toml` cannot define a set named like one the system or global
+`miserc.toml` defines, or like an environment it selects.
+
 ## File names and precedence {#file-names-and-precedence}
 
 In a project directory, a file higher in this table overrides one lower down:

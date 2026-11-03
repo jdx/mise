@@ -1546,6 +1546,15 @@ impl Config {
                 );
                 continue;
             }
+            // A file tracked when it counted as a config (an idiomatic file some
+            // enabled tool once claimed) that nothing recognizes now is stale, not broken.
+            if matches!(&detection, config_file::ConfigFileDetection::Unknown) {
+                debug!(
+                    "skipping unrecognized tracked config: {}",
+                    display_path(&path)
+                );
+                continue;
+            }
             match config_file::parse_detected(&path, detection).await {
                 Ok(cf) => {
                     config_files.insert(path, cf);
