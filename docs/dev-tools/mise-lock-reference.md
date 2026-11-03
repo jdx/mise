@@ -80,11 +80,12 @@ The top level can contain:
 | 1                  | `specifiers`, which bind each request to the entry it resolved to                    |
 | 2                  | npm and PyPI dependency graphs in [sidecar directories](#native-dependency-sidecars) |
 | 3                  | `repository_ids` for packslip tools                                                  |
+| 4                  | `provenance`, the [source repository](#npm-package-provenance) of an npm tool        |
 
-New lockfiles use version 3. mise keeps an existing lockfile at its version
+New lockfiles use version 4. mise keeps an existing lockfile at its version
 during ordinary updates, so teammates on an older mise can still read it. A
-lockfile older than version 3 omits packslip repository IDs, and mise warns when
-a release provides them. A mise that is older than a lockfile's format refuses to
+lockfile older than version 3 omits packslip repository IDs, and one older than
+version 4 omits npm source repositories; mise warns when a release provides them. A mise that is older than a lockfile's format refuses to
 read it.
 
 Run `mise lock --upgrade` to move a lockfile to the latest format. It processes
@@ -92,7 +93,7 @@ every configured tool and cannot be combined with tool arguments. `mise lock`
 warns when a lockfile uses an older format. Other lockfile-aware commands warn
 once a newer format has been out for six months: version 0 lockfiles after
 23 February 2027, version 1 after 13 March 2027, and version 2 after
-27 March 2027.
+27 March 2027, and version 3 after 3 May 2027.
 
 ## Entry fields {#tool-entry-fields}
 
@@ -104,6 +105,7 @@ once a newer format has been out for six months: version 0 lockfiles after
 | `specifiers` | 1       | The requests that resolve to this version and option variant                                                             |
 | `aube`       | 2       | `{ path, digest }` of an npm tool's embedded-aube [sidecar](#native-dependency-sidecars)                                 |
 | `uv`         | 2       | `{ path, digest }` of a PyPI tool's uv [sidecar](#native-dependency-sidecars)                                            |
+| `provenance` | 4       | `{ repository }` an npm tool's package was built from, as its [provenance](#npm-package-provenance) showed               |
 
 A shorthand keeps the `backend` recorded here after the registry moves the tool
 to another backend; see
@@ -189,7 +191,8 @@ provenance = { repository = "github.com/sigstore/sigstore-js" }
 install must show provenance from that repository, so a release published from
 another repository fails. A package that stops publishing provenance fails too,
 rather than installing unchecked. The entry is recorded by `mise install`, not by
-`mise lock`, and only while `npm.provenance` is on.
+`mise lock`, and only while `npm.provenance` is on. A version that is already
+installed is not verified again; reinstall it to check it against the entry.
 
 ## Platform keys
 

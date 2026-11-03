@@ -680,6 +680,42 @@ pub async fn generate(
             });
         }
     }
+    // A pin is the repository the install verified, or else the one already
+    // recorded for this version. An install that showed another repository
+    // than the recorded one must not replace the pin.
+    for (short, entries) in &mut candidate.tools {
+        for entry in entries.iter_mut() {
+            let verified = installed
+                .iter()
+                .filter(|tv| {
+                    crate::toolset::install_state::state_short(&tv.ba().short) == short.as_str()
+                        && tv.version == entry.version
+                        && tv.ba().stored_full() == entry.backend.clone().unwrap_or_default()
+                })
+                .find_map(|tv| tv.npm_provenance.clone());
+            let recorded = previous
+                .tools_for(short)
+                .and_then(|previous_entries| {
+                    previous_entries.iter().find(|previous| {
+                        previous.version == entry.version
+                            && previous.backend == entry.backend
+                            && previous.options == entry.options
+                    })
+                })
+                .and_then(|previous| previous.provenance.clone());
+            if let (Some(verified), Some(recorded)) = (&verified, &recorded)
+                && verified != recorded
+            {
+                bail!(
+                    "{short}@{} was built from {}, but mise.lock pins its provenance to {}; previous files were preserved",
+                    entry.version,
+                    verified.repository,
+                    recorded.repository
+                );
+            }
+            entry.provenance = verified.or(recorded);
+        }
+    }
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut().filter(|entry| entry.uv.is_none()) {
             entry.uv = previous
