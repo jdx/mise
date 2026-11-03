@@ -5391,10 +5391,11 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
     read_lockfile_at(lockfile_path, legacy_path, trusted)
 }
 
-/// Read the lockfile at `path` uncached, reduced to what it may decide unless
+/// Read the lockfile at `path` uncached, merged with the legacy monorepo
+/// lockfiles that migrate into it, and reduced to what it may decide unless
 /// its config is trusted ([`Lockfile::drop_what_needs_trust`]).
 pub fn read_lockfile_as_trusted(config: &Config, path: &Path) -> Lockfile {
-    let mut lockfile = Lockfile::read(path).unwrap_or_default();
+    let mut lockfile = generate::read_previous(config, path, true).unwrap_or_default();
     if !lockfile_is_trusted(config, path) {
         lockfile.drop_what_needs_trust(path);
     }
