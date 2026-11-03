@@ -388,7 +388,12 @@ fn bootstrap_shims_current(
 
 #[cfg(windows)]
 fn has_stale_windows_shim_variants(shims_dir: &Path, desired: &BTreeSet<String>) -> bool {
-    stale_windows_shim_variants(desired).any(|variant| shims_dir.join(variant).exists())
+    // The prune also deletes a variant's `.old` copy, and `symlink_metadata`
+    // sees a dangling symlink that `exists` does not.
+    stale_windows_shim_variants(desired).any(|variant| {
+        let path = shims_dir.join(variant);
+        path.symlink_metadata().is_ok() || old_shim_path(&path).symlink_metadata().is_ok()
+    })
 }
 
 #[cfg(not(windows))]
