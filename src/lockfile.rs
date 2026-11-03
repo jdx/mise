@@ -1817,7 +1817,7 @@ impl Lockfile {
                 .any(|tool| tool.provenance.is_some())
         {
             warn!(
-                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; omitting it from revision {}. Run `mise lock --upgrade` to record it",
+                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; omitting it from revision {}. Run `mise lock --upgrade`, then `mise install --force` to verify and record it",
                 self.lockfile_version
             );
         }
