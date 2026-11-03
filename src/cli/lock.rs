@@ -2380,7 +2380,8 @@ impl Lock {
         let config = context.config;
         let ts = context.toolset;
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
-        let target_lockfile = Lockfile::read(target_lockfile_path).unwrap_or_default();
+        // An untrusted lockfile may not choose a backend.
+        let target_lockfile = lockfile::read_lockfile_as_trusted(config, target_lockfile_path);
 
         let mut all_tools: Vec<LockTool> = Vec::new();
         let locks_here = |source: &ToolSource| {
