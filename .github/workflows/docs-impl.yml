@@ -47,9 +47,11 @@ jobs:
   # reads (xtasks/docs/showreel lists them). Captures use the newest mise
   # release, so a release that moves mise's node `lts` alias changes the key
   # and is the run that re-renders; other releases find main's render and
-  # don't wait on one. Nothing here fails the job: on any failure it leaves
-  # the last good render, with a warning on the run. With no render at all,
-  # the docs job below fails the run rather than build the site without one.
+  # don't wait on one. A failed lookup, recording or render leaves the last
+  # good render, with a warning on the run; a step before the cache is
+  # mounted (checkout, mise-action, aube install) fails the job instead.
+  # With no render either way, the docs job below fails the run rather than
+  # build the site without one.
   showreel:
     if: github.repository == 'jdx/mise' && inputs.trusted && github.event_name != 'pull_request'
     runs-on: ${{ inputs.trusted && 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-docs-showreel' || 'ubuntu-latest' }}

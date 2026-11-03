@@ -238,7 +238,11 @@ restore() {
 	# The chapters track the render was made with (renders kept before it
 	# was kept with them serve the checkout's).
 	if [ -s "$dir/$chapters_vtt" ]; then
-		cp "$dir/$chapters_vtt" "$public/$chapters_vtt" || return 1
+		if ! { cp "$dir/$chapters_vtt" "$public/.$chapters_vtt.partial" && mv -f "$public/.$chapters_vtt.partial" "$public/$chapters_vtt"; }; then
+			rm -f "$public/.$chapters_vtt.partial"
+			clear_public
+			return 1
+		fi
 	fi
 	# Recently used, for pruning.
 	touch "$dir" || true
