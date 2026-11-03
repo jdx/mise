@@ -87,4 +87,56 @@ function M.find(sdk_path)
     return find_python(version), version
 end
 
+--- Where the interpreter chosen for an SDK is remembered. It lives inside the
+--- SDK directory, so a new gcloud version starts with no cache. The first line
+--- is the Python version the SDK required, the second the interpreter path.
+local function cache_path(sdk_path)
+    return file.join_path(sdk_path, ".mise-cloudsdk-python")
+end
+
+--- Return the cached interpreter if it was chosen for `version` and still exists.
+local function read_cache(sdk_path, version)
+    local handle = io.open(cache_path(sdk_path), "r")
+    if not handle then
+        return nil
+    end
+    local contents = handle:read("*a")
+    handle:close()
+    local cached_version, cached = string.match(contents or "", "^%s*([^\n]+)\n%s*([^\n]+)")
+    if cached_version == version and cached and file.exists(strings.trim_space(cached)) then
+        return strings.trim_space(cached)
+    end
+end
+
+local function write_cache(sdk_path, version, python)
+    local handle = io.open(cache_path(sdk_path), "w")
+    if handle then
+        handle:write(version, "\n", python, "\n")
+        handle:close()
+    end
+end
+
+--- Like `find`, for callers that run on every shell prompt (`EnvKeys`). The
+--- interpreter found by a full probe is remembered next to the SDK together
+--- with the Python version the SDK required, and later calls only re-read that
+--- requirement and check that the interpreter still exists, falling back to
+--- the probe when either changed (`gcloud components update` can raise the
+--- requirement in place). A miss is never cached, so installing the right
+--- Python later is picked up on the next call.
+function M.find_cached(sdk_path)
+    local version = required_python_version(sdk_path)
+    if not version then
+        return nil
+    end
+    local cached = read_cache(sdk_path, version)
+    if cached then
+        return cached
+    end
+    local found = find_python(version)
+    if found then
+        pcall(write_cache, sdk_path, version, found)
+    end
+    return found
+end
+
 return M
