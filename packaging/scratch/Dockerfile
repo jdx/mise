@@ -11,7 +11,7 @@
 # image could not reach any HTTPS registry. Alpine ships the bundle as part of
 # its base image, so this stage copies a file without running anything and
 # never needs emulation.
-FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS certs
+FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS certs
 
 FROM scratch
 ARG TARGETARCH
