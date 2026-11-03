@@ -186,6 +186,52 @@ impl PIPXBackend {
         Ok(())
     }
 
+    /// The interpreter for a tool without a selected Python: mise's own, else the one
+    /// uv picks. `uv lock` searches on its own then, so a PATH lookup here would replay
+    /// and install on a Python that `UV_PYTHON` or `UV_PYTHON_PREFERENCE` excluded.
+    async fn unselected_python(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        requires_python: Option<&str>,
+    ) -> Option<PathBuf> {
+        if let Ok(toolset) = self.dependency_toolset(config).await
+            && let Some(python) = toolset.which_bin_spawnable(config, "python").await
+        {
+            return Some(python);
+        }
+        // `uv python find` ignores `UV_PYTHON`; `uv lock` takes it and rejects one outside the range.
+        let uv_python = match tv.install_env().shift_remove("UV_PYTHON") {
+            Some(value) => value.into_string(),
+            None => config
+                .env()
+                .await
+                .ok()
+                .and_then(|mut env| env.shift_remove("UV_PYTHON"))
+                .or_else(|| std::env::var("UV_PYTHON").ok()),
+        }
+        .filter(|value| !value.is_empty());
+        let uv = self.lock_uv_program(config).await.ok()?;
+        let project = tempfile::tempdir().ok()?;
+        let found = self
+            .uv_lock_command(config, tv, &uv, project.path())
+            .await
+            .ok()?
+            .args([
+                "python",
+                "find",
+                "--no-config",
+                "--no-project",
+                "--no-python-downloads",
+            ])
+            .args(uv_python.as_deref().or(requires_python)) // what `uv lock` picked its interpreter for
+            .read()
+            .await
+            .ok()?;
+        let python = PathBuf::from(found.trim());
+        (!python.as_os_str().is_empty()).then_some(python)
+    }
+
     async fn lock_uv_program(&self, config: &Arc<Config>) -> Result<PathBuf> {
         let uv = self.spawnable_dependency(config, None, "uv").await
             .ok_or_else(|| eyre!("Python dependency locks require uv >= {MIN_UV_VERSION}; install it with `mise use uv`"))?;
@@ -361,7 +407,17 @@ impl PIPXBackend {
                 ),
             )
         } else {
-            let python = self.spawnable_dependency(&ctx.config, None, "python").await
+            let requires_python = tv
+                .uv_lock
+                .as_ref()
+                .and_then(|lock| lock.load().ok())
+                .and_then(|lock| {
+                    lock.graph
+                        .get("requires-python")?
+                        .as_str()
+                        .map(str::to_owned)
+                });
+            let python = self.unselected_python(&ctx.config, tv, requires_python.as_deref()).await
                 .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; add python to your config (`mise use python`) and run `mise install`"))?;
             let identity = if let Some(identity) =
                 self.configured_python_identity(&ctx.config).await
@@ -561,6 +617,7 @@ impl PIPXBackend {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
+        requires_python: &str,
     ) -> Result<(LockPython, LockPython)> {
         let bound = match &tv.uv_python {
             Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
@@ -592,7 +649,10 @@ impl PIPXBackend {
         };
         let replay = match &configured {
             Some(path) => Some(path.clone()),
-            None => self.spawnable_dependency(config, None, "python").await,
+            None => {
+                self.unselected_python(config, tv, Some(requires_python))
+                    .await
+            }
         };
         let installed = |path: Option<PathBuf>| match path {
             Some(path) => LockPython::Installed(path.into()),
@@ -654,6 +714,7 @@ impl PIPXBackend {
         }
         constraints.dedup();
         let requires_python = constraints.join(",");
+        let lock_range = requires_python.clone();
         let mut project = toml::Table::new();
         project.insert(
             "project".into(),
@@ -672,7 +733,7 @@ impl PIPXBackend {
         )?;
         // Resolve and replay against the interpreter the install will bind, not
         // whichever Python uv happens to find on PATH.
-        let (lock_python, replay_python) = self.lock_python(config, tv).await?;
+        let (lock_python, replay_python) = self.lock_python(config, tv, &lock_range).await?;
         let mut cmd = self
             .uv_lock_command(config, tv, &uv, temp.path())
             .await?

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# Without a mise Python, `uv lock` lets uv pick the interpreter, so the graph replay
+# and install must take that pick too, not a `python` on PATH that uv's settings exclude.
+export UV_PYTHON_PREFERENCE=only-managed
+export UV_PYTHON_INSTALL_DIR="$HOME/uv-pythons"
+mkdir -p "$HOME/system-python"
+ln -s "$(python3 -c 'import sys; print(sys.executable)')" "$HOME/system-python/python"
+export PATH="$HOME/system-python:$PATH"
+
+cat >mise.toml <<EOF
+[tools]
+uv = "0.12.10"
+"pypi:cowsay" = "6.1"
+[settings]
+lockfile = true
+EOF
+
+assert_on_uv_python() {
+  local venv
+  venv=$(dirname "$(dirname "$(readlink -f "$(mise which cowsay)")")")
+  assert_contains "cat '$venv/pyvenv.cfg'" "uv-pythons/"
+}
+
+# The first install finds no uv-managed Python to lock against, so it installs without
+# a graph. The uv-managed Python it downloads lets `mise lock` record one.
+mise install
+mise lock
+assert_contains "cat mise.lock" 'uv = { path = ".mise/locks/pypi-cowsay/6.1"'
+# A later install used to replay the graph onto the PATH Python.
+mise install
+assert_on_uv_python
+# A forced install replays the graph.
+mise install --force pypi:cowsay
+assert_on_uv_python
+assert_contains "mise exec -- cowsay -t ok" "ok"
