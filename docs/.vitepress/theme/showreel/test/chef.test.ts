@@ -180,9 +180,13 @@ test("the name card's copy is mise's own: Cargo.toml, README.md and the site", (
   assert.equal(/^description = "([^"]+)"/m.exec(cargo)?.[1], TAGLINE);
   const readme = readFileSync(join(REPO, "README.md"), "utf8");
   assert.ok(readme.includes(`<b>${TAGLINE}</b>`), "README.md's tagline");
-  // The card types the short form; the README may add curl flags (-fsSL).
-  const installUrl = INSTALL.command.replace(/^curl /, "");
-  assert.ok(readme.includes(installUrl), "README.md's install command");
+  // The card types the short form; the README may add the -fsSL flags.
+  assert.equal(INSTALL.command, "curl https://mise.run | sh");
+  assert.match(
+    readme,
+    /curl (?:-[fsSL]+ )*https:\/\/mise\.run \| sh/,
+    "README.md's install command",
+  );
   const winget = /`([^`]+)`/.exec(PLATFORM)?.[1] ?? "";
   assert.ok(readme.includes(`\`${winget}\``), "README.md's Windows line");
   assert.equal(URL, "mise.jdx.dev");
