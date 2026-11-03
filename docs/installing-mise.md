@@ -380,8 +380,8 @@ winget install jdx.mise
 ```
 
 ::: warning winget can lag behind releases
-The winget package is not maintained by the mise project, so new releases can
-take days or longer to appear. mise also turns self-update off for winget
+New releases can take days or longer to appear in winget, because each
+submission waits on review. mise also turns self-update off for winget
 installs; upgrade with `winget upgrade jdx.mise`. To get releases promptly, use
 the [PowerShell script](#windows-script).
 :::
