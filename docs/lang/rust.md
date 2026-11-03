@@ -129,6 +129,14 @@ to resolve `rust@nightly`. When
 architecture from the [`arch`](/configuration/settings.html#arch) setting when
 you set it.
 
+With `RUSTUP_DIST_SERVER` set, mise does not query GitHub for rust versions. A
+mirror has no release index, so `latest` resolves to the release its `stable`
+channel points at, and an exact version such as `1.80.0` is accepted when the
+mirror serves `dist/channel-rust-1.80.0.toml`. Older releases cannot be
+discovered, so prefix selectors such as `1.80` and a
+[release-age cutoff](/configuration/settings.html#install_before) older than the
+current stable build only match that stable release.
+
 ## Cache Cargo builds with Mr Boxington {#share-cargo-builds-with-mr-boxington}
 
 [Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) caches Rust compilations
