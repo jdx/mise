@@ -1245,6 +1245,18 @@ impl Backend for NPMBackend {
             .await;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
+        // Lock lookup needs matching install options, but the repository a
+        // package was built from does not depend on them: load the pin by
+        // package and version, so an option change cannot swap the repository
+        // before the install is verified.
+        if Self::provenance_enabled() && tv.npm_provenance.is_none() {
+            tv.npm_provenance = crate::lockfile::get_locked_npm_provenance(
+                &ctx.config,
+                &crate::toolset::install_state::state_short(&tv.ba().short),
+                &tv.version,
+                &tv.ba().stored_full(),
+            );
+        }
         // A checksum without an aube lock installs a downloaded local archive,
         // which aube builds no provenance subject for. Only the paranoid
         // category treats that as an error; `npm.provenance` alone, which is

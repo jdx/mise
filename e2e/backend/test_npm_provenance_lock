@@ -35,6 +35,17 @@ TOML
   assert_succeed "mise -C $mode uninstall npm:@sigstore/bundle@3.1.0"
   assert_fail_contains "mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
 
+  # Changing an install option must not shed the pin: the new lock entry is
+  # keyed by its options, but the repository belongs to the package.
+  cp "$mode/mise.toml" "$mode/mise.toml.orig"
+  cat >"$mode/mise.toml" <<'TOML'
+[tools]
+node = "20.11.1"
+"npm:@sigstore/bundle" = { version = "3.1.0", allow_builds = ["@sigstore/bundle"] }
+TOML
+  assert_fail_contains "mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
+  mv "$mode/mise.toml.orig" "$mode/mise.toml"
+
   # Turning the setting off skips the check, but the paranoid provenance
   # category does the check on its own.
   assert_fail_contains "MISE_NPM_PROVENANCE=0 MISE_PARANOID=provenance mise -C $mode install 2>&1" "pins its provenance to github.com/example/other"
