@@ -41,6 +41,7 @@ impl Vfox {
             runtime_env_type: None,
             url_rewriter: None,
             http_headers_resolver: None,
+            download_progress: None,
             log_tx: None,
             log_handler: None,
         }
@@ -705,4 +706,32 @@ async fn test_download_to_sends_plugin_headers() {
         .await
         .unwrap();
     assert_eq!(std::fs::read(dest).unwrap(), b"artifact");
+}
+
+#[tokio::test]
+async fn test_download_to_reports_progress() {
+    use std::sync::Mutex;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/artifact.zip"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"artifact"))
+        .mount(&server)
+        .await;
+
+    let temp = TempDir::new().unwrap();
+    let dest = temp.path().join("artifact");
+    let url = Url::parse(&format!("{}/artifact.zip", server.uri())).unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut vfox = Vfox::test();
+    vfox.set_download_progress({
+        let seen = seen.clone();
+        move |written, total| seen.lock().unwrap().push((written, total))
+    });
+    vfox.download_to(&url, &dest, None).await.unwrap();
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.first(), Some(&(0, Some(8))));
+    assert_eq!(seen.last(), Some(&(8, Some(8))));
 }

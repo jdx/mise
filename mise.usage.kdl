@@ -668,6 +668,13 @@ Ask for `[vars]` entries that declare a `prompt` and have no saved answer
 mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default. A `--dry-run` still saves the answers it asks for.
 """#
     }
+    flag --save-env help="Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`" {
+        long_help #"""
+Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`
+
+Writes `env` in the `miserc.local.toml` of mise's config directory, so later runs, including `mise bootstrap --update`, select the same environments without `-E`. Names may be sets from `[env_sets]` in `miserc.toml`. Other keys in the file are kept. Needs `-E` or `MISE_ENV`, and a `--dry-run` writes nothing.
+"""#
+    }
     flag --skip help="Skip these parts" var=#true {
         long_help #"""
 Skip these parts
@@ -708,7 +715,7 @@ Repeat the flag or separate parts with commas. Cannot be combined with `--only`.
         long_help #"""
 Refresh package metadata and update repositories before applying
 
-Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without `--update`, a reused checkout stays at its current commit.
+Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without either, fast-forwards the global config when it is a Git checkout with an upstream, as `--adopt` makes, or links into one, as `--config-dir` makes, then bootstraps from the new commit. Without `--update`, a checkout stays at its current commit.
 """#
     }
     flag --upgrade help="Upgrade installed packages and tools as well as installing missing ones" {
@@ -6705,8 +6712,10 @@ Link the active tools' skills where an agent looks for them
 
 Writes one symlink per skill into DIR, named after the skill and pointing
 at the directory of the version that is active here. DIR defaults to the
-`skills.dir` setting, `.claude/skills`, under the project root: the
-directory of the nearest mise config. Run it again after `mise use` changes
+`skills.dir` setting under the project root: the directory of the nearest
+mise config. Unset, that is `.agents/skills` if it exists, then
+`.claude/skills` if it exists; with neither, mise creates `.agents/skills`
+and a `.claude/skills` symlink to it. Run it again after `mise use` changes
 a version and the links follow, or set `skills.auto_sync` to have mise do
 that after every install and `mise use`.
 
@@ -6722,12 +6731,12 @@ reported.
             long_help #"""
 Link into the skills.dir directory under your home directory instead of the project's
 
-With the default skills.dir, that is ~/.claude/skills.
+With no skills.dir set, that follows the same rule as in a project.
 """#
         }
         flag --prune help="Remove links mise made for skills that are no longer active"
         flag "-h --help" help="Print help" action=help builtin=#true
-        example "mise skills sync" help="Link skills into the project's skills.dir (default .claude/skills)"
+        example "mise skills sync" help="Link skills into the project's skills.dir (default .agents/skills)"
         example "mise skills sync --dir .agents/skills --prune" help="Link into .agents/skills and remove links for skills that are no longer active"
         complete dir type=dir
     }
@@ -8837,4 +8846,12 @@ node
 mise which node --version
 20.0.0
 """# help="Show the version that provides it"
+}
+config {
+    prop task.remote_no_cache optional=#true type=bool env=MISE_TASK_REMOTE_NO_CACHE help="Do not use the cache for remote tasks" {
+        cli "--no-cache"
+    }
+    prop truncate optional=#true type=bool help="Truncate long terminal output to fit the available width" {
+        cli "--truncate" "--no-truncate"
+    }
 }

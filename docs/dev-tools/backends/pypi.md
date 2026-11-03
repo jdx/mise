@@ -19,7 +19,8 @@ the same package. See [compatibility with `pipx:`](#compatibility-with-pipx).
 
 Install uv, or pipx. Add Python as well: pipx needs one to run, and installs
 from a [dependency graph](#dependency-locking) need an installed interpreter
-rather than one uv downloads. When `uv`, `pipx` or `python` is in your config,
+rather than one uv downloads. Without one, mise installs from the version alone
+unless you pass `--locked`, which fails instead. When `uv`, `pipx` or `python` is in your config,
 mise installs it before your Python tools. The [`with`](#with),
 [`expose`](#expose) and [`dependency_prereleases`](/dev-tools/backends/pypi.html#dependency-prereleases)
 options need uv.

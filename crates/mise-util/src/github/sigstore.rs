@@ -32,7 +32,9 @@ use std::path::Path;
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
-pub use mise_sigstore::{AttestationError, CosignIdentity, SlsaArtifact, SlsaSignerIdentity};
+pub use mise_sigstore::{
+    Attestation, AttestationError, CosignIdentity, SlsaArtifact, SlsaSignerIdentity,
+};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
@@ -1098,6 +1100,34 @@ pub async fn verify_cosign_signature_with_key(
         public_key_path,
     )
     .await
+}
+
+/// Verify attestations against a sha512 digest and return the `owner/repo`
+/// each verified one was built from. Passthrough — no token needed, but the TUF
+/// root follows `url_replacements` like every other check here.
+pub async fn verify_github_attestation_sources_for_sha512(
+    sha512: &[u8],
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+) -> AttestationResult<Vec<String>> {
+    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::verify_github_attestation_sources_for_sha512(
+        sha512,
+        attestations,
+        signer_workflow,
+    )
+    .await
+}
+
+/// [`verify_github_attestation_sources_for_sha512`] for GitHub Actions or
+/// gitlab.com CI provenance; each source is `github.com/owner/repo` or
+/// `gitlab.com/group/project`.
+pub async fn verify_forge_attestation_sources_for_sha512(
+    sha512: &[u8],
+    attestations: &[Attestation],
+) -> AttestationResult<Vec<String>> {
+    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::verify_forge_attestation_sources_for_sha512(sha512, attestations).await
 }
 
 #[cfg(test)]

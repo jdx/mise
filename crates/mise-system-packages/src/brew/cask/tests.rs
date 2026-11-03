@@ -422,7 +422,7 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
     file::create_dir_all(token_dir.join("2.40.0"))?;
     assert_eq!(homebrew_installed_version("example")?, None);
 
-    write_homebrew_metadata(&token_dir, "example", "2.40.0")?;
+    write_homebrew_metadata(&token_dir, "example", "2.40.0", true)?;
 
     let versions = token_dir.join(".metadata/2.40.0");
     let stamps = std::fs::read_dir(&versions)?.collect::<Result<Vec<_>, _>>()?;
@@ -433,11 +433,33 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
     assert_eq!(stamp.as_bytes()[14], b'.');
     let record = versions.join(&stamp).join("Casks/example.json");
     assert_eq!(mise_util::file::read_to_string(record)?, "{}");
+    let receipt: serde_json::Value = serde_json::from_str(&mise_util::file::read_to_string(
+        token_dir.join(".metadata/INSTALL_RECEIPT.json"),
+    )?)?;
+    assert_eq!(receipt["installed_on_request"], true);
+    assert_eq!(receipt["installed_as_dependency"], false);
+    assert_eq!(receipt["loaded_from_api"], true);
+    assert_eq!(receipt["arch"], "arm64");
+    assert_eq!(receipt["source"]["tap"], "homebrew/cask");
+    assert_eq!(receipt["source"]["version"], "2.40.0");
+    // The install time is the version directory's, not the handoff time.
+    let meta = token_dir.join("2.40.0").metadata()?;
+    let created = meta.created().or_else(|_| meta.modified())?;
+    let created = created.duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+    assert_eq!(receipt["time"].as_i64(), Some(created));
+    assert!(receipt.get("uninstall_artifacts").is_none());
     assert_eq!(
         homebrew_installed_version("example")?.as_deref(),
         Some("2.40.0")
     );
     Ok(())
+}
+
+#[test]
+fn dependency_receipt_is_not_marked_as_requested() {
+    let receipt = install_receipt("1.0.0", false, 1_700_000_000);
+    assert_eq!(receipt["installed_on_request"], false);
+    assert_eq!(receipt["installed_as_dependency"], true);
 }
 
 #[test]
@@ -11287,4 +11309,31 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
         "the staged bundle was copied rather than moved out of the stage"
     );
     Ok(())
+}
+
+#[test]
+fn homebrew_receipt_needs_a_release_that_verifies_uninstall_recovery() {
+    let min = MIN_SAFE_HOMEBREW;
+    assert!(homebrew_version_at_least("Homebrew 6.0.22\n", min));
+    assert!(homebrew_version_at_least(
+        "Homebrew 7.0.11-24-g2833c25\nHomebrew/homebrew-core",
+        min
+    ));
+    assert!(!homebrew_version_at_least("Homebrew 6.0.21\n", min));
+    assert!(!homebrew_version_at_least("Homebrew 5.9.99\n", min));
+    assert!(!homebrew_version_at_least("Homebrew\n", min));
+    assert!(!homebrew_version_at_least("", min));
+}
+
+#[test]
+fn requested_tokens_use_the_last_segment_of_a_tapped_name() {
+    let requests = ["foo", "homebrew/cask/bar"].map(|name| PackageRequest {
+        name: name.to_string(),
+        version: None,
+        tap_url: None,
+        desired: crate::PackageDesiredState::Present,
+    });
+    let tokens = requested_tokens(&requests);
+    assert!(tokens.contains("foo") && tokens.contains("bar"));
+    assert_eq!(tokens.len(), 2);
 }

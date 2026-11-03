@@ -25,7 +25,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ConfigScope, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 /// Resources fetched from outside the artifact live here in the install.
@@ -1090,6 +1090,22 @@ pub(crate) fn skills_of(
 /// The skills of every tool active in the current directory.
 pub async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
     let ts = config.get_toolset().await?;
+    skills_of_toolset(config, ts)
+}
+
+/// The skills of the tools the global and system config select, wherever
+/// the command runs and whatever a project or `MISE_*_VERSION` asks for. It
+/// is what belongs in the home directory's skills.
+pub async fn global_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
+    let ts = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .without_runtime_env()
+        .build(config)
+        .await?;
+    skills_of_toolset(config, &ts)
+}
+
+fn skills_of_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<DeclaredSkills> {
     let mut skills = DeclaredSkills::default();
     for (backend, tv) in ts.list_current_installed_versions(config) {
         let install_path = tv.install_path();
@@ -1120,28 +1136,144 @@ pub async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
 }
 
 /// Where skills are linked under `root`, a project root or the home
-/// directory: the `skills.dir` setting, or that setting itself when it
-/// is absolute.
-pub fn skills_dir(root: &Path) -> PathBuf {
-    root.join(&Settings::get().skills.dir)
+/// directory, and the symlink to create beside them once there is something
+/// to link.
+pub struct SkillsTarget {
+    pub dir: PathBuf,
+    /// The `.claude/skills` beside a default `.agents/skills`: where mise
+    /// makes its link, and whether it may make one now.
+    alias: Option<PathBuf>,
+    create_alias: bool,
+}
+
+impl SkillsTarget {
+    /// An explicit directory, with nothing to link beside it.
+    pub fn at(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            alias: None,
+            create_alias: false,
+        }
+    }
+
+    /// Make `.claude/skills` a symlink to the directory, for a target mise
+    /// chose because neither default existed. A path that is already there,
+    /// even a dangling link, is somebody's and is left alone.
+    pub fn link_alias(&self) -> Result<()> {
+        let Some(alias) = &self.alias else {
+            return Ok(());
+        };
+        let Some(parent) = alias.parent() else {
+            return Ok(());
+        };
+        // A `.claude` that is itself a link may be shared with other
+        // projects: nothing here is ours to make, change or un-hide in it.
+        if file::is_symlink_or_junction(parent) {
+            if self.create_alias && self.dir.is_dir() {
+                warn!(
+                    "{} is a link, so mise did not make {}; link it to {} to have Claude Code read these skills",
+                    file::display_path(parent),
+                    file::display_path(alias),
+                    file::display_path(&self.dir)
+                );
+            }
+            return Ok(());
+        }
+        if alias.symlink_metadata().is_ok() {
+            // Somebody replaced the link with a real directory of their own
+            // (or it never was ours): stop hiding it from git.
+            if !file::is_symlink_or_junction(alias) {
+                crate::packslip_exclude::exclude_links(parent, [], SYNC_STATE)?;
+            }
+            return Ok(());
+        }
+        if !self.create_alias || !self.dir.is_dir() {
+            return Ok(());
+        }
+        file::create_dir_all(parent)?;
+        // Relative, so a project that moves keeps its link. A Windows
+        // junction needs the absolute path.
+        let target = if cfg!(windows) {
+            self.dir.clone()
+        } else {
+            PathBuf::from("../.agents/skills")
+        };
+        file::make_symlink(&target, alias)?;
+        crate::packslip_exclude::exclude_links(parent, ["skills"], SYNC_STATE)
+    }
+}
+
+/// The directory under `root` to link skills into: the `skills.dir`
+/// setting, or that setting itself when it is absolute. Unset, an existing
+/// `.agents/skills` wins, then an existing `.claude/skills`; with neither,
+/// `.agents/skills` is used and `.claude/skills` is linked to it.
+pub fn skills_target(root: &Path) -> SkillsTarget {
+    if let Some(dir) = &Settings::get().skills.dir {
+        return SkillsTarget::at(root.join(dir));
+    }
+    let agents = root.join(".agents/skills");
+    let claude = root.join(".claude/skills");
+    if agents.is_dir() {
+        return SkillsTarget {
+            dir: agents,
+            alias: Some(claude),
+            create_alias: false,
+        };
+    }
+    if claude.is_dir() {
+        return SkillsTarget::at(claude);
+    }
+    SkillsTarget {
+        dir: agents,
+        alias: Some(claude),
+        create_alias: true,
+    }
 }
 
 /// With `skills.auto_sync` on, link the active tools' skills into the
-/// project after an install or a version change. Nothing fails an install
-/// here: a problem is reported and the tools stay installed. Outside a
-/// project root there is nowhere to link into, so nothing happens.
+/// project after an install or a version change, and the global tools' skills
+/// into the home directory. Nothing fails an install here: a problem is
+/// reported and the tools stay installed. Outside a project root only the
+/// global links are kept up to date.
 pub async fn auto_sync_skills(config: &Arc<Config>) {
+    if let Some(root) = &config.project_root {
+        auto_sync_skills_into(config, root, false).await;
+    }
+    // Installing or upgrading a global tool moves its skills too. Where the
+    // project and the home directory share one skills directory (a project
+    // rooted at home, or an absolute `skills.dir`), the project sync already
+    // wrote there with a superset, and a second pass would undo or prune it.
+    let shared = config
+        .project_root
+        .as_ref()
+        .is_some_and(|root| skills_target(root).dir == skills_target(&crate::dirs::HOME).dir);
+    if !shared {
+        auto_sync_global_skills(config).await;
+    }
+}
+
+/// [`auto_sync_skills`] for a global change such as `mise use -g`: the links
+/// go under the home directory, as `mise skills sync --global` writes them.
+pub async fn auto_sync_global_skills(config: &Arc<Config>) {
+    auto_sync_skills_into(config, &crate::dirs::HOME, true).await;
+}
+
+async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) {
     let settings = Settings::get();
-    let Some(root) = &config.project_root else {
-        return;
-    };
     if !settings.skills.auto_sync {
-        hint_skills(config).await;
+        if !global {
+            hint_skills(config).await;
+        }
         return;
     }
-    let dir = skills_dir(root);
+    let target = skills_target(root);
+    let dir = target.dir.clone();
     let result = async {
-        let skills = active_skills(config).await?;
+        let skills = if global {
+            global_skills(config).await?
+        } else {
+            active_skills(config).await?
+        };
         // Reported, not warned: this runs after every install, and a skill
         // that is missing on purpose must not nag on each one. `mise skills
         // ls` is where someone asks the question, and it warns.
@@ -1161,6 +1293,9 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
     .await;
     match result {
         Ok(report) => {
+            if let Err(err) = target.link_alias() {
+                warn!("could not link .claude/skills: {err}");
+            }
             for name in &report.linked {
                 info!("linked skill {name} into {}", file::display_path(&dir));
             }

@@ -449,10 +449,6 @@ needs, and resolving it pins users to the oldest supported release (see
 Do not extract unrelated project versions, dependency versions, lockfile schema
 revisions, or generic `version` fields that do not constrain the tool.
 
-To retire an existing file that reads a floor, add `deprecated = "<reason>"` to
-its table. It keeps resolving, and mise warns users to move the version into
-`mise.toml`.
-
 List every file name the tool officially reads, including documented nested
 paths such as `.config/tool.yml`. When suffixes overlap, mise uses the most
 specific matching path. Users still have to enable idiomatic files for the tool:

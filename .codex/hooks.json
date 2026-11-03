@@ -10,6 +10,17 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v jouet >/dev/null 2>&1 || exit 0; exec jouet hook codex post-edit'",
+            "commandWindows": "if (Get-Command jouet -ErrorAction Ignore) { jouet hook codex post-edit }",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -34,6 +45,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v jouet >/dev/null 2>&1 || exit 0; exec jouet hook codex session-start'",
+            "commandWindows": "if (Get-Command jouet -ErrorAction Ignore) { jouet hook codex session-start }",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
@@ -44,6 +65,16 @@
             "type": "command",
             "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks codex stop'",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v jouet >/dev/null 2>&1 || exit 0; exec jouet hook codex stop'",
+            "commandWindows": "if (Get-Command jouet -ErrorAction Ignore) { jouet hook codex stop }",
+            "timeout": 10
           }
         ]
       }
@@ -80,6 +111,19 @@
             "type": "command",
             "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks codex user-prompt-submit'",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v jouet >/dev/null 2>&1 || exit 0; exec jouet hook codex pre-tool-use'",
+            "commandWindows": "if (Get-Command jouet -ErrorAction Ignore) { jouet hook codex pre-tool-use }",
+            "timeout": 10
           }
         ]
       }

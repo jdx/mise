@@ -1,0 +1,4 @@
+backends = ["aqua:juanfont/headscale"]
+description = "An open source, self-hosted implementation of the Tailscale control server"
+test = { cmd = "headscale version", expected = "headscale version v{{version}}" }
+version_order = "semver"

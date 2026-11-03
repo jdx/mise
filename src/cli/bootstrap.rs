@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use futures_util::future::LocalBoxFuture;
 use heck::ToKebabCase;
 use serde::Serialize;
@@ -216,6 +216,16 @@ pub(crate) struct Bootstrap {
     #[usage(long)]
     prompt_vars: bool,
 
+    /// Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`
+    ///
+    /// Writes `env` in the `miserc.local.toml` of mise's config directory, so
+    /// later runs, including `mise bootstrap --update`, select the same
+    /// environments without `-E`. Names may be sets from `[env_sets]` in
+    /// `miserc.toml`. Other keys in the file are kept. Needs `-E` or
+    /// `MISE_ENV`, and a `--dry-run` writes nothing.
+    #[usage(long)]
+    save_env: bool,
+
     /// Skip these parts
     ///
     /// Repeat the flag or separate parts with commas. Cannot be combined with
@@ -226,7 +236,10 @@ pub(crate) struct Bootstrap {
     /// Refresh package metadata and update repositories before applying
     ///
     /// Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without
-    /// `--update`, a reused checkout stays at its current commit.
+    /// either, fast-forwards the global config when it is a Git checkout with
+    /// an upstream, as `--adopt` makes, or links into one, as `--config-dir`
+    /// makes, then bootstraps from the new commit. Without `--update`, a
+    /// checkout stays at its current commit.
     #[usage(long)]
     update: bool,
 
@@ -355,6 +368,107 @@ fn warn_legacy_bootstrap_command(id: &'static str, legacy: &str, replacement: &s
 }
 
 type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
+
+/// Set for a bootstrap that runs after the global config was fast-forwarded,
+/// so that run does not fast-forward it again.
+const CONFIG_UPDATED_ENV: &str = "__MISE_BOOTSTRAP_CONFIG_UPDATED";
+
+/// The Git checkout that `mise bootstrap --update` fast-forwards for the
+/// global config: the config directory itself when it is the top of a
+/// checkout (`--adopt`), or the checkout it links into (`--config-dir`).
+/// A config directory that merely sits inside a larger repository, such as
+/// a home directory kept in Git, is not one. A branch without an upstream,
+/// or a detached HEAD, has nothing to fast-forward from.
+fn global_config_checkout() -> Result<Option<PathBuf>> {
+    let dir = system::history::tracked::global_config_dir();
+    let Ok(resolved) = dunce::canonicalize(&dir) else {
+        return Ok(None);
+    };
+    let Some(top) = git_stdout(&resolved, ["rev-parse", "--show-toplevel"]) else {
+        return Ok(None);
+    };
+    let top = dunce::canonicalize(top)?;
+    if top != resolved && !crate::file::is_symlink_or_junction(&dir) {
+        return Ok(None);
+    }
+    if git_stdout(&top, ["rev-parse", "--symbolic-full-name", "@{upstream}"]).is_none() {
+        debug!(
+            "bootstrap: {} has no upstream to fast-forward from",
+            top.display_user()
+        );
+        return Ok(None);
+    }
+    Ok(Some(top))
+}
+
+/// Runs this `mise bootstrap` again, after the global config moved to a new
+/// commit, so it reads that commit's config from the start. It starts in the
+/// directory this one started in, where a relative `--cd` or `MISE_CD`
+/// resolves as it did here.
+/// Write `env` to the `miserc.local.toml` of mise's config directory, keeping
+/// the file's other keys and comments.
+fn save_env(names: &[String], dry_run: bool) -> Result<()> {
+    if names.is_empty() {
+        bail!("--save-env needs the environments to save: pass -E or set MISE_ENV");
+    }
+    if let Some(name) = names.iter().find(|name| name.contains(['/', '\\'])) {
+        bail!("--save-env: {name:?} is not an environment name: it contains a path separator");
+    }
+    let path = dirs::CONFIG.join("miserc.local.toml");
+    if dry_run {
+        info!("would save env = {names:?} to {}", path.display_user());
+        return Ok(());
+    }
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err).wrap_err_with(|| format!("reading {}", path.display_user())),
+    };
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .wrap_err_with(|| format!("parsing {}", path.display_user()))?;
+    let mut list = toml_edit::Array::new();
+    list.extend(names.iter().map(String::as_str));
+    doc["env"] = toml_edit::value(list);
+    if let Some(parent) = path.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::write_atomic(&path, doc.to_string())?;
+    info!("saved env = {names:?} to {}", path.display_user());
+    Ok(())
+}
+
+fn rerun_bootstrap_after_config_update() -> Result<()> {
+    let args = crate::env::ARGS.read().unwrap().clone();
+    let mut command = Command::new(std::env::current_exe()?);
+    command
+        .args(args.iter().skip(1))
+        .env(CONFIG_UPDATED_ENV, "1");
+    if let Some(cwd) = crate::env::original_cwd() {
+        command.current_dir(cwd);
+    }
+    let status = command.status()?;
+    if !status.success() {
+        bail!("bootstrap from the updated global config failed with {status}");
+    }
+    Ok(())
+}
+
+/// A git command's trimmed output, or `None` when it fails.
+fn git_stdout<const N: usize>(dir: &Path, args: [&str; N]) -> Option<String> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .stderr(std::process::Stdio::null());
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
 
 fn run_bootstrap_git<const N: usize>(checkout: &Path, args: [&str; N]) -> Result<()> {
     let mut command = Command::new("git");
@@ -1882,6 +1996,23 @@ impl Bootstrap {
         if self.prompt_vars && self.command.is_some() {
             bail!("--prompt-vars only applies to a full `mise bootstrap` run, not a subcommand");
         }
+        if self.save_env && self.command.is_some() {
+            bail!("--save-env only applies to a full `mise bootstrap` run, not a subcommand");
+        }
+        // A full run with --update first fast-forwards a global config that is
+        // a Git checkout, or links into one. New commits can change miserc.toml
+        // and the environments, which this process has already read, so the
+        // bootstrap then runs again in a process of its own.
+        if self.update
+            && self.from.is_none()
+            && self.adopt.is_none()
+            && self.command.is_none()
+            && std::env::var_os(CONFIG_UPDATED_ENV).is_none()
+            && let Some(checkout) = global_config_checkout()?
+            && self.update_global_config_checkout(&checkout).await?
+        {
+            return rerun_bootstrap_after_config_update();
+        }
         // Every subcommand, not just the full run, applies less than project
         // config declares in safe mode; say so up front.
         if Settings::safe_mode()
@@ -1903,6 +2034,13 @@ impl Bootstrap {
         }
         if let Some(command) = self.command.take() {
             return command.run().await;
+        }
+        if self.save_env {
+            let args = crate::env::ARGS.read().unwrap().clone();
+            save_env(
+                &crate::env::explicit_environment(&args).unwrap_or_default(),
+                self.dry_run,
+            )?;
         }
         if self.prompt_vars {
             crate::config::env_directive::prompt::enable();
@@ -2665,11 +2803,51 @@ impl Bootstrap {
         self.run_child_bootstrap(checkout).await
     }
 
+    /// Fast-forwards the Git checkout of the global config. Returns whether
+    /// it moved to a new commit.
+    async fn update_global_config_checkout(&self, checkout: &Path) -> Result<bool> {
+        if self.dry_run {
+            miseprintln!(
+                "Would run: git -C {} pull --ff-only",
+                checkout.display_user()
+            );
+            return Ok(false);
+        }
+        let before = git_stdout(checkout, ["rev-parse", "HEAD"]);
+        let generation = OperationScope::begin("bootstrap --update", false).await?;
+        let pulled = run_bootstrap_git(checkout, ["pull", "--ff-only"]);
+        match &pulled {
+            Ok(()) => {
+                journal::note(format!(
+                    "updated the checkout of the global config in {}",
+                    checkout.display_user()
+                ));
+                generation.finish(
+                    None,
+                    Some(Summary {
+                        message: Some("checkout of the global config".into()),
+                    }),
+                );
+            }
+            Err(err) => generation.finish(Some(format!("{err:#}")), None),
+        }
+        pulled.wrap_err_with(|| {
+            format!(
+                "could not fast-forward the global config in {}",
+                checkout.display_user()
+            )
+        })?;
+        Ok(git_stdout(checkout, ["rev-parse", "HEAD"]) != before)
+    }
+
     /// Runs the bootstrap itself as a child process from `checkout` (the
     /// global configuration directory for `--adopt`), trusted for it.
     async fn run_child_bootstrap(&self, checkout: PathBuf) -> Result<()> {
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
+        // the checkout, and with it any config directory inside it, is
+        // already where `--update` wanted it
+        command.env(CONFIG_UPDATED_ENV, "1");
         command.args(bootstrap_from_child_args(
             &checkout,
             &crate::env::ARGS.read().unwrap(),

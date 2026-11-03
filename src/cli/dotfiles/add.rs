@@ -797,6 +797,7 @@ impl PlannedAdd {
             dot_prefix: false,
             relative: system::files::relative_symlinks(self.mode, None),
             group: None,
+            depends: vec![],
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),

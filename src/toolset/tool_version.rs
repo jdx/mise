@@ -618,7 +618,17 @@ impl ToolVersion {
         };
         let path = self.ba().installs_path().join(&pathname);
         let path = env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname);
-        if path.is_dir() && is_runtime_symlink(&path) {
+        // The link stands in for this installation only while it names it: a
+        // `latest` link skips prereleases, and any link is stale during an
+        // upgrade until runtime symlinks are rebuilt.
+        let install_path = self.install_path();
+        let names_install = |target: &Path| {
+            matches!(
+                (target.canonicalize(), install_path.canonicalize()),
+                (Ok(a), Ok(b)) if a == b
+            )
+        };
+        if path.is_dir() && is_runtime_symlink(&path) && names_install(&path) {
             return path;
         }
 
@@ -629,7 +639,7 @@ impl ToolVersion {
             && let Some(parent) = path.parent()
         {
             let target = parent.join(target);
-            if target.is_dir() {
+            if target.is_dir() && names_install(&target) {
                 return target
                     .absolutize()
                     .expect("failed to absolutize path")
@@ -637,7 +647,7 @@ impl ToolVersion {
             }
         }
 
-        self.install_path()
+        install_path
     }
     pub(crate) fn cache_path(&self) -> PathBuf {
         self.ba().cache_path().join(self.state_key())
@@ -675,6 +685,7 @@ impl ToolVersion {
             warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
+            keep_moved_alias_pins: base_opts.keep_moved_alias_pins,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -779,6 +790,20 @@ impl ToolVersion {
         };
         Some(pathname.replace([':', '/'], "-"))
     }
+    /// Whether `--locked` (or `locked`) and `tool_config.locked`, in that
+    /// order, forbid resolving this request outside the lockfile.
+    fn locked_by(config: &Config, request: &ToolRequest, opts: &ResolveOptions) -> (bool, bool) {
+        let invocation_locked =
+            config.invocation_locked_for(request.source(), Settings::get().locked);
+        let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
+        (invocation_locked, tool_config_locked)
+    }
+
+    fn resolution_locked(config: &Config, request: &ToolRequest, opts: &ResolveOptions) -> bool {
+        let (invocation_locked, tool_config_locked) = Self::locked_by(config, request, opts);
+        invocation_locked || tool_config_locked
+    }
+
     fn ensure_unlocked_resolution_allowed(
         config: &Config,
         request: &ToolRequest,
@@ -786,8 +811,7 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<()> {
         let settings = Settings::get();
-        let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
-        let invocation_locked = config.invocation_locked_for(request.source(), settings.locked);
+        let (invocation_locked, tool_config_locked) = Self::locked_by(config, request, opts);
         if (invocation_locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
@@ -819,6 +843,7 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
         let backend = request.backend()?;
+        let requested = v;
         let v = config.resolve_alias(&backend, v).await?;
         let request = request.with_registry_version(&v);
         let backend = request.backend()?;
@@ -838,8 +863,14 @@ impl ToolVersion {
         };
         if opts.use_locked_version
             && !has_linked_version(request.ba(), lock_query)
-            && let Some(lt) =
-                request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
+            && let Some(lt) = request.lockfile_resolve_with_prefix(
+                config,
+                lock_query,
+                lock_prefix_boundary,
+                v != requested
+                    && (opts.keep_moved_alias_pins
+                        || Self::resolution_locked(config, &request, opts)),
+            )?
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
@@ -1487,6 +1518,11 @@ pub struct ResolveOptions {
     /// Defer those lazy tools even when not under `prefer_offline`. For a command that
     /// manages one tool's versions and so resolves the others only to look them up.
     pub defer_missing_lazy_online: bool,
+    /// Keep a version 0 lockfile's only entry for a tool whose alias has
+    /// moved (`lts` -> `26` with `24.13.0` locked). `mise lock --upgrade`
+    /// sets it so the upgrade binds the alias to that pin instead of
+    /// re-resolving it.
+    pub keep_moved_alias_pins: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1508,6 +1544,7 @@ impl Default for ResolveOptions {
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
+            keep_moved_alias_pins: false,
         }
     }
 }
@@ -2281,10 +2318,10 @@ mod tests {
         let tv = ToolVersion::new(request, "3.14.6".into());
         assert!(!tv.resolved_from_lockfile());
 
-        // Without locking, runtime_path() follows the stale fuzzy runtime symlink, so
-        // it does NOT resolve to the version just installed -- the bug behavior. (This
-        // also self-checks the stale-symlink setup above.)
-        assert_ne!(tv.runtime_path(), install_path);
+        // runtime_path() skips the stale fuzzy runtime symlink, which names a
+        // different installation, and resolves to the version just installed.
+        assert!(is_runtime_symlink(&runtime_link));
+        assert_eq!(tv.runtime_path(), install_path);
 
         // with_locked() pins runtime_path() to the exact install just made, not the
         // fuzzy runtime symlink, so the postinstall hook sees 3.14.6 (#10347).

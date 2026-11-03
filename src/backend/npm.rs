@@ -1239,6 +1239,15 @@ impl Backend for NPMBackend {
             .await;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
+        // A checksum without an aube lock installs a downloaded local archive,
+        // which aube builds no provenance subject for.
+        if Self::provenance_enabled() && options.checksum().is_some() && tv.aube_lock.is_none() {
+            eyre::bail!(
+                "npm:{} has a checksum and no aube lock, so it installs a local archive that provenance cannot be verified for; \
+                 lock the tool, or turn off npm.provenance and the paranoid provenance category",
+                self.display_tool_name()
+            );
+        }
         let package = self.package_install_spec(ctx, &tv, &options).await?;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
@@ -1249,6 +1258,15 @@ impl Backend for NPMBackend {
             }
             None => Vec::new(),
         };
+        // Only the embedded aube runs the verifier. Skipping it silently under
+        // another installer would install without the check the user asked for.
+        if Self::provenance_enabled() && !matches!(package_manager, NpmPackageManager::Aube) {
+            eyre::bail!(
+                "npm:{} installs with {package_manager}, which cannot verify provenance; \
+                 set npm.package_manager to aube, or turn off npm.provenance and the paranoid provenance category",
+                self.display_tool_name()
+            );
+        }
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
@@ -1318,7 +1336,12 @@ impl Backend for NPMBackend {
                 )?
                 // required to avoid pnpm error "global bin dir isn't in PATH"
                 // https://github.com/pnpm/pnpm/issues/9333
-                .prepend_path(vec![bin_dir.clone()])?;
+                .prepend_path(vec![bin_dir.clone()])?
+                // pnpm 11+ links packages through a global virtual store outside the
+                // install dir by default, which breaks a restored MISE_DATA_DIR cache.
+                // `virtualStoreType` only exists in newer pnpm, so use the setting
+                // every pnpm 11+ honors. pnpm 10 and older have no global store.
+                .env("PNPM_CONFIG_ENABLE_GLOBAL_VIRTUAL_STORE", "false");
                 if use_global_dir_env {
                     // pnpm 12's replacement Rust CLI does not accept both path settings
                     // as flags, but reads them from PNPM_CONFIG_* environment variables.
@@ -2102,6 +2125,27 @@ impl NPMBackend {
         }
     }
 
+    /// Checks the tool's own package against the Sigstore provenance npm
+    /// publishes for it when `npm.provenance`, or the paranoid `provenance`
+    /// category, is on. See [`npm_provenance`](crate::backend::npm_provenance).
+    fn provenance_enabled() -> bool {
+        let settings = Settings::get();
+        settings.npm.provenance || settings.paranoid.provenance()
+    }
+
+    fn with_provenance_verifier(
+        &self,
+        control: aube::embed::InstallControl,
+    ) -> aube::embed::InstallControl {
+        if Self::provenance_enabled() {
+            control.with_provenance_verifier(
+                crate::backend::npm_provenance::NpmProvenanceVerifier::new(&self.tool_name()),
+            )
+        } else {
+            control
+        }
+    }
+
     /// Install an npm package by embedding aube's package manager in-process
     /// (`aube::embed::add`) instead of shelling out to the `aube` binary.
     ///
@@ -2142,11 +2186,12 @@ impl NPMBackend {
             install_options.strict_no_lockfile = true;
             install_options.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
             install_options.dangerously_allow_all_builds = matches!(allow_builds, AllowBuilds::All);
-            install_options.control =
+            install_options.control = self.with_provenance_verifier(
                 aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
                     .with_prompt_decision_handler(Arc::new(AubePromptHandler {
                         yes: ctx.explicit_yes,
-                    }));
+                    })),
+            );
             install_options.runtime = self.aube_embed_runtime(ctx).await;
             let install = aube::embed::install_with_overrides(
                 install_options,
@@ -2185,10 +2230,12 @@ impl NPMBackend {
             // `aube.allowBuilds`; only the "allow everything" case needs the
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
-            control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
-                .with_prompt_decision_handler(Arc::new(AubePromptHandler {
-                    yes: ctx.explicit_yes,
-                })),
+            control: self.with_provenance_verifier(
+                aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
+                    .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                        yes: ctx.explicit_yes,
+                    })),
+            ),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
@@ -3701,6 +3748,27 @@ packages:
 
         crate::file::make_symlink_or_file(Path::new("./1.3.1-3"), &installs_path.join("latest"))
             .unwrap();
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.3.1-3")
+        );
+    }
+
+    /// The generated `latest` link leaves pre-releases out, so it must not
+    /// hold a pre-release request back on the stable install (#15256).
+    #[test]
+    fn latest_installed_version_with_prereleases_skips_stable_latest_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-prerelease-link");
+        std::fs::create_dir_all(installs_path.join("1.2.4")).unwrap();
+        std::fs::create_dir_all(installs_path.join("1.3.1-3")).unwrap();
+        crate::file::make_symlink_or_file(Path::new("./1.2.4"), &installs_path.join("latest"))
+            .unwrap();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        let backend = test_backend("happy-prerelease-link", Some(installs_path), Some(opts));
+
         assert_eq!(
             backend.latest_installed_version(None).unwrap().as_deref(),
             Some("1.3.1-3")

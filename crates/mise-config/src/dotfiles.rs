@@ -110,6 +110,8 @@ pub struct DotfileTableDecl {
     pub format: Option<String>,
     /// OS/profile variants: history streams for track mode, or optional destinations for deployment modes
     pub variants: Option<Vec<DotfileVariantDecl>>,
+    /// dotfile groups (by name) and whole-file entries (by target path) mise writes before it renders or reads this entry, so a template, a fnox file or a copy can use files they create. A dependency that fails stops this entry and everything after it; a cycle or a name that is neither is an error. Not for edits or track modes
+    pub depends: Option<Vec<String>>,
 }
 
 /// The value of an entry's `merge` key: `true`, or `"missing"` to set only absent keys.
@@ -149,6 +151,8 @@ pub struct DotfileGroupDecl {
     /// target directory, absolute or starting with ~/
     #[schemars(extend("default" = "~"))]
     pub target: Option<String>,
+    /// dotfile groups (by name) and whole-file entries (by target path) mise writes before it deploys this group and its entries
+    pub depends: Option<Vec<String>>,
     /// how the tree is deployed
     #[schemars(extend("enum" = ["symlink-each", "copy", "symlink"], "default" = "symlink-each"))]
     pub mode: Option<String>,
@@ -229,6 +233,8 @@ pub struct DotfileGroupEntryTableDecl {
     pub enabled: Option<bool>,
     /// OS/profile variants: history streams for track mode, or optional destinations for deployment modes
     pub variants: Option<Vec<DotfileVariantDecl>>,
+    /// dotfile groups (by name) and whole-file entries (by target path) mise writes before it renders or reads this entry, in addition to the group's own. Not for edits or track modes
+    pub depends: Option<Vec<String>>,
     /// edit entry: block content, maintained between marker comments
     pub block: Option<String>,
     /// template engine to render block content with; currently only "tera"

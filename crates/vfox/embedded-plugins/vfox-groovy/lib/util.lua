@@ -2,7 +2,7 @@
 local util = {}
 
 util.GROOVY_URL = "https://archive.apache.org/dist/groovy"
-util.DOWNLOAD_URL = "https://archive.apache.org/dist/groovy/%s/distribution/apache-groovy-sdk-%s.zip"
+util.DOWNLOAD_URL = "https://archive.apache.org/dist/groovy/%s/distribution/apache-groovy-binary-%s.zip"
 
 function util:compare_versions(v1o, v2o)
     local v1 = v1o.version
