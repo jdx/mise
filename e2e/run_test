@@ -160,7 +160,7 @@ within_isolated_env() {
         TMPDIR="$TEST_TMPDIR" \
         EXCLUDE_FROM_CI="${CI:-}" \
         MISE_E2E_INSIDE_DOCKER="${MISE_E2E_INSIDE_DOCKER:-}" \
-        E2E_ASSERTION_LOG="$TEST_ISOLATED_DIR/assertions" \
+        E2E_ASSERTION_LOG="$E2E_ASSERTION_LOG" \
         "$@"
   ) || return $?
 }
@@ -177,6 +177,11 @@ run_test() {
 
   local status=0
 
+  # ok() counts each passing check by appending to this file. It exists before
+  # the test starts and lives outside the test's tree, so the appends change no
+  # directory a test watches (hook-env's fast path checks their mtimes).
+  E2E_ASSERTION_LOG="$(mktemp "${TMPDIR:-/tmp}/mise-e2e-assertions.XXXXXX")"
+
   START="$(date +%s)"
   # Check shebang to determine which shell to use
   local shebang
@@ -192,9 +197,10 @@ run_test() {
   DURATION=$((END - START))s
 
   echo "$TEST: $DURATION" >&2
-  if [[ -f "$TEST_ISOLATED_DIR/assertions" ]]; then
-    echo "$TEST: $(wc -l <"$TEST_ISOLATED_DIR/assertions" | tr -d ' ') assertions" >&2
+  if [[ -s $E2E_ASSERTION_LOG ]]; then
+    echo "$TEST: $(wc -l <"$E2E_ASSERTION_LOG" | tr -d ' ') assertions" >&2
   fi
+  rm -f "$E2E_ASSERTION_LOG"
 
   # Check if test took >20s and isn't marked as slow
   DURATION_NUM="${DURATION%s}"
