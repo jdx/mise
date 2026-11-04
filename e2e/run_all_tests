@@ -129,8 +129,9 @@ pass_line() {
   local name="$1" log="$2" duration count
   duration="$(grep -m1 -E "^$name: [0-9]+s$" "$log" | sed 's/.*: //' || true)"
   # assert.sh's ok() prints `SUCCESS: ` unstyled and green on GitHub Actions
-  # or a terminal; count both.
-  count="$(grep -cE $'^(SUCCESS: |\e\\[92m)' "$log" || true)"
+  # or a terminal, then the `[command]` it checked; a test's own SUCCESS line
+  # has no `[`.
+  count="$(grep -cE $'^(SUCCESS: |\e\\[92m)\\[' "$log" || true)"
   local details="${duration:-}"
   if [[ ${count:-0} -gt 0 ]]; then
     local noun=assertions
