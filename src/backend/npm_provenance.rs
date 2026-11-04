@@ -10,9 +10,11 @@
 //!
 //! Only the tool's own package is checked. A package that publishes no
 //! provenance, and a private registry that serves none, install as they do
-//! with verification off.
+//! with verification off, unless `mise.lock` pins the package to a source
+//! repository: then the provenance must show that repository, and a package
+//! that no longer publishes any is refused.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use aube::embed::{InstallProvenanceFuture, InstallProvenanceSubject, InstallProvenanceVerifier};
 use base64::Engine as _;
@@ -24,13 +26,24 @@ use crate::http::HTTP;
 
 pub(crate) struct NpmProvenanceVerifier {
     package: String,
+    /// The repository `mise.lock` pins the package to, if it does.
+    pinned: Option<String>,
+    verified: Mutex<Option<String>>,
 }
 
 impl NpmProvenanceVerifier {
-    pub(crate) fn new(package: &str) -> Arc<Self> {
+    pub(crate) fn new(package: &str, pinned: Option<&str>) -> Arc<Self> {
         Arc::new(Self {
             package: package.to_string(),
+            pinned: pinned.map(str::to_string),
+            verified: Mutex::new(None),
         })
+    }
+
+    /// The repository the package's provenance showed, once an install
+    /// verified it. `None` when the package publishes no provenance.
+    pub(crate) fn verified_repository(&self) -> Option<String> {
+        self.verified.lock().ok()?.clone()
     }
 }
 
@@ -38,9 +51,12 @@ impl InstallProvenanceVerifier for NpmProvenanceVerifier {
     fn verify(&self, packages: Vec<InstallProvenanceSubject>) -> InstallProvenanceFuture<'_> {
         Box::pin(async move {
             for subject in packages.iter().filter(|s| s.name == self.package) {
-                verify_subject(subject)
+                let repository = verify_subject(subject, self.pinned.as_deref())
                     .await
                     .map_err(|e| miette!("{e:#}"))?;
+                if let (Some(repository), Ok(mut verified)) = (repository, self.verified.lock()) {
+                    *verified = Some(repository);
+                }
             }
             Ok(())
         })
@@ -92,20 +108,47 @@ fn select_provenance(entries: Vec<NpmAttestation>) -> eyre::Result<Vec<Attestati
     Ok(provenance)
 }
 
-async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> {
+/// The outcome for a package with no provenance to verify: it installs as it
+/// does with this off, unless the lockfile pins its source repository.
+fn unverified(
+    pinned: Option<&str>,
+    name: &str,
+    version: &str,
+    why: &str,
+) -> eyre::Result<Option<String>> {
+    match pinned {
+        Some(repository) => eyre::bail!(
+            "npm:{name}@{version} {why}, but mise.lock pins its provenance to {repository}"
+        ),
+        None => {
+            debug!("npm:{name}@{version} {why}, skipping provenance");
+            Ok(None)
+        }
+    }
+}
+
+/// Verifies `subject`'s provenance and returns the repository it was built
+/// from, or `None` when there is none to verify and nothing pins one.
+async fn verify_subject(
+    subject: &InstallProvenanceSubject,
+    pinned: Option<&str>,
+) -> eyre::Result<Option<String>> {
     let (name, version) = (&subject.name, &subject.version);
     let registry = npm_registry::package_registry(name);
     if !npm_registry::is_public_registry(&registry) {
-        debug!("npm:{name}@{version}: {registry} is not the public registry, skipping provenance");
-        return Ok(());
+        return unverified(
+            pinned,
+            name,
+            version,
+            &format!("comes from {registry}, which is not the public registry"),
+        );
     }
 
     let url = attestations_url(&registry, name, version);
     let response = match HTTP.json::<AttestationsResponse, _>(&url).await {
         Ok(response) => response,
         Err(err) if is_not_found(&err) => {
-            debug!("npm:{name}@{version} publishes no attestations");
-            return Ok(());
+            return unverified(pinned, name, version, "publishes no attestations");
         }
         Err(err) => {
             return Err(err.wrap_err(format!(
@@ -118,8 +161,7 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
     let provenance = select_provenance(response.attestations)
         .map_err(|e| e.wrap_err(format!("npm attestations for {name}@{version}")))?;
     if provenance.is_empty() {
-        debug!("npm:{name}@{version} publishes no provenance");
-        return Ok(());
+        return unverified(pinned, name, version, "publishes no provenance");
     }
 
     // Only a package that publishes provenance needs a digest to check it
@@ -134,14 +176,25 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
         )
     })?;
 
-    let sources = verify_forge_attestation_sources_for_sha512(&sha512, &provenance)
+    let mut sources = verify_forge_attestation_sources_for_sha512(&sha512, &provenance)
         .await
         .map_err(|e| eyre::eyre!("npm provenance for {name}@{version} did not verify: {e}"))?;
+    sources.sort();
+    sources.dedup();
     debug!(
         "npm:{name}@{version} provenance verified, built from {}",
         sources.join(", ")
     );
-    Ok(())
+    match pinned {
+        Some(pinned) if sources.iter().any(|source| source == pinned) => {
+            Ok(Some(pinned.to_string()))
+        }
+        Some(pinned) => eyre::bail!(
+            "npm:{name}@{version} was built from {}, but mise.lock pins its provenance to {pinned}",
+            sources.join(", ")
+        ),
+        None => Ok(sources.into_iter().next()),
+    }
 }
 
 fn is_not_found(err: &eyre::Report) -> bool {
@@ -216,6 +269,22 @@ mod tests {
             .unwrap()
             .is_empty()
         );
+    }
+
+    #[test]
+    fn a_package_without_provenance_installs_unless_the_lockfile_pins_one() {
+        let unpinned = unverified(None, "wrangler", "4.156.0", "publishes no provenance");
+        assert_eq!(unpinned.unwrap(), None);
+
+        let pinned = unverified(
+            Some("github.com/cloudflare/workers-sdk"),
+            "wrangler",
+            "4.156.0",
+            "publishes no provenance",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(pinned.contains("pins its provenance to github.com/cloudflare/workers-sdk"));
     }
 
     #[test]

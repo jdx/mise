@@ -2674,6 +2674,11 @@ provenance, or a private registry that serves none, installs as it does with
 this off. Provenance must come from GitHub Actions or from CI on gitlab.com;
 provenance built anywhere else, such as on a self-hosted GitLab, is not accepted
 yet, so such a package fails to install while this is on.
+
+The first install with this on records the repository the provenance names in
+`mise.lock` (lockfile revision 4). Later installs of that version must show the
+same repository, and a package that has stopped publishing provenance is
+refused.
 [`paranoid`](/configuration/settings.html#paranoid) turns it on for the
 `provenance` category.
 """

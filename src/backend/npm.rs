@@ -3,6 +3,7 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::npm_provenance::NpmProvenanceVerifier;
 use crate::backend::npm_registry;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
@@ -15,6 +16,7 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
 use crate::install_layout::resolver::redact_credentials;
+use crate::lockfile::PackageProvenance;
 use crate::semver::{semver_is_at_least, semver_is_older_than};
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
@@ -1230,7 +1232,11 @@ impl Backend for NPMBackend {
         Ok(self.is_version_installed(config, tv, check_symlink))
     }
 
-    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
         forget_aube_install_health(&tv.install_path());
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
@@ -1239,6 +1245,22 @@ impl Backend for NPMBackend {
             .await;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
+        // Lock lookup needs matching install options, but the repository a
+        // package was built from does not depend on them: load the pin by
+        // package and version, so an option change cannot swap the repository
+        // before the install is verified.
+        //
+        // The pin is loaded even with verification off, so the lock entry
+        // written for the new options keeps it for when it is turned back on.
+        if tv.npm_provenance.is_none() {
+            tv.npm_provenance = crate::lockfile::get_locked_npm_provenance(
+                &ctx.config,
+                &tv.request,
+                &crate::toolset::install_state::state_short(&tv.ba().short),
+                &tv.version,
+                &tv.ba().stored_full(),
+            );
+        }
         // A checksum without an aube lock installs a downloaded local archive,
         // which aube builds no provenance subject for.
         if Self::provenance_enabled() && options.checksum().is_some() && tv.aube_lock.is_none() {
@@ -1270,8 +1292,24 @@ impl Backend for NPMBackend {
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
-                self.install_via_aube_embed(ctx, &tv, &options, &package)
+                let verifier = self.provenance_verifier(&tv);
+                self.install_via_aube_embed(ctx, &tv, &options, &package, verifier.as_ref())
                     .await?;
+                if let Some(verifier) = verifier {
+                    match verifier.verified_repository() {
+                        Some(repository) => {
+                            tv.npm_provenance = Some(PackageProvenance { repository })
+                        }
+                        // A source the verifier is never shown, such as a git
+                        // spec, cannot satisfy a pin.
+                        None if tv.npm_provenance.is_some() => eyre::bail!(
+                            "npm:{} is pinned to a provenance repository in mise.lock, but its install has no provenance to verify; \
+                             remove the pin or turn off npm.provenance",
+                            self.display_tool_name()
+                        ),
+                        None => {}
+                    }
+                }
             }
             NpmPackageManager::AubeCli => {
                 self.install_via_aube_cli(ctx, &tv, &options, &package)
@@ -2133,16 +2171,24 @@ impl NPMBackend {
         settings.npm.provenance || settings.paranoid.provenance()
     }
 
-    fn with_provenance_verifier(
-        &self,
-        control: aube::embed::InstallControl,
-    ) -> aube::embed::InstallControl {
-        if Self::provenance_enabled() {
-            control.with_provenance_verifier(
-                crate::backend::npm_provenance::NpmProvenanceVerifier::new(&self.tool_name()),
+    /// The verifier for an install with provenance on, pinned to the
+    /// repository the lockfile records for the tool.
+    fn provenance_verifier(&self, tv: &ToolVersion) -> Option<Arc<NpmProvenanceVerifier>> {
+        Self::provenance_enabled().then(|| {
+            NpmProvenanceVerifier::new(
+                &self.tool_name(),
+                tv.npm_provenance.as_ref().map(|p| p.repository.as_str()),
             )
-        } else {
-            control
+        })
+    }
+
+    fn with_provenance_verifier(
+        control: aube::embed::InstallControl,
+        verifier: Option<&Arc<NpmProvenanceVerifier>>,
+    ) -> aube::embed::InstallControl {
+        match verifier {
+            Some(verifier) => control.with_provenance_verifier(verifier.clone()),
+            None => control,
         }
     }
 
@@ -2162,6 +2208,7 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
         package: &str,
+        verifier: Option<&Arc<NpmProvenanceVerifier>>,
     ) -> Result<()> {
         crate::backend::aube_host::init();
         let install_path = tv.install_path();
@@ -2186,11 +2233,12 @@ impl NPMBackend {
             install_options.strict_no_lockfile = true;
             install_options.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
             install_options.dangerously_allow_all_builds = matches!(allow_builds, AllowBuilds::All);
-            install_options.control = self.with_provenance_verifier(
+            install_options.control = Self::with_provenance_verifier(
                 aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
                     .with_prompt_decision_handler(Arc::new(AubePromptHandler {
                         yes: ctx.explicit_yes,
                     })),
+                verifier,
             );
             install_options.runtime = self.aube_embed_runtime(ctx).await;
             let install = aube::embed::install_with_overrides(
@@ -2230,11 +2278,12 @@ impl NPMBackend {
             // `aube.allowBuilds`; only the "allow everything" case needs the
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
-            control: self.with_provenance_verifier(
+            control: Self::with_provenance_verifier(
                 aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
                     .with_prompt_decision_handler(Arc::new(AubePromptHandler {
                         yes: ctx.explicit_yes,
                     })),
+                verifier,
             ),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
