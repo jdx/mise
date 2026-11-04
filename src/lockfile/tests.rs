@@ -5164,7 +5164,17 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let alias = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    aliasOf: other\n    resolution: {integrity: sha512-abc}\n";
     let orphan_snapshot = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      dep: 2.0.0\n";
     let with_dependency = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0(dep@2.0.0)\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n  dep@2.0.0:\n    resolution: {integrity: sha512-def}\nsnapshots:\n  cli@1.0.0(dep@2.0.0):\n    dependencies:\n      dep: 2.0.0\n  dep@2.0.0: {}\n";
+    let shorthand = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: owner/cli\n        version: owner/cli\npackages: {}\n";
+    let string_dep = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli: link:../cli\npackages: {}\n";
+    let peer_link = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n    peerDependencies:\n      evil: ../evil\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    let no_version = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    let unlisted = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  other@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
     for (graph, kept) in [
+        (shorthand, false),
+        (string_dep, false),
+        (peer_link, false),
+        (no_version, false),
+        (unlisted, false),
         (alias, false),
         (orphan_snapshot, false),
         (with_dependency, true),

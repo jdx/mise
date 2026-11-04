@@ -2562,7 +2562,7 @@ impl NPMBackend {
         // it picked, so there is nothing to compare until the tag is resolved.
         let resolves_locked_version = is_git_spec(&self.tool_name())
             || versions::SemVer::new(&tv.version).is_none()
-            || resolved.is_none_or(|v| v.split('(').next() == Some(tv.version.as_str()));
+            || resolved.is_some_and(|v| v.split('(').next() == Some(tv.version.as_str()));
         if requirement != Some(self.package_requirement(tv)?.as_str()) || !resolves_locked_version {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
