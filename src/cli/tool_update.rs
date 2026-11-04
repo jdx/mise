@@ -338,7 +338,7 @@ const GLOBAL_SCOPE_ENV: &str = "__MISE_GLOBAL_SCOPE";
 fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
     // A shim may point to this executable, so resolve the symlink
     // before launching an internal mise command.
-    let mut command = Command::new(crate::file::canonicalize_or_self(&env::MISE_BIN));
+    let mut command = Command::new(crate::shims::running_mise_bin());
     command
         .args(args)
         .env_clear()
