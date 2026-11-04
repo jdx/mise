@@ -14,6 +14,10 @@ run = 'echo works'
 description = "Accept a path"
 usage = 'arg "<value>"'
 run = 'true'
+
+[tasks.upgrade]
+description = "A task named like a built-in alias"
+run = 'true'
 EOF
 
 fish_tasks="$(mise __complete_word__ --shell fish --line 'mise run ')"
@@ -49,3 +53,10 @@ assert_not_contains_text "$tools" $'\001files'
 
 task_paths="$(mise __complete_word__ --shell fish --line 'mise run paths ')"
 assert_contains_text "$task_paths" $'\001files'
+
+# `mise upgrade` runs the built-in, so a task of that name must not replace its description
+shadowed="$(mise __complete_word__ --shell fish --line 'mise up')"
+assert_contains_text "$shadowed" $'upgrade\tUpgrade outdated tools'
+assert_not_contains_text "$shadowed" 'A task named like a built-in alias'
+run_shadowed="$(mise __complete_word__ --shell fish --line 'mise run up')"
+assert_contains_text "$run_shadowed" $'upgrade\tA task named like a built-in alias'

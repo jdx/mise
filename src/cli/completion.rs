@@ -131,6 +131,7 @@ fn complete_spec(
             // Project data answers here; a value carrying a control character would be read
             // as protocol rather than as a candidate.
             .filter(|(value, _)| is_completable(value))
+            .filter(|(value, description)| !shadowed_by_command(spec, request, value, description))
             .map(|(value, description)| {
                 let description = strip_control_chars(&description);
                 if description.is_empty() {
@@ -157,6 +158,43 @@ fn complete_spec(
 /// for task names or `run=` completer output, which come from project files that need not be
 /// trusted. A value that could be read as protocol, or that would start a line of its own, is
 /// left out rather than escaped: no name a shell can complete needs a control character.
+/// Whether a candidate is a task named like a command `mise <name>` runs instead.
+///
+/// With a default subcommand, the first word completes both the commands and the mounted task
+/// names. A task called `upgrade` is then offered beside the built-in `upgrade`, and a shell
+/// that lists one entry per name shows the task's description over the command's. `mise
+/// upgrade` runs the command, so the task is only reachable as `mise run upgrade`. A candidate
+/// that carries a command's name or alias without that command's description is the task.
+fn shadowed_by_command(
+    spec: &usage::Spec,
+    request: &usage_rs::complete::CompletionRequest,
+    value: &str,
+    description: &str,
+) -> bool {
+    if spec.default_subcommand.is_none() {
+        return false;
+    }
+    // Only the first word that is not a flag picks a command.
+    let at_first_word = request
+        .split
+        .words
+        .get(1..request.split.cword)
+        .is_some_and(|before| before.iter().all(|w| w.starts_with('-')));
+    if !at_first_word {
+        return false;
+    }
+    spec.cmd.subcommands.values().any(|cmd| {
+        let named = cmd.name == value
+            || cmd
+                .aliases
+                .iter()
+                .chain(&cmd.hidden_aliases)
+                .any(|alias| alias == value);
+        let help = cmd.help.as_deref().unwrap_or_default().lines().next();
+        named && help.unwrap_or_default() != description
+    })
+}
+
 fn is_completable(value: &str) -> bool {
     !value.chars().any(char::is_control)
 }
