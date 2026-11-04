@@ -6,5 +6,8 @@ bins = ["odin"]
 [[backends]]
 full = "github:odin-lang/Odin"
 
+[backends.options]
+bin_path = "."
+
 [[backends]]
 full = "asdf:jtakakura/asdf-odin"
