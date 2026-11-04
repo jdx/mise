@@ -141,6 +141,7 @@ These [`mise run`](/cli/run.html) flags change how a run proceeds:
 | `-c`, `--continue-on-error`   | Keep running after a task fails. See [When a task fails](#when-a-task-fails).                                                                                                                                       |
 | `--skip-deps`                 | Run only the named tasks, without their dependencies.                                                                                                                                                               |
 | `--timeout <DURATION>`        | Stop the whole run after a duration such as `30s` or `5m`. Overrides the [`task.timeout`](/configuration/settings.html#task.timeout) setting.                                                                       |
+| `--report-file <PATH>`        | Write a JSON report of every task's result when the run ends. See [Run report](#run-report).                                                                                                                        |
 | `-C`, `--cd <DIR>`            | Run as if mise started in another directory.                                                                                                                                                                        |
 | `-t`, `--tool <TOOL@VERSION>` | Add a tool to the run, such as `--tool node@24`.                                                                                                                                                                    |
 | `--skip-tools`                | Do not install missing tools before the tasks start.                                                                                                                                                                |
@@ -159,6 +160,72 @@ already started. The run exits with the failed task's status.
 With `--continue-on-error`, running tasks finish and the remaining tasks still
 start, including tasks that depend on the failed one. At the end, mise lists the
 failed tasks and exits with a non-zero status.
+
+### Run report
+
+`mise run --report-file <PATH>` writes a JSON report when the run ends, whether
+it passes, fails, is interrupted with Ctrl-C, or stops at `--timeout`. CI
+dashboards and agent tools can read what ran and how it ended instead of
+parsing the output. Setting `MISE_TASK_REPORT_FILE` does the same without
+changing the command line. The tasks the run starts do not inherit
+`MISE_TASK_REPORT_FILE`, so a `mise run` inside a task does not overwrite the
+report.
+
+```json
+{
+  "version": 1,
+  "status": "failed",
+  "started_at": "2026-11-04T12:00:00.000Z",
+  "ended_at": "2026-11-04T12:00:01.500Z",
+  "duration_ms": 1500,
+  "tasks": [
+    {
+      "name": "lint",
+      "args": [],
+      "status": "skipped",
+      "exit_code": null,
+      "duration_ms": 2,
+      "started_at": "2026-11-04T12:00:00.100Z",
+      "ended_at": "2026-11-04T12:00:00.102Z"
+    },
+    {
+      "name": "test",
+      "args": ["--quick"],
+      "status": "failed",
+      "exit_code": 3,
+      "duration_ms": 1300,
+      "started_at": "2026-11-04T12:00:00.110Z",
+      "ended_at": "2026-11-04T12:00:01.410Z"
+    },
+    {
+      "name": "deploy",
+      "args": [],
+      "status": "not_run",
+      "exit_code": null,
+      "duration_ms": null,
+      "started_at": null,
+      "ended_at": null
+    }
+  ]
+}
+```
+
+`tasks` lists every task the run scheduled, dependencies included, in the order
+they started, followed by the tasks that never started. A task's `status` is one
+of:
+
+| Status      | Meaning                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `passed`    | It ran and exited 0.                                                                                          |
+| `failed`    | It ran, or failed to start, and did not succeed. `exit_code` is its exit status, or `null` when it had none.  |
+| `cancelled` | mise stopped it: Ctrl-C, `--timeout`, or another task failing.                                                |
+| `skipped`   | It did not need to run: its [outputs were up to date](#skip-tasks-that-are-up-to-date), or `skip_if` was met. |
+| `cached`    | Its result was restored from the [artifact cache](/tasks/caching.html).                                       |
+| `not_run`   | The run ended before it started.                                                                              |
+
+The top-level `status` is `passed`, `failed`, `cancelled`, or `timed_out`.
+Arguments are redacted like the terminal output. A `version` change means a
+field changed meaning; new fields can appear without one.
 
 ## Output
 

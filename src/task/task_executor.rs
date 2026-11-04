@@ -436,6 +436,8 @@ pub struct TaskExecutor {
 pub struct TaskRunOutcome {
     pub did_work: bool,
     pub cache_key: Option<String>,
+    /// The task's result came from the artifact cache instead of running it.
+    pub restored: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -834,6 +836,7 @@ impl TaskExecutor {
                             return Ok(TaskRunOutcome {
                                 did_work: false,
                                 cache_key: Some(cache.key().to_string()),
+                                restored: false,
                             });
                         }
                         // The run may change the outputs and fail before it marks its key, so
@@ -868,6 +871,7 @@ impl TaskExecutor {
                         return Ok(TaskRunOutcome {
                             did_work: false,
                             cache_key: Some(cache.key().to_string()),
+                            restored: false,
                         });
                     }
                     if bypass_cache {
@@ -924,6 +928,7 @@ impl TaskExecutor {
                                     return Ok(TaskRunOutcome {
                                         did_work: true,
                                         cache_key: Some(cache.key().to_string()),
+                                        restored: true,
                                     });
                                 }
                                 TaskCacheRestore::Miss(reason) => reason,
@@ -1233,6 +1238,7 @@ impl TaskExecutor {
         Ok(TaskRunOutcome {
             did_work: true,
             cache_key,
+            restored: false,
         })
     }
 
@@ -3053,6 +3059,16 @@ impl TaskExecutor {
         } else {
             env.remove(crate::shims::TASK_TOOL_ARGS_ENV);
             env_remove.insert(crate::shims::TASK_TOOL_ARGS_ENV.to_string());
+        }
+        // The report this run writes is not the report of a `mise run` the task starts, which
+        // would otherwise overwrite it. A value the task's own env sets is passed on.
+        let report_env = crate::task::run_report::REPORT_FILE_ENV;
+        if std::env::var_os(report_env).is_some_and(|inherited| {
+            env.get(report_env)
+                .is_none_or(|value| inherited == value.as_str())
+        }) {
+            env.remove(report_env);
+            env_remove.insert(report_env.to_string());
         }
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();

@@ -8892,6 +8892,14 @@ Connect the tasks directly to stdin, stdout, and stderr instead of reading their
 
 Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
 .TP
+\fB\-\-report\-file\fR \fI<PATH>\fR
+Write a JSON report of every task the run scheduled to this file when the run ends
+
+Written on success, failure, Ctrl\-C and `\-\-timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_REPORT_FILE\fR
+.RE
+.TP
 \fB\-\-secrets\fR \fI<SECRET>\fR
 [experimental] Give the named tasks these secrets (comma\-separated); their dependencies and subtasks do not get them
 

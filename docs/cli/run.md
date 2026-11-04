@@ -74,6 +74,11 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`-r --raw`** — Connect the tasks directly to stdin, stdout, and stderr instead of reading their output by line
 
   Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
+- **`--report-file <PATH>`** — Write a JSON report of every task the run scheduled to this file when the run ends
+
+  Written on success, failure, Ctrl-C and `--timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+
+  **Environment Variable:** `MISE_TASK_REPORT_FILE`
 - **`--secrets <SECRET>`** — [experimental] Give the named tasks these secrets (comma-separated); their dependencies and subtasks do not get them
 
   Put this flag before the task name. Not allowed in safe mode.
