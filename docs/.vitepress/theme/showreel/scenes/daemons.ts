@@ -7,7 +7,7 @@
 // names, `[daemons] postgres = "18"`, and caption 1 says the task declares
 // the daemon it needs. Then `mise run db` types and plays at real time:
 // pitchfork's own readiness spinner (`waiting for command … pg_isready …`)
-// over Postgres's log lines, dimmed as texture, then `✔ [shop/postgres]
+// over Postgres's log lines, dimmed as texture, then `✔ pitchfork: [shop/postgres]
 // started on port 5432`, `[db] $ psql -Atc "show server_version"` and the
 // server's real version, held for its read while [daemons] lights sage and
 // its pilot light comes on; the version lifts out of its row as a 40 px

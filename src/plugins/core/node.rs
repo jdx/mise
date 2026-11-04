@@ -1029,6 +1029,13 @@ impl NodePlugin {
     /// error the caller locks the artifact without a checksum, so the install that follows
     /// checks the signature itself and fails the same way.
     async fn verify_shasums_with_gpg(&self, shasums_url: &Url, shasums: &str) -> Result<()> {
+        // unofficial-builds signs nothing, and `mise lock` records its musl entries from any
+        // host, so a warning here would print on every lock with nothing to act on. An
+        // install from it still warns (`missing_signature`).
+        if !publishes_signatures(shasums_url) {
+            debug!("{shasums_url} is not signed, skipping signature verification");
+            return Ok(());
+        }
         // `mise lock` asks once per target platform; fetch and check each signature once.
         static VERIFIED: OnceLock<Mutex<BTreeMap<String, String>>> = OnceLock::new();
         let mut verified = VERIFIED.get_or_init(Default::default).lock().await;

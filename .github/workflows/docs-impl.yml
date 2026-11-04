@@ -47,9 +47,11 @@ jobs:
   # reads (xtasks/docs/showreel lists them). Captures use the newest mise
   # release, so a release that moves mise's node `lts` alias changes the key
   # and is the run that re-renders; other releases find main's render and
-  # don't wait on one. Nothing here fails the run: on any failure the site
-  # keeps the last good render, or builds without one, with a warning on the
-  # run.
+  # don't wait on one. A failed lookup, recording or render leaves the last
+  # good render, with a warning on the run; a step before the cache is
+  # mounted (checkout, mise-action, aube install) fails the job instead.
+  # With no render either way, the docs job below fails the run rather than
+  # build the site without one.
   showreel:
     if: github.repository == 'jdx/mise' && inputs.trusted && github.event_name != 'pull_request'
     runs-on: ${{ inputs.trusted && 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-docs-showreel' || 'ubuntu-latest' }}
@@ -66,7 +68,7 @@ jobs:
     # time across main, releases and dispatches (the run's own group only
     # orders deploys, or runs on one ref). A job never cancels a running one;
     # GitHub keeps only the newest waiting job, and a docs job whose showreel
-    # job was dropped builds without the reel and warns.
+    # job was dropped fails; rerun it once the volume is free.
     concurrency:
       group: docs-showreel-volume
       cancel-in-progress: false
@@ -182,8 +184,8 @@ jobs:
 
   docs:
     needs: [showreel]
-    # Whether the showreel job ran, found a render, or failed, the site builds
-    # (without one if it has none).
+    # Runs whatever the showreel job's result, so that a trusted run outside
+    # pull requests can fail with the reason when it has no render.
     if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' }}
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     # The build and deploy take about two minutes, but the rate-limit step below can
@@ -244,19 +246,22 @@ jobs:
         with:
           name: showreel
           path: ${{ runner.temp }}/showreel
-      - name: Note a missing showreel
+      - name: Stop without a showreel
         if: inputs.trusted && github.event_name != 'pull_request' && needs.showreel.result != 'success'
         env:
           RESULT: ${{ needs.showreel.result }}
-        run: echo "::warning title=Showreel::The showreel job did not succeed ($RESULT), so the site builds without the reel"
+        run: |
+          echo "::error title=Showreel::The showreel job did not succeed ($RESULT), so the site is not built without the reel"
+          exit 1
+      # The showreel job runs only for trusted runs outside pull requests, so
+      # a render is required here.
       - name: Put the showreel in place
         if: needs.showreel.result == 'success'
-        continue-on-error: true
         run: |
           stage="$RUNNER_TEMP/showreel"
           if ! [ -s "$stage/showreel.mp4" ] || ! [ -s "$stage/showreel-poster.jpg" ]; then
-            echo "::warning title=Showreel::The showreel job left no render, so the site builds without one"
-            exit 0
+            echo "::error title=Showreel::The showreel job left no render (its log says why), so the site is not built without one"
+            exit 1
           fi
           for f in showreel-120.mp4 showreel.mp4 showreel-poster.jpg showreel-chapters.vtt showreel-overview.mp4 showreel-overview-chapters.vtt; do
             if [ -s "$stage/$f" ]; then cp "$stage/$f" "docs/public/$f"; fi
@@ -271,23 +276,8 @@ jobs:
             echo "SHOWREEL_OVERVIEW_CHAPTERS=$stage/overview-chapters.json" >>"$GITHUB_ENV"
           fi
 
-      # Built once, then uploaded. A build that fails only with the showreel
-      # in it is built again without it.
-      - name: Build the site
-        id: build
-        continue-on-error: ${{ inputs.trusted && github.event_name != 'pull_request' }}
-        run: mise run docs:build
-      - name: Build the site without the showreel
-        if: steps.build.outcome == 'failure'
-        run: |
-          if ! [ -f docs/public/showreel.mp4 ]; then
-            echo "::error::The site does not build (see the step above)"
-            exit 1
-          fi
-          echo "::warning title=Showreel::The site did not build with the showreel, so it is built and deployed without it"
-          rm -f docs/public/showreel-120.mp4 docs/public/showreel.mp4 docs/public/showreel-poster.jpg docs/public/showreel-overview.mp4 docs/public/showreel-overview-chapters.vtt
-          git checkout -- docs/public/showreel-chapters.vtt
-          mise run docs:build
+      # Built once, then uploaded.
+      - run: mise run docs:build
       - run: mise run --skip-deps docs:release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
