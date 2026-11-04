@@ -7,6 +7,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  onServerPrefetch,
   provide,
   reactive,
   ref,
@@ -27,6 +28,20 @@ const groups = computed(() => grouped(keys.value));
 const total = computed(() =>
   keys.value.reduce((n, key) => n + 1 + key.count, 0),
 );
+
+// Every key as a heading with its description, for the site search's crawler, which does not
+// run scripts. Only the server renders these, so the page's script does not carry the whole
+// reference, and hydration drops them.
+const crawled = shallowRef([]);
+const descendants = (key) =>
+  key.children.flatMap((child) => [child, ...descendants(child)]);
+onServerPrefetch(async () => {
+  const everything = (await import("/config-reference.data.ts")).data;
+  crawled.value = everything.map((section) => ({
+    section,
+    keys: descendants(section),
+  }));
+});
 
 const entities = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
 
@@ -463,6 +478,23 @@ function firstSentence(html) {
       </div>
     </div>
   </div>
+  <div class="crawled" data-allow-mismatch="children">
+    <!-- the v-if lets hydration drop the sections quietly; an empty v-for would not -->
+    <template v-if="crawled.length > 0">
+      <section v-for="{ section, keys: below } in crawled" :key="section.path">
+        <h2 :id="section.path">
+          <code>{{ section.path }}</code>
+        </h2>
+        <div v-html="section.description"></div>
+        <template v-for="key in below" :key="key.path">
+          <h3 :id="key.path">
+            <code>{{ key.path }}</code>
+          </h3>
+          <div v-html="key.description"></div>
+        </template>
+      </section>
+    </template>
+  </div>
 </template>
 
 <style>
@@ -475,6 +507,10 @@ function firstSentence(html) {
 </style>
 
 <style scoped>
+.crawled {
+  display: none;
+}
+
 .explorer {
   display: grid;
   grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
