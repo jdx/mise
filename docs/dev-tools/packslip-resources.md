@@ -162,7 +162,10 @@ prune = true
 ```
 
 With `auto_sync`, mise syncs after `mise install`, after `mise use` changes a
-version, and after `mise upgrade`. `prune = true` removes links mise made for
+version, and after `mise upgrade`. The project's directory gets the tools its
+own config declares, and any tool a `MISE_<TOOL>_VERSION` variable selects.
+Other tools only your global config declares are linked under your home
+directory instead. `prune = true` removes links mise made for
 skills that are no longer active; without it, stale links stay. To prune on one
 manual run:
 
