@@ -653,6 +653,7 @@ mod tests {
         let prefixes = encrypted_prefixes(&repo, Some(&encrypted)).unwrap();
         assert!(is_encrypted(&prefixes, "home/secret.d/a"));
         assert!(!is_encrypted(&prefixes, "home/secret.d2/b"));
+        assert!(is_encrypted(&prefixes, "home/secret.d"));
         let plain = manifest(false).write(&repo, &tree).unwrap();
         assert!(encrypted_paths(&repo, Some(&plain)).unwrap().is_empty());
     }

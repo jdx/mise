@@ -613,6 +613,68 @@ mod tests {
         Ok(())
     }
 
+    /// A saved file this machine cannot decrypt is not held, even when its
+    /// live file is gone: both sides must not read as "nothing".
+    #[cfg(unix)]
+    #[test]
+    fn an_undecryptable_saved_file_with_no_live_file_is_not_held() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::checkpoint::test_checkpoint;
+        use crate::history::shadow::Overlay;
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+        use age::secrecy::ExposeSecret;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let key = age::x25519::Identity::generate();
+        let mut environment = mise_util::testing::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        // encrypted for someone else, so this machine's key cannot open it
+        let other = age::x25519::Identity::generate();
+        let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(other.to_public())];
+
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-undecryptable-")
+            .tempdir_in(&roots.home)?;
+        // listed as live in the walk, never created on disk
+        let file = normalize(scratch.path()).join("secret.txt");
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entry = TrackedEntry::new(file.clone(), "track", policy);
+        let stream = entry.tree_path(&file)?;
+        let ciphertext = crate::history::sync::files::encode(
+            &stream,
+            "100644",
+            b"private contents",
+            "scheme",
+            &recipients,
+        )?;
+        let overlay = Overlay {
+            path: stream.clone(),
+            object: Some(("100644".into(), repo.hash_blob(&ciphertext)?)),
+        };
+        let tree = repo.compose(&repo.empty_object("tree")?, &[overlay])?;
+        let saved = repo.write_checkpoint(Some(&tree), &test_checkpoint("saved", Some(&tree)))?;
+        let mut walk = Walk {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        walk.files.insert(file, (0, policy));
+        let encrypted = BTreeSet::from([stream.clone()]);
+        assert!(!live_matches_saved(
+            &repo,
+            Some(&saved),
+            &walk,
+            0,
+            &stream,
+            &encrypted
+        )?);
+        Ok(())
+    }
+
     /// A parent whose enrollment manifest cannot be read holds nothing: the
     /// stream is carried and the save goes on, as before the encrypted
     /// paths were loaded once per save.
