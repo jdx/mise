@@ -361,6 +361,7 @@ pub(crate) fn check_semver_bump(old: &str, new: &str) -> Option<String> {
 
 /// Represents a config file update needed when a CLI-specified version doesn't match
 /// the current config prefix.
+#[derive(Clone)]
 pub struct ConfigBump {
     pub tool_name: String,
     pub config_path: std::path::PathBuf,

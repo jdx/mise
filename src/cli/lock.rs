@@ -494,6 +494,9 @@ struct LockRun<'a> {
     toolset: &'a Toolset,
     resolve_options: &'a ResolveOptions,
     inputs: LockInputs,
+    /// Config edits this run makes. They are known before any target is bound
+    /// so a lockfile binds the request the config will hold afterwards.
+    config_bumps: Vec<crate::toolset::outdated_info::ConfigBump>,
 }
 
 /// A lockfile target whose tools have been resolved but not yet written.
@@ -729,12 +732,14 @@ impl Lock {
             &ts_owned
         };
 
+        let config_bumps = self.compute_config_bumps(&setup, &inputs);
         let run = LockRun {
             setup,
             settings,
             toolset: ts,
             resolve_options: &lock_resolve_options,
             inputs,
+            config_bumps,
         };
         let mut outcome = LockOutcome::default();
 
@@ -1288,14 +1293,14 @@ impl Lock {
         let format_changed = self.upgrade && lockfile.needs_upgrade() && resolution_succeeded;
         if format_changed {
             self.prepare_lockfile_format(lockfile_path, &mut lockfile);
-            if !self.bind_requests(&mut lockfile, tools, target_platforms) {
+            if !self.bind_requests(run, &mut lockfile, tools, target_platforms) {
                 bail!(
                     "cannot upgrade {} because not every request binding was resolved",
                     display_path(lockfile_path)
                 );
             }
         } else {
-            self.bind_requests(&mut lockfile, tools, target_platforms);
+            self.bind_requests(run, &mut lockfile, tools, target_platforms);
         }
         let graph_tools = lockfile::generate::tools_on_platforms(tools, target_platforms);
         Box::pin(lockfile::generate::populate_uv_locks(
@@ -1380,40 +1385,49 @@ impl Lock {
         Ok(())
     }
 
-    /// Update config files when a specific version is requested that doesn't match
-    /// the current prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`).
-    /// Never under --bump, which is documented to leave config files untouched.
+    /// The config edits for a specific version that doesn't match the current
+    /// prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`).
+    /// None under --bump, which is documented to leave config files untouched.
+    fn compute_config_bumps(
+        &self,
+        setup: &LockSetup<'_>,
+        inputs: &LockInputs,
+    ) -> Vec<crate::toolset::outdated_info::ConfigBump> {
+        if self.bump {
+            return Vec::new();
+        }
+        let tool_versions: Vec<(String, String)> = self
+            .tool
+            .iter()
+            .filter_map(|t| {
+                t.tvr
+                    .as_ref()
+                    .map(|tvr| (t.ba.short.clone(), tvr.version()))
+            })
+            .collect();
+        let refs: Vec<(&str, &str)> = tool_versions
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_str()))
+            .collect();
+        crate::toolset::outdated_info::compute_config_bumps_for_paths(
+            setup.config,
+            &refs,
+            &inputs.scoped_config_paths,
+        )
+    }
+
+    /// Apply (or preview) the planned config bumps.
     /// Returns the bumps that atomic runs apply later with their lockfile writes.
     fn plan_config_bumps(
         &self,
         run: &LockRun<'_>,
     ) -> Result<Vec<crate::toolset::outdated_info::ConfigBump>> {
         let mut deferred_config_bumps = Vec::new();
-        if !self.bump {
-            use crate::toolset::outdated_info::{
-                apply_config_bumps, compute_config_bumps_for_paths,
-            };
-            let tool_versions: Vec<(String, String)> = self
-                .tool
-                .iter()
-                .filter_map(|t| {
-                    t.tvr
-                        .as_ref()
-                        .map(|tvr| (t.ba.short.clone(), tvr.version()))
-                })
-                .collect();
-            let refs: Vec<(&str, &str)> = tool_versions
-                .iter()
-                .map(|(n, v)| (n.as_str(), v.as_str()))
-                .collect();
-            let bumps = compute_config_bumps_for_paths(
-                run.setup.config,
-                &refs,
-                &run.inputs.scoped_config_paths,
-            );
+        if !run.config_bumps.is_empty() {
+            let bumps = &run.config_bumps;
             if self.dry_run {
                 if !self.json {
-                    for bump in &bumps {
+                    for bump in bumps {
                         miseprintln!(
                             "Would update {} from {} to {} in {}",
                             redact_output(&bump.tool_name),
@@ -1424,9 +1438,9 @@ impl Lock {
                     }
                 }
             } else if run.setup.atomic {
-                deferred_config_bumps = bumps;
+                deferred_config_bumps = bumps.clone();
             } else {
-                apply_config_bumps(run.setup.config, &bumps)?;
+                crate::toolset::outdated_info::apply_config_bumps(run.setup.config, bumps)?;
             }
         }
         Ok(deferred_config_bumps)
@@ -1781,6 +1795,7 @@ impl Lock {
 
     fn bind_requests(
         &self,
+        run: &LockRun<'_>,
         lockfile: &mut Lockfile,
         tools: &[LockTool],
         platforms: &[Platform],
@@ -1794,6 +1809,16 @@ impl Lock {
                 all_bound = false;
                 continue;
             };
+            // A config bump rewrites the request, so bind what the config will
+            // say rather than the version argument that caused the bump.
+            let specifier = run
+                .config_bumps
+                .iter()
+                .find(|bump| {
+                    bump.tool_name == ba.short
+                        && tv.request.source().path() == Some(bump.config_path.as_path())
+                })
+                .map_or_else(|| tv.request.version(), |bump| bump.new_request.version());
             for platform in platforms {
                 if !tv.request.is_os_supported_on(platform) {
                     continue;
@@ -1806,12 +1831,8 @@ impl Lock {
                         all_bound = false;
                         continue;
                     };
-                    all_bound &= lockfile.bind_request(
-                        &ba.short,
-                        &tv.request.version(),
-                        &tv.version,
-                        &options,
-                    );
+                    all_bound &=
+                        lockfile.bind_request(&ba.short, &specifier, &tv.version, &options);
                 }
             }
         }
