@@ -5161,7 +5161,13 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let overrides = "lockfileVersion: '9.0'\noverrides:\n  dep: portal:../dep\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages: {}\n";
     let no_packages = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n";
     let empty_integrity = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {}\n";
+    let alias = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    aliasOf: other\n    resolution: {integrity: sha512-abc}\n";
+    let orphan_snapshot = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      dep: 2.0.0\n";
+    let with_dependency = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0(dep@2.0.0)\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n  dep@2.0.0:\n    resolution: {integrity: sha512-def}\nsnapshots:\n  cli@1.0.0(dep@2.0.0):\n    dependencies:\n      dep: 2.0.0\n  dep@2.0.0: {}\n";
     for (graph, kept) in [
+        (alias, false),
+        (orphan_snapshot, false),
+        (with_dependency, true),
         (empty_integrity, false),
         (registry, true),
         (tarball, false),

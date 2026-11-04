@@ -5502,6 +5502,7 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
     graph.keys().all(|key| SECTIONS.contains(&key.as_str()))
         && packages.iter().all(|(key, package)| {
             !key.contains(':')
+                && package.get("aliasOf").is_none()
                 && package
                     .get("resolution")
                     .and_then(toml::Value::as_table)
@@ -5525,9 +5526,16 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         && table("snapshots").is_none_or(|snapshots| {
             snapshots.iter().all(|(key, snapshot)| {
                 !key.contains(':')
-                    && dependency_tables(snapshot)
-                        .iter()
-                        .all(|deps| deps.values().all(plain))
+                    && packages.contains_key(key.split('(').next().unwrap_or(key))
+                    && dependency_tables(snapshot).iter().all(|deps| {
+                        deps.iter().all(|(name, version)| {
+                            plain(version)
+                                && version.as_str().is_some_and(|v| {
+                                    let v = v.split('(').next().unwrap_or(v);
+                                    packages.contains_key(&format!("{name}@{v}"))
+                                })
+                        })
+                    })
             })
         })
 }
