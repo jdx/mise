@@ -2101,6 +2101,11 @@ pub async fn err_no_version_set(
     tvs: Vec<ToolVersion>,
 ) -> Result<PathBuf> {
     if tvs.is_empty() {
+        // A shim left over from an older version: the configured tool may now ship the
+        // executable under another name, which is more useful to say than "invalid shim".
+        if let Some(msg) = unavailable_configured_tool_message(config, &ts, bin_name).await {
+            return Err(eyre!(msg));
+        }
         bail!(
             "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
         );
@@ -2245,7 +2250,7 @@ pub async fn unavailable_configured_tool_message(
     let mut lacking = vec![];
     for (backend, tv) in versions {
         let bins = offered_bins(config, &backend, &tv).await;
-        if bins.is_empty() || bins.iter().any(|b| same_bin_name(b, bin_name)) {
+        if bins.is_empty() || offers_bin(&bins, bin_name) {
             reinstall.push(tv);
         } else {
             lacking.push((tv, bins));
@@ -2280,18 +2285,13 @@ pub async fn unavailable_configured_tool_message(
     Some(msg.trim().to_string())
 }
 
-fn same_bin_name(a: &str, b: &str) -> bool {
-    let stem = |n: &str| {
-        let n = if cfg!(windows) {
-            Path::new(n)
-                .file_stem()
-                .map_or(n.to_string(), |s| s.to_string_lossy().into_owned())
-        } else {
-            n.to_string()
-        };
-        shim_filename_key(n)
-    };
-    stem(a) == stem(b)
+/// Whether an executable the install offers answers to `bin_name` the way the real lookup does:
+/// an explicit extension must match exactly, a bare name also matches its Windows extensions.
+fn offers_bin(bins: &BTreeSet<String>, bin_name: &str) -> bool {
+    file::executable_names(bin_name).iter().any(|name| {
+        bins.iter()
+            .any(|b| shim_filename_key(b.clone()) == shim_filename_key(name.clone()))
+    })
 }
 
 /// `mise install <tool>` deliberately writes to no config file, so the tool's
@@ -2699,6 +2699,37 @@ mod tests {
         assert!(!msg.contains("install --force"), "{msg}");
         assert!(msg.contains("does not provide codex"), "{msg}");
         assert!(msg.contains("dekit"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn stale_shim_for_renamed_bin_names_what_the_version_provides() {
+        let config = Config::get().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let mut ts = Toolset::new(ToolSource::Argument);
+
+        let ba = Arc::new(BackendArg::from("codex"));
+        let request = ToolRequest::new(ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request.clone(), "1.0.0".into());
+        let install_path = temp.path().join("codex");
+        let bin_dir = install_path.join("bin");
+        file::create_dir_all(&bin_dir).unwrap();
+        let renamed = bin_dir.join(if cfg!(windows) { "dekit.exe" } else { "dekit" });
+        fs::write(&renamed, "").unwrap();
+        file::make_executable(&renamed).unwrap();
+        tv.install_path = Some(install_path);
+
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+        tvl.versions.push(tv);
+        ts.versions.insert(ba, tvl);
+
+        // No installed version provides the bin, so the shim has no providers at all.
+        let err = err_no_version_set(&config, ts, "codex", vec![])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("does not provide codex"), "{err}");
+        assert!(!err.contains("install --force"), "{err}");
     }
 
     #[tokio::test]
