@@ -4463,7 +4463,9 @@ fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         };
         let expected = req.source.join(&source_rel);
         if link_points_at(entry.path(), &dest, &expected)
-            && (!expected.exists() || is_excluded(&source_rel, &req.exclude))
+            // a dangling link in the source is still a source entry the walk deploys
+            && (std::fs::symlink_metadata(&expected).is_err()
+                || is_excluded(&source_rel, &req.exclude))
         {
             out.push(entry.path().to_path_buf());
         }
