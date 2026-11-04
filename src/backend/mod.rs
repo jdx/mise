@@ -4705,14 +4705,21 @@ pub trait Backend: Debug + Send + Sync {
                     // old releases happened to be numbered: Odin's `0.12.0`
                     // from 2020. Pick from every version the cutoff allows.
                     if !fuzzy_version_matches("latest", &version) {
-                        let versions = self
+                        // A stable request still leaves out what the shared
+                        // matcher would treat as a pre-release.
+                        let versions: Vec<String> = self
                             .every_version_for_latest(
                                 config,
                                 selection_opts,
                                 before_date,
                                 fallback_refresh,
                             )
-                            .await?;
+                            .await?
+                            .into_iter()
+                            .filter(|v| {
+                                !VERSION_REGEX.is_match(v) && !self.is_backend_prerelease(v)
+                            })
+                            .collect();
                         return Ok(find_match_in_list(&versions, resolved_query));
                     }
                 }
@@ -7251,12 +7258,14 @@ mod latest_version_tests {
         // Odin numbered its releases until 2020 and names them `dev-*` since.
         // Its own latest release is too new, and the only numeric one is years
         // old; `latest` must stay on the newest `dev-*` the cutoff allows.
-        let backend = LatestBackend::new("test-cutoff-non-numeric-latest")
+        let backend = LatestBackend::new("test-cutoff-non-numeric-latest-unflagged-rc")
             .with_stable_info(dated("dev-2026-11a", "2026-11-03"))
             .with_remote_versions(vec![
                 dated("0.12.0", "2020-01-18"),
                 dated("dev-2026-09", "2026-09-01"),
                 dated("dev-2026-10", "2026-10-01"),
+                // Unflagged, but a pre-release by its name.
+                dated("1.0.0-rc.1", "2026-10-15"),
                 dated("dev-2026-11a", "2026-11-03"),
             ]);
         let before = parse_into_timestamp("2026-11-02").unwrap();
