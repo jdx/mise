@@ -961,3 +961,16 @@ EOF
 assert_fail "MISE_CONFIG_FILE=$PWD/userlink4.toml mise dotfiles apply --yes"
 assert_succeed "MISE_CONFIG_FILE=$PWD/userlink4.toml mise dotfiles apply --yes --force"
 assert "readlink '$PWD/userlink4-home/a.txt'" "$PWD/userlink4-src/a.txt"
+
+# A dangling link in a symlink-each source is deployed as a link, and the first
+# apply, which has no state to go by, does not prune it as stale again.
+mkdir -p dangling-src dangling-home
+echo "kept" >dangling-src/kept.txt
+ln -s "$PWD/dangling-missing" dangling-src/dangling
+cat <<EOF >dangling.toml
+[dotfiles]
+"$PWD/dangling-home" = { source = "dangling-src", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$PWD/dangling.toml mise dotfiles apply --yes"
+assert "readlink $PWD/dangling-home/dangling" "$PWD/dangling-src/dangling"
+assert_not_contains "MISE_CONFIG_FILE=$PWD/dangling.toml mise dotfiles status" "missing"
