@@ -2247,5 +2247,14 @@ mod hashed_path_filename_tests {
         let name = hashed_path_filename(&missing);
         assert!(name.starts_with("nope-mise.toml-"), "{name}");
         assert_eq!(name, hashed_path_filename(&missing));
+
+        // a relative path must hash like its absolute form, not as written
+        let relative = Path::new("mise-nonexistent-dir").join("mise.toml");
+        assert!(relative.canonicalize().is_err());
+        let absolute = std::path::absolute(&relative).unwrap();
+        assert_eq!(
+            hashed_path_filename(&relative),
+            hashed_path_filename(&absolute)
+        );
     }
 }
