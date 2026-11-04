@@ -2113,10 +2113,15 @@ pub async fn err_no_version_set(
         .filter(|t| missing_plugins.contains(t.ba()))
         .collect_vec();
     if missing_tools.is_empty() {
-        if let Some(msg) = unavailable_configured_tool_message(config, &ts, bin_name) {
+        let lacks = active_version_lacks_bin_message(&ts, bin_name, &missing_plugins, &tvs);
+        // Naming the installed version that does provide the executable beats a generic hint.
+        if let Some(msg) = lacks.as_ref().filter(|m| m.contains("is provided by:")) {
+            return Err(eyre!(msg.clone()));
+        }
+        if let Some(msg) = unavailable_configured_tool_message(config, &ts, bin_name).await {
             return Err(eyre!(msg));
         }
-        if let Some(msg) = active_version_lacks_bin_message(&ts, bin_name, &missing_plugins, &tvs) {
+        if let Some(msg) = lacks {
             return Err(eyre!(msg));
         }
         let mut msg = format!("No version is set for shim: {bin_name}\n");
@@ -2199,7 +2204,25 @@ fn active_version_lacks_bin_message(
     Some(msg)
 }
 
-pub fn unavailable_configured_tool_message(
+/// Executables a version's current backend metadata puts in its bin dirs. Empty when the install
+/// has none yet (or its metadata cannot be read), which says nothing about what a reinstall adds.
+async fn offered_bins(
+    config: &Arc<Config>,
+    backend: &Arc<dyn Backend>,
+    tv: &ToolVersion,
+) -> BTreeSet<String> {
+    let mut bins = BTreeSet::new();
+    for dir in backend.list_bin_paths(config, tv).await.unwrap_or_default() {
+        if dir.parent().is_some()
+            && let Ok(found) = list_executables_in_dir(&dir)
+        {
+            bins.extend(found);
+        }
+    }
+    bins
+}
+
+pub async fn unavailable_configured_tool_message(
     config: &Arc<Config>,
     ts: &Toolset,
     bin_name: &str,
@@ -2210,10 +2233,36 @@ pub fn unavailable_configured_tool_message(
         .filter(|(backend, tv)| {
             tv.ba().matches_bin_name(bin_name) && backend.is_version_installed(config, tv, true)
         })
-        .map(|(_, tv)| tv)
         .collect_vec();
     if versions.is_empty() {
         return None;
+    }
+
+    // A reinstall only helps when the version's metadata lists the executable. A version that
+    // ships other executables but not this one (an upstream rename, a registry alias) would be
+    // reinstalled into the same state.
+    let mut reinstall = vec![];
+    let mut lacking = vec![];
+    for (backend, tv) in versions {
+        let bins = offered_bins(config, &backend, &tv).await;
+        if bins.is_empty() || bins.iter().any(|b| same_bin_name(b, bin_name)) {
+            reinstall.push(tv);
+        } else {
+            lacking.push((tv, bins));
+        }
+    }
+
+    if reinstall.is_empty() {
+        let mut msg = String::new();
+        for (tv, bins) in &lacking {
+            msg.push_str(&format!(
+                "{}@{} does not provide {bin_name} (it provides: {})\n",
+                tv.ba(),
+                tv.version,
+                bins.iter().join(", ")
+            ));
+        }
+        return Some(msg.trim().to_string());
     }
 
     let mut msg = format!("No executable found for configured tool: {bin_name}\n");
@@ -2221,7 +2270,7 @@ pub fn unavailable_configured_tool_message(
         "The installed version does not provide this executable with its current backend metadata.\n",
     );
     msg.push_str("Reinstall it with:\n");
-    for tv in versions {
+    for tv in reinstall {
         msg.push_str(&format!(
             "mise install --force {}@{}\n",
             tv.ba(),
@@ -2229,6 +2278,20 @@ pub fn unavailable_configured_tool_message(
         ));
     }
     Some(msg.trim().to_string())
+}
+
+fn same_bin_name(a: &str, b: &str) -> bool {
+    let stem = |n: &str| {
+        let n = if cfg!(windows) {
+            Path::new(n)
+                .file_stem()
+                .map_or(n.to_string(), |s| s.to_string_lossy().into_owned())
+        } else {
+            n.to_string()
+        };
+        shim_filename_key(n)
+    };
+    stem(a) == stem(b)
 }
 
 /// `mise install <tool>` deliberately writes to no config file, so the tool's
@@ -2601,9 +2664,41 @@ mod tests {
             ts.versions.insert(ba, tvl);
         }
 
-        let msg = unavailable_configured_tool_message(&config, &ts, "codex").unwrap();
+        let msg = unavailable_configured_tool_message(&config, &ts, "codex")
+            .await
+            .unwrap();
         assert!(msg.contains("mise install --force codex@1.0.0"));
         assert!(!msg.contains("node@1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn unavailable_tool_message_skips_reinstall_when_version_ships_other_bins() {
+        let config = Config::get().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let mut ts = Toolset::new(ToolSource::Argument);
+
+        let ba = Arc::new(BackendArg::from("codex"));
+        let request = ToolRequest::new(ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request.clone(), "1.0.0".into());
+        let install_path = temp.path().join("codex");
+        let bin_dir = install_path.join("bin");
+        file::create_dir_all(&bin_dir).unwrap();
+        let renamed = bin_dir.join(if cfg!(windows) { "dekit.exe" } else { "dekit" });
+        fs::write(&renamed, "").unwrap();
+        file::make_executable(&renamed).unwrap();
+        tv.install_path = Some(install_path);
+
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+        tvl.versions.push(tv);
+        ts.versions.insert(ba, tvl);
+
+        let msg = unavailable_configured_tool_message(&config, &ts, "codex")
+            .await
+            .unwrap();
+        assert!(!msg.contains("install --force"), "{msg}");
+        assert!(msg.contains("does not provide codex"), "{msg}");
+        assert!(msg.contains("dekit"), "{msg}");
     }
 
     #[tokio::test]
