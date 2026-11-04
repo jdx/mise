@@ -906,3 +906,16 @@ assert_contains "cat ~/.secret-dotfile" "phase=apply-time"
 for command in add apply diff edit status unapply; do
   assert_contains "mise dotfiles $command --help" "--prompt-secrets"
 done
+
+# A dangling link in a symlink-each source is deployed as a link, and the first
+# apply, which has no state to go by, does not prune it as stale again.
+mkdir -p dangling-src dangling-home
+echo "kept" >dangling-src/kept.txt
+ln -s "$PWD/dangling-missing" dangling-src/dangling
+cat <<EOF >dangling.toml
+[dotfiles]
+"$PWD/dangling-home" = { source = "dangling-src", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$PWD/dangling.toml mise dotfiles apply --yes"
+assert "readlink $PWD/dangling-home/dangling" "$PWD/dangling-src/dangling"
+assert_not_contains "MISE_CONFIG_FILE=$PWD/dangling.toml mise dotfiles status" "missing"
