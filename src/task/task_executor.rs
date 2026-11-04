@@ -1187,7 +1187,10 @@ impl TaskExecutor {
             && !self.dry_run
             && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
         {
-            let timings = !self.no_timings && Settings::get().task.timings != Some(false);
+            // As for the `Finished in` line: `--no-timings` wins, then
+            // `--timings`, then the setting.
+            let timings =
+                !self.no_timings && (self.timings || Settings::get().task.timings != Some(false));
             self.output_handler
                 .summary_duration(task, timings.then_some(execution_duration));
         }

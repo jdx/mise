@@ -3,6 +3,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set when `--timeout` stops the run: the tasks it kills were cut short, not
+/// stopped because another failed, so `summary` shows what they printed.
+static RUN_TIMED_OUT: AtomicBool = AtomicBool::new(false);
 use std::time::Duration;
 
 use super::args::ToolArg;
@@ -1055,6 +1060,7 @@ impl Run {
                     // and their children would outlive mise. It is dropped only
                     // afterwards: that aborts the jobs, whose commands would
                     // leave the running list before they could be stopped.
+                    RUN_TIMED_OUT.store(true, Ordering::SeqCst);
                     crate::cmd::CmdLineRunner::terminate_all().await;
                     Err(eyre!("mise run timed out after {:?}", timeout))
                 }
@@ -1452,7 +1458,9 @@ impl Run {
                 // one stopped because a sibling failed says nothing more.
                 let outcome = match &result {
                     Ok(_) => SummaryOutcome::Passed,
-                    Err(_) if interrupted => SummaryOutcome::Failed,
+                    Err(_) if interrupted || RUN_TIMED_OUT.load(Ordering::SeqCst) => {
+                        SummaryOutcome::Failed
+                    }
                     Err(_) if cancelled => SummaryOutcome::Cancelled,
                     Err(_) => SummaryOutcome::Failed,
                 };
