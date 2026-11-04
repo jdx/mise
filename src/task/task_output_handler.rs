@@ -23,6 +23,9 @@ pub struct SummaryState {
     durations: HashMap<Task, Option<Duration>>,
     /// Tasks whose output came from the artifact cache rather than a run.
     replayed: HashSet<Task>,
+    /// Tasks skipped because their sources are up to date, whose cached
+    /// output was replayed: they get mise's skip line, not `passed (cached)`.
+    up_to_date: HashSet<Task>,
     /// Tasks whose summary is printed: what mise says about them later, such
     /// as the run's closing `task failed`, prints at once.
     finished: HashSet<Task>,
@@ -67,15 +70,29 @@ impl SummaryBuffer {
         }
         self.bytes = self.bytes.saturating_add(text.len() + 1);
         self.lines.push_back(line);
-        // The newest line stays, however long it is.
-        while self.bytes > SUMMARY_TAIL_BYTES && self.lines.len() > 1 {
-            let Some(KeepOrderLine::Stdout(_, old) | KeepOrderLine::Stderr(_, old)) =
-                self.lines.pop_front()
+        // Drop the oldest lines past the limit, and cut the front off one
+        // that is longer than what is left to drop, so a long line keeps its
+        // end rather than vanishing whole.
+        while self.bytes > SUMMARY_TAIL_BYTES {
+            let excess = self.bytes - SUMMARY_TAIL_BYTES;
+            let Some(KeepOrderLine::Stdout(_, oldest) | KeepOrderLine::Stderr(_, oldest)) =
+                self.lines.front_mut()
             else {
                 break;
             };
-            self.bytes = self.bytes.saturating_sub(old.len() + 1);
             self.truncated = true;
+            if oldest.len() <= excess {
+                let len = oldest.len();
+                self.lines.pop_front();
+                self.bytes = self.bytes.saturating_sub(len + 1);
+            } else {
+                let mut cut = excess;
+                while !oldest.is_char_boundary(cut) {
+                    cut += 1;
+                }
+                oldest.drain(..cut);
+                self.bytes = self.bytes.saturating_sub(cut);
+            }
         }
     }
 
@@ -700,6 +717,12 @@ impl OutputHandler {
         buffer.push(KeepOrderLine::Stderr(prefix.to_string(), line.to_string()));
     }
 
+    /// Note that a task is up to date and its cached output is replayed.
+    pub(crate) fn summary_up_to_date(&self, task: &Task) {
+        let mut state = self.summary_state.lock().unwrap();
+        state.up_to_date.insert(task.clone());
+    }
+
     /// Note how long a task took, for the line `summary` prints when it passes.
     pub(crate) fn summary_duration(&self, task: &Task, duration: Option<Duration>) {
         let mut state = self.summary_state.lock().unwrap();
@@ -709,9 +732,10 @@ impl OutputHandler {
     /// Print what `summary` held for a finished task: one line when it passed
     /// or was cancelled, and everything it printed when it failed.
     pub fn finish_summary(&self, task: &Task, outcome: SummaryOutcome) {
-        let (lines, duration, replayed) = {
+        let (lines, duration, replayed, up_to_date) = {
             let mut state = self.summary_state.lock().unwrap();
             state.finished.insert(task.clone());
+            let up_to_date = state.up_to_date.remove(task);
             (
                 state
                     .buffers
@@ -720,6 +744,7 @@ impl OutputHandler {
                     .unwrap_or_default(),
                 state.durations.remove(task),
                 state.replayed.remove(task),
+                up_to_date,
             )
         };
         let prefix = task.estyled_prefix();
@@ -731,6 +756,9 @@ impl OutputHandler {
                     prefix_eprintln!(prefix, "{}", style::egreen(msg));
                 }
                 Some(None) => prefix_eprintln!(prefix, "{}", style::egreen("passed")),
+                None if up_to_date => {
+                    prefix_eprintln!(prefix, "sources up-to-date, skipping");
+                }
                 None if replayed => {
                     prefix_eprintln!(prefix, "{}", style::egreen("passed (cached)"));
                 }
@@ -892,6 +920,43 @@ impl OutputHandler {
 mod tests {
     use super::*;
     use crate::task::RunEntry;
+
+    fn texts(buffer: SummaryBuffer) -> Vec<String> {
+        buffer
+            .into_lines(&Task::default())
+            .into_iter()
+            .map(|line| match line {
+                KeepOrderLine::Stdout(_, t) | KeepOrderLine::Stderr(_, t) => t,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn summary_keeps_the_end_of_a_long_line_within_the_limit() {
+        let mut buffer = SummaryBuffer::default();
+        // Multi-byte characters, so a cut must find a character boundary.
+        let long = "é".repeat(35 * 1024);
+        buffer.push(KeepOrderLine::Stdout(String::new(), long.clone()));
+        buffer.push(KeepOrderLine::Stdout(String::new(), "done".to_string()));
+        assert!(buffer.bytes <= SUMMARY_TAIL_BYTES);
+        let lines = texts(buffer);
+        assert_eq!(lines[0], "[output truncated; showing last 64 KiB]");
+        assert!(long.ends_with(&lines[1]) && !lines[1].is_empty());
+        assert_eq!(lines[2], "done");
+    }
+
+    #[test]
+    fn summary_holds_a_short_first_line_apart_from_the_tail() {
+        let mut buffer = SummaryBuffer::default();
+        buffer.push(KeepOrderLine::Stderr(String::new(), "$ make".to_string()));
+        for i in 0..20_000 {
+            buffer.push(KeepOrderLine::Stdout(String::new(), format!("line {i}")));
+        }
+        let lines = texts(buffer);
+        assert_eq!(lines[0], "$ make");
+        assert_eq!(lines[1], "[output truncated; showing last 64 KiB]");
+        assert_eq!(lines.last().unwrap(), "line 19999");
+    }
 
     #[test]
     fn colored_prefix_modes_require_a_rendered_style() {

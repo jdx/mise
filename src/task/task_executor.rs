@@ -863,6 +863,9 @@ impl TaskExecutor {
                         if !self.quiet(Some(task)) {
                             self.eprint(task, &prefix, "sources up-to-date, skipping");
                         }
+                        if self.output(Some(task)) == TaskOutput::Summary {
+                            self.output_handler.summary_up_to_date(task);
+                        }
                         self.output_handler
                             .replay_cached_output(task, &prefix, &output);
                         return Ok(TaskRunOutcome {
