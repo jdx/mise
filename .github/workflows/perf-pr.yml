@@ -110,7 +110,7 @@ jobs:
 
       # Compile inside the pinned job container. Restoring target/ could relabel
       # a binary built on another runner class as a jdx-perf-v1 measurement.
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           cache: false
         env:
