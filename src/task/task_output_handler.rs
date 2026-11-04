@@ -19,7 +19,8 @@ type SummaryMap = Arc<Mutex<SummaryState>>;
 #[derive(Default)]
 pub struct SummaryState {
     buffers: IndexMap<Task, Vec<KeepOrderLine>>,
-    durations: HashMap<Task, Duration>,
+    /// Tasks that ran a command, with how long they took when timings are on.
+    durations: HashMap<Task, Option<Duration>>,
     /// Tasks whose output came from the artifact cache rather than a run.
     replayed: HashSet<Task>,
     /// Tasks whose summary is printed: what mise says about them later, such
@@ -583,13 +584,8 @@ impl OutputHandler {
         if let Some(o) = Settings::get().task.output {
             return o.style_with_raw(self.raw(task));
         }
-        // 4. defaults: an agent reads every line of a run, so it gets only
-        // what it acts on, the output of tasks that failed.
-        if self.raw(task) {
-            TaskOutput::Interleave
-        } else if *crate::env::AI_AGENT {
-            TaskOutput::Summary
-        } else if self.jobs() == 1 || self.is_linear {
+        // 4. defaults
+        if self.raw(task) || self.jobs() == 1 || self.is_linear {
             TaskOutput::Interleave
         } else {
             TaskOutput::Prefix
@@ -639,7 +635,7 @@ impl OutputHandler {
     }
 
     /// Note how long a task took, for the line `summary` prints when it passes.
-    pub(crate) fn summary_duration(&self, task: &Task, duration: Duration) {
+    pub(crate) fn summary_duration(&self, task: &Task, duration: Option<Duration>) {
         let mut state = self.summary_state.lock().unwrap();
         state.durations.insert(task.clone(), duration);
     }
@@ -660,16 +656,17 @@ impl OutputHandler {
         match outcome {
             SummaryOutcome::Failed => KeepOrderState::print_lines(&lines),
             SummaryOutcome::Passed if !self.quiet(Some(task)) => match duration {
-                Some(d) => {
+                Some(Some(d)) => {
                     let msg = format!("passed in {}", crate::ui::time::format_duration(d));
                     prefix_eprintln!(prefix, "{}", style::egreen(msg));
                 }
+                Some(None) => prefix_eprintln!(prefix, "{}", style::egreen("passed")),
                 None if replayed => {
                     prefix_eprintln!(prefix, "{}", style::egreen("passed (cached)"));
                 }
                 // It ran nothing: what mise said about it, such as that its
-                // sources are up to date, or nothing for a task that only
-                // has dependencies.
+                // sources are up to date or, in a dry run, the commands it
+                // would run; nothing for a task that only has dependencies.
                 None => KeepOrderState::print_lines(&lines),
             },
             SummaryOutcome::Cancelled if !self.quiet(Some(task)) => {

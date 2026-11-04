@@ -4398,7 +4398,7 @@ env = "MISE_TASK_MONOREPO_RESPECT_GITIGNORE"
 type = "Bool"
 
 [task.output]
-default_docs = "`summary` when an AI agent runs mise, `interleave` when tasks run one at a time, otherwise `prefix`"
+default_docs = "`interleave` when tasks run one at a time, otherwise `prefix`"
 description = "Default output style for `mise run`."
 docs = """
 How much mise prints is a separate choice: [`task.quiet`](#task.quiet),
@@ -4406,10 +4406,6 @@ How much mise prints is a separate choice: [`task.quiet`](#task.quiet),
 combine with any style. For example, `task.output = "prefix"` with
 `task.quiet = true` keeps the task-name labels and hides mise's own messages.
 See [Output](/tasks/running-tasks.html#output).
-
-When an AI agent such as Claude Code or Codex runs mise, as its environment
-shows, the default is `summary`, so the agent reads only the output of tasks
-that failed. Set this, `MISE_TASK_OUTPUT` or `--output` to choose another.
 
 The `quiet` value is deprecated: it warns from mise 2026.9.3 and is removed in
 mise 2027.9.3. Use `task.output = "interleave"` with `task.quiet = true`

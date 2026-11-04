@@ -164,9 +164,7 @@ failed tasks and exits with a non-zero status.
 
 When tasks run in parallel, mise labels each output line with the task name
 (`prefix`). When only one task can run at a time (a single task, a chain of
-dependencies, or `--jobs 1`), it prints output directly (`interleave`). When an
-AI agent runs mise, it prints a line for each task that passed and the output
-of each task that failed (`summary`). Choose a
+dependencies, or `--jobs 1`), it prints output directly (`interleave`). Choose a
 style with `--output`, `MISE_TASK_OUTPUT`, the
 [`task.output`](/configuration/settings.html#task.output) setting, or a task's
 [`output`](/tasks/task-configuration.html#output) property:
@@ -189,16 +187,16 @@ set [`task.quiet`](/configuration/settings.html#task.quiet) under `[settings]`.
 A task can also set its own `quiet` or `silent` property. The `quiet` output
 style is deprecated; use `--output interleave --quiet` instead.
 
-### Output for AI agents {#output-for-agents}
+### Only what failed {#summary-output}
 
-A coding agent reads everything a command prints, and pays for it in its
-context. When mise sees from the environment that an agent such as Claude Code,
-Codex or Cursor is running it, the default style is `summary`: a test suite
-that passes prints one line per task instead of every test's output, and a
-failing task still prints all of it, so the agent has what it needs to fix it.
+`summary` holds each task's output until it ends. A test suite that passes
+prints one line per task instead of every test's output, and a failing task
+prints all of it. It suits CI logs and coding agents, which read every line a
+command prints; for an agent, set `MISE_TASK_OUTPUT=summary` in its
+environment.
 
 ```console
-$ mise run test
+$ mise run --output summary test
 [test:lint] $ cargo clippy -- -D warnings
 [test:lint] error: unused variable: `x`
 [test:lint]  --> src/main.rs:12:9
@@ -207,13 +205,12 @@ $ mise run test
 ```
 
 A task that mise stopped because another one failed prints
-`[name] cancelled`. `--output`, `MISE_TASK_OUTPUT`, `task.output` and a task's
-`output` property still choose another style, and `raw` and `interactive`
-tasks still get the terminal.
+`[name] cancelled`, and a dry run prints the commands it would run. `raw` and
+`interactive` tasks still get the terminal.
 
 A task that keeps running, such as a development server or a watcher, prints
 nothing in `summary` until it exits, or until the run is interrupted. Give it
-`output = "interleave"` so an agent sees what it prints as it runs.
+`output = "interleave"` to see what it prints as it runs.
 
 ## Interactive input
 

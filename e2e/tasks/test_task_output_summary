@@ -26,7 +26,9 @@ assert_not_contains "mise run --output summary ok 2>&1" "ok-stderr"
 assert_fail_contains "mise run --output summary both" "[bad] bad-stdout"
 assert_fail_contains "mise run --output summary both" "[bad] bad-stderr"
 assert_fail_contains "mise run --output summary both" "[bad] ERROR task failed"
-assert_fail_contains "mise run --output summary both" "[ok] passed in"
+# The siblings run in parallel, so only with --continue-on-error is the
+# passing one sure to finish.
+assert_fail_contains "mise run --output summary --continue-on-error both" "[ok] passed in"
 assert_not_contains "mise run --output summary --continue-on-error both 2>&1 || true" "ok-stdout"
 # A task with only dependencies ran nothing and gets no line.
 assert_not_contains "mise run --output summary --continue-on-error both 2>&1 || true" "[both]"
@@ -35,10 +37,14 @@ assert_not_contains "mise run --output summary --continue-on-error both 2>&1 || 
 mise run --output summary fresh
 assert_contains "mise run --output summary fresh 2>&1" "[fresh] sources up-to-date, skipping"
 
-# An agent gets summary by default; a style it names still wins.
-assert_contains "CLAUDECODE=1 mise run ok 2>&1" "[ok] passed in"
-assert_not_contains "CLAUDECODE=1 mise run ok 2>&1" "ok-stdout"
-assert_contains "CLAUDECODE=1 mise run --output interleave ok 2>&1" "ok-stdout"
-assert_contains "CLAUDECODE=1 MISE_TASK_OUTPUT=prefix mise run ok 2>&1" "[ok] ok-stdout"
-# Without one, the default is unchanged.
-assert_contains "mise run ok 2>&1" "ok-stdout"
+# A dry run shows the commands it would run, not a pass.
+assert_contains "mise run --output summary --dry-run ok 2>&1" '[ok] $ echo ok-stdout'
+assert_not_contains "mise run --output summary --dry-run ok 2>&1" "passed"
+
+# With timings off, a pass says so without the time.
+assert_contains "mise run --output summary --no-timings ok 2>&1" "[ok] passed"
+assert_not_contains "mise run --output summary --no-timings ok 2>&1" "passed in"
+
+# MISE_TASK_OUTPUT selects it, and it is no one's default.
+assert_contains "MISE_TASK_OUTPUT=summary mise run ok 2>&1" "[ok] passed in"
+assert_contains "CLAUDECODE=1 mise run ok 2>&1" "ok-stdout"

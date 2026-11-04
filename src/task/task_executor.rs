@@ -1181,12 +1181,15 @@ impl TaskExecutor {
         }
 
         let execution_duration = timer.elapsed();
-        // A task that only has dependencies ran nothing, and gets no line.
+        // A task that only has dependencies ran nothing, and gets no line; a
+        // dry run ran nothing either, and shows the commands it would run.
         if self.output(Some(task)) == TaskOutput::Summary
+            && !self.dry_run
             && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
         {
+            let timings = !self.no_timings && Settings::get().task.timings != Some(false);
             self.output_handler
-                .summary_duration(task, execution_duration);
+                .summary_duration(task, timings.then_some(execution_duration));
         }
         if self.task_timings(Some(task))
             && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
