@@ -1,6 +1,7 @@
 //! Generate selected scope from requests with an immutable previous lockfile.
 use super::*;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::{QuietReport, SingleReport};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static INSTALL_FAILED: AtomicBool = AtomicBool::new(false);
@@ -8,6 +9,13 @@ static INSTALL_FAILURE_DETAIL: Lazy<Mutex<Option<String>>> = Lazy::new(Default::
 type ResolutionCell = Arc<tokio::sync::OnceCell<LockResolutionResult>>;
 static RESOLUTIONS: Lazy<Mutex<HashMap<String, ResolutionCell>>> = Lazy::new(Default::default);
 static PREPARE_SLOTS: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(1));
+
+tokio::task_local! {
+    /// Set while `prepare_install` generates in the background of an install, which
+    /// draws no rows of its own: the lockfile is written, and reported, once the
+    /// install is done.
+    static IN_BACKGROUND: ();
+}
 
 #[derive(Default)]
 pub(crate) struct PreparationBatch {
@@ -186,16 +194,20 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
     platforms.retain(|platform| platform.to_key() != Platform::current().to_key());
     // Reserve at most one background worker, leaving the remaining workers for installs.
     let _permit = PREPARE_SLOTS.acquire().await?;
-    let mut candidate = generate(
-        &previous,
-        &[(tv.ba().clone(), tv.clone())],
-        &platforms,
-        true,
-        PlatformSelection::Default,
-        1,
-        &[],
-    )
-    .await?;
+    let mut candidate = IN_BACKGROUND
+        .scope(
+            (),
+            generate(
+                &previous,
+                &[(tv.ba().clone(), tv.clone())],
+                &platforms,
+                true,
+                PlatformSelection::Default,
+                1,
+                &[],
+            ),
+        )
+        .await?;
     // With no foreign target (for example `lockfile_platforms` limited to the
     // host) the candidate has no entry for the tool, so there is no graph to
     // attach to.
@@ -478,7 +490,11 @@ pub async fn generate(
         }
     }
     candidate.conda_packages = previous.conda_packages.clone();
-    let report = MultiProgressReport::get().add("lock");
+    let report: Box<dyn SingleReport> = if IN_BACKGROUND.try_with(|_| ()).is_ok() {
+        Box::new(QuietReport::new())
+    } else {
+        MultiProgressReport::get().add("lock")
+    };
     let mut progress = ProgressGuard {
         report: report.as_ref(),
         finished: false,

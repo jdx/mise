@@ -217,7 +217,7 @@ export const LISTEN = {
      * through it. Listened for so the scene's export stays typed.
      */
     run: 7.442,
-    /** `✔ [shop/postgres] started on port 5432`: the pilot light. */
+    /** `✔ pitchfork: [shop/postgres] started on port 5432`: the pilot light. */
     started: 7.989,
     /** The thread ties the server's version to `postgres = "18"`. */
     tie: 10.91,

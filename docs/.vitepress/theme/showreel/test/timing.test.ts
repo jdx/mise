@@ -50,7 +50,10 @@ test("the timing patterns catch what they name, and pass what they do not", () =
   for (const t of good) assert.doesNotMatch(t, TIMING, t);
   assert.match(" hk@2.2.0 ✓", PROGRESS);
   assert.match("lock            jq@1.8.2 windows-x64      ✔", PROGRESS);
-  assert.doesNotMatch("✔ [shop/postgres] started on port 5432", PROGRESS);
+  assert.doesNotMatch(
+    "✔ pitchfork: [shop/postgres] started on port 5432",
+    PROGRESS,
+  );
   // A placeholder, whole or being typed; the fixture user's home is not one.
   for (const t of [
     "~ $ git clone https://github.com/you/a",
@@ -60,11 +63,21 @@ test("the timing patterns catch what they name, and pass what they do not", () =
   ])
     assert.ok(namesPlaceholder(t), t);
   for (const t of [
-    "linked /home/you/work/api/.claude/skills/hk-debug -> /home/you/.local/share/mise",
+    "linked /home/you/work/api/.agents/skills/hk-debug -> /home/you/.local/share/mise",
     "/home/you/.local/share/mise/installs/hk/2.2.0/skills/hk-configure",
   ])
     assert.ok(!namesPlaceholder(t), t);
 });
+
+/**
+ * mise 2026.11.0 draws `lock … ✔` rows in C19's install: `mise install`
+ * prepares the lockfile's other platforms in the background and shows that
+ * as checked rows from the install's first frame, before any cut. A later
+ * release draws none (lockfile/generate.rs `prepare_install`); once the reel
+ * records with one, delete this and its use.
+ */
+const lockPreparedInClone = (section: string, row: string): boolean =>
+  section === "clone" && /^lock\s/.test(row);
 
 const { facts, report } = loadFacts(REPO);
 
@@ -89,7 +102,11 @@ test("at 60 fps, timing text only moves under the time-lapse badge, no progress 
     const lapse = texts.includes("time-lapse");
     const next = new Map<string, number>();
     for (const row of rows) {
-      if (PROGRESS.test(row) && /[✓✔]/.test(row))
+      if (
+        PROGRESS.test(row) &&
+        /[✓✔]/.test(row) &&
+        !lockPreparedInClone(sectionAt(at), row)
+      )
         flag(at, `a checked progress row: ${JSON.stringify(row)}`);
       if (!TIMING.test(row)) continue;
       timed++;

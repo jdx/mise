@@ -407,7 +407,7 @@ Takes the slip's rect when `mise skills sync` prints (slip leaves down 3/8, link
 | Part  | Spec                                                                                                                                                                                                                                                                 |
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rows  | One per linked skill (two), 64 apart                                                                                                                                                                                                                                 |
-| Nodes | Left: the project path (`.claude/skills/<skill>`) as a mono 26 chip, text1 on elevated. Right: the install path abridged with `…` around the version segment; only the version segment is lit (tools pink on `PILLAR_BAND`). All text from the take's `linked` rows. |
+| Nodes | Left: the project path (`.agents/skills/<skill>`) as a mono 26 chip, text1 on elevated. Right: the install path abridged with `…` around the version segment; only the version segment is lit (tools pink on `PILLAR_BAND`). All text from the take's `linked` rows. |
 | Arrow | 2 px paper curve (lift 0.12) with a 10 px arrowhead, drawn on over 1/2 beat, the two rows 1/2 beat apart, on the celesta's G G G F (`score/packslip.ts`)                                                                                                             |
 
 ### 12.8 Folder diagram (`switch`)

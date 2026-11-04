@@ -1468,6 +1468,12 @@ impl Lockfile {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
+    /// The backend this lockfile locks `short` under; see [`locked_backend`].
+    pub fn locked_backend(&self, short: &str, version: Option<&str>) -> Option<String> {
+        let entries = self.tools_for(short)?.iter().collect::<Vec<_>>();
+        locked_backend(&entries, version)
+    }
+
     /// The version and recorded backend of each of `short`'s entries that
     /// names a backend.
     pub fn locked_backends(&self, short: &str) -> Vec<(String, String)> {
@@ -5452,6 +5458,26 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
 
     let trusted = lockfile_is_trusted(config, &lockfile_path);
     read_lockfile_at(lockfile_path, legacy_path, trusted)
+}
+
+/// Read the lockfile at `path` uncached, merged with the legacy monorepo
+/// lockfiles that migrate into it. Each is reduced to what it may decide
+/// unless its own config is trusted ([`Lockfile::drop_what_needs_trust`]).
+pub fn read_lockfile_as_trusted(config: &Config, path: &Path) -> Result<Lockfile> {
+    let read = |path: &Path| -> Result<Lockfile> {
+        let mut lockfile = Lockfile::read(path)?;
+        if !lockfile_is_trusted(config, path) {
+            lockfile.drop_what_needs_trust(path);
+        }
+        Ok(lockfile)
+    };
+    let mut lockfile = read(path)?;
+    for (source, target) in monorepo_lockfile_migration_paths(config) {
+        if target == path && source.exists() {
+            merge_lockfile_preserving_root(&mut lockfile, read(&source)?);
+        }
+    }
+    Ok(lockfile)
 }
 
 /// Read the lockfile at `lockfile_path`, merged with a legacy monorepo
