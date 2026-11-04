@@ -784,9 +784,10 @@ impl Upgrade {
                         // Entries that differ in install-affecting options can
                         // install into separate directories, so the newer
                         // version must be the same installation.
-                        let mut latest = o.tool_version.clone();
-                        latest.version = o.latest.clone();
-                        latest.install_path = None;
+                        // Built fresh so no checksum or dependency graph of the
+                        // old release leaks into the identity of the new one.
+                        let latest =
+                            ToolVersion::new(o.tool_version.request.clone(), o.latest.clone());
                         let latest_path = latest.install_path();
                         !current.iter().any(|(_, tv)| {
                             backend_args_match(tv.ba(), o.tool_version.ba())
