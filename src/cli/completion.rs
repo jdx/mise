@@ -585,6 +585,49 @@ mod shell_name_tests {
     }
 
     #[test]
+    fn a_forwarded_command_completes_files_after_its_first_word() {
+        let ask = |line: &str| {
+            let argv: Vec<OsString> = ["__complete_word__", "--shell", "bash", "--line", line]
+                .into_iter()
+                .map(OsString::from)
+                .collect();
+            completion_request(&argv).unwrap()
+        };
+        // Every word after the command is a file, as in a bare shell. The command word is
+        // covered by `a_forwarded_command_word_completes_commands`. One request per test: each
+        // builds the whole completion spec, and nextest kills a unit test after a second, which
+        // a debug build on a slow runner reaches with three.
+        assert_eq!(ask("mise x node@22 -- ls -l src/"), "\u{1}files\n");
+    }
+
+    /// The command word is the one thing after `--` that is not a file. `PATH` holds a single
+    /// directory, so listing the commands stays cheap on a host with a large one.
+    #[cfg(unix)]
+    #[test]
+    fn a_forwarded_command_word_completes_commands() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("forwardedtool");
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut environment = mise_util::testing::EnvVarGuard::new();
+        environment.set("PATH", dir.path());
+
+        let argv: Vec<OsString> = [
+            "__complete_word__",
+            "--shell",
+            "bash",
+            "--line",
+            "mise x -- forwarded",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        assert_eq!(completion_request(&argv).unwrap(), "forwardedtool\n");
+    }
+
+    #[test]
     fn a_candidate_cannot_forge_a_protocol_line() {
         // The zsh script globs for what follows `\x01extensions`, and a glob qualifier there
         // runs code. Neither a name opening with the marker nor one carrying it onto a line of
