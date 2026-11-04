@@ -781,9 +781,17 @@ impl Upgrade {
                     .into_iter()
                     .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
                     .filter(|o| {
+                        // Entries that differ in install-affecting options can
+                        // install into separate directories, so the newer
+                        // version must be the same installation.
+                        let mut latest = o.tool_version.clone();
+                        latest.version = o.latest.clone();
+                        latest.install_path = None;
+                        let latest_path = latest.install_path();
                         !current.iter().any(|(_, tv)| {
                             backend_args_match(tv.ba(), o.tool_version.ba())
                                 && tv.version == o.latest
+                                && tv.install_path() == latest_path
                         })
                     })
                     .collect::<Vec<_>>()
