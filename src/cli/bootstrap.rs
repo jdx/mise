@@ -2454,9 +2454,19 @@ impl Bootstrap {
                     return Ok(declined());
                 };
                 let apply_config = if self.dry_run {
-                    let simulated = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+                    let simulated = config_files_after_dotfiles_dry_run(
+                        &config,
+                        &files,
+                        &edits,
+                        &HashSet::new(),
+                    )?;
                     let simulated = config.with_bootstrap_dry_run_config_files(simulated)?;
-                    dry_run_base = Some(simulated.clone());
+                    let touched = files
+                        .iter()
+                        .map(|req| req.target.clone())
+                        .chain(edits.iter().map(|req| req.path.clone()))
+                        .collect::<HashSet<_>>();
+                    dry_run_base = Some((simulated.clone(), touched));
                     simulated
                 } else {
                     Config::reset().await?
@@ -2504,11 +2514,17 @@ impl Bootstrap {
                 // on top of the first pass's simulation, so what it would write
                 // counts even when the new config no longer lists it, and an
                 // edit it applied is not replayed over a later copy
-                let config_files = config_files_after_dotfiles_dry_run(
-                    dry_run_base.as_ref().unwrap_or(&config),
-                    &files,
-                    &edits,
-                )?;
+                let config_files = match &dry_run_base {
+                    Some((base, touched)) => {
+                        config_files_after_dotfiles_dry_run(base, &files, &edits, touched)?
+                    }
+                    None => config_files_after_dotfiles_dry_run(
+                        &config,
+                        &files,
+                        &edits,
+                        &HashSet::new(),
+                    )?,
+                };
                 config = config.with_bootstrap_dry_run_config_files(config_files.clone())?;
                 hooks = system::hooks_from_config(&config);
                 dry_run_config_files = Some(config_files);
@@ -3423,6 +3439,7 @@ fn config_files_after_dotfiles_dry_run(
     config: &Config,
     files: &[FileRequest],
     edits: &[system::edits::EditRequest],
+    simulated: &HashSet<PathBuf>,
 ) -> Result<config::ConfigMap> {
     let mut config_files = config.config_files.clone();
     let mut bodies = indexmap::IndexMap::new();
@@ -3492,6 +3509,23 @@ fn config_files_after_dotfiles_dry_run(
         }
         let body = match bodies.get(&edit.path) {
             Some(body) => body.clone(),
+            // an earlier pass already simulated this target: its text is not
+            // on disk, so the edit starts from the simulated config
+            None if simulated.contains(&edit.path)
+                && config.config_files.contains_key(&edit.path) =>
+            {
+                match config.config_files[&edit.path].dump() {
+                    Ok(body) => body,
+                    Err(err) => {
+                        warn!(
+                            "[dotfiles].\"{}\": failed to read simulated config target {}: {err}",
+                            edit.config_key(),
+                            edit.path.display()
+                        );
+                        continue;
+                    }
+                }
+            }
             None if edit.path.exists() => match crate::file::read_to_string(&edit.path) {
                 Ok(body) => body,
                 Err(err) => {
@@ -5615,7 +5649,8 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
         let apply_config = if dry_run {
             let (files, edits) = cmd.requests(&config)?;
             first_pass_files = files.clone();
-            let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+            let config_files =
+                config_files_after_dotfiles_dry_run(&config, &files, &edits, &HashSet::new())?;
             config.with_bootstrap_dry_run_config_files(config_files)?
         } else {
             Config::reset().await?
@@ -5628,8 +5663,12 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
             // the files the first pass would write count too, even when the
             // new config no longer lists them
             first_pass_files.extend(files);
-            let config_files =
-                config_files_after_dotfiles_dry_run(&config, &first_pass_files, &edits)?;
+            let config_files = config_files_after_dotfiles_dry_run(
+                &config,
+                &first_pass_files,
+                &edits,
+                &HashSet::new(),
+            )?;
             config = config.with_bootstrap_dry_run_config_files(config_files)?;
             system::hooks_from_config(&config)
         } else {
