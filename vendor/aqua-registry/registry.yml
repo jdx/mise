@@ -93741,6 +93741,13 @@ packages:
           type: github_release
           asset: supabase_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+      - version_constraint: semver("< 3.1.0-beta.10")
+        asset: supabase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: supabase_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -93748,6 +93755,9 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: supabase/cli/.github/workflows/release-shared.yml
+          deny_self_hosted_runners: true
   - type: github_release
     repo_owner: superbrothers
     repo_name: ksort
