@@ -3650,6 +3650,7 @@ fn reconcile_symlink_each_states(
                 .get(&link.target)
                 .is_none_or(|source| **source != link.source)
                 && link_points_to(&link.source, &link.target)
+                && !beneath_dir_link(&link.target, &state.target)
             {
                 stale_links.insert(link.target.clone(), link.clone());
             }
@@ -4508,14 +4509,17 @@ fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
     };
     Ok(stale
         .into_iter()
-        .filter(|path| {
-            !path
-                .ancestors()
-                .skip(1)
-                .take_while(|dir| *dir != req.target && dir.starts_with(&req.target))
-                .any(file::is_symlink_or_junction)
-        })
+        .filter(|path| !beneath_dir_link(path, &req.target))
         .collect())
+}
+
+/// Whether a directory link lies between `root` and `path`, so that removing `path` would reach
+/// into wherever the link points. A link at `root` itself, or above it, is not counted.
+fn beneath_dir_link(path: &Path, root: &Path) -> bool {
+    path.ancestors()
+        .skip(1)
+        .take_while(|dir| *dir != root && dir.starts_with(root))
+        .any(file::is_symlink_or_junction)
 }
 
 fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
@@ -9257,6 +9261,42 @@ source = "oldrc""#,
 
         assert!(reconciliation.stale_links.is_empty());
         assert!(reconciliation.targets.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reconciliation_leaves_links_beneath_a_users_directory_link() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_dir = dir.path().join("src");
+        let outside = dir.path().join("outside");
+        let target = dir.path().join("home");
+        file::create_dir_all(&source_dir)?;
+        file::create_dir_all(&outside)?;
+        file::create_dir_all(&target)?;
+        file::write(source_dir.join("a"), "managed")?;
+        std::os::unix::fs::symlink(source_dir.join("a"), outside.join("a"))?;
+        std::os::unix::fs::symlink(&outside, target.join("sub"))?;
+        let stored = SymlinkEachState {
+            version: SYMLINK_EACH_STATE_VERSION,
+            source: source_dir.clone(),
+            target: target.clone(),
+            links: vec![ManagedLink {
+                source: source_dir.join("a"),
+                target: target.join("sub/a"),
+            }],
+            group: None,
+        };
+        let active = SymlinkEachState {
+            source: dir.path().join("other-src"),
+            links: vec![],
+            ..stored.clone()
+        };
+        let selected_targets = [target].into_iter().collect();
+
+        let reconciliation = reconcile_symlink_each_states(&[active], &selected_targets, &[stored]);
+
+        assert!(reconciliation.stale_links.is_empty());
+        Ok(())
     }
 
     #[cfg(unix)]
