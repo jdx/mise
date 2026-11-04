@@ -164,7 +164,9 @@ failed tasks and exits with a non-zero status.
 
 When tasks run in parallel, mise labels each output line with the task name
 (`prefix`). When only one task can run at a time (a single task, a chain of
-dependencies, or `--jobs 1`), it prints output directly (`interleave`). Choose a
+dependencies, or `--jobs 1`), it prints output directly (`interleave`). When an
+AI agent runs mise, it prints a line for each task that passed and the output
+of each task that failed (`summary`). Choose a
 style with `--output`, `MISE_TASK_OUTPUT`, the
 [`task.output`](/configuration/settings.html#task.output) setting, or a task's
 [`output`](/tasks/task-configuration.html#output) property:
@@ -175,6 +177,7 @@ style with `--output`, `MISE_TASK_OUTPUT`, the
 | `interleave` | Output as it arrives, without labels.                                                                                                     |
 | `keep-order` | Labelled lines; one task streams live while the others are buffered and printed in order.                                                 |
 | `replacing`  | Each new stdout line replaces the previous one; stderr is printed as is.                                                                  |
+| `summary`    | Nothing while a task runs; then `[test] passed in 2.1s` if it passed, or everything it printed, labelled, if it failed.                   |
 | `timed`      | Labelled stdout lines that stay the task's latest line for at least a second; lines replaced sooner are dropped. Stderr is printed as is. |
 | `silent`     | Nothing from tasks or mise except errors.                                                                                                 |
 
@@ -185,6 +188,32 @@ mise's messages. To make every task quiet without changing other mise commands,
 set [`task.quiet`](/configuration/settings.html#task.quiet) under `[settings]`.
 A task can also set its own `quiet` or `silent` property. The `quiet` output
 style is deprecated; use `--output interleave --quiet` instead.
+
+### Output for AI agents {#output-for-agents}
+
+A coding agent reads everything a command prints, and pays for it in its
+context. When mise sees from the environment that an agent such as Claude Code,
+Codex or Cursor is running it, the default style is `summary`: a test suite
+that passes prints one line per task instead of every test's output, and a
+failing task still prints all of it, so the agent has what it needs to fix it.
+
+```console
+$ mise run test
+[test:lint] $ cargo clippy -- -D warnings
+[test:lint] error: unused variable: `x`
+[test:lint]  --> src/main.rs:12:9
+[test:unit] passed in 4.2s
+[test:lint] ERROR task failed
+```
+
+A task that mise stopped because another one failed prints
+`[name] cancelled`. `--output`, `MISE_TASK_OUTPUT`, `task.output` and a task's
+`output` property still choose another style, and `raw` and `interactive`
+tasks still get the terminal.
+
+A task that keeps running, such as a development server or a watcher, prints
+nothing in `summary` until it exits, or until the run is interrupted. Give it
+`output = "interleave"` so an agent sees what it prints as it runs.
 
 ## Interactive input
 

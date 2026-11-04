@@ -18,7 +18,7 @@ use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
-use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_output_handler::{OutputHandler, SummaryOutcome};
 use crate::task::task_scheduler::RunLoopHooks;
 use crate::task::{Deps, Task, TaskCacheMode, usage_command_for_args};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
@@ -197,6 +197,7 @@ pub(crate) struct Run {
     /// - `replacing` - Stdout is replaced each time, stderr is printed as is
     /// - `timed` - Only show stdout lines if they are displayed for more than 1 second
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+    /// - `summary` - Print one line for each task that passed, and all of a failed task's output once it ends; the default when an AI agent runs mise
     /// - `quiet` - Deprecated; use `--output interleave --quiet`
     /// - `silent` - Do not show any output, including the task's stdout and stderr, except errors
     #[usage(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
@@ -1444,6 +1445,16 @@ impl Run {
             {
                 oh.keep_order_state.lock().unwrap().on_task_finished(&task);
             }
+            if let Some(oh) = &this.output_handler
+                && oh.output(Some(&task)) == TaskOutput::Summary
+            {
+                let outcome = match &result {
+                    Ok(_) => SummaryOutcome::Passed,
+                    Err(_) if cancelled => SummaryOutcome::Cancelled,
+                    Err(_) => SummaryOutcome::Failed,
+                };
+                oh.finish_summary(&task, outcome);
+            }
             let mut deps = deps_for_remove.lock().await;
             if result
                 .as_ref()
@@ -1488,6 +1499,11 @@ impl Run {
             crate::cmd::CmdLineRunner::kill_all();
         }
         self.retire_keep_order_slot(&task);
+        if let Some(oh) = &self.output_handler
+            && oh.output(Some(&task)) == TaskOutput::Summary
+        {
+            oh.finish_summary(&task, SummaryOutcome::Failed);
+        }
         // The task never started, but its failure is what stopped the run, so
         // it still gets a span; otherwise the trace's only error is the root.
         if let Some(t) = &self.telemetry {

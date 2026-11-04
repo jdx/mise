@@ -957,7 +957,7 @@ further: it makes every task raw and runs one task at a time.
 
 ### `output`
 
-- **Type**: `"prefix" | "interleave" | "keep-order" | "replacing" | "timed" | "quiet" | "silent"`
+- **Type**: `"prefix" | "interleave" | "keep-order" | "replacing" | "summary" | "timed" | "quiet" | "silent"`
 - **Default**: the [`task.output`](/configuration/settings.html#task.output)
   setting
 

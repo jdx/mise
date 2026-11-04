@@ -9,9 +9,35 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::style;
 use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 type TaskPrMap = Arc<Mutex<IndexMap<Task, Arc<Box<dyn SingleReport>>>>>;
+type SummaryMap = Arc<Mutex<SummaryState>>;
+
+/// What `summary` output holds back: each running task's lines, and how long
+/// each task that ran took.
+#[derive(Default)]
+pub struct SummaryState {
+    buffers: IndexMap<Task, Vec<KeepOrderLine>>,
+    durations: HashMap<Task, Duration>,
+    /// Tasks whose output came from the artifact cache rather than a run.
+    replayed: HashSet<Task>,
+    /// Tasks whose summary is printed: what mise says about them later, such
+    /// as the run's closing `task failed`, prints at once.
+    finished: HashSet<Task>,
+}
+
+/// How a task ended, for its `summary` output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SummaryOutcome {
+    /// It succeeded: one line, and its output is dropped.
+    Passed,
+    /// It failed: everything it printed, in order.
+    Failed,
+    /// mise stopped it because another task failed or the run was
+    /// interrupted: one line, since its output says nothing about the cause.
+    Cancelled,
+}
 type TimedOutputMap = Arc<Mutex<IndexMap<String, (SystemTime, Vec<String>)>>>;
 
 /// A single line of output, tagged by stream.
@@ -412,6 +438,7 @@ pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
     pub task_prs: TaskPrMap,
     pub timed_outputs: TimedOutputMap,
+    pub summary_state: SummaryMap,
 
     // Configuration from CLI args
     output: Option<TaskOutput>,
@@ -428,6 +455,7 @@ impl Clone for OutputHandler {
             keep_order_state: self.keep_order_state.clone(),
             task_prs: self.task_prs.clone(),
             timed_outputs: self.timed_outputs.clone(),
+            summary_state: self.summary_state.clone(),
             output: self.output,
             silent: self.silent,
             quiet: self.quiet,
@@ -473,7 +501,11 @@ impl OutputHandler {
 fn displays_colored_task_prefix(output: TaskOutput) -> bool {
     matches!(
         output,
-        TaskOutput::Prefix | TaskOutput::KeepOrder | TaskOutput::Replacing | TaskOutput::Timed
+        TaskOutput::Prefix
+            | TaskOutput::KeepOrder
+            | TaskOutput::Replacing
+            | TaskOutput::Summary
+            | TaskOutput::Timed
     )
 }
 
@@ -483,6 +515,7 @@ impl OutputHandler {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
             task_prs: Arc::new(Mutex::new(IndexMap::new())),
             timed_outputs: Arc::new(Mutex::new(IndexMap::new())),
+            summary_state: Arc::new(Mutex::new(SummaryState::default())),
             output: config.output,
             silent: config.silent,
             quiet: config.quiet,
@@ -550,8 +583,13 @@ impl OutputHandler {
         if let Some(o) = Settings::get().task.output {
             return o.style_with_raw(self.raw(task));
         }
-        // 4. defaults
-        if self.raw(task) || self.jobs() == 1 || self.is_linear {
+        // 4. defaults: an agent reads every line of a run, so it gets only
+        // what it acts on, the output of tasks that failed.
+        if self.raw(task) {
+            TaskOutput::Interleave
+        } else if *crate::env::AI_AGENT {
+            TaskOutput::Summary
+        } else if self.jobs() == 1 || self.is_linear {
             TaskOutput::Interleave
         } else {
             TaskOutput::Prefix
@@ -574,9 +612,79 @@ impl OutputHandler {
                 let pr = self.get_or_init_task_pr(task);
                 pr.set_message(format!("{prefix} {line}"));
             }
+            TaskOutput::Summary => self.summary_stderr(task, prefix, line),
             _ => {
                 prefix_eprintln!(prefix, "{line}");
             }
+        }
+    }
+
+    /// Hold a line a task wrote to stdout until it finishes (`summary`).
+    pub(crate) fn summary_stdout(&self, task: &Task, prefix: &str, line: &str) {
+        let mut state = self.summary_state.lock().unwrap();
+        let buffer = state.buffers.entry(task.clone()).or_default();
+        buffer.push(KeepOrderLine::Stdout(prefix.to_string(), line.to_string()));
+    }
+
+    /// Hold a line a task, or mise about it, wrote to stderr (`summary`).
+    pub(crate) fn summary_stderr(&self, task: &Task, prefix: &str, line: &str) {
+        let mut state = self.summary_state.lock().unwrap();
+        if state.finished.contains(task) {
+            drop(state);
+            prefix_eprintln!(prefix, "{line}");
+            return;
+        }
+        let buffer = state.buffers.entry(task.clone()).or_default();
+        buffer.push(KeepOrderLine::Stderr(prefix.to_string(), line.to_string()));
+    }
+
+    /// Note how long a task took, for the line `summary` prints when it passes.
+    pub(crate) fn summary_duration(&self, task: &Task, duration: Duration) {
+        let mut state = self.summary_state.lock().unwrap();
+        state.durations.insert(task.clone(), duration);
+    }
+
+    /// Print what `summary` held for a finished task: one line when it passed
+    /// or was cancelled, and everything it printed when it failed.
+    pub fn finish_summary(&self, task: &Task, outcome: SummaryOutcome) {
+        let (lines, duration, replayed) = {
+            let mut state = self.summary_state.lock().unwrap();
+            state.finished.insert(task.clone());
+            (
+                state.buffers.shift_remove(task).unwrap_or_default(),
+                state.durations.remove(task),
+                state.replayed.remove(task),
+            )
+        };
+        let prefix = task.estyled_prefix();
+        match outcome {
+            SummaryOutcome::Failed => KeepOrderState::print_lines(&lines),
+            SummaryOutcome::Passed if !self.quiet(Some(task)) => match duration {
+                Some(d) => {
+                    let msg = format!("passed in {}", crate::ui::time::format_duration(d));
+                    prefix_eprintln!(prefix, "{}", style::egreen(msg));
+                }
+                None if replayed => {
+                    prefix_eprintln!(prefix, "{}", style::egreen("passed (cached)"));
+                }
+                // It ran nothing: what mise said about it, such as that its
+                // sources are up to date, or nothing for a task that only
+                // has dependencies.
+                None => KeepOrderState::print_lines(&lines),
+            },
+            SummaryOutcome::Cancelled if !self.quiet(Some(task)) => {
+                prefix_eprintln!(prefix, "{}", style::edim("cancelled"));
+            }
+            SummaryOutcome::Passed | SummaryOutcome::Cancelled => {}
+        }
+    }
+
+    /// Print what `summary` still holds for tasks that never finished, such as
+    /// after an interrupt: their output may be all there is to go on.
+    pub(crate) fn flush_summaries(&self) {
+        let buffers = std::mem::take(&mut self.summary_state.lock().unwrap().buffers);
+        for lines in buffers.values() {
+            KeepOrderState::print_lines(lines);
         }
     }
 
@@ -588,6 +696,11 @@ impl OutputHandler {
         output: &[TaskCacheOutput],
     ) {
         let mode = self.output(Some(task));
+        if mode == TaskOutput::Summary {
+            // Its line says it passed from the cache, not what it printed.
+            let mut state = self.summary_state.lock().unwrap();
+            state.replayed.insert(task.clone());
+        }
         if mode == TaskOutput::Timed && !task.silent.suppresses_stdout() {
             let stdout = output
                 .iter()
@@ -643,6 +756,12 @@ impl OutputHandler {
                     }
                 }
                 (TaskOutput::Timed, TaskCacheOutput::Stdout(_)) => {}
+                (TaskOutput::Summary, TaskCacheOutput::Stdout(line)) => {
+                    self.summary_stdout(task, prefix, line);
+                }
+                (TaskOutput::Summary, TaskCacheOutput::Stderr(line)) => {
+                    self.summary_stderr(task, prefix, line);
+                }
                 (TaskOutput::Interleave | TaskOutput::Quiet, TaskCacheOutput::Stdout(line)) => {
                     if console::colors_enabled() {
                         println!("{line}\x1b[0m");

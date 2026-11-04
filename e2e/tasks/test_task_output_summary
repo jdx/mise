@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.ok]
+run = "echo ok-stdout; echo ok-stderr >&2"
+
+[tasks.bad]
+run = "echo bad-stdout; echo bad-stderr >&2; exit 3"
+
+[tasks.both]
+depends = ["ok", "bad"]
+
+[tasks.fresh]
+run = "echo built > out.txt"
+sources = ["mise.toml"]
+outputs = ["out.txt"]
+EOF
+
+# A task that passed is one line; its output is not printed.
+assert_contains "mise run --output summary ok 2>&1" "[ok] passed in"
+assert_not_contains "mise run --output summary ok 2>&1" "ok-stdout"
+assert_not_contains "mise run --output summary ok 2>&1" "ok-stderr"
+
+# A task that failed prints everything it wrote, labelled, and the run's
+# closing error still shows; a passing sibling stays one line.
+assert_fail_contains "mise run --output summary both" "[bad] bad-stdout"
+assert_fail_contains "mise run --output summary both" "[bad] bad-stderr"
+assert_fail_contains "mise run --output summary both" "[bad] ERROR task failed"
+assert_fail_contains "mise run --output summary both" "[ok] passed in"
+assert_not_contains "mise run --output summary --continue-on-error both 2>&1 || true" "ok-stdout"
+# A task with only dependencies ran nothing and gets no line.
+assert_not_contains "mise run --output summary --continue-on-error both 2>&1 || true" "[both]"
+
+# A task skipped because it is up to date says so.
+mise run --output summary fresh
+assert_contains "mise run --output summary fresh 2>&1" "[fresh] sources up-to-date, skipping"
+
+# An agent gets summary by default; a style it names still wins.
+assert_contains "CLAUDECODE=1 mise run ok 2>&1" "[ok] passed in"
+assert_not_contains "CLAUDECODE=1 mise run ok 2>&1" "ok-stdout"
+assert_contains "CLAUDECODE=1 mise run --output interleave ok 2>&1" "ok-stdout"
+assert_contains "CLAUDECODE=1 MISE_TASK_OUTPUT=prefix mise run ok 2>&1" "[ok] ok-stdout"
+# Without one, the default is unchanged.
+assert_contains "mise run ok 2>&1" "ok-stdout"
