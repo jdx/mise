@@ -174,6 +174,11 @@ pub(crate) fn streams(
     walk: &super::tracked::Walk,
 ) -> Result<Streams> {
     let mut streams = Streams::default();
+    // one walk of the saved tree for every stream's comparison
+    let encrypted = match parent {
+        Some(head) => super::sync::files::encrypted_paths(repo, Some(head))?,
+        None => BTreeSet::new(),
+    };
     for (index, entry) in walk.entries.iter().enumerate() {
         let stream = entry.tree_path(&entry.path)?;
         if held.always_holds(&stream) {
@@ -186,7 +191,7 @@ pub(crate) fn streams(
             .flatten();
         if held.holds(&stream, saved.as_ref())
             || held.kept(&stream)
-            || live_matches_saved(repo, parent, walk, index, &stream)?
+            || live_matches_saved(repo, parent, walk, index, &stream, &encrypted)?
         {
             streams.held.insert(stream);
         } else {
@@ -210,6 +215,7 @@ fn live_matches_saved(
     walk: &super::tracked::Walk,
     index: usize,
     stream: &str,
+    encrypted: &BTreeSet<String>,
 ) -> Result<bool> {
     let Some(head) = parent else {
         return Ok(false);
@@ -232,7 +238,6 @@ fn live_matches_saved(
             .collect(),
         Some((mode, oid)) => vec![(stream.to_string(), mode, oid)],
     };
-    let encrypted = super::sync::files::encrypted_paths(repo, Some(head))?;
     let mut compared = BTreeSet::new();
     for (path, mode, oid) in paths {
         let Some(local) = roots.locate(&path).path().map(Path::to_path_buf) else {
@@ -410,7 +415,14 @@ mod tests {
             walk
         };
         let matches = |saved: &str, loose: bool| {
-            live_matches_saved(&repo, Some(saved), &walk(loose), 0, &stream)
+            live_matches_saved(
+                &repo,
+                Some(saved),
+                &walk(loose),
+                0,
+                &stream,
+                &BTreeSet::new(),
+            )
         };
         // the nested entry's files are its own to compare; the loose one is
         // new, though a stream covering its directory was saved before
@@ -434,7 +446,8 @@ mod tests {
             Some(&narrow),
             &replaced(),
             0,
-            &stream
+            &stream,
+            &BTreeSet::new()
         )?);
 
         // a saved file the entry owns that changed or went missing is not held
@@ -467,7 +480,8 @@ mod tests {
             Some(&globbed),
             &walk,
             0,
-            &stream
+            &stream,
+            &BTreeSet::new()
         )?);
 
         // a merge that dropped the loose file deleted it too

@@ -158,6 +158,9 @@ pub(crate) fn encrypted_paths(
         return Ok(BTreeSet::new());
     };
     let protected = manifest.encrypted_paths();
+    if protected.is_empty() {
+        return Ok(BTreeSet::new());
+    }
     Ok(repo
         .ls_tree(commit)?
         .into_iter()
@@ -604,6 +607,41 @@ mod tests {
             .commit_tree(&encrypted_tree, vec![&clean, &exposed], "merge")
             .unwrap();
         assert!(audit_history(&repo, &merge, &protected).is_err());
+    }
+
+    #[test]
+    fn encrypted_paths_lists_only_files_under_encrypted_enrollments() {
+        use crate::history::manifest::{Enrollment, Manifest};
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let oid = repo.hash_blob(b"x").unwrap();
+        let tree = repo
+            .write_tree(&[
+                ("100644".into(), oid.clone(), "home/secret.d/a".into()),
+                ("100644".into(), oid.clone(), "home/secret.d2/b".into()),
+                ("100644".into(), oid, "home/other".into()),
+            ])
+            .unwrap();
+        let manifest = |encrypt| Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/secret.d".into(),
+                autosave: true,
+                encrypt,
+                allow_plaintext: None,
+                variants: vec![],
+                exclude: None,
+                include: None,
+            }],
+            ..Default::default()
+        };
+        // a sibling that merely shares the prefix is not under the enrollment
+        let encrypted = manifest(true).write(&repo, &tree).unwrap();
+        assert_eq!(
+            encrypted_paths(&repo, Some(&encrypted)).unwrap(),
+            BTreeSet::from(["home/secret.d/a".to_string()])
+        );
+        let plain = manifest(false).write(&repo, &tree).unwrap();
+        assert!(encrypted_paths(&repo, Some(&plain)).unwrap().is_empty());
     }
 
     #[test]
