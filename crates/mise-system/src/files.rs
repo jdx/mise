@@ -3788,12 +3788,7 @@ pub(crate) fn forget_group_symlink_each_states(group: &str) {
         let Ok(state) = read_symlink_each_state(&path) else {
             continue;
         };
-        if state.group.as_deref() != Some(group)
-            || state
-                .links
-                .iter()
-                .any(|link| link_points_to(&link.source, &link.target))
-        {
+        if state.group.as_deref() != Some(group) || !state.links.iter().all(link_confirmed_gone) {
             continue;
         }
         if let Err(err) = file::remove_file(&path) {
@@ -3801,6 +3796,18 @@ pub(crate) fn forget_group_symlink_each_states(group: &str) {
                 "files: failed to remove dotfiles state {}: {err}",
                 path.display_user()
             );
+        }
+    }
+}
+
+/// Whether `link`'s target is confirmed not to be that link: absent, not a link, or a link
+/// elsewhere. A path that cannot be inspected is not confirmed, so its record stays.
+fn link_confirmed_gone(link: &ManagedLink) -> bool {
+    match std::fs::symlink_metadata(&link.target) {
+        Err(err) => err.kind() == std::io::ErrorKind::NotFound,
+        Ok(_) if !file::is_symlink_or_junction(&link.target) => true,
+        Ok(_) => {
+            std::fs::read_link(&link.target).is_ok() && !link_points_to(&link.source, &link.target)
         }
     }
 }

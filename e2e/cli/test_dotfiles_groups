@@ -270,11 +270,29 @@ target = "~/.stateful"
 mode = "symlink-each"
 EOF
 assert_succeed "mise dot apply --yes"
-assert "readlink $HOME/.stateful/sub/b.txt" "$DOTS/stateful/sub/b.txt"
-assert_contains "grep -l 'group = \"stateful\"' $MISE_STATE_DIR/dotfiles/*.toml" "dotfiles/"
+assert "readlink '$HOME/.stateful/sub/b.txt'" "$DOTS/stateful/sub/b.txt"
+assert_contains "grep -l 'group = \"stateful\"' '$MISE_STATE_DIR'/dotfiles/*.toml" "dotfiles/"
 assert_succeed "mise dot unapply --group stateful --yes"
-assert_fail "test -e $HOME/.stateful/a.txt"
-assert_fail "grep -l 'group = \"stateful\"' $MISE_STATE_DIR/dotfiles/*.toml"
+assert_fail "test -e '$HOME/.stateful/a.txt'"
+assert_fail "grep -l 'group = \"stateful\"' '$MISE_STATE_DIR'/dotfiles/*.toml"
+
+# A link another entry now claims is left in place by the group's unapply, so
+# the record that tracks it stays.
+cat <<EOF >mise.toml
+[dotfile_groups.stateful]
+root = "stateful"
+target = "~/.stateful"
+mode = "symlink-each"
+EOF
+assert_succeed "mise dot apply --yes"
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.stateful/a.txt" = { source = "$DOTS/stateful/a.txt", mode = "symlink" }
+EOF
+assert_succeed "mise dot unapply --group stateful --yes"
+assert "readlink '$HOME/.stateful/a.txt'" "$DOTS/stateful/a.txt"
+assert_fail "test -e '$HOME/.stateful/sub/b.txt'"
+assert_contains "grep -l 'group = \"stateful\"' '$MISE_STATE_DIR'/dotfiles/*.toml" "dotfiles/"
 
 # A declared group that fails to expand keeps its files: they are not
 # orphaned, and a prune leaves them.
