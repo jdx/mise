@@ -11,7 +11,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use usage_rs::spec::ValueEnum;
 
-use super::dotfiles::{Dotfiles, DotfilesApply, prune_orphans, write_and_reload_with};
+use super::dotfiles::{
+    ConfigPass, Dotfiles, DotfilesApply, apply_config_entries, prune_orphans, write_and_reload_with,
+};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -2402,7 +2404,70 @@ impl Bootstrap {
             // is written, so neither the apply nor the prune can change
             // which commands run
             let reload = system::history::config::reload_commands()?;
-            if (!files.is_empty() || !edits.is_empty())
+            // mise's own configuration is written first and read again, so a
+            // rule it adds applies in this run instead of the next one, as in
+            // `mise dot apply`. A dry run previews that write, then plans the
+            // rest against the sources it would write.
+            let mut config_files_written = files.clone();
+            let mut files = files;
+            let mut edits = edits;
+            let config_pass_files = system::files::with_dependencies(&files, |req| {
+                is_config_target(&config, &req.target)
+            });
+            let config_pass_edits = if self.dry_run {
+                vec![]
+            } else {
+                edits
+                    .iter()
+                    .filter(|req| is_config_target(&config, &req.path))
+                    .cloned()
+                    .collect()
+            };
+            if !config_pass_files.is_empty() || !config_pass_edits.is_empty() {
+                let pass = ConfigPass {
+                    reload: &reload,
+                    dry_run: self.dry_run,
+                    files: system::files::ApplyOpts {
+                        dry_run: self.dry_run,
+                        verbose: false,
+                        force: self.force_dotfiles,
+                        force_hint: "use --force-dotfiles or run `mise dot apply --force`",
+                        yes: self.yes,
+                    },
+                    edits: system::edits::ApplyOpts {
+                        part: "dotfiles",
+                        dry_run: self.dry_run,
+                        verbose: false,
+                        yes: self.yes,
+                    },
+                    secrets: &secrets,
+                };
+                let Some(done) =
+                    apply_config_entries(&config, &config_pass_files, &config_pass_edits, &pass)?
+                else {
+                    return Ok(declined());
+                };
+                let apply_config = if self.dry_run {
+                    let simulated = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+                    config.with_bootstrap_dry_run_config_files(simulated)?
+                } else {
+                    Config::reset().await?
+                };
+                files = system::files::files_from_config(&apply_config)?;
+                edits = system::edits::edits_from_config(&apply_config)?;
+                // a file the first pass wrote is not written again: a config
+                // edit that pass made would otherwise be copied back over
+                files.retain(|req| !done.contains(&format!("{req:?}")));
+                config_files_written.extend(files.iter().cloned());
+                if !files.is_empty() || !edits.is_empty() {
+                    let apply_config = &apply_config;
+                    if !write_and_reload_with(&reload, self.dry_run, |written| {
+                        self.apply_dotfiles(apply_config, &files, &edits, &secrets, written)
+                    })? {
+                        return Ok(declined());
+                    }
+                }
+            } else if (!files.is_empty() || !edits.is_empty())
                 && !write_and_reload_with(&reload, self.dry_run, |written| {
                     self.apply_dotfiles(&config, &files, &edits, &secrets, written)
                 })?
@@ -2410,7 +2475,10 @@ impl Bootstrap {
                 return Ok(declined());
             }
             if self.dry_run {
-                let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+                // the files the first pass would write count too, even when
+                // the new config no longer lists them
+                let config_files =
+                    config_files_after_dotfiles_dry_run(&config, &config_files_written, &edits)?;
                 config = config.with_bootstrap_dry_run_config_files(config_files.clone())?;
                 hooks = system::hooks_from_config(&config);
                 dry_run_config_files = Some(config_files);
