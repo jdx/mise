@@ -4334,44 +4334,56 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         if matches.is_empty() && query == "latest" {
             // Fall back to all versions if no match
-            matches = match before_date {
-                Some(before) => {
-                    let versions_with_info = self
-                        .list_remote_versions_with_info_with_selection_options(
-                            config,
-                            selection_opts,
-                            refresh,
-                        )
-                        .await?;
-                    VersionInfo::filter_by_date(versions_with_info, before)
-                        .into_iter()
-                        .map(|v| v.version)
-                        .collect()
-                }
-                None => {
-                    self.list_remote_versions_with_selection_options(
+            matches = self
+                .every_version_for_latest(config, selection_opts, before_date, refresh)
+                .await?;
+        }
+        Ok(find_match_in_list(&matches, query))
+    }
+
+    /// Every version `latest` may resolve to, in order, when its numeric
+    /// pattern does not describe the tool's releases: the full list after the
+    /// prerelease and release-age filters.
+    async fn every_version_for_latest(
+        &self,
+        config: &Arc<Config>,
+        selection_opts: &ToolVersionOptions,
+        before_date: Option<Timestamp>,
+        refresh: bool,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = match before_date {
+            Some(before) => {
+                let versions_with_info = self
+                    .list_remote_versions_with_info_with_selection_options(
                         config,
                         selection_opts,
                         refresh,
                     )
-                    .await?
-                }
-            };
-            matches = self.version_order(selection_opts)?.order(matches);
-            // `list_versions_matching_with_selection_options` already did this
-            // for the list above; this branch built its own.
-            if let Some(before) = before_date {
-                self.drop_matches_hidden_by_cutoff(
-                    config,
-                    &mut matches,
-                    before,
-                    selection_opts,
-                    query,
-                )
-                .await?;
+                    .await?;
+                VersionInfo::filter_by_date(versions_with_info, before)
+                    .into_iter()
+                    .map(|v| v.version)
+                    .collect()
             }
+            None => {
+                self.list_remote_versions_with_selection_options(config, selection_opts, refresh)
+                    .await?
+            }
+        };
+        let mut versions = self.version_order(selection_opts)?.order(versions);
+        // `list_versions_matching_with_selection_options` does this for the
+        // lists it builds; this one is built here.
+        if let Some(before) = before_date {
+            self.drop_matches_hidden_by_cutoff(
+                config,
+                &mut versions,
+                before,
+                selection_opts,
+                "latest",
+            )
+            .await?;
         }
-        Ok(find_match_in_list(&matches, query))
+        Ok(versions)
     }
 
     /// Drop the candidates a release-age cutoff hides but the listing left undated.
@@ -4685,6 +4697,23 @@ pub trait Backend: Debug + Send + Sync {
                     };
                     if allowed {
                         return Ok(Some(version));
+                    }
+                    // The `latest` pattern only matches versions that start
+                    // with a digit. When the tool's own latest release does
+                    // not, its releases are named some other way (Odin's
+                    // `dev-2026-11a`), and the numeric matches are whatever
+                    // old releases happened to be numbered: Odin's `0.12.0`
+                    // from 2020. Pick from every version the cutoff allows.
+                    if !fuzzy_version_matches("latest", &version) {
+                        let versions = self
+                            .every_version_for_latest(
+                                config,
+                                selection_opts,
+                                before_date,
+                                fallback_refresh,
+                            )
+                            .await?;
+                        return Ok(find_match_in_list(&versions, resolved_query));
                     }
                 }
                 None => return Ok(Some(version)),
@@ -7207,6 +7236,38 @@ mod latest_version_tests {
                 .unwrap()
                 .as_deref(),
             Some("2.0.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_keeps_latest_on_non_numeric_releases() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let dated = |version: &str, created_at: &str| VersionInfo {
+            version: version.to_string(),
+            created_at: Some(created_at.to_string()),
+            ..Default::default()
+        };
+        // Odin numbered its releases until 2020 and names them `dev-*` since.
+        // Its own latest release is too new, and the only numeric one is years
+        // old; `latest` must stay on the newest `dev-*` the cutoff allows.
+        let backend = LatestBackend::new("test-cutoff-non-numeric-latest")
+            .with_stable_info(dated("dev-2026-11a", "2026-11-03"))
+            .with_remote_versions(vec![
+                dated("0.12.0", "2020-01-18"),
+                dated("dev-2026-09", "2026-09-01"),
+                dated("dev-2026-10", "2026-10-01"),
+                dated("dev-2026-11a", "2026-11-03"),
+            ]);
+        let before = parse_into_timestamp("2026-11-02").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, None, Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("dev-2026-10")
         );
     }
 
