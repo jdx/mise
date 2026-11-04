@@ -294,7 +294,9 @@ impl Backend for GoBackend {
         // The program does not change if an explicitly requested version needs a retry.
         let go = self.spawn_program(&ctx.config, Some(&ctx.ts), "go").await;
 
-        let install = async |v| {
+        // One `go install` attempt. Returns the captured stderr alongside the
+        // result so the caller can tell a network blip from a bad version.
+        let install_once = async |v: &str| {
             // An explicit -mod keeps a project's GOFLAGS=-mod=vendor out of this
             // install (#7052). `mod` rather than `readonly` also installs a tool whose
             // published go.mod is missing a requirement, which readonly rejects.
@@ -304,9 +306,22 @@ impl Backend for GoBackend {
                 cmd = cmd.arg("-tags").arg(tags);
             }
 
-            cmd.arg(format!("{}@{v}", self.tool_name()))
+            let stderr = Arc::new(std::sync::Mutex::new(String::new()));
+            let captured = stderr.clone();
+            let env = match self.dependency_env(&ctx.config).await {
+                Ok(env) => env,
+                Err(e) => return (Err(e), String::new()),
+            };
+            let result = cmd
+                .arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
-                .envs(self.dependency_env(&ctx.config).await?)
+                .with_stderr_observer(move |line| {
+                    if let Ok(mut buf) = captured.lock() {
+                        buf.push_str(line);
+                        buf.push('\n');
+                    }
+                })
+                .envs(env)
                 // `go` derives GOROOT from where its own executable lives, so it
                 // does not need one. An inherited GOROOT does harm: mise exports
                 // one for the Go it manages and `mise activate` carries it into
@@ -319,14 +334,45 @@ impl Backend for GoBackend {
                 .env_remove("GOROOT")
                 .env_values(tv.install_env())
                 .env("GOBIN", tv.install_path().join("bin"))
-                .execute()
+                .execute();
+            let stderr = stderr.lock().map(|s| s.clone()).unwrap_or_default();
+            (result, stderr)
+        };
+
+        // `go` downloads modules itself, so `http_retries` does not reach it.
+        // Retry the same version on a transient transport failure with the same
+        // setting and backoff; a failure that is not transient is returned as is.
+        let install = async |v: String| {
+            let mut backoff =
+                mise_util::http::default_backoff_strategy(Settings::get().http_retries());
+            let mut attempt = 1;
+            loop {
+                let (result, stderr) = install_once(&v).await;
+                let Err(err) = result else {
+                    return Ok(());
+                };
+                if !is_transient_go_network_failure(&stderr) {
+                    return Err((err, false));
+                }
+                let Some(delay) = backoff.next() else {
+                    return Err((err, true));
+                };
+                warn!(
+                    "go install {}@{v} attempt {attempt} failed (transient): {err:#}; retrying in {delay:?}",
+                    self.tool_name()
+                );
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            }
         };
 
         let (version, fallback) = go_install_versions(&install_version, &tv.request.version());
-        if let Err(first_error) = install(version).await {
-            if let Some(fallback) = fallback {
+        if let Err((first_error, transient)) = install(version).await {
+            // The unprefixed version can only fix a version lookup failure. After
+            // a network failure it would hide the cause behind `unknown revision`.
+            if let Some(fallback) = fallback.filter(|_| !transient) {
                 warn!("Failed to install, trying again without added 'v' prefix");
-                if let Err(retry_error) = install(fallback).await {
+                if let Err((retry_error, _)) = install(fallback).await {
                     return Err(go_install_retry_error(first_error, retry_error));
                 }
             } else {
@@ -354,6 +400,29 @@ fn go_install_versions(version: &str, requested_version: &str) -> (String, Optio
     } else {
         (version.to_string(), None)
     }
+}
+
+/// Whether `go install` stderr shows a transport failure worth retrying with
+/// the same version, such as the proxy or checksum database dropping a stream.
+/// A missing module or version is deterministic, and so is a DNS failure, which
+/// mise's HTTP retries also skip.
+fn is_transient_go_network_failure(stderr: &str) -> bool {
+    const MARKERS: &[&str] = &[
+        "stream error",
+        "internal_error",
+        "connection reset",
+        "connection refused",
+        "i/o timeout",
+        "tls handshake timeout",
+        "timeout awaiting response headers",
+        "unexpected eof",
+        "502 bad gateway",
+        "503 service unavailable",
+        "504 gateway timeout",
+        "429 too many requests",
+    ];
+    let stderr = stderr.to_lowercase();
+    !stderr.contains("no such host") && MARKERS.iter().any(|m| stderr.contains(m))
 }
 
 fn go_install_retry_error(first_error: eyre::Report, retry_error: eyre::Report) -> eyre::Report {
@@ -1019,6 +1088,26 @@ mod tests {
             go_install_versions("main", "main"),
             ("main".to_string(), None)
         );
+    }
+
+    #[test]
+    fn transient_go_network_failures_are_recognized() {
+        assert!(is_transient_go_network_failure(
+            "go: x@v2.8.0: reading https://sum.golang.org/tile/8/0/x276/526: stream error: stream ID 59; INTERNAL_ERROR; received from peer"
+        ));
+        assert!(is_transient_go_network_failure(
+            "dial tcp 1.2.3.4:443: i/o timeout"
+        ));
+        assert!(is_transient_go_network_failure(
+            "reading https://proxy.golang.org/x/@v/list: 503 Service Unavailable"
+        ));
+        assert!(!is_transient_go_network_failure(
+            "go: x@2.8.0: unknown revision 2.8.0"
+        ));
+        assert!(!is_transient_go_network_failure(
+            "dial tcp: lookup proxy.golang.org: no such host, connection refused"
+        ));
+        assert!(!is_transient_go_network_failure(""));
     }
 
     #[test]
