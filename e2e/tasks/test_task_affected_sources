@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+
+# Without a monorepo root, `--affected` keeps the tasks whose `sources` match a
+# changed file, plus the tasks that declare no `sources`.
+
+export AFFECTED_LOG="$PWD/affected.log"
+
+cat <<'EOF' >.gitignore
+affected.log
+EOF
+
+cat <<'EOF' >mise.toml
+[tasks."test:unit"]
+sources = ["src/**", "!src/**/*.snap"]
+run = 'echo unit >> "$AFFECTED_LOG"'
+
+[tasks."test:docs"]
+sources = ["docs/**"]
+run = 'echo docs >> "$AFFECTED_LOG"'
+
+[tasks."test:smoke"]
+run = 'echo smoke >> "$AFFECTED_LOG"'
+
+[tasks."test:shared"]
+dir = "app"
+sources = ["../shared/*.txt"]
+run = 'echo shared >> "$AFFECTED_LOG"'
+EOF
+
+mkdir -p src docs shared app
+echo initial >src/lib.rs
+echo initial >docs/index.md
+echo initial >shared/notes.txt
+
+git init -q
+git config user.email test@example.com
+git config user.name Test
+git add .
+git commit -qm initial
+
+echo changed >>src/lib.rs
+git add .
+git commit -qm src-change
+
+assert_json "mise run --affected --affected-json 'test:*'" '{
+  "base": "HEAD~1",
+  "head": "HEAD",
+  "tasks": [
+    {
+      "name": "test:smoke",
+      "reasons": [{ "type": "no-sources" }]
+    },
+    {
+      "name": "test:unit",
+      "reasons": [{ "type": "changed-source", "path": "src/lib.rs" }]
+    }
+  ]
+}'
+assert "test ! -e affected.log"
+
+output=$(mise run --affected --affected-explain --force --jobs 1 'test:*')
+assert_contains "echo \"$output\"" "Affected tasks (HEAD~1...HEAD):"
+assert_contains "echo \"$output\"" "changed source: src/lib.rs"
+assert_contains "echo \"$output\"" "no sources declared"
+assert_contains "echo \"$output\"" "Unaffected tasks:"
+assert "sort affected.log" $'smoke\nunit'
+
+# A negated source pattern keeps its files out.
+: >affected.log
+echo changed >src/output.snap
+git add .
+git commit -qm snapshot-change
+mise run --affected --force --jobs 1 'test:*'
+assert "cat affected.log" "smoke"
+
+# Sources resolve against the task directory, so `../` reaches a sibling.
+: >affected.log
+echo changed >>shared/notes.txt
+git add .
+git commit -qm shared-change
+mise run --affected --force --jobs 1 'test:*'
+assert "sort affected.log" $'shared\nsmoke'
+
+# Working-tree changes count, and the source flags narrow them.
+: >affected.log
+echo changed >>docs/index.md
+mise run --affected --affected-uncommitted --force --jobs 1 'test:*'
+assert "sort affected.log" $'docs\nsmoke'
+
+: >affected.log
+mise run --affected --affected-committed --force --jobs 1 'test:*'
+assert "sort affected.log" $'shared\nsmoke'
+git checkout -q docs/index.md
+
+: >affected.log
+echo new >docs/new.md
+mise run --affected --affected-untracked --force --jobs 1 'test:*'
+assert "sort affected.log" $'docs\nsmoke'
+rm docs/new.md
+
+# An explicit range with no changes selects nothing, not even tasks without sources.
+: >affected.log
+mise run --affected --affected-base HEAD --affected-head HEAD --force --jobs 1 'test:*'
+assert "test ! -s affected.log"
+
+# Editing the file that defines the tasks affects every task in it.
+: >affected.log
+echo '# comment' >>mise.toml
+git add .
+git commit -qm config-change
+assert_contains "mise run --affected --affected-explain --dry-run 'test:docs'" "changed task config: mise.toml"
+mise run --affected --force --jobs 1 'test:*'
+assert "sort affected.log" $'docs\nshared\nsmoke\nunit'
+
+# --affected-base picks the range.
+: >affected.log
+mise run --affected --affected-base HEAD~4 --affected-head HEAD~2 --force --jobs 1 'test:*'
+assert "sort affected.log" $'smoke\nunit'
+
+# Dependencies of a selected task run even when their sources did not change.
+cat <<'EOF' >>mise.toml
+
+[tasks.ci]
+sources = ["src/**"]
+depends = ["test:docs"]
+run = 'echo ci >> "$AFFECTED_LOG"'
+EOF
+git add .
+git commit -qm add-ci
+: >affected.log
+echo changed >>src/lib.rs
+mise run --affected --affected-uncommitted --force --jobs 1 ci
+assert "sort affected.log" $'ci\ndocs'

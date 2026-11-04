@@ -491,6 +491,13 @@ impl Git {
             .into())
     }
 
+    /// Returns the root of the working tree that contains `self.dir`.
+    pub fn toplevel(&self) -> Result<PathBuf> {
+        Ok(git_cmd_read!(&self.dir, "rev-parse", "--show-toplevel")?
+            .trim()
+            .into())
+    }
+
     /// Returns paths changed between the merge base of two revisions.
     ///
     /// Rename detection is disabled so moves report both the old and new path.
