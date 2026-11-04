@@ -336,7 +336,14 @@ const GLOBAL_SCOPE_ENV: &str = "__MISE_GLOBAL_SCOPE";
 /// The current environments (`-E`) carry over, since they choose which global
 /// files apply.
 fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
-    let mut command = Command::new(&*env::MISE_BIN);
+    // Preserve the launching executable on Unix; Windows hardlinks need a mise path.
+    let mut command = Command::new(if cfg!(windows) {
+        crate::shims::running_mise_bin()
+    } else {
+        crate::file::canonicalize_or_self(&env::MISE_BIN)
+    });
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::arg0(&mut command, "mise");
     command
         .args(args)
         .env_clear()

@@ -6,20 +6,20 @@
 # first check is always due.
 
 fresh_state() {
-  export MISE_STATE_DIR="$PWD/state-$1"
+	export MISE_STATE_DIR="$PWD/state-$1"
 }
 
 global_config() {
-  printf '[tools]\n%s\n' "$1" >"$MISE_CONFIG_DIR/config.toml"
+	printf '[tools]\n%s\n' "$1" >"$MISE_CONFIG_DIR/config.toml"
 }
 
 reset_dummy() {
-  mise uninstall dummy --all
-  mise install dummy@1.0.0
+	mise uninstall dummy --all
+	mise install dummy@1.0.0
 }
 
 assert_not_checked() {
-  assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+	assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 }
 
 # `mise use` writes the option, and rewriting the entry keeps it.
@@ -62,6 +62,18 @@ fresh_state shim
 reset_dummy
 mise reshim
 assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"
+
+# A hardlink shim must use its own binary, not another mise on PATH.
+fresh_state hardlink-shim
+reset_dummy
+mise reshim
+mkdir -p "$MISE_DATA_DIR/bin"
+cp "$(command -v mise)" "$MISE_DATA_DIR/bin/runner-copy"
+rm "$MISE_DATA_DIR/shims/dummy"
+ln "$MISE_DATA_DIR/bin/runner-copy" "$MISE_DATA_DIR/shims/dummy"
+printf '#!/bin/sh\nexit 97\n' >"$MISE_DATA_DIR/bin/mise"
+chmod +x "$MISE_DATA_DIR/bin/mise"
+assert "PATH=\"$MISE_DATA_DIR/bin:\$PATH\" \"$MISE_DATA_DIR/shims/dummy\"" "This is Dummy 1.1.0!"
 
 # Only the tool being launched is checked.
 fresh_state other-command
@@ -167,8 +179,8 @@ EOF
 eval "$(mise activate bash)" && _mise_hook
 assert "printenv FOO" "project"
 for _ in {1..300}; do
-  test -s "$HOME/postinstall.log" && break
-  sleep 0.1
+	test -s "$HOME/postinstall.log" && break
+	sleep 0.1
 done
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert "cat $HOME/postinstall.log" "FOO="
