@@ -12,7 +12,6 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
-use crate::platform::{ARCH, OS};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
@@ -1295,9 +1294,14 @@ impl AquaBackend {
         Self::package_with_options_for_pkg(tv, pkg, &versions)
     }
 
+    /// The aqua platform name and architecture for a target, so a lockfile
+    /// target resolves the assets that platform would install.
     fn to_aqua_platform(target: &PlatformTarget) -> (&str, &str) {
         let target_os = match target.os_name() {
             "macos" => "darwin",
+            // No aqua recipe publishes Android assets. The Linux build is the
+            // closest one, and Android keeps the musl-only preference below.
+            "android" => "linux",
             other => other,
         };
         let target_arch = to_aqua_arch(target.arch_name());
@@ -1330,6 +1334,9 @@ impl AquaBackend {
     /// has no musl build for mise to invent. The tool's `libc` option and `libc = "musl"` in
     /// settings are explicit, so they still select the musl build.
     fn asset_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        if target.os_name() == "android" {
+            return Some("musl".to_string());
+        }
         let libc = Self::target_libc(target, tool_libc)?;
         if libc == "musl" && !Self::musl_requested(tool_libc) {
             return None;
@@ -1341,7 +1348,14 @@ impl AquaBackend {
         tool_libc == Some("musl") || Settings::get().libc() == Some("musl")
     }
 
+    /// The libc qualifier for an asset on a target, which makes an Android target
+    /// a musl target whatever the tool asked for.
     fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        // Bionic only runs static musl binaries, so an Android target is a musl
+        // target whatever the tool asked for.
+        if target.os_name() == "android" {
+            return Some("musl".to_string());
+        }
         if target.os_name() != "linux" {
             return None;
         }
@@ -3899,12 +3913,39 @@ impl AquaBackend {
             }
         }
 
+        // Bionic provides no glibc or musl loader, so an asset that names no
+        // libc can still be linked against one and die at exec. The interpreter
+        // says which build it is, whatever the file is called.
+        if Settings::get().os() == "android" {
+            Self::ensure_binaries_run_on_android(&srcs)?;
+        }
+
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
         if opts.symlink_bins() || selected_libc_sibling {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
+        Ok(())
+    }
+
+    /// Reject an installed binary whose dynamic loader Android does not have.
+    ///
+    /// Reading the interpreter, rather than trusting the asset name, also covers
+    /// an unqualified `...-linux` asset that is really linked against glibc: the
+    /// name cannot tell a static build from a dynamically linked one.
+    fn ensure_binaries_run_on_android(srcs: &[AquaFileLink]) -> Result<()> {
+        for src in srcs.iter().map(|link| &link.src) {
+            let Some(interpreter) = elf_interpreter(src) else {
+                continue;
+            };
+            if !is_android_interpreter(&interpreter) {
+                bail!(
+                    "{} needs the dynamic loader {interpreter}, which Android does not provide; the release has no static build for this platform",
+                    src.display()
+                );
+            }
+        }
         Ok(())
     }
 
@@ -4707,6 +4748,9 @@ fn ensure_url_safe_version(version: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reject a package the aqua registry says cannot be installed here: no asset,
+/// an upstream error, an environment the recipe does not support, or a package
+/// type this backend does not handle.
 fn validate(pkg: &AquaPackage, version: &str) -> Result<()> {
     if pkg.no_asset.unwrap_or(false) {
         bail!("no asset released");
@@ -4862,7 +4906,16 @@ enum LibcAssetPreference {
     MuslStrict,
 }
 
+/// Which libc an asset name may carry on this target.
+///
+/// Android is `MuslStrict`: bionic runs static musl builds and never a gnu one,
+/// so a gnu asset is refused rather than installed to fail at exec.
 fn libc_asset_preference(target: &PlatformTarget, tool_libc: Option<&str>) -> LibcAssetPreference {
+    // A glibc build installs on Android and then fails at exec on bionic, so
+    // take the musl sibling, or the registry's unqualified asset, but never gnu.
+    if target.os_name() == "android" {
+        return LibcAssetPreference::MuslStrict;
+    }
     if target.os_name() != "linux" {
         return LibcAssetPreference::Exact;
     }
@@ -4987,6 +5040,111 @@ fn is_libc_variant_of_expected_asset(
         )
 }
 
+/// The `PT_INTERP` path of an ELF file, or `None` when the file is not ELF or has
+/// no interpreter, which is what a fully static binary looks like.
+fn elf_interpreter(path: &Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut header = [0u8; 64];
+    let read = file.read(&mut header).ok()?;
+    if read < 52 || !header.starts_with(b"\x7fELF") {
+        return None;
+    }
+    let is_64 = header[4] == 2;
+    // Every Android architecture is little-endian, so a big-endian ELF is not a
+    // binary this check can find an Android loader for.
+    if header[5] != 1 {
+        return None;
+    }
+    let (phoff, phentsize, phnum) = if is_64 {
+        (
+            le_u64(&header, 0x20)?,
+            usize::from(le_u16(&header, 0x36)?),
+            usize::from(le_u16(&header, 0x38)?),
+        )
+    } else {
+        (
+            u64::from(le_u32(&header, 0x1c)?),
+            usize::from(le_u16(&header, 0x2a)?),
+            usize::from(le_u16(&header, 0x2c)?),
+        )
+    };
+    if phentsize == 0 || phnum == 0 {
+        return None;
+    }
+    // A downloaded file is untrusted. Read one program header at a time into a
+    // buffer whose size comes from an ELF header field's own width (at most
+    // 64 KiB), so no read allocates more than the file can justify, and bound
+    // the interpreter by the file's length and the length a path can have.
+    let file_len = file.metadata().ok()?.len();
+    let mut entry = vec![0u8; phentsize];
+    for index in 0..phnum {
+        let phdr_offset = phoff.checked_add(u64::try_from(index * phentsize).ok()?)?;
+        file.seek(SeekFrom::Start(phdr_offset)).ok()?;
+        if file.read_exact(&mut entry).is_err() {
+            return None;
+        }
+        if le_u32(&entry, 0)? != 3 {
+            continue; // not PT_INTERP
+        }
+        let (offset, size) = if is_64 {
+            (le_u64(&entry, 8)?, le_u64(&entry, 32)?)
+        } else {
+            (
+                u64::from(le_u32(&entry, 4)?),
+                u64::from(le_u32(&entry, 16)?),
+            )
+        };
+        let size = usize::try_from(size).ok()?;
+        if size == 0 || size > 4096 || offset.checked_add(size as u64)? > file_len {
+            return None;
+        }
+        let mut buf = vec![0u8; size];
+        file.seek(SeekFrom::Start(offset)).ok()?;
+        file.read_exact(&mut buf).ok()?;
+        let end = buf.iter().position(|byte| *byte == 0).unwrap_or(buf.len());
+        return Some(String::from_utf8_lossy(&buf[..end]).into_owned());
+    }
+    None
+}
+
+/// Whether a `PT_INTERP` path is one of bionic's own loaders.
+///
+/// Android's interpreter is `/system/bin/linker64` on 64-bit and
+/// `/system/bin/linker` on 32-bit, with the ASan and runtime-APEX variants.
+/// Compared exactly: the path comes from the downloaded file, so a binary naming
+/// `/system/bin/linker_anything` must not pass as a loader Android provides.
+fn is_android_interpreter(interpreter: &str) -> bool {
+    matches!(
+        interpreter,
+        "/system/bin/linker"
+            | "/system/bin/linker64"
+            | "/system/bin/linker_asan"
+            | "/system/bin/linker_asan64"
+            | "/apex/com.android.runtime/bin/linker"
+            | "/apex/com.android.runtime/bin/linker64"
+    )
+}
+
+fn le_u16(bytes: &[u8], offset: usize) -> Option<u16> {
+    bytes
+        .get(offset..offset + 2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+}
+
+fn le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    bytes
+        .get(offset..offset + 4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+}
+
+fn le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
+    bytes
+        .get(offset..offset + 8)
+        .map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+}
+
 fn asset_name_tokens(name: &str) -> Vec<String> {
     name.split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|token| !token.is_empty())
@@ -4994,16 +5152,37 @@ fn asset_name_tokens(name: &str) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        &OS
+/// The aqua platform name for the binaries this host should install.
+///
+/// Reads the settings rather than `env::consts`, so `os = "linux"` resolves
+/// Linux assets. Android is reported as `linux`: aqua metadata has no Android
+/// packages, and the Linux build is the one mise installs there.
+static AQUA_OS: LazyLock<String> = LazyLock::new(|| to_aqua_os(Settings::get().os()).to_string());
+
+/// The aqua platform name for a mise OS name.
+///
+/// aqua calls macOS `darwin`, and has no Android packages, so an Android host
+/// takes the Linux recipes. Split out so the mapping is testable: the cached
+/// [`AQUA_OS`] cannot be re-evaluated in-process.
+fn to_aqua_os(os: &str) -> &str {
+    match os {
+        "macos" => "darwin",
+        "android" => "linux",
+        other => other,
     }
 }
 
+/// The aqua platform name for the binaries this host installs.
+pub(crate) fn os() -> &'static str {
+    AQUA_OS.as_str()
+}
+
+static AQUA_ARCH: LazyLock<String> =
+    LazyLock::new(|| to_aqua_arch(Settings::get().arch()).to_string());
+
+/// The aqua architecture name for the binaries this host installs.
 pub(crate) fn arch() -> &'static str {
-    to_aqua_arch(&ARCH)
+    AQUA_ARCH.as_str()
 }
 
 fn to_aqua_arch(arch: &str) -> &str {
@@ -5932,6 +6111,164 @@ no_asset: true
             LibcAssetPreference::Exact
         );
         assert_eq!(AquaBackend::target_variant_libc(&macos, Some("musl")), None);
+    }
+
+    #[test]
+    fn test_android_uses_linux_metadata_and_musl_assets() {
+        let android = PlatformTarget::new(Platform::parse("android-arm64").unwrap());
+
+        // No aqua recipe publishes Android assets, so the recipe's Linux
+        // replacements have to supply the asset name.
+        assert_eq!(AquaBackend::to_aqua_platform(&android), ("linux", "arm64"));
+
+        // Bionic only runs static musl builds: a gnu request still resolves to
+        // musl, and a gnu asset is not accepted even when the registry names it.
+        assert_eq!(
+            AquaBackend::target_variant_libc(&android, Some("gnu")).as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            AquaBackend::asset_libc(&android, Some("gnu")).as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            libc_asset_preference(&android, Some("gnu")),
+            LibcAssetPreference::MuslStrict
+        );
+        assert!(is_platform_supported(
+            &["linux".to_string()],
+            AquaBackend::to_aqua_platform(&android).0,
+            AquaBackend::to_aqua_platform(&android).1
+        ));
+    }
+
+    #[test]
+    fn test_aqua_os_maps_android_to_linux() {
+        // The cached AQUA_OS cannot be re-evaluated in-process, so removing the
+        // mapping is what this pins: without it, validate() would reject every
+        // Linux-only recipe on Android before any asset is looked up.
+        assert_eq!(to_aqua_os("android"), "linux");
+        assert_eq!(to_aqua_os("macos"), "darwin");
+        assert_eq!(to_aqua_os("linux"), "linux");
+        assert_eq!(to_aqua_os("windows"), "windows");
+    }
+
+    /// A minimal ELF64 little-endian file whose only program header is `PT_INTERP`,
+    /// or no program headers at all when `interpreter` is `None`.
+    fn elf64(interpreter: Option<&str>) -> Vec<u8> {
+        const HEADER: usize = 64;
+        const PHDR: usize = 56;
+        let interp_offset = HEADER + PHDR;
+        let mut bytes = vec![0u8; interp_offset + interpreter.map_or(0, |i| i.len() + 1)];
+        bytes[..4].copy_from_slice(b"\x7fELF");
+        bytes[4] = 2; // ELFCLASS64
+        bytes[5] = 1; // ELFDATA2LSB
+        bytes[0x20..0x28].copy_from_slice(&(HEADER as u64).to_le_bytes());
+        bytes[0x36..0x38].copy_from_slice(&(PHDR as u16).to_le_bytes());
+        bytes[0x38..0x3a].copy_from_slice(&u16::from(interpreter.is_some()).to_le_bytes());
+        let Some(interpreter) = interpreter else {
+            return bytes;
+        };
+        bytes[HEADER..HEADER + 4].copy_from_slice(&3u32.to_le_bytes()); // PT_INTERP
+        bytes[HEADER + 8..HEADER + 16].copy_from_slice(&(interp_offset as u64).to_le_bytes());
+        bytes[HEADER + 32..HEADER + 40]
+            .copy_from_slice(&((interpreter.len() + 1) as u64).to_le_bytes());
+        bytes[interp_offset..interp_offset + interpreter.len()]
+            .copy_from_slice(interpreter.as_bytes());
+        bytes
+    }
+
+    #[test]
+    fn test_elf_interpreter_reads_the_loader() {
+        let dir = tempfile::tempdir().unwrap();
+        let glibc = dir.path().join("glibc");
+        std::fs::write(&glibc, elf64(Some("/lib/ld-linux-aarch64.so.1"))).unwrap();
+        assert_eq!(
+            elf_interpreter(&glibc).as_deref(),
+            Some("/lib/ld-linux-aarch64.so.1")
+        );
+
+        let static_bin = dir.path().join("static");
+        std::fs::write(&static_bin, elf64(None)).unwrap();
+        assert_eq!(elf_interpreter(&static_bin), None);
+
+        let script = dir.path().join("script");
+        std::fs::write(&script, b"#!/bin/sh\necho hi\n").unwrap();
+        assert_eq!(elf_interpreter(&script), None);
+    }
+
+    #[test]
+    fn test_elf_interpreter_ignores_a_header_beyond_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // A truncated header that claims more program headers than the file holds.
+        let mut truncated = elf64(Some("/system/bin/linker64"));
+        truncated.truncate(64 + 8);
+        let path = dir.path().join("truncated");
+        std::fs::write(&path, &truncated).unwrap();
+        assert_eq!(elf_interpreter(&path), None);
+
+        // A program header that points the interpreter past the end of the file.
+        let mut runaway = elf64(Some("/system/bin/linker64"));
+        runaway[64 + 8..64 + 16].copy_from_slice(&u64::MAX.to_le_bytes());
+        let path = dir.path().join("runaway");
+        std::fs::write(&path, &runaway).unwrap();
+        assert_eq!(elf_interpreter(&path), None);
+    }
+
+    #[test]
+    fn test_android_loader_paths_are_exact() {
+        // Bionic's own linkers, including the ASan and runtime-APEX variants.
+        for loader in [
+            "/system/bin/linker",
+            "/system/bin/linker64",
+            "/system/bin/linker_asan",
+            "/system/bin/linker_asan64",
+            "/apex/com.android.runtime/bin/linker64",
+        ] {
+            assert!(is_android_interpreter(loader), "{loader}");
+        }
+
+        // The path comes from the file, so a prefix that only looks like a
+        // loader, or any other host loader, is not one.
+        for impostor in [
+            "/system/bin/linker_evil",
+            "/system/bin/linker64.old",
+            "/system/lib64/ld-android.so",
+            "/lib/ld-linux-aarch64.so.1",
+            "/lib/ld-musl-aarch64.so.1",
+        ] {
+            assert!(!is_android_interpreter(impostor), "{impostor}");
+        }
+    }
+
+    #[test]
+    fn test_android_install_rejects_a_foreign_loader() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = |name: &str, bytes: Vec<u8>| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, bytes).unwrap();
+            AquaFileLink {
+                src: path.clone(),
+                dst: path,
+                hard: false,
+                explicit_link: false,
+            }
+        };
+
+        // A static build and a bionic-linked one both run on Android.
+        let static_bin = link("static", elf64(None));
+        let bionic = link("bionic", elf64(Some("/system/bin/linker64")));
+        assert!(AquaBackend::ensure_binaries_run_on_android(&[static_bin, bionic]).is_ok());
+
+        // glibc and a dynamically linked musl build both name a loader Android
+        // does not have, whatever the asset was called.
+        let glibc = link("glibc", elf64(Some("/lib/ld-linux-aarch64.so.1")));
+        let err = AquaBackend::ensure_binaries_run_on_android(&[glibc]).unwrap_err();
+        assert!(format!("{err}").contains("ld-linux-aarch64.so.1"), "{err}");
+
+        let musl = link("musl", elf64(Some("/lib/ld-musl-aarch64.so.1")));
+        assert!(AquaBackend::ensure_binaries_run_on_android(&[musl]).is_err());
     }
 
     #[test]
