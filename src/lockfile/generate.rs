@@ -680,6 +680,55 @@ pub async fn generate(
             });
         }
     }
+    // A pin is the repository the install verified, or else the one already
+    // recorded for this version. An install that showed another repository
+    // than the recorded one must not replace the pin.
+    for (short, entries) in &mut candidate.tools {
+        for entry in entries.iter_mut() {
+            let verified = installed
+                .iter()
+                .filter(|tv| {
+                    crate::toolset::install_state::state_short(&tv.ba().short) == short.as_str()
+                        && tv.version == entry.version
+                        && tv.ba().stored_full() == entry.backend.clone().unwrap_or_default()
+                })
+                .find_map(|tv| tv.npm_provenance.clone());
+            let recorded = previous
+                .tools_for(short)
+                .and_then(|previous_entries| {
+                    // The repository is a property of the package, so a pin
+                    // survives a change of install options: prefer the entry
+                    // with the same options, else any of the same version.
+                    let same_package = |previous: &&LockfileTool| {
+                        previous.version == entry.version && previous.backend == entry.backend
+                    };
+                    previous_entries
+                        .iter()
+                        .filter(same_package)
+                        .find(|previous| {
+                            previous.options == entry.options && previous.provenance.is_some()
+                        })
+                        .or_else(|| {
+                            previous_entries
+                                .iter()
+                                .filter(same_package)
+                                .find(|previous| previous.provenance.is_some())
+                        })
+                })
+                .and_then(|previous| previous.provenance.clone());
+            if let (Some(verified), Some(recorded)) = (&verified, &recorded)
+                && verified != recorded
+            {
+                bail!(
+                    "{short}@{} was built from {}, but mise.lock pins its provenance to {}; previous files were preserved",
+                    entry.version,
+                    verified.repository,
+                    recorded.repository
+                );
+            }
+            entry.provenance = verified.or(recorded);
+        }
+    }
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut().filter(|entry| entry.uv.is_none()) {
             entry.uv = previous

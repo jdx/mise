@@ -40,8 +40,8 @@ assert_fail "mise install --dry-run" "Available: windows-x64"
 
 # aqua can tell from the registry entry. Specific versions are marked `no_asset` there regardless
 # of platform, which is what makes this runnable on any runner: `unsupported env` depends on the
-# host, and aqua reads the host from `env::consts::OS` rather than from settings, so `MISE_OS`
-# cannot stage it.
+# host. `MISE_OS` sets the host aqua reads (`AQUA_OS`), so it could stage that
+# path. This test uses the registry entry instead, which does not depend on the host.
 assert_fail "mise install --dry-run age@1.0.0-beta1" "no asset released"
 
 # The controls. Both pass before this change as well as after, and a fix that simply made
