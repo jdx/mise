@@ -1249,7 +1249,10 @@ impl Backend for NPMBackend {
         // package was built from does not depend on them: load the pin by
         // package and version, so an option change cannot swap the repository
         // before the install is verified.
-        if Self::provenance_enabled() && tv.npm_provenance.is_none() {
+        //
+        // The pin is loaded even with verification off, so the lock entry
+        // written for the new options keeps it for when it is turned back on.
+        if tv.npm_provenance.is_none() {
             tv.npm_provenance = crate::lockfile::get_locked_npm_provenance(
                 &ctx.config,
                 &tv.request,

@@ -5030,6 +5030,19 @@ where
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
+            // The repository an npm package was built from does not depend on
+            // its install options, so a pin follows the same release into an
+            // entry written for changed options.
+            if let Some(provenance) = &existing_tool.provenance {
+                for ((version, _), entry) in by_key.iter_mut() {
+                    if *version == existing_tool.version
+                        && entry.backend == existing_tool.backend
+                        && entry.provenance.is_none()
+                    {
+                        entry.provenance = Some(provenance.clone());
+                    }
+                }
+            }
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
                 entry.specifiers.extend(existing_tool.specifiers.clone());
