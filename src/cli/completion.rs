@@ -193,10 +193,13 @@ fn shadowed_by_command(
                 .find(flag)
                 .is_some_and(|f| f.arg.is_some())
     };
+    // After `--`, even right behind a flag, the next word is a task, not a command.
+    if before.iter().any(|word| word == "--") {
+        return false;
+    }
     let mut words = before.iter();
     while let Some(word) = words.next() {
-        // After `--` the next word is a task, not a command.
-        if !word.starts_with('-') || word == "--" {
+        if !word.starts_with('-') {
             return false;
         }
         if takes_value(word) {
