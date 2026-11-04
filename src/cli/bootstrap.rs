@@ -2411,7 +2411,7 @@ impl Bootstrap {
             // the config a dry run simulates after the first pass; the second
             // pass is simulated on top of it, in the order a real run writes
             let mut dry_run_base = None;
-            let mut simulated_bodies = indexmap::IndexMap::new();
+            let mut simulated_bodies = DryRunTexts::default();
             let mut files = files;
             let mut edits = edits;
             let config_pass_files = system::files::with_dependencies(&files, |req| {
@@ -3427,7 +3427,16 @@ fn config_files_after_dotfiles_dry_run(
     files: &[FileRequest],
     edits: &[system::edits::EditRequest],
 ) -> Result<config::ConfigMap> {
-    simulate_dotfiles_dry_run(config, files, edits, &mut indexmap::IndexMap::new())
+    simulate_dotfiles_dry_run(config, files, edits, &mut DryRunTexts::default())
+}
+
+/// What a dry-run simulation knows about each config target: the text it
+/// would write, and the targets whose text is not known because a template
+/// would have to be rendered.
+#[derive(Default)]
+struct DryRunTexts {
+    bodies: indexmap::IndexMap<PathBuf, String>,
+    unavailable: HashSet<PathBuf>,
 }
 
 /// Like `config_files_after_dotfiles_dry_run`, with the simulated text of each
@@ -3437,10 +3446,13 @@ fn simulate_dotfiles_dry_run(
     config: &Config,
     files: &[FileRequest],
     edits: &[system::edits::EditRequest],
-    bodies: &mut indexmap::IndexMap<PathBuf, String>,
+    texts: &mut DryRunTexts,
 ) -> Result<config::ConfigMap> {
     let mut config_files = config.config_files.clone();
-    let mut unavailable_bodies = HashSet::new();
+    let DryRunTexts {
+        bodies,
+        unavailable: unavailable_bodies,
+    } = texts;
     for file in files {
         if !is_simulated_config_target(config, &file.target) {
             continue;
@@ -3448,6 +3460,7 @@ fn simulate_dotfiles_dry_run(
         if file.mode == FileMode::Absent {
             // removed by the apply; a later edit starts from an empty file
             config_files.shift_remove(&file.target);
+            unavailable_bodies.remove(&file.target);
             bodies.insert(file.target.clone(), String::new());
             continue;
         }
@@ -3472,6 +3485,7 @@ fn simulate_dotfiles_dry_run(
         match contents {
             Ok(body) => match parse_mise_config_body(&file.target, &body) {
                 Ok(cf) => {
+                    unavailable_bodies.remove(&file.target);
                     bodies.insert(file.target.clone(), body);
                     config_files.insert(file.target.clone(), cf);
                 }
