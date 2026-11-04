@@ -7079,7 +7079,11 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need
-            for dir in needed_dirs(req)? {
+            // outermost first: once a link is gone, the paths that went through
+            // it no longer reach whatever it pointed at
+            let mut dirs = needed_dirs(req)?;
+            dirs.sort_by_key(|dir| dir.components().count());
+            for dir in dirs {
                 if (dir.exists() && !dir.is_dir() || file::is_symlink_or_junction(&dir))
                     && remove_existing(&dir)?
                 {

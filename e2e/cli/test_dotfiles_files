@@ -923,3 +923,17 @@ assert_succeed "MISE_CONFIG_FILE=$PWD/userlink.toml mise dotfiles apply --yes --
 assert_fail "test -L '$PWD/userlink-home/sub'"
 assert "readlink '$PWD/userlink-home/sub/a.txt'" "$PWD/userlink-src/sub/a.txt"
 assert_fail "test -e '$PWD/userlink-old/a.txt'"
+
+# --force replaces a directory link from the outermost one, so a link behind it
+# (here one inside the directory it points to) is never touched.
+mkdir -p userlink2-src/sub/deep userlink2-old userlink2-outside userlink2-home
+echo "a" >userlink2-src/sub/deep/a.txt
+ln -s "$PWD/userlink2-outside" userlink2-old/deep
+ln -s "$PWD/userlink2-old" userlink2-home/sub
+cat <<EOF >userlink2.toml
+[dotfiles]
+"$PWD/userlink2-home" = { source = "userlink2-src", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink2.toml mise dotfiles apply --yes --force"
+assert "readlink '$PWD/userlink2-old/deep'" "$PWD/userlink2-outside"
+assert "readlink '$PWD/userlink2-home/sub/deep/a.txt'" "$PWD/userlink2-src/sub/deep/a.txt"
