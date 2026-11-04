@@ -949,3 +949,15 @@ EOF
 assert_succeed "MISE_CONFIG_FILE=$PWD/userlink3.toml mise dotfiles apply --yes"
 assert "readlink '$PWD/userlink3-home'" "$PWD/userlink3-real"
 assert "readlink '$PWD/userlink3-real/a.txt'" "$PWD/userlink3-src/a.txt"
+
+# A target that links to nothing blocks the entry until --force replaces it.
+mkdir -p userlink4-src
+echo "a" >userlink4-src/a.txt
+ln -s "$PWD/userlink4-missing" userlink4-home
+cat <<EOF >userlink4.toml
+[dotfiles]
+"$PWD/userlink4-home" = { source = "userlink4-src", mode = "symlink-each" }
+EOF
+assert_fail "MISE_CONFIG_FILE=$PWD/userlink4.toml mise dotfiles apply --yes"
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink4.toml mise dotfiles apply --yes --force"
+assert "readlink '$PWD/userlink4-home/a.txt'" "$PWD/userlink4-src/a.txt"

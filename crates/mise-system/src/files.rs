@@ -3400,6 +3400,13 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
     Ok(out.into_iter().collect())
 }
 
+/// Whether `dir`, a directory a `symlink-each` entry needs, is a link the entry must not write
+/// through. The target itself may link to the directory that holds the links, but not to
+/// nothing, which no link can be written under.
+fn blocking_dir_link(req: &FileRequest, dir: &Path) -> bool {
+    file::is_symlink_or_junction(dir) && (dir != req.target || !dir.exists())
+}
+
 fn symlink_each_state_path(req: &FileRequest) -> PathBuf {
     let source = lexical_normalize(&req.source);
     let target = lexical_normalize(&req.target);
@@ -6405,9 +6412,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             // may anything above it.
             for dir in needed_dirs(req)? {
                 if dir.exists() && !dir.is_dir()
-                    || dir != req.target
-                        && file::is_symlink_or_junction(&dir)
-                        && !folded.iter().any(|(link, _)| *link == dir)
+                    || blocking_dir_link(req, &dir) && !folded.iter().any(|(link, _)| *link == dir)
                 {
                     out.push(dir);
                 }
@@ -7086,8 +7091,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             let mut dirs = needed_dirs(req)?;
             dirs.sort_by_key(|dir| dir.components().count());
             for dir in dirs {
-                if (dir.exists() && !dir.is_dir()
-                    || dir != req.target && file::is_symlink_or_junction(&dir))
+                if (dir.exists() && !dir.is_dir() || blocking_dir_link(req, &dir))
                     && remove_existing(&dir)?
                 {
                     written.push(dir);
