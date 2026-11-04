@@ -1803,17 +1803,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn hashed_path_filename_survives_uncanonicalizable_path() {
-        // canonicalize fails for a missing path, as it does when a sandbox denies access
-        let tmp = tempfile::tempdir().unwrap();
-        let missing = tmp.path().join("nope").join("mise.toml");
-        assert!(missing.canonicalize().is_err());
-        let name = hashed_path_filename(&missing);
-        assert!(name.starts_with("nope-mise.toml-"), "{name}");
-        assert_eq!(name, hashed_path_filename(&missing));
-    }
-
     #[tokio::test]
     async fn test_detect_config_file_type() {
         env::set_var("MISE_EXPERIMENTAL", "true");
@@ -2242,5 +2231,21 @@ mod env_file_trust_tests {
         let path = tmp.path().join(".env");
         std::fs::write(&path, "A=1\n").unwrap();
         assert!(env_file_trust_check(&path).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod hashed_path_filename_tests {
+    use super::*;
+
+    #[test]
+    fn survives_uncanonicalizable_path() {
+        // canonicalize fails for a missing path, as it does when a sandbox denies access
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("nope").join("mise.toml");
+        assert!(missing.canonicalize().is_err());
+        let name = hashed_path_filename(&missing);
+        assert!(name.starts_with("nope-mise.toml-"), "{name}");
+        assert_eq!(name, hashed_path_filename(&missing));
     }
 }
