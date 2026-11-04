@@ -5150,3 +5150,27 @@ fn same_persisted_data_ignores_download_headers() {
     };
     assert!(stored.same_persisted_data(&resolved));
 }
+
+#[test]
+fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
+    let registry = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    let tarball = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc, tarball: 'http://attacker.example/cli.tgz'}\n";
+    let linked = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: link:../cli\n        version: link:../cli\npackages: {}\n";
+    for (graph, kept) in [(registry, true), (tarball, false), (linked, false)] {
+        let mut lockfile = Lockfile::default();
+        lockfile
+            .tools
+            .insert("npm:cli".to_string(), vec![basic_tool("1.0.0", "npm:cli")]);
+        lockfile
+            .set_aube_lock(
+                "npm:cli",
+                "1.0.0",
+                "npm:cli",
+                &BTreeMap::new(),
+                AubeLock::from_yaml(graph).unwrap().into(),
+            )
+            .unwrap();
+        lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+        assert_eq!(lockfile.tools["npm:cli"][0].aube.is_some(), kept, "{graph}");
+    }
+}

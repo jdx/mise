@@ -5440,7 +5440,16 @@ impl Lockfile {
                     return false;
                 }
                 entry.uv = None;
-                entry.aube = None;
+                // The graph pins integrity hashes and the backend fetches from
+                // the user's registry, so it stays unless it names a place to
+                // download from, which only a trusted lockfile may do.
+                if !entry
+                    .aube
+                    .as_ref()
+                    .is_some_and(|graph| graph.load().is_ok_and(aube_graph_names_only_registry))
+                {
+                    entry.aube = None;
+                }
                 for info in entry.platforms.values_mut() {
                     info.url = None;
                     info.url_api = None;
@@ -5459,6 +5468,39 @@ impl Lockfile {
         self.tools.retain(|_, entries| !entries.is_empty());
         self.conda_packages.clear();
     }
+}
+
+/// Whether an aube dependency graph resolves every package from the registry
+/// by integrity hash alone: no tarball URL, git or directory source, and no
+/// linked or file dependency in the importers.
+fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
+    let only_integrity = lock
+        .graph
+        .get("packages")
+        .and_then(toml::Value::as_table)
+        .is_none_or(|packages| {
+            packages.values().all(|package| {
+                package
+                    .get("resolution")
+                    .and_then(toml::Value::as_table)
+                    .is_some_and(|resolution| resolution.keys().all(|key| key == "integrity"))
+            })
+        });
+    let no_local_source = lock
+        .graph
+        .get("importers")
+        .and_then(toml::Value::as_table)
+        .is_none_or(|importers| {
+            importers
+                .values()
+                .filter_map(|importer| importer.as_table())
+                .flat_map(|importer| importer.values())
+                .filter_map(toml::Value::as_table)
+                .flat_map(|deps| deps.values())
+                .filter_map(|dep| dep.get("version").and_then(toml::Value::as_str))
+                .all(|version| !version.starts_with("link:") && !version.starts_with("file:"))
+        });
+    only_integrity && no_local_source
 }
 
 fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
