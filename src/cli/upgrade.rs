@@ -773,10 +773,19 @@ impl Upgrade {
                     .await;
                 // A tool whose backend-wide lookup failed may be out of date too.
                 checked.unchecked.extend(bumps.unchecked);
+                // With `python = ["3.15", "3.14"]`, 3.15.2 is not news for the
+                // 3.14 entry: another entry of the same tool already uses it.
+                let current = ts.list_current_versions();
                 bumps
                     .outdated
                     .into_iter()
                     .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
+                    .filter(|o| {
+                        !current.iter().any(|(_, tv)| {
+                            backend_args_match(tv.ba(), o.tool_version.ba())
+                                && tv.version == o.latest
+                        })
+                    })
                     .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
