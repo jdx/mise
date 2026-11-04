@@ -4341,6 +4341,23 @@ pub trait Backend: Debug + Send + Sync {
         Ok(find_match_in_list(&matches, query))
     }
 
+    /// Whether `info`, or its entry in the cached listing, is a rolling channel.
+    async fn is_rolling_listed_version(
+        &self,
+        config: &Arc<Config>,
+        info: &VersionInfo,
+        selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<bool> {
+        if info.rolling {
+            return Ok(true);
+        }
+        Ok(self
+            .list_remote_versions_with_info_with_selection_options(config, selection_opts, false)
+            .await?
+            .iter()
+            .any(|v| v.rolling && v.version == info.version))
+    }
+
     /// Every version `latest` may resolve to, in order, when its numeric
     /// pattern does not describe the tool's releases: the full list after the
     /// prerelease and release-age filters.
@@ -4704,7 +4721,15 @@ pub trait Backend: Debug + Send + Sync {
                     // `dev-2026-11a`), and the numeric matches are whatever
                     // old releases happened to be numbered: Odin's `0.12.0`
                     // from 2020. Pick from every version the cutoff allows.
-                    if !fuzzy_version_matches("latest", &version) {
+                    //
+                    // A rolling channel (Rust's `stable` behind a mirror) says
+                    // nothing about how releases are named, and the full list
+                    // would also offer its sibling channels (`beta`, `nightly`).
+                    if !fuzzy_version_matches("latest", &version)
+                        && !self
+                            .is_rolling_listed_version(config, &latest, selection_opts)
+                            .await?
+                    {
                         // A stable request still leaves out what the shared
                         // matcher would treat as a pre-release.
                         let versions: Vec<String> = self
@@ -7277,6 +7302,38 @@ mod latest_version_tests {
                 .unwrap()
                 .as_deref(),
             Some("dev-2026-10")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_keeps_latest_off_sibling_channels_of_a_rolling_stable() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let dated = |version: &str, created_at: &str, rolling: bool| VersionInfo {
+            version: version.to_string(),
+            created_at: Some(created_at.to_string()),
+            rolling,
+            ..Default::default()
+        };
+        // Rust behind a mirror: `latest` is the `stable` channel, which the
+        // cutoff hides. `beta` must not take its place.
+        let backend = LatestBackend::new("test-cutoff-rolling-stable-channel")
+            .with_stable_info(dated("stable", "2026-11-03", true))
+            .with_remote_versions(vec![
+                dated("1.90.0", "2026-09-18", false),
+                dated("nightly", "2026-11-03", true),
+                dated("beta", "2026-10-30", true),
+                dated("stable", "2026-11-03", true),
+            ]);
+        let before = parse_into_timestamp("2026-11-02").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, None, Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.90.0")
         );
     }
 
