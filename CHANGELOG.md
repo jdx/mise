@@ -1,5 +1,70 @@
 # Changelog
 
+## [2026.11.1](https://github.com/jdx/mise/releases/tag/v2026.11.1) - 2026-11-04
+
+### 🚀 Features
+
+- **(config)** name sets of environments with env_sets in miserc.toml by @jdx in [#15327](https://github.com/jdx/mise/pull/15327)
+- **(npm)** accept gitlab.com CI provenance when npm.provenance is on by @jdx in [#15335](https://github.com/jdx/mise/pull/15335)
+- **(npm)** pin an npm tool to the repository its provenance showed by @jdx in [#15338](https://github.com/jdx/mise/pull/15338)
+- **(vfox)** show download progress for a PreInstall url by @jdx in [#15323](https://github.com/jdx/mise/pull/15323)
+
+### 🐛 Bug Fixes
+
+- **(activate)** keep $? for the prompt mise wraps in pwsh by @meop in [#15315](https://github.com/jdx/mise/pull/15315)
+- **(aqua)** install Linux musl builds on Android by @i-api in [#15347](https://github.com/jdx/mise/pull/15347)
+- **(backend)** keep latest on non-numeric releases under the release-age cutoff by @jdx in [#15360](https://github.com/jdx/mise/pull/15360)
+- **(config)** skip a stale tracked file that no config type claims by @jdx in [#15333](https://github.com/jdx/mise/pull/15333)
+- **(lock)** keep a v0 lockfile's pin when an alias like lts moves by @jdx in [#15301](https://github.com/jdx/mise/pull/15301)
+- **(lock)** leave the global lockfile alone on project installs by @jdx in [#15348](https://github.com/jdx/mise/pull/15348)
+- **(lock)** quiet the unsigned-mirror warning and install's background lock rows, and restore the showreel by @jdx in [#15346](https://github.com/jdx/mise/pull/15346)
+- **(npm)** keep pnpm installs inside the install dir by @jdx in [#15330](https://github.com/jdx/mise/pull/15330)
+- **(rust)** stop querying GitHub when a rustup mirror is configured by @jdx in [#15326](https://github.com/jdx/mise/pull/15326)
+- **(shim)** run command wrappers on a read-only filesystem by @jdx in [#15300](https://github.com/jdx/mise/pull/15300)
+- **(upgrade)** skip out-of-range note for versions another entry already uses by @jdx in [#15359](https://github.com/jdx/mise/pull/15359)
+- **(zig)** install from the lockfile URL and fix the fallback archive name by @jdx in [#15351](https://github.com/jdx/mise/pull/15351)
+
+### 📚 Documentation
+
+- **(install)** recommend the PowerShell script on Windows by @jdx in [#15332](https://github.com/jdx/mise/pull/15332)
+
+### 🧪 Testing
+
+- **(docs)** accept curl flags in the showreel's README install check by @jdx in [#15324](https://github.com/jdx/mise/pull/15324)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#15319](https://github.com/jdx/mise/pull/15319)
+- update rust crate jsonschema to 0.60 by @renovate[bot] in [#15311](https://github.com/jdx/mise/pull/15311)
+- lock file maintenance by @renovate[bot] in [#15325](https://github.com/jdx/mise/pull/15325)
+- update rattler by @renovate[bot] in [#15336](https://github.com/jdx/mise/pull/15336)
+- ignore unmaintained astral-tokio-tar and pin-utils in cargo-deny by @jdx in [#15352](https://github.com/jdx/mise/pull/15352)
+- update jdx crates to v7.2.0 by @renovate[bot] in [#15342](https://github.com/jdx/mise/pull/15342)
+- update mise tools to latest by @renovate[bot] in [#15350](https://github.com/jdx/mise/pull/15350)
+- update github actions by @renovate[bot] in [#15309](https://github.com/jdx/mise/pull/15309)
+
+### 📦 Registry
+
+- fix blaze test for the ra-jit to blaze rename by @jdx in [#15371](https://github.com/jdx/mise/pull/15371)
+
+### Ci
+
+- **(docs)** fail the docs deploy when the showreel has no render by @jdx in [#15344](https://github.com/jdx/mise/pull/15344)
+
+### Security
+
+- **(npm)** **breaking** verify npm provenance by default by @jdx in [#15341](https://github.com/jdx/mise/pull/15341)
+
+### New Contributors
+
+- @meop made their first contribution in [#15315](https://github.com/jdx/mise/pull/15315)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`supabase/cli`](https://github.com/supabase/cli)
+
 ## [2026.11.0](https://github.com/jdx/mise/releases/tag/v2026.11.0) - 2026-11-03
 
 ### 🚀 Features
