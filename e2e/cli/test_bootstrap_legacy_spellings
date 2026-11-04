@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# The spellings from before launchd, systemd and macOS defaults moved under
+# `mise bootstrap macos` and `mise bootstrap linux` still run, with a warning.
+assert_contains "mise bootstrap launchd status 2>&1" "deprecated [bootstrap.launchd]"
+assert_contains "mise bootstrap launchd status 2>&1" "mise bootstrap macos launchd-agents"
+assert_contains "mise bootstrap systemd status 2>&1" "deprecated [bootstrap.systemd]"
+assert_contains "mise bootstrap systemd status 2>&1" "mise bootstrap linux systemd-units"
+assert_contains "mise bootstrap macos-defaults status 2>&1" "deprecated [bootstrap.macos-defaults]"
+assert_contains "mise bootstrap macos-defaults status 2>&1" "mise bootstrap macos defaults"
+assert_not_contains "mise bootstrap macos launchd-agents status 2>&1" "deprecated"
+assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "deprecated"
+assert_not_contains "mise bootstrap macos defaults status 2>&1" "deprecated"
+
+# The old part names --only and --skip accept
+legacy_parts="mise bootstrap --dry-run --only launchd,systemd,defaults,shell 2>&1"
+assert_contains "$legacy_parts" "deprecated [bootstrap.part_aliases]"
+assert_matches "$legacy_parts" "Replace .launchd. with .macos-launchd-agents."
+assert_matches "$legacy_parts" ".systemd. with .linux-systemd-units."
+assert_matches "$legacy_parts" ".defaults. with .macos-defaults."
+assert_matches "$legacy_parts" ".shell. with .mise-shell-activate."
+assert_contains "mise bootstrap --dry-run --skip=launchd,tools,task 2>&1" "deprecated [bootstrap.part_aliases]"
+assert_not_contains "mise bootstrap --dry-run --only macos-launchd-agents,linux-systemd-units,macos-defaults,mise-shell-activate 2>&1" "deprecated"
+assert_fail_contains "mise bootstrap remote --host missing --skip shell --connect-timeout 0" "deprecated [bootstrap.part_aliases]"

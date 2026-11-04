@@ -63,6 +63,9 @@ pub fn init() {
     env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
     env::set_var("MISE_USE_TOML", "0");
     env::set_var("MISE_YES", "1");
+    // Unit tests expect `installs/<tool>/<version>`. CI exports MISE_EXPERIMENTAL=1, which on
+    // Windows would otherwise select the identity layout; e2e tests cover that layout.
+    env::set_var("MISE_INSTALL_LAYOUT", "legacy");
     // A test that re-runs this binary as a child (to get fresh process-wide
     // statics) inherits this variable. The child must reuse the fixture tree
     // rather than reset it: remove_all() would unlink the directory the parent
@@ -93,7 +96,6 @@ pub fn init() {
             always_keep_download = true
             always_keep_install = true
             idiomatic_version_file = true
-            plugin_autoupdate_last_check_duration = "20m"
             jobs = 2
             "#},
     )

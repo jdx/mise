@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# `mise prune` must keep versions that a tracked project's task includes scope
+# to their tasks, not only its inline tasks.
+# https://github.com/jdx/mise/issues/15150
+
+mkdir -p proj/tasks proj/mise-tasks other
+cat >proj/mise.toml <<'TOML'
+[task_config]
+includes = ["tasks.toml", "tasks", "mise-tasks"]
+TOML
+cat >proj/tasks.toml <<'TOML'
+[test]
+run = "true"
+tools.dummy = "1.0.0"
+TOML
+cat >proj/tasks/lint.toml <<'TOML'
+[lint]
+run = "true"
+tools.dummy = "2.0.0"
+TOML
+cat >proj/mise-tasks/build <<'SH'
+#!/usr/bin/env bash
+#MISE tools={tiny="2.1.0"}
+true
+SH
+chmod +x proj/mise-tasks/build
+# a script that is not executable is not a task
+cat >proj/mise-tasks/notes <<'SH'
+#MISE tools={tiny="1.0.0"}
+SH
+
+assert "mise trust proj/mise.toml"
+assert "mise install dummy@1.0.0 dummy@2.0.0 dummy@3.0.0 tiny@1.0.0 tiny@2.1.0"
+# track this config
+assert "mise ls -C proj"
+
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@3.0.0"
+assert_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"
+
+# without task_config.includes, the default task directories count
+cd .. || exit 1
+mkdir -p proj2/.mise/tasks
+cat >proj2/mise.toml <<'TOML'
+[tools]
+TOML
+cat >proj2/.mise/tasks/deploy <<'SH'
+#!/usr/bin/env bash
+#MISE tools={tiny="1.0.0"}
+true
+SH
+chmod +x proj2/.mise/tasks/deploy
+assert "mise trust proj2/mise.toml"
+assert "mise ls -C proj2"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@3.0.0"
+
+# an environment config's includes count when prune runs without that environment
+cd .. || exit 1
+mkdir -p proj3
+cat >proj3/mise.toml <<'TOML'
+[tools]
+TOML
+cat >proj3/mise.prod.toml <<'TOML'
+[task_config]
+includes = ["prod-tasks.toml"]
+TOML
+cat >proj3/prod-tasks.toml <<'TOML'
+[release]
+run = "true"
+tools.dummy = "3.0.0"
+TOML
+assert "mise trust proj3/mise.toml"
+assert "mise trust proj3/mise.prod.toml"
+assert "MISE_ENV=prod mise ls -C proj3"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@3.0.0"
+
+# an environment config's own excludes filter its own includes
+cd .. || exit 1
+mkdir -p proj4/ptasks
+cat >proj4/mise.toml <<'TOML'
+[tools]
+TOML
+cat >proj4/mise.prod.toml <<'TOML'
+[task_config]
+includes = ["ptasks"]
+excludes = ["ptasks/skip.toml"]
+TOML
+cat >proj4/ptasks/keep.toml <<'TOML'
+[keep]
+run = "true"
+tools.dummy = "4.0.0"
+TOML
+cat >proj4/ptasks/skip.toml <<'TOML'
+[skip]
+run = "true"
+tools.dummy = "5.0.0"
+TOML
+assert "mise trust proj4/mise.toml"
+assert "mise trust proj4/mise.prod.toml"
+assert "mise install dummy@4.0.0 dummy@5.0.0 tiny@3.1.0"
+assert "MISE_ENV=prod mise ls -C proj4"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@4.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@5.0.0"
+
+# a monorepo root's task defaults can give a project's task its tools
+cd .. || exit 1
+mkdir -p mono/packages/a
+cat >mono/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[monorepo.task_defaults.build]
+tools = { tiny = "3.1.0" }
+TOML
+cat >mono/packages/a/mise.toml <<'TOML'
+[tasks.build]
+run = "true"
+TOML
+assert "mise trust mono/mise.toml"
+assert "mise trust mono/packages/a/mise.toml"
+assert "MISE_EXPERIMENTAL=1 mise ls -C mono/packages/a"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+
+# so can a project that only a workspace provider discovers, such as a Cargo member;
+# the members share one discovery of the workspace
+cd .. || exit 1
+mkdir -p cargo-mono/crates/app cargo-mono/crates/lib
+cat >cargo-mono/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo.task_defaults.build]
+tools = { dummy = "6.0.0" }
+
+[monorepo.task_defaults.test]
+tools = { dummy = "7.0.0" }
+TOML
+cat >cargo-mono/Cargo.toml <<'TOML'
+[workspace]
+members = ["crates/app", "crates/lib"]
+TOML
+for crate in app lib; do
+  cat >"cargo-mono/crates/$crate/Cargo.toml" <<TOML
+[package]
+name = "$crate"
+version = "0.1.0"
+TOML
+done
+cat >cargo-mono/crates/app/mise.toml <<'TOML'
+[tasks.build]
+run = "true"
+TOML
+cat >cargo-mono/crates/lib/mise.toml <<'TOML'
+[tasks.test]
+run = "true"
+TOML
+assert "mise trust cargo-mono/mise.toml"
+assert "mise trust cargo-mono/crates/app/mise.toml"
+assert "mise trust cargo-mono/crates/lib/mise.toml"
+assert "mise install dummy@6.0.0 dummy@7.0.0"
+assert "MISE_EXPERIMENTAL=1 mise ls -C cargo-mono/crates/app"
+assert "MISE_EXPERIMENTAL=1 mise ls -C cargo-mono/crates/lib"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@6.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@7.0.0"
+
+# a file one config excludes still counts when another includes it under other excludes
+cd .. || exit 1
+mkdir -p proj5/tasks
+cat >proj5/mise.toml <<'TOML'
+[task_config]
+includes = ["tasks"]
+excludes = ["tasks/release.toml"]
+TOML
+cat >proj5/mise.prod.toml <<'TOML'
+[task_config]
+includes = ["tasks"]
+excludes = ["tasks/dev.toml"]
+TOML
+cat >proj5/tasks/release.toml <<'TOML'
+[release]
+run = "true"
+tools.dummy = "8.0.0"
+TOML
+assert "mise trust proj5/mise.toml"
+assert "mise trust proj5/mise.prod.toml"
+assert "mise install dummy@8.0.0"
+assert "MISE_ENV=prod mise ls -C proj5"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@8.0.0"
+
+# a script reached through two includes is a task under each name, and task
+# defaults match by name
+cd .. || exit 1
+mkdir -p mono2/packages/a/tasks/sub
+cat >mono2/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[monorepo.task_defaults.build]
+tools = { dummy = "9.0.0" }
+TOML
+cat >mono2/packages/a/mise.toml <<'TOML'
+[task_config]
+includes = ["tasks", "tasks/sub"]
+TOML
+cat >mono2/packages/a/tasks/sub/build <<'SH2'
+#!/usr/bin/env bash
+true
+SH2
+chmod +x mono2/packages/a/tasks/sub/build
+assert "mise trust mono2/mise.toml"
+assert "mise trust mono2/packages/a/mise.toml"
+assert "mise install dummy@9.0.0"
+assert "MISE_EXPERIMENTAL=1 mise ls -C mono2/packages/a"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@9.0.0"

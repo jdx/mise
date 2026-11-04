@@ -86,6 +86,20 @@ impl ToolVersionList {
         Ok(())
     }
 
+    /// Whether resolving leaves this tool for its first run: every request is a
+    /// lazy tool that `opts` defers and nothing of it is installed. Nothing is
+    /// looked up for it, so a progress display has nothing to report.
+    pub(crate) fn defers_resolution(&self, opts: &ResolveOptions) -> bool {
+        !self.requests.is_empty()
+            && self.requests.iter().all(|request| {
+                ToolVersion::defers_missing_lazy(request, opts)
+                    && request
+                        .ba()
+                        .backend()
+                        .is_ok_and(|backend| backend.list_installed_versions().is_empty())
+            })
+    }
+
     pub fn os_supported_versions(&self) -> impl Iterator<Item = &ToolVersion> {
         self.versions
             .iter()

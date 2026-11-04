@@ -1,0 +1,64 @@
+[package]
+name = "mise-daemons"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Daemon declarations, ports, presets, and runtime for mise"
+repository = "https://github.com/jdx/mise"
+include = ["src/**/*", "presets/*.toml", "build.rs"]
+
+[dependencies]
+bytesize = "2"
+eyre = "0.6"
+fslock = "0.2"
+futures-util = "0.3"
+hex = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+log = "0.4"
+mise-config = { path = "../mise-config", version = "0.1" }
+mise-settings = { path = "../mise-settings", version = "2026" }
+mise-util = { path = "../mise-util", version = "2026", default-features = false }
+path-absolutize = "4"
+rand = "0.10"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tera = "2"
+tokio = { version = "1", features = ["full"] }
+toml = { version = "1", features = ["parse", "preserve_order"] }
+walkdir = "2"
+which = "8"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = [
+  "dir",
+  "feature",
+  "fs",
+  "hostname",
+  "resource",
+  "signal",
+  "term",
+  "user",
+] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Wdk_System_Threading",
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+eyre = "0.6"
+regex = "1"
+toml = "1"

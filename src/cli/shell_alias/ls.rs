@@ -6,8 +6,8 @@ use crate::ui::table;
 
 /// List shell aliases
 ///
-/// Shows the shell aliases that are set in the current directory.
-/// These are defined in `mise.toml` under the `[shell_alias]` section.
+/// Lists the shell aliases configured for the current directory: the
+/// `[shell_alias]` entries of every config file mise loads here.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "list",
@@ -15,12 +15,13 @@ use crate::ui::table;
         r###"mise shell-alias ls
 alias    command
 ll       ls -la
-gs       git status"###
+gs       git status"###,
+        help = "List the aliases set in this directory"
     ),
     verbatim_doc_comment
 )]
 pub(super) struct ShellAliasLs {
-    /// Don't show table header
+    /// Do not print the table header
     #[usage(long)]
     pub no_header: bool,
 }

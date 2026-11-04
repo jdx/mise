@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# Without watchexec on PATH or in the toolset, `mise watch` stops with an
+# install hint that matches the `mise watch` help.
+mise tasks add example -- echo 'running example'
+
+# The host PATH may hold a real watchexec, which would start a watcher that
+# never exits, so give mise a PATH with only itself on it and bound the run.
+mise_only_bin="$HOME/mise-only-bin"
+mkdir -p "$mise_only_bin"
+ln -s "$(command -v mise)" "$mise_only_bin/mise"
+
+status=0
+output=$(run_with_timeout 30 env PATH="$mise_only_bin" mise watch example) || status=$?
+assert "echo $status" "1"
+assert_contains_text "$output" "Install watchexec with:"
+assert_contains_text "$output" "  mise use -g watchexec"
+assert_not_contains_text "$output" "watchexec@latest"

@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+
+# Remote `git::` task files, `git::`/`oci::` task includes and OpenTelemetry
+# export are experimental: with experimental off, a config that mentions them
+# still loads, and nothing is fetched or exported.
+
+export MISE_EXPERIMENTAL=0
+
+# Nothing listens on port 9 here, so a missing gate shows up as a fetch error.
+cat <<'TOML' >mise.toml
+[tasks.local]
+run = "echo local-ok"
+
+[tasks.remote]
+description = "a remote task"
+file = "git::https://127.0.0.1:9/org/repo.git//tasks/hello"
+
+[tasks.uses-remote]
+depends = ["remote"]
+run = "echo uses-remote"
+TOML
+
+# Only running a task enforces the gate, dry runs and dependencies included.
+assert "mise run local" "local-ok"
+assert_fail_matches "mise run remote" "loading task .remote. from a .git::. file is experimental"
+assert_fail_matches "mise run uses-remote" "loading task .remote. from a .git::. file is experimental"
+assert_fail_matches "mise run --dry-run remote" "loading task .remote. from a .git::. file is experimental"
+
+# Commands that only inspect tasks never fetch the remote file: they show the
+# task from its TOML metadata and warn that its file was not fetched.
+assert_contains "mise tasks ls" "local"
+assert_contains "mise tasks ls" "a remote task"
+assert_matches "mise tasks ls 2>&1" "task .remote. has a .git::. file, which is experimental and was not fetched"
+assert_contains "mise tasks info remote" "a remote task"
+assert_contains "mise tasks info remote 2>&1" "was not fetched"
+assert_contains "mise tasks info remote --json" '"description": "a remote task"'
+assert_contains "mise tasks deps uses-remote" "remote"
+assert_contains "mise tasks deps uses-remote 2>&1" "was not fetched"
+assert_contains "mise tasks deps --dot" "uses-remote"
+assert_contains "mise generate task-docs" "a remote task"
+assert_contains "mise generate task-docs 2>&1" "was not fetched"
+assert_not_contains "mise generate task-docs 2>&1" "could not read task file"
+assert_contains "mise tasks ls --complete" "local:"
+assert_contains "mise tasks ls --complete" "remote:a remote task"
+assert_not_contains "mise tasks ls --complete 2>&1" "experimental"
+assert_contains "mise tasks --usage" 'cmd local'
+assert_contains "mise tasks --usage" 'cmd remote'
+assert_not_contains "mise tasks --usage 2>&1" "experimental"
+
+# Validation does not fetch the remote file either: it reports it as a warning
+# and still validates the other tasks.
+assert_succeed "mise tasks validate local"
+assert_succeed "mise tasks validate"
+assert_contains "mise tasks validate 2>&1" "is experimental; not fetched"
+assert_not_contains "mise tasks validate 2>&1" "not found"
+# Validate reports a validated remote task as an issue, not also as a warning,
+# and says nothing about a remote task it was not asked to validate.
+assert_not_contains "mise tasks validate 2>&1" "was not fetched"
+assert_not_contains "mise tasks validate local 2>&1" "remote"
+
+# A remote task's TOML usage defaults still resolve its dependencies.
+cat <<'TOML' >mise.toml
+[tasks.child]
+run = "echo child"
+
+[tasks.remote-usage]
+usage = 'arg "[target]" default="child"'
+depends = ["{{usage.target}}"]
+file = "git::https://127.0.0.1:9/org/repo.git//tasks/hello"
+TOML
+
+assert_contains "mise tasks deps remote-usage" "child"
+assert_not_contains "mise tasks deps remote-usage 2>&1" "could not read task file"
+
+# Hidden tasks are never documented, so an unreachable remote file on one does
+# not stop docs for the others.
+cat <<'TOML' >mise.toml
+[tasks.local]
+description = "a local task"
+run = "echo local-ok"
+
+[tasks.hidden-http]
+hide = true
+file = "http://127.0.0.1:9/hidden.sh"
+TOML
+
+assert_contains "mise generate task-docs" "a local task"
+
+cat <<'TOML' >mise.toml
+[task_config]
+includes = ["git::https://127.0.0.1:9/org/repo.git//tasks"]
+
+[tasks.local]
+run = "echo local-ok"
+TOML
+
+# The remote include is skipped with a warning; the config's own tasks still
+# list, complete and run.
+assert_succeed "mise config ls"
+assert "mise run local" "local-ok"
+assert_matches "mise run local 2>&1" "skipping task include .git::https://127.0.0.1:9/org/repo.git//tasks.: including tasks from a .git::. source is experimental"
+assert_contains "mise tasks ls" "local"
+assert_contains "mise tasks ls --complete" "local:"
+
+cat <<'TOML' >mise.toml
+[task_config]
+includes = ["oci::127.0.0.1:9/org/tasks:v1"]
+
+[tasks.local]
+run = "echo local-ok"
+TOML
+
+assert "mise run local" "local-ok"
+assert_matches "mise run local 2>&1" "including tasks from an .oci::. source is experimental"
+
+cat <<'TOML' >mise.toml
+[settings.otel]
+enabled = true
+
+[tasks.local]
+run = "echo local-ok"
+TOML
+
+# Without an endpoint nothing is exported, so the setting alone is fine.
+assert "mise run local" "local-ok"
+assert_fail_contains "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:9 mise run local" "OpenTelemetry export is experimental"
+
+export MISE_EXPERIMENTAL=1
+assert "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:9 OTEL_EXPORTER_OTLP_TIMEOUT=100 mise run local" "local-ok"

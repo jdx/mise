@@ -1,5 +1,5 @@
 ---
-source: src/hooks/pre_install.rs
+source: crates/vfox/src/hooks/pre_install.rs
 expression: pre_install
 ---
 PreInstall {
@@ -11,4 +11,5 @@ PreInstall {
     sha1: None,
     sha512: None,
     attestation: None,
+    headers: None,
 }

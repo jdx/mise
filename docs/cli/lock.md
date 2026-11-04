@@ -11,70 +11,80 @@ description: "Create or refresh lockfile versions, checksums, and download URLs"
 
 Create or refresh lockfile versions, checksums, and download URLs
 
-Operates on the current config root, including tools declared by tasks. Existing
-matching locked versions are preserved unless `--bump` re-resolves their selectors.
-This command writes lockfiles without installing tools; `--dry-run` previews changes.
+Operates on the current config root, including tools declared by tasks.
+Existing matching locked versions are preserved unless `--bump` re-resolves
+their requests. This command does not install tools; `--dry-run` previews
+changes.
 
-Use `--platform` for explicit targets. Otherwise mise uses `lockfile_platforms`
-plus the current platform when that setting is configured, existing lockfile
-platforms when available, or the common platform defaults for a new lockfile.
+`mise lock TOOL@VERSION` locks that exact version. When the version falls
+outside the configured request, such as `tiny@3.0.1` with `tiny = "2"`, mise
+also updates the request in mise.toml to match.
 
 ## Arguments
-- **`[TOOL]…`** — Tool(s) to update in lockfile
-  e.g.: node python
-  If not specified, all configured and task-specific tools will be updated
+- **`[TOOL]…`** — Tools to lock, such as `node python`; defaults to every configured tool and every tool a task needs
+
+  Use `tool@version` to lock an exact version. If it falls outside the configured
+  request, mise.toml is updated to match.
 
 ## Flags
-- **`-g --global`** — Target only global config lockfiles (~/.config/mise/mise.lock and system config)
-  By default, only the active project config root is locked
-- **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
-  Values below 1 are treated as 1
+- **`-g --global`** — Lock only the global and system config lockfiles
+
+  These are ~/.config/mise/mise.lock and the system config's lockfile. By
+  default, only the current project's config root is locked.
+- **`-j --jobs <JOBS>`** — How many jobs to run in parallel; defaults to the `jobs` setting
+
+  Values below 1 are treated as 1.
 
   **Environment Variable:** `MISE_JOBS`
-- **`-n --dry-run`** — Show what would be updated without making changes
-- **`-p --platform <PLATFORM>`** — Comma-separated list of platforms to target
-  e.g.: linux-x64,macos-arm64,windows-x64
-  If omitted, use lockfile_platforms, existing platforms, or common defaults
-- **`--bump`** — Re-resolve fuzzy version selectors against the latest available versions
+- **`-n --dry-run`** — Show what would change, without writing anything
+- **`-p --platform <PLATFORM>`** — Platforms to lock, comma-separated, such as `linux-x64,macos-arm64`
+
+  Defaults to the `lockfile_platforms` setting plus the current platform when
+  that setting is configured, else the platforms already in the lockfile, else
+  a common set for a new lockfile.
+- **`--bump`** — Re-resolve version requests against the latest available versions
 
   By default, `mise lock` refreshes metadata for the currently locked versions.
-  With this flag, selectors like "latest", "lts", or prefixes like "20" are
+  With this flag, requests such as "latest", "lts", or prefixes such as "24" are
   re-resolved against the latest matching remote versions, so the lockfile
-  advances without installing anything. Config files are never modified:
-  exactly pinned versions resolve to themselves and stay unchanged
-  (use `mise upgrade --bump` to rewrite pins in mise.toml).
-  If the remote versions cannot be fetched, it fails rather than keep
-  the locked version.
+  advances without installing anything. `--bump` never modifies config files:
+  exact versions resolve to themselves and stay unchanged (use
+  `mise upgrade --bump` to rewrite pins in mise.toml). If the remote versions
+  cannot be fetched, it fails rather than keep the locked version.
 - **`--json`** — Output version changes as JSON
 
   Prints an array of objects describing lockfile version changes:
   name, backend, lockfile, old_versions, new_versions.
   Version lists keep config/lockfile order; they are not sorted.
-  Only version-level changes are reported: checksum/URL refreshes for
-  unchanged versions produce no entries, so plain `mise lock --json`
-  typically prints `[]` while still updating the lockfile.
+  Only version-level changes are reported: checksum and URL refreshes for
+  unchanged versions produce no entries, so `mise lock --json` prints `[]`
+  when no version changed, even though it still updates the lockfile.
   Suppresses the human-readable output. Combine with `--dry-run` to
   detect available updates without writing the lockfile.
-- **`--local`** — Update mise.local.lock instead of mise.lock
-  Use for tools defined in .local.toml configs
-- **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only lock versions released before this age or date
+- **`--local`** — Update mise.local.lock, for tools in mise.local.toml, instead of mise.lock
+- **`--minimum-release-age <AGE>`** — Only lock versions released before a date or at least a duration ago
 
-  Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-  This only affects fuzzy version matches like "20" or "latest".
-  Explicitly pinned versions like "22.5.0" are not filtered.
-  Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
-- **`--upgrade`** — Upgrade legacy lockfiles to the latest format
+  Takes a date such as `2024-06-01` or a duration such as `90d` or `1y`.
+  Overrides the `minimum_release_age` setting and tool option. It filters only
+  requests that are not exact, such as "24" or "latest"; exact versions such
+  as "24.11.0" are not filtered. Existing matching lockfile entries are kept;
+  this flag alone does not downgrade them.
+- **`--upgrade`** — Upgrade lockfiles to the latest format
 
-  Existing unversioned lockfiles use format version 0 and are otherwise
-  preserved to avoid unexpected lockfile drift. This flag upgrades them
-  to the latest format with request-specific version bindings.
-  Format upgrades always process every configured tool and cannot be
-  combined with tool arguments.
+  mise keeps an existing lockfile at its format version during normal updates,
+  so collaborators on an older mise can still read it. This flag rewrites it in
+  the newest format, which adds request bindings, dependency-graph sidecars,
+  and packslip repository IDs. It processes every configured tool and cannot be
+  combined with tool arguments. See
+  <https://mise.jdx.dev/dev-tools/mise-lock-reference.html#format-versions>.
 - **`--sidecars`** — List native dependency sidecars instead of updating lockfiles
 
-  Prints, for each existing lockfile in scope, the sidecar directory mise
-  keeps its native dependency graphs in and every sidecar directory the
-  lockfile references. Nothing is resolved, installed, or written.
+  Backends such as npm and pypi keep a tool's locked dependency graph in a
+  sidecar directory next to mise.lock; see
+  <https://mise.jdx.dev/dev-tools/mise-lock-reference.html#native-dependency-sidecars>.
+  For each existing lockfile in scope, prints the sidecar directory mise keeps
+  its dependency graphs in and every sidecar directory the lockfile references.
+  Nothing is resolved, installed, or written.
   Paths are relative to the current directory when they are inside it,
   and absolute otherwise, such as the sidecars of a symlinked lockfile.
   Combine with `--json` for machine-readable output, or with `--local`
@@ -83,55 +93,61 @@ platforms when available, or the common platform defaults for a new lockfile.
 
 ## Examples
 
-create or refresh the project lockfile
+Create or refresh the project lockfile
 
 ```
 mise lock
 ```
 
-update only node and python
+Refresh only node and python
 
 ```
 mise lock node python
 ```
 
-update only linux-x64 platform
+Lock an exact version; mise.toml keeps a request such as "24"
+
+```
+mise lock node@24.11.0
+```
+
+Lock only the linux-x64 platform
 
 ```
 mise lock --platform linux-x64
 ```
 
-show what would be updated
+Show what would change
 
 ```
 mise lock --dry-run
 ```
 
-re-resolve selectors like "latest" or "20" to the latest matching versions
+Re-resolve requests such as "latest" or "24" to the latest matching versions
 
 ```
 mise lock --bump
 ```
 
-list available updates as JSON without writing
+List available updates as JSON without writing
 
 ```
 mise lock --bump --dry-run --json
 ```
 
-lock latest/fuzzy versions released before 2024-01-01
+Lock versions released before 2024-01-01 for requests that are not exact
 
 ```
 mise lock --minimum-release-age 2024-01-01
 ```
 
-update mise.local.lock for local configs
+Update mise.local.lock
 
 ```
 mise lock --local
 ```
 
-update only global config lockfiles
+Update only the global lockfiles
 
 ```
 mise lock --global

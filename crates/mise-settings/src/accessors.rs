@@ -27,15 +27,25 @@ impl Settings {
     }
 
     pub fn generate_lockfiles(&self) -> bool {
-        self.lockfile_mode.as_deref() == Some("generate")
+        self.lockfile_mode == "generate"
     }
 
-    pub fn validate_lockfile_mode(&self) -> Result<()> {
-        validate_setting_enum_values(
-            "lockfile_mode",
-            self.lockfile_mode.as_deref(),
-            &["merge", "generate"],
-        )
+    /// Reject unknown values of the [`STRICT_CHOICE_SETTINGS`], so a typo fails
+    /// here instead of panicking later.
+    pub fn validate_string_choices(&self) -> Result<()> {
+        for (key, value) in [
+            ("lockfile_mode", Some(self.lockfile_mode.as_str())),
+            (
+                "status.missing_tools",
+                Some(self.status.missing_tools.as_str()),
+            ),
+            ("windows_shim_mode", Some(self.windows_shim_mode.as_str())),
+        ] {
+            if let Some(value) = value {
+                validate_setting_choice(key, value)?;
+            }
+        }
+        Ok(())
     }
 
     pub fn lockfile_creation_enabled(&self) -> bool {
@@ -43,7 +53,7 @@ impl Settings {
     }
 
     pub fn force_provenance_verify(&self) -> bool {
-        self.locked_verify_provenance || self.paranoid
+        self.locked_verify_provenance || self.paranoid.provenance()
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {

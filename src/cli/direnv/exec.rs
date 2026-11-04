@@ -7,8 +7,7 @@ use serde::Deserialize;
 use crate::config::Config;
 use crate::toolset::ToolsetBuilder;
 
-/// [internal] This is an internal command that writes an envrc file
-/// for direnv to consume.
+/// [internal] Print the environment for direnv to load
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, hide = true)]
 pub(super) struct DirenvExec {}

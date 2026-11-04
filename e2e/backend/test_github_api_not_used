@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# GitHub release metadata comes from mise-versions, not api.github.com:
+# unauthenticated users get 60 API requests an hour, so normal usage must not
+# spend them, not even when mise-versions says a tag doesn't exist. Only a
+# mise-versions error (a timeout, a lost connection, 429 or 5xx) is retried on
+# api.github.com.
+
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+export MISE_GITHUB_GH_CLI_TOKENS=false
+
+no_github_api() {
+  local output
+  output="$(MISE_DEBUG=1 mise "$@" 2>&1)" || {
+    echo "$output"
+    fail "mise $* failed"
+  }
+  if [[ $output == *"GET https://api.github.com/"* ]]; then
+    echo "$output"
+    fail "mise $* asked api.github.com"
+  fi
+}
+
+no_github_api ls-remote github:jdx/communique
+# ripgrep tags have no `v`: the `v14.1.1` guess is a 404 from mise-versions,
+# which must not send mise to GitHub.
+no_github_api install github:BurntSushi/ripgrep@14.1.1
+assert_contains "mise x github:BurntSushi/ripgrep@14.1.1 -- rg --version" "ripgrep 14.1.1"
+# terraform's GitHub releases have no assets.
+no_github_api latest aqua:hashicorp/terraform
+# fnox's packslip declares a skill that lives in its repository: listed by
+# mise-versions, fetched from raw.githubusercontent.com.
+no_github_api use fnox@1.39.0
+assert_contains "mise skills ls" "fnox"
+# ant is `version_source: github_tag` with no registry entry: its versions
+# are git tags.
+no_github_api latest aqua:apache/ant
+# Attestations come from mise-versions too. foundry's are filtered by
+# predicate type (SPDX), which mise-versions leaves to the client.
+no_github_api install aqua:goreleaser/goreleaser@2.14.1
+no_github_api install aqua:foundry-rs/foundry@1.8.5
+# kubectl's aqua package reads kubernetes/kubernetes, whose releases have no
+# assets: `latest` comes from mise-versions' whole release list.
+no_github_api latest aqua:kubernetes/kubectl
+
+# A stand-in for mise-versions that answers every request with the status it
+# finds in a file, so one server can play an outage and a 404.
+echo 503 >mirror-status
+start_http_server --handler - "$PWD/mirror-status" <<'PY'
+import http.server
+import sys
+
+STATUS_FILE = sys.argv[1]
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        with open(STATUS_FILE) as f:
+            status = int(f.read().strip())
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+PY
+cat >mise.toml <<EOF
+[settings]
+url_replacements = { "https://mise-versions.jdx.dev" = "http://127.0.0.1:$HTTP_PORT" }
+EOF
+
+# mise-versions failing with a 503: the same lookup goes to api.github.com.
+# GitHub may rate-limit this runner, so only a failure that names both
+# sources is accepted in place of the version list.
+export MISE_CACHE_DIR="$PWD/cache-mirror-503"
+output="$(MISE_DEBUG=1 mise ls-remote github:jdx/communique 2>&1)" || {
+  if [[ $output != *"from mise-versions.jdx.dev"*"and from api.github.com after it"* ]]; then
+    echo "$output"
+    fail "a failed GitHub retry did not name both failures"
+  fi
+}
+if [[ $output != *"GET https://api.github.com/repos/jdx/communique/releases"* ]]; then
+  echo "$output"
+  fail "mise did not ask api.github.com after mise-versions answered 503"
+fi
+
+# mise-versions answering 404 is trusted: the repository is unknown, and
+# without a token mise doesn't ask GitHub.
+echo 404 >mirror-status
+export MISE_CACHE_DIR="$PWD/cache-mirror-404"
+output="$(MISE_DEBUG=1 mise ls-remote github:jdx/communique 2>&1)" && {
+  echo "$output"
+  fail "mise listed versions mise-versions does not have"
+}
+if [[ $output == *"GET https://api.github.com/"* ]]; then
+  echo "$output"
+  fail "mise asked api.github.com after mise-versions answered 404"
+fi
+if [[ $output != *"404 from mise-versions.jdx.dev"* ]]; then
+  echo "$output"
+  fail "expected the 404 from mise-versions to be the answer"
+fi

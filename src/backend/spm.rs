@@ -4,6 +4,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::{ensure_plain_asset_name, ensure_plain_bin_name};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
@@ -159,6 +160,13 @@ impl<'a> SpmOptions<'a> {
 
 #[async_trait]
 impl Backend for SPMBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            &["tool_spm_options"],
+            &["tool_spm_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Spm
     }
@@ -173,6 +181,12 @@ impl Backend for SPMBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    /// Packages are usually built from source, so `mise lock` has no download
+    /// URL to record. Return false so --locked mode doesn't error for spm tools.
+    fn supports_lockfile_url(&self) -> bool {
+        false
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
@@ -191,7 +205,7 @@ impl Backend for SPMBackend {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = SpmOptions::new(&raw_opts);
-        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
+        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let versions = match provider.kind {
             GitProviderKind::GitLab => {
@@ -199,8 +213,8 @@ impl Backend for SPMBackend {
                     .await?
                     .into_iter()
                     .map(|r| VersionInfo {
+                        created_at: r.published_at().map(str::to_string),
                         version: r.tag_name,
-                        created_at: r.released_at,
                         ..Default::default()
                     })
                     .rev()
@@ -243,7 +257,7 @@ impl Backend for SPMBackend {
         let raw_opts = tv.request.options();
         let opts = SpmOptions::new(&raw_opts);
         let install_command = opts.source_install_command()?;
-        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
+        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = match package_revision(&tv) {
             Some(revision) => revision,
@@ -264,6 +278,8 @@ impl Backend for SPMBackend {
             &tv.version,
         )? {
             let artifactbundle_required = opts.requires_artifactbundle(artifactbundle_mode);
+            // Read before the attempt, which records the release's own digest in `tv`.
+            let artifactbundle_locked = self.locked_artifactbundle_checksum(&tv).is_some();
             match self
                 .try_install_artifactbundle(
                     ctx,
@@ -288,8 +304,18 @@ impl Backend for SPMBackend {
                         repo.shorthand
                     );
                 }
+                // A source build has nothing to check the lockfile's checksum against,
+                // so it must not stand in for a locked bundle that cannot be installed.
+                Ok(false) if artifactbundle_locked => {
+                    bail!(
+                        "{} locks a SwiftPM artifact bundle of {}, but it has no binary for this Swift target, \
+                         and a source build is not covered by mise.lock; set artifactbundle = false to build from source",
+                        self.describe_lock_entry(&tv, &self.get_platform_key()),
+                        repo.shorthand
+                    );
+                }
                 Ok(false) => {}
-                Err(err) if artifactbundle_required => return Err(err),
+                Err(err) if artifactbundle_required || artifactbundle_locked => return Err(err),
                 Err(err) if Settings::get().spm.artifactbundle_only => return Err(err),
                 Err(err) => {
                     debug!(
@@ -320,6 +346,14 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 impl SPMBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    /// The checksum the lockfile holds for this platform. It is that of the
+    /// release's artifact bundle; nothing is recorded about the source.
+    fn locked_artifactbundle_checksum<'a>(&self, tv: &'a ToolVersion) -> Option<&'a str> {
+        tv.lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|platform| platform.checksum.as_deref())
     }
 
     async fn install_from_source(
@@ -403,6 +437,17 @@ impl SPMBackend {
         revision: &PackageRevision,
     ) -> Result<PathBuf, eyre::Error> {
         let repo = Git::new(tv.cache_path().join("repo"));
+        // A cache cloned from another remote (for example from github.com
+        // before api_url decided the clone host) must not be reused.
+        if let Some(remote) = repo.get_remote_url()
+            && remote.trim_end_matches('/') != package_repo.url.as_str().trim_end_matches('/')
+        {
+            debug!(
+                "Swift package repo cache remote {remote} differs from {}, re-cloning",
+                package_repo.url.as_str()
+            );
+            file::remove_all(&repo.dir)?;
+        }
         if revision.is_git_revision() && repo.exists() {
             let requested = revision.as_str().to_ascii_lowercase();
             let matches = repo
@@ -550,16 +595,24 @@ impl SPMBackend {
     ) -> eyre::Result<bool> {
         let Some(asset) = resolve_artifactbundle_asset(provider, repo, revision, opts).await?
         else {
+            if let Some(checksum) = self.locked_artifactbundle_checksum(tv) {
+                bail!(
+                    "{} locks a SwiftPM artifact bundle ({checksum}), but the {revision} release of {} has none",
+                    self.describe_lock_entry(tv, &self.get_platform_key()),
+                    repo.shorthand
+                );
+            }
             return Ok(false);
         };
 
+        ensure_plain_asset_name(&asset.name)?;
         let bundle_dir = tv.cache_path().join("artifactbundle");
         file::remove_all(&bundle_dir)?;
         file::create_dir_all(&bundle_dir)?;
         let download_path = tv.download_path().join(&asset.name);
         let headers = match provider.kind {
             GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url)?,
-            GitProviderKind::GitHub => github::get_headers(&asset.url)?,
+            GitProviderKind::GitHub => github::get_headers(&asset.url, &provider.api_url)?,
         };
         ctx.pr.set_message(format!("download {}", asset.name));
         HTTP.download_file_with_headers(
@@ -571,7 +624,10 @@ impl SPMBackend {
         .await?;
 
         let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        // A bundle with no binary for this target is not what gets installed, so its
+        // URL and checksum must not end up in the lock entry of a source build.
+        let previous_lock_entry = tv.lock_platforms.get(&platform_key).cloned();
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = asset.url_api.clone();
         if platform_info.checksum.is_none() {
@@ -584,13 +640,17 @@ impl SPMBackend {
 
         let triples = swift_target_triples(ctx, self, tv).await?;
         let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
+        let binaries = if binaries.is_empty() {
+            binaries
+        } else {
+            filter_artifactbundle_binaries(opts, binaries)?
+        };
         if binaries.is_empty() {
             file::remove_all(tv.cache_path())?;
-            return Ok(false);
-        }
-        let binaries = filter_artifactbundle_binaries(opts, binaries)?;
-        if binaries.is_empty() {
-            file::remove_all(tv.cache_path())?;
+            match previous_lock_entry {
+                Some(entry) => tv.lock_platforms.insert(platform_key, entry),
+                None => tv.lock_platforms.remove(&platform_key),
+            };
             return Ok(false);
         }
 
@@ -740,10 +800,14 @@ impl GitProvider {
     fn from_ba(ba: &BackendArg) -> Self {
         let raw_opts = ba.opts();
         let opts = SpmOptions::new(&raw_opts);
-        Self::from_ba_with_opts(ba, &opts)
+        Self::for_mode(ba, &opts, false).unwrap()
     }
 
-    fn from_ba_with_opts(ba: &BackendArg, opts: &SpmOptions<'_>) -> Self {
+    fn from_ba_with_opts(ba: &BackendArg, opts: &SpmOptions<'_>) -> Result<Self> {
+        Self::for_mode(ba, opts, Settings::safe_mode())
+    }
+
+    fn for_mode(ba: &BackendArg, opts: &SpmOptions<'_>, safe_mode: bool) -> Result<Self> {
         let provider = opts.provider(None);
         let kind = if ba.tool_name.contains("gitlab.com") {
             GitProviderKind::GitLab
@@ -756,17 +820,80 @@ impl GitProvider {
 
         let api_url = match opts.api_url(None) {
             Some(api_url) => api_url,
-            None => {
-                Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(|| {
-                    match kind {
-                        GitProviderKind::GitHub => github::API_URL.to_string(),
-                        GitProviderKind::GitLab => gitlab::API_URL.to_string(),
-                    }
-                })
-            }
+            None => match Self::derive_api_url_from_tool_name(&ba.tool_name, &kind) {
+                // The derived host gets the user's forge token. A config naming one
+                // needs trust (`tool_key_selects_api_host`), and safe mode, which
+                // waives trust, does not let a tool name pick it. Nor does it fall
+                // back to the public API, whose `owner/repo` of the same name is
+                // another project with other releases and artifact bundles.
+                Some(_) if safe_mode => bail!(
+                    "{} is on a self-hosted forge, whose API safe mode does not take from the tool name; set its api_url",
+                    ba.tool_name
+                ),
+                Some(derived) => derived,
+                None => match kind {
+                    GitProviderKind::GitHub => github::API_URL.to_string(),
+                    GitProviderKind::GitLab => gitlab::API_URL.to_string(),
+                },
+            },
         };
 
-        Self { api_url, kind }
+        Ok(Self { api_url, kind })
+    }
+
+    /// The web front end that repositories given as a slug are cloned from,
+    /// derived from the API URL so a self-hosted instance (GitHub Enterprise,
+    /// self-managed GitLab) clones from its own host rather than the public one.
+    ///
+    /// Only API URLs with a recognized shape are mapped. Anything else (for
+    /// example a proxy or mirror of the public API) keeps cloning from the
+    /// public host, since a clone URL that still carries an API path is not a
+    /// git remote. A full repository URL as the tool name overrides this.
+    fn web_url(&self) -> String {
+        let (public_api_url, public_web_url) = match self.kind {
+            GitProviderKind::GitHub => (github::API_URL, "https://github.com"),
+            GitProviderKind::GitLab => (gitlab::API_URL, "https://gitlab.com"),
+        };
+        if self.api_url.trim_end_matches('/') == public_api_url {
+            return public_web_url.to_string();
+        }
+        match self.self_hosted_web_url() {
+            Some(url) => url.as_str().trim_end_matches('/').to_string(),
+            None => {
+                // api_url may carry credentials, so it is not logged here.
+                debug!(
+                    "spm: api_url is not a recognized self-hosted API URL, \
+                     cloning slug packages from {public_web_url}"
+                );
+                public_web_url.to_string()
+            }
+        }
+    }
+
+    fn self_hosted_web_url(&self) -> Option<Url> {
+        let api_path = match self.kind {
+            GitProviderKind::GitHub => github::API_PATH,
+            GitProviderKind::GitLab => gitlab::API_PATH,
+        };
+        let mut url = Url::parse(&self.api_url).ok()?;
+        let path = url.path().trim_end_matches('/').to_string();
+        if let Some(web_path) = path.strip_suffix(api_path) {
+            url.set_path(web_path);
+        } else if self.kind == GitProviderKind::GitHub && path.is_empty() {
+            // GitHub Enterprise with subdomain isolation (and GHE.com) serves its
+            // API from `api.<host>` at the root.
+            let host = url.host_str()?.strip_prefix("api.")?.to_string();
+            url.set_host(Some(&host)).ok()?;
+        } else {
+            return None;
+        }
+        url.set_query(None);
+        url.set_fragment(None);
+        // Credentials in api_url are for the API. Keep them out of the clone
+        // URL, which is logged and written to the cached repo's git config.
+        url.set_username("").ok()?;
+        url.set_password(None).ok()?;
+        Some(url)
     }
 
     /// When the tool name is a full URL pointing to a self-hosted instance,
@@ -788,6 +915,16 @@ impl GitProvider {
             }
         }
     }
+}
+
+/// Whether an `spm:` tool key names a package by the URL of a host other than
+/// github.com or gitlab.com. mise then derives that host's API from the name and
+/// sends it the user's forge token, as it would for an `api_url` option, so a
+/// config holding such a key needs trust like one with inline options.
+pub(crate) fn tool_key_selects_api_host(tool: &str) -> bool {
+    tool.trim().strip_prefix("spm:").is_some_and(|name| {
+        GitProvider::derive_api_url_from_tool_name(name, &GitProviderKind::GitHub).is_some()
+    })
 }
 
 #[derive(Debug)]
@@ -812,11 +949,7 @@ impl SwiftPackageRepo {
             let url = Url::parse(name)?;
             (shorthand, url)
         } else if shorthand_regex.is_match(name) {
-            let host = match provider.kind {
-                GitProviderKind::GitHub => "github.com",
-                GitProviderKind::GitLab => "gitlab.com",
-            };
-            let url_str = format!("https://{}/{}.git", host, name);
+            let url_str = format!("{}/{}.git", provider.web_url(), name);
             let url = Url::parse(&url_str)?;
             (name, url)
         } else {
@@ -998,6 +1131,7 @@ fn artifactbundle_binaries(
     target_triples: &[String],
 ) -> eyre::Result<Vec<ArtifactBundleBinary>> {
     let mut binaries = vec![];
+    let root = extract_dir.canonicalize()?;
     for bundle in artifactbundle_dirs(extract_dir)? {
         let info = file::read_to_string(bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
@@ -1006,6 +1140,8 @@ fn artifactbundle_binaries(
             if artifact.r#type != "executable" {
                 continue;
             }
+            // The name becomes the installed file's name under bin/.
+            ensure_plain_bin_name("artifact bundle executable name", &name)?;
             for variant in artifact.variants {
                 if variant
                     .supported_triples
@@ -1017,6 +1153,15 @@ fn artifactbundle_binaries(
                         bail!(
                             "artifact bundle executable does not exist: {}",
                             path.display()
+                        );
+                    }
+                    // The executable is copied into the install, so it must be
+                    // part of the bundle, not reached through `..`, an absolute
+                    // path or a symlink the bundle shipped.
+                    if !path.canonicalize()?.starts_with(&root) {
+                        bail!(
+                            "artifact bundle executable {:?} is outside the bundle",
+                            variant.path
                         );
                     }
                     binaries.push(ArtifactBundleBinary {
@@ -1095,6 +1240,49 @@ mod tests {
     use super::*;
     use indexmap::indexmap;
     use pretty_assertions::assert_str_eq;
+
+    /// In safe mode a self-hosted package named by URL is refused rather than
+    /// looked up on the public API, where the same `owner/repo` is another
+    /// project with its own releases and artifact bundles.
+    #[test]
+    fn test_safe_mode_refuses_a_self_hosted_name() {
+        let ba = |tool: &str, opts: Option<ToolVersionOptions>| {
+            BackendArg::new_raw(
+                "spm".to_string(),
+                Some(tool.to_string()),
+                tool.to_string(),
+                opts,
+                BackendResolution::new(true),
+            )
+        };
+        let provider = |ba: &BackendArg| {
+            let raw_opts = ba.opts();
+            GitProvider::for_mode(ba, &SpmOptions::new(&raw_opts), true)
+        };
+        let err = provider(&ba("https://github.acme.com/org/Tool.git", None)).unwrap_err();
+        assert!(err.to_string().contains("api_url"), "{err}");
+        // github.com and an explicit api_url are unaffected.
+        assert_eq!(
+            provider(&ba("https://github.com/org/Tool.git", None))
+                .unwrap()
+                .api_url,
+            github::API_URL
+        );
+        let opts = ToolVersionOptions {
+            opts: indexmap! {
+                "api_url".to_string() =>
+                    toml::Value::String("https://github.acme.com/api/v3".to_string())
+            }
+            .into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            provider(&ba("https://github.acme.com/org/Tool.git", Some(opts)))
+                .unwrap()
+                .api_url,
+            "https://github.acme.com/api/v3"
+        );
+    }
 
     #[tokio::test]
     async fn test_git_provider_from_ba() {
@@ -1283,6 +1471,101 @@ mod tests {
             "https://gitlab.acme.com/acme/someuser/SwiftTool.git"
         );
         assert_str_eq!(package_repo.shorthand, "acme/someuser/SwiftTool");
+    }
+
+    #[test]
+    fn test_spm_repo_init_by_shorthand_uses_custom_api_url_host() {
+        let cases = [
+            (
+                GitProviderKind::GitHub,
+                "https://github.acme.com/api/v3",
+                "https://github.acme.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitHub,
+                "https://github.acme.com/api/v3/",
+                "https://github.acme.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitHub,
+                "https://api.acme.ghe.com",
+                "https://acme.ghe.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitHub,
+                github::API_URL,
+                "https://github.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitLab,
+                "https://gitlab.acme.com/api/v4",
+                "https://gitlab.acme.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitLab,
+                "https://acme.com/gitlab/api/v4",
+                "https://acme.com/gitlab/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitLab,
+                gitlab::API_URL,
+                "https://gitlab.com/acme/SwiftTool.git",
+            ),
+            // Credentials in api_url never reach the clone URL.
+            (
+                GitProviderKind::GitHub,
+                "https://user:token@github.acme.com/api/v3",
+                "https://github.acme.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitLab,
+                "https://oauth2:token@gitlab.acme.com/api/v4?private=1",
+                "https://gitlab.acme.com/acme/SwiftTool.git",
+            ),
+            // Unrecognized shapes (a proxy or mirror of the public API) keep
+            // cloning from the public host instead of from the API path.
+            (
+                GitProviderKind::GitHub,
+                "https://ghproxy.acme.com/api/github",
+                "https://github.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitHub,
+                "https://ghproxy.acme.com",
+                "https://github.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitLab,
+                "https://api.gitlab.acme.com",
+                "https://gitlab.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitHub,
+                "not a url",
+                "https://github.com/acme/SwiftTool.git",
+            ),
+        ];
+        for (kind, api_url, expected) in cases {
+            let provider = GitProvider {
+                api_url: api_url.to_string(),
+                kind,
+            };
+            let package_repo = SwiftPackageRepo::new("acme/SwiftTool", &provider).unwrap();
+            assert_str_eq!(package_repo.url.as_str(), expected, "api_url: {api_url}");
+            assert_str_eq!(package_repo.shorthand, "acme/SwiftTool");
+        }
+    }
+
+    #[test]
+    fn test_spm_does_not_require_lockfile_urls() {
+        let backend = SPMBackend::from_arg(BackendArg::new_raw(
+            "spm".to_string(),
+            Some("spm:acme/SwiftTool".to_string()),
+            "acme/SwiftTool".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        assert!(!backend.supports_lockfile_url());
     }
 
     fn opts_with_filter_bins(value: toml::Value) -> ToolVersionOptions {
@@ -1863,6 +2146,86 @@ mod tests {
         let binaries =
             artifactbundle_binaries(tmp.path(), &["x86_64-unknown-linux-gnu".to_string()]).unwrap();
         assert!(binaries.is_empty());
+    }
+
+    fn executable_bundle_info(name: &str, path: &str) -> String {
+        serde_json::json!({
+            "schemaVersion": "1.0",
+            "artifacts": {
+                name: {
+                    "version": "1.0.0",
+                    "type": "executable",
+                    "variants": [
+                        { "path": path, "supportedTriples": ["x86_64-unknown-linux-gnu"] }
+                    ]
+                }
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_artifactbundle_binaries_rejects_names_and_paths_outside_the_bundle() {
+        let triples = ["x86_64-unknown-linux-gnu".to_string()];
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("secret");
+        file::write(&outside, "secret").unwrap();
+        let extract = tmp.path().join("extract");
+        let bundle = extract.join("tool.artifactbundle");
+        file::create_dir_all(bundle.join("bin")).unwrap();
+        file::write(bundle.join("bin/tool"), "").unwrap();
+
+        // The executable's name becomes a file under the install's bin/.
+        for name in [
+            "../../../../.bashrc",
+            "/tmp/tool",
+            "sub/tool",
+            "..",
+            "..\\tool",
+        ] {
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info(name, "bin/tool"),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{name}: {err}");
+        }
+
+        // The variant path is the copy's source and must stay in the bundle.
+        for path in ["../../secret", outside.to_str().unwrap()] {
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info("tool", path),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(
+                err.to_string().contains("outside the bundle"),
+                "{path}: {err}"
+            );
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, bundle.join("bin/linked")).unwrap();
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info("tool", "bin/linked"),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(err.to_string().contains("outside the bundle"), "{err}");
+        }
+
+        // A path spelled with `./` still names a file in the bundle.
+        file::write(
+            bundle.join("info.json"),
+            executable_bundle_info("tool", "./bin/tool"),
+        )
+        .unwrap();
+        let binaries = artifactbundle_binaries(&extract, &triples).unwrap();
+        assert_eq!(binaries.len(), 1);
+        assert_eq!(binaries[0].name, "tool");
     }
 
     #[test]

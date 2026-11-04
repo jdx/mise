@@ -6,239 +6,36 @@ use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
 use crate::tera::{
-    TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
+    TeraEngine, contains_template_syntax, get_tera, render_config_str, tera_exec, tera1_exec,
 };
 use crate::toolset::Toolset;
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{cmp::PartialEq, sync::Arc};
 
 use super::{Config, Settings};
 pub(crate) use mise_util::env_value::EnvValue;
 
 mod file;
 mod module;
+pub use module::skipped_env_modules;
 mod path;
+pub mod prompt;
 mod source;
 pub(crate) mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) enum RequiredValue {
-    #[default]
-    False,
-    True,
-    Help(String),
-}
+pub use mise_config::env::{
+    AgeFormat, EnvDirective, EnvDirectiveOptions, PathPosition, RequiredValue,
+};
 
-impl RequiredValue {
-    pub(crate) fn is_required(&self) -> bool {
-        !matches!(self, RequiredValue::False)
-    }
-
-    pub(crate) fn help_text(&self) -> Option<&str> {
-        match self {
-            RequiredValue::Help(text) => Some(text.as_str()),
-            _ => None,
-        }
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for RequiredValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::{self, Visitor};
-        use std::fmt;
-
-        struct RequiredVisitor;
-
-        impl<'de> Visitor<'de> for RequiredVisitor {
-            type Value = RequiredValue;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a boolean or a string")
-            }
-
-            fn visit_bool<E>(self, value: bool) -> Result<RequiredValue, E>
-            where
-                E: de::Error,
-            {
-                Ok(if value {
-                    RequiredValue::True
-                } else {
-                    RequiredValue::False
-                })
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<RequiredValue, E>
-            where
-                E: de::Error,
-            {
-                Ok(RequiredValue::Help(value.to_string()))
-            }
-
-            fn visit_string<E>(self, value: String) -> Result<RequiredValue, E>
-            where
-                E: de::Error,
-            {
-                Ok(RequiredValue::Help(value))
-            }
-        }
-
-        deserializer.deserialize_any(RequiredVisitor)
-    }
-}
-
-impl serde::Serialize for RequiredValue {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            RequiredValue::False => serializer.serialize_bool(false),
-            RequiredValue::True => serializer.serialize_bool(true),
-            RequiredValue::Help(text) => serializer.serialize_str(text),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct EnvDirectiveOptions {
-    #[serde(default)]
-    pub(crate) tools: bool,
-    #[serde(default)]
-    pub redact: Option<bool>,
-    #[serde(default)]
-    pub(crate) required: RequiredValue,
-    #[serde(default)]
-    pub(crate) expand: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum EnvDirective {
-    /// simple key/value pair
-    Val(String, String, EnvDirectiveOptions),
-    /// use a fallback value if the key is not already set
-    Default(String, String, EnvDirectiveOptions),
-    /// remove a key
-    Rm(String, EnvDirectiveOptions),
-    /// Required variable that must be defined elsewhere
-    Required(String, EnvDirectiveOptions),
-    /// dotenv file
-    File(String, EnvDirectiveOptions),
-    /// add a path to the PATH
-    Path(String, EnvDirectiveOptions),
-    /// run a bash script and apply the resulting env diff
-    Source(String, EnvDirectiveOptions),
-    /// [experimental] age-encrypted value
-    Age {
-        key: String,
-        value: String,
-        format: Option<AgeFormat>,
-        options: EnvDirectiveOptions,
-    },
-    PythonVenv {
-        path: String,
-        create: bool,
-        python: Option<String>,
-        uv_create_args: Option<Vec<String>>,
-        python_create_args: Option<Vec<String>>,
-        options: EnvDirectiveOptions,
-    },
-    Module(String, toml::Value, EnvDirectiveOptions),
-}
-
-impl EnvDirective {
-    pub(crate) fn options(&self) -> &EnvDirectiveOptions {
-        match self {
-            EnvDirective::Val(_, _, opts)
-            | EnvDirective::Default(_, _, opts)
-            | EnvDirective::Rm(_, opts)
-            | EnvDirective::Required(_, opts)
-            | EnvDirective::File(_, opts)
-            | EnvDirective::Path(_, opts)
-            | EnvDirective::Source(_, opts)
-            | EnvDirective::Age { options: opts, .. }
-            | EnvDirective::PythonVenv { options: opts, .. }
-            | EnvDirective::Module(_, _, opts) => opts,
-        }
-    }
-}
-
-impl From<(String, String)> for EnvDirective {
-    fn from((k, v): (String, String)) -> Self {
-        Self::Val(k, v, Default::default())
-    }
-}
-
-impl From<(String, i64)> for EnvDirective {
-    fn from((k, v): (String, i64)) -> Self {
-        (k, v.to_string()).into()
-    }
-}
-
-impl Display for EnvDirective {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
-            EnvDirective::Default(k, v, _) => write!(f, "{k} default={v}"),
-            EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
-            EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
-            EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
-            EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
-            EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
-            EnvDirective::Age { key, format, .. } => {
-                write!(f, "{key} (age-encrypted")?;
-                if let Some(fmt) = format {
-                    let fmt_str = match fmt {
-                        AgeFormat::Zstd => "zstd",
-                        AgeFormat::Raw => "raw",
-                    };
-                    write!(f, ", {fmt_str}")?;
-                }
-                write!(f, ")")
-            }
-            EnvDirective::Module(name, _, _) => write!(f, "module {name}"),
-            EnvDirective::PythonVenv {
-                path,
-                create,
-                python,
-                uv_create_args,
-                python_create_args,
-                ..
-            } => {
-                write!(f, "python venv path={}", display_path(path))?;
-                if *create {
-                    write!(f, " create")?;
-                }
-                if let Some(python) = python {
-                    write!(f, " python={python}")?;
-                }
-                if let Some(args) = uv_create_args {
-                    write!(f, " uv_create_args={args:?}")?;
-                }
-                if let Some(args) = python_create_args {
-                    write!(f, " python_create_args={args:?}")?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub enum AgeFormat {
-    #[serde(rename = "zstd")]
-    Zstd,
-    #[serde(rename = "raw")]
-    #[default]
-    Raw,
+/// Show env directive paths the way the rest of mise does.
+pub(crate) fn register_hooks() {
+    mise_config::env::set_display_path(|path| display_path(path));
 }
 
 #[derive(Default, Clone)]
@@ -248,6 +45,8 @@ pub struct EnvResults {
     pub env_remove: BTreeSet<String>,
     pub env_files: Vec<PathBuf>,
     pub env_paths: Vec<PathBuf>,
+    /// `_.path` entries declared with `position = "append"`: they go after tool paths
+    pub env_paths_append: Vec<PathBuf>,
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
     pub redaction_exclusions: BTreeSet<String>,
@@ -263,7 +62,8 @@ pub struct EnvResults {
     /// Files to watch for cache invalidation (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
     /// True if any directive declared cacheable=false, is a dynamic module, or produced a
-    /// redacted or decrypted (age, sops) value, none of which may be written to the env cache
+    /// decrypted (age, sops) value, or a redacted one unless `env_cache_redacted` is on,
+    /// none of which may be written to the env cache
     pub has_uncacheable: bool,
 }
 
@@ -417,6 +217,7 @@ impl EnvResults {
             }
         };
         let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let mut append_paths: Vec<(PathBuf, PathBuf)> = Vec::new();
         let safe_mode = Settings::safe_mode();
         // In safe mode, environment directives from project (non-global) config are
         // ignored — they would otherwise be applied to the host environment and to
@@ -426,10 +227,8 @@ impl EnvResults {
         // is operator-owned and still applies, mirroring the trust model. `_.source`
         // runs a shell script (code execution rather than env injection), so it is
         // ignored regardless of source, including operator-owned global config.
-        let dropped_in_safe_mode = |directive: &EnvDirective, source: &Path| -> bool {
-            safe_mode
-                && (!crate::config::is_global_config(source)
-                    || matches!(directive, EnvDirective::Source(..)))
+        let dropped_in_safe_mode = |directive: &EnvDirective, source: &Path| {
+            safe_mode && dropped_in_safe_mode(directive, source)
         };
         // Choose the last venv among directives that survive the safe-mode filter,
         // so a dropped project venv can't cause an operator's global venv to be
@@ -477,6 +276,17 @@ impl EnvResults {
             initial
         };
 
+        if resolve_opts.vars {
+            // A saved value is an ordinary var, below every config value and visible to
+            // templates from the start. A name the process environment sets is skipped,
+            // because the environment ranks higher.
+            for (key, value) in prompt::saved_all() {
+                if !value.is_empty() && env::PRISTINE_ENV.get(&key).is_none_or(|v| v.is_empty()) {
+                    r.vars.insert(key, (value, prompt::answers_path()));
+                }
+            }
+        }
+
         for (directive, source) in filtered_input {
             let mut tera = None;
             // trace!(
@@ -485,8 +295,8 @@ impl EnvResults {
             //     &source
             // );
             let config_root = crate::config::config_file::config_root::config_root(&source);
-            ctx.insert("cwd", &*dirs::CWD);
-            ctx.insert("config_root", &config_root);
+            ctx.insert("cwd", &dirs::CWD.as_ref().map(|p| p.to_string_lossy()));
+            ctx.insert("config_root", &config_root.to_string_lossy());
             ctx.insert(
                 "config_source",
                 &crate::config::config_file::config_root::config_source(&source),
@@ -504,6 +314,18 @@ impl EnvResults {
 
             ctx.insert("vars", &vars);
             let redact = directive.options().redact;
+            if !resolve_opts.vars && directive.options().prompt.is_some() {
+                eyre::bail!("`prompt` is only supported in [vars], not [env]");
+            }
+            if resolve_opts.vars
+                && directive.options().prompt.is_some()
+                && !matches!(
+                    directive,
+                    EnvDirective::Default(..) | EnvDirective::Required(..)
+                )
+            {
+                eyre::bail!("`prompt` needs a `default` or `required` on the same var");
+            }
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
@@ -531,7 +353,10 @@ impl EnvResults {
                         env.insert(k, (v, Some(source.clone())));
                     }
                 }
-                EnvDirective::Default(k, v, _opts) => {
+                EnvDirective::Default(k, v, opts) => {
+                    if resolve_opts.vars && opts.prompt.is_some() {
+                        prompt::note_declared(&k);
+                    }
                     // Same fold as `Val` above, and for the same reason.
                     let k = if resolve_opts.vars {
                         k
@@ -539,11 +364,11 @@ impl EnvResults {
                         crate::env::normalize_path_key(k)
                     };
                     if resolve_opts.vars {
-                        if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
+                        if r.vars.get(&k).is_some_and(|(v, _)| !v.is_empty()) {
+                            // The value stays with the file (or the saved answer) that set it.
                             if redact.unwrap_or(false) {
                                 r.redactions.push(k.clone());
                             }
-                            r.vars.insert(k, (v.clone(), source.clone()));
                             continue;
                         }
                         if let Some(v) = env::PRISTINE_ENV.get(&k).filter(|v| !v.is_empty()) {
@@ -561,6 +386,19 @@ impl EnvResults {
                         continue;
                     }
 
+                    // A saved answer wins over the default, so render the default only
+                    // when there is none.
+                    if resolve_opts.vars
+                        && let Some(a) = prompt::saved(&k)
+                    {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        r.track_redaction_override(&k, redact);
+                        r.vars.insert(k, (a, prompt::answers_path()));
+                        continue;
+                    }
+
                     r.track_redaction_override(&k, redact);
                     r.rendered_defaults.insert(k.clone());
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?;
@@ -569,7 +407,14 @@ impl EnvResults {
                         if redact.unwrap_or(false) {
                             r.redactions.push(k.clone());
                         }
-                        r.vars.insert(k, (v, source.clone()));
+                        let answer = match &opts.prompt {
+                            Some(p) => prompt::answer(&k, p, Some(&v))?,
+                            None => None,
+                        };
+                        match answer {
+                            Some(a) => r.vars.insert(k, (a, prompt::answers_path())),
+                            None => r.vars.insert(k, (v, source.clone())),
+                        };
                     } else {
                         r.env_remove.remove(&k);
                         if redact.unwrap_or(false) {
@@ -594,7 +439,10 @@ impl EnvResults {
                     r.caller_env_keys.remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Required(k, _opts) => {
+                EnvDirective::Required(k, opts) => {
+                    if resolve_opts.vars && opts.prompt.is_some() {
+                        prompt::note_declared(&k);
+                    }
                     // Required directives only validate; they never assign. Record the key so
                     // redaction can resolve it against the caller environment.
                     r.caller_env_keys.insert(k.clone());
@@ -614,6 +462,15 @@ impl EnvResults {
                         && let Some(v) = required_env.get(&k)
                     {
                         r.vars.insert(k, (v.clone(), source.clone()));
+                    } else if resolve_opts.vars
+                        && !vars.contains_key(&k)
+                        && !r.vars.contains_key(&k)
+                        && let Some(a) = match &opts.prompt {
+                            Some(p) => prompt::answer(&k, p, None)?,
+                            None => prompt::saved(&k),
+                        }
+                    {
+                        r.vars.insert(k, (a, prompt::answers_path()));
                     }
                 }
                 EnvDirective::Age {
@@ -683,7 +540,7 @@ impl EnvResults {
                         env.insert(k.clone(), (decrypted_v, Some(source.clone())));
                     }
                 }
-                EnvDirective::Path(input_str, _opts) => {
+                EnvDirective::Path(input_str, opts) => {
                     let mut directive_ctx = EnvDirectiveContext {
                         config,
                         tera_ctx: &mut ctx,
@@ -696,11 +553,19 @@ impl EnvResults {
                         toolset,
                     };
                     let path = Self::path(&mut directive_ctx, input_str).await?;
-                    paths.push((path.clone(), source.clone()));
+                    match opts.position {
+                        PathPosition::Prepend => paths.push((path.clone(), source.clone())),
+                        PathPosition::Append => append_paths.push((path.clone(), source.clone())),
+                    }
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
                 }
-                EnvDirective::File(input, opts) => {
+                directive @ (EnvDirective::File(..) | EnvDirective::FileGroup(..)) => {
+                    let (inputs, opts) = match directive {
+                        EnvDirective::File(input, opts) => (vec![input], opts),
+                        EnvDirective::FileGroup(inputs, opts) => (inputs, opts),
+                        _ => unreachable!(),
+                    };
                     let mut directive_ctx = EnvDirectiveContext {
                         config,
                         tera_ctx: &mut ctx,
@@ -712,7 +577,8 @@ impl EnvResults {
                         config_root: &config_root,
                         toolset,
                     };
-                    let files = Self::file(&mut directive_ctx, input, opts.expand).await?;
+                    let files =
+                        Self::file(&mut directive_ctx, inputs, opts.expand, opts.find_up).await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
@@ -804,18 +670,44 @@ impl EnvResults {
                         .collect();
                     // Incorporate _.path entries accumulated so far into PATH
                     // so that cmd.exec in the plugin can find tools on PATH.
-                    if !paths.is_empty() {
+                    if !paths.is_empty() || !append_paths.is_empty() {
                         let existing_path =
                             env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
                         let mut path_env = PathEnv::from_path_str(&existing_path);
-                        for (p, path_source) in &paths {
+                        let resolve = |(p, path_source): &(PathBuf, PathBuf)| {
                             let config_root =
                                 crate::config::config_file::config_root::config_root(path_source);
-                            for s in env::split_paths(p) {
-                                path_env.add(normalize_path(&config_root, s));
+                            env::split_paths(p)
+                                .map(|s| normalize_path(&config_root, s))
+                                .collect_vec()
+                        };
+                        for entry in paths.iter().flat_map(resolve) {
+                            path_env.add(entry);
+                        }
+                        // A `tools = true` module already has the tool paths in PATH, and
+                        // appended entries belong behind them, not ahead.
+                        let tool_paths = match toolset {
+                            Some(ts) => ts.list_paths(config).await,
+                            None => vec![],
+                        };
+                        let tools_in_path =
+                            env::split_paths(&existing_path).any(|e| tool_paths.contains(&e));
+                        let mut appended = vec![];
+                        for entry in append_paths.iter().flat_map(resolve) {
+                            if tools_in_path {
+                                appended.push(entry);
+                            } else {
+                                path_env.add(entry);
                             }
                         }
-                        env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
+                        let mut entries = env::split_paths(&path_env.to_string()).collect_vec();
+                        if let Some(i) = entries.iter().rposition(|e| tool_paths.contains(e)) {
+                            entries.splice(i + 1..i + 1, appended);
+                        }
+                        env_map.insert(
+                            env::PATH_KEY.to_string(),
+                            env::join_paths(entries)?.to_string_lossy().to_string(),
+                        );
                     }
                     if log::log_enabled!(log::Level::Trace) {
                         if let Some(path) = env_map.get(&*env::PATH_KEY) {
@@ -859,22 +751,8 @@ impl EnvResults {
         }
         // trace!("resolve: paths: {:#?}", &paths);
         // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-        for (source, paths) in &paths.iter().chunk_by(|(_, source)| source) {
-            // Use the computed config_root (project root for nested configs) for path resolution
-            // to be consistent with other env directives like _.source and _.file
-            let config_root = crate::config::config_file::config_root::config_root(source);
-            let paths = paths.map(|(p, _)| p).collect_vec();
-            let mut paths = paths
-                .iter()
-                .rev()
-                .flat_map(|path| env::split_paths(path))
-                .map(|s| normalize_path(&config_root, s))
-                .collect::<Vec<_>>();
-            // r.env_paths is already reversed and paths should prepend r.env_paths
-            paths.reverse();
-            paths.extend(r.env_paths);
-            r.env_paths = paths;
-        }
+        Self::prepend_paths(&mut r.env_paths, &paths, normalize_path);
+        Self::prepend_paths(&mut r.env_paths_append, &append_paths, normalize_path);
 
         let context_vars_for_validation = Self::context_vars(&ctx);
         let oci_env_keys = if resolve_opts.vars {
@@ -890,13 +768,23 @@ impl EnvResults {
             &r,
             &context_vars_for_validation,
             &oci_env_keys,
-            resolve_opts.warn_on_missing_required,
+            resolve_opts.warn_on_missing_required
+                || (resolve_opts.vars && prompt::tolerates_missing()),
             resolve_opts.vars,
         )?;
 
         // A redacted value is a secret by the user's or the directive's own account
         // (age values are redacted by default), and the env cache would write it to disk.
-        if !r.redactions.is_empty() {
+        // `env_cache_redacted` opts in; decrypted values were marked above regardless.
+        // A redacted var can change without the config file changing, and a `default` or
+        // `required` depends on the caller's environment, which the cache key does not see.
+        let caller_dependent = r
+            .redactions
+            .iter()
+            .any(|k| r.caller_env_keys.contains(k) || r.rendered_defaults.contains(k));
+        if !r.redactions.is_empty()
+            && (!Settings::get().env_cache_redacted || resolve_opts.vars || caller_dependent)
+        {
             r.has_uncacheable = true;
         }
 
@@ -1043,7 +931,7 @@ impl EnvResults {
                 }
                 tera
             });
-            output = render_str(tera, input, ctx)
+            output = render_config_str(tera, input, ctx, path)
                 .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         }
 
@@ -1061,12 +949,38 @@ impl EnvResults {
         Ok(output)
     }
 
+    /// Puts each config file's `paths` ahead of `target`, so the config file that sorts last
+    /// ends up first. A file's own entries keep the order they were written in.
+    fn prepend_paths(
+        target: &mut Vec<PathBuf>,
+        paths: &[(PathBuf, PathBuf)],
+        normalize_path: fn(&Path, PathBuf) -> PathBuf,
+    ) {
+        for (source, paths) in &paths.iter().chunk_by(|(_, source)| source) {
+            // Use the computed config_root (project root for nested configs) for path resolution
+            // to be consistent with other env directives like _.source and _.file
+            let config_root = crate::config::config_file::config_root::config_root(source);
+            let paths = paths.map(|(p, _)| p).collect_vec();
+            let mut paths = paths
+                .iter()
+                .rev()
+                .flat_map(|path| env::split_paths(path))
+                .map(|s| normalize_path(&config_root, s))
+                .collect::<Vec<_>>();
+            // target is already reversed and paths should prepend target
+            paths.reverse();
+            paths.extend(std::mem::take(target));
+            *target = paths;
+        }
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.env.is_empty()
             && self.vars.is_empty()
             && self.env_remove.is_empty()
             && self.env_files.is_empty()
             && self.env_paths.is_empty()
+            && self.env_paths_append.is_empty()
             && self.env_scripts.is_empty()
             && self.tool_add_paths.is_empty()
     }
@@ -1268,6 +1182,9 @@ impl Debug for EnvResults {
         if !self.env_paths.is_empty() {
             ds.field("env_paths", &self.env_paths);
         }
+        if !self.env_paths_append.is_empty() {
+            ds.field("env_paths_append", &self.env_paths_append);
+        }
         if !self.env_scripts.is_empty() {
             ds.field("env_scripts", &self.env_scripts);
         }
@@ -1276,6 +1193,12 @@ impl Debug for EnvResults {
         }
         ds.finish()
     }
+}
+
+/// Whether safe mode ignores `directive` from `source` (see `resolve_with_toolset`): any
+/// directive from project config, and `_.source` from any config.
+pub(super) fn dropped_in_safe_mode(directive: &EnvDirective, source: &Path) -> bool {
+    !crate::config::is_global_config(source) || matches!(directive, EnvDirective::Source(..))
 }
 
 #[cfg(test)]

@@ -5,15 +5,25 @@ use eyre::{Result, WrapErr};
 use crate::system::history::OperationScope;
 use crate::system::history::store::{OperationKind, Summary};
 
-/// Record tracked files before and after an external command
+/// Run a command and save tracked files before and after it
 ///
-/// Runs the command directly, inheriting its terminal and environment. Keeps
-/// a linked checkpoint pair, including when the command fails or changes no
-/// files. Capture failures warn and never replace the command's exit status.
-/// Only tracked files are recorded: package, service, and other system effects
-/// are not reversible. Concurrent editor changes are part of the same interval.
+/// Runs the command with your terminal and environment and saves a checkpoint
+/// before and after it, even when the command fails or changes nothing, so
+/// `mise dot undo` can reverse what it did to your tracked files. Edits you
+/// make while it runs are part of the same operation. Packages, services, and
+/// other system changes are not recorded and cannot be undone. If saving
+/// fails, mise warns and still exits with the command's status.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example(
+        "mise dot capture -- brew upgrade",
+        help = "Record what an upgrade changes"
+    ),
+    example(
+        "mise dot capture --label \"theme switch\" -- ./switch-theme.sh",
+        help = "Label the operation in history"
+    )
+)]
 pub(crate) struct DotfilesCapture {
     /// Describe this operation in history
     #[usage(long, value_name = "LABEL")]
@@ -52,8 +62,15 @@ impl DotfilesCapture {
                 warn!("history: no protective checkpoint is available for this command");
             }
         }
-        let result = Command::new(program)
-            .args(args)
+        // local-only history gets a labeled checkpoint on each side
+        let local_label = self.label.clone().unwrap_or_else(|| "capture".into());
+        save_local(&local_label).await;
+        let mut command = Command::new(program);
+        command.args(args);
+        // under `mise dot --local`, the command runs with the state
+        // directory it was given, never the local-only store's
+        crate::system::history::local::restore_env(&mut command);
+        let result = command
             .status()
             .wrap_err_with(|| format!("could not run {program}"));
         if let Some(scope) = scope {
@@ -71,12 +88,34 @@ impl DotfilesCapture {
                 }),
             );
         }
+        save_local(&local_label).await;
         let status = result?;
         if status.success() {
             Ok(())
         } else {
             Err(crate::request_exit(exit_code(status)))
         }
+    }
+}
+
+/// Saves this machine's local-only history, if it tracks anything, with
+/// `label`. Never in the way of the command: a failure only warns.
+async fn save_local(label: &str) {
+    if crate::system::history::local::active() {
+        return;
+    }
+    let declared = match crate::config::Config::get().await {
+        Ok(config) => crate::system::history::tracked::TrackedSet::from_config(&config)
+            .is_ok_and(|set| !set.local.is_empty()),
+        Err(_) => false,
+    };
+    if !declared {
+        return;
+    }
+    if let Err(err) =
+        crate::system::history::local::run(["dot", "save", "--best-effort", "--label", label])
+    {
+        warn!("history: {err:#}");
     }
 }
 

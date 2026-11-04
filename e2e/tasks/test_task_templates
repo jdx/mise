@@ -224,3 +224,82 @@ mise run '//...:demo'
 assert "cat pkgs/a/out.txt" "v2"
 
 echo '' >mise.toml
+
+# A file task that extends a template gets the template's usage spec
+mkdir -p .mise-tasks
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+usage = '''
+flag "-t --test" help="template flag"
+'''
+EOT
+cat <<'EOT' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+#USAGE flag "--own" help="own flag"
+echo "test=${usage_test:-no}"
+EOT
+chmod +x .mise-tasks/file_task
+assert_contains "mise file_task -h" "template flag"
+assert_contains "mise file_task -h" "own flag"
+assert "mise run file_task -t" "test=true"
+
+# The inherited usage is rendered with the task context
+cat <<'EOT' >mise.toml
+[vars]
+profile = "dev"
+
+[task_templates.tmpl]
+usage = '''
+flag "--profile <p>" default="{{ vars.profile }}"
+'''
+EOT
+cat <<'EOT' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+echo "profile=$usage_profile"
+EOT
+assert "mise run file_task" "profile=dev"
+
+# The inherited usage renders in the task's directory
+echo v9 >VERSION
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+usage = '''
+flag "--ver <v>" default="{{ read_file(path='VERSION') | trim }}"
+'''
+EOT
+cat <<'EOT' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+echo "ver=$usage_ver"
+EOT
+mkdir -p sub
+assert "cd sub && mise run file_task" "ver=v9"
+assert_contains "cd sub && mise run file_task -h" "--ver"
+
+# The inherited usage sees the task's env
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+env = { PROFILE = "prod" }
+usage = '''
+flag "--profile <p>" default="{{ env.PROFILE }}"
+'''
+EOT
+cat <<'EOS' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+echo "profile=$usage_profile"
+EOS
+assert "mise run file_task" "profile=prod"
+# Help has no task env, so the env-based flag is dropped with a warning instead of failing
+assert_contains "mise run file_task -h 2>&1" "ignoring the usage"
+
+# A template that cannot render for a reason other than the task env still fails validation
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+usage = '''
+flag "--x <p>" default="{{ vars.nope }}"
+'''
+EOT
+assert_fail "mise tasks validate"

@@ -20,7 +20,9 @@ use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{TVTuple, preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
-use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
+use crate::toolset::tool_deps::{
+    ToolDeps, ensure_compatible_install_requests, graph_key, tool_key,
+};
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
@@ -121,9 +123,17 @@ impl Toolset {
         // than inheriting the provider's. The provider's own directory is still needed
         // to explain a failure that is caused by writing outside the user's install dir.
         let provider_install_dir = scope_installs_dir(&tv.request);
+        // Running a lazy tool for the first time doesn't need the other missing ones resolved.
         let install_options = InstallOptions {
             reason: "lazy shim".into(),
             scoped_install_dirs: true,
+            after_install_resolve: ResolveOptions {
+                defer_missing_lazy_tools: true,
+                // Nothing shows what resolves after the install, so this doesn't wait for
+                // `prefer_offline`: a command wrapper can reach here without it.
+                defer_missing_lazy_online: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let requests = self.lazy_install_requests(config, &tv).await;
@@ -144,7 +154,10 @@ impl Toolset {
             })?;
         if !installed.is_empty() {
             let ts = config
-                .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                .get_toolset_with_opts(&ResolveOptions {
+                    warn_not_in_lockfile: false,
+                    ..install_options.after_install_resolve.clone()
+                })
                 .await?;
             config::rebuild_shims_and_runtime_symlinks(
                 config,
@@ -232,7 +245,10 @@ impl Toolset {
         }
         if !installed.is_empty() {
             let ts = config
-                .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                .get_toolset_with_opts(&ResolveOptions {
+                    warn_not_in_lockfile: false,
+                    ..opts.after_install_resolve.clone()
+                })
                 .await?;
             config::rebuild_shims_and_runtime_symlinks(
                 config,
@@ -318,6 +334,15 @@ impl Toolset {
         }
 
         self.init_request_options(&mut versions);
+        // Some backends own a versioned runtime for one consumer. Add those
+        // requests to this installation batch before constructing the graph so
+        // the runtime is installed first rather than being borrowed from the
+        // active shell toolset.
+        // The backend itself may request a runtime from the same backend as a
+        // tool selected by the caller. Track dependencies by their full request
+        // key, rather than just their backend, so that private runtimes are not
+        // returned to callers such as `mise use` and persisted as user tools.
+        let private_dependency_keys = self.add_private_install_dependencies(&mut versions)?;
         ensure_compatible_install_requests(&versions)?;
         ensure_safe_install_options(&versions)?;
 
@@ -434,7 +459,10 @@ impl Toolset {
             trace!("install: reloading config");
             *config = Config::reset().await?;
             trace!("install: resolving");
-            if let Err(err) = self.resolve(config).await {
+            if let Err(err) = self
+                .resolve_with_opts(config, &opts.after_install_resolve)
+                .await
+            {
                 debug!("error resolving versions after install: {err:#}");
             }
             if !failed_backends.is_empty()
@@ -447,7 +475,10 @@ impl Toolset {
             // The caller has a live config that other work is using. Refresh this
             // toolset against that snapshot without replacing the global config.
             trace!("install: resolving without reloading config");
-            if let Err(err) = self.resolve(config).await {
+            if let Err(err) = self
+                .resolve_with_opts(config, &opts.after_install_resolve)
+                .await
+            {
                 debug!("error resolving versions after install: {err:#}");
             }
             if !failed_backends.is_empty()
@@ -507,9 +538,45 @@ impl Toolset {
             // `self` was re-resolved after the config reload above and still
             // contains explicitly requested and task-only tools that are not
             // present in the reloaded project config.
+            //
+            // Runtime symlinks for fuzzy requests (`latest`, `1`) are only rebuilt
+            // after the hook, so lock the just-installed versions in a copy of the
+            // toolset: the hook's PATH then resolves to them rather than to the
+            // version being replaced (#14842).
+            let mut hook_ts = self.clone();
+            hook_ts.tera_ctx = Default::default();
+            for tvl in hook_ts.versions.values_mut() {
+                let sole_entry = tvl.versions.len() == 1;
+                for tv in tvl.versions.iter_mut() {
+                    // Take the completed install itself rather than the re-resolved
+                    // entry: a lockfile pinning the old version re-resolves `self`
+                    // back to it even though the upgrade installed a newer one.
+                    let same_slot = |d: &&ToolVersion| {
+                        d.install_satisfied != Some(true)
+                            && !private_dependency_keys.contains(&graph_key(&d.request))
+                            && d.ba().installs_path() == tv.ba().installs_path()
+                            && d.request.source() == tv.request.source()
+                            && d.request.lockfile_scope() == tv.request.lockfile_scope()
+                    };
+                    // `upgrade --bump` installs a new selector while the config still
+                    // holds the old one, so fall back to the only install of a tool
+                    // that is configured once.
+                    let done = installed
+                        .iter()
+                        .filter(same_slot)
+                        .find(|d| d.request.version() == tv.request.version())
+                        .or_else(|| {
+                            let mut slot = installed.iter().filter(same_slot);
+                            slot.next().filter(|_| sole_entry && slot.next().is_none())
+                        });
+                    if let Some(done) = done {
+                        *tv = done.clone().with_locked();
+                    }
+                }
+            }
             hooks::run_one_hook_with_context(
                 config,
-                self,
+                &hook_ts,
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),
@@ -520,16 +587,56 @@ impl Toolset {
         }
 
         // Return appropriate result
+        let requested_installations = || {
+            installed
+                .iter()
+                .filter(|tv| !private_dependency_keys.contains(&graph_key(&tv.request)))
+                .cloned()
+                .collect()
+        };
         if all_failed.is_empty() {
-            Ok(installed)
+            Ok(requested_installations())
         } else {
             crate::lockfile::generate::record_install_failure();
             Err(Error::InstallFailed {
-                successful_installations: installed,
+                successful_installations: requested_installations(),
                 failed_installations: all_failed,
             }
             .into())
         }
+    }
+
+    fn add_private_install_dependencies(
+        &self,
+        versions: &mut Vec<ToolRequest>,
+    ) -> Result<HashSet<String>> {
+        let mut private_dependency_keys = HashSet::new();
+        let mut next = 0;
+        while next < versions.len() {
+            // Only the PyPI selector owns a private runtime. Do not inspect
+            // every backend's install metadata here: an ordinary unknown tool
+            // must continue through the installer so its failure is rendered
+            // as `Failed to install <tool>`, rather than escaping this setup
+            // phase without install context.
+            let mut dependencies =
+                crate::backend::pipx::selected_python_dependency(&versions[next])?
+                    .into_iter()
+                    .collect_vec();
+            // A selector-owned runtime is resolved in the consumer's source
+            // scope, but its installer options still come from the effective
+            // configured runtime request. Apply those before duplicate and
+            // compatibility checks so the private dependency is the same
+            // concrete install request as an explicitly configured Python.
+            self.init_request_options(&mut dependencies);
+            for dependency in dependencies {
+                if !versions.contains(&dependency) {
+                    private_dependency_keys.insert(graph_key(&dependency));
+                    versions.push(dependency);
+                }
+            }
+            next += 1;
+        }
+        Ok(private_dependency_keys)
     }
 
     /// Ensure all plugins for the requested tools are installed
@@ -603,7 +710,7 @@ impl Toolset {
         let request_order: HashMap<String, usize> = versions
             .iter()
             .enumerate()
-            .map(|(i, tr)| (tool_key(tr), i))
+            .map(|(i, tr)| (graph_key(tr), i))
             .collect();
 
         // Build dependency graph
@@ -774,7 +881,7 @@ impl Toolset {
 
         // Sort installed versions by original request order to preserve user's intended ordering
         installed.sort_by_key(|tv| {
-            let key = tool_key(&tv.request);
+            let key = graph_key(&tv.request);
             request_order.get(&key).copied().unwrap_or(usize::MAX)
         });
 
@@ -804,8 +911,12 @@ impl Toolset {
         .await?;
         let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
-        crate::lockfile::ensure_locked_url_matches_version(&tv, &backend.get_platform_key())?;
-        tv.ba().warn_if_locked_backend_superseded(&tv.version);
+        crate::lockfile::ensure_locked_url_matches_version(
+            &tv,
+            &backend.get_platform_key_for(&tv),
+        )?;
+        tv.ba()
+            .warn_if_locked_backend_superseded(&tv.version, tv.request.lockfile_owner_source());
         let install_dir = opts.install_dir.clone().or_else(|| {
             opts.scoped_install_dirs
                 .then(|| scope_installs_dir(tr))
@@ -817,6 +928,12 @@ impl Toolset {
             tv.install_path_is_explicit = true;
         }
         let before_date = transitive_dependency_before_date(tr, &tv);
+        // Silent unless resolution picked this version under a cutoff without a
+        // date, so it needs no cutoff check of its own: an upgrade installs what
+        // it picked as an exact pin, which has no `before_date` here.
+        if !opts.dry_run {
+            crate::backend::warn_if_release_date_unchecked(tv.ba(), &tv.version);
+        }
 
         let ctx = InstallContext {
             config: config.clone(),
@@ -841,14 +958,23 @@ impl Toolset {
             && Settings::get().lockfile_enabled()
             && !ctx.locked
             && !opts.dry_run;
-        if !generate {
-            return backend.install_version(ctx, tv).await;
+        let installed = if generate {
+            let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
+                && !opts.raw
+                && !Settings::get().raw;
+            preparations.start(config.clone(), tv.clone(), concurrent)?;
+            backend.install_version(ctx, tv).await
+        } else {
+            backend.install_version(ctx, tv).await
+        };
+        // After the install has released its lock and cleared its incomplete
+        // marker, a copy under a credential-named directory can go.
+        if let Ok(tv) = &installed
+            && !opts.dry_run
+        {
+            crate::toolset::install_state::remove_credential_named_installs(&tv.ba().short);
         }
-        let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
-            && !opts.raw
-            && !Settings::get().raw;
-        preparations.start(config.clone(), tv.clone(), concurrent)?;
-        backend.install_version(ctx, tv).await
+        installed
     }
 
     /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,
@@ -1017,7 +1143,7 @@ impl Toolset {
         let mpr = MultiProgressReport::get();
 
         for (plugin_key, url) in repo_urls {
-            let (plugin_type, name) = Self::parse_plugin_key(plugin_key);
+            let (plugin_type, name) = PluginType::from_plugin_entry(plugin_key, url);
 
             // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
             if name.is_empty() {
@@ -1029,16 +1155,21 @@ impl Toolset {
             plugin.set_remote_url(url.clone());
 
             if !plugin.is_installed() {
+                // An unprefixed packslip entry already resolved to vfox, so
+                // only an explicit non-vfox prefix can reach this.
+                if url.starts_with("packslip:")
+                    && !matches!(plugin_type, PluginType::Vfox | PluginType::VfoxBackend)
+                {
+                    eyre::bail!(
+                        "plugin {plugin_key}: packslip plugin sources require the vfox or vfox-backend plugin type"
+                    );
+                }
                 plugin
                     .ensure_installed(config, &mpr, false, dry_run)
                     .await?;
             }
         }
         Ok(())
-    }
-
-    fn parse_plugin_key(key: &str) -> (PluginType, &str) {
-        PluginType::from_plugin_config(key)
     }
 }
 
@@ -1239,5 +1370,40 @@ mod tests {
         assert_eq!(options.get("selected"), Some("config"));
         assert_eq!(options.get("request_only"), Some("request"));
         assert_eq!(options.get("inline_only"), Some("inline"));
+    }
+
+    #[test]
+    fn selected_python_dependency_inherits_configured_python_options() {
+        let python = Arc::new(BackendArg::from("python"));
+        let pypi = Arc::new(BackendArg::from("pypi:black"));
+        let configured_python = ToolRequest::new_with_options(
+            python.clone(),
+            "3.12",
+            parse_tool_options("patch_sysconfig=false"),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let selected_tool = ToolRequest::new_with_options(
+            pypi,
+            "24.10.0",
+            parse_tool_options(r#"python="3.12""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured_python);
+        let mut versions = vec![selected_tool];
+
+        let private = toolset
+            .add_private_install_dependencies(&mut versions)
+            .unwrap();
+        let dependency = versions
+            .iter()
+            .find(|request| request.ba() == &python)
+            .expect("selected Python dependency should be added");
+
+        assert_eq!(dependency.options().get("patch_sysconfig"), Some("false"));
+        assert!(private.contains(&graph_key(dependency)));
+        ensure_compatible_install_requests(&versions).unwrap();
     }
 }

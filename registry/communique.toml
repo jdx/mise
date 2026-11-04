@@ -1,5 +1,5 @@
 backends = [
-  { full = "packslip:github.com/jdx/communique", min_version = "1.3.5" },
+  { full = "packslip:github.com/jdx/communique", min_version = "1.3.5", options = { workflow = "release.yml@refs/heads/main" } },
   { full = "github:jdx/communique", attestations_since = "0.1.2" },
 ]
 bins = ["communique"]

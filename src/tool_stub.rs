@@ -167,6 +167,12 @@ impl ToolStubFile {
     }
 
     // Create a ToolRequest directly using ToolVersionOptions
+    /// Whether the stub sets tool options beyond the tool, version, binary and
+    /// platforms it runs on.
+    pub fn has_tool_options(&self) -> bool {
+        self.opts.keys().any(|key| key != "tool") || !self.install_env.is_empty()
+    }
+
     pub fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
         use crate::args::BackendArg;
 

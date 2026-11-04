@@ -318,6 +318,7 @@ mod tests {
                     as_file: false,
                     injectable,
                     description: None,
+                    personal: None,
                 },
             );
         }
@@ -691,7 +692,8 @@ mod tests {
                 target_os = "linux",
                 target_os = "macos",
                 target_os = "freebsd",
-                target_os = "openbsd"
+                target_os = "openbsd",
+                windows
             ))
         );
     }
@@ -839,16 +841,16 @@ mod tests {
         async fn status_line_names_the_protocol() {
             let d = daemon(
                 Some(Response::Hello {
-                    protocol: 6,
-                    min_protocol: 6,
-                    fnox_version: "1.39.0".into(),
+                    protocol: 7,
+                    min_protocol: 7,
+                    fnox_version: "1.43.0".into(),
                     pid: 1,
                 }),
                 true,
             );
             assert_eq!(
                 d.source.daemon_line(&catalog(), LIMIT).await.unwrap(),
-                "daemon: running (protocol 6)"
+                "daemon: running (protocol 7)"
             );
             d.requests.join().unwrap();
         }

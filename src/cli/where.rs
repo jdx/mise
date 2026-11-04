@@ -5,29 +5,29 @@ use crate::config::Config;
 use crate::errors::Error;
 use crate::toolset::ToolsetBuilder;
 
-/// Display the installation path for a tool
+/// Show the install directory of a tool version
 ///
-/// The tool must be installed for this to work.
+/// Fails if no matching version is installed.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise where node@20
-/home/jdx/.local/share/mise/installs/node/20.0.0"###,
-        help = r###"Show the latest installed node 20.x Errors if no matching version is installed"###
+~/.local/share/mise/installs/node/20.0.0"###,
+        help = r###"Show the newest installed node 20.x"###
     ),
     example(
         r###"mise where node
-/home/jdx/.local/share/mise/installs/node/20.0.0"###,
-        help = r###"Show the install directory of the active node, or of the latest installed version if no config requests node Errors if no matching version is installed"###
+~/.local/share/mise/installs/node/20.0.0"###,
+        help = r###"Show the active node, or the newest installed node if no config requests one"###
     )
 )]
 pub(crate) struct Where {
-    /// Tool to look up
-    /// e.g.: ruby@3
-    /// With "@<PREFIX>", shows the latest installed version matching the prefix.
-    /// Otherwise, shows the current, active installed version.
-    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    /// Tool to look up, such as ruby@3
+    ///
+    /// With a version prefix, shows the newest installed version that matches it.
+    /// Otherwise, shows the active installed version.
+    #[usage(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
     /// the version prefix to use when querying the latest version

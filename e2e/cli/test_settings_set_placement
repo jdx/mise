@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# `mise settings set` refuses to write a setting where mise would ignore it, and says where it
+# has to go instead. Writing it used to succeed silently.
+
+# early-init settings are read only from miserc.toml and the environment, never from a config
+assert_fail "mise settings set ceiling_paths /tmp" "miserc.toml or the MISE_CEILING_PATHS environment variable"
+assert_fail "mise settings set --local env_conf_d true" ".miserc.toml or the MISE_ENV_CONF_D environment variable"
+assert_fail "mise settings add env ci" "MISE_ENV environment variable"
+assert_fail "test -f mise.toml"
+assert_fail "test -f $MISE_CONFIG_DIR/config.toml"
+
+# global-only settings are stripped from project configs, so --local is refused
+assert_fail "mise settings set --local yes true" "Drop --local to set it in the global config, or use the MISE_YES environment variable"
+assert_fail "mise settings add --local trusted_config_paths /tmp" "MISE_TRUSTED_CONFIG_PATHS"
+assert_fail "test -f mise.toml"
+
+# the global config is where they belong, and that still works
+mise settings set yes true
+assert "mise settings get yes" "true"
+
+# ordinary settings are unaffected by --local
+mise settings set --local jobs 3
+assert "mise settings get jobs" "3"

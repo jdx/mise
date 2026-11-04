@@ -2,7 +2,7 @@ use crate::config::{self, Config, SettingsExt};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,
-    resolve_task_pattern,
+    name_from_path, resolve_task_pattern,
 };
 use crate::ui::ctrlc;
 use crate::ui::{prompt, style};
@@ -11,6 +11,7 @@ use console::Term;
 use demand::{DemandOption, Select};
 use eyre::{Result, bail, ensure, eyre};
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
@@ -77,21 +78,28 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
     Ok(())
 }
 
-/// Check if a name is similar to any known CLI subcommands using fuzzy matching
+/// Check if a name is similar to any known CLI subcommands
 fn suggest_similar_commands(name: &str) -> Vec<String> {
+    similar_commands(name, crate::frontend::subcommand_names())
+}
+
+/// Close spellings (a transposed or missing letter, like `lsit` for `list`) come first, then
+/// commands that contain the typed letters in order. The frontend leaves hidden commands out:
+/// their long names contain almost any short typo as a subsequence.
+fn similar_commands(name: &str, commands: Vec<String>) -> Vec<String> {
+    const MAX: usize = 3;
+    let mut found = xx::suggest::similar_n_with_threshold(name, &commands, MAX, 0.8);
+
     let mut matcher = FuzzyMatcher::default();
     let pattern = FuzzyPattern::new(name);
-    crate::frontend::subcommand_names()
-        .into_iter()
-        .filter_map(|subcmd| {
-            matcher
-                .score_pattern(&subcmd, &pattern)
-                .map(|score| (score, subcmd))
-        })
+    let fuzzy = commands
+        .iter()
+        .filter(|c| !found.contains(c))
+        .filter_map(|c| matcher.score_pattern(c, &pattern).map(|score| (score, c)))
         .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
-        .take(3)
-        .map(|(_, subcmd)| subcmd)
-        .collect()
+        .map(|(_, c)| c.clone());
+    found.extend(fuzzy.take(MAX - found.len()));
+    found
 }
 
 async fn tasks_for_missing_task_error(
@@ -272,17 +280,6 @@ async fn err_no_task(
     let (tasks_for_error, showing_all_tasks) = tasks_for_missing_task_error(config, name).await?;
 
     if tasks_for_error.is_empty() {
-        // If the name matches a CLI subcommand closely, suggest that instead of
-        // the confusing "no tasks defined" message
-        if !similar_cmds.is_empty() {
-            let mut err_msg = format!("unknown command: {}", style::ered(name));
-            err_msg.push_str("\n\nDid you mean:");
-            for cmd_name in &similar_cmds {
-                err_msg.push_str(&format!("\n  mise {cmd_name}"));
-            }
-            bail!(err_msg);
-        }
-
         // Check if there are any untrusted config files in the current directory
         // that might contain tasks.
         if let Some(cwd) = &*dirs::CWD {
@@ -319,6 +316,18 @@ async fn err_no_task(
 
         if let Some(task) = make_task_executable(config, name, task_context).await? {
             return Ok(Some(task));
+        }
+
+        // If the name matches a CLI subcommand closely, suggest that instead of
+        // the confusing "no tasks defined" message. This comes after the non-executable task
+        // check so a close command name does not hide a task file that can be made executable.
+        if !similar_cmds.is_empty() {
+            let mut err_msg = format!("unknown command: {}", style::ered(name));
+            err_msg.push_str("\n\nDid you mean:");
+            for cmd_name in &similar_cmds {
+                err_msg.push_str(&format!("\n  mise {cmd_name}"));
+            }
+            bail!(err_msg);
         }
 
         // Check if there are non-executable files in task include directories
@@ -416,6 +425,28 @@ async fn prompt_for_task(config: &Arc<Config>, load_all: bool) -> Result<Task> {
     }
 }
 
+/// The file a task argument names, when it is one. `mise run` runs an existing file given as
+/// any of these as an ad-hoc task instead of looking up a task:
+/// - ./path/to/script
+/// - ~/path/to/script
+/// - /path/to/script
+/// - ../path/to/script
+/// - C:\path\to\script
+/// - .\path\to\script
+pub fn script_path_arg(t: &str) -> Option<PathBuf> {
+    // A path starting with "//" on Windows will be treated as a UNC path by
+    // PathBuf, but "//" in UNIX will be collapsed to "/" by PathBuf.
+    // Checking a nonexistent UNC path for Windows will incur a large
+    // hiccup (~2.8s) due to Windows trying to resolve the UNC path.
+    let t = t
+        .strip_prefix("//")
+        .map(|s| format!("/{s}"))
+        .unwrap_or_else(|| t.to_string());
+    let arg_re = xx::regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
+    let path = PathBuf::from(&t);
+    (arg_re.is_match(&t) && path.exists()).then_some(path)
+}
+
 /// Get a list of tasks to run from command-line arguments
 /// Handles task patterns, monorepo paths, and interactive selection
 pub async fn get_task_lists(
@@ -485,39 +516,29 @@ pub async fn get_task_lists(
     };
 
     let mut tasks = vec![];
-    let arg_re = xx::regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
     for (t, args) in args {
         // Expand :task pattern to match tasks in current directory's config root
         let original_name = t.clone();
         let t = crate::task::expand_colon_task_syntax(&t, config)?;
 
-        // A path starting with "//" on Windows will be treated as a UNC path by
-        // PathBuf, but "//" in UNIX will be collapsed to "/" by PathBuf.
-        // Checking a nonexistent UNC path for Windows will incur a large
-        // hiccup (~2.8s) due to Windows trying to resolve the UNC path.
-        let t_for_path_check = t
-            .strip_prefix("//")
-            .map(|s| format!("/{s}"))
-            .unwrap_or_else(|| t.clone());
-
-        // can be any of the following:
-        // - ./path/to/script
-        // - ~/path/to/script
-        // - /path/to/script
-        // - ../path/to/script
-        // - C:\path\to\script
-        // - .\path\to\script
-        if arg_re.is_match(&t_for_path_check) {
-            let path = PathBuf::from(&t_for_path_check);
-            if path.exists() {
-                let config_root = config
-                    .project_root
-                    .clone()
-                    .or_else(|| dirs::CWD.clone())
-                    .unwrap_or_default();
-                let task = Task::from_path(config, &path, &PathBuf::new(), &config_root).await?;
-                return Ok(vec![task.with_args(args)]);
-            }
+        // `mise mcp` passes a client's task name here, which must not become a script to run,
+        // even if a file by that path appears after the server checked the name.
+        if !*crate::env::MISE_TASK_NAMES_ONLY
+            && let Some(path) = script_path_arg(&t)
+        {
+            let config_root = config
+                .project_root
+                .clone()
+                .or_else(|| dirs::CWD.clone())
+                .unwrap_or_default();
+            // A task resolves a relative file against its config root, but this path is
+            // relative to where mise was run, so make it absolute. The name still comes
+            // from the path as typed.
+            let abs_path = path.absolutize()?;
+            let mut task =
+                Task::from_path(config, &abs_path, &PathBuf::new(), &config_root).await?;
+            task.name = name_from_path(PathBuf::new(), &path)?;
+            return Ok(vec![task.with_args(args)]);
         }
         // Load tasks with the appropriate context
         // If the task was expanded to monorepo syntax (e.g., bare "build" -> "//packages/foo:build"),
@@ -665,6 +686,13 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transposed_command_suggests_the_real_command() {
+        let commands = ["list", "ls", "install", "use"].map(String::from).to_vec();
+        let found = similar_commands("lsit", commands);
+        assert_eq!(found.first().map(String::as_str), Some("list"), "{found:?}");
+    }
 
     // A miss asks the CLI frontend for similar subcommand names. The library's own tests have
     // no CLI, so this also checks that their stand-in frontend is registered.

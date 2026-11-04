@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# Without a terminal, or with -y, `mise edit` and `mise generate config` skip the interactive
+# editor and write the default template. That template is a fresh file rather than an edit of
+# the one already there, so it used to replace an existing config wholesale and report success.
+# The editor runs only when stderr is a terminal, so every command that could reach it sends
+# stderr to a pipe: assert_fail_contains does that itself, and the others capture 2>&1. Without
+# it, running this test from a terminal would open the editor and hang. The harness sets MISE_YES=1, which would
+# reach the same path on its own; turn it off so the commands without -y exercise the missing
+# terminal, and pass -y where the yes path is meant.
+export MISE_YES=0
+
+cat >mise.toml <<EOF
+[tools]
+node = "22"
+EOF
+
+assert_fail_contains "mise edit" "mise.toml already exists"
+assert_fail_contains "mise edit -y" "pass --force"
+assert_fail_contains "mise generate config" "mise.toml already exists"
+assert_fail_contains "mise generate config -y" "pass --force"
+# The hint names no subcommand, so it fits whichever of the two was run.
+assert_fail_contains "mise generate config" "run this command in a terminal"
+assert_contains "cat mise.toml" 'node = "22"'
+assert_not_contains "cat mise.toml" "mise config files are hierarchical"
+
+# The same for an explicit path and for the global config.
+cp mise.toml custom.toml
+assert_fail_contains "mise edit custom.toml" "custom.toml already exists"
+assert_contains "cat custom.toml" 'node = "22"'
+export MISE_GLOBAL_CONFIG_FILE="$PWD/global-config.toml"
+cp mise.toml global-config.toml
+assert_fail_contains "mise edit --global" "global-config.toml already exists"
+assert_fail_contains "mise generate config --global" "global-config.toml already exists"
+assert_contains "cat global-config.toml" 'node = "22"'
+
+# --dry-run writes nothing, so it still prints the template.
+assert_contains "mise edit --dry-run 2>&1" "mise config files are hierarchical"
+assert_contains "cat mise.toml" 'node = "22"'
+
+# --tool-versions merges into the existing file instead of replacing it, so it is unaffected.
+cat >.tool-versions <<EOF
+python 3.12
+EOF
+assert_succeed "mise edit custom.toml --tool-versions .tool-versions"
+assert_contains "cat custom.toml" 'node = "22"'
+assert_contains "cat custom.toml" 'python = "3.12"'
+
+# --force asks for the replacement explicitly.
+assert_contains "mise edit --force 2>&1" "writing to mise.toml"
+assert_contains "cat mise.toml" "mise config files are hierarchical"
+assert_succeed "mise generate config -y -f --global"
+assert_contains "cat global-config.toml" "mise config files are hierarchical"

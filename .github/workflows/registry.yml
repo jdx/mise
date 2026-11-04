@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
 
+# Held by the caller, which only calls registry-impl.yml: a group set inside the
+# called workflow would use this workflow's name too and wait for this run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.number || 'push' }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use netrc_rs::Netrc;
+use netrc_jdx::Netrc;
 
 use crate::dirs;
 use mise_settings::Settings;
@@ -35,7 +35,7 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
     }
 
     match std::fs::read_to_string(&path) {
-        Ok(content) => match Netrc::parse(content, false) {
+        Ok(content) => match Netrc::parse(&content) {
             Ok(netrc) => {
                 debug!("Loaded netrc from {}", path.display());
                 Some(netrc)
@@ -82,24 +82,21 @@ fn netrc_path() -> PathBuf {
 pub fn get_credentials(host: &str) -> Option<(String, String)> {
     let netrc = NETRC.as_ref()?;
 
-    // First try exact host match
-    if let Some(machine) = netrc.machines.iter().find(|m| {
-        m.name
-            .as_ref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(host))
-    }) && let (Some(login), Some(password)) = (&machine.login, &machine.password)
-    {
-        trace!("Found netrc credentials for host: {}", host);
-        return Some((login.clone(), password.clone()));
-    }
+    let (login, password) = netrc.credentials(host)?;
+    trace!("Found netrc credentials for host: {}", host);
+    Some((login.to_string(), password.to_string()))
+}
 
-    // Fall back to default machine if no exact match
-    if let Some(machine) = netrc.machines.iter().find(|m| m.name.is_none())
-        && let (Some(login), Some(password)) = (&machine.login, &machine.password)
-    {
-        trace!("Using default netrc credentials for host: {}", host);
-        return Some((login.clone(), password.clone()));
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    None
+    #[test]
+    fn credentials_skip_comment_lines() {
+        let netrc = Netrc::parse(
+            "#stepsecurity-begin\nmachine example.com\n  login user\n  password pa#ss\n#stepsecurity-end\n",
+        )
+        .unwrap();
+        assert_eq!(netrc.credentials("example.com"), Some(("user", "pa#ss")));
+    }
 }

@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# depends makes an entry or a group wait for other entries of the same apply:
+# mise writes the dependencies first and only then renders or reads the entry,
+# so a template can use a file the same apply creates.
+
+mkdir -p secrets-src templates
+echo "group-token" >secrets-src/token
+
+cat <<EOF >templates/rc.tera
+key={{ read_file(path="out/key") | trim }}
+token={{ read_file(path="out/group/token") | trim }}
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$PWD/out/rc" = { source = "templates/rc.tera", mode = "template", depends = ["$PWD/out/key", "secrets"] }
+
+[dotfile_groups.secrets]
+root = "$PWD/secrets-src"
+target = "$PWD/out/group"
+mode = "copy"
+EOF
+
+# one apply writes the key and the group, then renders the template that reads them
+assert_succeed "mise dot apply --yes"
+assert "cat out/rc" "key=from-entry
+token=group-token"
+
+# a dry run lists the dependent without rendering it
+rm -rf out
+assert_contains "mise dot apply --dry-run" "out/rc"
+assert "test -e out/rc || echo absent" "absent"
+
+# a group depends on entries too, and its entries inherit what it waits for
+rm -rf out
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+
+[dotfile_groups.secrets]
+root = "$PWD/secrets-src"
+target = "$PWD/out/group"
+mode = "copy"
+
+[dotfile_groups.late]
+root = "$PWD/templates"
+target = "$PWD/out/late"
+mode = "copy"
+depends = ["$PWD/out/key", "secrets"]
+
+[dotfile_groups.late.entries]
+"$PWD/out/late/rc.tera" = { mode = "template" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert_contains "cat out/late/rc.tera" "key=from-entry"
+assert_contains "cat out/late/rc.tera" "token=group-token"
+
+# a failed dependency stops the entries that wait for it, and both are reported
+rm -rf out
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { source = "missing-source" }
+"$PWD/out/rc" = { content = "late\n", depends = ["$PWD/out/key"] }
+EOF
+assert_fail "mise dot apply --yes" "sources do not exist"
+assert_fail "mise dot apply --yes" "not applied because an entry they depend on failed: $PWD/out/rc"
+assert "test -e out/rc || echo absent" "absent"
+
+# a cycle is an error
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/a" = { content = "a\n", depends = ["$PWD/out/b"] }
+"$PWD/out/b" = { content = "b\n", depends = ["$PWD/out/a"] }
+EOF
+assert_fail "mise dot apply --yes" "depends form a cycle"
+
+# so is a name that is neither a group nor an entry
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/a" = { content = "a\n", depends = ["secrts"] }
+EOF
+assert_fail "mise dot apply --yes" '"secrts"'
+
+# an applied target can be narrowed to without its dependencies
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$PWD/out/rc" = { content = "late\n", depends = ["$PWD/out/key"] }
+EOF
+assert_succeed "mise dot apply --yes $PWD/out/rc"
+assert "cat out/rc" "late"
+
+# an entry that writes mise's own config is applied first, and still waits
+rm -rf out
+cat <<'EOT' >templates/private.tera
+[env]
+SECRET = "{{ read_file(path="out/key") | trim }}"
+EOT
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$HOME/.config/mise/conf.d/private.toml" = { source = "templates/private.tera", mode = "template", depends = ["$PWD/out/key"] }
+EOF
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $HOME/.config/mise/conf.d/private.toml" 'SECRET = "from-entry"'
+
+# a dry run lists a copy whose source an earlier round writes
+rm -rf out
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$PWD/out/copy" = { source = "$PWD/out/key", mode = "copy", depends = ["$PWD/out/key"] }
+EOF
+assert_succeed "mise dot apply --dry-run"
+assert_succeed "mise dot apply --dry-run --verbose"
+assert_succeed "mise dot apply --yes"
+assert "cat out/copy" "from-entry"
+
+# so does a source inside a directory that an earlier round deploys
+rm -rf out
+mkdir -p tree out/dircopy
+echo nested >tree/f
+cat <<EOF >mise.toml
+[dotfile_groups.tree]
+root = "$PWD/tree"
+target = "$PWD/out/tree"
+mode = "copy"
+
+[dotfiles]
+"$PWD/out/nested" = { source = "$PWD/out/tree/f", mode = "copy", depends = ["tree"] }
+"$PWD/out/each" = { source = "$PWD/out/tree", mode = "symlink-each", depends = ["tree"] }
+"$PWD/out/dircopy" = { source = "$PWD/out/tree", mode = "copy", depends = ["tree"] }
+"$PWD/out/more" = { source = "$PWD/out/dircopy/f", mode = "copy", depends = ["$PWD/out/dircopy"] }
+EOF
+assert_succeed "mise dot apply --dry-run --verbose"
+assert_succeed "mise dot apply --yes"
+assert "cat out/nested" "nested"
+assert "cat out/each/f" "nested"
+assert "cat out/more" "nested"
+
+# a dry run still reports a conflict it can see without the source
+rm -rf out
+mkdir out
+echo in-the-way >out/link
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$PWD/out/link" = { source = "$PWD/out/key", mode = "symlink", depends = ["$PWD/out/key"] }
+EOF
+assert_fail "mise dot apply --dry-run" "refusing to overwrite"

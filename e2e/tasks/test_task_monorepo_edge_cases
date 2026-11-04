@@ -31,6 +31,7 @@ chmod +x projects/frontend/mise-tasks/backup.test.js
 
 # Verify task is discovered (display name strips one extension: backup.test)
 assert_contains "mise tasks ls --all" "//projects/frontend:backup.test"
+assert_contains "mise tasks -a" "//projects/frontend:backup.test"
 
 # Test running with display name (without .js)
 assert_contains "mise run '//projects/frontend:backup.test'" "backup test"

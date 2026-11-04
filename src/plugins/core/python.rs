@@ -2,6 +2,7 @@ use crate::args::BackendArg;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
+use crate::backend::static_helpers::lock_checksum;
 use crate::backend::{Backend, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -16,13 +17,11 @@ use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{dirs, file, plugins, sysconfig};
+use crate::{dirs, file, plugins, sysconfig, versions_host};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
-use flate2::read::GzDecoder;
 use itertools::Itertools;
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, OnceLock};
@@ -264,21 +263,34 @@ impl PythonPlugin {
         }
     }
     fn python_build_definition_created_at(&self) -> eyre::Result<BTreeMap<String, String>> {
-        let output = crate::cmd!(
-            "git",
-            "-C",
-            self.python_build_path(),
-            "-c",
-            format!("safe.directory={}", self.python_build_path().display()),
-            "log",
-            "--format=%cI",
-            "--diff-filter=A",
-            "--name-only",
-            "--",
-            "plugins/python-build/share/python-build",
-        )
-        .read()?;
-        Ok(parse_python_build_definition_created_at(&output))
+        git_python_build_definition_created_at(&self.python_build_path())
+    }
+
+    /// Runs `python-build --definitions` from the pyenv clone, cloning or updating it first.
+    async fn list_python_build_definitions(&self) -> eyre::Result<Vec<VersionInfo>> {
+        self.install_or_update_python_build(None)?;
+        let python_build_bin = self.python_build_bin();
+        let python_build_str = python_build_bin.to_string_lossy().to_string();
+        let definition_created_at = self
+            .python_build_definition_created_at()
+            .inspect_err(|err| debug!("failed to get python-build definition timestamps: {err:#}"))
+            .unwrap_or_default();
+        plugins::core::run_fetch_task_with_timeout_async(async move || {
+            let output = crate::cmd::cmd_read_async_inherited_env(
+                &python_build_str,
+                &["--definitions"],
+                std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+            )
+            .await?;
+            Ok(python_build_version_infos(output.split('\n').map(|s| {
+                VersionInfo {
+                    version: s.to_string(),
+                    created_at: definition_created_at.get(s).cloned(),
+                    ..Default::default()
+                }
+            })))
+        })
+        .await
     }
 
     async fn fetch_precompiled_remote_versions(
@@ -295,12 +307,7 @@ impl PythonPlugin {
             .get_or_try_init_async(async || {
                 let settings = Settings::get();
                 let url_path = python_precompiled_url_path(&settings);
-                let rsp = HTTP_FETCH
-                    .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
-                    .await?;
-                let mut decoder = GzDecoder::new(rsp.as_ref());
-                let mut raw = String::new();
-                decoder.read_to_string(&mut raw)?;
+                let raw = versions_host::python_precompiled(&url_path).await?;
                 let platform = python_precompiled_platform();
                 let flavor = settings.python.precompiled_flavor.clone();
                 // order by version, whether it is a release candidate, date, and in the preferred order of install types
@@ -416,6 +423,8 @@ impl PythonPlugin {
             debug!("using lockfile URL for platform {platform_key}: {url}");
             url
         } else {
+            // mise-versions publishes what `python-build --definitions` prints, so listing does
+            // not need a pyenv clone. Compiling still clones it, in `install_compiled`.
             let settings = Settings::get();
             let os = settings.os();
             let (platform, arch) = pypy_platform_arch(os, settings.arch())
@@ -437,8 +446,13 @@ impl PythonPlugin {
 
         let tarball_path = tv.download_path().join(filename);
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_stored(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
@@ -531,7 +545,7 @@ impl PythonPlugin {
                         debug!("no precompiled python found for {}", tv.version);
                     } else {
                         warn!(
-                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile=false`",
+                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings python.compile=false`",
                             tv.version
                         );
                     }
@@ -562,8 +576,13 @@ impl PythonPlugin {
         let tarball_path = download.join(filename);
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_stored(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
         // Record the URL in lock_platforms so verify_checksum can find it
         tv.lock_platforms
@@ -649,9 +668,13 @@ impl PythonPlugin {
             return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("python-build".into());
+        file::create_dir_all(tv.install_path())?;
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
+            // python-build looks for its definition argument as a file first,
+            // so it must not start in the project's directory.
+            .current_dir(tv.install_path())
             .with_pr(ctx.pr.as_ref())
-            .arg(tv.version.as_str())
+            .arg(plugins::core::build_definition_name(&tv.version)?)
             .arg(tv.install_path())
             .envs(ctx.config.env().await?)
             .env_values(tv.install_env())
@@ -807,12 +830,7 @@ impl PythonPlugin {
 
         let platform = format!("{arch}-{os}");
         let url_path = format!("python-precompiled-{arch}-{os}.gz");
-        let rsp = HTTP_FETCH
-            .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
-            .await?;
-        let mut decoder = GzDecoder::new(rsp.as_ref());
-        let mut raw = String::new();
-        decoder.read_to_string(&mut raw)?;
+        let raw = versions_host::python_precompiled(&url_path).await?;
 
         let flavor = settings.python.precompiled_flavor.clone();
 
@@ -1006,36 +1024,17 @@ impl Backend for PythonPlugin {
                 .collect();
             Ok(merge_pypy_and_cpython(versions, cpython))
         } else {
-            self.install_or_update_python_build(None)?;
-            let python_build_bin = self.python_build_bin();
-            let python_build_str = python_build_bin.to_string_lossy().to_string();
-            let definition_created_at = self
-                .python_build_definition_created_at()
-                .inspect_err(|err| {
-                    debug!("failed to get python-build definition timestamps: {err:#}")
-                })
-                .unwrap_or_default();
-            plugins::core::run_fetch_task_with_timeout_async(async move || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    &python_build_str,
-                    &["--definitions"],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+            // mise-versions publishes what `python-build --definitions` prints, so listing does
+            // not need a pyenv clone. Compiling still clones it, in `install_compiled`.
+            let settings = Settings::get();
+            if python_build_definitions_may_come_from_versions_host(&settings)
+                && let Some(versions) = python_build_definitions_from_versions_host(
+                    versions_host::list_python_build_definitions().await,
                 )
-                .await?;
-                let versions = output
-                    .split('\n')
-                    // remove free-threaded pythons like 3.13t and 3.14t-dev
-                    .filter(|s| !regex!(r"\dt(-dev)?$").is_match(s))
-                    .map(|s| VersionInfo {
-                        version: s.to_string(),
-                        created_at: definition_created_at.get(s).cloned(),
-                        ..Default::default()
-                    })
-                    .sorted_by_cached_key(|v| python_version_sort_key(&v.version))
-                    .collect();
-                Ok(versions)
-            })
-            .await
+            {
+                return Ok(versions);
+            }
+            self.list_python_build_definitions().await
         }
     }
 
@@ -1269,6 +1268,70 @@ impl Backend for PythonPlugin {
             ..Default::default()
         })
     }
+}
+
+/// The pyenv repository mise-versions reads python-build's definitions from.
+const VERSIONS_HOST_PYENV_REPO: &str = "https://github.com/pyenv/pyenv.git";
+
+/// mise-versions only describes the default pyenv repository; a fork set in `python.pyenv_repo`
+/// can add or drop definitions, so its list has to come from the fork itself.
+fn python_build_definitions_may_come_from_versions_host(settings: &Settings) -> bool {
+    settings.python.pyenv_repo == VERSIONS_HOST_PYENV_REPO
+}
+
+/// The python-build listing to use from the versions host, or `None` to run python-build from a
+/// pyenv clone instead: the host is turned off, has no list, or failed.
+fn python_build_definitions_from_versions_host(
+    host: eyre::Result<Option<Vec<VersionInfo>>>,
+) -> Option<Vec<VersionInfo>> {
+    match host {
+        // Keep only what a pyenv clone gives, so the list cannot depend on where it came from:
+        // a host `prerelease` flag would drop entries python leaves to PEP 440 matching.
+        Ok(Some(versions)) => Some(python_build_version_infos(versions.into_iter().map(|v| {
+            VersionInfo {
+                version: v.version,
+                created_at: v.created_at,
+                ..Default::default()
+            }
+        }))),
+        Ok(None) => None,
+        Err(err) => {
+            debug!("failed to list python-build definitions from the versions host: {err:#}");
+            None
+        }
+    }
+}
+
+/// Shapes python-build's definitions into the python listing, wherever they came from.
+fn python_build_version_infos(versions: impl IntoIterator<Item = VersionInfo>) -> Vec<VersionInfo> {
+    versions
+        .into_iter()
+        // remove free-threaded pythons like 3.13t and 3.14t-dev
+        .filter(|v| !regex!(r"\dt(-dev)?$").is_match(&v.version))
+        .sorted_by_cached_key(|v| python_version_sort_key(&v.version))
+        .collect()
+}
+
+/// When each definition file first appeared in the pyenv clone at `repo`.
+fn git_python_build_definition_created_at(repo: &Path) -> eyre::Result<BTreeMap<String, String>> {
+    let output = crate::cmd!(
+        "git",
+        "-C",
+        repo.to_path_buf(),
+        "-c",
+        format!("safe.directory={}", repo.display()),
+        "log",
+        "--format=%cI",
+        // A definition made by copying or renaming another (`3.15.0` from `3.15.0rc3`) is not an
+        // addition to git's rename detection, so without this it would have no date at all.
+        "--no-renames",
+        "--diff-filter=A",
+        "--name-only",
+        "--",
+        "plugins/python-build/share/python-build",
+    )
+    .read()?;
+    Ok(parse_python_build_definition_created_at(&output))
 }
 
 fn parse_python_build_definition_created_at(output: &str) -> BTreeMap<String, String> {
@@ -1857,6 +1920,40 @@ mod tests {
     }
 
     #[test]
+    fn dates_definitions_that_git_sees_as_renames() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        let defs = repo.join("plugins/python-build/share/python-build");
+        std::fs::create_dir_all(&defs).unwrap();
+        let git = |date: &str, args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .env("GIT_COMMITTER_DATE", date)
+                .env("GIT_AUTHOR_DATE", date)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{args:?}: {out:?}");
+        };
+        git("2026-01-01T00:00:00Z", &["init", "-q"]);
+        let body = "install_package \"Python-3.15.0rc3\" \"https://example.com/py.tgz#abc\"\n";
+        std::fs::write(defs.join("3.15.0rc3"), body).unwrap();
+        git("2026-01-01T00:00:00Z", &["add", "."]);
+        git("2026-01-01T00:00:00Z", &["commit", "-q", "-m", "rc3"]);
+        std::fs::rename(defs.join("3.15.0rc3"), defs.join("3.15.0")).unwrap();
+        git("2026-02-02T00:00:00Z", &["add", "-A"]);
+        git("2026-02-02T00:00:00Z", &["commit", "-q", "-m", "final"]);
+
+        let created_at = git_python_build_definition_created_at(repo).unwrap();
+        // Git spells UTC `Z` or `+00:00` depending on its version, so compare instants.
+        let created: jiff::Timestamp = created_at["3.15.0"].parse().unwrap();
+        assert_eq!(created, "2026-02-02T00:00:00Z".parse().unwrap());
+    }
+
+    #[test]
     fn parses_python_build_definition_created_at() {
         let output = "\
 2026-06-11T12:34:56+00:00
@@ -2013,6 +2110,78 @@ cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
             Some("/etc/python-patches")
         );
         Settings::reset(None);
+    }
+
+    fn python_build_definition(version: &str, created_at: &str) -> VersionInfo {
+        VersionInfo {
+            version: version.to_string(),
+            created_at: Some(created_at.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_python_build_definitions_from_versions_host_are_shaped_like_pyenv() {
+        let host = vec![
+            python_build_definition("3.13.0", "2024-10-07T00:00:00.000Z"),
+            VersionInfo {
+                prerelease: Some(true),
+                rolling: true,
+                release_url: Some("https://example.com/3.14.0a1".to_string()),
+                ..python_build_definition("3.14.0a1", "2024-10-15T00:00:00.000Z")
+            },
+            python_build_definition("3.13t-dev", "2024-05-08T00:00:00.000Z"),
+            python_build_definition("miniconda3-latest", "2019-01-01T00:00:00.000Z"),
+            python_build_definition("3.13.0t", "2024-10-07T00:00:00.000Z"),
+            python_build_definition("pypy3.10-7.3.17", "2024-08-29T00:00:00.000Z"),
+        ];
+        let versions = python_build_definitions_from_versions_host(Ok(Some(host)))
+            .expect("a host list is used");
+        // The filter, order and fields a pyenv clone's `python-build --definitions` gives.
+        assert_eq!(
+            versions
+                .into_iter()
+                .map(|v| (
+                    v.version,
+                    v.created_at,
+                    v.prerelease,
+                    v.rolling,
+                    v.release_url
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("pypy3.10-7.3.17", "2024-08-29T00:00:00.000Z"),
+                ("miniconda3-latest", "2019-01-01T00:00:00.000Z"),
+                ("3.13.0", "2024-10-07T00:00:00.000Z"),
+                ("3.14.0a1", "2024-10-15T00:00:00.000Z"),
+            ]
+            .map(|(v, at)| (v.to_string(), Some(at.to_string()), None, false, None))
+        );
+    }
+
+    #[test]
+    fn test_python_build_definitions_fall_back_to_pyenv_without_a_host_list() {
+        assert!(python_build_definitions_from_versions_host(Ok(None)).is_none());
+        assert!(python_build_definitions_from_versions_host(Err(eyre!("status 500"))).is_none());
+    }
+
+    #[test]
+    fn test_python_build_definitions_from_versions_host_need_the_default_pyenv_repo() {
+        let mut settings = Settings::default();
+        settings.python.pyenv_repo = VERSIONS_HOST_PYENV_REPO.to_string();
+        assert!(python_build_definitions_may_come_from_versions_host(
+            &settings
+        ));
+        settings.python.pyenv_repo = "https://github.com/example/pyenv.git".to_string();
+        assert!(!python_build_definitions_may_come_from_versions_host(
+            &settings
+        ));
+    }
+
+    #[test]
+    fn test_versions_host_pyenv_repo_is_the_default() {
+        let _guard = crate::test::SettingsGuard::lock();
+        assert_eq!(Settings::get().python.pyenv_repo, VERSIONS_HOST_PYENV_REPO);
     }
 
     #[test]

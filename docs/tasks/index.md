@@ -5,45 +5,68 @@ description: "Run builds, tests, and deployments with your project's tools and e
 # Tasks
 
 A task is a named command or script that runs with your project's tools and
-environment variables. Use tasks for builds, tests, linters, development servers,
-and other commands you want teammates and CI to run consistently.
+environment variables. Use tasks for builds, tests, linters, development
+servers, and other commands that teammates and CI should run the same way.
 
 ## Run your first task
 
-Create this file in a project directory:
+Add a task to `mise.toml` in a project directory:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tasks.hello]
 description = "Check that task execution works"
 run = "echo hello from mise"
 ```
 
+Run it with [`mise run`](/cli/run.html):
+
 ```sh
 mise run hello
-# hello from mise
 ```
 
-Shell activation is not required. mise loads the configuration for the task and,
-by default, installs any missing configured tools before starting it.
-Use `mise tasks ls` to list tasks and `mise tasks info hello` to inspect one.
+```text
+[hello] $ echo hello from mise
+hello from mise
+```
+
+mise prints the command it runs, then the command's output. Shell activation is
+not required: `mise run` loads the project's configuration and, unless
+[`task.run_auto_install`](/configuration/settings.html#task.run_auto_install) is
+off, installs missing tools before the task starts. Run `mise tasks ls` to list
+tasks and `mise tasks info hello` to see where a task is defined.
 
 ## Choose a task format
 
-| Format                             | Use it when                                                          | Configuration                                       |
-| ---------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
-| [TOML tasks](./toml-tasks.html)    | Commands are short or mostly configure dependencies and options.     | `[tasks.<name>]` in `mise.toml`                     |
-| [File tasks](./file-tasks.html)    | A script benefits from its language's editor support and lint tools. | A script in `mise-tasks/` or another task directory |
-| [Task templates](./templates.html) | Several tasks share configuration.                                   | `[task_templates.<name>]`, selected with `extends`  |
+| Format                               | Use it when                                                                       | Where it lives                                                  |
+| ------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [TOML tasks](/tasks/toml-tasks.html) | The command fits on a line or two, or the task mostly runs other tasks.           | `[tasks.<name>]` in `mise.toml`                                 |
+| [File tasks](/tasks/file-tasks.html) | The script is long enough to benefit from your editor's highlighting and linting. | An executable script in `mise-tasks/` or another task directory |
 
-The formats use the same task runner. Start with TOML and move longer scripts into
-files as they grow.
+Both formats use the same runner and accept most of the same properties. Start
+with TOML and move a script into a file when it grows. Either format can inherit shared
+settings from a [task template](/tasks/templates.html).
 
-## Tasks in `mise.toml` files
+## Write a task as a script
 
-A dependency-only task can group other tasks. Prerequisites may run in parallel;
-their order in `depends` does not establish a sequence:
+Save a script as `mise-tasks/hello`:
 
-```toml [mise.toml]
+```sh [mise-tasks/hello]
+#!/usr/bin/env bash
+#MISE description="Check that task execution works"
+echo "hello from a file task"
+```
+
+On Linux and macOS, make it executable with `chmod +x mise-tasks/hello`, then
+run `mise run hello`. Define the name `hello` either in this file or in the TOML
+task above, not both. [File tasks](/tasks/file-tasks.html#windows) explains how
+Windows decides which files are tasks.
+
+## Group tasks with dependencies
+
+A task with only `depends` runs other tasks. The prerequisites can run in
+parallel; their order in `depends` does not set a sequence:
+
+```mise-toml [mise.toml]
 [tasks.check]
 depends = ["format", "test"]
 
@@ -54,47 +77,26 @@ run = "echo checking formatting"
 run = "echo running tests"
 ```
 
-`mise run check` runs both prerequisites. Replace the `echo` commands with your
-project's checks. Use a [run array](./running-tasks.html#execution-order) when one
-step must finish before the next starts.
-
-## File Tasks
-
-Save a script as `mise-tasks/hello`:
-
-```sh [mise-tasks/hello]
-#!/usr/bin/env bash
-#MISE description="Check that task execution works"
-echo "hello from a file task"
-```
-
-On macOS and Linux, make it executable with `chmod +x mise-tasks/hello`, then run
-`mise run hello`. This is an alternative to the TOML task above. The
-[file task guide](./file-tasks.html#windows) explains Windows detection and interpreters.
+`mise run check` runs `format` and `test`. Replace the `echo` commands with your
+project's checks. When one step must finish before the next starts, use
+[run steps](/tasks/architecture.html#run-steps-in-order) instead.
 
 ## Build a task workflow
 
-- [Running tasks](./running-tasks.html): arguments, wildcards, parallelism, and execution order.
-- [Task arguments](./task-arguments.html): define a CLI with validation, help, and completions.
-- [Task configuration](./task-configuration.html): find a specific property and its scope.
-- [Task caching](./caching.html): choose freshness checks or cached outputs and declare their inputs.
-- [Monorepo tasks](./monorepo.html): run tasks across configured project roots.
-- [Task architecture](./architecture.html): understand discovery, scheduling, and failures.
-
-## Environment variables passed to tasks
-
-The following environment variables are passed to the task:
-
-- `MISE_ORIGINAL_CWD`: The original working directory from where the task was run.
-- `MISE_CONFIG_ROOT`: The directory containing the `mise.toml` file where the task was defined. If the config path is something like `~/src/myproj/.config/mise.toml`, this is `~/src/myproj`.
-- `MISE_PROJECT_ROOT`: The root of the project that defines the task. For monorepo subproject tasks this is the subproject's directory and is stable regardless of the directory the task is invoked from.
-- `MISE_MONOREPO_ROOT`: The root of the monorepo (the directory containing the config with `monorepo_root = true`). Only set inside a monorepo.
-- `MISE_TASK_NAME`: The name of the task being run.
-- `MISE_TASK_COLOR`: The ANSI sequence that starts the task's prefix color and emphasis. This is
-  set to an empty string when colors are disabled or the selected output mode does not display a
-  task prefix. Add an ANSI reset after the text, for example
-  `printf '%smessage\033[0m\n' "$MISE_TASK_COLOR"`. The replacing output style also provides the value when
-  it uses its text fallback. The variable describes the task label style and does not mean that every line
-  is automatically prefixed.
-- `MISE_TASK_DIR`: The directory containing the task script.
-- `MISE_TASK_FILE`: The full path to the task script.
+- [Running tasks](/tasks/running-tasks.html): select tasks by name or pattern,
+  pass arguments, and control parallelism and output. Tasks also receive
+  [variables that describe the task](/tasks/running-tasks.html#task-environment).
+- [Task arguments](/tasks/task-arguments.html): give a task a command-line
+  interface with validation, `--help`, and completions.
+- [Dependencies and execution order](/tasks/architecture.html): choose between
+  `depends`, `wait_for`, `depends_post`, and run steps.
+- [Task discovery and precedence](/tasks/task-discovery.html): where mise finds
+  tasks and which definition wins.
+- [Task templates](/tasks/templates.html): share tools, environment variables,
+  and arguments across tasks.
+- [Task caching](/tasks/caching.html): skip or restore work whose inputs have
+  not changed.
+- [Monorepo tasks](/tasks/monorepo.html): run tasks across several project
+  roots.
+- [Task configuration reference](/tasks/task-configuration.html): every task
+  property and `task.*` setting.

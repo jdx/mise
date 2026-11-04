@@ -32,7 +32,7 @@ impl FromStr for ToolArg {
     type Err = eyre::Error;
 
     fn from_str(input: &str) -> eyre::Result<Self> {
-        let (backend_input, version) = parse_input(input);
+        let (backend_input, version) = split_tool_version(input);
 
         let ba: Arc<BackendArg> = Arc::new(backend_input.parse()?);
         let version_type = match version.as_ref() {
@@ -156,12 +156,15 @@ impl Display for ToolArg {
     }
 }
 
-fn parse_input(s: &str) -> (&str, Option<&str>) {
+/// Splits `TOOL@VERSION` into the tool and its version, the way `mise use` reads
+/// its arguments: scoped npm names, URLs with userinfo and inline options keep
+/// their own `@`.
+pub fn split_tool_version(s: &str) -> (&str, Option<&str>) {
     // An identity or URL in inline options may contain '@'. Only a separator
     // after the closing bracket starts a version; scoped package names still
     // follow the ordinary rules below.
     if let Some((name, _, suffix)) = super::backend_arg::split_bracketed_opts_with_suffix(s)
-        && parse_input(name) == (name, None)
+        && split_tool_version(name) == (name, None)
     {
         if suffix.is_empty() {
             return (s, None);
@@ -296,7 +299,7 @@ mod tests {
     async fn test_tool_arg_parse_input() {
         let _config = Config::get().await.unwrap();
         let t = |input: &str, f: &str, v: Option<&str>| {
-            let (backend, version) = parse_input(input);
+            let (backend, version) = split_tool_version(input);
             assert_eq!(backend, f);
             assert_eq!(version, v);
         };

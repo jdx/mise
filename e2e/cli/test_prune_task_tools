@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# `mise prune` must keep versions that a tracked config only references through
+# a task-scoped tool. https://github.com/jdx/mise/issues/14325
+
+cat >mise.toml <<'TOML'
+[task_templates.base]
+tools = { dummy = "1.0.0" }
+
+[tasks.templated]
+extends = "base"
+run = "true"
+TOML
+assert "mise trust"
+assert "mise install dummy@1.0.0 dummy@2.0.0 dummy@3.0.0"
+# track this config
+assert "mise ls"
+
+cd "$(mktemp -d)" || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+
+# a templated version cannot be rendered outside the project, so every
+# installation of the tool is kept
+cd - >/dev/null || exit 1
+cat >>mise.toml <<'TOML'
+
+[vars]
+ver = "3.0.0"
+
+[tasks.rendered]
+run = "true"
+tools = { dummy = "{{vars.ver}}" }
+TOML
+assert "mise ls"
+cd "$(mktemp -d)" || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@"
+
+# a task extends a template from a parent config of its project, and a
+# same-named template in the directory prune runs from must not stand in for it
+mkdir -p proj/child other
+cat >proj/mise.toml <<'TOML'
+[task_templates.shared]
+tools = { tiny = "3.1.0" }
+TOML
+cat >proj/child/mise.toml <<'TOML'
+[tasks.t]
+extends = "shared"
+run = "true"
+TOML
+cat >other/mise.toml <<'TOML'
+[task_templates.shared]
+tools = { tiny = "2.1.0" }
+TOML
+for f in proj/mise.toml proj/child/mise.toml other/mise.toml; do
+  assert "mise trust $f"
+done
+assert "mise install tiny@3.1.0 tiny@2.1.0 tiny@1.0.0"
+assert "mise ls -C proj/child"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+assert_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+
+# a template can live in a sibling config under the project's .mise directory
+cd .. || exit 1
+mkdir -p proj2/.mise
+cat >proj2/.mise/config.toml <<'TOML'
+[task_templates.shared]
+tools = { tiny = "1.0.0" }
+TOML
+cat >proj2/mise.toml <<'TOML'
+[tasks.t]
+extends = "shared"
+run = "true"
+TOML
+assert "mise trust proj2/.mise/config.toml"
+assert "mise trust proj2/mise.toml"
+assert "mise ls -C proj2"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"
+
+# global configs layer too: config.local.toml overrides config.toml
+cd .. || exit 1
+mkdir -p proj3
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[task_templates.gbase]
+tools = { tiny = "1.0.0" }
+TOML
+cat >"$MISE_CONFIG_DIR/config.local.toml" <<'TOML'
+[task_templates.gbase]
+tools = { tiny = "2.1.0" }
+TOML
+cat >proj3/mise.toml <<'TOML'
+[tasks.t]
+extends = "gbase"
+run = "true"
+TOML
+assert "mise trust proj3/mise.toml"
+assert "mise ls -C proj3"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+
+# configs that share a root have a precedence only a full load knows, so the
+# template versions of all of them are kept
+cd .. || exit 1
+mkdir -p proj4
+cat >proj4/mise.toml <<'TOML'
+[task_templates.tie]
+tools = { tiny = "3.1.0" }
+
+[tasks.t]
+extends = "tie"
+run = "true"
+TOML
+cat >proj4/mise.local.toml <<'TOML'
+[task_templates.tie]
+tools = { tiny = "2.1.0" }
+TOML
+assert "mise trust proj4/mise.toml"
+assert "mise trust proj4/mise.local.toml"
+assert "mise ls -C proj4"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+
+# global configs in conf.d are as global as config.toml, whatever their depth
+cd .. || exit 1
+mkdir -p proj5 "$MISE_CONFIG_DIR/conf.d/foo"
+cat >"$MISE_CONFIG_DIR/conf.d/foo/mise.toml" <<'TOML'
+[task_templates.deep]
+tools = { tiny = "1.0.0" }
+TOML
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+
+[task_templates.deep]
+tools = { tiny = "3.1.0" }
+TOML
+cat >proj5/mise.toml <<'TOML'
+[tasks.t]
+extends = "deep"
+run = "true"
+TOML
+assert "mise trust proj5/mise.toml"
+assert "mise ls -C proj5"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"

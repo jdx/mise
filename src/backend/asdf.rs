@@ -28,7 +28,6 @@ use crate::{dirs, env, file};
 use async_trait::async_trait;
 use color_eyre::eyre::{Result, WrapErr, bail, eyre};
 use console::style;
-use heck::ToKebabCase;
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub(crate) struct AsdfBackend {
@@ -48,7 +47,7 @@ pub(crate) struct AsdfBackend {
 impl AsdfBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         let name = ba.tool_name.clone();
-        let plugin_path = dirs::PLUGINS.join(ba.short.to_kebab_case());
+        let plugin_path = dirs::PLUGINS.join(crate::backend::tool_directory_name(&ba.short));
         let plugin = AsdfPlugin::new(name.clone(), plugin_path.clone());
         let toml_path = plugin_path.join("mise.plugin.toml");
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
@@ -125,6 +124,7 @@ impl AsdfBackend {
         if env_results.env.is_empty()
             && env_results.env_remove.is_empty()
             && env_results.env_paths.is_empty()
+            && env_results.env_paths_append.is_empty()
         {
             return None;
         }
@@ -137,6 +137,7 @@ impl AsdfBackend {
             env,
             &env_results.env_remove,
             &env_results.env_paths,
+            &env_results.env_paths_append,
         )))
     }
 
@@ -148,10 +149,13 @@ impl AsdfBackend {
         for (key, (value, _)) in &env_results.env {
             sm = sm.with_env(key, value);
         }
-        if !env_results.env_paths.is_empty() {
+        if !env_results.env_paths.is_empty() || !env_results.env_paths_append.is_empty() {
             let path_key = OsString::from(&*env::PATH_KEY);
             let current_path = sm.env.get(&path_key).cloned().unwrap_or_default();
+            // Version listing runs without tools, so appended entries only need to
+            // follow the prepended ones.
             let mut paths = env_results.env_paths.clone();
+            paths.extend(env_results.env_paths_append.iter().cloned());
             if !current_path.is_empty() {
                 paths.extend(env::split_paths(&current_path));
             }
@@ -514,6 +518,12 @@ impl Backend for AsdfBackend {
             // the second is to prevent infinite loops
             return Ok(BTreeMap::new());
         }
+        // exec-env is sourced by EnvDiff::from_bash_script, which spawns bash
+        // itself and so passes none of ScriptManager's own safe mode checks.
+        // Its environment also carries the request's install_env (BASH_ENV).
+        // Checked before the cache, whose key is the version alone: a result
+        // computed with another config's install_env must not be served either.
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let res = self
             .cache
             .exec_env(config, self, tv, async || {
@@ -674,6 +684,12 @@ mod tests {
         assert_ne!(
             AsdfBackend::version_listing_cache_context(&first),
             AsdfBackend::version_listing_cache_context(&changed_path)
+        );
+        let mut changed_append = first.clone();
+        changed_append.env_paths_append = vec![PathBuf::from("/tail/bin")];
+        assert_ne!(
+            AsdfBackend::version_listing_cache_context(&first),
+            AsdfBackend::version_listing_cache_context(&changed_append)
         );
         assert_eq!(
             AsdfBackend::version_listing_cache_context(&EnvResults::default()),

@@ -1,0 +1,21 @@
+bins = ["martin", "martin-cp", "mbtiles"]
+description = "Blazing fast and lightweight PostGIS, MBTiles and PMTiles tile server, tile generation, and MBTiles tooling"
+os = ["linux", "macos", "windows"]
+test = { cmd = "martin --version", expected = "martin {{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "github:maplibre/martin"
+
+[backends.options]
+# The repository also tags mbtiles and martin-core crate releases, so only
+# `martin-v*` tags are martin releases.
+version_prefix = "martin-v"
+
+# The glibc Linux builds link dynamically against libuv and libcurl, which are
+# not installed by default on most distributions; the musl builds are static.
+[backends.options.platforms.linux-arm64]
+asset_pattern = "martin-aarch64-unknown-linux-musl.tar.gz"
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "martin-x86_64-unknown-linux-musl.tar.gz"

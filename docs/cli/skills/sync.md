@@ -13,30 +13,35 @@ Link the active tools' skills where an agent looks for them
 
 Writes one symlink per skill into DIR, named after the skill and pointing
 at the directory of the version that is active here. DIR defaults to the
-`skills.dir` setting, `.claude/skills`, under the project root: the
-directory of the nearest mise config. Run it again after `mise use` changes
+`skills.dir` setting under the project root: the directory of the nearest
+mise config. Unset, that is `.agents/skills` if it exists, then
+`.claude/skills` if it exists; with neither, mise creates `.agents/skills`
+and a `.claude/skills` symlink to it. Run it again after `mise use` changes
 a version and the links follow, or set `skills.auto_sync` to have mise do
 that after every install and `mise use`.
 
-Only links mise made, which point into its installs directory, are ever
-replaced or, with --prune or the `skills.prune` setting, removed. A real
-directory or a link of your own at a skill's name is left alone and reported.
+mise replaces only the links it made, which point into its installs
+directory, and removes them only with --prune or the `skills.prune` setting.
+A real directory or a link of your own at a skill's name is left alone and
+reported.
 
 ## Flags
 - **`--dir <DIR>`** — The directory to link skills into
-- **`-g --global`** — Link into ~/.claude/skills instead of the project's directory
+- **`-g --global`** — Link into the skills.dir directory under your home directory instead of the project's
+
+  With no skills.dir set, that follows the same rule as in a project.
 - **`--prune`** — Remove links mise made for skills that are no longer active
 - **`-h --help`** — Print help
 
 ## Examples
 
-into the project's .claude/skills, or wherever skills.dir says
+Link skills into the project's skills.dir (default .agents/skills)
 
 ```
 mise skills sync
 ```
 
-somewhere else, and drop links for skills that are no longer active
+Link into .agents/skills and remove links for skills that are no longer active
 
 ```
 mise skills sync --dir .agents/skills --prune

@@ -11,7 +11,9 @@ pub trait NativeGraph: Clone + std::fmt::Debug + Serialize + DeserializeOwned {
     const GRAPH_FILE: &'static str;
     fn graph_text(&self) -> Result<String>;
     fn files(&self) -> Result<Vec<(&'static str, String)>>;
-    fn read(dir: &Path, graph_text: String) -> Result<Self>;
+    /// Read the graph in `dir` from `graph_text` and the sidecar's other files.
+    /// `base` is the lockfile's directory (see [`read_sidecar_file`]).
+    fn read(base: &Path, dir: &Path, graph_text: String) -> Result<Self>;
 }
 
 #[derive(Clone, Debug)]
@@ -23,6 +25,8 @@ pub enum GraphRef<T> {
     },
     Sidecar {
         dir: PathBuf,
+        /// The directory of the lockfile that points at `dir`.
+        base: PathBuf,
         digest: String,
         cell: OnceLock<Result<T, String>>,
     },
@@ -71,6 +75,18 @@ pub(crate) fn digest_text(text: &str) -> String {
     digest_bytes(normalize_newlines(text).as_bytes())
 }
 
+/// Read a file of the sidecar of the lockfile in `base`. A sidecar outside
+/// the sidecar root is rewritten below it when the lockfile is saved, so a
+/// symlink on the way down from `base` would copy whatever file it leads to
+/// into the checkout. This is the read-side counterpart of the check in
+/// [`SidecarWrites::publish_files`].
+fn read_sidecar_file(base: &Path, path: &Path) -> Result<String> {
+    if let Some(link) = symlink_below(base, path) {
+        bail!("refusing to read through symlink {}", link.display());
+    }
+    Ok(std::fs::read_to_string(path)?)
+}
+
 impl<T: NativeGraph> GraphRef<T> {
     pub(crate) fn identity(&self) -> String {
         match self {
@@ -111,9 +127,14 @@ impl<T: NativeGraph> GraphRef<T> {
     pub(crate) fn load(&self) -> Result<&T> {
         match self {
             Self::Inline { graph, .. } => Ok(graph),
-            Self::Sidecar { dir, digest, cell } => cell
+            Self::Sidecar {
+                dir,
+                base,
+                digest,
+                cell,
+            } => cell
                 .get_or_init(|| {
-                    let raw = std::fs::read_to_string(dir.join(T::GRAPH_FILE))
+                    let raw = read_sidecar_file(base, &dir.join(T::GRAPH_FILE))
                         .map_err(|e| e.to_string())?;
                     let text = normalize_newlines(&raw).into_owned();
                     // Older versions hashed the bytes as they found them, so a
@@ -127,7 +148,7 @@ impl<T: NativeGraph> GraphRef<T> {
                             "digest mismatch; run `mise lock` to accept the edited graph".into(),
                         );
                     }
-                    T::read(dir, text).map_err(|e| e.to_string())
+                    T::read(base, dir, text).map_err(|e| e.to_string())
                 })
                 .as_ref()
                 .map_err(|e| {
@@ -140,12 +161,12 @@ impl<T: NativeGraph> GraphRef<T> {
     }
     /// Read actual bytes when accepting external edits. Keep the recorded directory.
     pub(crate) fn refresh(&self) -> Result<Self> {
-        let Self::Sidecar { dir, .. } = self else {
+        let Self::Sidecar { dir, base, .. } = self else {
             return Ok(self.clone());
         };
-        let text = std::fs::read_to_string(dir.join(T::GRAPH_FILE))
+        let text = read_sidecar_file(base, &dir.join(T::GRAPH_FILE))
             .map_err(|e| eyre!("dependency sidecar {}: {e}; run `mise lock`", dir.display()))?;
-        let graph = T::read(dir, normalize_newlines(&text).into_owned())
+        let graph = T::read(base, dir, normalize_newlines(&text).into_owned())
             .map_err(|e| eyre!("dependency sidecar {}: {e}; run `mise lock`", dir.display()))?;
         Ok(Self::Inline {
             graph,
@@ -154,14 +175,15 @@ impl<T: NativeGraph> GraphRef<T> {
         })
     }
     pub(crate) fn resolve_path(&mut self, lockfile: &Path) -> Result<()> {
-        if let Self::Sidecar { dir, .. } = self {
+        if let Self::Sidecar { dir, base, .. } = self {
             if dir.is_absolute()
                 || dir.components().any(|c| !matches!(c, Component::Normal(_)))
                 || dir.to_string_lossy().contains('\\')
             {
                 bail!("invalid dependency sidecar path {}", dir.display());
             }
-            *dir = absolute(lockfile.parent().unwrap_or(Path::new("."))).join(&*dir);
+            *base = absolute(lockfile.parent().unwrap_or(Path::new(".")));
+            *dir = base.join(&*dir);
         }
         Ok(())
     }
@@ -183,6 +205,8 @@ impl<T: NativeGraph> GraphRef<T> {
             }
             Ok(Self::Sidecar {
                 dir: p.path,
+                // Set with `dir` by `resolve_path`.
+                base: PathBuf::new(),
                 digest: p.digest,
                 cell: OnceLock::new(),
             })
@@ -230,6 +254,15 @@ impl<'de, T: NativeGraph> Deserialize<'de> for GraphRef<T> {
     }
 }
 
+/// The first symlink on the way down from `base` (exclusive) to `path`, if
+/// any. Everything below a lockfile's directory comes with the working tree,
+/// so a link there can lead anywhere on the machine.
+pub fn symlink_below<'a>(base: &Path, path: &'a Path) -> Option<&'a Path> {
+    path.ancestors()
+        .take_while(|p| *p != base && p.starts_with(base))
+        .find(|p| p.is_symlink())
+}
+
 pub(crate) fn absolute(path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
@@ -239,11 +272,25 @@ pub(crate) fn absolute(path: &Path) -> PathBuf {
 }
 
 pub fn sidecar_root(lockfile: &Path) -> PathBuf {
+    sidecar_root_in(lockfile, &crate::env::MISE_CONFIG_DIR)
+}
+
+fn sidecar_root_in(lockfile: &Path, global_config_dir: &Path) -> PathBuf {
     let dir = lockfile.parent().unwrap_or(Path::new("."));
-    let mut root = match dir.file_name().and_then(|s| s.to_str()) {
+    // Choose the layout from the physical directory, so a symlinked config
+    // dir (`~/.config/mise` -> a dotfiles repo) gets the same sidecar location
+    // however it is reached. The root itself stays under the given path.
+    let physical = dunce::canonicalize(absolute(dir)).ok();
+    let layout = physical.as_deref().unwrap_or(dir);
+    // The global config dir keeps `locks/` whatever its link target is named.
+    let is_global = physical.as_deref().is_some_and(|physical| {
+        dunce::canonicalize(absolute(global_config_dir)).is_ok_and(|global| global == physical)
+    });
+    let mut root = match layout.file_name().and_then(|s| s.to_str()) {
+        _ if is_global => dir.join("locks"),
         Some(".mise") => dir.join("locks"),
         Some("mise")
-            if dir
+            if layout
                 .parent()
                 .and_then(Path::file_name)
                 .is_some_and(|s| s == ".config") =>
@@ -271,6 +318,126 @@ pub(crate) fn variant_suffix(
     hex::encode(hash.finalize())[..8].to_owned()
 }
 
+impl UvLock {
+    /// The digest of this graph without the release-age cutoff uv records in
+    /// `[options]`, or `None` when the graph carries no cutoff.
+    ///
+    /// The cutoff is the time `mise lock` ran, so two repos locking the same
+    /// tool with the same dependencies record different `exclude-newer` values.
+    /// It only constrains resolution, which `uv sync --frozen` does not repeat
+    /// on install, so it must not make one installation of the graph differ
+    /// from another.
+    ///
+    /// The cutoff is removed from the text as it is, not from a reserialized
+    /// table, so the rest of the graph hashes the bytes it always has: the
+    /// result is the [`digest_text`] of the graph uv writes without a cutoff.
+    fn identity_without_cutoff(&self) -> Result<Option<String>> {
+        Self::identity_of_text(&self.graph_text()?)
+    }
+
+    /// [`Self::identity_without_cutoff`] of a graph given as its text.
+    fn identity_of_text(text: &str) -> Result<Option<String>> {
+        let mut doc = text.parse::<toml_edit::DocumentMut>()?;
+        let Some(options) = doc
+            .get_mut("options")
+            .and_then(toml_edit::Item::as_table_mut)
+        else {
+            return Ok(None);
+        };
+        if options.remove("exclude-newer").is_none() {
+            return Ok(None);
+        }
+        if options.is_empty() {
+            doc.remove("options");
+        } else if options.iter().all(|(_, item)| item.is_table()) {
+            // Only sub-tables are left, which uv writes without a `[options]` header.
+            options.set_implicit(true);
+        }
+        Ok(Some(digest_text(&doc.to_string())))
+    }
+}
+
+impl GraphRef<UvLock> {
+    /// What names an installation of this graph: [`Self::identity`], except
+    /// that the release-age cutoff in the graph's `[options]` is left out.
+    /// A graph without one keeps its [`Self::identity`], so installs made
+    /// before this stay where they are.
+    pub(crate) fn install_identity(&self) -> String {
+        if let Self::Sidecar {
+            dir, base, digest, ..
+        } = self
+            && let Some(identity) = cached_install_identity(base, dir, digest)
+        {
+            return identity;
+        }
+        self.load()
+            .and_then(UvLock::identity_without_cutoff)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| self.identity())
+    }
+}
+
+/// The [`GraphRef::install_identity`] of a sidecar, remembered by the digest of
+/// its text. Finding the identity parses the whole graph, which every `hook-env`
+/// process would otherwise repeat; the text behind a digest never changes, so
+/// the answer is kept in the process and in the cache directory.
+///
+/// The sidecar is still read and checked against `digest` first, so an edited
+/// graph is never answered from the cache. `None` when it cannot be read or does
+/// not match, and the caller falls back to parsing it.
+fn cached_install_identity(base: &Path, dir: &Path, digest: &str) -> Option<String> {
+    static MEMO: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> =
+        std::sync::Mutex::new(None);
+    let raw = read_sidecar_file(base, &dir.join(UvLock::GRAPH_FILE)).ok()?;
+    let text = normalize_newlines(&raw);
+    if digest_bytes(text.as_bytes()) != digest && digest_bytes(raw.as_bytes()) != digest {
+        return None;
+    }
+    let key = digest_text(&text);
+    let remembered = MEMO
+        .lock()
+        .ok()
+        .and_then(|memo| memo.as_ref()?.get(&key).cloned());
+    let cutoff_free = if let Some(identity) = remembered {
+        identity
+    } else {
+        let path = crate::dirs::CACHE
+            .join("uv-install-identity")
+            // The answer depends on how this mise removes the cutoff, so a
+            // new release starts a new set instead of trusting the old one.
+            .join(env!("CARGO_PKG_VERSION"))
+            .join(key.trim_start_matches("sha256:"));
+        let identity = match std::fs::read_to_string(&path) {
+            Ok(identity) if identity == NO_CUTOFF || identity.starts_with("sha256:") => identity,
+            _ => {
+                let identity = UvLock::identity_of_text(&text)
+                    .ok()?
+                    .unwrap_or_else(|| NO_CUTOFF.to_string());
+                if let Err(err) = crate::file::create_dir_all(path.parent().unwrap_or(&path))
+                    .and_then(|()| crate::file::write_atomic_unsynced(&path, &identity))
+                {
+                    debug!("could not cache uv install identity: {err:#}");
+                }
+                identity
+            }
+        };
+        if let Ok(mut memo) = MEMO.lock() {
+            memo.get_or_insert_with(Default::default)
+                .insert(key, identity.clone());
+        }
+        identity
+    };
+    // A graph without a cutoff keeps its digest, in whichever form its lockfile records it.
+    Some(if cutoff_free == NO_CUTOFF {
+        digest.to_string()
+    } else {
+        cutoff_free
+    })
+}
+
+const NO_CUTOFF: &str = "no-cutoff";
+
 impl NativeGraph for UvLock {
     const GRAPH_FILE: &'static str = "uv.lock";
     fn graph_text(&self) -> Result<String> {
@@ -286,9 +453,9 @@ impl NativeGraph for UvLock {
             ("pyproject.toml", toml::to_string(&self.project)?),
         ])
     }
-    fn read(dir: &Path, graph_text: String) -> Result<Self> {
+    fn read(base: &Path, dir: &Path, graph_text: String) -> Result<Self> {
         Ok(Self {
-            project: normalize_newlines(&std::fs::read_to_string(dir.join("pyproject.toml"))?)
+            project: normalize_newlines(&read_sidecar_file(base, &dir.join("pyproject.toml"))?)
                 .parse()?,
             graph: graph_text.parse()?,
             graph_text,
@@ -329,9 +496,9 @@ impl NativeGraph for AubeLock {
             ("package.json", project),
         ])
     }
-    fn read(dir: &Path, graph_text: String) -> Result<Self> {
+    fn read(base: &Path, dir: &Path, graph_text: String) -> Result<Self> {
         let mut graph = Self::from_yaml(&graph_text)?;
-        let project = std::fs::read_to_string(dir.join("package.json"))?;
+        let project = read_sidecar_file(base, &dir.join("package.json"))?;
         let project = normalize_newlines(&project).into_owned();
         serde_json::from_str::<serde_json::Value>(&project)?;
         graph.project = Some(project);
@@ -343,15 +510,24 @@ impl NativeGraph for AubeLock {
 pub(super) struct SidecarWrites {
     pub files: Vec<(PathBuf, String)>,
     pub referenced: std::collections::BTreeSet<PathBuf>,
+    /// The lockfile's directory. Sidecar writes and removals stay below it.
+    pub dir: PathBuf,
     pub root: PathBuf,
     pub remove: Vec<PathBuf>,
 }
 impl SidecarWrites {
     pub(super) fn new(lockfile: &Path) -> Self {
         Self {
+            dir: absolute(lockfile.parent().unwrap_or(Path::new("."))),
             root: absolute(&sidecar_root(lockfile)),
             ..Default::default()
         }
+    }
+    /// Whether the sidecar root is reached through a symlink, such as a
+    /// committed `.mise` or `.mise/locks` link. Such a root is not part of
+    /// this project, so nothing below it is collected or removed.
+    pub(super) fn root_is_linked(&self) -> bool {
+        symlink_below(&self.dir, &self.root).is_some()
     }
     pub(super) fn reserve<T: NativeGraph>(&mut self, graph: &GraphRef<T>) {
         if let Some(dir) = graph.dir().filter(|dir| dir.starts_with(&self.root)) {
@@ -385,6 +561,7 @@ impl SidecarWrites {
             dir: source,
             digest,
             cell,
+            ..
         } = graph
             && *source == dir
             && source.is_dir()
@@ -397,6 +574,7 @@ impl SidecarWrites {
                 if identity != *digest {
                     return Ok(GraphRef::Sidecar {
                         dir,
+                        base: self.dir.clone(),
                         digest: identity,
                         cell: cell.clone(),
                     });
@@ -428,11 +606,15 @@ impl SidecarWrites {
         // legacy CRLF digest must not survive onto freshly written bytes.
         Ok(GraphRef::Sidecar {
             dir,
+            base: self.dir.clone(),
             digest: digest_text(&body.graph_text()?),
             cell: OnceLock::new(),
         })
     }
     pub(super) fn collect_garbage(&mut self) {
+        if self.root_is_linked() {
+            return;
+        }
         let Ok(tools) = std::fs::read_dir(&self.root) else {
             return;
         };
@@ -463,13 +645,11 @@ impl SidecarWrites {
             let parent = target
                 .parent()
                 .ok_or_else(|| eyre!("invalid sidecar file path"))?;
-            for ancestor in parent.ancestors().take_while(|p| p.starts_with(&self.root)) {
-                if ancestor.is_symlink() {
-                    bail!(
-                        "refusing to write dependency sidecar through symlink {}",
-                        ancestor.display()
-                    );
-                }
+            if let Some(ancestor) = symlink_below(&self.dir, parent) {
+                bail!(
+                    "refusing to write dependency sidecar through symlink {}",
+                    ancestor.display()
+                );
             }
             std::fs::create_dir_all(parent)?;
             let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
@@ -523,6 +703,7 @@ mod tests {
         let path = temp.path().join("mise.lock");
         let graph: GraphRef<UvLock> = GraphRef::Sidecar {
             dir: sidecar_root(&path).join("pypi-fixture/1.0.0"),
+            base: temp.path().to_path_buf(),
             digest: digest_bytes(b"missing"),
             cell: OnceLock::new(),
         };
@@ -606,16 +787,40 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn global_config_dir_keeps_locks_layout_through_a_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dotfiles = tmp.path().join("dotfiles/shell");
+        let config = tmp.path().join("home/.config-link");
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&dotfiles, &config).unwrap();
+        for dir in [&config, &dotfiles] {
+            assert_eq!(
+                sidecar_root_in(&dir.join("mise.lock"), &config),
+                dir.join("locks")
+            );
+        }
+        // Not the global dir: the project layout applies.
+        let other = tmp.path().join("other");
+        assert_eq!(
+            sidecar_root_in(&dotfiles.join("mise.lock"), &other),
+            dotfiles.join(".mise/locks")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn symlinked_lockfile_keeps_native_graphs_beside_target() {
         use std::os::unix::fs::symlink;
 
         for deploy_sidecars in [true, false] {
             let temp = tempfile::tempdir().unwrap();
             let root = temp.path().canonicalize().unwrap();
-            let repo = root.join("repo/mise");
+            // Below the link's directory: a link out of a temp dir, which is
+            // neither the global config nor a trusted project, is refused.
             let global = root.join(".config/mise");
+            let repo = global.join("repo/mise");
             std::fs::create_dir_all(&repo).unwrap();
-            std::fs::create_dir_all(&global).unwrap();
             let target = repo.join("mise.lock");
             let link = global.join("mise.lock");
             let mut lock = Lockfile::default();
@@ -630,7 +835,7 @@ mod tests {
             lock.tools.insert("pypi:fixture".into(), vec![py]);
             lock.tools.insert("npm:fixture".into(), vec![npm]);
             lock.save(&target).unwrap();
-            symlink("../../repo/mise/mise.lock", &link).unwrap();
+            symlink("repo/mise/mise.lock", &link).unwrap();
             let files = [
                 ".mise/locks/pypi-fixture/1.0.0/uv.lock",
                 ".mise/locks/pypi-fixture/1.0.0/pyproject.toml",
@@ -693,6 +898,34 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_out_of_an_unvouched_directory_is_not_written_through() {
+        // A checkout can commit mise.lock as a link to any file of the user.
+        // Nothing vouches for a link out of a temp dir: it is neither the
+        // global lockfile nor one a trusted config keeps.
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("home/config.toml");
+        let link = temp.path().join("checkout/mise.lock");
+        for path in [&target, &link] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        }
+        std::fs::write(&target, "[settings]\nparanoid = true\n").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let mut lock = Lockfile::read(&link).unwrap();
+        let mut tool = entry("pypi:fixture");
+        tool.uv = Some(uv().into());
+        lock.tools.insert("pypi:fixture".into(), vec![tool]);
+        let error = lock.save(&link).unwrap_err();
+        assert!(error.to_string().contains("refusing to write lockfile"));
+        assert!(link.is_symlink());
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "[settings]\nparanoid = true\n"
+        );
+        assert!(!sidecar_root(&target).exists());
     }
 
     #[cfg(unix)]
@@ -765,6 +998,7 @@ mod tests {
     #[test]
     fn writes_still_reject_symlinked_sidecar_directories() {
         for ancestor in [
+            ".mise",
             ".mise/locks",
             ".mise/locks/pypi-fixture",
             ".mise/locks/pypi-fixture/1.0.0",
@@ -788,6 +1022,120 @@ mod tests {
             );
             assert!(!path.exists());
             assert_eq!(std::fs::read_dir(outside).unwrap().count(), 0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_never_follows_symlinked_sidecar_roots() {
+        // A checkout can commit `.mise` or `.mise/locks` as a link to a
+        // directory of other projects, each holding a `uv.lock` two levels
+        // below it. Neither saving nor migrating a lockfile may remove them.
+        for (name, link, unrelated) in [
+            ("mise.lock", ".mise", "locks/acme/payments"),
+            ("mise.lock", ".mise/locks", "acme/payments"),
+            ("mise.local.lock", ".mise/locks", "mise.local/acme/payments"),
+            ("mise.local.lock", ".mise/locks/mise.local", "acme/payments"),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("apps/a").join(name);
+            let target = temp.path().join(name);
+            let outside = temp.path().join("outside");
+            let unrelated = outside.join(unrelated).join("uv.lock");
+            std::fs::create_dir_all(unrelated.parent().unwrap()).unwrap();
+            std::fs::write(&unrelated, "version = 1\n").unwrap();
+            let link = path.parent().unwrap().join(link);
+            std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            let lock = Lockfile::default();
+            lock.save(&path).unwrap();
+            assert!(unrelated.is_file(), "{name} {link:?}");
+            lock.save(&target).unwrap();
+            crate::lockfile::remove_migrated_sidecars(&path, &target).unwrap();
+            assert!(unrelated.is_file(), "{name} {link:?}");
+            assert!(link.is_symlink());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reads_reject_symlinked_sidecars() {
+        // A sidecar outside the sidecar root is rewritten below it on save, so
+        // a linked sidecar file or directory would copy a file of the user's
+        // into the checkout.
+        let files = [
+            ("graphs/pypi/uv.lock", "version = 1\n"),
+            ("graphs/pypi/pyproject.toml", "token = \"secret\"\n"),
+            ("graphs/npm/aube-lock.yaml", "lockfileVersion: '9.0'\n"),
+            ("graphs/npm/package.json", "{\"token\":\"secret\"}\n"),
+        ];
+        for link in ["graphs", "graphs/pypi", "graphs/npm"]
+            .into_iter()
+            .chain(files.iter().map(|(file, _)| *file))
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("checkout/mise.lock");
+            let checkout = path.parent().unwrap();
+            for (file, text) in files {
+                // Only what `link` leads to lives outside the checkout.
+                let dir = if file.starts_with(link) {
+                    "home"
+                } else {
+                    "checkout"
+                };
+                let file = temp.path().join(dir).join(file);
+                std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+                std::fs::write(file, text).unwrap();
+            }
+            std::fs::create_dir_all(checkout.join(link).parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(temp.path().join("home").join(link), checkout.join(link))
+                .unwrap();
+            std::fs::write(
+                &path,
+                format!(
+                    r#"lockfile_version = 2
+[[tools."pypi:fixture"]]
+version = "1.0.0"
+backend = "pypi:fixture"
+uv = {{ path = "graphs/pypi", digest = "{}" }}
+[[tools."npm:fixture"]]
+version = "1.0.0"
+backend = "npm:fixture"
+aube = {{ path = "graphs/npm", digest = "{}" }}
+"#,
+                    digest_text(files[0].1),
+                    digest_text(files[2].1)
+                ),
+            )
+            .unwrap();
+            let lock = Lockfile::read(&path).unwrap();
+            let py = lock.tools["pypi:fixture"][0].uv.as_ref().unwrap();
+            let npm = lock.tools["npm:fixture"][0].aube.as_ref().unwrap();
+            let errors = [
+                ("pypi", [py.load().err(), py.refresh().err()]),
+                ("npm", [npm.load().err(), npm.refresh().err()]),
+            ];
+            lock.save(&path).unwrap();
+            let saved = std::fs::read_to_string(&path).unwrap();
+            for (kind, errors) in errors {
+                let dir = format!("graphs/{kind}");
+                let linked = dir.starts_with(link) || link.starts_with(&dir);
+                for error in errors {
+                    assert_eq!(error.is_some(), linked, "{link}");
+                    if let Some(error) = error {
+                        assert!(
+                            error
+                                .to_string()
+                                .contains("refusing to read through symlink")
+                        );
+                    }
+                }
+                // A graph that cannot be read stays where it is, and nothing
+                // it leads to is copied into the checkout.
+                assert_eq!(saved.contains(&format!("path = \"{dir}\"")), linked);
+                let moved = sidecar_root(&path).join(format!("{kind}-fixture"));
+                assert_eq!(moved.exists(), !linked, "{link}");
+            }
         }
     }
 
@@ -841,6 +1189,165 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("mise lock")
+        );
+    }
+    fn uv_with_cutoff(cutoff: Option<&str>) -> UvLock {
+        let options = cutoff
+            .map(|cutoff| format!("\n[options]\nexclude-newer = \"{cutoff}\"\n"))
+            .unwrap_or_default();
+        let graph_text = format!("version = 1\nrevision = 3\n{options}");
+        UvLock {
+            project: toml::toml! { [project] name = "fixture" },
+            graph: graph_text.parse().unwrap(),
+            graph_text,
+        }
+    }
+    #[test]
+    fn uv_install_identity_ignores_the_release_age_cutoff() {
+        let monday = GraphRef::from(uv_with_cutoff(Some("2026-10-26T09:00:00Z")));
+        let tuesday = GraphRef::from(uv_with_cutoff(Some("2026-10-27T17:30:00Z")));
+        // The lockfile still records each graph as it was written ...
+        assert_ne!(monday.identity(), tuesday.identity());
+        // ... but the same dependencies are one installation.
+        assert_eq!(monday.install_identity(), tuesday.install_identity());
+    }
+    #[test]
+    fn uv_install_identity_keeps_graphs_without_a_cutoff_where_they_were() {
+        let graph = GraphRef::from(uv());
+        assert_eq!(graph.install_identity(), graph.identity());
+        // Another resolver option is not the cutoff.
+        let mut other = uv();
+        other.graph.insert(
+            "options".into(),
+            toml::toml! { prerelease-mode = "allow" }.into(),
+        );
+        other.graph_text.clear();
+        let other = GraphRef::from(other);
+        assert_eq!(other.install_identity(), other.identity());
+    }
+    #[test]
+    fn uv_install_identity_still_tells_different_graphs_apart() {
+        let cutoff = "2026-10-26T09:00:00Z";
+        let before = GraphRef::from(uv_with_cutoff(Some(cutoff)));
+        let mut changed = uv_with_cutoff(Some(cutoff));
+        changed
+            .graph
+            .insert("requires-python".into(), ">=3.10".into());
+        changed.graph_text.clear();
+        assert_ne!(
+            before.install_identity(),
+            GraphRef::from(changed).install_identity()
+        );
+        // An option that stays in the graph still counts.
+        let mut pre = uv_with_cutoff(Some(cutoff));
+        pre.graph["options"]
+            .as_table_mut()
+            .unwrap()
+            .insert("prerelease-mode".into(), "allow".into());
+        pre.graph_text.clear();
+        assert_ne!(
+            before.install_identity(),
+            GraphRef::from(pre).install_identity()
+        );
+    }
+    #[test]
+    fn uv_install_identity_is_the_identity_of_the_graph_uv_writes_without_a_cutoff() {
+        // `uv lock` output, with and without `--exclude-newer` (and an exempt package).
+        let package = r#"[[package]]
+name = "six"
+version = "1.17.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/six-1.17.0.tar.gz", hash = "sha256:ff70", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+"#;
+        let header = "version = 1\nrevision = 5\nrequires-python = \">=3.9\"\n";
+        let graph = |options: &str| {
+            let text = format!("{header}{options}\n{package}");
+            GraphRef::from(UvLock {
+                project: toml::Table::new(),
+                graph: text.parse().unwrap(),
+                graph_text: text,
+            })
+        };
+        let plain = graph("");
+        let cutoff = graph("\n[options]\nexclude-newer = \"2026-10-27T17:30:00Z\"\n");
+        assert_eq!(cutoff.install_identity(), plain.identity());
+        assert_eq!(plain.install_identity(), plain.identity());
+        let exempt = "\n[options.exclude-newer-package]\nsix = false\n";
+        assert_eq!(
+            graph(&format!(
+                "\n[options]\nexclude-newer = \"2026-10-27T17:30:00Z\"\n{exempt}"
+            ))
+            .install_identity(),
+            graph(exempt).identity()
+        );
+    }
+    #[test]
+    fn uv_install_identity_of_a_sidecar_is_saved_to_the_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        // A graph no other test or run has seen, so only this lookup can write its entry.
+        let nonce = temp.path().display();
+        let text = format!(
+            "version = 1\n# {nonce}\n[options]\nexclude-newer = \"2026-10-26T09:00:00Z\"\n"
+        );
+        let dir = temp.path().join("locks/pypi-fixture");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("uv.lock"), &text).unwrap();
+        let sidecar: GraphRef<UvLock> = GraphRef::Sidecar {
+            dir,
+            base: temp.path().to_path_buf(),
+            digest: digest_text(&text),
+            cell: OnceLock::new(),
+        };
+        let identity = sidecar.install_identity();
+        assert_ne!(identity, sidecar.identity());
+        let saved = crate::dirs::CACHE
+            .join("uv-install-identity")
+            .join(env!("CARGO_PKG_VERSION"))
+            .join(digest_text(&text).trim_start_matches("sha256:"));
+        assert_eq!(std::fs::read_to_string(&saved).unwrap(), identity);
+        std::fs::remove_file(saved).unwrap();
+    }
+    #[test]
+    fn uv_install_identity_is_the_same_for_a_sidecar_graph() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        let identities = ["2026-10-26T09:00:00Z", "2026-10-27T17:30:00Z"].map(|cutoff| {
+            let dir =
+                sidecar_root(&path).join(format!("pypi-fixture/{}", cutoff.replace(':', "-")));
+            let graph = uv_with_cutoff(Some(cutoff));
+            for (name, text) in graph.files().unwrap() {
+                std::fs::create_dir_all(&dir).unwrap();
+                std::fs::write(dir.join(name), text).unwrap();
+            }
+            let sidecar: GraphRef<UvLock> = GraphRef::Sidecar {
+                dir,
+                base: temp.path().to_path_buf(),
+                digest: digest_text(&graph.graph_text),
+                cell: OnceLock::new(),
+            };
+            (sidecar.identity(), sidecar.install_identity())
+        });
+        assert_ne!(identities[0].0, identities[1].0);
+        assert_eq!(identities[0].1, identities[1].1);
+        // The answer is remembered by the digest, so a second look agrees.
+        let again = sidecar_root(&path).join("pypi-fixture/2026-10-26T09-00-00Z");
+        let graph = uv_with_cutoff(Some("2026-10-26T09:00:00Z"));
+        let sidecar: GraphRef<UvLock> = GraphRef::Sidecar {
+            dir: again.clone(),
+            base: temp.path().to_path_buf(),
+            digest: digest_text(&graph.graph_text),
+            cell: OnceLock::new(),
+        };
+        assert_eq!(sidecar.install_identity(), identities[0].1);
+        // An edited sidecar is not answered from what was remembered.
+        std::fs::write(again.join("uv.lock"), "version = 1\n").unwrap();
+        assert_eq!(sidecar.install_identity(), sidecar.identity());
+        assert_eq!(
+            identities[0].1,
+            GraphRef::from(uv_with_cutoff(Some("2030-01-01T00:00:00Z"))).install_identity()
         );
     }
     #[test]

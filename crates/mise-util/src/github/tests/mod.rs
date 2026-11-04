@@ -152,6 +152,7 @@ fn tag_without_commit(name: &str) -> GithubTag {
 mod api;
 mod asset_notes;
 mod listing;
+mod mirror_fallback;
 mod mirrored_releases;
 mod release_selection;
 mod tokens;

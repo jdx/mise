@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::context::Context;
 use crate::embedded_plugins::{self, EmbeddedPlugin};
 use crate::error::Result;
+use crate::hook_dependencies::HookDependencyRecorder;
 use crate::http::HttpHeadersResolver;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
@@ -30,12 +31,24 @@ pub struct Plugin {
     pub name: String,
     pub dir: PathBuf,
     pub runtime_env_type: Option<String>,
+    /// Persistent directory exposed to hooks as `RUNTIME.cacheDirPath`
+    pub cache_dir_path: Option<PathBuf>,
     source: PluginSource,
     lua: Lua,
     metadata: OnceCell<Metadata>,
 }
 
 impl Plugin {
+    /// The cache directory to expose to hooks, created on demand. `None` when it can't
+    /// be created, so a hook never writes into a directory mise promised but doesn't have.
+    pub(crate) fn usable_cache_dir_path(&self) -> Option<PathBuf> {
+        self.cache_dir_path.clone().filter(|dir| {
+            std::fs::create_dir_all(dir)
+                .inspect_err(|err| debug!("[vfox:{}] no cache dir {dir:?}: {err}", self.name))
+                .is_ok()
+        })
+    }
+
     pub fn from_dir(dir: &Path) -> Result<Self> {
         if !dir.exists() {
             error!("Plugin directory not found: {:?}", dir);
@@ -48,6 +61,7 @@ impl Plugin {
             name,
             dir: dir.to_path_buf(),
             runtime_env_type: None,
+            cache_dir_path: None,
             source: PluginSource::Filesystem(dir.to_path_buf()),
             lua,
             metadata: OnceCell::new(),
@@ -65,6 +79,7 @@ impl Plugin {
             name: name.to_string(),
             dir: dummy_dir,
             runtime_env_type: None,
+            cache_dir_path: None,
             source: PluginSource::Embedded(embedded),
             lua,
             metadata: OnceCell::new(),
@@ -146,6 +161,12 @@ impl Plugin {
         self.lua
             .set_named_registry_value("mise_terminal_lock", func)?;
         Ok(())
+    }
+
+    /// Record what the hooks run on this plugin depend on into `recorder`;
+    /// see [`crate::HookDependencies`].
+    pub(crate) fn set_hook_dependencies(&self, recorder: HookDependencyRecorder) {
+        self.lua.set_app_data(recorder);
     }
 
     /// Store a GitHub token for the Lua http module.
@@ -286,6 +307,7 @@ impl Plugin {
             // Load standard Lua modules (http, json, etc.) FIRST
             // These must be available before loading embedded lib files
             lua_mod::archiver(&self.lua)?;
+            lua_mod::cache(&self.lua)?;
             lua_mod::cmd(&self.lua)?;
             lua_mod::file(&self.lua)?;
             lua_mod::html(&self.lua)?;
@@ -306,7 +328,11 @@ impl Plugin {
             self.set_global("PLUGIN", metadata.clone())?;
             self.set_global(
                 "RUNTIME",
-                Runtime::get(self.dir.clone(), self.runtime_env_type.as_deref()),
+                Runtime::get(
+                    self.dir.clone(),
+                    self.usable_cache_dir_path(),
+                    self.runtime_env_type.as_deref(),
+                ),
             )?;
             self.set_global("OS_TYPE", config::os())?;
             self.set_global("ARCH_TYPE", config::arch())?;

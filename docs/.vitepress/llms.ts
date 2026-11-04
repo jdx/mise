@@ -22,6 +22,12 @@ const SITE_URL = "https://mise.jdx.dev";
 
 const MAX_DESCRIPTION = 200;
 
+// Pages that render part of their content in the browser, and the Markdown file
+// the docs build writes with all of it.
+const MARKDOWN_COPIES: Record<string, string> = {
+  "/configuration/reference": "/configuration/reference.md",
+};
+
 /** `/dev-tools/` -> `docs/dev-tools/index.md`, `/demo` -> `docs/demo.md` */
 function sourceFile(link: string): string {
   const rel = link.replace(/^\//, "");
@@ -172,13 +178,19 @@ function main() {
     }
     if (entries.length === 0) continue;
 
-    const lines = entries.map(({ text, link }) => {
+    const lines = entries.flatMap(({ text, link }) => {
       const file = sourceFile(link);
       const desc = description(file);
       if (!desc) missing.push(link);
-      return desc
-        ? `- [${text}](${pageUrl(link)}): ${desc}`
-        : `- [${text}](${pageUrl(link)})`;
+      const entry = (label: string, url: string) =>
+        desc ? `- [${label}](${url}): ${desc}` : `- [${label}](${url})`;
+      const copy = MARKDOWN_COPIES[link];
+      return copy
+        ? [
+            entry(text, pageUrl(link)),
+            entry(`${text} (Markdown)`, `${SITE_URL}${copy}`),
+          ]
+        : [entry(text, pageUrl(link))];
     });
 
     sections.push(`## ${group.text}\n\n${lines.join("\n")}`);

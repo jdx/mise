@@ -10,16 +10,17 @@ use super::reconcile;
 
 /// Symlink node versions installed by nvm, nodenv, or Homebrew into mise
 ///
-/// Use this to make versions installed by another version manager available to mise.
-///
-/// This won't overwrite managed installs, runtime aliases, or links from other providers.
+/// Use this to make versions installed by another version manager available to
+/// mise. It does not overwrite managed installs, runtime aliases, or links from
+/// other providers. Pass one or more of --brew, --nodenv, and --nvm.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"brew install node@20
+        r###"brew install node@24
 mise sync node --brew
-mise use -g node@20 # uses Homebrew-provided node"###
+mise use -g node@24"###,
+        help = "Use the node that Homebrew installed"
     )
 )]
 pub(super) struct SyncNode {

@@ -10,10 +10,14 @@ REFRESH_TOKEN = os.environ.get("MOCK_GITHUB_OAUTH_REFRESH_TOKEN", "ghr-native-re
 REFRESHED_TOKEN = os.environ.get(
     "MOCK_GITHUB_OAUTH_REFRESHED_TOKEN", f"{TOKEN}-refreshed"
 )
+# With MOCK_GITHUB_OAUTH_ROTATE set, every refresh grant must present the
+# newest refresh token and returns a new one, like GitHub's expiring tokens.
+ROTATE = bool(os.environ.get("MOCK_GITHUB_OAUTH_ROTATE"))
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     device_token_count = 0
+    rotations = 0
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
@@ -46,6 +50,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         grant_type = form.get("grant_type", [""])[0]
         if grant_type == "urn:ietf:params:oauth:grant-type:device_code":
             Handler.device_token_count += 1
+            Handler.rotations = 0
             token = TOKEN
             if Handler.device_token_count > 1:
                 token = f"{TOKEN}-{Handler.device_token_count}"
@@ -63,12 +68,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "error": "incorrect_client_credentials",
                     "error_description": "The client credentials are incorrect.",
                 }
-            return {
+            payload = {
                 "access_token": REFRESHED_TOKEN,
                 "expires_in": 28800,
                 "token_type": "bearer",
                 "scope": "",
             }
+            if ROTATE:
+                presented = form.get("refresh_token", [""])[0]
+                current = (
+                    f"ghr-rotated-{Handler.rotations}"
+                    if Handler.rotations
+                    else REFRESH_TOKEN
+                )
+                if presented != current:
+                    return {
+                        "error": "bad_refresh_token",
+                        "error_description": "The refresh token passed is incorrect or expired.",
+                    }
+                Handler.rotations += 1
+                payload["refresh_token"] = f"ghr-rotated-{Handler.rotations}"
+                payload["refresh_token_expires_in"] = 15897600
+            return payload
         return {"error": "unsupported_grant_type"}
 
 

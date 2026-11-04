@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+# --config-dir links mise's config directory to a directory inside a --from
+# checkout, then bootstraps from it, so a dotfiles repository can keep mise's
+# config beside the other applications' config.
+
+repo="$PWD/dotfiles-source"
+checkout="$HOME/.dotfiles"
+
+# setup/mise is not a path project discovery looks for, so everything below
+# loads only if the bootstrap reads the directory as global config.
+mkdir -p "$repo/setup/mise/conf.d" "$repo/.config/kitty"
+git -C "$repo" init -q -b main
+git -C "$repo" config user.email test@example.com
+git -C "$repo" config user.name "mise test"
+
+cat <<'EOF' >"$repo/setup/mise/config.toml"
+[dotfiles]
+"~/.config/kitty" = { mode = "symlink" }
+
+[tasks.bootstrap]
+run = 'printf "%s" "{{ mise_config_dir }}" > ~/config-dir-seen'
+EOF
+cat <<'EOF' >"$repo/setup/mise/miserc.toml"
+env = ["work"]
+EOF
+cat <<'EOF' >"$repo/setup/mise/config.work.toml"
+[dotfiles]
+"~/.work-marker" = {}
+EOF
+cat <<'EOF' >"$repo/setup/mise/conf.d/zsh.toml"
+[dotfiles]
+"~/.zshrc" = {}
+EOF
+echo work >"$repo/.work-marker"
+echo 'export ZSH=1' >"$repo/.zshrc"
+echo 'font_size 12' >"$repo/.config/kitty/kitty.conf"
+git -C "$repo" add .
+git -C "$repo" commit -qm initial
+
+# The path must name a directory inside the checkout.
+assert_fail "mise bootstrap --config-dir setup/mise --dry-run"
+assert_fail "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir ../mise --dry-run" "must be a path inside the checkout"
+assert_fail "test -e '$checkout'"
+
+# The first run links the (empty) config directory to the selected one and
+# reads it as global config: its miserc.toml selects the work environment, its
+# conf.d fragments load, and mise_config_dir is the config directory mise
+# keeps using. An inherited MISE_GLOBAL_CONFIG_FILE or MISE_CONFIG_FILE would
+# narrow global config to one file, so the run drops both.
+assert_succeed "MISE_GLOBAL_CONFIG_FILE='$HOME/elsewhere.toml' MISE_CONFIG_FILE='$HOME/other.toml' mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir setup/mise --yes --only dotfiles,task"
+assert "readlink '$MISE_CONFIG_DIR'" "$checkout/setup/mise"
+assert "cat ~/.config/kitty/kitty.conf" "font_size 12"
+assert "cat ~/.work-marker" "work"
+assert "cat ~/.zshrc" "export ZSH=1"
+assert "cat ~/config-dir-seen" "$MISE_CONFIG_DIR"
+
+# From then on the link is the global config, with no --from, and a repeated
+# --from run accepts the link it made.
+assert_contains "mise config ls" "config.work.toml"
+assert_succeed "mise bootstrap --yes --only dotfiles"
+assert_succeed "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir setup/mise --yes --only dotfiles"
+assert "readlink '$MISE_CONFIG_DIR'" "$checkout/setup/mise"
+
+# Commands that write global config write to the checkout through the link.
+echo '[user]' >~/.gitconfig
+assert_succeed "mise dot add ~/.gitconfig --yes"
+assert "cat '$checkout/.gitconfig'" "[user]"
+assert_contains "cat '$checkout/setup/mise/config.toml'" '"~/.gitconfig"'
+
+# A config directory that holds a config, or links somewhere else, is left
+# alone.
+mkdir -p "$HOME/held-config"
+echo '[env]' >"$HOME/held-config/config.toml"
+assert_fail "MISE_CONFIG_DIR='$HOME/held-config' mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir setup/mise --yes --only dotfiles" "already holds a global config"
+assert "cat '$HOME/held-config/config.toml'" "[env]"
+ln -s "$HOME/held-config" "$HOME/linked-config"
+assert_fail "MISE_CONFIG_DIR='$HOME/linked-config' mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir setup/mise --yes --only dotfiles" "is already a link"
+assert "readlink '$HOME/linked-config'" "$HOME/held-config"
+
+# Missing directories and symlinks that leave the checkout are refused.
+assert_fail "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir missing --dry-run" "is not a directory in the checkout"
+ln -s "$HOME" "$checkout/escape"
+assert_fail "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir escape --dry-run" "outside the checkout"

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# A vfox plugin can report release dates, so a cutoff hides versions released
+# after it. Covers a tool plugin (Available) and a backend plugin
+# (BackendListVersions, with plain strings mixed in), and checks that an
+# invalid date leaves the version undated instead of failing the listing.
+
+TOOL_DIR="$PWD/vfox-dated"
+mkdir -p "$TOOL_DIR/hooks"
+cat >"$TOOL_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "dated-test"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "release date test plugin"
+LUA
+cat >"$TOOL_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+  return {
+    { version = "3.0.0", created_at = "2099-01-01T00:00:00Z" },
+    { version = "2.0.0", created_at = "2001-06-01T00:00:00Z" },
+    { version = "1.5.0", created_at = "not a date" },
+    { version = "1.0.0" },
+  }
+end
+LUA
+git -C "$TOOL_DIR" init -q
+git -C "$TOOL_DIR" add .
+git -C "$TOOL_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -q -m "initial plugin"
+
+# Every backend gets the default cutoff, which would hide the 2099 versions
+# below; turn it off until the cutoff itself is under test.
+export MISE_MINIMUM_RELEASE_AGE=0s
+
+TOOL="vfox:file://$TOOL_DIR"
+assert_contains "mise ls-remote '$TOOL'" "3.0.0"
+assert_not_contains "mise ls-remote '$TOOL' --before 2026-01-01" "3.0.0"
+assert_contains "mise ls-remote '$TOOL' --before 2026-01-01" "2.0.0"
+# invalid and absent dates stay listed
+assert_contains "mise ls-remote '$TOOL' --before 2026-01-01" "1.5.0"
+assert_contains "mise ls-remote '$TOOL' --before 2026-01-01" "1.0.0"
+
+BACKEND_DIR="$PWD/vfox-dated-backend"
+mkdir -p "$BACKEND_DIR/hooks"
+cat >"$BACKEND_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "dated-backend"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "release date backend test plugin"
+LUA
+cat >"$BACKEND_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return {
+    versions = {
+      "0.9.0",
+      { version = "1.0.0", created_at = "2001-06-01T00:00:00Z" },
+      { version = "2.0.0", created_at = "2099-01-01T00:00:00Z" },
+    },
+  }
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+  return { env_vars = {} }
+end
+LUA
+mise plugins link dated-backend "$BACKEND_DIR"
+
+assert_contains "mise ls-remote dated-backend:tool" "2.0.0"
+assert_not_contains "mise ls-remote dated-backend:tool --before 2026-01-01" "2.0.0"
+assert_contains "mise ls-remote dated-backend:tool --before 2026-01-01" "1.0.0"
+assert_contains "mise ls-remote dated-backend:tool --before 2026-01-01" "0.9.0"
+
+# minimum_release_age reaches version selection the same way as --before
+export MISE_MINIMUM_RELEASE_AGE=365d
+assert_not_contains "mise ls-remote '$TOOL'" "3.0.0"
+assert_not_contains "mise ls-remote dated-backend:tool" "2.0.0"
+assert_contains "mise ls-remote '$TOOL'" "2.0.0"
+assert_contains "mise ls-remote dated-backend:tool" "1.0.0"

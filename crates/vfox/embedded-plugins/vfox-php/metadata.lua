@@ -19,33 +19,37 @@ PLUGIN.notes = {
 -- passes is satisfied regardless of how it was installed, so the `packages`
 -- hints are only used to offer remediation.
 --
--- Only the build tools are marked required: they are always needed and can be
--- detected reliably. The libraries are marked optional (informational only)
--- because this plugin adds each one to PKG_CONFIG_PATH from `brew --prefix` at
--- build time — many are keg-only on macOS, so a bare `pkg-config` probe would
--- report them missing even though the build finds them. Flagging them as
--- required would false-alarm on working machines; as optional they still tell
--- the user what to install without blocking or prompting.
+-- Build tools are always required. The libraries the default build needs
+-- (libxml2, oniguruma, icu) are required on Linux, where they are found via
+-- plain pkg-config. On macOS they are keg-only: this plugin adds each one to
+-- PKG_CONFIG_PATH from `brew --prefix` at build time, so a bare `pkg-config`
+-- probe would false-alarm there; the check is skipped on Darwin. Remaining
+-- libraries are optional (informational only).
+local linux_only = 'test "$(uname -s)" = Darwin || '
+
 PLUGIN.systemDependencies = {
     -- build toolchain (required)
     { bin = "cc", packages = { apt = "build-essential", dnf = "gcc" } },
     { bin = "make", packages = { brew = "make", apt = "build-essential", dnf = "make" } },
     { bin = "autoconf", packages = { brew = "autoconf", apt = "autoconf", dnf = "autoconf" } },
-    -- macOS ships bison 2.3; PHP's parser generator needs >= 3.0
-    { bin = "bison", version = ">=3.0",
+    -- macOS ships bison 2.3; PHP's parser generator needs >= 3.0. The build
+    -- prepends Homebrew's bison to PATH, so check that one first, then PATH.
+    { command = 'for b in "${HOMEBREW_PREFIX:-/opt/homebrew}/opt/bison/bin/bison" /usr/local/opt/bison/bin/bison bison; do '
+        .. 'command -v "$b" >/dev/null 2>&1 || continue; '
+        .. '"$b" --version 2>/dev/null | head -n 1 | grep -Eq " ([3-9]|[1-9][0-9]+)\\." && exit 0; done; exit 1',
       packages = { brew = "bison", apt = "bison", dnf = "bison" } },
     { bin = "re2c", packages = { brew = "re2c", apt = "re2c", dnf = "re2c" } },
     { bin = "pkg-config",
       packages = { brew = "pkg-config", apt = "pkg-config", dnf = "pkgconfig" } },
 
-    -- libraries (optional/informational — see note above)
-    { pkgconfig = "libxml-2.0", optional = "xml support",
+    -- libraries (libxml2/oniguruma/icu are required on Linux; the rest are informational)
+    { command = linux_only .. 'pkg-config --exists libxml-2.0',
       packages = { brew = "libxml2", apt = "libxml2-dev", dnf = "libxml2-devel" } },
     { pkgconfig = "openssl", optional = "openssl / TLS support",
       packages = { brew = "openssl@3", apt = "libssl-dev", dnf = "openssl-devel" } },
-    { pkgconfig = "oniguruma", optional = "mbstring support",
+    { command = linux_only .. 'pkg-config --exists oniguruma',
       packages = { brew = "oniguruma", apt = "libonig-dev", dnf = "oniguruma-devel" } },
-    { pkgconfig = "icu-uc", optional = "intl support",
+    { command = linux_only .. 'pkg-config --exists icu-uc',
       packages = { brew = "icu4c", apt = "libicu-dev", dnf = "libicu-devel" } },
     { pkgconfig = "zlib", optional = "zlib support",
       packages = { brew = "zlib", apt = "zlib1g-dev", dnf = "zlib-devel" } },

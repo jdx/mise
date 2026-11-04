@@ -1,5 +1,27 @@
 local http = require("http")
 
+--- Quote a string as a single POSIX shell word
+local function shell_quote(value)
+    return "'" .. string.gsub(value, "'", "'\\''") .. "'"
+end
+
+--- Homebrew prefix: honor HOMEBREW_PREFIX, else pick the one that exists
+--- (/opt/homebrew on Apple Silicon, /usr/local on Intel)
+local function homebrew_prefix_dir()
+    local prefix = os.getenv("HOMEBREW_PREFIX")
+    if prefix ~= nil and prefix ~= "" then
+        return prefix
+    end
+    for _, candidate in ipairs({ "/opt/homebrew", "/usr/local" }) do
+        local f = io.open(candidate .. "/Cellar", "r")
+        if f ~= nil then
+            f:close()
+            return candidate
+        end
+    end
+    return "/opt/homebrew"
+end
+
 --- Compiles and installs PHP from source
 --- @param ctx table Context provided by vfox
 --- @field ctx.sdkInfo table SDK information with version and path
@@ -12,11 +34,11 @@ function PLUGIN:PostInstall(ctx)
     -- So sdkPath IS the source directory (php-src-php-X.Y.Z contents)
 
     local os_type = RUNTIME.osType
-    local homebrew_prefix = os.getenv("HOMEBREW_PREFIX") or "/opt/homebrew"
+    local homebrew_prefix = homebrew_prefix_dir()
 
     -- Build environment and configure options
     local envPrefix = ""
-    local configureOptions = "--prefix='" .. sdkPath .. "'"
+    local configureOptions = "--prefix=" .. shell_quote(sdkPath)
 
     -- Common configure options
     local commonOptions = [[
@@ -38,9 +60,6 @@ function PLUGIN:PostInstall(ctx)
         --enable-sysvmsg
         --enable-sysvsem
         --enable-sysvshm
-        --sysconfdir=']] .. sdkPath .. [['
-        --with-config-file-path=']] .. sdkPath .. [['
-        --with-config-file-scan-dir=']] .. sdkPath .. [[/conf.d'
         --with-curl
         --with-mhash
         --with-mysqli=mysqlnd
@@ -51,9 +70,17 @@ function PLUGIN:PostInstall(ctx)
         --without-snmp
     ]]
 
-    -- Clean up whitespace in common options
+    -- Clean up whitespace in common options (before inserting paths, which may contain spaces)
     commonOptions = string.gsub(commonOptions, "%s+", " ")
-    configureOptions = configureOptions .. " " .. commonOptions
+    configureOptions = configureOptions
+        .. " "
+        .. commonOptions
+        .. " --sysconfdir="
+        .. shell_quote(sdkPath)
+        .. " --with-config-file-path="
+        .. shell_quote(sdkPath)
+        .. " --with-config-file-scan-dir="
+        .. shell_quote(sdkPath .. "/conf.d")
 
     if os_type == "darwin" then
         configureOptions, envPrefix = configure_macos(configureOptions, homebrew_prefix)
@@ -70,12 +97,12 @@ function PLUGIN:PostInstall(ctx)
     local userOptions = os.getenv("PHP_CONFIGURE_OPTIONS")
     if userOptions ~= nil and userOptions ~= "" then
         -- User provided full options, use those instead (but keep prefix)
-        configureOptions = "--prefix='" .. sdkPath .. "' " .. userOptions
+        configureOptions = "--prefix=" .. shell_quote(sdkPath) .. " " .. userOptions
     end
 
     -- Run buildconf
     print("Running buildconf...")
-    local buildconfCmd = string.format("cd '%s' && %s./buildconf --force", sdkPath, envPrefix)
+    local buildconfCmd = string.format("cd %s && %s./buildconf --force", shell_quote(sdkPath), envPrefix)
     local status = os.execute(buildconfCmd)
     if status ~= 0 and status ~= true then
         error("Failed to run buildconf")
@@ -83,7 +110,7 @@ function PLUGIN:PostInstall(ctx)
 
     -- Run configure
     print("Configuring PHP with options...")
-    local configureCmd = string.format("cd '%s' && %s./configure %s", sdkPath, envPrefix, configureOptions)
+    local configureCmd = string.format("cd %s && %s./configure %s", shell_quote(sdkPath), envPrefix, configureOptions)
     status = os.execute(configureCmd)
     if status ~= 0 and status ~= true then
         error("Failed to configure PHP")
@@ -91,8 +118,11 @@ function PLUGIN:PostInstall(ctx)
 
     -- Build PHP
     print("Building PHP (this may take several minutes)...")
-    local makeCmd =
-        string.format("cd '%s' && %smake -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)", sdkPath, envPrefix)
+    local makeCmd = string.format(
+        "cd %s && %smake -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)",
+        shell_quote(sdkPath),
+        envPrefix
+    )
     status = os.execute(makeCmd)
     if status ~= 0 and status ~= true then
         error("Failed to build PHP")
@@ -100,14 +130,14 @@ function PLUGIN:PostInstall(ctx)
 
     -- Install PHP
     print("Installing PHP...")
-    local installCmd = string.format("cd '%s' && %smake install", sdkPath, envPrefix)
+    local installCmd = string.format("cd %s && %smake install", shell_quote(sdkPath), envPrefix)
     status = os.execute(installCmd)
     if status ~= 0 and status ~= true then
         error("Failed to install PHP")
     end
 
     -- Create conf.d directory
-    os.execute(string.format("mkdir -p '%s/conf.d'", sdkPath))
+    os.execute(string.format("mkdir -p %s", shell_quote(sdkPath .. "/conf.d")))
     local confFile = io.open(sdkPath .. "/conf.d/php.ini", "w")
     if confFile then
         confFile:write("# Add system-wide PHP configuration options here\n")
@@ -120,8 +150,8 @@ function PLUGIN:PostInstall(ctx)
     -- Clean up source files to save space
     print("Cleaning up source files...")
     local cleanCmd = string.format(
-        "cd '%s' && rm -rf Zend ext sapi main TSRM build configure* aclocal* Makefile* 2>/dev/null",
-        sdkPath
+        "cd %s && rm -rf Zend ext sapi main TSRM build configure* aclocal* Makefile* 2>/dev/null",
+        shell_quote(sdkPath)
     )
     os.execute(cleanCmd)
 
@@ -188,7 +218,7 @@ function configure_macos(configureOptions, homebrew_prefix)
                     table.insert(pkg_config_paths, pkg_path .. "/lib/pkgconfig")
                 end
                 if pkg.path_only then
-                    envPrefix = envPrefix .. 'export PATH="' .. pkg_path .. '/bin:$PATH" && '
+                    envPrefix = envPrefix .. "export PATH=" .. shell_quote(pkg_path .. "/bin") .. ':"$PATH" && '
                 end
             else
                 io.stderr:write("Warning: " .. pkg.name .. " not found at " .. pkg_path .. check_dir .. "\n")
@@ -205,7 +235,7 @@ function configure_macos(configureOptions, homebrew_prefix)
         if existing_pkg ~= "" then
             new_pkg = new_pkg .. ":" .. existing_pkg
         end
-        envPrefix = envPrefix .. 'export PKG_CONFIG_PATH="' .. new_pkg .. '" && '
+        envPrefix = envPrefix .. "export PKG_CONFIG_PATH=" .. shell_quote(new_pkg) .. " && "
     end
 
     -- Set FREETYPE2 flags to bypass pkg-config (bzip2 doesn't have .pc file)
@@ -213,8 +243,14 @@ function configure_macos(configureOptions, homebrew_prefix)
     local f = io.open(freetype_path .. "/lib", "r")
     if f ~= nil then
         f:close()
-        envPrefix = envPrefix .. 'export FREETYPE2_CFLAGS="-I' .. freetype_path .. '/include/freetype2" && '
-        envPrefix = envPrefix .. 'export FREETYPE2_LIBS="-L' .. freetype_path .. '/lib -lfreetype" && '
+        envPrefix = envPrefix
+            .. "export FREETYPE2_CFLAGS="
+            .. shell_quote("-I" .. freetype_path .. "/include/freetype2")
+            .. " && "
+        envPrefix = envPrefix
+            .. "export FREETYPE2_LIBS="
+            .. shell_quote("-L" .. freetype_path .. "/lib -lfreetype")
+            .. " && "
     end
 
     -- Optional packages with configure flags
@@ -238,24 +274,17 @@ function configure_macos(configureOptions, homebrew_prefix)
         local f = io.open(pkg_path .. "/lib", "r")
         if f ~= nil then
             f:close()
-            configureOptions = configureOptions .. " " .. pkg.flag .. "='" .. pkg_path .. "'"
+            configureOptions = configureOptions .. " " .. pkg.flag .. "=" .. shell_quote(pkg_path)
         else
             io.stderr:write("Info: " .. pkg.name .. " not found, skipping " .. pkg.flag .. "\n")
         end
     end
 
-    -- Add external-gd if we have the dependencies
-    local has_gd_deps = true
-    for _, dep in ipairs({ "freetype", "jpeg", "libpng" }) do
-        local f = io.open(homebrew_prefix .. "/opt/" .. dep .. "/lib", "r")
-        if f ~= nil then
-            f:close()
-        else
-            has_gd_deps = false
-            break
-        end
-    end
-    if has_gd_deps then
+    -- Add external-gd only if libgd itself is installed (image libraries alone
+    -- are not enough; without it PHP uses its bundled GD)
+    local gd_lib = io.open(homebrew_prefix .. "/opt/gd/lib", "r")
+    if gd_lib ~= nil then
+        gd_lib:close()
         configureOptions = configureOptions .. " --with-external-gd"
     end
 
@@ -267,8 +296,8 @@ function configure_linux(configureOptions)
     -- On Linux, most libraries are in standard paths
     configureOptions = configureOptions .. " --with-openssl --with-curl --with-readline --with-gettext"
 
-    -- Check for GD dependencies
-    local gd_check = os.execute("pkg-config --exists libpng 2>/dev/null")
+    -- Only use external GD when libgd itself is present; otherwise PHP uses its bundled GD
+    local gd_check = os.execute("pkg-config --exists gdlib 2>/dev/null")
     if gd_check == 0 or gd_check == true then
         configureOptions = configureOptions .. " --with-external-gd"
     end
@@ -334,7 +363,7 @@ end
 function install_composer(sdkPath)
     print("Installing Composer...")
 
-    local php_bin = sdkPath .. "/bin/php"
+    local php_bin = shell_quote(sdkPath .. "/bin/php")
 
     local installer_path = sdkPath .. "/composer-setup.php"
     local downloaded, download_err = download_https_file("https://getcomposer.org/installer", installer_path)
@@ -349,16 +378,20 @@ function install_composer(sdkPath)
         error("Failed to download Composer installer signature: " .. tostring(signature_err))
     end
     expected_signature = string.gsub(expected_signature, "%s+", "")
-    if expected_signature == "" then
+    -- The signature is a SHA-384 hex digest; reject anything else since it is
+    -- embedded in a shell command below
+    if #expected_signature ~= 96 or string.find(expected_signature, "^%x+$") == nil then
         os.remove(installer_path)
-        error("Failed to download Composer installer signature")
+        error("Composer installer signature is not a valid SHA-384 digest")
     end
 
+    local php_path_literal = string.gsub(installer_path, "[\\']", "\\%0")
     local verify_cmd = string.format(
-        "%s -r \"if (hash_file('sha384', '%s/composer-setup.php') !== '%s') { exit(1); }\"",
+        "%s -r %s",
         php_bin,
-        sdkPath,
-        expected_signature
+        shell_quote(
+            "if (hash_file('sha384', '" .. php_path_literal .. "') !== '" .. expected_signature .. "') { exit(1); }"
+        )
     )
     local status = os.execute(verify_cmd)
     if status ~= 0 and status ~= true then
@@ -367,10 +400,10 @@ function install_composer(sdkPath)
     end
 
     local install_cmd = string.format(
-        "%s '%s/composer-setup.php' --install-dir='%s/bin' --filename=composer",
+        "%s %s --install-dir=%s --filename=composer",
         php_bin,
-        sdkPath,
-        sdkPath
+        shell_quote(installer_path),
+        shell_quote(sdkPath .. "/bin")
     )
     status = os.execute(install_cmd)
     if status ~= 0 and status ~= true then

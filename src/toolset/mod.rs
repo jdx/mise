@@ -3,6 +3,7 @@ use crate::backend::Backend;
 use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
+use crate::daemons::glue::DaemonSetExt;
 use crate::env::TERM_WIDTH;
 use crate::errors::Error;
 use crate::file::display_path;
@@ -13,7 +14,7 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::{backend, parallel};
 pub use builder::{ConfigScope, ToolsetBuilder};
 use console::truncate_str;
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use helpers::TVTuple;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -36,6 +37,8 @@ pub use install_options::InstallOptions;
 pub use running::RunningProcess;
 pub use tool_deps::ensure_compatible_install_requests;
 pub use tool_request::ToolRequest;
+pub(crate) use tool_request::{record_safe_mode_credential_hosts, with_safe_mode_tool_scope};
+pub(crate) use tool_request_set::configured_options_for_runtime_request;
 pub use tool_request_set::{
     ToolRequestSet, ToolRequestSetBuilder, apply_config_options_to_runtime_arg, tool_env_var_name,
     tool_env_vars, tool_from_env_var_name,
@@ -44,10 +47,11 @@ pub use tool_source::ToolSource;
 pub use tool_version::resolve_sub_base;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub(crate) use tool_version_list::ToolVersionList;
+pub(crate) use tool_version_options::fill_registry_defaults;
 pub use tool_version_options::{
     CoreToolOptions, EPHEMERAL_OPT_KEYS, RawBackendOptions, ResolvedToolOptions, ToolOptionSource,
-    ToolOptions, ToolVersionOptions, parse_tool_options, scalar_value_to_string,
-    try_parse_tool_options,
+    ToolOptions, ToolVersionOptions, parse_tool_options, redact_tool_options,
+    scalar_value_to_string, try_parse_tool_options,
 };
 
 mod builder;
@@ -91,6 +95,48 @@ pub struct Toolset {
     pub versions: IndexMap<Arc<BackendArg>, ToolVersionList>,
     pub source: Option<ToolSource>,
     tera_ctx: OnceCell<tera::Context>,
+}
+
+/// Which versions `Toolset::list_outdated_versions_selecting` looks up.
+/// What a check for newer versions found.
+#[derive(Debug, Default)]
+pub struct OutdatedVersions {
+    pub outdated: Vec<OutdatedInfo>,
+    /// The tool versions whose check failed, already reported with a warning.
+    /// A check that failed found nothing, so an empty `outdated` does not mean
+    /// these are up to date.
+    pub unchecked: Vec<String>,
+}
+
+impl OutdatedVersions {
+    pub fn extend(&mut self, other: OutdatedVersions) {
+        self.outdated.extend(other.outdated);
+        self.unchecked.extend(other.unchecked);
+    }
+
+    /// A warning naming the unchecked tool versions, if there are any. A tool
+    /// that failed more than one lookup is named once.
+    pub fn warn_unchecked(&self) {
+        let unchecked = self.unchecked.iter().unique().collect::<Vec<_>>();
+        if !unchecked.is_empty() {
+            warn!(
+                "Could not check {} for updates: {}",
+                if unchecked.len() == 1 {
+                    "1 tool".to_string()
+                } else {
+                    format!("{} tools", unchecked.len())
+                },
+                unchecked.iter().join(", ")
+            );
+        }
+    }
+}
+
+pub struct OutdatedSelection<'a> {
+    pub filter_tools: Option<&'a [crate::args::ToolArg]>,
+    pub exclude_tools: Option<&'a [crate::args::ToolArg]>,
+    pub show_progress: bool,
+    pub select: &'a dyn Fn(&ToolVersion) -> bool,
 }
 
 impl Toolset {
@@ -147,10 +193,13 @@ impl Toolset {
     ) -> eyre::Result<()> {
         let mut progress = show_progress
             .then(|| {
+                // A lazy tool left for its first run is not looked up, so listing
+                // it would only suggest work that does not happen.
                 crate::ui::install_progress::resolution_progress(
                     self.versions
-                        .keys()
-                        .map(|ba| (ba.short.clone(), ba.short.clone())),
+                        .iter()
+                        .filter(|(_, tvl)| !tvl.defers_resolution(opts))
+                        .map(|(ba, _)| (ba.short.clone(), ba.short.clone())),
                 )
             })
             .flatten();
@@ -221,7 +270,7 @@ impl Toolset {
     }
 
     /// Lists missing install markers without invoking backend-specific checks.
-    pub(crate) async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
+    pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
         trace!("list_missing_versions");
         measure!("toolset::list_missing_versions", {
             self.list_current_versions()
@@ -408,11 +457,12 @@ impl Toolset {
 
     /// Whether any configured tool is declared `lazy = true`. Such a tool installs the
     /// first time one of its bootstrap shims runs, so environments mise builds for this
-    /// toolset have to make those shims reachable behind the real tool paths.
+    /// toolset have to make those shims reachable behind the real tool paths. Safe mode
+    /// ignores the declarations of project config (see [`ToolRequest::provides_lazy_bins`]).
     pub fn has_lazy_declarations(&self) -> bool {
         self.list_current_requests()
             .iter()
-            .any(|request| request.options().lazy == Some(true))
+            .any(|request| request.provides_lazy_bins())
     }
 
     pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
@@ -466,7 +516,7 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
         opts: &ResolveOptions,
-    ) -> Vec<OutdatedInfo> {
+    ) -> OutdatedVersions {
         self.list_outdated_versions_filtered(config, bump, opts, None, None)
             .await
     }
@@ -478,7 +528,7 @@ impl Toolset {
         opts: &ResolveOptions,
         filter_tools: Option<&[crate::args::ToolArg]>,
         exclude_tools: Option<&[crate::args::ToolArg]>,
-    ) -> Vec<OutdatedInfo> {
+    ) -> OutdatedVersions {
         self.list_outdated_versions_with_progress(
             config,
             bump,
@@ -498,7 +548,37 @@ impl Toolset {
         filter_tools: Option<&[crate::args::ToolArg]>,
         exclude_tools: Option<&[crate::args::ToolArg]>,
         show_progress: bool,
-    ) -> Vec<OutdatedInfo> {
+    ) -> OutdatedVersions {
+        self.list_outdated_versions_selecting(
+            config,
+            bump,
+            opts,
+            OutdatedSelection {
+                filter_tools,
+                exclude_tools,
+                show_progress,
+                select: &|_| true,
+            },
+        )
+        .await
+    }
+
+    /// Like `list_outdated_versions_with_progress`, but only looks up the
+    /// versions `select` accepts, so a caller that will discard a request
+    /// does not pay for resolving its latest version.
+    pub async fn list_outdated_versions_selecting(
+        &self,
+        config: &Arc<Config>,
+        bump: bool,
+        opts: &ResolveOptions,
+        selection: OutdatedSelection<'_>,
+    ) -> OutdatedVersions {
+        let OutdatedSelection {
+            filter_tools,
+            exclude_tools,
+            show_progress,
+            select,
+        } = selection;
         let list_versions = if opts.inactive {
             match self.list_all_versions(config).await {
                 Ok(v) => v,
@@ -521,11 +601,12 @@ impl Toolset {
                     return false;
                 }
                 // Include only specified tools if provided
-                if let Some(tools) = filter_tools {
-                    tools.iter().any(|t| t.ba.as_ref() == tv.ba())
-                } else {
-                    true
+                if let Some(tools) = filter_tools
+                    && !tools.iter().any(|t| t.ba.as_ref() == tv.ba())
+                {
+                    return false;
                 }
+                select(tv)
             })
             .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();
@@ -586,7 +667,7 @@ impl Toolset {
                             Ok(None) => {}
                             Err(e) => {
                                 error = Some(e.to_string());
-                                warn!("Error creating OutdatedInfo for {tv}: {e:#}");
+                                warn!("Error getting latest version for {tv}: {e:#}");
                             }
                         }
                         Ok(outdated)
@@ -596,7 +677,7 @@ impl Toolset {
                 if let Some(reporter) = reporter {
                     reporter.complete(error.as_deref());
                 }
-                result
+                result.map(|outdated| (outdated, error.map(|_| tv.to_string())))
             },
         )
         .await
@@ -607,7 +688,12 @@ impl Toolset {
         if let Some(progress) = progress.as_mut() {
             progress.finish(vec![]);
         }
-        outdated.into_iter().flatten().collect()
+        let mut versions = OutdatedVersions::default();
+        for (outdated, unchecked) in outdated {
+            versions.outdated.extend(outdated);
+            versions.unchecked.extend(unchecked);
+        }
+        versions
     }
 
     pub(crate) fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfos> {
@@ -925,30 +1011,36 @@ pub fn needed_key(tv: &ToolVersion) -> (String, String) {
     }
 }
 
-/// Get all tool versions that are needed by tracked config files.
-/// This is used by both `mise prune` and `mise upgrade` to avoid
-/// uninstalling versions that other projects still need.
-pub(crate) async fn get_versions_needed_by_tracked_configs(
-    config: &Arc<Config>,
-    use_locked_version: bool,
-    offline: bool,
-) -> Result<NeededVersions> {
-    get_versions_needed_by_tracked_configs_excluding_locks(
-        config,
-        use_locked_version,
-        offline,
-        &HashSet::new(),
-    )
-    .await
-}
-
-/// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
-/// for the provided config paths.
+/// Like tracked configs, but ignores lockfile pins
+/// for the provided config paths. With `defer_missing_lazy`, lazy tools that are
+/// not installed stay unresolved: there is nothing of theirs to keep or remove.
 pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     config: &Arc<Config>,
     use_locked_version: bool,
     offline: bool,
     exclude_locked_config_paths: &HashSet<PathBuf>,
+    defer_missing_lazy: bool,
+) -> Result<NeededVersions> {
+    get_versions_needed_by_tracked_configs_with_progress(
+        config,
+        use_locked_version,
+        offline,
+        exclude_locked_config_paths,
+        defer_missing_lazy,
+        None,
+    )
+    .await
+}
+
+/// Like [`get_versions_needed_by_tracked_configs_excluding_locks`], reporting
+/// each tracked config to `progress` as it is resolved.
+async fn get_versions_needed_by_tracked_configs_with_progress(
+    config: &Arc<Config>,
+    use_locked_version: bool,
+    offline: bool,
+    exclude_locked_config_paths: &HashSet<PathBuf>,
+    defer_missing_lazy: bool,
+    progress: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<NeededVersions> {
     let mut needed = NeededVersions::new();
     // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
@@ -956,11 +1048,27 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     // it just upgraded so stale locks there do not keep the old version alive.
     // Prune also passes offline=true: it only protects installed versions, so
     // remote resolution can never affect the outcome and just adds latency.
-    for (path, cf) in config.get_tracked_config_files().await? {
+    let tracked = config.get_tracked_config_files().await?;
+    let mut workspace_graphs = crate::config::WorkspaceGraphCache::new();
+    for (done, (path, cf)) in tracked.clone().into_iter().enumerate() {
+        // Without the animated display each message is a separate log line, so
+        // a long list of configs would flood CI logs and piped output.
+        if let Some(progress) = progress.filter(|_| {
+            crate::ui::multi_progress_report::MultiProgressReport::get().use_tty_install_output()
+        }) {
+            progress.set_message(format!(
+                "{}/{} {}",
+                done + 1,
+                tracked.len(),
+                display_path(&path)
+            ));
+        }
         let use_locked_version = use_locked_version && !exclude_locked_config_paths.contains(&path);
         let opts = ResolveOptions {
             use_locked_version,
             offline,
+            defer_missing_lazy_tools: defer_missing_lazy,
+            defer_missing_lazy_online: defer_missing_lazy,
             ..Default::default()
         };
         if use_locked_version && Settings::get().lockfile_enabled() {
@@ -1020,30 +1128,53 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         // to where the project is used; a global prune cannot render them the way
         // the project does, so it reads the snapshot. With no current snapshot it
         // keeps every installation of those tools until the project is used again.
-        let mut requests =
-            if crate::install_layout::resolver::enabled() && cf.has_templated_tool_versions() {
-                let mut requests = cf.to_tool_request_set_skipping_templated()?;
-                let current = crate::install_layout::snapshots::current(&path, &cf.source());
-                for request in current.requests {
-                    requests.add_version(request, &cf.source());
+        let templated =
+            crate::install_layout::resolver::enabled() && cf.has_templated_tool_versions();
+        let requests = if templated {
+            cf.to_tool_request_set_skipping_templated()
+        } else {
+            cf.to_tool_request_set()
+        };
+        // A tool version that no longer parses is skipped like a config that no
+        // longer parses, so one broken project does not stop the whole prune.
+        let mut requests = match requests {
+            Ok(requests) => requests,
+            Err(err) => {
+                warn!(
+                    "error loading tracked config file {}: {err:#}",
+                    display_path(&path)
+                );
+                continue;
+            }
+        };
+        if templated {
+            let current = crate::install_layout::snapshots::current(&path, &cf.source());
+            for request in current.requests {
+                requests.add_version(request, &cf.source());
+            }
+            if current.keep_all {
+                for short in cf.templated_tool_backends() {
+                    keep_every_installation(&short, &path, &mut needed);
                 }
-                if current.keep_all {
-                    for short in cf.templated_tool_backends() {
-                        keep_every_installation(&short, &path, &mut needed);
-                    }
-                }
-                for short in &current.keep_tools {
-                    keep_every_installation(short, &path, &mut needed);
-                }
-                requests
-            } else {
-                cf.to_tool_request_set()?
-            };
+            }
+            for short in &current.keep_tools {
+                keep_every_installation(short, &path, &mut needed);
+            }
+        }
         let files = [(path.clone(), cf.clone())].into_iter().collect();
-        crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
+        crate::daemons::glue::load(&files)?.add_tool_requests(&mut requests)?;
+        // Tools scoped to a task are still referenced by the config.
+        let (task_requests, task_templated) =
+            crate::config::task_tool_requests(config, &tracked, &cf, &mut workspace_graphs);
+        for tvr in task_requests {
+            requests.add_version(tvr, &cf.source());
+        }
+        for short in &task_templated {
+            keep_every_installation(short, &path, &mut needed);
+        }
         let mut ts = Toolset::from(requests);
         ts.resolve_with_opts(config, &opts).await?;
-        collect_needed_versions(&ts, offline, &path, &mut needed);
+        collect_needed_versions(config, &ts, offline, &path, &mut needed).await?;
     }
     Ok(needed)
 }
@@ -1051,7 +1182,7 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
 /// Get all tool versions that are needed by tracked tool stub files.
 /// Stubs are tracked in ~/.local/state/mise/tracked-stubs when they are
 /// executed. Returns (short_name, tv_pathname) pairs like
-/// [`get_versions_needed_by_tracked_configs`] so `mise prune` and
+/// [`get_versions_needed_by_tracked_configs_excluding_locks`] so `mise prune` and
 /// `mise upgrade` do not delete versions still referenced by a stub.
 pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Result<NeededVersions> {
     let mut needed = NeededVersions::new();
@@ -1094,7 +1225,7 @@ pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Resul
             );
             continue;
         }
-        collect_needed_versions(&ts, true, &path, &mut needed);
+        collect_needed_versions(config, &ts, true, &path, &mut needed).await?;
     }
     Ok(needed)
 }
@@ -1103,7 +1234,9 @@ pub async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    Ok(prunable_tools_with_sources(config, tools).await?.to_delete)
+    Ok(prunable_tools_with_sources(config, tools, None)
+        .await?
+        .to_delete)
 }
 
 /// The outcome of deciding which installed versions are unused.
@@ -1121,15 +1254,22 @@ pub struct PrunableTools {
 /// what the tracked configs and stubs still need, and which versions running
 /// processes hold. Pruning removes what none of them named, so the versions
 /// that were kept — and what kept them — are the only evidence available for
-/// explaining a removal.
+/// explaining a removal. `progress` reports the scan of tracked configs.
 pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    progress: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<PrunableTools> {
     // Resolving the toolset of this directory inspects it from the environment
     // prune runs in; it must not replace what the project's snapshots say.
     let _suspended = crate::install_layout::snapshots::suspend();
+    if let Some(progress) = progress {
+        progress.set_message("resolving tools for this directory".into());
+    }
     let ts = ToolsetBuilder::new().build(config).await?;
+    if let Some(progress) = progress {
+        progress.set_message("listing installed versions".into());
+    }
     let mut to_delete = ts
         .list_installed_versions(config)
         .await?
@@ -1151,7 +1291,15 @@ pub async fn prunable_tools_with_sources(
     to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
 
     // Remove versions that are still needed by tracked configs
-    let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
+    let mut needed = get_versions_needed_by_tracked_configs_with_progress(
+        config,
+        true,
+        true,
+        &HashSet::new(),
+        false,
+        progress,
+    )
+    .await?;
 
     // Remove versions that are still needed by tracked tool stubs
     for (key, sources) in get_versions_needed_by_tracked_stubs(config).await? {
@@ -1164,6 +1312,9 @@ pub async fn prunable_tools_with_sources(
 
     // A process started before its version stopped being needed may still be
     // running from it. Removing the version would delete files from under it.
+    if let Some(progress) = progress {
+        progress.set_message("checking running processes".into());
+    }
     let candidates = to_delete.values().map(|(_, tv)| tv).collect::<Vec<_>>();
     let mut processes = running::processes_running_from(&candidates);
     let mut running = vec![];
@@ -1232,17 +1383,262 @@ fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> b
     })
 }
 
-fn collect_needed_versions(
+/// A `pipx:`/`pypi:` install made from a uv lock is named by a digest that includes
+/// the Python it was built with, and that Python comes from the directory the
+/// toolset is resolved in. A global tool therefore resolves to a different
+/// directory per project, so keep the installs of the same version built with
+/// any other Python as well.
+fn keep_uv_python_variants(
+    tv: &ToolVersion,
+    source: &Path,
+    needed: &mut NeededVersions,
+) -> Result<()> {
+    // A selected runtime can be temporarily unavailable after its lock pin
+    // advances. Keep existing receipt-backed environments in that case rather
+    // than skipping their runtime closure solely because resolution did not
+    // populate `uv_python` yet.
+    if tv.uv_install_identity().is_none() && !crate::backend::pipx::has_selected_python(tv)? {
+        return Ok(());
+    }
+    let prefix = format!("{}~uv~", tv.logical_pathname());
+    let Ok(backend) = tv.backend() else {
+        return Ok(());
+    };
+    for v in backend.list_installed_versions() {
+        if v.starts_with(&prefix) {
+            needed
+                .entry((tv.ba().short.to_string(), v))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
+    }
+    // Graph locks also write receipts for system and non-core interpreters.
+    // Only an explicit selector owns a mise Python runtime that must be
+    // retained through the receipt closure below.
+    let selected_python = crate::backend::pipx::has_selected_python(tv)?;
+    // A retained variant may have been built before its selector's lock entry
+    // advanced. Its receipt is authoritative for the runtime closure of that
+    // existing environment, so retain that exact Python as well. Do not merely
+    // retain the version string: identity-layout installations are pruned by
+    // their physical directory, while legacy installations use the tool/version
+    // key. A receipt that cannot be mapped safely aborts pruning rather than
+    // leaving a retained environment with a deleted interpreter.
+    let python_ba = BackendArg::from("python");
+    if selected_python {
+        let mut variant_dirs: Vec<_> = crate::install_layout::resolver::installs_of(tv.ba())
+            .into_iter()
+            .map(|(_, dir)| dir)
+            .collect();
+        // The default layout stores environments under `<tool>/<version>`, which
+        // `installs_of` intentionally does not enumerate. Include those retained
+        // variants so an older receipt can keep its exact interpreter alive too.
+        variant_dirs.extend(
+            backend
+                .list_installed_versions()
+                .into_iter()
+                .filter(|version| version.starts_with(&prefix))
+                .map(|version| tv.ba().installs_path().join(version)),
+        );
+        for dir in variant_dirs {
+            let receipt = dir.join(".mise-uv/python.json");
+            let contents = match crate::file::read_to_string(&receipt) {
+                Ok(contents) => contents,
+                // Older non-selector variants have no interpreter receipt and do
+                // not own a private runtime.
+                Err(err)
+                    if err
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|err| err.kind() == std::io::ErrorKind::NotFound) =>
+                {
+                    continue;
+                }
+                Err(err) => {
+                    return Err(err).wrap_err_with(|| {
+                        format!(
+                            "cannot safely prune: failed to read Python receipt {}",
+                            receipt.display()
+                        )
+                    });
+                }
+            };
+            let (python, version) = selected_python_receipt(&contents, &receipt)?;
+            let identity_installs = crate::install_layout::resolver::installs_of(&python_ba);
+            match receipt_python_install(
+                &python,
+                &version,
+                &identity_installs,
+                python_ba.installs_path(),
+            ) {
+                Some(ReceiptPython::Identity(python_dir)) => {
+                    let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
+                    else {
+                        bail!(
+                            "cannot safely prune: Python receipt {} points to an unkeyable identity installation {}",
+                            receipt.display(),
+                            python_dir.display()
+                        );
+                    };
+                    needed
+                        .entry((String::new(), dir_name))
+                        .or_default()
+                        .insert(source.to_path_buf());
+                    continue;
+                }
+                Some(ReceiptPython::Legacy(name)) => {
+                    needed
+                        .entry((python_ba.short.to_string(), name))
+                        .or_default()
+                        .insert(source.to_path_buf());
+                    continue;
+                }
+                None => {}
+            }
+
+            bail!(
+                "cannot safely prune: Python receipt {} points to an unknown mise Python installation {}",
+                receipt.display(),
+                python.display()
+            );
+        }
+    }
+    for (name, dir) in crate::install_layout::resolver::installs_of(tv.ba()) {
+        if name.starts_with(&prefix)
+            && let Some(dir) = crate::install_layout::resolver::dir_name_of(&dir)
+        {
+            needed
+                .entry((String::new(), dir))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
+    }
+    Ok(())
+}
+
+/// Whether a receipt's interpreter lives in `dir`. A path that only matches once the
+/// symlinks in it are followed counts only for the install the identity names: the
+/// live `python/3.14` link may since have moved on to a newer patch release.
+fn receipt_python_in_dir(python: &Path, resolved: &Path, dir: &Path) -> bool {
+    python.starts_with(dir)
+        || resolved.starts_with(dir)
+        || dir
+            .canonicalize()
+            .is_ok_and(|dir| resolved.starts_with(dir))
+}
+
+fn resolve_receipt_python(python: &Path) -> PathBuf {
+    match (
+        python.parent().and_then(|p| p.canonicalize().ok()),
+        python.file_name(),
+    ) {
+        (Some(dir), Some(name)) => dir.join(name),
+        _ => python.to_path_buf(),
+    }
+}
+
+/// The mise Python installation a receipt's interpreter belongs to.
+#[derive(Debug, PartialEq)]
+enum ReceiptPython {
+    /// An identity-layout installation directory.
+    Identity(PathBuf),
+    /// A legacy `python/<name>` installation.
+    Legacy(String),
+}
+
+/// Map a receipt's interpreter to the installation that keeps it working.
+///
+/// The receipt may reach the interpreter through a minor-version symlink
+/// (`python/3.14 -> ./3.14.9`), and the data dir may itself be a symlink, so both spellings
+/// are compared. The recorded `version` is preferred, but the link can lag the identity (it had
+/// not moved yet when the environment was built), so otherwise whatever the interpreter
+/// resolves into is retained.
+fn receipt_python_install(
+    python: &Path,
+    version: &str,
+    identity_installs: &[(String, PathBuf)],
+    legacy_root: &Path,
+) -> Option<ReceiptPython> {
+    let resolved = resolve_receipt_python(python);
+    let in_dir = |dir: &Path| receipt_python_in_dir(python, &resolved, dir);
+    let identity = identity_installs
+        .iter()
+        .find(|(name, dir)| python.starts_with(dir) || (name == version && in_dir(dir)))
+        .or_else(|| identity_installs.iter().find(|(_, dir)| in_dir(dir)));
+    if let Some((_, dir)) = identity {
+        return Some(ReceiptPython::Identity(dir.clone()));
+    }
+    if in_dir(&legacy_root.join(version)) {
+        return Some(ReceiptPython::Legacy(version.to_string()));
+    }
+    receipt_legacy_install_name(&resolved, legacy_root).map(ReceiptPython::Legacy)
+}
+
+/// The legacy installation directory (`python/<version>`) that `python` resolves into, for a
+/// receipt whose recorded version no longer names the directory its path leads to.
+fn receipt_legacy_install_name(resolved: &Path, installs: &Path) -> Option<String> {
+    let root = installs
+        .canonicalize()
+        .unwrap_or_else(|_| installs.to_path_buf());
+    let name = resolved.strip_prefix(&root).ok()?.components().next()?;
+    let name = name.as_os_str().to_str()?;
+    root.join(name).is_dir().then(|| name.to_string())
+}
+
+fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
+    let (python, identity) =
+        serde_json::from_str::<(PathBuf, String)>(contents).wrap_err_with(|| {
+            format!(
+                "cannot safely prune: invalid Python receipt {}",
+                receipt.display()
+            )
+        })?;
+    let mut parts = identity.splitn(4, ':');
+    let (Some("core"), Some("python"), Some(version), Some(_runtime_identity)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        bail!(
+            "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
+            receipt.display()
+        );
+    };
+    Ok((python, version.to_string()))
+}
+
+async fn collect_needed_versions(
+    config: &Arc<Config>,
     ts: &Toolset,
     offline: bool,
     source: &Path,
     needed: &mut NeededVersions,
-) {
+) -> Result<()> {
     for (_, tv) in ts.list_current_versions() {
         needed
             .entry(needed_key(&tv))
             .or_default()
             .insert(source.to_path_buf());
+        keep_uv_python_variants(&tv, source, needed)?;
+        for runtime in
+            crate::install_context::install_dependency_declarations(&tv.request).versioned()
+        {
+            let runtime = ToolVersion::resolve(
+                config,
+                runtime.clone(),
+                &ResolveOptions {
+                    offline: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "cannot safely prune while resolving selected runtime for {}",
+                    tv.style()
+                )
+            })?;
+            needed
+                .entry(needed_key(&runtime))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
         // Offline can't resolve `sub-N:latest` to a concrete version
         // (no remote latest available). Conservatively protect every
         // installed version of this backend so we don't delete the
@@ -1270,6 +1666,7 @@ fn collect_needed_versions(
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1307,6 +1704,130 @@ mod tests {
             &BackendArg::from("aqua:BurntSushi/ripgrep[bin=rg]")
         ));
         assert!(is_named_in(&names, &BackendArg::from("ripgrep[bin=rg]")));
+    }
+
+    #[test]
+    fn selected_python_receipt_preserves_its_runtime_after_lock_advance() {
+        let receipt = Path::new("/data/installs/pypi:demo/demo~uv~old/.mise-uv/python.json");
+        let (python, version) = selected_python_receipt(
+            r#"["/data/installs/python/3.11.9/bin/python","core:python:3.11.9:old-runtime"]"#,
+            receipt,
+        )
+        .unwrap();
+        assert_eq!(
+            python,
+            PathBuf::from("/data/installs/python/3.11.9/bin/python")
+        );
+        assert_eq!(version, "3.11.9");
+    }
+
+    #[test]
+    fn selected_python_receipt_fails_closed_when_malformed_or_not_mise_python() {
+        let receipt = Path::new("/data/installs/pypi:demo/demo/.mise-uv/python.json");
+        let invalid_json = selected_python_receipt("not json", receipt).unwrap_err();
+        assert!(invalid_json.to_string().contains("invalid Python receipt"));
+
+        let foreign_runtime = selected_python_receipt(
+            r#"["/usr/bin/python3","system:python:3.12:system"]"#,
+            receipt,
+        )
+        .unwrap_err();
+        assert!(
+            foreign_runtime
+                .to_string()
+                .contains("does not name a mise core Python runtime")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_python_install_keeps_what_a_lagging_link_resolves_into() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("python");
+        std::fs::create_dir_all(root.join("3.14.8/bin")).unwrap();
+        std::fs::create_dir_all(root.join("hash-3149/bin")).unwrap();
+        std::os::unix::fs::symlink("./3.14.8", root.join("3.14")).unwrap();
+        let python = root.join("3.14/bin/python");
+
+        // Legacy layout: the receipt records 3.14.7, but the link leads into 3.14.8.
+        assert_eq!(
+            receipt_python_install(&python, "3.14.7", &[], &root),
+            Some(ReceiptPython::Legacy("3.14.8".into()))
+        );
+        // Identity layout: the installation the link resolves into is kept, not an
+        // unrelated one.
+        std::fs::remove_file(root.join("3.14")).unwrap();
+        std::os::unix::fs::symlink("./hash-3149", root.join("3.14")).unwrap();
+        let installs = vec![
+            ("3.14.8".to_string(), root.join("3.14.8")),
+            ("3.14.9".to_string(), root.join("hash-3149")),
+        ];
+        assert_eq!(
+            receipt_python_install(&python, "3.14.7", &installs, &root),
+            Some(ReceiptPython::Identity(root.join("hash-3149")))
+        );
+        // An interpreter outside every mise installation still fails closed.
+        let elsewhere = tmp.path().join("other/bin/python");
+        assert_eq!(
+            receipt_python_install(&elsewhere, "3.14.7", &installs, &root),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_legacy_install_name_follows_the_link_to_the_current_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("python");
+        std::fs::create_dir_all(installs.join("3.14.8/bin")).unwrap();
+        std::os::unix::fs::symlink("./3.14.8", installs.join("3.14")).unwrap();
+        let resolved = resolve_receipt_python(&installs.join("3.14/bin/python"));
+        assert_eq!(
+            receipt_legacy_install_name(&resolved, &installs).as_deref(),
+            Some("3.14.8")
+        );
+        let elsewhere = tmp.path().join("other/bin/python");
+        assert_eq!(receipt_legacy_install_name(&elsewhere, &installs), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_receipt_python_follows_the_minor_version_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let concrete = tmp.path().join("python/3.14.9");
+        std::fs::create_dir_all(concrete.join("bin")).unwrap();
+        std::os::unix::fs::symlink("./3.14.9", tmp.path().join("python/3.14")).unwrap();
+        let resolved = resolve_receipt_python(&tmp.path().join("python/3.14/bin/python"));
+        assert_eq!(
+            resolved,
+            concrete.canonicalize().unwrap().join("bin/python")
+        );
+        // A symlinked data dir still matches the install dir spelled through it.
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(tmp.path(), &link).unwrap();
+        let python = link.join("python/3.14/bin/python");
+        let resolved = resolve_receipt_python(&python);
+        assert!(receipt_python_in_dir(
+            &python,
+            &resolved,
+            &link.join("python/3.14.9")
+        ));
+        assert!(!receipt_python_in_dir(
+            &python,
+            &resolved,
+            &link.join("python/3.13.1")
+        ));
+        // Once `python/3.14` has moved on to a newer patch, a receipt that names 3.14.9
+        // through it must not match the install the link now points at.
+        std::fs::create_dir_all(tmp.path().join("python/3.14.10/bin")).unwrap();
+        std::fs::remove_file(tmp.path().join("python/3.14")).unwrap();
+        std::os::unix::fs::symlink("./3.14.10", tmp.path().join("python/3.14")).unwrap();
+        let python = tmp.path().join("python/3.14/bin/python");
+        let resolved = resolve_receipt_python(&python);
+        assert!(!receipt_python_in_dir(&python, &resolved, &concrete));
+        // A path that does not exist is left alone rather than failing.
+        let missing = tmp.path().join("nope/bin/python");
+        assert_eq!(resolve_receipt_python(&missing), missing);
     }
 
     #[tokio::test]

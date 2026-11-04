@@ -38,6 +38,9 @@ rustup)
 			echo "error: the toolchain is damaged" >&2
 			exit 1
 		fi
+		if [[ $2 == list && $1 == component ]]; then
+			printf '%s\n' cargo-aarch64-unknown-linux-musl rust-std-aarch64-unknown-linux-musl rustc-aarch64-unknown-linux-musl
+		fi
 		;;
 	"check ")
 		if [[ -e $STATE/update_available ]]; then

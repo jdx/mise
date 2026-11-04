@@ -92,7 +92,7 @@ mise run 'group:*'
 assert "mise cache task 'group:*' --json | jq 'length'" "2"
 mise cache clear --task 'group:*'
 assert "mise cache task 'group:*' --json | jq '[.[].entries | length] | add'" "0"
-assert_contains "mise cache task 'group:*'" "No output cache entries for group:one, group:two"
+assert_contains "mise cache task 'group:*'" "No artifact cache entries for group:one, group:two"
 
 # A stale state pointer can reference another task's artifact key. Clearing the
 # stale task must not remove the owning task's manifest/archive.

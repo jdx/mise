@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_LOCKFILE_MODE=generate
+
+detect_platform
+
+# A lockfile written on another platform gains an entry for the platform that
+# installs, without widening to the platforms it never listed.
+if [[ $MISE_PLATFORM == windows-x64 ]]; then
+  other=linux-x64
+else
+  other=windows-x64
+fi
+
+cat <<EOF2 >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF2
+
+mise lock --platform "$other"
+assert_not_contains "cat mise.lock" "platforms.$MISE_PLATFORM"
+
+mise install
+assert_contains "cat mise.lock" "platforms.$other"
+assert_contains "cat mise.lock" "platforms.$MISE_PLATFORM"

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Named ports allocated per worktree with `ports.<name> = { auto = true }`.
+# Preset rendering only: no service is installed or started here.
+
+export MISE_OFFLINE=1
+cat >~/bin/pitchfork <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  usage) echo 'cmd config help="External files" {' ;;
+  status) exit 1 ;;
+  supervisor) echo '{"status":"down"}' ;;
+  project) echo '[]' ;;
+esac
+SH
+chmod u+x ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+
+# A named port can be allocated per worktree with a base of its own, so it
+# neither collides with another worktree nor lands on the preset default.
+mkdir -p "$HOME/named-primary/.git"
+cd "$HOME/named-primary"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.cockroach]
+preset = "cockroachdb"
+version = "26"
+port = { auto = true, base = 26258 }
+ports.http_port = { auto = true, base = 27000 }
+[daemons.nats]
+preset = "nats"
+version = "2"
+port = { auto = true, base = 4223 }
+ports.monitor_port = { auto = true, base = 28000, stride = 2 }
+TOML
+assert_contains "mise env -s bash" "COCKROACH_HTTP_PORT=27000"
+assert_contains "mise env -s bash" "NATS_MONITOR_PORT=28000"
+
+mkdir -p "$HOME/named-primary/.git/worktrees/wt"
+printf 'ref: refs/heads/main\n' >"$HOME/named-primary/.git/HEAD"
+printf '../..\n' >"$HOME/named-primary/.git/worktrees/wt/commondir"
+mkdir -p "$HOME/named-wt"
+printf 'gitdir: %s\n' "$HOME/named-primary/.git/worktrees/wt" >"$HOME/named-wt/.git"
+cp mise.toml "$HOME/named-wt/mise.toml"
+cd "$HOME/named-wt"
+wt_env=$(mise env -s bash)
+env_value() { printf '%s\n' "$wt_env" | sed -n "s/^export $1=//p" | tr -d "'\""; }
+wt_primary=$(env_value COCKROACH_HOST | sed 's/.*://')
+wt_http=$(env_value COCKROACH_HTTP_PORT)
+wt_monitor=$(env_value NATS_MONITOR_PORT)
+slot=$((wt_primary - 26258))
+# The named ports use the primary port's slot with their own base and stride,
+# and the daemon definition carries the same numbers as the exports.
+assert "test '$slot' -gt 0"
+assert "test '$wt_http' = '$((27000 + slot))'"
+assert "test '$wt_monitor' = '$((28000 + 2 * slot))'"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"cockroach\") | .port'" "$wt_primary"
+
+# A table without `auto = true`, or an unknown key, is refused with its path.
+# schema: invalid
+cat >mise.toml <<'TOML'
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+ports.http_port = { base = 27000 }
+TOML
+assert_fail_contains "mise daemons ls 2>&1" 'ports.http_port.auto must be true'
+
+# Two daemons cannot be handed one port by their named bases.
+cat >mise.toml <<'TOML'
+[daemons.a]
+preset = "cockroachdb"
+version = "26"
+port = 26300
+ports.http_port = { auto = true, base = 27000 }
+[daemons.b]
+preset = "cockroachdb"
+version = "26"
+port = 26301
+ports.http_port = { auto = true, base = 27000 }
+TOML
+assert_fail_contains "mise daemons ls 2>&1" 'both use port'

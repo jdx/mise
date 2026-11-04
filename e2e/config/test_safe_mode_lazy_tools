@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# A lazy tool claims command names: mise writes shims for them, puts the shims
+# directory on PATH, and installs and runs the tool when one of those commands
+# runs. In safe mode project config must not be able to do that (it could
+# claim `git`), so only global and system config may declare lazy tools there.
+
+mkdir -p safe-lazy/bin
+printf '#!/bin/sh\necho LAZY_RAN\n' >safe-lazy/bin/safe-lazy-cmd
+chmod +x safe-lazy/bin/safe-lazy-cmd
+tar -czf safe-lazy.tar.gz safe-lazy
+rm -rf safe-lazy
+shims="$MISE_DATA_DIR/shims"
+url="file://$PWD/safe-lazy.tar.gz"
+
+cat <<EOF >mise.toml
+[tools]
+"http:safe-lazy" = { version = "1.0.0", url = "$url", lazy = true, lazy_bins = ["safe-lazy-cmd"] }
+EOF
+assert_not_contains "MISE_SAFE=1 mise env" "$shims"
+MISE_SAFE=1 mise reshim
+assert_fail "test -e '$shims/safe-lazy-cmd'"
+assert_fail "MISE_SAFE=1 mise x -- safe-lazy-cmd"
+assert_fail "test -e '$MISE_DATA_DIR/installs/http-safe-lazy'"
+
+# A shim that an earlier run without safe mode left behind does not install
+# the project's tool either.
+assert_contains "mise env" "$shims"
+assert_succeed "test -e '$shims/safe-lazy-cmd'"
+assert_fail "MISE_SAFE=1 '$shims/safe-lazy-cmd'"
+assert_fail "test -e '$MISE_DATA_DIR/installs/http-safe-lazy'"
+
+# A project tool alias cannot make a global entry lazy.
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+tiny = "1.0.0"
+EOF
+cat <<'EOF' >mise.toml
+[tool_alias]
+tiny = "tiny[lazy=true]"
+EOF
+assert_contains "mise env" "$shims"
+assert_not_contains "MISE_SAFE=1 mise env" "$shims"
+
+# Global config is the operator's, so its lazy tools still install on first
+# use in safe mode.
+rm mise.toml
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+"http:safe-lazy" = { version = "1.0.0", url = "$url", lazy = true, lazy_bins = ["safe-lazy-cmd"] }
+EOF
+assert_contains "MISE_SAFE=1 mise env" "$shims"
+assert "MISE_SAFE=1 '$shims/safe-lazy-cmd'" "LAZY_RAN"

@@ -19,6 +19,8 @@ Show the command for a shell alias
 
 ## Examples
 
+Print the command that ll runs
+
 ```
 mise shell-alias get ll
 ls -la

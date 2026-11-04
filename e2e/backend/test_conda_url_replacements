@@ -75,6 +75,7 @@ MIRROR="http://127.0.0.1:$HTTP_PORT/mirror"
 cat >mise.toml <<EOF
 [settings]
 lockfile = true
+download_cache = true
 
 [settings.url_replacements]
 "$UPSTREAM" = "$MIRROR"
@@ -95,6 +96,14 @@ assert_fail "grep -q '127.0.0.1' mise.lock"
 mise uninstall -a conda:url-replacement-fixture
 rm -rf "$MISE_DATA_DIR/conda-packages"
 : >"$REQUEST_LOG"
-mise install
+assert_succeed "MISE_DOWNLOAD_CACHE=0 MISE_LOCKED=1 mise install"
 assert "mise exec -- url-replacement-fixture" "conda-url-replacement-ok"
 assert_succeed "grep -q '/mirror/noarch/url-replacement-fixture-1.0.0-0.tar.bz2' '$REQUEST_LOG'"
+
+# With networking unavailable, locked installs can restore a pinned archive from the
+# download CAS even after the Conda archive store is cleared.
+mise uninstall -a conda:url-replacement-fixture
+rm -rf "$MISE_DATA_DIR/conda-packages"
+sed -i "s|$MIRROR|http://127.0.0.1:1/mirror|" mise.toml
+assert_succeed "MISE_LOCKED=1 mise install"
+assert "mise exec -- url-replacement-fixture" "conda-url-replacement-ok"

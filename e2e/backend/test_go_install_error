@@ -29,8 +29,8 @@ if mise install 'go:example.com/other@1.2.3' >"$HOME/unprefixed-error" 2>&1; the
   exit 1
 fi
 assert "awk 'END {print NR}' '$HOME/go-invocations'" "3"
-assert "sed -n '2p' '$HOME/go-invocations'" 'install -mod=readonly example.com/other@v1.2.3'
-assert "sed -n '3p' '$HOME/go-invocations'" 'install -mod=readonly example.com/other@1.2.3'
+assert "sed -n '2p' '$HOME/go-invocations'" 'install -mod=mod example.com/other@v1.2.3'
+assert "sed -n '3p' '$HOME/go-invocations'" 'install -mod=mod example.com/other@1.2.3'
 assert_contains "cat '$HOME/unprefixed-error'" 'go install failed for example.com/other@v1.2.3'
 assert_contains "cat '$HOME/unprefixed-error'" "Retry without the 'v' prefix also failed"
 assert_contains "cat '$HOME/unprefixed-error'" 'go install failed for example.com/other@1.2.3'

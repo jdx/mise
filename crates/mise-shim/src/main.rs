@@ -18,6 +18,27 @@ const MISE_SHIM_TARGET_ENV: &str = "__MISE_SHIM_TARGET";
 const LAUNCHER_NAME: &str = "mise-shim";
 #[used]
 static NATIVE_SHIM_MARKER: [u8; 30] = *include_bytes!("../../../src/assets/native-shim-marker");
+/// `mise-shim-version:<mise release>\n`, set by `build.rs` from the workspace root `Cargo.toml`.
+/// mise scans the `mise-shim.exe` it copies shims from for this tag to tell when that template is
+/// older than mise itself (`shims::stale_native_shim_template`). The newline closes the tag, so the
+/// scan cannot run into whatever the linker places next.
+const MISE_SHIM_VERSION_TAG: &str = concat!(env!("MISE_SHIM_VERSION_TAG"), "\n");
+#[used]
+static MISE_SHIM_VERSION_TAG_BYTES: [u8; MISE_SHIM_VERSION_TAG.len()] =
+    bytes_of(MISE_SHIM_VERSION_TAG);
+
+/// Copy a string's bytes into an array, so the tag is one contiguous `#[used]` object rather than a
+/// pointer to data the linker may place anywhere.
+const fn bytes_of<const N: usize>(s: &str) -> [u8; N] {
+    let bytes = s.as_bytes();
+    let mut out = [0u8; N];
+    let mut i = 0;
+    while i < N {
+        out[i] = bytes[i];
+        i += 1;
+    }
+    out
+}
 
 fn paths_eq(a: &Path, b: &Path) -> bool {
     let lexical_eq = |a: &Path, b: &Path| {
@@ -38,6 +59,7 @@ fn paths_eq(a: &Path, b: &Path) -> bool {
 }
 
 fn main() -> ExitCode {
+    keep_embedded_tags();
     match run() {
         Ok(code) => ExitCode::from(code as u8),
         Err(err) => {
@@ -45,6 +67,14 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `#[used]` only keeps a static through compilation: the MSVC linker still drops one nothing
+/// references (`/OPT:REF`), which is what happened to the version tag in the LTO release build.
+/// Taking the address through `black_box` gives both statics a reference the optimizer cannot remove.
+fn keep_embedded_tags() {
+    std::hint::black_box(&NATIVE_SHIM_MARKER);
+    std::hint::black_box(&MISE_SHIM_VERSION_TAG_BYTES);
 }
 
 fn run() -> Result<i32, String> {

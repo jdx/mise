@@ -17,5 +17,7 @@ strip_components = 0
 # with the current version, so extract it from there (same idea as claude's
 # `latest` file and grok's `stable` file).
 url = 'https://downloads.cursor.com/lab/{{ version }}/{{ os(macos="darwin") }}/{{ arch(x64="x64", arm64="arm64") }}/agent-cli-package.tar.gz'
+# Versions start with their build date, 2026.10.16-e3cb207.
+version_date_expr = 'map(versions, { [#, replace(#[:10], ".", "-")] })'
 version_list_url = "https://cursor.com/install"
 version_regex = 'downloads\.cursor\.com/lab/([0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]+)/'

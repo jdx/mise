@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# Global file tasks load without a global config file. Run from outside $HOME
+# so the walk up from the working directory cannot find them as local tasks.
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/global-file"
+#!/usr/bin/env bash
+echo global-file
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/global-file"
+
+outside="$TMPDIR/outside-home"
+mkdir -p "$outside"
+cd "$outside" || exit 1
+
+assert "mise tasks ls --global --name-only" "global-file"
+assert "mise run global-file" "global-file"
+
+# A MISE_CONFIG_DIR other than ~/.config/mise holds its own global tasks.
+custom_config_dir="$TMPDIR/custom-config"
+mkdir -p "$custom_config_dir/tasks"
+cat <<'EOF' >"$custom_config_dir/tasks/custom-file"
+#!/usr/bin/env bash
+echo custom-file
+EOF
+chmod +x "$custom_config_dir/tasks/custom-file"
+
+assert "MISE_CONFIG_DIR='$custom_config_dir' mise run custom-file" "custom-file"
+
+# The same holds once that directory has a config file.
+cat <<'TOML' >"$custom_config_dir/config.toml"
+tasks.inline = "echo inline"
+TOML
+assert_contains "MISE_CONFIG_DIR='$custom_config_dir' mise tasks ls --global --name-only" "custom-file"
+assert_contains "MISE_CONFIG_DIR='$custom_config_dir' mise tasks ls --global --name-only" "inline"
+
+# The config directory's path is literal even when it looks like a glob.
+bracket_config_dir="$TMPDIR/config[1]"
+mkdir -p "$bracket_config_dir/tasks" "$TMPDIR/config1/tasks"
+cat <<'EOF' >"$bracket_config_dir/tasks/bracket-file"
+#!/usr/bin/env bash
+echo bracket-file
+EOF
+cat <<'EOF' >"$TMPDIR/config1/tasks/glob-match"
+#!/usr/bin/env bash
+echo glob-match
+EOF
+chmod +x "$bracket_config_dir/tasks/bracket-file" "$TMPDIR/config1/tasks/glob-match"
+assert "MISE_CONFIG_DIR='$bracket_config_dir' mise tasks ls --global --name-only" "bracket-file"
+
+# Without a global config, only $MISE_CONFIG_DIR/tasks is global. The other
+# task directories in $HOME stay local, so a ~/mise.toml task_config still
+# applies to them.
+mkdir -p "$HOME/.mise/tasks" "$HOME/proj" "$TMPDIR/task-dir"
+cat <<'EOF' >"$HOME/.mise/tasks/home-file"
+#!/usr/bin/env bash
+pwd
+EOF
+chmod +x "$HOME/.mise/tasks/home-file"
+cat <<EOF >"$HOME/mise.toml"
+[task_config]
+dir = "$TMPDIR/task-dir"
+EOF
+cd "$HOME/proj" || exit 1
+assert "mise run home-file" "$TMPDIR/task-dir"
+assert_not_contains "mise tasks ls --global --name-only" "home-file"
+
+cat <<'EOF' >"$HOME/mise.toml"
+[task_config]
+includes = ["scripts"]
+EOF
+assert_not_contains "mise tasks ls --name-only" "home-file"
+assert_contains "mise tasks ls --name-only" "global-file"

@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+# Writing a config trusts its whole config root. That must not trust anything
+# nobody decided about: config loaded in safe mode, or files in that root the
+# writing command never read.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+assert_still_untrusted() {
+  assert_contains "mise trust --show" "untrusted"
+  assert_not_contains "mise hook-env -s bash 2>&1 || true" "WRITE_TRUST_PAYLOAD"
+}
+
+reset_project() {
+  mise trust --untrust "$PWD" >/dev/null 2>&1 || true
+  rm -rf mise.toml mise.local.toml mise.staging.toml .config
+}
+
+echo "=== safe mode: an edit records no trust ==="
+reset_project
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+
+[env]
+WRITE_TRUST_PAYLOAD = "{{ exec(command='echo ran') }}"
+EOF
+assert "MISE_SAFE=1 mise set FOO=bar"
+assert_contains "cat mise.toml" 'FOO = "bar"'
+assert_still_untrusted
+assert "MISE_SAFE=1 mise unuse dummy"
+assert_still_untrusted
+assert "MISE_SAFE=1 mise tasks add hi -- echo hi"
+assert_contains "cat mise.toml" "[tasks.hi]"
+assert_still_untrusted
+assert "MISE_SAFE=1 MISE_PARANOID=1 mise set BAR=baz"
+assert_still_untrusted
+
+echo "=== an untrusted sibling is not trusted by a write ==="
+for cmd in "mise set FOO=bar" "mise unset FOO" "mise tasks add lint -- echo lint"; do
+  reset_project
+  cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+  mkdir -p .config/mise/conf.d
+  cat <<'EOF' >.config/mise/conf.d/ci.toml
+[env]
+WRITE_TRUST_PAYLOAD = "{{ exec(command='echo ran') }}"
+EOF
+  assert_fail_contains "$cmd 2>&1" "not trusted"
+  assert_still_untrusted
+done
+
+echo "=== a profile of another environment counts too ==="
+reset_project
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+cat <<'EOF' >mise.staging.toml
+[env]
+WRITE_TRUST_PAYLOAD = "{{ exec(command='echo ran') }}"
+EOF
+assert_fail_contains "mise set FOO=bar 2>&1" "not trusted"
+assert_not_contains "MISE_ENV=staging mise hook-env -s bash 2>&1 || true" "WRITE_TRUST_PAYLOAD"
+
+echo "=== tasks add checks the file it edits ==="
+reset_project
+cat <<'EOF' >mise.toml
+[env]
+WRITE_TRUST_PAYLOAD = "{{ exec(command='echo ran') }}"
+EOF
+assert_fail_contains "mise tasks add lint -- echo lint 2>&1" "not trusted"
+assert_not_contains "cat mise.toml" "lint"
+assert_still_untrusted
+
+echo "=== a decision about the root still lets the write trust it ==="
+reset_project
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+cat <<'EOF' >mise.local.toml
+[env]
+WRITE_TRUST_PAYLOAD = "trusted"
+EOF
+assert "MISE_YES=1 mise set FOO=bar"
+assert_not_contains "mise trust --show" "untrusted"
+assert_contains "mise env" "WRITE_TRUST_PAYLOAD=trusted"
+
+reset_project
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+assert "mise set FOO=bar"
+assert_contains "mise env" "FOO=bar"

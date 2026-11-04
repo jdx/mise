@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# A relative --source starts from the current directory, like any path on the
+# command line, and the entry is written relative to the config file's
+# directory, which is what the loader resolves it against.
+project="$PWD"
+echo "[dotfiles]" >mise.toml
+
+echo root >~/.rel-root
+mise dotfiles add --local --yes --source dotfiles/rel-root ~/.rel-root
+assert "cat $project/dotfiles/rel-root" "root"
+assert "readlink ~/.rel-root" "$project/dotfiles/rel-root"
+assert_contains "cat mise.toml" '"~/.rel-root" = { source = "dotfiles/rel-root" }'
+assert_not_contains "mise dotfiles status ~/.rel-root" "differs"
+
+# from a subdirectory, the source lands under it and the entry says so
+mkdir sub
+echo sub >~/.rel-sub
+(cd sub && mise dotfiles add --local --yes --source rel-sub ~/.rel-sub)
+assert "cat $project/sub/rel-sub" "sub"
+assert "readlink ~/.rel-sub" "$project/sub/rel-sub"
+assert_contains "cat mise.toml" '"~/.rel-sub" = { source = "sub/rel-sub" }'
+assert_not_contains "mise dotfiles status ~/.rel-sub" "missing"
+assert_succeed "mise dotfiles apply --yes"
+
+# a relative source outside the config directory is written absolute
+mkdir -p "$HOME/outside"
+echo out >~/.rel-out
+(cd "$HOME/outside" && mise dotfiles add --path "$project/mise.toml" --yes --source ../out-src ~/.rel-out)
+assert "readlink ~/.rel-out" "$HOME/out-src"
+assert_contains "cat mise.toml" '"~/.rel-out" = { source = "~/out-src" }'
+
+# relative_symlinks makes a link that resolves to the same source
+echo relative >~/.rel-link
+MISE_DOTFILES_RELATIVE_SYMLINKS=1 mise dotfiles add --local --yes --source dotfiles/rel-link ~/.rel-link
+assert "cat ~/.rel-link" "relative"
+assert "realpath ~/.rel-link" "$(realpath "$project/dotfiles/rel-link")"
+
+# `..` after a symlinked directory follows the link's real parent
+mkdir -p real/dots
+ln -s real/dots alias
+echo link >~/.rel-dots
+mise dotfiles add --path "$project/mise.toml" --yes --source alias/../dotsrc ~/.rel-dots
+assert "cat $project/real/dotsrc" "link"
+
+# a backslash in a source name is kept as part of the name
+echo bs >~/.rel-bs
+mise dotfiles add --local --yes --source 'dotfiles/a\b' ~/.rel-bs
+assert_contains "cat mise.toml" "source = 'dotfiles/a\\b'"
+assert "cat '$project/dotfiles/a\\b'" "bs"
+
+# a `..` after something that is not a directory is an error, not a shortcut
+echo nodir >~/.rel-nodir
+assert_fail "mise dotfiles add --local --yes --source missing-dir/../nodirsrc ~/.rel-nodir"
+assert_fail "mise dotfiles add --local --yes --source mise.toml/../nodirsrc ~/.rel-nodir"
+assert "cat ~/.rel-nodir" "nodir"

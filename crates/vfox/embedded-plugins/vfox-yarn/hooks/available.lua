@@ -111,16 +111,54 @@ local function semver_compare(a, b)
     return false
 end
 
+-- Hosts Yarn 6+ publishes binaries for (keep in sync with ZPM_TARGETS in
+-- pre_install.lua). Listing 6+ elsewhere would make `latest` uninstallable.
+local ZPM_HOSTS = {
+    ["darwin/arm64"] = true,
+    ["linux/arm64"] = true,
+    ["linux/x86"] = true,
+    ["linux/amd64"] = true,
+}
+
+-- Publish times of an npm package's versions, keyed by version. One request
+-- per package; returns an empty table when the registry cannot be read.
+local function fetch_npm_times(package)
+    local resp, err = http.try_get({ url = "https://registry.npmjs.org/" .. package })
+    if err ~= nil or resp.status_code ~= 200 then
+        return {}
+    end
+    local ok, doc = pcall(json.decode, resp.body)
+    if not ok or type(doc) ~= "table" or type(doc.time) ~= "table" then
+        return {}
+    end
+    return doc.time
+end
+
+local function npm_time(times, version)
+    local t = times[version]
+    if type(t) == "string" and t:match("^%d%d%d%d%-%d%d%-%d%dT") then
+        return t
+    end
+    return nil
+end
+
 function PLUGIN:Available(ctx)
     local versions = {}
 
     -- Get Yarn ZPM versions (v6+). Only versions published to npm are
     -- installable (some git tags never were), so list the npm package. Every
     -- platform package carries the same versions, so any one will do.
-    local resp, err = http.try_get({ url = "https://registry.npmjs.org/@yarnpkg/yarn-x86_64-unknown-linux-musl" })
-    if err == nil and resp.status_code == 200 then
+    -- Skip them on hosts without a published binary.
+    local zpm_supported = ZPM_HOSTS[RUNTIME.osType .. "/" .. RUNTIME.archType]
+    local resp, err
+    if zpm_supported then
+        resp, err = http.try_get({ url = "https://registry.npmjs.org/@yarnpkg/yarn-x86_64-unknown-linux-musl" })
+    end
+    if zpm_supported and err == nil and resp.status_code == 200 then
         local zpm_versions = {}
-        for version in pairs(json.decode(resp.body).versions or {}) do
+        local zpm_doc = json.decode(resp.body)
+        local zpm_times = type(zpm_doc.time) == "table" and zpm_doc.time or {}
+        for version in pairs(zpm_doc.versions or {}) do
             local major = tonumber(version:match("^(%d+)%.%d+%.%d+"))
             if major and major >= 6 then
                 table.insert(zpm_versions, version)
@@ -128,7 +166,7 @@ function PLUGIN:Available(ctx)
         end
         table.sort(zpm_versions, semver_compare)
         for _, version in ipairs(zpm_versions) do
-            table.insert(versions, { version = version })
+            table.insert(versions, { version = version, created_at = npm_time(zpm_times, version) })
         end
     end
 
@@ -147,10 +185,13 @@ function PLUGIN:Available(ctx)
     -- Sort Berry versions in descending order
     table.sort(berry_versions, version_compare)
 
-    -- Add Berry versions to the list
+    -- Add Berry versions to the list. The CLI is published to npm as
+    -- @yarnpkg/cli-dist; tags it never published stay undated.
+    local berry_times = #berry_versions > 0 and fetch_npm_times("@yarnpkg%2Fcli-dist") or {}
     for _, version in ipairs(berry_versions) do
         table.insert(versions, {
             version = version,
+            created_at = npm_time(berry_times, version),
         })
     end
 
@@ -171,9 +212,11 @@ function PLUGIN:Available(ctx)
     table.sort(classic_versions, version_compare)
 
     -- Add Classic versions to the list
+    local classic_times = #classic_versions > 0 and fetch_npm_times("yarn") or {}
     for _, version in ipairs(classic_versions) do
         table.insert(versions, {
             version = version,
+            created_at = npm_time(classic_times, version),
         })
     end
 

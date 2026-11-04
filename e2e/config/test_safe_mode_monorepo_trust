@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# The marker of a monorepo root trusts every config below it in later runs. Safe
+# mode and CI load a root nobody trusted, so they must not leave a marker behind,
+# and a marker must only count while the root itself is trusted.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+EOF
+
+mkdir -p sub
+cat <<'EOF' >sub/mise.toml
+[env]
+MONOREPO_CHILD = "loaded"
+EOF
+
+# hook-env skips untrusted configs one by one, so it shows whether the
+# descendant loads while the root stays untrusted.
+assert_not_contains "mise -C sub hook-env -s bash 2>&1" "MONOREPO_CHILD"
+
+assert "MISE_SAFE=1 mise ls"
+assert_not_contains "mise -C sub hook-env -s bash 2>&1" "MONOREPO_CHILD"
+
+assert "CI=true mise ls"
+assert_not_contains "mise -C sub hook-env -s bash 2>&1" "MONOREPO_CHILD"
+
+assert_empty "ls '$MISE_STATE_DIR/trusted-configs' 2>/dev/null || true"
+
+# The marker extends the root's trust, so it stops counting when that ends.
+assert_contains "MISE_TRUSTED_CONFIG_PATHS='$PWD' mise -C sub hook-env -s bash" "MONOREPO_CHILD=loaded"
+assert_not_contains "mise -C sub hook-env -s bash 2>&1" "MONOREPO_CHILD"
+
+# Trusting the root on record still trusts the descendant through the marker,
+# and a later safe-mode run of the trusted root keeps it.
+assert "mise trust"
+assert_contains "mise -C sub hook-env -s bash" "MONOREPO_CHILD=loaded"
+assert "MISE_SAFE=1 mise ls"
+assert_contains "mise -C sub hook-env -s bash" "MONOREPO_CHILD=loaded"
+
+# Ignoring the root ends its trust, and with it the descendant's.
+assert "mise trust --ignore"
+assert_not_contains "mise -C sub hook-env -s bash 2>&1" "MONOREPO_CHILD"
+
+assert "mise trust --untrust '$PWD'"
+assert_not_contains "mise -C sub hook-env -s bash 2>&1" "MONOREPO_CHILD"

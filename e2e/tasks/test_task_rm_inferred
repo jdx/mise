@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# A task inferred from a package.json script has no definition these commands edit, so they
+# refuse instead of deleting the manifest.
+
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[settings]
+task.auto_infer = ["node"]
+TOML
+cat <<'JSON' >package.json
+{
+  "packageManager": "npm@11.0.0",
+  "workspaces": ["packages/*"]
+}
+JSON
+mkdir -p packages/app
+cat <<'JSON' >packages/app/package.json
+{
+  "name": "@scope/app",
+  "scripts": {
+    "build": "echo built"
+  }
+}
+JSON
+
+assert_contains "mise tasks --all" "node:@scope/app#build"
+assert_fail_contains "mise tasks rm 'node:@scope/app#build'" "which mise tasks rm does not edit"
+assert_fail_contains "mise tasks rm --path packages/app/package.json 'node:@scope/app#build'" "is neither a TOML config file nor the script of task"
+assert_fail_contains "mise tasks set 'node:@scope/app#build' --hide" "which mise tasks set does not edit"
+assert_contains "cat packages/app/package.json" '"build": "echo built"'

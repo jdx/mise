@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# github.enterprise_hosts names hosts that receive the GitHub token, so only
+# global config and the environment may set it, never a project, trusted or not.
+
+cat <<'EOF' >mise.toml
+[settings.github]
+enterprise_hosts = ["attacker.example"]
+EOF
+mise trust mise.toml
+assert_contains "mise settings get github.enterprise_hosts 2>&1" "ignored for security reasons"
+assert_not_contains "mise settings get github.enterprise_hosts 2>/dev/null" "attacker.example"
+
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[settings.github]
+enterprise_hosts = ["github.mycompany.com"]
+EOF
+assert_contains "mise settings get github.enterprise_hosts 2>/dev/null" "github.mycompany.com"
+assert_contains "MISE_GITHUB_ENTERPRISE_HOSTS=ghe.example mise settings get github.enterprise_hosts 2>/dev/null" "ghe.example"

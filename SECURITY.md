@@ -26,65 +26,45 @@ mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI 
 which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
 vendor to reduce surface area.
 
-## Native Security Verification
+## Download verification
 
-mise provides **native Rust implementation** for security verification of tools, eliminating the need for external dependencies like `cosign`, `slsa-verifier`, `minisign`, or `gh` CLI tools. This applies to tools using the aqua backend.
+mise verifies downloads itself, without external `cosign`, `slsa-verifier`,
+`minisign`, `gpg` or `gh` executables. What it checks depends on the backend and
+on what the upstream project publishes: checksums, Cosign and Minisign
+signatures, SLSA provenance, GitHub artifact attestations, and signed packslip
+release manifests. These checks are on by default, and a failed check aborts
+the install. Run `mise tool <name>` to see which checks apply to a tool, and see
+[Download verification](https://mise.jdx.dev/security.html#download-verification)
+for the full table and the settings that control each check.
 
-### Supported Verification Methods
-
-- **Cosign signatures**: Keyless and key-based signature verification
-- **SLSA provenance**: Verification of Supply-chain Levels for Software Artifacts (SLSA) attestations
-- **GitHub Artifact Attestations**: Verification of GitHub's artifact attestation system
-- **Minisign verification**: Verification of minisign signatures
-- **Checksum verification**: Always enabled for supported backends
-
-### Configuration
-
-All verification methods are enabled by default and can be configured via environment variables:
-
-```bash
-# Enable/disable specific verification methods
-export MISE_AQUA_COSIGN=true                 # Default: true
-export MISE_AQUA_SLSA=true                   # Default: true
-export MISE_AQUA_GITHUB_ATTESTATIONS=true    # Default: true
-export MISE_AQUA_MINISIGN=true               # Default: true
-```
-
-### How it Works
-
-You will see this verification happen automatically when aqua tools are installed. The verification status is displayed during installation with progress indicators. If any verification fails, the installation will be aborted.
-
-See the [aqua docs](https://aquaproj.github.io/docs/reference/security/cosign-slsa) for more on how verification is configured in the [aqua registry](https://github.com/aquaproj/aqua-registry).
-
-If you notice a tool offers security verification methods (gpg/slsa/cosign/minisign/etc), consider making a PR to the aqua registry to enable verification for that tool.
+If a tool publishes signatures or provenance that mise does not check yet,
+consider a PR that declares them, for example in the
+[aqua registry](https://github.com/aquaproj/aqua-registry).
 
 ## `mise.lock`
 
-mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.html#lockfile) which will
-store/verify the checksum of tool tarballs. Committing this into your repository is a good way to ensure
-that the exact same version of a tool is installed across all developers and CI/CD systems.
-
-Not all backends support this—notably asdf plugins do not.
+A [lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html) records the exact
+version, artifact checksums and verified provenance of each tool. Commit it so
+every developer and CI system installs the same artifacts. Not every backend
+supports it; asdf plugins do not.
 
 ## asdf plugins
 
-asdf plugins in asdf (but not with mise's default tools) are dangerous. They are typically owned by random developers
-unconnected to either asdf or the tool vendor. They may get hacked or maliciously inject code into
-their plugin that could trivially execute code on your machine.
+asdf plugins are dangerous. They are typically owned by developers unconnected
+to either asdf or the tool vendor, and they may get hacked or inject malicious
+code that runs on your machine.
 
-asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry/) whenever possible.
-Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install
-setups or need to export env vars. As of 2025-01-08, <25% of tools use asdf plugins as the default backend.
-All of these are hosted in the [mise-plugins org](https://github.com/mise-plugins) to secure the supply
-chain so you do not need to rely on plugins maintained by anyone except me.
+The [registry](https://github.com/jdx/mise/blob/main/registry/) avoids asdf
+plugins whenever a safer backend works, preferring packslip, aqua and GitHub
+releases. The asdf plugins it still uses are hosted in the
+[mise-plugins org](https://github.com/mise-plugins), so you do not rely on
+plugins maintained by anyone except me. If you _manually_ add plugins from
+elsewhere, make sure they come from a trusted source.
 
-Of course if you _manually_ add plugins not from the mise-plugins org you will want to ensure they
-are coming from a trusted source.
-
-Please contribute to this effort to migrate away from asdf plugins by checking if a tool works in ubi or aqua and submitting a PR to
-[registry/](https://github.com/jdx/mise/blob/main/registry/) to add it. If it doesn't work
-in ubi or is missing from aqua, submit an issue or PR to the respective project to add it. New tools
-using asdf are **not** likely to be accepted unless they cannot be supported with any other backend.
+To help move tools off asdf plugins, check whether a tool works with the
+packslip, aqua or github backend and submit a PR to
+[registry/](https://github.com/jdx/mise/blob/main/registry/). New tools that use
+asdf are **not** likely to be accepted unless no other backend can support them.
 
 ## Supported Versions
 

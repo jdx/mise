@@ -12,27 +12,29 @@ description: "Link a local plugin directory into mise for development"
 
 Link a local plugin directory into mise for development
 
-Edits in the source directory take effect without reinstalling the plugin. Pass
-both a name and directory, or only a directory to infer the name after stripping
-a known prefix such as `mise-` or `vfox-`. This does not install a tool version.
+Edits in the source directory take effect without reinstalling the plugin.
+Pass a name and a directory, or only a directory to name the plugin after it
+without an `asdf-`, `mise-`, or `vfox-` prefix. Use the bare name, without a
+`vfox:` or `package:` prefix: mise detects the plugin type from the
+directory. This does not install a tool version.
 
 ## Arguments
-- **`<NAME>`** — The name of the plugin
-  With one argument, this is the plugin directory and the name is inferred
-- **`[DIR]`** — The local path to the plugin
-  e.g.: ./mise-my-tool
+- **`<NAME>`** — The plugin name, or the plugin directory when DIR is omitted
+- **`[DIR]`** — The local path to the plugin, such as ./mise-my-tool
 
 ## Flags
-- **`-f --force`** — Overwrite existing plugin
+- **`-f --force`** — Replace an existing plugin with the same name
 - **`-h --help`** — Print help
 
 ## Examples
+
+Link ./mise-my-tool as the plugin my-tool
 
 ```
 mise plugins link my-tool ./mise-my-tool
 ```
 
-Alternative: infer the name "my-tool"
+Infer the name my-tool from the directory
 
 ```
 mise plugins link ./mise-my-tool
@@ -48,6 +50,6 @@ mise ls-remote my-tool
 
 ## Related documentation
 
-- [Developing tool plugins](/tool-plugin-development.html).
+- [Tool plugins](/tool-plugin-development.html).
 - [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

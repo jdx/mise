@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Within one directory: mise.<env>.local.toml > mise.local.toml > mise.<env>.toml > mise.toml.
+# Across directories: the project beats its parent directories and the global config.
+# Each file sets both a tool version and an env var, which must agree.
+
+export MISE_ENV=test
+
+write() {
+  mkdir -p "$(dirname "$1")"
+  cat >"$1" <<TOML
+[tools]
+dummy = "$2"
+[env]
+SOURCE = "$2"
+TOML
+}
+
+winner() {
+  local tool env_var
+  tool="$(mise ls --json dummy | jq -r '.[0].requested_version')"
+  env_var="$(mise env --json | jq -r .SOURCE)"
+  echo "tools=$tool env=$env_var"
+}
+# assert runs its command in a child bash
+export -f winner
+
+project="$PWD/parent/project"
+mkdir -p "$project"
+cd "$project"
+
+# The global config dir ranks its files the same way. It is under $HOME, so it is
+# found both by walking up from the cwd and as the global config; the ceiling
+# keeps it out of the walk.
+write "$MISE_CONFIG_DIR/config.toml" 11
+write "$MISE_CONFIG_DIR/config.test.toml" 12
+write "$MISE_CONFIG_DIR/config.local.toml" 13
+assert "winner" "tools=13 env=13"
+MISE_CEILING_PATHS="$HOME" assert "winner" "tools=13 env=13"
+write "$MISE_CONFIG_DIR/config.test.local.toml" 14
+assert "winner" "tools=14 env=14"
+MISE_CEILING_PATHS="$HOME" assert "winner" "tools=14 env=14"
+
+# A parent directory beats the global config, even its environment-local file.
+write ../mise.toml 21
+assert "winner" "tools=21 env=21"
+
+# The project's plain mise.toml beats every file in a parent or global directory.
+write ../mise.test.local.toml 24
+assert "winner" "tools=24 env=24"
+write mise.toml 1
+assert "winner" "tools=1 env=1"
+
+# Within the project directory.
+write mise.test.toml 2
+assert "winner" "tools=2 env=2"
+write mise.local.toml 3
+assert "winner" "tools=3 env=3"
+write mise.test.local.toml 4
+assert "winner" "tools=4 env=4"
+
+# Without MISE_ENV, environment files are not loaded.
+MISE_ENV='' assert "winner" "tools=3 env=3"
+rm mise.local.toml mise.test.local.toml
+assert "winner" "tools=2 env=2"
+MISE_ENV='' assert "winner" "tools=1 env=1"
+
+# A conf.d folder ranks its own files the same way, in the global config dir
+# (walked or not) and in a project.
+frag() {
+  mkdir -p "$(dirname "$1")"
+  printf '[env]\nFRAG = "%s"\n' "$2" >"$1"
+}
+frag "$MISE_CONFIG_DIR/conf.d/f/mise.toml" global-shared
+frag "$MISE_CONFIG_DIR/conf.d/f/mise.test.toml" global-env
+assert_contains "mise env -s bash" "FRAG=global-env"
+frag "$MISE_CONFIG_DIR/conf.d/f/mise.local.toml" global-local
+assert_contains "mise env -s bash" "FRAG=global-local"
+MISE_CEILING_PATHS="$HOME" assert_contains "mise env -s bash" "FRAG=global-local"
+frag .mise/conf.d/f/mise.test.toml project-env
+assert_contains "mise env -s bash" "FRAG=project-env"
+frag .mise/conf.d/f/mise.local.toml project-local
+assert_contains "mise env -s bash" "FRAG=project-local"
+frag .mise/conf.d/f/mise.test.local.toml project-env-local
+assert_contains "mise env -s bash" "FRAG=project-env-local"

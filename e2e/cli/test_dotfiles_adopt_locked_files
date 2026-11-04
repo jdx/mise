@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Adopting a setup whose encrypted files this machine cannot unlock names
+# every such file at once, not just the first, so a stale recipient list
+# is fixed in one pass.
+require_cmd git
+export MISE_EXPERIMENTAL=0
+KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+PUB="age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"
+KEY2="AGE-SECRET-KEY-12LCM5FM5DQ7HZDGYUZWMJ6QHM66J07NZ75VVP2VVGCZX53HYD5PQUXUN8K"
+export MISE_AGE_KEY="$KEY"
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p "$HOME/.config/app"
+echo first >"$HOME/.config/app/first"
+echo second >"$HOME/.config/app/second"
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[history.encryption]
+recipients = ["$PUB"]
+[dotfiles]
+"~/.config/app/first" = { mode = "track", encrypt = true }
+"~/.config/app/second" = { mode = "track", encrypt = true }
+"~/.config/mise/config.toml" = { mode = "track" }
+TOML
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+
+# a second machine whose identity is not a recipient
+B="$(dirname "$HOME")/locked-b"
+mkdir -p "$B/.config/mise"
+cat >"$PWD/b" <<WRAPPER
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+ MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+ MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B" MISE_AGE_KEY="$KEY2"
+cd "\$HOME" && exec mise "\$@"
+WRAPPER
+chmod +x "$PWD/b"
+b="$PWD/b"
+assert_fail "$b bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'cannot unlock 2 encrypted files: home/.config/app/first, home/.config/app/second'
+assert_fail "test -e $B/.config/app/first"

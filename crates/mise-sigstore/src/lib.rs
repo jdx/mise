@@ -14,8 +14,8 @@ use sigstore_verify::VerificationPolicy;
 use sigstore_verify::trust_root::{SigstoreInstance, TrustedRoot, TufBootstrap, TufConfig};
 use sigstore_verify::types::bundle::VerificationMaterialContent;
 use sigstore_verify::types::{
-    Artifact, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash, SignatureBytes,
-    SignatureContent,
+    Artifact, ArtifactDigest, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash,
+    SignatureBytes, SignatureContent,
 };
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
@@ -35,6 +35,7 @@ mod trust;
 /// The Sigstore public-good TUF repository URL.
 pub const DEFAULT_TUF_URL: &str = "https://tuf-repo-cdn.sigstore.dev";
 
+pub use certificate::normalize_github_repository;
 pub use client::{
     Attestation, AttestationClient, AttestationClientBuilder, FetchParams, GitHubSource, sources,
 };
@@ -42,16 +43,18 @@ pub use cosign::{verify_cosign_signature, verify_cosign_signature_with_key};
 pub use cosign_identity::CosignIdentity;
 pub use digest::calculate_file_digest;
 pub use github::{
-    GithubAttestationRequest, verify_github_attestation, verify_github_attestation_sources,
-    verify_github_attestation_with_attestations, verify_github_attestation_with_base_url,
-    verify_github_attestation_with_base_url_and_digest,
+    GithubAttestationRequest, verify_forge_attestation_sources_for_sha512,
+    verify_github_attestation, verify_github_attestation_sources,
+    verify_github_attestation_sources_for_sha512, verify_github_attestation_with_attestations,
+    verify_github_attestation_with_base_url, verify_github_attestation_with_base_url_and_digest,
 };
 pub use model::{
     ArtifactRef, AttestationError, AttestationSource, Result, SlsaArtifact, SlsaSignerIdentity,
 };
 pub use retry::RetryConfig;
 pub use slsa::{
-    is_slsa_subject_mismatch, verify_slsa_provenance, verify_slsa_provenance_artifacts,
+    is_slsa_subject_mismatch, slsa_provenance_unaccepted_source_repositories,
+    verify_slsa_provenance, verify_slsa_provenance_artifacts,
 };
 pub use trust::set_tuf_url;
 

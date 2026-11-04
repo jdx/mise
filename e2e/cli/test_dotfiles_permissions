@@ -71,6 +71,7 @@ assert "cat ~/.ssh/config" "Host *
 assert_directory_exists "$HOME/.ssh"
 
 # permissions cannot be combined with a link
+# schema: invalid
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.netrc" = { source = "dotfiles/netrc.tera", mode = "symlink", permissions = "0600" }
@@ -78,6 +79,7 @@ EOF
 assert_contains "mise dot status 2>&1" "permissions requires mode copy or template"
 
 # permissions cannot ride along on a block or line edit
+# schema: invalid
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.bashrc/example" = { block = "export EXAMPLE=1", permissions = "0600" }

@@ -157,8 +157,9 @@ pub struct Settings {"#
                     "ListPath" => "Vec<PathBuf>",
                     "SetString" => "BTreeSet<String>",
                     "IndexMap<String, String>" => "IndexMap<String, String>",
-                    "BoolOrString" => {
-                        panic!(r#"type \"BoolOrString\" requires a `rust_type` to be specified"#)
+                    "IndexMap<String, Vec<String>>" => "IndexMap<String, Vec<String>>",
+                    t @ ("BoolOrString" | "BoolOrList") => {
+                        panic!("type {t:?} requires a `rust_type` to be specified")
                     }
                     t => panic!("Unknown type: {t}"),
                 })
@@ -294,6 +295,50 @@ pub fn validate_settings_enum_values(settings: &Settings) -> Result<()> {"#
 
     lines.push(
         r#"
+/// The string choices that settings.toml's `enum` lists for a setting, in order, or
+/// an empty slice when it lists none.
+pub fn setting_choices(key: &str) -> &'static [&'static str] {
+    match key {"#
+            .to_string(),
+    );
+    /// Emit one match arm per setting whose `enum` lists string choices.
+    fn emit_setting_choices(lines: &mut Vec<String>, table: &toml::Table, path: &[&str]) {
+        for (key, value) in table {
+            let props = value.as_table().unwrap();
+            let mut field_path = path.to_vec();
+            field_path.push(key);
+            if !props.contains_key("type") {
+                emit_setting_choices(lines, props, &field_path);
+                continue;
+            }
+            let Some(choices) = props.get("enum").and_then(toml::Value::as_array) else {
+                continue;
+            };
+            // An entry is either the value itself or a table describing it.
+            let choices = choices
+                .iter()
+                .filter_map(|choice| match choice {
+                    toml::Value::Table(choice) => choice.get("value")?.as_str(),
+                    choice => choice.as_str(),
+                })
+                .map(|choice| format!("{choice:?}"))
+                .collect::<Vec<_>>();
+            if !choices.is_empty() {
+                lines.push(format!(
+                    "        {:?} => &[{}],",
+                    field_path.join("."),
+                    choices.join(", ")
+                ));
+            }
+        }
+    }
+    emit_setting_choices(&mut lines, &settings, &[]);
+    lines.push("        _ => &[],".to_string());
+    lines.push("    }".to_string());
+    lines.push("}".to_string());
+
+    lines.push(
+        r#"
 /// Apply the merge strategies declared in settings.toml to config-file layers.
 pub fn merge_settings_file_layers(layers: &mut [SettingsPartial]) {"#
             .to_string(),
@@ -375,6 +420,10 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
             "        env_only: {},",
             props.get("env_only").is_some_and(|v| v.as_bool().unwrap())
         ));
+        lines.push(format!(
+            "        rc: {},",
+            props.get("rc").is_some_and(|v| v.as_bool().unwrap())
+        ));
     }
     /// Emit flattened runtime metadata for settings and nested settings tables.
     fn emit_settings_meta(lines: &mut Vec<String>, table: &toml::Table, prefix: &str) {
@@ -389,7 +438,7 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                 // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
                 // Thus, we introduce 'meta_type' here.
                 let meta_type = match type_ {
-                    "IndexMap<String, String>" => "IndexMap",
+                    "IndexMap<String, String>" | "IndexMap<String, Vec<String>>" => "IndexMap",
                     other => other,
                 };
                 lines.push(format!(
@@ -458,9 +507,10 @@ pub struct MisercSettings {"#
                         "ListPath" => "Vec<PathBuf>",
                         "SetString" => "BTreeSet<String>",
                         "IndexMap<String, String>" => "IndexMap<String, String>",
-                        "BoolOrString" => panic!(
-                            r#"type \"BoolOrString\" requires a `rust_type` to be specified"#
-                        ),
+                        "IndexMap<String, Vec<String>>" => "IndexMap<String, Vec<String>>",
+                        t @ ("BoolOrString" | "BoolOrList") => {
+                            panic!("type {t:?} requires a `rust_type` to be specified")
+                        }
                         t => panic!("Unknown type: {t}"),
                     })
                 });

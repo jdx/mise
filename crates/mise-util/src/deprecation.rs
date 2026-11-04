@@ -17,6 +17,15 @@ pub fn set_version(version: &str) {
     let _ = VERSION.set(Versioning::new(version).expect("invalid mise version"));
 }
 
+/// The registered mise version, with a `-DEBUG` suffix on debug builds.
+pub static VERSION_PLAIN: LazyLock<String> = LazyLock::new(|| {
+    let mut v = version().to_string();
+    if cfg!(debug_assertions) {
+        v.push_str("-DEBUG");
+    }
+    v
+});
+
 /// The registered mise version.
 pub fn version() -> &'static Versioning {
     VERSION

@@ -61,7 +61,7 @@ root = "old"
 entries."~/.work.conf" = { source = "$DOTS/work.conf", mode = "copy" }
 EOF
 assert_succeed "mise dot apply --yes"
-sed -i 's/dotfile_groups.old/dotfile_groups.new/; s/root = "old"/root = "new"/' mise.toml
+sed -i.bak 's/dotfile_groups.old/dotfile_groups.new/; s/root = "old"/root = "new"/' mise.toml
 assert_succeed "mise dot apply --prune --yes"
 assert "cat $HOME/.work.conf" "work"
 
@@ -121,7 +121,7 @@ mode = "copy"
 EOF2
 assert_succeed "mise dot apply --yes"
 assert "cat $HOME/.config/app/app.conf" "app"
-sed -i 's/mode = "copy"/mode = "symlink"/' mise.toml
+sed -i.bak 's/mode = "copy"/mode = "symlink"/' mise.toml
 assert_succeed "mise dot apply --yes --force"
 assert "readlink $HOME/.config/app" "$DOTS/app"
 assert_succeed "mise dot unapply --group app --yes --force"
@@ -130,7 +130,7 @@ assert "cat $DOTS/app/app.conf" "app"
 # The same when the target was replaced by a link outside mise and the
 # group is then deselected and pruned, even with --force.
 rm -f "$HOME/.config/app"
-sed -i 's/mode = "symlink"/mode = "copy"/' mise.toml
+sed -i.bak 's/mode = "symlink"/mode = "copy"/' mise.toml
 assert_succeed "mise dot apply --yes"
 rm -rf "$HOME/.config/app"
 ln -s "$DOTS/app" "$HOME/.config/app"
@@ -193,7 +193,7 @@ root = "first"
 entries."~/.shared.conf" = { source = "$DOTS/shared.conf", mode = "copy" }
 EOF2
 assert_succeed "mise dot apply --yes"
-sed -i 's/dotfile_groups.first/dotfile_groups.second/; s/root = "first"/root = "second"/' mise.toml
+sed -i.bak 's/dotfile_groups.first/dotfile_groups.second/; s/root = "first"/root = "second"/' mise.toml
 assert_succeed "mise dot apply --yes"
 assert_succeed "mise dot unapply --group first --force --yes"
 assert "cat $HOME/.shared.conf" "shared"
@@ -260,7 +260,7 @@ mode = "copy"
 EOF2
 assert_succeed "mise dot apply --yes"
 assert "cat $HOME/.config/narrow/b.conf" "b"
-sed -i 's/mode = "copy"/mode = "copy"\nexclude = ["b.conf"]/' mise.toml
+perl -0pi -e 's/mode = "copy"/mode = "copy"\nexclude = ["b.conf"]/g' mise.toml
 assert_succeed "mise dot apply --yes"
 assert_contains "mise dot status" "orphaned"
 assert_succeed "mise dot apply --prune --yes"
@@ -320,10 +320,10 @@ EOF2
   chmod 755 "$HOME/.config/pp/y"
   chmod 644 "$HOME/.config/pp/y/b.conf"
   assert "cat $HOME/.config/pp/x/a.conf" "x2"
-  # the interrupted write is accepted as it is before going on; without a
-  # terminal, MISE_YES answers the confirmation
-  assert_contains "MISE_YES=0 mise dot recover --keep-current </dev/null 2>&1" "recovery copies preserved"
-  assert_contains "MISE_YES=0 mise dot recover --keep-current </dev/null 2>&1" "Interrupted operation"
+  # Discarding recovery copies requires explicit approval without a TTY.
+  # Refusing preserves the pending operation until that approval is given.
+  assert_fail "MISE_YES=0 mise dot recover --keep-current </dev/null 2>&1" "pass --yes"
+  assert_fail "MISE_YES=0 mise dot recover --keep-current </dev/null 2>&1" "Interrupted operation"
   assert_contains "MISE_YES=1 mise dot recover --keep-current </dev/null 2>&1" "recovered operation"
   assert_contains "mise dot recover 2>&1" "no interrupted operations"
   cat <<EOF2 >>mise.toml

@@ -4,6 +4,7 @@ use crate::file::{self, display_path};
 use crate::hash;
 use crate::rand::random_string;
 use crate::task::Task;
+use crate::task::task_sources::TaskOutputsExt;
 use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
@@ -679,11 +680,18 @@ pub(crate) fn task_source_match_root(root: &Path, config: &Config) -> PathBuf {
         .unwrap_or_else(|| root.to_path_buf())
 }
 
+/// Source file metadatas for a task, anchored at the correct workspace root.
+struct SourceMetadatas {
+    root: PathBuf,
+    match_root: PathBuf,
+    files: Vec<(PathBuf, fs::Metadata)>,
+    /// Whether `sources` matched any file. The task's own config files are
+    /// always added to `files`, so `files` is not empty when this is false.
+    matched_sources: bool,
+}
+
 /// Collect source file metadatas for a task, anchored at the correct workspace root.
-async fn collect_source_metadatas(
-    task: &Task,
-    config: &Arc<Config>,
-) -> Result<(PathBuf, PathBuf, Vec<(PathBuf, fs::Metadata)>)> {
+async fn collect_source_metadatas(task: &Task, config: &Arc<Config>) -> Result<SourceMetadatas> {
     let root = task_cwd(task, config).await?;
     // Anchor the Override matcher at the outermost config root that is an
     // ancestor of the task CWD (i.e. the workspace root). This allows
@@ -700,6 +708,7 @@ async fn collect_source_metadatas(
     let matcher = build_source_matcher(match_root, &root, &task.sources);
     let glob_patterns = source_glob_patterns(&task.sources);
     let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
+    let matched_sources = !source_metadatas.is_empty();
     // Always include every file that contributed to the task definition,
     // regardless of excludes — a stray `!mise.toml` must not silently
     // disable invalidation.
@@ -716,7 +725,12 @@ async fn collect_source_metadatas(
             source_metadatas.push((config_path, meta));
         }
     }
-    Ok((root, match_root_owned, source_metadatas))
+    Ok(SourceMetadatas {
+        root,
+        match_root: match_root_owned,
+        files: source_metadatas,
+        matched_sources,
+    })
 }
 
 /// Compute the current source hash for a task. Returns `(hash, hash_file_path)`
@@ -729,7 +743,11 @@ async fn compute_source_hash(
         return Ok(None);
     }
     let use_content_hash = Settings::get().task.source_freshness_hash_contents;
-    let (root, _, source_metadatas) = collect_source_metadatas(task, config).await?;
+    let SourceMetadatas {
+        root,
+        files: source_metadatas,
+        ..
+    } = collect_source_metadatas(task, config).await?;
     if source_metadatas.is_empty() {
         return Ok(None);
     }
@@ -763,7 +781,12 @@ pub(crate) async fn task_cache_inputs(
     if task.sources.is_empty() {
         return Ok(None);
     }
-    let (root, match_root, mut source_metadatas) = collect_source_metadatas(task, config).await?;
+    let SourceMetadatas {
+        root,
+        match_root,
+        files: mut source_metadatas,
+        ..
+    } = collect_source_metadatas(task, config).await?;
     if source_metadatas.is_empty() {
         return Ok(None);
     }
@@ -815,14 +838,23 @@ pub(crate) async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Resu
     let equal_mtime_is_fresh = settings.task.source_freshness_equal_mtime_is_fresh;
 
     let run = async || -> Result<bool> {
-        let (root, _, source_metadatas) = collect_source_metadatas(task, config).await?;
+        let SourceMetadatas {
+            root,
+            files: source_metadatas,
+            matched_sources,
+            ..
+        } = collect_source_metadatas(task, config).await?;
 
-        // Check if sources resolved to no files (likely a config mistake)
-        if source_metadatas.is_empty() {
+        // Check if sources resolved to no files (likely a config mistake).
+        // The task's own config file is still a source, so freshness is
+        // decided as before.
+        if !matched_sources {
             warn!(
                 "task {} has sources defined but no matching files found",
                 task.name
             );
+        }
+        if source_metadatas.is_empty() {
             return Ok(false);
         }
 
@@ -1308,7 +1340,25 @@ struct CachedFileHash {
     mtime_secs: i64,
     mtime_nanos: u32,
     size: u64,
+    /// Inode change time. Unlike mtime it cannot be set from userspace, so an edit that restores
+    /// the old size and mtime (`rsync -a`, `cp -p`, `touch -r`) still invalidates the entry.
+    /// Entries written before this field existed deserialize as 0 and are rehashed once.
+    #[serde(default)]
+    ctime_secs: i64,
+    #[serde(default)]
+    ctime_nanos: i64,
     hash: String,
+}
+
+#[cfg(unix)]
+fn metadata_ctime(metadata: &fs::Metadata) -> (i64, i64) {
+    use std::os::unix::fs::MetadataExt;
+    (metadata.ctime(), metadata.ctime_nsec())
+}
+
+#[cfg(not(unix))]
+fn metadata_ctime(_metadata: &fs::Metadata) -> (i64, i64) {
+    (0, 0)
 }
 
 type ContentHashCache = BTreeMap<PathBuf, CachedFileHash>;
@@ -1356,7 +1406,10 @@ fn cached_entry_matches(entry: &CachedFileHash, metadata: &fs::Metadata) -> bool
     let Ok(dur) = mtime.duration_since(UNIX_EPOCH) else {
         return false;
     };
+    let (ctime_secs, ctime_nanos) = metadata_ctime(metadata);
     entry.size == metadata.len()
+        && entry.ctime_secs == ctime_secs
+        && entry.ctime_nanos == ctime_nanos
         && entry.mtime_secs == dur.as_secs() as i64
         && entry.mtime_nanos == dur.subsec_nanos()
 }
@@ -1366,7 +1419,10 @@ fn make_cache_entry(metadata: &fs::Metadata, hash: String) -> CachedFileHash {
         .modified()
         .ok()
         .and_then(|m| m.duration_since(UNIX_EPOCH).ok());
+    let (ctime_secs, ctime_nanos) = metadata_ctime(metadata);
     CachedFileHash {
+        ctime_secs,
+        ctime_nanos,
         mtime_secs: dur.map(|d| d.as_secs() as i64).unwrap_or(0),
         mtime_nanos: dur.map(|d| d.subsec_nanos()).unwrap_or(0),
         size: metadata.len(),
@@ -2336,6 +2392,38 @@ mod tests {
         let third = file_contents_to_hash(&metadatas, &mut cache).unwrap();
         assert_ne!(second, third);
         assert_ne!(cache.get(&a).unwrap().hash, a_hash_v1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn content_hash_cache_notices_same_size_edit_with_restored_mtime() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.txt");
+        std::fs::write(&a, "good\n").unwrap();
+        let before = a.metadata().unwrap();
+        let mut cache = ContentHashCache::new();
+        let first = file_contents_to_hash(&[(a.clone(), before.clone())], &mut cache).unwrap();
+
+        // Same size, mtime restored: only ctime betrays the edit. Retry until the filesystem's
+        // ctime clock has ticked so a coarse timestamp can't make the edit invisible.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let after = loop {
+            std::fs::write(&a, "fail\n").unwrap();
+            filetime::set_file_mtime(&a, filetime::FileTime::from_last_modification_time(&before))
+                .unwrap();
+            let after = a.metadata().unwrap();
+            if metadata_ctime(&after) != metadata_ctime(&before) {
+                break after;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "ctime did not advance within 10s; this filesystem's ctime resolution is too coarse for the test"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        assert_eq!(before.len(), after.len());
+        let second = file_contents_to_hash(&[(a.clone(), after)], &mut cache).unwrap();
+        assert_ne!(first, second);
     }
 
     #[test]

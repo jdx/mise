@@ -10,9 +10,12 @@ fn main() {
     codegen_embedded_plugins();
 }
 
-/// Convert a path to a string with forward slashes (required for include_str! on Windows)
-fn path_to_forward_slashes(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+/// `include_str!` for a file under `embedded-plugins/`, resolved from the crate's manifest
+/// directory when rustc compiles the generated code. The generated file must not contain the
+/// checkout path: build script output is reused from a shared cache by jobs that check the
+/// repository out somewhere else, where an absolute path no longer exists.
+fn include_embedded(relative: &str) -> String {
+    format!("include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/embedded-plugins/{relative}\"))")
 }
 
 fn codegen_embedded_plugins() {
@@ -116,24 +119,19 @@ pub struct EmbeddedPlugin {
             "static {var_name}: EmbeddedPlugin = EmbeddedPlugin {{\n"
         ));
 
-        // Metadata - use absolute path with forward slashes for cross-platform include_str!
-        let metadata_path = embedded_dir.join(name).join("metadata.lua");
+        // Metadata
         code.push_str(&format!(
-            "    metadata: include_str!(\"{}\"),\n",
-            path_to_forward_slashes(&metadata_path)
+            "    metadata: {},\n",
+            include_embedded(&format!("{name}/metadata.lua"))
         ));
 
         // Hooks
         code.push_str("    hooks: &[\n");
         for hook in &files.hooks {
-            let hook_path = embedded_dir
-                .join(name)
-                .join("hooks")
-                .join(format!("{}.lua", hook));
             code.push_str(&format!(
-                "        (\"{}\", include_str!(\"{}\")),\n",
+                "        (\"{}\", {}),\n",
                 hook,
-                path_to_forward_slashes(&hook_path)
+                include_embedded(&format!("{name}/hooks/{hook}.lua"))
             ));
         }
         code.push_str("    ],\n");
@@ -141,14 +139,10 @@ pub struct EmbeddedPlugin {
         // Lib files
         code.push_str("    lib: &[\n");
         for lib in &files.lib {
-            let lib_path = embedded_dir
-                .join(name)
-                .join("lib")
-                .join(format!("{}.lua", lib));
             code.push_str(&format!(
-                "        (\"{}\", include_str!(\"{}\")),\n",
+                "        (\"{}\", {}),\n",
                 lib,
-                path_to_forward_slashes(&lib_path)
+                include_embedded(&format!("{name}/lib/{lib}.lua"))
             ));
         }
         code.push_str("    ],\n");

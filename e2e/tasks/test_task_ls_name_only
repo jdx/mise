@@ -40,7 +40,7 @@ build"
 # Local/global filtering still applies
 echo "tasks.myglobal = { run = 'echo myglobal' }" >~/.config/mise/config.toml
 assert "mise tasks ls --name-only --global" "myglobal"
-assert "mise tasks ls --name-only --local" "build
+assert "mise tasks ls --name-only --no-global" "build
 deploy
 lint
 test"

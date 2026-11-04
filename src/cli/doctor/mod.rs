@@ -2,6 +2,7 @@ mod path;
 mod project;
 
 use crate::plugins::PluginEnum;
+use mise_util::redactions::{redact_json, redact_output};
 use std::collections::HashSet;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -30,16 +31,18 @@ use std::env::split_paths;
 use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
 
-/// Check mise installation for possible problems
+/// Check your mise setup for problems
+///
+/// Prints mise's version, whether shell activation and shims are set up, its
+/// directories, the config files, tools, and environment in use, and its settings,
+/// then lists any problems and warnings with a suggested fix. Exits with status 1
+/// when it finds a problem. Include this output when you report a bug.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "dr",
     verbatim_doc_comment,
-    example(
-        r###"mise doctor
-mise doctor --json
-mise doctor path --full"###
-    )
+    example("mise doctor", help = "Check the setup and list problems"),
+    example("mise doctor --json", help = "Print the report as JSON")
 )]
 pub(crate) struct Doctor {
     #[usage(subcommand)]
@@ -78,7 +81,16 @@ enum SystemDefaultsDiagnosis {
 /// outcome of the `[bootstrap.user].login_shell` doctor check
 #[derive(serde::Serialize)]
 struct DotfilesDiagnosis {
+    /// `history.enabled`: when false, nothing is saved or synced and only
+    /// `repo`, `origin`, and `tracked` are reported.
+    history_enabled: bool,
+    /// The local bare repository that holds the history.
+    repo: PathBuf,
+    /// The connected setup repository, if any.
+    origin: Option<DotfilesOriginDiagnosis>,
     tracked: usize,
+    /// Why the tracked entries could not be read, when history is disabled.
+    tracking_error: Option<String>,
     watcher: String,
     stale: bool,
     health_age_secs: Option<u64>,
@@ -96,6 +108,66 @@ struct DotfilesDiagnosis {
     sync_failures: u32,
     /// Whether conflict notifications can reach the user.
     notifications: String,
+}
+
+#[derive(serde::Serialize)]
+struct DotfilesOriginDiagnosis {
+    url: String,
+    branch: String,
+    sync: String,
+}
+
+/// The connected setup repository, if any.
+fn dotfiles_origin() -> Option<DotfilesOriginDiagnosis> {
+    crate::system::history::sync::run::origin()
+        .ok()
+        .map(|origin| DotfilesOriginDiagnosis {
+            url: origin.url,
+            branch: origin.branch,
+            sync: crate::system::history::sync::SyncMode::current()
+                .map(|mode| mode.as_str().to_string())
+                .unwrap_or_else(|_| "unknown".to_string()),
+        })
+}
+
+/// Where the dotfiles history would live with `history.enabled = false`:
+/// the store is closed, so nothing about capture or sync health applies.
+/// Reads the declared tracking only, never opening or creating the store.
+/// Returns `None` when nothing is tracked, no history exists, and no setup
+/// repository is connected.
+async fn check_disabled_dotfiles() -> Option<DotfilesDiagnosis> {
+    let config = Config::get().await.ok()?;
+    // a declaration that cannot be read is reported, not taken for none
+    let (tracked, tracking_error) =
+        match crate::system::history::tracked::TrackedSet::from_config(&config) {
+            Ok(set) => (set.entries.len(), None),
+            Err(err) => (0, Some(format!("{err:#}"))),
+        };
+    let repo =
+        crate::system::history::store::repo_dir_in(&crate::system::history::store::state_dir());
+    let origin = dotfiles_origin();
+    if tracked == 0 && tracking_error.is_none() && !repo.is_dir() && origin.is_none() {
+        return None;
+    }
+    Some(DotfilesDiagnosis {
+        history_enabled: false,
+        repo,
+        origin,
+        tracked,
+        tracking_error,
+        watcher: "disabled".to_string(),
+        stale: false,
+        health_age_secs: None,
+        unavailable: None,
+        last_error: None,
+        degraded: vec![],
+        throttled: vec![],
+        sync_conflicts: vec![],
+        sync_error: None,
+        sync_failing_for_secs: None,
+        sync_failures: 0,
+        notifications: "disabled".to_string(),
+    })
 }
 
 /// How long syncs have been failing: since the current run of failures
@@ -217,7 +289,10 @@ impl Doctor {
             .extend(crate::secrets::doctor_warnings(&config).await);
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
+        #[cfg(windows)]
+        self.analyze_native_shim_template();
         self.analyze_plugins();
+        self.analyze_env_modules(&config);
         self.analyze_plugin_drift(&config);
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
@@ -279,9 +354,14 @@ impl Doctor {
                         false => {
                             tool.insert("version".into(), tv.version.to_string().into());
                             tool.insert("missing".into(), true.into());
-                            self.errors.push(format!(
-                                "tool {tv} is not installed, install with `mise install`"
-                            ));
+                            if tv.request.options().lazy == Some(true) {
+                                tool.insert("lazy".into(), true.into());
+                                self.errors.extend(lazy_config_error(tv));
+                            } else {
+                                self.errors.push(format!(
+                                    "tool {tv} is not installed, install with `mise install`"
+                                ));
+                            }
                         }
                     }
                     serde_json::Value::from(tool)
@@ -316,6 +396,11 @@ impl Doctor {
             );
         }
 
+        // Printed to stdout, outside the logger, and meant to be shared.
+        let data: BTreeMap<String, serde_json::Value> = data
+            .into_iter()
+            .map(|(k, v)| (redact_output(&k), redact_json(v)))
+            .collect();
         let out = serde_json::to_string_pretty(&data)?;
         let written = miseprint!("{out}\n");
 
@@ -355,7 +440,7 @@ impl Doctor {
 
         match Config::get().await {
             Ok(config) => self.analyze_config(&config).await?,
-            Err(err) => self.errors.push(format!("failed to load config: {err}")),
+            Err(err) => self.errors.push(format!("failed to load config: {err:#}")),
         }
 
         self.analyze_plugins();
@@ -392,6 +477,7 @@ impl Doctor {
             miseprintln!("{}\n", style(warning_summary).yellow().bold());
             for (i, check) in self.warnings.iter().enumerate() {
                 let num = style::nyellow(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
         }
@@ -404,6 +490,7 @@ impl Doctor {
             miseprintln!("{}\n", style(error_summary).red().bold());
             for (i, check) in self.errors.iter().enumerate() {
                 let num = style::nred(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
             return Err(crate::request_exit(1));
@@ -557,6 +644,7 @@ impl Doctor {
                 continue;
             }
         }
+        self.analyze_env_modules(config);
 
         if !env::is_activated() && !shims_on_path() {
             let shims = style::ncyan(display_path(dirs::shims()));
@@ -580,12 +668,14 @@ impl Doctor {
         match ToolsetBuilder::new().build(config).await {
             Ok(ts) => {
                 let desired_shims = self.analyze_shims(config, &ts).await;
+                #[cfg(windows)]
+                self.analyze_native_shim_template();
                 self.analyze_toolset(&ts).await?;
                 self.analyze_paths(&ts).await?;
                 self.check_path_ordering(&ts, config).await;
                 self.check_shim_shadowing(&desired_shims).await;
             }
-            Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
+            Err(err) => self.errors.push(format!("failed to load toolset: {err:#}")),
         }
 
         self.analyze_system_packages(config).await?;
@@ -763,7 +853,7 @@ impl Doctor {
         use crate::system::history::health;
         use crate::system::history::tracked::TrackedSet;
         if !crate::config::Settings::get().history.enabled {
-            return None;
+            return check_disabled_dotfiles().await;
         }
         let tracked = TrackedSet::effective().await.ok()?;
         let watcher = crate::cli::dotfiles::capture_health::watcher().await.ok()?;
@@ -785,7 +875,11 @@ impl Doctor {
         .unwrap_or(600);
         let stale = running && age.is_some_and(|age| reconcile > 0 && age > reconcile * 2);
         let mut diagnosis = DotfilesDiagnosis {
+            history_enabled: true,
+            repo: crate::system::history::store::repo_dir_in(&state_dir),
+            origin: dotfiles_origin(),
             tracked: tracks,
+            tracking_error: None,
             watcher: watcher.as_str().to_string(),
             stale,
             health_age_secs: age,
@@ -924,12 +1018,33 @@ impl Doctor {
         let Some(diagnosis) = self.check_dotfiles().await else {
             return Ok(());
         };
-        let mut lines = vec![format!(
-            "{} tracked entr{}, watcher {}",
+        let entries = format!(
+            "{} tracked entr{}",
             diagnosis.tracked,
-            if diagnosis.tracked == 1 { "y" } else { "ies" },
-            diagnosis.watcher
-        )];
+            if diagnosis.tracked == 1 { "y" } else { "ies" }
+        );
+        let mut lines = vec![if diagnosis.history_enabled {
+            format!("{entries}, watcher {}", diagnosis.watcher)
+        } else if let Some(error) = &diagnosis.tracking_error {
+            format!(
+                "tracked entries could not be read ({error}); history disabled (history.enabled = false): nothing is saved or synced"
+            )
+        } else {
+            format!(
+                "{entries}, history disabled (history.enabled = false): nothing is saved or synced"
+            )
+        }];
+        lines.push(format!("repo: {}", display_path(&diagnosis.repo)));
+        if let Some(origin) = &diagnosis.origin {
+            lines.push(format!(
+                "origin: {} (branch {}, sync {})",
+                origin.url, origin.branch, origin.sync
+            ));
+        }
+        if !diagnosis.history_enabled {
+            info::section("dotfiles", lines.join("\n"))?;
+            return Ok(());
+        }
         if diagnosis.stale {
             lines.push(format!(
                 "health information is stale (last update {} ago); the watcher may be stuck",
@@ -1146,6 +1261,11 @@ impl Doctor {
                     (tv.to_string(), style::ndim("(empty)"))
                 }
                 true => (tv.to_string(), style::nstyle("")),
+                // lazy tools are installed on first use, so not being installed yet is expected
+                false if tv.request.options().lazy == Some(true) => {
+                    self.errors.extend(lazy_config_error(&tv));
+                    (tv.to_string(), style::ndim("(lazy)"))
+                }
                 false => {
                     self.errors.push(format!(
                         "tool {tv} is not installed, install with `mise install`"
@@ -1207,6 +1327,15 @@ impl Doctor {
         HashSet::new()
     }
 
+    /// "exe" shims are copies of the `mise-shim.exe` beside mise, which a package manager can leave
+    /// behind when it replaces `mise.exe`; `mise reshim` then rebuilds the old launcher forever.
+    #[cfg(windows)]
+    fn analyze_native_shim_template(&mut self) {
+        if let Some(stale) = shims::stale_native_shim_template(&shims::mise_bin_for_shims()) {
+            self.errors.push(stale.message());
+        }
+    }
+
     fn analyze_plugins(&mut self) {
         for plugin in backend::list() {
             let is_core = CORE_PLUGINS.contains_key(plugin.id());
@@ -1216,6 +1345,17 @@ impl Doctor {
                 self.warnings
                     .push(format!("plugin {} overrides a core plugin", plugin.id()));
             }
+        }
+    }
+
+    fn analyze_env_modules(&mut self, config: &Config) {
+        for (name, source) in crate::config::env_directive::skipped_env_modules(config) {
+            let install = style::nyellow(format!("mise plugins install {name} <url>"));
+            self.errors.push(formatdoc!(
+                r#"env plugin {name} is not installed and has no source, so [env] _.{name} in {source} is skipped
+                    Install it with {install}, or set its URL in [plugins]"#,
+                source = display_path(&source),
+            ));
         }
     }
 
@@ -1249,21 +1389,19 @@ impl Doctor {
             // one the registry has moved. Strip options for comparison
             // (e.g., "github:repo[exe=bin]" -> "github:repo").
             let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
-            let recommended: Vec<&str> = if ist.versions.is_empty() {
-                rt.backends().into_iter().take(1).collect()
+            let per_version: Vec<Vec<&str>> = if ist.versions.is_empty() {
+                vec![rt.backends()]
             } else {
                 ist.versions
                     .iter()
-                    .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
+                    .map(|v| rt.backends_for_version(Some(v)))
                     .collect()
             };
-            // The install state records one backend per tool, so versions installed
-            // on either side of a cutover cannot all match it. Only warn when none do.
-            // Only a change of backend kind counts; a repo or org rename within one does not.
-            if recommended.iter().any(|full| {
-                let stripped = full.split('[').next().unwrap_or(full);
-                crate::args::same_backend_kind(stripped, stored_stripped)
-            }) {
+            let recommended: Vec<&str> = per_version
+                .iter()
+                .filter_map(|backends| backends.first().copied())
+                .collect();
+            if backend_matches_registry(&per_version, stored_stripped, ist.explicit_backend) {
                 continue;
             }
             let Some(registry_full) = recommended.first() else {
@@ -1472,19 +1610,15 @@ fn mise_dirs() -> Vec<(String, PathBuf)> {
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {
-    const REDACT_KEYS: &[&str] = &[
-        "MISE_GITHUB_TOKEN",
-        "MISE_GITLAB_TOKEN",
-        "MISE_GITHUB_ENTERPRISE_TOKEN",
-        "MISE_GITLAB_ENTERPRISE_TOKEN",
-    ];
     env::vars_safe()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .map(|(k, v)| {
-            let v = if REDACT_KEYS.contains(&k.as_str()) {
+            // By the shape of the name, so a credential variable added later
+            // (`MISE_SOPS_AGE_KEY`, `MISE_FORGEJO_TOKEN`, ...) is hidden too.
+            let v = if mise_settings::is_secret_name(&k) {
                 style::ndim("REDACTED").to_string()
             } else {
-                v
+                mise_util::redactions::redact_output(&v)
             };
             (k, v)
         })
@@ -1496,7 +1630,17 @@ fn render_config_files(config: &Config) -> String {
         .config_files
         .keys()
         .rev()
-        .map(display_path)
+        .map(|path| {
+            let display = display_path(path);
+            if crate::config::is_override_config(path) {
+                format!(
+                    "{display} {}",
+                    style::ndim("(override: outranks project config)")
+                )
+            } else {
+                display.to_string()
+            }
+        })
         .join("\n")
 }
 
@@ -1673,6 +1817,12 @@ fn install_is_empty(tv: &ToolVersion) -> bool {
 }
 
 /// One wording for an empty install, so the text and JSON paths cannot drift.
+/// A lazy tool that is not installed yet is expected, but one that cannot name the
+/// commands that trigger its install is a configuration error.
+fn lazy_config_error(tv: &ToolVersion) -> Option<String> {
+    tv.request.lazy_bins().err().map(|err| err.to_string())
+}
+
 fn empty_install_error(tv: &ToolVersion) -> String {
     format!(
         "tool {tv} is installed but its directory is empty, reinstall with \
@@ -1694,9 +1844,48 @@ fn install_dir_is_empty(path: &Path) -> bool {
     }
 }
 
+/// Whether the stored backend agrees with the registry for the installed versions.
+///
+/// `per_version` holds, for each installed version, the registry backends in
+/// priority order. The install state records one backend per tool, so versions
+/// installed on either side of a cutover cannot all match it: only warn when none
+/// do. Only a change of backend kind counts; a repo or org rename within one does
+/// not. An explicit backend is a deliberate choice, so any backend the registry
+/// lists for the tool is acceptable; otherwise it must be the recommended one.
+fn backend_matches_registry(
+    per_version: &[Vec<&str>],
+    stored_stripped: &str,
+    explicit: bool,
+) -> bool {
+    per_version.iter().any(|backends| {
+        let candidates = if explicit { backends.len() } else { 1 };
+        backends.iter().take(candidates).any(|full| {
+            let stripped = full.split('[').next().unwrap_or(full);
+            crate::args::same_backend_kind(stripped, stored_stripped)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{install_dir_is_empty, sync_failure_duration};
+    use super::{backend_matches_registry, install_dir_is_empty, sync_failure_duration};
+
+    #[test]
+    fn explicit_backend_may_be_any_registry_backend() {
+        let neovim = vec![vec!["vfox:jdx/vfox-neovim", "aqua:neovim/neovim"]];
+        assert!(backend_matches_registry(
+            &neovim,
+            "aqua:neovim/neovim",
+            true
+        ));
+        assert!(!backend_matches_registry(
+            &neovim,
+            "aqua:neovim/neovim",
+            false
+        ));
+        assert!(!backend_matches_registry(&neovim, "cargo:neovim", true));
+    }
+
     use crate::system::history::sync::run::SyncStatus;
 
     fn ago(now: chrono::DateTime<chrono::Utc>, secs: i64) -> Option<String> {

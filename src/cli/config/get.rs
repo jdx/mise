@@ -2,7 +2,7 @@ use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;
 
-/// Display a value from one mise TOML file
+/// Print a value from one mise TOML file
 ///
 /// Reads the highest-precedence loaded TOML file by default. Select another with
 /// `--file`, `--global`, or `--system`. This reads stored values, not the merged or
@@ -11,42 +11,58 @@ use std::path::PathBuf;
 #[usage(
     example(
         r###"mise config get tools.python
-3.12"###
+3.13"###,
+        help = "Print the python request"
     ),
+    example("mise config get", help = "Print the whole file"),
     verbatim_doc_comment
 )]
 pub(super) struct ConfigGet {
-    /// Dotted key path to display, e.g. `tools.python`; omit to print the whole file
+    /// Dotted key path to print, such as `tools.python`; omit to print the whole file
+    ///
+    /// Quote a key with a dot in its name as TOML does, inside shell quotes:
+    /// `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when
+    /// there is no key `build` in the way.
     #[usage(complete = complete_key)]
     pub key: Option<String>,
 
-    /// The path to the mise.toml file to read
+    /// Config file to read, or a directory whose config file to read
     ///
-    /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
-    ///
-    /// If not provided, the highest-precedence loaded TOML file is used
+    /// For a directory, mise reads the TOML config file already there, such as
+    /// `.mise.toml`, or `mise.toml` when there is none. Defaults to the
+    /// highest-precedence loaded TOML file other than the global override files.
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
-    /// Read the global config file.
+    /// Read the global config file
     #[usage(long, short = 'g', conflicts = ["file", "system"])]
     pub global: bool,
 
-    /// Read the system config file.
+    /// Read the system config file
     #[usage(long, conflicts = ["file", "global"])]
     pub system: bool,
+
+    /// Read the global override file, `config.override.toml`
+    #[usage(long = "override", conflicts = ["file", "global", "system"])]
+    pub override_file: bool,
 }
 
 fn complete_key(
     partial: &<ConfigGet as usage_rs::spec::CommandArgs>::Partial,
     ctx: &usage_rs::complete::CompleteCtx<'_>,
 ) -> Vec<usage_rs::complete::Candidate<'static>> {
-    super::keys::complete(ctx, partial.file.as_deref(), partial.global, partial.system)
+    super::keys::complete(
+        ctx,
+        partial.file.as_deref(),
+        partial.global,
+        partial.system,
+        partial.override_file,
+    )
 }
 
 impl ConfigGet {
     pub(super) fn run(self) -> eyre::Result<()> {
-        let file = super::target_file(self.file, self.global, self.system)?;
+        let file = super::target_file(self.file, self.global, self.system, self.override_file)?;
         if let Some(file) = file {
             if !file.exists() {
                 bail!("config file not found: {}", display_path(&file));
@@ -55,8 +71,13 @@ impl ConfigGet {
             let config: toml::Value = toml::de::from_str(&content)?;
             let mut value = &config;
             if let Some(key) = &self.key {
-                for k in key.split('.') {
-                    value = value.get(k).ok_or_else(|| {
+                let path = super::keys::rejoin(super::keys::split_keys(key), |path| {
+                    path.iter()
+                        .try_fold(&config, |value, k| value.get(k))
+                        .is_some()
+                });
+                for k in path {
+                    value = value.get(&k).ok_or_else(|| {
                         eyre::eyre!("Key not found: {} in {}", key, display_path(&file))
                     })?;
                 }

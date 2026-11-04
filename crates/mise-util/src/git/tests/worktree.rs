@@ -188,6 +188,11 @@ fn worktree_main_checkout_equivalent() {
     std::fs::write(main.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
     std::fs::write(
+        main.join(".git/worktrees/wt/gitdir"),
+        format!("{}\n", wt.join(".git").display()),
+    )
+    .unwrap();
+    std::fs::write(
         wt.join(".git"),
         format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
     )
@@ -199,6 +204,41 @@ fn worktree_main_checkout_equivalent() {
         super::main_checkout_equivalent(&wt.join("sub/mise.toml")),
         Some(main.join("sub/mise.toml"))
     );
+
+    // a directory that merely names the same entry is not that worktree: the
+    // entry points back at `wt`, so neither an unrelated directory nor one
+    // nested in the main checkout inherits anything
+    for claimed in [base.join("claimed"), main.join("vendor/claimed")] {
+        std::fs::create_dir_all(&claimed).unwrap();
+        std::fs::write(
+            claimed.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+        )
+        .unwrap();
+        assert_eq!(super::main_checkout_equivalent(&claimed), None);
+    }
+    // nor is one whose `.git` is a symlink to the real worktree's
+    #[cfg(unix)]
+    {
+        let linked = base.join("linked");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::os::unix::fs::symlink(wt.join(".git"), linked.join(".git")).unwrap();
+        assert_eq!(super::main_checkout_equivalent(&linked), None);
+    }
+
+    // `worktree.useRelativePaths` writes both pointers relative to their files
+    let rel = base.join("rel");
+    std::fs::create_dir_all(main.join(".git/worktrees/rel")).unwrap();
+    std::fs::create_dir_all(&rel).unwrap();
+    std::fs::write(main.join(".git/worktrees/rel/commondir"), "../..\n").unwrap();
+    std::fs::write(
+        main.join(".git/worktrees/rel/gitdir"),
+        "../../../../rel/.git\n",
+    )
+    .unwrap();
+    std::fs::write(rel.join(".git"), "gitdir: ../main/.git/worktrees/rel\n").unwrap();
+    assert_eq!(super::main_checkout_equivalent(&rel), Some(main.clone()));
+
     // main checkout and non-repo paths do not map
     assert_eq!(super::main_checkout_equivalent(&main), None);
     assert_eq!(super::main_checkout_equivalent(&base), None);
@@ -245,6 +285,58 @@ fn worktree_main_checkout_equivalent() {
     assert_eq!(
         super::main_checkout_equivalent(&wt_subm.join("mise.toml")),
         Some(subm.join("mise.toml"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn worktree_main_checkout_equivalent_rejects_symlinks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap();
+    let main = base.join("main");
+    let wt = base.join("wt");
+    let elsewhere = base.join("elsewhere");
+    std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+    std::fs::create_dir_all(wt.join("sub")).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(main.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+    // the forged checkout is the attacker's own, so it registers the worktree
+    std::fs::write(
+        main.join(".git/worktrees/wt/gitdir"),
+        format!("{}\n", wt.join(".git").display()),
+    )
+    .unwrap();
+    std::fs::write(
+        wt.join(".git"),
+        format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+    )
+    .unwrap();
+    std::fs::write(elsewhere.join("mise.toml"), "").unwrap();
+    std::fs::write(wt.join("mise.toml"), "").unwrap();
+
+    // the main checkout's counterpart is a link to a file outside it
+    std::os::unix::fs::symlink(elsewhere.join("mise.toml"), main.join("mise.toml")).unwrap();
+    assert_eq!(super::main_checkout_equivalent(&wt.join("mise.toml")), None);
+
+    // so is a directory on the way to it
+    std::os::unix::fs::symlink(&elsewhere, main.join("sub")).unwrap();
+    assert_eq!(
+        super::main_checkout_equivalent(&wt.join("sub/mise.toml")),
+        None
+    );
+
+    // a link back to the worktree's own file must not map onto itself
+    std::fs::remove_file(main.join("mise.toml")).unwrap();
+    std::os::unix::fs::symlink(wt.join("mise.toml"), main.join("mise.toml")).unwrap();
+    assert_eq!(super::main_checkout_equivalent(&wt.join("mise.toml")), None);
+
+    // a regular file in the main checkout still maps
+    std::fs::remove_file(main.join("mise.toml")).unwrap();
+    std::fs::write(main.join("mise.toml"), "").unwrap();
+    assert_eq!(
+        super::main_checkout_equivalent(&wt.join("mise.toml")),
+        Some(main.join("mise.toml"))
     );
 }
 
@@ -333,4 +425,67 @@ fn git_commands_ignore_inherited_work_tree() {
 
     assert!(clone_cache.join("file.txt").exists());
     assert!(!work_tree.join("file.txt").exists());
+}
+
+/// A `.git` pointer file in an unpacked archive can lead to a `commondir`
+/// that is a pipe, which an unbounded read would wait on forever.
+#[cfg(unix)]
+#[test]
+fn worktree_detection_skips_a_commondir_that_is_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap();
+    let checkout = base.join("proj");
+    let private = checkout.join("g/worktrees/x");
+    std::fs::create_dir_all(&private).unwrap();
+    std::fs::write(checkout.join(".git"), "gitdir: g/worktrees/x\n").unwrap();
+    nix::unistd::mkfifo(
+        &private.join("commondir"),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let probe = checkout.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(super::in_linked_worktree(&probe));
+    });
+    let linked = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("worktree detection blocked on a commondir pipe");
+    assert!(!linked);
+}
+
+/// The worktree entry's `gitdir` pointer is read while trust is resolved, and
+/// a pipe there must not block it.
+#[cfg(unix)]
+#[test]
+fn main_checkout_equivalent_skips_a_gitdir_pointer_that_is_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap();
+    let main = base.join("main");
+    let wt = base.join("wt");
+    std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(main.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+    nix::unistd::mkfifo(
+        &main.join(".git/worktrees/wt/gitdir"),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    std::fs::write(
+        wt.join(".git"),
+        format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+    )
+    .unwrap();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let probe = wt.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(super::main_checkout_equivalent(&probe));
+    });
+    let equivalent = rx
+        .recv_timeout(std::time::Duration::from_millis(500))
+        .expect("worktree trust blocked on a gitdir pipe");
+    assert_eq!(equivalent, None);
 }

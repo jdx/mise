@@ -1,4 +1,5 @@
 use crate::config::{self, Config};
+use crate::task::task_fetcher::TaskFetcher;
 use crate::{dirs, file};
 use color_eyre::eyre::bail;
 use std::path::{Path, PathBuf};
@@ -8,27 +9,29 @@ const TASK_PLACEHOLDER_END: &str = "<!-- /mise-tasks -->";
 
 /// Generate Markdown documentation for project tasks
 ///
-/// Prints to stdout by default. Use `--output` to write a file, `--inject`
-/// to replace a marked section, or `--multi` for one file per task.
+/// Documents the tasks defined for the current directory. Prints to stdout by
+/// default. Use `--output` to write a file, `--inject` to replace a marked section,
+/// or `--multi` for one file per task.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
+    example("mise generate task-docs", help = "Print the task documentation"),
     example(
-        r###"mise generate task-docs --style detailed
-mise generate task-docs --output TASKS.md"###
+        "mise generate task-docs --output TASKS.md",
+        help = "Write the task documentation to TASKS.md"
     ),
     example(
-        r###"mise generate task-docs --inject --output README.md"###,
-        help = r###"README.md must already contain both mise-tasks marker comments"###
+        "mise generate task-docs --inject --output README.md",
+        help = "Update the marked section of README.md"
     )
 )]
 pub(super) struct TaskDocs {
-    /// Insert the documentation into an existing file
+    /// Replace the marked section of the --output file
     ///
-    /// This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.
-    /// It will replace everything between the comment and the next comment, `<!-- /mise-tasks -->` so it can be
-    /// run multiple times on the same file to update the documentation.
-    /// The file must already contain both comments; mise errors instead of modifying the file if they are missing.
+    /// Replaces everything between `<!-- mise-tasks -->` and `<!-- /mise-tasks -->`
+    /// in the --output file, so you can rerun it to update the docs. The file must
+    /// already contain both markers; mise reports an error and leaves the file
+    /// unchanged if either is missing.
     #[usage(long, short, verbatim_doc_comment)]
     inject: bool,
     /// Write only an index of tasks, intended for use with `--multi`
@@ -38,13 +41,20 @@ pub(super) struct TaskDocs {
     #[usage(long, short, verbatim_doc_comment)]
     multi: bool,
     /// Write the generated docs to a file or directory
-    #[usage(long, short, verbatim_doc_comment)]
+    #[usage(long, short, value_name = "PATH", verbatim_doc_comment)]
     output: Option<PathBuf>,
-    /// Root directory to search for tasks
-    #[usage(long, short, verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
+    /// Has no effect; tasks always come from the current directory
+    #[usage(long, short, hide = true, verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
     root: Option<PathBuf>,
-    /// Documentation style: `simple` lists tasks, `detailed` documents each task's usage
-    #[usage(long, short, verbatim_doc_comment, value_enum, default = "simple")]
+    /// Has no effect; both styles produce the same output
+    #[usage(
+        long,
+        short,
+        hide = true,
+        verbatim_doc_comment,
+        value_enum,
+        default = "simple"
+    )]
     style: TaskDocsStyle,
 }
 
@@ -61,7 +71,22 @@ impl TaskDocs {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let dir = dirs::CWD.as_ref().unwrap();
-        let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
+        let mut tasks: Vec<_> = config::load_tasks_in_dir(&config, dir, &config.config_files)
+            .await?
+            .into_iter()
+            .filter(|t| !t.hide)
+            .collect();
+        // Generating docs only inspects tasks, so a gated `git::` file is not fetched and the
+        // task is documented from its TOML metadata (see `TaskFetcher`). Hidden tasks are
+        // dropped first so a remote file that is never documented can't fail the command.
+        TaskFetcher::for_inspection(false)
+            .fetch_tasks(&config, &mut tasks)
+            .await?;
+        let tasks: Vec<_> = tasks
+            .into_iter()
+            .map(|task| TaskFetcher::toml_only(&task).unwrap_or(task))
+            .collect();
+        // A fetched file's `#MISE hide=true` header can hide a task too.
         let visible_tasks: Vec<_> = tasks.iter().filter(|t| !t.hide).collect();
         if let Some(output) = &self.output {
             if self.multi {

@@ -1,38 +1,90 @@
 ---
-description: "Manage development environments with mise, pronounced “meez.”"
-socialDescription: "Manage development environments with mise, pronounced “meez.”"
+description: "Learn what the name mise-en-place means, who makes mise, and how to support its development."
 ---
 
-# About
+<script setup>
+import { VPTeamMembers } from 'vitepress/theme'
 
-mise (pronounced “meez”), short for _mise-en-place_, helps you set up and work in development
-environments. The name comes from the French culinary practice of preparing ingredients and
-utensils before cooking. In a project, `mise.toml` serves a similar purpose: it records the
-tools, environment, and commands needed to get to work.
+const members = [
+  {
+    avatar: 'https://www.github.com/jdx.png',
+    name: 'Jeff Dickey',
+    title: 'BDFL',
+    links: [
+      { icon: 'github', link: 'https://github.com/jdx' },
+      { icon: 'twitter', link: 'https://twitter.com/jdxcode' },
+      { icon: 'mastodon', link: 'https://fosstodon.org/@jdx' }
+    ]
+  }
+]
+const board = [
+  {
+    avatar: 'https://www.github.com/booniepepper.png',
+    name: 'Justin "J.R." Hill',
+    links: [
+      { icon: 'github', link: 'https://github.com/booniepepper' },
+    ]
+  },
+  {
+    avatar: 'https://www.github.com/pepicrft.png',
+    name: 'Pedro Piñera Buendía',
+    links: [
+      { icon: 'github', link: 'https://github.com/pepicrft' },
+    ]
+  },
+  {
+    avatar: 'https://www.github.com/chadac.png',
+    name: 'Chad Crawford',
+    links: [
+      { icon: 'github', link: 'https://github.com/chadac' },
+    ]
+  }
+]
+</script>
 
-## What mise manages
+# About mise
 
-- **[Development tools](/dev-tools/):** install runtimes and command-line tools, select versions
-  per project, and share those choices with your team and CI.
-- **[Environment variables](/environments/):** define project configuration, load dotenv files
-  or secrets, and activate environments such as Python virtualenvs.
-- **[Tasks](/tasks/):** give build, test, lint, and other commands names, dependencies, and arguments.
-- **[Machine setup](/bootstrap.html):** declare packages, files, services, and other host setup
-  separately from a project's tool installations.
+mise is pronounced "meez". The name is short for _mise-en-place_, the French
+kitchen practice of setting out every ingredient and utensil before you start
+cooking.
 
-You can adopt these features independently. Start by managing one tool or one task; you do
-not need to move all your existing scripts and configuration at once.
+mise installs a project's tools, sets its environment variables, and runs its
+tasks from one `mise.toml` that works in your shell, editor, and CI. With
+`mise bootstrap`, it can also set up a whole machine: packages, dotfiles, and
+services. To start using it, follow [Getting started](/getting-started.html).
 
-## Where to start
+## Who makes mise {#who-makes-mise}
 
-Follow [Getting Started](/getting-started.html) for the first setup, then the
-[walkthrough](/walkthrough.html) to work through a project. The [glossary](/glossary.html)
-explains terms such as backend, shim, and task. Use [Troubleshooting](/troubleshooting.html)
-when a command or shell environment does not behave as expected.
+[Jeff Dickey](https://jdx.dev/) created mise and maintains it.
+
+<VPTeamMembers :members="members" />
+
+### Advisory board
+
+The advisory board helps decide which features go on the roadmap, when a
+feature moves from experimental to stable, and whether, when, and how a feature
+is deprecated.
+
+<VPTeamMembers :members="board" />
+
+### Contributors
+
+See [everyone who has contributed](https://github.com/jdx/mise/graphs/contributors).
+To help with code, docs, or tests, read [Contributing](/contributing.html).
+
+## Support mise {#supporting-mise}
+
+mise is free and MIT licensed. Sponsors fund the development of mise and the
+other jdx.dev open source tools: companies such as
+[Entire](https://entire.io) and the
+[Omacom Foundation](https://omarchy.org/patrons/), and individuals on the
+Patron tier. To become a sponsor or a patron, see
+[jdx.dev/sponsors](https://jdx.dev/sponsors.html).
+
+[`mise sponsors`](/cli/sponsors.html) lists the sponsoring companies, and
+[`mise patrons`](/cli/patrons.html) lists the patrons.
+[Namespace](https://namespace.so) provides CI services for mise.
 
 ## Contact
 
-mise was created by [Jeff Dickey](https://jdx.dev/) and is developed with its
-[contributors](/team.html). The aim is to make development easier and more consistent across
-languages. Questions, bug reports, and suggestions are welcome; see [Contact](/contact.html)
-for the right place to start.
+To ask a question, report a bug, or reach Jeff, see [Contact](/contact.html).

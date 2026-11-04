@@ -4,7 +4,9 @@ assert "mise latest dummy" "2.0.0"
 assert "mise latest dummy@latest" "2.0.0"
 
 mise cache clear dummy
-output=$(MISE_DEBUG=1 mise latest dummy@latest 2>&1)
+# A cutoff makes mise check the stable pick's date in the listing, and the
+# default cutoff now applies to every backend; test the shortcut without one.
+output=$(MISE_MINIMUM_RELEASE_AGE=0s MISE_DEBUG=1 mise latest dummy@latest 2>&1)
 
 if [[ $output != *"latest-stable"* ]]; then
   fail "expected dummy@latest to use latest-stable, got: $output"

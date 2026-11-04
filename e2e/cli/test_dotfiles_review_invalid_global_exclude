@@ -163,6 +163,15 @@ for earlier in '~/.codex/cacheX' '~/.codex'; do
 done
 assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'price'
 assert_succeed 'mise dot save'
+# Likewise a later path that was never tracked.
+echo 'untracked' >"$HOME/.never-tracked"
+cp "$MISE_CONFIG_DIR/config.toml" before-untrack.toml
+before_untrack=$(git --git-dir="$repo" rev-parse HEAD)
+for earlier in '~/.codex/cacheX' '~/.codex'; do
+  assert_fail "mise dot untrack '$earlier' '$HOME/.never-tracked'" 'is not tracked'
+  assert_succeed "cmp before-untrack.toml '$MISE_CONFIG_DIR/config.toml'"
+  assert "git --git-dir=$repo rev-parse HEAD" "$before_untrack"
+done
 
 # Nothing acts on a rule set it could not fully build. A pull would
 # delete, so it refuses with the same diagnostic rather than proceeding

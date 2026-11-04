@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# The completion answer is a line protocol, and a line that opens with \x01 is an
+# instruction to the shell script rather than a candidate. zsh pastes what follows
+# \x01extensions into a glob, where a qualifier can run a command. A task name or
+# description from a config nobody trusted must not be able to forge such a line.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "true"
+
+[tasks."\u0001extensions"]
+description = "*)(e:./payload.sh:) x("
+run = "true"
+
+[tasks.described]
+description = "line\n\u0001extensions\t*)(e:./payload.sh:)"
+run = "true"
+EOF
+
+has_marker() {
+  [[ $1 == *$'\x01extensions'* ]]
+}
+
+for shell in bash fish zsh; do
+  answer="$(mise __complete_word__ --shell "$shell" --line "mise ")"
+  assert_contains_text "$answer" "build"
+  if has_marker "$answer"; then
+    fail "$shell answer forged a protocol line: $(printf '%q' "$answer")"
+  fi
+done
+
+complete_lines="$(mise tasks ls --complete)"
+if has_marker "$complete_lines"; then
+  fail "tasks ls --complete printed a control character: $(printf '%q' "$complete_lines")"
+fi
+assert_contains_text "$complete_lines" "described:line  extensions"

@@ -11,35 +11,37 @@ description: "Generate Markdown documentation for project tasks"
 
 Generate Markdown documentation for project tasks
 
-Prints to stdout by default. Use `--output` to write a file, `--inject`
-to replace a marked section, or `--multi` for one file per task.
+Documents the tasks defined for the current directory. Prints to stdout by
+default. Use `--output` to write a file, `--inject` to replace a marked section,
+or `--multi` for one file per task.
 
 ## Flags
-- **`-i --inject`** — Insert the documentation into an existing file
+- **`-i --inject`** — Replace the marked section of the --output file
 
-  This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.
-  It will replace everything between the comment and the next comment, `<!-- /mise-tasks -->` so it can be
-  run multiple times on the same file to update the documentation.
-  The file must already contain both comments; mise errors instead of modifying the file if they are missing.
+  Replaces everything between `<!-- mise-tasks -->` and `<!-- /mise-tasks -->`
+  in the --output file, so you can rerun it to update the docs. The file must
+  already contain both markers; mise reports an error and leaves the file
+  unchanged if either is missing.
 - **`-I --index`** — Write only an index of tasks, intended for use with `--multi`
 - **`-m --multi`** — Render each task as a separate document; requires `--output` to be a directory
-- **`-o --output <OUTPUT>`** — Write the generated docs to a file or directory
-- **`-r --root <ROOT>`** — Root directory to search for tasks
-- **`-s --style <STYLE>`** — Documentation style: `simple` lists tasks, `detailed` documents each task's usage
-
-  **Choices:** `simple`, `detailed`
-
-  **Default:** `simple`
+- **`-o --output <PATH>`** — Write the generated docs to a file or directory
 - **`-h --help`** — Print help
 
 ## Examples
 
+Print the task documentation
+
 ```
-mise generate task-docs --style detailed
+mise generate task-docs
+```
+
+Write the task documentation to TASKS.md
+
+```
 mise generate task-docs --output TASKS.md
 ```
 
-README.md must already contain both mise-tasks marker comments
+Update the marked section of README.md
 
 ```
 mise generate task-docs --inject --output README.md

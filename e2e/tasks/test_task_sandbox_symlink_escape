@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# An allow-list path usually lies in the project whose code is being confined,
+# so the project decides what its names are. A checkout that ships `dist -> /`
+# must not turn `--allow-write=./dist` into write access to everything, however
+# the path is spelled.
+
+ln -s / dist
+mkdir -p real sub
+ln -s real inside
+
+cat >mise.toml <<'TOML'
+[tasks.escape]
+run = "echo ran"
+allow_write = ["./dist"]
+
+[tasks.escape_template]
+run = "echo ran"
+allow_read = ["{{config_root}}/dist"]
+
+[tasks.escape_from_sub]
+dir = "sub"
+run = "echo ran"
+allow_write = ["{{config_root}}/dist"]
+
+[tasks.stay]
+run = "echo ran"
+allow_write = ["./inside"]
+TOML
+
+assert_fail "mise x --allow-write=./dist -- echo ran" "leads out of"
+assert_fail "mise x --allow-read=dist/etc -- echo ran" "leads out of"
+assert_fail "mise x --allow-write=$PWD/dist -- echo ran" "leads out of"
+assert_fail "cd sub && mise x --allow-write=../dist -- echo ran" "leads out of"
+assert_fail "cd sub && mise x --allow-write=$PWD/dist -- echo ran" "leads out of"
+assert_fail "mise run --allow-write=./dist stay" "leads out of"
+assert_fail "mise run escape" "leads out of"
+assert_fail "mise run escape_template" "leads out of"
+assert_fail "mise run escape_from_sub" "leads out of"
+
+# A link that stays in the project is followed, and so is a target named
+# outright. Asserted on the message, so a host that cannot start the sandbox
+# does not fail this.
+assert_not_contains "mise x --allow-write=./inside -- echo ran 2>&1 || true" "leads out of"
+assert_not_contains "mise x --allow-write=/ -- echo ran 2>&1 || true" "leads out of"
+assert_not_contains "mise run stay 2>&1 || true" "leads out of"

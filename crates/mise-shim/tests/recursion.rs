@@ -72,3 +72,15 @@ fn a_target_elsewhere_still_runs_mise() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("failed to execute mise"), "{stderr}");
 }
+
+#[test]
+fn embeds_the_version_tag_and_marker() {
+    let bytes = fs::read(env!("CARGO_BIN_EXE_mise-shim")).unwrap();
+    let contains = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    let prefix = include_str!("../../../src/assets/native-shim-version-prefix").trim();
+    assert!(contains(prefix.as_bytes()), "version tag missing");
+    assert!(
+        contains(include_bytes!("../../../src/assets/native-shim-marker")),
+        "marker missing"
+    );
+}

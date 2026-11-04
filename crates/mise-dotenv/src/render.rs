@@ -158,33 +158,24 @@ fn is_unquoted_safe(value: &str) -> bool {
         return false;
     }
 
-    let mut quote = None;
     let mut escaped = false;
     let mut previous = None;
-    for character in value.chars() {
+    for (index, character) in value.char_indices() {
         if matches!(character, '\0' | '\n' | '\r') {
             return false;
         }
-
-        if let Some(open_quote) = quote {
-            if character == open_quote && !escaped {
-                quote = None;
-            }
-            if character == '\\' {
-                escaped = !escaped;
-            } else {
-                escaped = false;
-            }
-        } else {
-            if character == '#' && previous.is_none_or(is_horizontal_whitespace) && !escaped {
-                return false;
-            }
-            if matches!(character, '\'' | '"') && !escaped {
-                quote = Some(character);
-            }
-            escaped = character == '\\' && !escaped;
+        // A quote with a partner later in the value starts a quoted segment and is removed;
+        // one without a partner is kept as written.
+        if matches!(character, '\'' | '"')
+            && !escaped
+            && has_closing_quote(&value[index + 1..], character)
+        {
+            return false;
         }
-
+        if character == '#' && previous.is_none_or(is_horizontal_whitespace) && !escaped {
+            return false;
+        }
+        escaped = character == '\\' && !escaped;
         previous = Some(character);
     }
 
@@ -202,6 +193,20 @@ fn is_unquoted_safe(value: &str) -> bool {
     }
 
     true
+}
+
+fn has_closing_quote(rest: &str, quote: char) -> bool {
+    let mut escaped = false;
+    for character in rest.chars() {
+        if escaped {
+            escaped = false;
+        } else if character == '\\' && quote == '"' {
+            escaped = true;
+        } else if character == quote {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

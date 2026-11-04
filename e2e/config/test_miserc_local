@@ -41,8 +41,8 @@ assert "(cd child && mise exec -- printenv MISERC_SELECTED)" native
 # An empty list clears the shared selection. Templates work in local files too.
 echo 'env = []' >.miserc.local.toml
 assert "mise exec -- printenv MISERC_SELECTED" base
-echo 'env = ["{{ env.MISERC_TEST_ENV }}"]' >.miserc.local.toml
-assert "MISERC_TEST_ENV=native mise exec -- printenv MISERC_SELECTED" native
+echo 'env = ["{{ "NATIVE" | lower }}"]' >.miserc.local.toml
+assert "mise exec -- printenv MISERC_SELECTED" native
 
 # A local selector works without a shared file, including the .config layout.
 rm .miserc.toml

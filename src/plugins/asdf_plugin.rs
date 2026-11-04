@@ -284,7 +284,7 @@ impl Plugin for AsdfPlugin {
                         style(&self.name).blue(),
                         style(url.trim_end_matches(".git")).yellow()
                     );
-                    if settings.paranoid {
+                    if settings.paranoid.plugins() {
                         bail!(
                             "Paranoid mode is enabled, refusing to install community-developed plugin"
                         );

@@ -1,5 +1,9 @@
 local os = require("os")
 
+local function shell_quote(value)
+    return "'" .. value:gsub("'", "'\\''") .. "'"
+end
+
 function PLUGIN:PostInstall(ctx)
     local sdkInfo = ctx.sdkInfo and ctx.sdkInfo[PLUGIN.name] or ctx
     local mainPath = sdkInfo.path
@@ -28,13 +32,16 @@ function PLUGIN:PostInstall(ctx)
         emsdk_cmd = "./emsdk"
     end
 
+    if not version or not version:match("^[%w%._%-]+$") then
+        error("Invalid emscripten version: " .. tostring(version))
+    end
     local install_version = version
     local ret
     if RUNTIME.osType == "windows" then
         ret = os.execute('cmd /c "cd /d ' .. mainPath .. ' && ' .. emsdk_cmd .. ' install ' .. install_version .. '"')
     else
         os.execute('chmod +x "' .. mainPath .. '/emsdk"')
-        ret = os.execute('cd "' .. mainPath .. '" && ' .. emsdk_cmd .. ' install ' .. install_version)
+        ret = os.execute('cd "' .. mainPath .. '" && ' .. emsdk_cmd .. ' install ' .. shell_quote(install_version))
     end
 
     if ret ~= true and ret ~= 0 then
@@ -44,7 +51,7 @@ function PLUGIN:PostInstall(ctx)
     if RUNTIME.osType == "windows" then
         ret = os.execute('cmd /c "cd /d ' .. mainPath .. ' && ' .. emsdk_cmd .. ' activate ' .. install_version .. '"')
     else
-        ret = os.execute('cd "' .. mainPath .. '" && ' .. emsdk_cmd .. ' activate ' .. install_version)
+        ret = os.execute('cd "' .. mainPath .. '" && ' .. emsdk_cmd .. ' activate ' .. shell_quote(install_version))
     end
 
     if ret ~= true and ret ~= 0 then

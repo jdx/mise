@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Each entry of a multi-entry vfox tool passes its own options to the plugin:
+# an option only the first entry sets must not reach the second's hooks.
+
+PLUGIN_DIR="$PWD/vfox-multi-entry"
+MARKERS="$MISE_DATA_DIR/vfox-multi-entry"
+mkdir -p "$PLUGIN_DIR/hooks" "$MARKERS"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "multi-entry"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/multi-entry"
+PLUGIN.license = "MIT"
+PLUGIN.description = "records the tool options each version sees"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return { { version = "1.0.0" }, { version = "2.0.0" } }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<LUA
+function PLUGIN:PreInstall(ctx)
+	local marker = io.open([[$MARKERS/]] .. ctx.version, "w")
+	marker:write(os.getenv("MISE_TOOL_OPTS__EXTENSIONS") or "missing")
+	marker:close()
+	return { version = ctx.version }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<'LUA'
+function PLUGIN:PostInstall(ctx)
+	os.execute("mkdir -p \"" .. ctx.rootPath .. "/bin\"")
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return { { key = "PATH", value = ctx.path .. "/bin" } }
+end
+LUA
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -qm "test(e2e): initialize plugin fixture"
+
+cat >mise.toml <<EOF
+[tools]
+"vfox:file://$PLUGIN_DIR" = [
+  { version = "1.0.0", extensions = "opentelemetry" },
+  { version = "2.0.0" },
+]
+EOF
+
+mise install
+assert "cat '$MARKERS/1.0.0'" "opentelemetry"
+assert "cat '$MARKERS/2.0.0'" "missing"

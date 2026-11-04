@@ -10,21 +10,26 @@ use itertools::Itertools;
 
 /// Show the path a tool's executable resolves to
 ///
-/// Use this to figure out what version of a tool is currently active.
+/// Prints the real path of the executable mise would run for BIN_NAME in the
+/// current directory, bypassing shims. Use `--version` or `--plugin` to see
+/// which tool version provides it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise which node
-/home/username/.local/share/mise/installs/node/20.0.0/bin/node"###
+~/.local/share/mise/installs/node/20.0.0/bin/node"###,
+        help = "Show the path of the node executable"
     ),
     example(
         r###"mise which node --plugin
-node"###
+node"###,
+        help = "Show the tool that provides it"
     ),
     example(
         r###"mise which node --version
-20.0.0"###
+20.0.0"###,
+        help = "Show the version that provides it"
     )
 )]
 pub(crate) struct Which {
@@ -32,15 +37,14 @@ pub(crate) struct Which {
     #[usage(required_unless = "complete")]
     pub bin_name: Option<String>,
 
-    /// Use a specific tool@version
-    /// e.g.: `mise which npm --tool=node@20`
+    /// Look in a specific tool version, such as `mise which npm --tool=node@20`
     #[usage(short, long, value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Option<ToolArg>,
 
     #[usage(long, hide = true)]
     pub complete: bool,
 
-    /// Show the plugin name instead of the path
+    /// Show the name of the tool that provides the executable
     #[usage(long, conflicts = "version")]
     pub plugin: bool,
 

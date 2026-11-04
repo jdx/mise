@@ -64,6 +64,7 @@ pub(super) async fn install(
 
     let manifest_bins = native_manifest_bins(&manifest);
     let bins = native_bins_to_install(opts.bin(), &manifest_bins, &package, &crate_name);
+    validate_native_bin_names(&bins)?;
     let bin_names = bins.iter().map(|bin| bin.name.clone()).collect::<Vec<_>>();
     let pkg_fmt = binstall.pkg_fmt.unwrap_or_else(|| "tgz".to_string());
     let package_format = native_package_format(&pkg_fmt)?;
@@ -183,6 +184,8 @@ pub(super) async fn install(
                     preserve_mtime: true,
                 },
             )?;
+            // The binary is copied by path, which reads through a shipped link.
+            file::ensure_symlinks_stay_within(&extract_dir)?;
             let Some(src) = find_native_bin(&extract_dir, binstall.bin_dir.as_deref(), &vars)?
             else {
                 if bin.required_features.is_empty() {
@@ -250,6 +253,8 @@ pub(super) async fn install(
             preserve_mtime: true,
         },
     )?;
+    // The binaries are copied by path, which reads through a shipped link.
+    file::ensure_symlinks_stay_within(extract_dir.path())?;
 
     let mut pending = vec![];
     for bin in &bins {
@@ -645,9 +650,13 @@ async fn download_crate_manifest(
     tv: &ToolVersion,
     ctx: &InstallContext,
 ) -> Result<toml::Value> {
-    let crate_path = tv
-        .download_path()
-        .join(format!("{}-{}.crate", package.name, package.num));
+    // The name and version come from the crates.io response, so they must not
+    // be able to point the download outside the download directory.
+    let crate_file_name = format!("{}-{}.crate", package.name, package.num);
+    if !file::is_plain_file_name(&crate_file_name) {
+        bail!("crates.io returned an unusable crate file name: {crate_file_name:?}");
+    }
+    let crate_path = tv.download_path().join(crate_file_name);
     ctx.pr.set_message(format!(
         "download {}",
         crate_path.file_name().unwrap().to_string_lossy()
@@ -1005,6 +1014,21 @@ fn validate_native_bin_relative_path(path: &str) -> Result<PathBuf> {
         );
     }
     Ok(path)
+}
+
+/// Bin names come from the crate's manifest, the crates.io `bin_names` list or
+/// the `bin` tool option, and are joined onto the download and install
+/// directories, so each one must be a single plain file name.
+fn validate_native_bin_names(bins: &[NativeCargoBin]) -> Result<()> {
+    for bin in bins {
+        if !file::is_plain_file_name(&bin.name) {
+            bail!(
+                "native cargo binary name must be a plain file name: {:?}",
+                bin.name
+            );
+        }
+    }
+    Ok(())
 }
 
 fn validate_native_bin_sources(pending: &[(PathBuf, PathBuf)]) -> Result<()> {
@@ -1407,6 +1431,34 @@ mod tests {
         assert!(validate_native_bin_relative_path("../bin/demo").is_err());
         assert!(validate_native_bin_relative_path("/bin/demo").is_err());
         assert!(validate_native_bin_relative_path("").is_err());
+    }
+
+    #[test]
+    fn native_bin_names_must_be_plain_file_names() {
+        let package = CratesIoPackage {
+            name: "demo".to_string(),
+            num: "1.0.0".to_string(),
+            dl_path: "/api/v1/crates/demo/1.0.0/download".to_string(),
+            repository: None,
+            bin_names: vec!["../../home/user/.bashrc".to_string()],
+        };
+        let bin = |name: &str| NativeCargoBin {
+            name: name.to_string(),
+            required_features: vec![],
+        };
+        // from the crates.io bin_names list
+        let bins = native_bins_to_install(None, &[], &package, "demo");
+        assert!(validate_native_bin_names(&bins).is_err());
+        for name in ["../../x", "/home/user/.bashrc", "x/", "a/b", "..", ".", ""] {
+            // from the manifest's [[bin]] tables
+            let bins = native_bins_to_install(None, &[bin(name)], &package, "demo");
+            assert!(
+                validate_native_bin_names(&bins).is_err(),
+                "expected {name:?} to be rejected"
+            );
+        }
+        let bins = native_bins_to_install(None, &[bin("demo"), bin("demo-cli")], &package, "demo");
+        assert!(validate_native_bin_names(&bins).is_ok());
     }
 
     #[test]

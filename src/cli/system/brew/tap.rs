@@ -8,20 +8,24 @@ use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
 use crate::system::packages::brew::default_tap_url;
 
-/// Add a Homebrew tap URL to [bootstrap.brew.taps]
+/// Add a Homebrew tap URL to the global `[bootstrap.brew.taps]`
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages brew tap railwaycat/emacsmacport
-mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git"###
+        "mise bootstrap packages brew tap acme/tools https://github.com/acme/brew-tools.git",
+        help = "Record a tap whose repository is not acme/homebrew-tools"
+    ),
+    example(
+        "mise bootstrap packages brew tap acme/tools https://github.com/acme/brew-tools.git --local",
+        help = "Write the entry to the local config instead"
     )
 )]
 pub(crate) struct SystemBrewTap {
     /// Tap name, e.g. `owner/repo`
     tap: String,
 
-    /// Repository URL for the tap; defaults to GitHub's owner/homebrew-repo.git naming
+    /// GitHub URL of the tap; defaults to `https://github.com/<owner>/homebrew-<repo>.git`
     #[usage(value_hint = usage_rs::ValueHint::Url)]
     url: Option<String>,
 
@@ -29,7 +33,7 @@ pub(crate) struct SystemBrewTap {
     #[usage(long, short)]
     local: bool,
 
-    /// Print the config change without writing it
+    /// Show the config change without writing it
     #[usage(long, short = 'n')]
     pub(super) dry_run: bool,
 

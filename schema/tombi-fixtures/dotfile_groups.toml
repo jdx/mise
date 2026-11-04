@@ -1,0 +1,11 @@
+#:schema ../mise.json
+
+[dotfile_groups.common]
+root = "home"
+target = "~"
+mode = "copy"
+
+[dotfile_groups.common.entries]
+"~/.config/git/config" = { mode = "template", permissions = "0600" }
+"~/.ssh" = { permissions = "0700" }
+"~/.ssh/config" = { mode = "copy", permissions = "0600" }

@@ -7,11 +7,18 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
 
-/// Remove Homebrew tap URLs from [bootstrap.brew.taps]
+/// Remove Homebrew tap URLs from `[bootstrap.brew.taps]`
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], example(r###"mise bootstrap packages brew untap railwaycat/emacsmacport"###))]
+#[usage(
+    verbatim_doc_comment,
+    visible_aliases = ["remove", "rm"],
+    example(
+        "mise bootstrap packages brew untap acme/tools",
+        help = "Remove a tap entry from the global config"
+    )
+)]
 pub(crate) struct SystemBrewUntap {
-    /// Tap name(s), e.g. `owner/repo`
+    /// Tap names, e.g. `owner/repo`
     #[usage(required = true)]
     taps: Vec<String>,
 
@@ -19,7 +26,7 @@ pub(crate) struct SystemBrewUntap {
     #[usage(long, short)]
     local: bool,
 
-    /// Print the config change without writing it
+    /// Show the config change without writing it
     #[usage(long, short = 'n')]
     pub(super) dry_run: bool,
 

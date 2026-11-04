@@ -40,6 +40,7 @@ assert_succeed "mise dotfiles unapply ~/.config/foo --yes"
 assert_fail "test -L ~/.config/foo"
 
 # relative only applies to symlink modes
+# schema: invalid
 cat >mise.toml <<'TOML'
 [dotfiles]
 "~/.copied" = { source = "~/dotfiles/foo", mode = "copy", relative = true }

@@ -26,6 +26,9 @@ platforms = [
 
 [backends.options]
 strip_components = 1
+# install.html links each release's nightlies build, whose path starts with the
+# build date: .../download/2026-09-08-version-2-2-<sha>/nim-2.2.12-linux_x64.tar.xz.
+version_date_expr = 'map(filter(split(body, "nightlies/releases/download/"), { # contains "/nim-" && # contains "-linux_x64.tar.xz" }), { [split(split(#, "/nim-")[1], "-linux_x64")[0], #[:10]] })'
 version_list_url = "https://nim-lang.org/install.html"
 version_regex = 'nim-(\d+\.\d+\.\d+)-linux_x64\.tar\.xz'
 

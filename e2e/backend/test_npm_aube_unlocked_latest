@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# A project with a lockfile installs an npm tool from its embedded-aube graph
+# into `<version>~aube~<digest>`. Another config that asks for the same tool as
+# `latest` (or a version prefix) without a lockfile resolves to what is
+# installed. It must see the npm version, never the private directory name
+# (discussion #14276). The identity layout keeps the graph install to the
+# project and gives the unlocked config its own installation; the legacy
+# layout keeps using the directory that was found.
+export MISE_EXPERIMENTAL=1
+
+mkdir locked unlocked prefix
+for dir in locked unlocked; do
+  cat >"$dir/mise.toml" <<'MISE_TOML'
+[tools]
+node = "20.11.1"
+"npm:inflight" = "latest"
+MISE_TOML
+done
+cat >prefix/mise.toml <<'MISE_TOML'
+[tools]
+node = "20.11.1"
+"npm:inflight" = "1.0"
+MISE_TOML
+
+where_of() {
+  realpath "$(mise -C "$1" where npm:inflight)"
+}
+
+for layout in identity legacy; do
+  echo "=== install_layout = $layout ==="
+  export MISE_INSTALL_LAYOUT=$layout
+  rm -rf "$MISE_DATA_DIR/installs" locked/mise.lock locked/.mise
+  mise -C locked lock
+  assert_contains "cat locked/mise.lock" 'aube = { path = ".mise/locks/npm-inflight/'
+  mise -C locked install
+  graph_dir="$(find "$MISE_DATA_DIR/installs/npm-inflight" -mindepth 1 -maxdepth 1 -name '*~aube~*' -printf '%f\n')"
+  [[ -n $graph_dir ]] || fail "no ~aube~ install for npm:inflight"
+  version="${graph_dir%%"~aube~"*}"
+  graph_path="$(realpath "$MISE_DATA_DIR/installs/npm-inflight/$graph_dir")"
+
+  for dir in unlocked prefix; do
+    assert "mise -C $dir current npm:inflight" "$version"
+    assert_not_contains "mise -C $dir ls npm:inflight 2>&1" "~aube~"
+    if [[ $layout == identity ]]; then
+      # Not the project's graph install: the plain version is missing until
+      # installed, and installing it adds a separate installation, which the
+      # prefix request then uses too.
+      if [[ $dir == unlocked ]]; then
+        assert_contains "mise -C $dir ls --missing --no-header npm:inflight" "$version"
+        assert_succeed "mise -C $dir install"
+        plain_path="$(where_of "$dir")"
+      fi
+      where_path="$(where_of "$dir")"
+      [[ $where_path != "$graph_path" ]] || fail "$dir runs the project's graph install"
+      [[ $where_path == "$plain_path" ]] || fail "$dir uses $where_path, not the plain install $plain_path"
+      [[ $where_path == "$MISE_DATA_DIR/installs/inflight-"* ]] || fail "no plain install for $dir: $where_path"
+    else
+      where_path="$(where_of "$dir")"
+      [[ $where_path == "$graph_path" ]] || fail "$dir uses $where_path, not $graph_path"
+    fi
+    assert "mise -C $dir ls --missing --no-header npm:inflight" ""
+    assert_not_contains "mise -C $dir env 2>&1" "missing"
+  done
+
+  # The project keeps running its own graph install.
+  current_path="$(realpath "$(mise -C locked ls --current --json npm:inflight | jq -r '.[0].install_path')")"
+  [[ $current_path == "$graph_path" ]] || fail "the project lost its graph install: $current_path"
+done

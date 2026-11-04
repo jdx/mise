@@ -1,21 +1,26 @@
 use crate::args::TruncateOptions;
 use crate::config::tracking::Tracker;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, is_override_config};
 use crate::file::display_path;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell};
 use eyre::Result;
 use itertools::Itertools;
 
-/// List config files currently in use
+/// List config files currently in use, from lowest to highest precedence
+///
+/// Later files override earlier ones. Global override files
+/// (`config.override.toml`) rank above all project config and are labeled
+/// `override`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise config ls
 Path                        Tools
-~/.config/mise/config.toml  pitchfork
-~/src/mise/mise.toml        bun, cargo-binstall, cargo:cargo-insta"###
+~/.config/mise/config.toml  node, python
+~/work/api/mise.toml        node, terraform"###,
+        help = "List the loaded config files and the tools each one requests"
     )
 )]
 pub(crate) struct ConfigLs {
@@ -26,11 +31,14 @@ pub(crate) struct ConfigLs {
     #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
-    /// Do not print table header
+    /// Do not print the table header
     #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
-    /// List all tracked config files
+    /// List every config file mise has loaded, in any project
+    ///
+    /// mise remembers the config files it loads so `mise prune` keeps the versions
+    /// they use.
     #[usage(long, verbatim_doc_comment)]
     pub tracked_configs: bool,
 }
@@ -56,10 +64,16 @@ impl ConfigLs {
             .rev()
             .map(|cf| cf.as_ref())
             .collect_vec();
-        let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
+        // Only label tiers when an override file is loaded, so the table keeps its shape otherwise.
+        let has_override = configs.iter().any(|cfg| is_override_config(cfg.get_path()));
+        let mut table = if has_override {
+            MiseTable::new(self.no_header, &["Path", "Tools", "Tier"])
+        } else {
+            MiseTable::new(self.no_header, &["Path", "Tools"])
+        };
         table.truncate(self.truncate.truncate);
         for cfg in configs {
-            let ts = cfg.to_tool_request_set().unwrap();
+            let ts = cfg.to_tool_request_set()?;
             let tools = ts.list_tools().into_iter().join(", ");
             let tools = if tools.is_empty() {
                 Cell::new("(none)")
@@ -68,7 +82,15 @@ impl ConfigLs {
             } else {
                 Cell::new(tools).add_attribute(Attribute::Dim)
             };
-            table.add_row(vec![Cell::new(display_path(cfg.get_path())), tools]);
+            let mut row = vec![Cell::new(display_path(cfg.get_path())), tools];
+            if has_override {
+                row.push(if is_override_config(cfg.get_path()) {
+                    Cell::new("override")
+                } else {
+                    Cell::new("")
+                });
+            }
+            table.add_row(row);
         }
         let verbose = Settings::get().verbose;
         for f in &env_results.env_files {
@@ -89,7 +111,11 @@ impl ConfigLs {
             } else {
                 Cell::new(description).add_attribute(Attribute::Dim)
             };
-            table.add_row(vec![Cell::new(display_path(f)), tools]);
+            let mut row = vec![Cell::new(display_path(f)), tools];
+            if has_override {
+                row.push(Cell::new(""));
+            }
+            table.add_row(row);
         }
         table.print()
     }
@@ -100,26 +126,27 @@ impl ConfigLs {
         let array_items: Vec<serde_json::Value> = config
             .config_files
             .values()
-            .map(|cf| {
+            .map(|cf| -> Result<serde_json::Value> {
                 let tools: Vec<String> = cf
-                    .to_tool_request_set()
-                    .unwrap()
+                    .to_tool_request_set()?
                     .list_tools()
                     .into_iter()
                     .map(|s| s.to_string())
                     .collect();
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "path": cf.get_path().to_string_lossy(),
                     "tools": tools,
-                })
+                    "override": is_override_config(cf.get_path()),
+                }))
             })
             .chain(env_results.env_files.iter().map(|f| {
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "path": f.to_string_lossy(),
                     "tools": [],
-                })
+                    "override": false,
+                }))
             }))
-            .collect();
+            .collect::<Result<_>>()?;
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }

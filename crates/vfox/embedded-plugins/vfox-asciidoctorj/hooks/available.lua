@@ -16,6 +16,14 @@ function PLUGIN:Available(ctx)
 
     -- Parse version directories from Maven Central HTML
     -- Pattern matches: <a href="2.5.13/" title="2.5.13/">
+    -- The listing prints "YYYY-MM-DD HH:MM" after each directory.
+    local dates = {}
+    for version, day, time in
+        resp.body:gmatch('<a href="([%d%.]+)/"[^>]*>[^<]*</a>%s+(%d%d%d%d%-%d%d%-%d%d) (%d%d:%d%d)')
+    do
+        dates[version] = day .. "T" .. time .. ":00Z"
+    end
+
     for version in resp.body:gmatch('<a href="([%d%.]+)/"') do
         -- Skip versions without bin distribution (older than 1.5.0)
         local major = tonumber(version:match("^(%d+)"))
@@ -24,6 +32,7 @@ function PLUGIN:Available(ctx)
             if major > 1 or (major == 1 and minor >= 5) then
                 table.insert(result, {
                     version = version,
+                    created_at = dates[version],
                 })
             end
         end

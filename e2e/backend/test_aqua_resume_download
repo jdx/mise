@@ -82,13 +82,13 @@ EOF_REGISTRY
 export MISE_AQUA_REGISTRY_URL="file://$PWD/registry"
 
 assert_fail "mise install aqua:example/resume-tool@1.0.0"
-assert_succeed "find '$MISE_DATA_DIR/downloads' -name '*.mise-part' -type f | grep -q ."
-assert_succeed "find '$MISE_DATA_DIR/downloads' -name '*.mise-part.json' -type f | grep -q ."
+assert_succeed "find '$MISE_CACHE_DIR/downloads-cas/incoming' -name '*.mise-part' -type f | grep -q ."
+assert_succeed "find '$MISE_CACHE_DIR/downloads-cas/incoming' -name '*.mise-part.json' -type f | grep -q ."
 
 mise install aqua:example/resume-tool@1.0.0
 assert "mise exec aqua:example/resume-tool@1.0.0 -- resume-tool" "resumed download"
 assert_contains "sed -n '1p' requests.log" 'range= if-range='
 assert_contains "cat requests.log" 'range=bytes='
 assert_contains "cat requests.log" 'if-range="resume-v1"'
-assert_fail "find '$MISE_DATA_DIR/downloads' -name '*.mise-part' -type f | grep -q ."
-assert_fail "find '$MISE_DATA_DIR/downloads' -name '*.mise-part.json' -type f | grep -q ."
+assert_fail "find '$MISE_CACHE_DIR/downloads-cas/incoming' -name '*.mise-part' -type f | grep -q ."
+assert_fail "find '$MISE_CACHE_DIR/downloads-cas/incoming' -name '*.mise-part.json' -type f | grep -q ."

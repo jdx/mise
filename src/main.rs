@@ -31,18 +31,34 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 mod test {
     // See `mise::testing::init`; this is the same constructor for the binary's
     // own tests, which also need the frontend hooks that only `cli` can register.
-    #[cfg_attr(
-        target_vendor = "apple",
-        ctor::ctor(unsafe, body(link_section = "__TEXT,__text,regular,pure_instructions"))
-    )]
-    #[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
+    mise_util::run_before_main!(init);
+
     fn init() {
         crate::cli::register_frontend();
         mise::testing::init();
     }
 }
 
+/// Raise the soft open-file limit. launchd starts agents with a soft limit of 256, which parallel
+/// installs (aube's store import in particular) exhaust with "Too many open files". The soft limit
+/// is unprivileged to raise up to the hard limit; macOS additionally rejects values above
+/// OPEN_MAX (10240) even when the hard limit is unlimited.
+#[cfg(unix)]
+fn raise_nofile_limit() {
+    use nix::sys::resource::{Resource, getrlimit, setrlimit};
+    const TARGET: nix::libc::rlim_t = 10240;
+    let Ok((soft, hard)) = getrlimit(Resource::RLIMIT_NOFILE) else {
+        return;
+    };
+    let new = hard.min(TARGET);
+    if soft < new {
+        let _ = setrlimit(Resource::RLIMIT_NOFILE, new, hard);
+    }
+}
+
 fn main() -> ExitCode {
+    #[cfg(unix)]
+    raise_nofile_limit();
     cli::register_frontend();
     register_util_hooks();
     // Same reason, different caller: `self-replace` spawns a copy of this binary under a generated
@@ -65,6 +81,12 @@ fn main() -> ExitCode {
     let early_args = env::args_safe();
     if let Some(code) = backend::aube_host::try_run_embedded_cli(&early_args) {
         return exit::status(code);
+    }
+    // Before the hook-env fast path: anything that builds an `eyre::Report` there makes eyre
+    // install its default handler, after which this install fails (mise#14954).
+    if let Err(err) = install_error_hooks() {
+        eprintln!("Error: {err:?}");
+        return exit::status(1);
     }
     if cli::Cli::exit_early_for_unchanged_hook_env(&early_args) {
         return ExitCode::SUCCESS;
@@ -92,7 +114,11 @@ fn main() -> ExitCode {
             return exit::status(1);
         }
     };
-    let result = runtime.block_on(main_());
+    // pest 2.9.3+ fails parsing when `stacker::remaining_stack()` reports < 64 KiB. On musl (the
+    // release binaries) `pthread_getattr_np` reports ~128 KiB for the main thread instead of its
+    // real size, so little headroom is left and aqua version filters fail (mise#14449). `maybe_grow`
+    // moves to a stack with known bounds when the detected space looks small and is a no-op otherwise.
+    let result = stacker::maybe_grow(256 * 1024, 16 * 1024 * 1024, || runtime.block_on(main_()));
     let (code, requested_exit) = match result {
         Ok(()) => (0, false),
         Err(err) => match exit::requested_exit_code(&err) {
@@ -101,7 +127,11 @@ fn main() -> ExitCode {
                 (code, true)
             }
             None => {
-                eprintln!("Error: {err:?}");
+                // Printed outside the logger, so redacted here as the logger would.
+                eprintln!(
+                    "Error: {}",
+                    mise_util::redactions::redact_output(&format!("{err:?}"))
+                );
                 (1, false)
             }
         },
@@ -120,8 +150,7 @@ fn main() -> ExitCode {
     }
 }
 
-async fn main_() -> eyre::Result<()> {
-    let _downloads = http::InvocationDownloads;
+fn install_error_hooks() -> eyre::Result<()> {
     // Configure color-eyre based on color preferences
     let hook_builder = if *env::CLICOLOR == Some(false) {
         // Use blank theme (no colors) when colors are disabled
@@ -132,6 +161,11 @@ async fn main_() -> eyre::Result<()> {
     let (panic_hook, eyre_hook) = hook_builder.into_hooks();
     eyre_hook.install()?;
     install_panic_hook(panic_hook);
+    Ok(())
+}
+
+async fn main_() -> eyre::Result<()> {
+    let _downloads = http::InvocationDownloads;
     measure!("main", {
         let args = env::args_safe();
         match Cli::run(&args)
@@ -178,7 +212,10 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     // Check for miette diagnostic errors and render them specially
     if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
     {
-        safe_eprintln!("{}", diagnostic.render());
+        safe_eprintln!(
+            "{}",
+            mise_util::redactions::redact_output(diagnostic.render())
+        );
         return Err(request_exit(1));
     }
 

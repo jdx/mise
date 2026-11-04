@@ -20,6 +20,18 @@ function PLUGIN:Available(ctx)
         error("Failed to fetch Lua versions, status: " .. resp.status_code)
     end
 
+    -- The FTP page lists each tarball with a date cell:
+    -- <A HREF="lua-5.4.8.tar.gz">...</A></TD><TD CLASS="date">2025-06-04</TD>
+    local dates = {}
+    for version, day in
+        string.gmatch(
+            resp.body,
+            'lua%-(%d+%.%d+[%.%d]*)%.tar%.gz</[Aa]></[Tt][Dd]>%s*<[Tt][Dd] [Cc][Ll][Aa][Ss][Ss]="date">(%d%d%d%d%-%d%d%-%d%d)<'
+        )
+    do
+        dates[version] = day .. "T00:00:00Z"
+    end
+
     -- Parse HTML to extract lua-X.Y.Z.tar.gz filenames
     -- Pattern matches: lua-5.4.8.tar.gz, lua-5.1.tar.gz, etc.
     for version in string.gmatch(resp.body, "lua%-(%d+%.%d+[%.%d]*).tar.gz") do
@@ -27,6 +39,7 @@ function PLUGIN:Available(ctx)
             seen[version] = true
             table.insert(result, {
                 version = version,
+                created_at = dates[version],
             })
         end
     end

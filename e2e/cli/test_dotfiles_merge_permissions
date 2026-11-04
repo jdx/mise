@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# permissions on a merge entry sets the mode of a target the merge creates and
+# never changes one that exists, so a seeded token file starts private and
+# whatever the user does to it afterwards stays.
+mkdir -p templates
+cat <<'EOF' >templates/private.toml
+[env]
+MISE_GITHUB_TOKEN = "your_github_token"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/conf.d/private.local.toml/seed" = { source = "templates/private.toml", merge = "missing", permissions = "0600" }
+EOF
+target="$HOME/.config/mise/conf.d/private.local.toml"
+
+# a missing target is created from the source with the declared mode
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "your_github_token"
+assert "stat -c %a $target" "600"
+assert_contains "mise dot status --verbose" "applied"
+
+# the user fills in the token and loosens the mode: the merge keeps both
+sed -i 's/your_github_token/ghp_secret/' "$target"
+chmod 644 "$target"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "ghp_secret"
+assert "stat -c %a $target" "644"
+assert_contains "mise dot status --verbose" "applied"
+
+# deleting the file creates it again with the declared mode
+rm "$target"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "your_github_token"
+assert "stat -c %a $target" "600"
+
+# an enforced merge works the same way
+cat <<'EOF' >templates/shared.json
+{"theme": "dark"}
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/app/settings.json/shared" = { source = "templates/shared.json", merge = true, permissions = "0640" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "stat -c %a $HOME/.config/app/settings.json" "640"
+chmod 600 "$HOME/.config/app/settings.json"
+echo '{"theme": "light", "other": 1}' >"$HOME/.config/app/settings.json"
+assert_succeed "mise dot apply --yes"
+assert "stat -c %a $HOME/.config/app/settings.json" "600"
+
+# entries that disagree about the mode of one file are refused
+cat <<'EOF' >templates/extra.json
+{"extra": true}
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/two/settings.json/one" = { source = "templates/shared.json", merge = true, permissions = "0600" }
+"~/.config/two/settings.json/two" = { source = "templates/extra.json", merge = true, permissions = "0644" }
+EOF
+assert_fail_contains "mise dot apply --yes" "declare different permissions"
+assert_fail "test -e $HOME/.config/two/settings.json"
+# selecting one of them does not skip the check
+assert_fail_contains "mise dot apply --yes ~/.config/two/settings.json/one" "declare different permissions"
+assert_fail "test -e $HOME/.config/two/settings.json"
+
+# an unselected pair that disagrees does not block an unrelated entry
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/two/settings.json/one" = { source = "templates/shared.json", merge = true, permissions = "0600" }
+"~/.config/two/settings.json/two" = { source = "templates/extra.json", merge = true, permissions = "0644" }
+"~/.config/other/settings.json/shared" = { source = "templates/shared.json", merge = true, permissions = "0600" }
+EOF
+assert_succeed "mise dot apply --yes ~/.config/other/settings.json/shared"
+assert "stat -c %a $HOME/.config/other/settings.json" "600"
+assert_fail "test -e $HOME/.config/two/settings.json"
+
+# a read-only mode is set after every merge for the file has written it
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/ro/settings.json/one" = { source = "templates/shared.json", merge = true, permissions = "0444" }
+"~/.config/ro/settings.json/two" = { source = "templates/extra.json", merge = true, permissions = "0444" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "stat -c %a $HOME/.config/ro/settings.json" "444"
+assert_contains "cat $HOME/.config/ro/settings.json" "theme"
+assert_contains "cat $HOME/.config/ro/settings.json" "extra"
+
+# a bad mode skips the entry
+# schema: invalid
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/bad/settings.json/shared" = { source = "templates/shared.json", merge = true, permissions = "rw" }
+EOF
+assert_contains "mise dot status 2>&1" "permissions must be an octal string"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.config/bad/settings.json"
+
+# a block or line edit never creates its file's mode, so it still rejects the key
+# schema: invalid
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.zshrc-test/activate" = { block = "echo hi", permissions = "0600" }
+EOF
+assert_contains "mise dot status 2>&1" "permissions applies to whole-file entries"

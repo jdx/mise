@@ -2,10 +2,7 @@ use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{
-    MISE_BINS_DIR, VersionInfo, filter_cached_prereleases, mark_prerelease,
-    runtime_path_for_install_path,
-};
+use crate::backend::{MISE_BINS_DIR, VersionInfo, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::http::{HTTP, apply_url_replacements};
@@ -20,8 +17,8 @@ use http::Extensions;
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
-    Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness, RepoDataRecord,
-    Subdir as CondaPlatform, prefix::Prefix, prefix_record::PathsEntry,
+    Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, PackageRecord, ParseStrictness,
+    RepoDataRecord, Subdir as CondaPlatform, prefix::Prefix, prefix_record::PathsEntry,
 };
 use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{
@@ -305,7 +302,8 @@ impl CondaBackend {
 
         file::create_dir_all(Self::conda_data_dir())?;
         let temp = Self::temp_download_path(dest);
-        HTTP.download_file(url, &temp, None).await?;
+        HTTP.download_file_pinned(url, &temp, checksum, None)
+            .await?;
 
         if !Self::verify_checksum(&temp, checksum)? {
             let _ = file::remove_all(&temp);
@@ -431,6 +429,11 @@ impl CondaBackend {
         tv.request.read_lockfile(&ctx.config)
     }
 
+    /// The `<name>==<version>` spec the solver is asked for.
+    fn exact_match_spec(&self, version: &str) -> Result<MatchSpec> {
+        exact_match_spec(&self.tool_name(), version)
+    }
+
     /// Install from a fresh solve (no lockfile deps).
     async fn install_fresh(
         &self,
@@ -439,9 +442,7 @@ impl CondaBackend {
         platform_key: &str,
     ) -> Result<()> {
         let tool_name = self.tool_name();
-        let spec_str = format!("{}=={}", tool_name, tv.version);
-        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
+        let match_spec = self.exact_match_spec(&tv.version)?;
 
         ctx.pr.set_message("fetching repodata".to_string());
         let raw_opts = tv.request.options();
@@ -1013,9 +1014,7 @@ impl CondaBackend {
     ) -> Result<BTreeMap<String, CondaPackageInfo>> {
         let platform = Self::target_to_conda_platform(target);
         let tool_name = self.tool_name();
-        let spec_str = format!("{}=={}", tool_name, tv.version);
-        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
+        let match_spec = self.exact_match_spec(&tv.version)?;
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
@@ -1043,8 +1042,47 @@ impl CondaBackend {
     }
 }
 
+/// Builds one `VersionInfo` per distinct version from repodata records.
+///
+/// A version has many builds and platform records, each with its own upload
+/// `timestamp`. The earliest one is the date the version first became available,
+/// which is the release date `minimum_release_age` should judge. A record's
+/// `indexed_timestamp` (when the channel first listed it) is preferred over
+/// `timestamp` (the build start, which the builder supplies). Records with
+/// neither, or with a non-positive one, don't date the version.
+fn collect_version_infos<'a>(
+    records: impl IntoIterator<Item = &'a PackageRecord>,
+) -> Vec<VersionInfo> {
+    let mut by_version: BTreeMap<String, Option<jiff::Timestamp>> = BTreeMap::new();
+    for record in records {
+        let ts = record
+            .indexed_timestamp
+            .or(record.timestamp)
+            .map(|t| t.jiff_timestamp())
+            .filter(|t| t.as_second() > 0);
+        let earliest = by_version.entry(record.version.to_string()).or_insert(None);
+        *earliest = match (*earliest, ts) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    by_version
+        .into_iter()
+        .map(|(version, ts)| VersionInfo {
+            version,
+            created_at: ts.map(|t| t.to_string()),
+            ..Default::default()
+        })
+        .sorted_by_cached_key(|v| Versioning::new(&v.version))
+        .collect()
+}
+
 #[async_trait]
 impl Backend for CondaBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_conda_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Conda
     }
@@ -1074,8 +1112,7 @@ impl Backend for CondaBackend {
         let tool_name = self.tool_name();
 
         let gateway = Self::create_gateway()?;
-        let match_spec = MatchSpec::from_str(&tool_name, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid match spec for '{}': {}", tool_name, e))?;
+        let match_spec = MatchSpec::from(conda_package_name(&tool_name)?);
 
         let repodata: Vec<RepoData> = gateway
             .query(
@@ -1087,45 +1124,32 @@ impl Backend for CondaBackend {
             .map_err(|e| eyre::eyre!("failed to list versions for '{}': {}", tool_name, e))?
             .to_vec();
 
-        // Collect unique versions across all repodata results
-        let mut version_set: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for data in &repodata {
-            for record in data {
-                version_set.insert(record.package_record.version.to_string());
-            }
-        }
-
-        let versions = version_set
-            .into_iter()
-            .map(|version| VersionInfo {
-                version,
-                ..Default::default()
-            })
-            .sorted_by_cached_key(|v| Versioning::new(&v.version))
-            .collect();
+        let versions = collect_version_infos(
+            repodata
+                .iter()
+                .flat_map(|data| data.into_iter().map(|record| &record.package_record)),
+        );
 
         Ok(versions)
     }
 
-    /// Override to bypass the shared remote_versions cache since conda's
-    /// channel option affects which versions are available. Conda always
-    /// queries the channel directly, so the `_refresh` flag is irrelevant.
-    async fn list_remote_versions_with_info_and_options(
-        &self,
-        config: &Arc<Config>,
-        _listing_opts: &ToolVersionOptions,
-        selection_opts: &ToolVersionOptions,
-        _refresh: bool,
-        _has_local_version_listing_override: bool,
-    ) -> Result<Vec<VersionInfo>> {
-        let want_prereleases = self.include_prereleases(selection_opts);
-        let versions = self
-            ._list_remote_versions(config)
-            .await?
-            .into_iter()
-            .map(mark_prerelease)
-            .collect();
-        Ok(filter_cached_prereleases(versions, want_prereleases))
+    /// Versions are not marked as pre-releases by the channel, so the shared
+    /// listing marks the ones whose version looks like one.
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
+    /// The versions available depend on the channel (the `channel` option or
+    /// `conda.channel`) and on this machine's platform, which the shared
+    /// versions host's one list cannot describe, so conda lists from its
+    /// channel and caches per channel and platform.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let channel = CondaOptions::new(&raw_opts).channel_name();
+        Ok(Some(format!(
+            "{channel}@{}",
+            Self::current_conda_platform()?
+        )))
     }
 
     async fn install_version_(
@@ -1157,10 +1181,7 @@ impl Backend for CondaBackend {
     ) -> Result<PlatformInfo> {
         let platform = Self::target_to_conda_platform(target);
         let tool_name = self.tool_name();
-        let spec_str = format!("{}=={}", tool_name, tv.version);
-
-        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid conda spec '{spec_str}': {e}"))?;
+        let match_spec = self.exact_match_spec(&tv.version)?;
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
@@ -1244,6 +1265,42 @@ fn cmd_escape_value(value: &str) -> String {
         .replace('"', "^\"")
 }
 
+/// The conda package name of a tool.
+fn conda_package_name(tool_name: &str) -> Result<rattler_conda_types::PackageName> {
+    use std::str::FromStr;
+    rattler_conda_types::PackageName::from_str(tool_name)
+        .map_err(|e| eyre::eyre!("invalid conda package name '{tool_name}': {e}"))
+}
+
+/// Build the `<name>==<version>` match spec from its parts.
+///
+/// Formatting the version into a match spec string and parsing that would
+/// honour the match spec grammar inside the version (`[url=...]`, `channel::`,
+/// a build string), and the version can come from a plain tool list that loads
+/// without trust. Only the version spec grammar applies to the version here,
+/// and only to name one version or a `.*` prefix of one: a group such as
+/// `3.46.0|>=0` would widen the request to other versions.
+fn exact_match_spec(tool_name: &str, version: &str) -> Result<MatchSpec> {
+    use rattler_conda_types::{EqualityOperator, StrictRangeOperator, VersionSpec};
+    let name = conda_package_name(tool_name)?;
+    let invalid =
+        |reason: String| eyre::eyre!("invalid conda version '{version}' for {tool_name}: {reason}");
+    let spec = VersionSpec::from_str(&format!("=={version}"), ParseStrictness::Lenient)
+        .map_err(|e| invalid(e.to_string()))?;
+    if !matches!(
+        spec,
+        VersionSpec::Exact(EqualityOperator::Equals, _)
+            | VersionSpec::StrictRange(StrictRangeOperator::StartsWith, _)
+    ) {
+        return Err(invalid("not a single version".to_string()));
+    }
+    Ok(MatchSpec {
+        name: rattler_conda_types::PackageNameMatcher::Exact(name),
+        version: Some(spec),
+        ..Default::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CondaBackend, CondaOptions, MISE_BINS_DIR, rewrite_request_url};
@@ -1263,6 +1320,32 @@ mod tests {
     use std::str::FromStr;
     use url::Url;
 
+    /// The version can come from a plain tool list that loads without trust,
+    /// so the match spec grammar must not apply to it.
+    #[test]
+    fn exact_match_spec_reads_the_version_as_a_version_only() {
+        let spec = super::exact_match_spec("sqlite", "3.46.0").unwrap();
+        assert_eq!(spec.to_string(), "sqlite ==3.46.0");
+        assert!(spec.url.is_none());
+        assert!(super::exact_match_spec("sqlite", "3.12.*").is_ok());
+        for version in [
+            "ref:sqlite[url=http://127.0.0.1:20319/sqlite-3.46.0-h0.tar.bz2]",
+            "3.46.0[url=/proc/self/cwd/sqlite-3.46.0-h0.tar.bz2]",
+            "3.46.0[url=http://example.invalid/x.tar.bz2]",
+            "3.46.0 h0",
+            "conda-forge::3.46.0",
+            "3.46.0|>=0",
+            "3.46.0,>=0",
+            "*",
+        ] {
+            assert!(
+                super::exact_match_spec("sqlite", version).is_err(),
+                "{version}"
+            );
+        }
+        assert!(super::exact_match_spec("sqlite[url=http://example.invalid/x]", "1").is_err());
+    }
+
     fn make_record(name: &str, version: &str, build: &str, url: &str) -> RepoDataRecord {
         let archive_id = ArchiveIdentifier {
             name: name.to_string(),
@@ -1278,12 +1361,63 @@ mod tests {
             package_record: PackageRecord::new(
                 PackageName::from_str(name).unwrap(),
                 Version::from_str(version).unwrap(),
-                build.to_string(),
+                rattler_conda_types::package::BuildString::new_unchecked(build),
             ),
             identifier: DistArchiveIdentifier::new(archive_id, DistArchiveType::Conda(conda_type)),
             url: Url::parse(url).unwrap(),
             channel: None,
         }
+    }
+
+    #[test]
+    fn version_infos_use_earliest_timestamp() {
+        use rattler_conda_types::utils::TimestampMs;
+        let ms =
+            |s: &str| TimestampMs::from_timestamp_millis(s.parse::<jiff::Timestamp>().unwrap());
+        let mut a = make_record("vim", "9.1.0", "a_0", "https://x.invalid/a.conda").package_record;
+        a.timestamp = Some(ms("2024-03-02T00:00:00Z"));
+        let mut b = make_record("vim", "9.1.0", "b_1", "https://x.invalid/b.conda").package_record;
+        b.timestamp = Some(ms("2024-03-01T00:00:00Z"));
+        let c = make_record("vim", "9.1.0", "c_2", "https://x.invalid/c.conda").package_record;
+        let undated =
+            make_record("vim", "9.0.0", "a_0", "https://x.invalid/d.conda").package_record;
+        let infos = super::collect_version_infos([&a, &b, &c, &undated]);
+        assert_eq!(infos.len(), 2);
+        assert_eq!(infos[0].version, "9.0.0");
+        assert_eq!(infos[0].created_at, None);
+        assert_eq!(infos[1].version, "9.1.0");
+        assert_eq!(infos[1].created_at.as_deref(), Some("2024-03-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn version_infos_prefer_indexed_timestamp() {
+        use rattler_conda_types::utils::TimestampMs;
+        let ms = |s: &str| TimestampMs::from_timestamp_millis(s.parse().unwrap());
+        let mut a = make_record("vim", "9.1.0", "a_0", "https://x.invalid/a.conda").package_record;
+        a.timestamp = Some(ms("2020-01-01T00:00:00Z"));
+        a.indexed_timestamp = Some(ms("2024-03-01T00:00:00Z"));
+        let infos = super::collect_version_infos([&a]);
+        assert_eq!(infos[0].created_at.as_deref(), Some("2024-03-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn minimum_release_age_hides_too_new_conda_version() {
+        use rattler_conda_types::utils::TimestampMs;
+        let mut new =
+            make_record("vim", "9.2.0", "a_0", "https://x.invalid/a.conda").package_record;
+        new.timestamp = Some(TimestampMs::from_timestamp_millis(
+            "2024-06-10T00:00:00Z".parse().unwrap(),
+        ));
+        let mut old =
+            make_record("vim", "9.1.0", "a_0", "https://x.invalid/b.conda").package_record;
+        old.timestamp = Some(TimestampMs::from_timestamp_millis(
+            "2024-01-01T00:00:00Z".parse().unwrap(),
+        ));
+        let infos = super::collect_version_infos([&new, &old]);
+        let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
+        let kept = crate::backend::VersionInfo::filter_by_date(infos, cutoff);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].version, "9.1.0");
     }
 
     #[test]

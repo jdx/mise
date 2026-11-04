@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# With the paranoid `config` category alone, a trusted project config does not
+# vouch for the task files beside it: each needs trust of its own, bound to its
+# content.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+marker="$PWD/task-template-ran"
+
+cat <<EOF >mise.toml
+[tasks.build]
+run = "echo building"
+EOF
+mkdir -p mise-tasks
+cat <<EOF >mise-tasks/ci.toml
+[test]
+description = "{{ exec(command='echo ran > $marker; echo rendered') }}"
+run = "echo test"
+EOF
+
+export MISE_PARANOID=config
+mise trust mise.toml
+assert_fail_contains "mise tasks ls 2>&1" "mise-tasks/ci.toml are not trusted"
+assert_fail "test -f $marker"
+
+mise trust mise-tasks/ci.toml
+assert_contains "mise tasks ls" "rendered"
+rm "$marker"
+
+# trust is bound to the content of the task file
+echo "# edited" >>mise-tasks/ci.toml
+assert_fail_contains "mise tasks ls 2>&1" "mise-tasks/ci.toml are not trusted"
+assert_fail "test -f $marker"
+
+# outside paranoid mode the trusted config vouches for it
+unset MISE_PARANOID
+mise trust mise.toml
+assert_contains "mise tasks ls" "rendered"
+rm "$marker"
+
+# In the home directory a project config shares its root with the global
+# config, which does not make the task files there global.
+export MISE_PARANOID=config
+echo "[env]" >"$MISE_CONFIG_DIR/config.toml"
+mkdir -p "$HOME/mise-tasks"
+cp mise.toml "$HOME/mise.toml"
+cp mise-tasks/ci.toml "$HOME/mise-tasks/ci.toml"
+cd "$HOME" || exit 1
+mise trust mise.toml
+assert_fail_contains "mise tasks ls 2>&1" "mise-tasks/ci.toml are not trusted"
+assert_fail "test -f $marker"

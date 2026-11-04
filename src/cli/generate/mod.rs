@@ -9,7 +9,7 @@ mod task_docs;
 mod task_stubs;
 mod tool_stub;
 
-/// Generate files for various tools/services
+/// Generate project files such as CI workflows, git hooks, and scripts
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "gen", alias = "g")]
 pub(crate) struct Generate {
@@ -19,7 +19,7 @@ pub(crate) struct Generate {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    /// Deprecated. Use `mise generate install-script` instead
+    /// Deprecated; use `mise generate install-script`
     // Renamed because `bootstrap` read as a form of `mise bootstrap` (machine setup), which this
     // command has nothing to do with.
     #[usage(hide)]

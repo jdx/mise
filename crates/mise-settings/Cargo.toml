@@ -14,6 +14,7 @@ indexmap = { version = "2", features = ["serde"] }
 itertools = "0.15"
 log = "0.4"
 mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-features = false }
+mise-config = { path = "../mise-config", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 strum = { version = "0.28", features = ["derive"] }

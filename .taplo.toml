@@ -28,5 +28,5 @@ reorder_keys = true
 reorder_arrays = false
 
 [[rule]]
-include = ["registry/daemon-presets/*.toml"]
+include = ["crates/mise-daemons/presets/*.toml"]
 schema.path = "./schema/mise-daemon-preset.json"

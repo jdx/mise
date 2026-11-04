@@ -8,7 +8,7 @@ use tokio::sync::OnceCell;
 use crate::args::BackendArg;
 use crate::ui::progress_report::SingleReport;
 use crate::{
-    config::Config,
+    config::{Config, Settings},
     toolset::{ResolveOptions, ToolRequest, ToolRequestSet, Toolset},
 };
 
@@ -19,27 +19,53 @@ use crate::{
 /// Matching uses `BackendArg::all_fulls`, just like install scheduling, so aliases
 /// and explicit backend identities select the same configured tools.
 #[derive(Debug, Default)]
-pub(crate) struct InstallDependencyDeclarations {
+pub struct InstallDependencyDeclarations {
     dependencies: IndexSet<BackendArg>,
+    /// Dependencies that belong to this consumer rather than to the active
+    /// toolset. They retain their own request (and therefore lockfile source)
+    /// instead of borrowing a visible tool with the same backend.
+    versioned: IndexSet<ToolRequest>,
     metadata_error: Option<String>,
 }
 
 impl InstallDependencyDeclarations {
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &BackendArg> {
         self.dependencies.iter()
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.dependencies.is_empty()
+        self.dependencies.is_empty() && self.versioned.is_empty()
     }
 
-    pub(crate) fn matches(&self, candidate: &BackendArg) -> bool {
+    pub fn matches(&self, candidate: &BackendArg) -> bool {
         self.dependencies
             .iter()
             .any(|dependency| backend_args_match(dependency, candidate))
     }
 
-    fn validate(&self) -> Result<()> {
+    fn matches_backend(&self, candidate: &BackendArg) -> bool {
+        self.matches(candidate)
+            || self
+                .versioned
+                .iter()
+                .any(|dependency| backend_args_match(dependency.ba(), candidate))
+    }
+
+    pub(crate) fn matches_request(&self, candidate: &ToolRequest) -> bool {
+        self.versioned.iter().any(|dependency| {
+            backend_args_match(dependency.ba(), candidate.ba())
+                && dependency.version() == candidate.version()
+                && dependency.source() == candidate.source()
+                && dependency.lockfile_scope() == candidate.lockfile_scope()
+        }) || self.matches(candidate.ba())
+    }
+
+    pub(crate) fn versioned(&self) -> impl Iterator<Item = &ToolRequest> {
+        self.versioned.iter()
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
         match &self.metadata_error {
             Some(err) => Err(eyre!(err.clone())),
             None => Ok(()),
@@ -58,12 +84,24 @@ impl InstallDependencyDeclarations {
         self.dependencies.insert(dependency);
     }
 
+    fn insert_versioned(&mut self, target: &BackendArg, dependency: ToolRequest) {
+        if backend_args_match(target, dependency.ba()) {
+            return;
+        }
+        self.dependencies.shift_remove(dependency.ba().as_ref());
+        self.versioned.insert(dependency);
+    }
+
     fn matching_requests(&self, requests: &ToolRequestSet) -> ToolRequestSet {
-        requests
+        let mut result: ToolRequestSet = requests
             .iter()
             .filter(|(ba, ..)| self.matches(ba))
             .map(|(ba, requests, source)| (ba.clone(), requests.clone(), source.clone()))
-            .collect()
+            .collect();
+        for request in &self.versioned {
+            result.add_version(request.clone(), request.source());
+        }
+        result
     }
 }
 
@@ -78,9 +116,7 @@ pub(crate) fn backend_args_match(left: &BackendArg, right: &BackendArg) -> bool 
 /// The returned collection always includes direct user declarations. A backend
 /// metadata error is retained so strict consumers can propagate it while the install
 /// graph can preserve its historical behavior of ignoring that error.
-pub(crate) fn install_dependency_declarations(
-    request: &ToolRequest,
-) -> InstallDependencyDeclarations {
+pub fn install_dependency_declarations(request: &ToolRequest) -> InstallDependencyDeclarations {
     let mut declarations = InstallDependencyDeclarations::default();
     match request
         .backend()
@@ -99,6 +135,11 @@ pub(crate) fn install_dependency_declarations(
             let dependency = BackendArg::from(raw.as_str());
             declarations.insert(request.ba(), dependency);
         }
+    }
+    match crate::backend::pipx::selected_python_dependency(request) {
+        Ok(Some(python)) => declarations.insert_versioned(request.ba(), python),
+        Ok(None) => {}
+        Err(err) => declarations.metadata_error = Some(format!("{err:#}")),
     }
     declarations
 }
@@ -134,6 +175,28 @@ impl InstallDependencyContext {
                 })?;
         }
         for (backend, dependency) in toolset.list_current_versions() {
+            let selector_owned = declarations
+                .versioned()
+                .any(|selected| selected == &dependency.request);
+            if selector_owned {
+                let expected = BackendArg::from("python");
+                if dependency.ba().full_without_opts() != expected.full_without_opts() {
+                    bail!(
+                        "selected Python dependency for '{}' is locked to backend '{}', expected '{}'",
+                        request,
+                        dependency.ba().full_without_opts(),
+                        expected.full_without_opts()
+                    );
+                }
+                let locked = config.invocation_locked_for(request.source(), Settings::get().locked)
+                    || request.tool_config_locked(config, true);
+                if locked && !dependency.resolved_from_lockfile() {
+                    bail!(
+                        "selected Python dependency '{}' is missing from this lockfile; run `mise lock`",
+                        dependency.request
+                    );
+                }
+            }
             if !backend.is_version_installed(config, &dependency, true) {
                 let unresolved = !dependency.resolved_from_lockfile()
                     && match &dependency.request {
@@ -175,7 +238,7 @@ impl InstallDependencyContext {
                 .toolset
                 .versions
                 .keys()
-                .all(|backend| context.declarations.matches(backend))
+                .all(|backend| context.declarations.matches_backend(backend))
         );
         Ok(context)
     }
@@ -226,6 +289,19 @@ mod tests {
 
     fn names(declarations: &InstallDependencyDeclarations) -> Vec<String> {
         declarations.iter().map(|ba| ba.short.clone()).collect()
+    }
+
+    #[test]
+    fn pipx_selected_python_is_a_source_owned_versioned_dependency() {
+        let request = request("pypi:demo", r#"python = "3.12""#);
+        let declarations = install_dependency_declarations(&request);
+        declarations.validate().unwrap();
+        assert!(!declarations.matches(&BackendArg::from("python")));
+        let dependencies = declarations.versioned().collect::<Vec<_>>();
+        assert_eq!(dependencies.len(), 1);
+        assert_eq!(dependencies[0].ba().short, "python");
+        assert_eq!(dependencies[0].version(), "3.12");
+        assert_eq!(dependencies[0].source(), request.source());
     }
 
     #[tokio::test]

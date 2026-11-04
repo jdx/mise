@@ -1,7 +1,8 @@
 use crate::config::{Config, Settings, SettingsExt};
+use crate::daemons::glue::DaemonSetExt;
 use crate::daemons::{
     self,
-    runtime::{self, Runtime},
+    runtime::{self},
 };
 use crate::file::display_path;
 use crate::ui::prompt::{self, Confirmation};
@@ -10,14 +11,27 @@ use std::path::PathBuf;
 
 /// [experimental] Manage project daemons with pitchfork
 ///
-/// Define commands or managed service presets in [daemons]: cockroachdb,
-/// nats, postgres, redis, spicedb.
-/// With no subcommand, list configured and previously managed daemons.
+/// Declare long-running processes in `[daemons]`, either as commands or as
+/// service presets such as `postgres` and `redis`, and mise runs them under
+/// pitchfork with the project's tools and environment. Requires
+/// `experimental = true`.
+///
+/// With no subcommand, lists the project's daemons like `mise daemons ls`.
+///
+/// See https://mise.jdx.dev/daemons.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "daemon",
     args_conflicts_with_subcommands = true,
-    verbatim_doc_comment
+    example(
+        "mise daemons start",
+        help = "Start the default group, or every project daemon"
+    ),
+    example(
+        "mise daemons logs api -n 50",
+        help = "Show the last 50 lines of api's output"
+    ),
+    example("mise daemons stop", help = "Stop every registered project daemon")
 )]
 pub(crate) struct Daemons {
     #[usage(subcommand)]
@@ -28,19 +42,96 @@ pub(crate) struct Daemons {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    Providers(daemons::providers::Providers),
+    /// [experimental] Manage shared servers from global `[daemon_providers]`
+    ///
+    /// A shared server is one PostgreSQL, CockroachDB, or NATS server declared in
+    /// your global config, with a separate database or account for each
+    /// checkout that uses it. Not supported on Windows. See
+    /// https://mise.jdx.dev/daemons/sharing.html#shared-server-providers
+    #[usage(
+        example("mise daemons providers ls", help = "List shared servers"),
+        example(
+            "mise daemons providers start local-postgres",
+            help = "Start the shared server named local-postgres"
+        )
+    )]
+    Providers(daemons::provider_commands::Providers),
     #[usage(name = "__provider-exec", hide = true)]
-    ProviderExec(daemons::providers::Exec),
+    ProviderExec(daemons::provider_commands::Exec),
     #[usage(name = "__resource", hide = true)]
-    Resource(daemons::providers::Resource),
+    Resource(daemons::provider_commands::Resource),
+    /// [experimental] Start project daemons and the daemons they depend on
+    ///
+    /// Installs missing tools and registers the project's daemons with pitchfork,
+    /// then starts the selected daemons and waits until they are ready. With no
+    /// names, starts the `default` group from `[daemon_groups]` when the project
+    /// declares one, otherwise every project daemon.
+    ///
+    /// Select daemons by name (`api` or a qualified ID such as `shop/api`), by
+    /// group with `--group NAME`, or all of them with `--all`. `--all` covers
+    /// every daemon in this project, including those the `default` group leaves
+    /// out; unlike pitchfork's own `--all`, it never reaches other projects, and
+    /// it cannot be combined with names or `--group`. Other flags pass through
+    /// to `pitchfork start`.
+    #[usage(
+        example(
+            "mise daemons start",
+            help = "Start the default group, or every daemon"
+        ),
+        example(
+            "mise daemons start api",
+            help = "Start api and the daemons it depends on"
+        ),
+        example(
+            "mise daemons start --group backend",
+            help = "Start a group declared in [daemon_groups]"
+        )
+    )]
     Start(Args),
     Register(Register),
+    /// [experimental] Stop project daemons
+    ///
+    /// With no names, stops every daemon the project has registered, including
+    /// daemons a removed group started. Data is kept. Select daemons
+    /// as `mise daemons start` does: by name, with `--group NAME`, or with
+    /// `--all`. Other flags pass through to `pitchfork stop`.
+    #[usage(example("mise daemons stop postgres", help = "Stop one daemon"))]
     Stop(Args),
+    /// [experimental] Restart project daemons
+    ///
+    /// Installs missing tools first and selects daemons as `mise daemons start`
+    /// does: with no names, the `default` group when the project declares one,
+    /// otherwise every project daemon. A changed daemon declaration takes effect
+    /// on restart. Other flags pass through to `pitchfork restart`.
+    #[usage(example(
+        "mise daemons restart api",
+        help = "Restart api with its current declaration"
+    ))]
     Restart(Args),
     #[usage(visible_alias = "list")]
     Ls(List),
     Urls(UrlsArgs),
+    /// [experimental] Show the output of project daemons
+    ///
+    /// Requires a running pitchfork supervisor. With no names, shows every
+    /// daemon the project has registered. Flags such as `-n`, `--since`, and
+    /// `--grep` pass through to `pitchfork logs`.
+    #[usage(
+        example(
+            "mise daemons logs api -n 50",
+            help = "Show the last 50 lines of api's output"
+        ),
+        example(
+            "mise daemons logs --since 5min",
+            help = "Show the last five minutes of output"
+        )
+    )]
     Logs(Args),
+    /// [experimental] Show the status of project daemons
+    ///
+    /// Prints pitchfork's status for each selected daemon. With no names, covers
+    /// every daemon the project has registered.
+    #[usage(example("mise daemons status api", help = "Show the status of api"))]
     Status(Args),
     Tui(TuiArgs),
     Prune(Prune),
@@ -48,71 +139,97 @@ enum Commands {
     Init(Init),
 }
 
-/// Prepare all project daemons for on-demand startup without starting them.
+/// [experimental] Register project daemons for on-demand startup
 ///
-/// Install missing tools, validate daemon definitions and dependencies, and
-/// register the generated configuration with Pitchfork. Includes imported
-/// dependencies and daemons outside the default group. Existing daemons keep
-/// running; this command does not start or restart them.
+/// Installs missing tools, validates daemon definitions and dependencies, and
+/// registers the generated configuration with pitchfork without starting
+/// anything. Covers every project daemon, including imported dependencies and
+/// daemons outside the `default` group. Daemons that are already running keep
+/// running.
 ///
-/// A running Pitchfork supervisor with its proxy enabled can then start a
-/// registered HTTP daemon when a request reaches its hostname.
+/// A running pitchfork supervisor with its proxy enabled can then start a
+/// registered HTTP daemon when a request reaches its hostname. See
+/// https://mise.jdx.dev/daemons/worktrees.html#register-for-on-demand-startup
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(example("mise daemons register", help = "Register every project daemon"))]
 struct Register {}
 
-/// Arguments passed to pitchfork; daemon names may be short or qualified.
 #[derive(Debug, usage_rs::Args)]
 #[usage(unknown_flags = "value")]
 struct Args {
+    /// Daemon names (short, such as `api`, or qualified, such as `shop/api`),
+    /// `--group NAME`, and flags passed to pitchfork
     #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 }
 
-/// Open pitchfork's dashboard with optional pitchfork TUI flags.
+/// [experimental] Open the pitchfork dashboard
+///
+/// Requires a running pitchfork supervisor. Takes `pitchfork tui` flags, not
+/// daemon names.
 #[derive(Debug, usage_rs::Args)]
 #[usage(unknown_flags = "value")]
 struct TuiArgs {
+    /// Flags passed to `pitchfork tui`
     #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 }
 
-/// List project daemons without starting a supervisor or registering configuration.
+/// [experimental] List project daemons
+///
+/// Shows each daemon's ID, status, and source without starting a supervisor or
+/// registering configuration.
 #[derive(Debug, Default, usage_rs::Args)]
+#[usage(example(
+    "mise daemons ls --json",
+    help = "Include ports, URLs, and data directories"
+))]
 struct List {
+    /// Output in JSON format, including ports, URLs, and data directories
     #[usage(long)]
     json: bool,
 }
 
-/// Remove daemon state left behind by deleted project directories.
+/// [experimental] Remove daemon state left by deleted projects
 ///
-/// Scan `$MISE_STATE_DIR/daemons/` for state belonging to deleted projects,
-/// including removed Git worktrees. Stop their daemons, unregister their
-/// configuration, and delete their state and data. Existing projects are preserved.
+/// Scans `$MISE_STATE_DIR/daemons/` for state that belongs to deleted projects,
+/// including removed Git worktrees. For each one, stops its daemons, unregisters
+/// its configuration, and deletes its state and data. Existing projects are not
+/// touched.
 ///
-/// Use `--dry-run` to preview the paths and sizes. Removal is irreversible and
-/// requires confirmation. Pass the global `--yes` flag for non-interactive cleanup;
-/// entries that may belong to an unmounted volume or a deleted symlink are skipped
-/// with `--yes` and require separate interactive confirmation.
+/// Use `--dry-run` to preview the paths and sizes. Removal cannot be undone and
+/// asks for confirmation. Pass the global `--yes` flag to prune without a
+/// prompt; entries that may belong to an unmounted volume or a deleted symlink
+/// are then skipped and need a separate interactive confirmation.
 ///
-/// Pitchfork must be available. State is kept when mise cannot confirm that the
+/// pitchfork must be available. State is kept when mise cannot confirm that the
 /// daemons have stopped or cannot unregister their configuration.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise daemons prune --dry-run", help = "Preview what would be removed"),
+    example("mise daemons prune", help = "Review the list and confirm removal")
+)]
 struct Prune {
     /// Show what would be removed without deleting anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 }
 
-/// Show each project daemon's port and its proxy hostname URL.
+/// [experimental] Show each daemon's URL and port
 ///
-/// Hostnames do not move between git worktrees, so an HTTP service can be
-/// addressed by URL while concurrent checkouts keep separate ports. A daemon
-/// with no port, or with proxy = false, is listed with its port alone.
+/// Lists every project daemon with its proxy hostname URL, the port it binds,
+/// its proxy mode, and its status. A daemon's hostname does not change when
+/// its port does, so an HTTP service can be addressed by URL while concurrent
+/// checkouts keep separate ports. A daemon with no `port`, or with
+/// `proxy = false`, gets no hostname and is listed without a URL. Each
+/// project's table is followed by its project page URL and, in a linked Git
+/// worktree, its stack page URL.
+///
+/// See https://mise.jdx.dev/daemons/worktrees.html#stable-urls-per-worktree
 #[derive(Debug, Default, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(example("mise daemons urls", help = "Show the URLs for this checkout"))]
 struct UrlsArgs {
+    /// Output in JSON format, including ports, URLs, and data directories
     #[usage(long)]
     json: bool,
 }
@@ -177,8 +294,10 @@ impl Daemons {
                 bail!("mise daemons tui opens the dashboard; pass TUI flags, not daemon names");
             }
             let previous = runtime::read_state(root)?;
-            let (config, ts) = runtime::toolset(&config, None).await?;
-            let runtime = Runtime::from_toolset(&config, &ts, Some(&previous.bin)).await?;
+            let (config, ts) = crate::daemons::glue::toolset(&config, None).await?;
+            let runtime =
+                crate::daemons::glue::runtime_from_toolset(&config, &ts, Some(&previous.bin))
+                    .await?;
             if !runtime.supervisor_up(root).await? {
                 bail!("pitchfork supervisor is not running; run mise daemons start");
             }
@@ -312,7 +431,7 @@ impl Daemons {
             while index < roots.len() {
                 let root = roots[index].clone();
                 index += 1;
-                let scoped = runtime::config_for_root(&config, &root).await?;
+                let scoped = crate::daemons::glue::config_for_root(&config, &root).await?;
                 if project_root.starts_with(&root) {
                     scoped.seed_daemons(loaded.for_root(&root));
                 }
@@ -412,7 +531,7 @@ impl Daemons {
             // The per-root configuration supplies this project's tools and env.
             let scoped = match owner_configs.remove(&root) {
                 Some(scoped) => scoped,
-                None => runtime::config_for_root(&config, &root).await?,
+                None => crate::daemons::glue::config_for_root(&config, &root).await?,
             };
             // What this invocation may act on, which for another project's root
             // is only what it imported.
@@ -455,8 +574,10 @@ impl Daemons {
             // depend on, since pitchfork starts dependencies with them. Their
             // tools are the ones installed and validated below.
             let here = set.restricted_to(&starting);
-            let (scoped, ts) = runtime::toolset(&scoped, install.then_some(&here)).await?;
-            let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
+            let (scoped, ts) =
+                crate::daemons::glue::toolset(&scoped, install.then_some(&here)).await?;
+            let runtime =
+                crate::daemons::glue::runtime_from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if matches!(action, "ls" | "urls") {
                 // Every listed root, labels or not. A root kept only by its
                 // recorded ids declares nothing now and so contributes no
@@ -532,7 +653,7 @@ impl Daemons {
                 // An unrelated daemon is registered but not started, so a
                 // missing tool or task reference of its own must not fail this
                 // command.
-                runtime::validate_tools(&here, &scoped, &ts).await?;
+                crate::daemons::glue::validate_tools(&here, &scoped, &ts).await?;
                 here.validate_tasks(&scoped).await?;
                 // This root's own configuration, which the check above cannot
                 // see: a referenced project declares its own imports.
@@ -688,11 +809,12 @@ impl Prune {
         // Pitchfork is resolved once from the ambient configuration; each entry
         // falls back to the executable its own state recorded.
         let config = Config::get().await?;
-        let (config, ts) = runtime::toolset(&config, None).await?;
+        let (config, ts) = crate::daemons::glue::toolset(&config, None).await?;
         for (entry, size) in &selected {
-            let runtime = Runtime::from_toolset(&config, &ts, Some(&entry.state.bin))
-                .await
-                .ok();
+            let runtime =
+                crate::daemons::glue::runtime_from_toolset(&config, &ts, Some(&entry.state.bin))
+                    .await
+                    .ok();
             if daemons::prune::remove(entry, runtime.as_ref()).await?
                 == daemons::prune::Outcome::Removed
             {
@@ -1143,7 +1265,7 @@ mod tests {
     /// loaded group.
     #[test]
     fn a_daemon_keeps_its_own_short_name_against_any_group() {
-        let set = daemons::load(&files(&[
+        let set = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.web]\nrun = 'child web'\n",
@@ -1184,7 +1306,7 @@ mod tests {
     fn qualified_selectors_still_reach_the_port_check() {
         // A root whose daemons this command does not reach through the closure.
         let empty = daemons::DaemonSet::default();
-        let set = daemons::load(&files(&[(
+        let set = crate::daemons::glue::load(&files(&[(
             "/project/mise.toml",
             "[daemons.api]\nrun = 'server'\n[daemons.web]\nrun = 'web'\n",
         )]))
@@ -1212,7 +1334,7 @@ mod tests {
         // bound by this same command and have to reach the conflict check.
         // Naming only what the selector matched would let one collide with
         // another project in silence.
-        let set = daemons::load(&files(&[(
+        let set = crate::daemons::glue::load(&files(&[(
             "/project/mise.toml",
             "[daemons.api]\nrun = 'server'\nport = 3000\ndepends = ['db']\n\
              [daemons.db]\nrun = 'db'\nport = 5432\n",
@@ -1311,7 +1433,7 @@ mod tests {
 
     #[test]
     fn group_names_select_every_member() {
-        let set = daemons::load(&files(&[(
+        let set = crate::daemons::glue::load(&files(&[(
             "/project/mise.toml",
             "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemons.web]\nrun = 'web'\n[daemon_groups]\nbackend = ['api', 'worker']\n",
         )]))
@@ -1340,7 +1462,7 @@ mod tests {
     fn a_group_selector_never_matches_a_same_named_daemon() {
         // One project declares the group; an unrelated project declares a daemon
         // that happens to share its name.
-        let loaded = daemons::load(&files(&[
+        let loaded = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.api]\nrun = 'api'\n[daemon_groups]\nops = ['api']\n",
@@ -1364,7 +1486,7 @@ mod tests {
     #[test]
     fn a_positional_name_resolves_in_each_project_separately() {
         // `web` is a group in the child and a daemon in the parent.
-        let loaded = daemons::load(&files(&[
+        let loaded = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemon_groups]\nweb = ['api']\n",
@@ -1388,7 +1510,7 @@ mod tests {
 
     #[test]
     fn a_default_group_applies_only_to_the_project_declaring_it() {
-        let loaded = daemons::load(&files(&[
+        let loaded = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.web]\nrun = 'web'\n[daemons.extra]\nrun = 'extra'\n[daemon_groups]\ndefault = ['web']\n",

@@ -7,17 +7,21 @@ use serde_json::json;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::task::Task;
+use crate::task::TaskOutputsExt;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_source_checker::task_cwd;
 use crate::ui::info;
 
-/// Get information about a task
+/// Show a task's definition
+///
+/// Prints the task's description, source file, dependencies, sources, outputs,
+/// run commands, environment, and usage spec. `--json` prints the full
+/// definition.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
     example(
         r###"mise tasks info test"###,
-        help = r###"Inspect the selected definition and its source file"###
+        help = r###"Show the test task and the file that defines it"###
     ),
     example(
         r###"mise tasks info test --json"###,
@@ -37,30 +41,14 @@ impl TasksInfo {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
 
-        let task_name = crate::task::expand_colon_task_syntax(&self.task, &config)?;
-
-        let tasks = if task_name.starts_with("//") {
-            let ctx = crate::task::TaskLoadContext::from_pattern(&task_name);
-            config.tasks_with_context(Some(&ctx)).await?
-        } else if crate::task::is_workspace_project_task(&task_name) {
-            let ctx = crate::task::TaskLoadContext::all();
-            config.tasks_with_context(Some(&ctx)).await?
-        } else {
-            config.tasks().await?
-        };
-
-        let tasks_with_aliases = crate::task::build_task_ref_map(tasks.iter());
-
-        use crate::task::GetMatchingExt;
-        let matching = tasks_with_aliases.get_matching(&task_name).ok();
-        let task = matching.and_then(|m| m.first().cloned().cloned());
+        let task = find_task(&config, &self.task).await?;
 
         if let Some(task) = task {
             // Resolve remote task files before displaying task info
             let mut tasks = vec![task.clone()];
             // always pass no_cache=false as the command doesn't take no-cache argument
             // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-            TaskFetcher::new(false)
+            TaskFetcher::for_inspection(false)
                 .fetch_tasks(&config, &mut tasks)
                 .await?;
             let task = &tasks[0];
@@ -128,6 +116,12 @@ impl TasksInfo {
         if let Some(dir) = &task.dir {
             info::inline_section("Directory", display_path(dir))?;
         }
+        if let Some(skip_if) = &task.skip_if {
+            info::inline_section("Skip if", skip_if)?;
+        }
+        if let Some(lock) = crate::task::task_lock::describe(task) {
+            info::inline_section("Lock", lock)?;
+        }
         if !task.sources.is_empty() {
             info::inline_section("Sources", task.sources.join(", "))?;
         }
@@ -157,7 +151,7 @@ impl TasksInfo {
                 .join("\n");
             info::section("Environment Variables", env_display)?;
         }
-        let spec = task.parse_usage_spec_for_display(config).await?;
+        let spec = usage_spec(config, task).await?;
         if !spec.is_empty() {
             info::section("Usage Spec", &spec)?;
         }
@@ -165,7 +159,7 @@ impl TasksInfo {
     }
 
     async fn display_json(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
-        let spec = task.parse_usage_spec_for_display(config).await?;
+        let spec = usage_spec(config, task).await?;
         let resolved_dir = task
             .dir(config)
             .await?
@@ -174,8 +168,12 @@ impl TasksInfo {
             "name": task.display_name,
             "aliases": task.aliases,
             "description": task.description,
-            "source": task.config_source,
-            "config_sources": task.config_sources(),
+            "source": task.config_source.to_string_lossy(),
+            "config_sources": task
+                .config_sources()
+                .iter()
+                .map(|source| source.to_string_lossy())
+                .collect::<Vec<_>>(),
             "depends": task.depends,
             "depends_post": task.depends_post,
             "daemons": task.daemons,
@@ -196,14 +194,47 @@ impl TasksInfo {
             "outputs": task.outputs,
             "cache": task.cache.clone().unwrap_or_default(),
             "shell": task.shell,
+            "skip_if": task.skip_if,
+            "lock": task.lock,
             "quiet": task.quiet,
             "silent": task.silent,
             "tools": task.tools,
             "run": task.run(),
-            "file": task.file,
+            "file": task.file.as_ref().map(|p| p.to_string_lossy()),
             "usage_spec": spec,
         });
         miseprintln!("{}", serde_json::to_string_pretty(&o)?);
         Ok(())
     }
+}
+
+/// A `git::` file left unfetched (experimental is off) can't be read, so its usage comes from
+/// the task's TOML metadata alone.
+async fn usage_spec(config: &Arc<Config>, task: &Task) -> Result<usage::Spec> {
+    match TaskFetcher::toml_only(task) {
+        Some(toml_only) => toml_only.parse_usage_spec_for_display(config).await,
+        None => task.parse_usage_spec_for_display(config).await,
+    }
+}
+
+/// Looks a task up the way `mise tasks info <name>` does, including colon
+/// expansion and monorepo patterns.
+pub(super) async fn find_task(config: &Arc<Config>, name: &str) -> Result<Option<Task>> {
+    let task_name = crate::task::expand_colon_task_syntax(name, config)?;
+
+    let tasks = if task_name.starts_with("//") {
+        let ctx = crate::task::TaskLoadContext::from_pattern(&task_name);
+        config.tasks_with_context(Some(&ctx)).await?
+    } else if crate::task::is_workspace_project_task(&task_name) {
+        let ctx = crate::task::TaskLoadContext::all();
+        config.tasks_with_context(Some(&ctx)).await?
+    } else {
+        config.tasks().await?
+    };
+
+    let tasks_with_aliases = crate::task::build_task_ref_map(tasks.iter());
+
+    use crate::task::GetMatchingExt;
+    let matching = tasks_with_aliases.get_matching(&task_name).ok();
+    Ok(matching.and_then(|m| m.first().cloned().cloned()).cloned())
 }

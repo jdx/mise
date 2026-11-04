@@ -4,62 +4,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::de::{self, Deserializer, SeqAccess, Visitor};
-
 use super::SecretName;
 use crate::task::{Task, TaskKey, TaskRunPhase, task_key};
 
-pub(crate) const G4_TRUE: &str = "secrets = true is not supported; tasks receive only the secrets they list, e.g. secrets = [\"DEPLOY_KEY\"]; grant for one run with mise run --secrets-all <task> or --secrets KEY";
-pub(crate) const G4_FALSE: &str =
-    "secrets = false is not needed: tasks receive no secrets unless they list them";
-pub(crate) const G5_TEXT: &str = "per-task source options (secrets = { fnox = ... }) are not supported yet; list key names: secrets = [\"DEPLOY_KEY\"]";
-pub const G7_TEXT: &str = "secrets is not allowed in [task_templates.<t>] or monorepo.task_defaults; list secrets on each task so every grant is visible on the task and in mise secrets ls";
-
-/// String or list of names. Shape errors fail at parse (G4/G5), like any wrong-typed task
-/// field. Name validity (G3/G6) is checked in preflight so a typo cannot break hook-env.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
-pub struct TaskSecrets(pub Vec<String>);
-
-impl TaskSecrets {
-    pub fn names(&self) -> &[String] {
-        &self.0
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for TaskSecrets {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        struct V;
-        impl<'de> Visitor<'de> for V {
-            type Value = TaskSecrets;
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("secrets must be a key name or a list of key names")
-            }
-            fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
-                Ok(TaskSecrets(vec![s.to_string()]))
-            }
-            fn visit_bool<E: de::Error>(self, b: bool) -> Result<Self::Value, E> {
-                Err(E::custom(if b { G4_TRUE } else { G4_FALSE }))
-            }
-            fn visit_map<A: de::MapAccess<'de>>(self, _: A) -> Result<Self::Value, A::Error> {
-                Err(de::Error::custom(G5_TEXT))
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                let mut out = vec![];
-                loop {
-                    match seq.next_element::<toml::Value>() {
-                        Ok(Some(toml::Value::String(s))) => out.push(s),
-                        Ok(Some(_)) | Err(_) => {
-                            return Err(de::Error::custom("secrets entries must be key names"));
-                        }
-                        Ok(None) => break,
-                    }
-                }
-                Ok(TaskSecrets(out))
-            }
-        }
-        d.deserialize_any(V)
-    }
-}
+pub use mise_config::task::{G7_TEXT, TaskSecrets};
 
 /// Launchers that start tasks without a person asking for them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -265,6 +213,7 @@ impl SecretGrant {
 pub enum ProblemKind {
     Unknown,
     NotInjectable,
+    Personal,
     InvalidName,
     Wildcard,
     Remote,
@@ -283,6 +232,7 @@ impl ProblemKind {
         match self {
             Self::Unknown => "unknown",
             Self::NotInjectable => "not_injectable",
+            Self::Personal => "personal",
             Self::InvalidName => "invalid_name",
             Self::Wildcard => "wildcard",
             Self::Remote => "remote",
@@ -940,25 +890,61 @@ pub(crate) fn key_problems(
                     .detail(format!("Granted by: {}", grant.granted_by(key))),
                 );
             }
+            // The user naming the key on the command line is the one way to hand it to a
+            // project's task.
+            Some(super::CatalogEntry {
+                personal: Some(file),
+                ..
+            }) if !grant
+                .keys
+                .get(key)
+                .is_some_and(|origins| origins.contains(&GrantOrigin::CliFlag)) =>
+            {
+                problems.push(
+                    Problem::new(
+                        &name,
+                        Some(key.as_str()),
+                        ProblemKind::Personal,
+                        format!("{who}: {key} comes from your own fnox config, so the project cannot grant it"),
+                    )
+                    .detail(format!(
+                        "{} supplies all or part of {key}. fnox adds its global config, and fnox.toml files in or above your home directory, to every project.",
+                        escape_controls(&crate::file::display_path(file))
+                    ))
+                    .detail(format!("Granted by: {}", grant.granted_by(key)))
+                    .detail(format!(
+                        "Pass it for one run yourself with `mise run --secrets {key} {name}`, or define {key} in the project's fnox.toml."
+                    )),
+                );
+            }
             Some(_) => {}
         }
     }
     problems
 }
 
+/// A file name comes from the user's config and reaches the terminal.
+fn escape_controls(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            let escaped: Vec<char> = if c.is_control() {
+                c.escape_default().collect()
+            } else {
+                vec![c]
+            };
+            escaped
+        })
+        .collect()
+}
+
 /// A close name: transposition-aware edit distance of at most 2, else a fuzzy match.
 pub(crate) fn suggest<'a>(typo: &str, names: impl Iterator<Item = &'a str>) -> Option<String> {
     use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
     let names: Vec<&str> = names.collect();
-    let typo_lc = typo.to_lowercase();
-    let near = names
-        .iter()
-        .map(|n| (osa_distance(&typo_lc, &n.to_lowercase()), *n))
-        .filter(|(d, _)| *d <= 2)
-        .min_by_key(|(d, _)| *d);
-    if let Some((_, n)) = near {
+    if let Some(n) = crate::fuzzy::nearest(typo, names.iter().copied()) {
         return Some(n.to_string());
     }
+    let typo_lc = typo.to_lowercase();
     let mut matcher = FuzzyMatcher::default();
     let pattern = FuzzyPattern::new(&typo_lc);
     names
@@ -970,30 +956,6 @@ pub(crate) fn suggest<'a>(typo: &str, names: impl Iterator<Item = &'a str>) -> O
         })
         .max_by_key(|(score, _)| *score)
         .map(|(_, n)| n.to_string())
-}
-
-fn osa_distance(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
-    for (i, row) in d.iter_mut().enumerate() {
-        row[0] = i;
-    }
-    for (j, cell) in d[0].iter_mut().enumerate() {
-        *cell = j;
-    }
-    for i in 1..=a.len() {
-        for j in 1..=b.len() {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1)
-                .min(d[i][j - 1] + 1)
-                .min(d[i - 1][j - 1] + cost);
-            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
-            }
-        }
-    }
-    d[a.len()][b.len()]
 }
 
 /// A task whose `run` only injects other tasks and that has no file: it would resolve secrets
@@ -1427,6 +1389,14 @@ fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escapes_control_characters_in_a_displayed_file_name() {
+        assert_eq!(
+            escape_controls("/h/.config/fnox/a\nb\u{1b}[31m.toml"),
+            "/h/.config/fnox/a\\nb\\u{1b}[31m.toml"
+        );
+    }
 
     fn parse(s: &str) -> Result<TaskSecrets, String> {
         #[derive(serde::Deserialize)]

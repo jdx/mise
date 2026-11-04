@@ -98,6 +98,7 @@ EOF
 mise reshim
 assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/cargo'"
 
+# schema: invalid
 cat >mise.toml <<'EOF'
 [wrappers]
 cargo = " "

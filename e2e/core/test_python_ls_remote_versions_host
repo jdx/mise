@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# With python.compile unset mise may compile, so ls-remote lists every
+# python-build definition, including ones that can only be compiled. That list
+# comes from mise-versions, so listing does not clone pyenv.
+unset MISE_PYTHON_COMPILE
+assert_contains "mise ls-remote python" "miniconda3-latest"
+assert_contains "mise ls-remote python 3.12" "3.12.3"
+assert_directory_not_exists "$MISE_CACHE_DIR/python/pyenv"
+
+# With the versions host off, the list comes from a pyenv clone as before.
+rm -rf "$MISE_CACHE_DIR/python"
+export MISE_USE_VERSIONS_HOST=0
+assert_contains "mise ls-remote python" "miniconda3-latest"
+assert_directory_exists "$MISE_CACHE_DIR/python/pyenv"

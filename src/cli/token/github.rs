@@ -2,28 +2,36 @@ use crate::github;
 use crate::tokens;
 use eyre::bail;
 
-/// Display the GitHub token mise will use for a given host
+/// Show the GitHub token mise uses for a host
 ///
-/// Shows which token source mise would use, useful for debugging
-/// authentication issues. The token is masked by default.
+/// Shows the token and where it came from, to debug authentication. The token
+/// is masked unless you pass --unmask or --raw.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise token github
-github.com: ghp_…xxxx (source: GITHUB_TOKEN)"###
+github.com: ghp_…xxxx (source: GITHUB_TOKEN)"###,
+        help = "Show the token for github.com"
     ),
     example(
         r###"mise token github --unmask
-github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)"###
+github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)"###,
+        help = "Show the whole token"
     ),
     example(
         r###"mise token github github.mycompany.com
-github.mycompany.com: (none)"###
+github.mycompany.com: (none)"###,
+        help = "Check a GitHub Enterprise host"
     ),
     example(
         r###"mise token github --oauth --refresh
-github.com: gho_…xxxx (source: GitHub OAuth)"###
+github.com: gho_…xxxx (source: GitHub OAuth)"###,
+        help = "Get a new token through native GitHub OAuth"
+    ),
+    example(
+        r###"GH_TOKEN=$(mise token github --raw) gh api user"###,
+        help = "Pass the resolved token to another tool"
     )
 )]
 pub(crate) struct Github {
@@ -35,19 +43,19 @@ pub(crate) struct Github {
     #[usage(long, hide = true)]
     pub(crate) git_credential: Option<String>,
 
-    /// Resolve only via the native GitHub OAuth source (cache,
-    /// refresh, or device-code flow), bypassing other token sources
+    /// Use only native GitHub OAuth (a cached token, a refresh, or the
+    /// device-code flow), ignoring other token sources
     #[usage(long)]
     pub(crate) oauth: bool,
 
-    /// Print only the token value
+    /// Print only the token, unmasked, for use in scripts
     #[usage(long)]
     pub(crate) raw: bool,
 
-    /// Mint a fresh OAuth token even if the cached one has not
-    /// expired, via the refresh-token grant or a new device-code flow.
-    /// Use after changing the GitHub App's installations or permissions:
-    /// cached tokens keep their original access until they expire
+    /// With --oauth, get a new OAuth token even if the cached one has not
+    /// expired, through the refresh-token grant or a new device-code flow.
+    /// Use it after changing the GitHub App's installations or permissions:
+    /// cached tokens keep their original access until they expire.
     #[usage(long, requires = "oauth")]
     pub(crate) refresh: bool,
 

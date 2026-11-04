@@ -89,7 +89,11 @@ fn walk_metadata(configured: &Path, target: &Path) -> BTreeSet<PathBuf> {
 }
 
 /// Generate a Seatbelt (SBPL) profile string from sandbox config.
-pub async fn generate_seatbelt_profile(
+///
+/// `allow_net` adds nothing: Seatbelt cannot name a remote host, so callers
+/// reject it with [`SandboxConfig::reject_allow_net`] first and the profile
+/// denies all network.
+pub fn generate_seatbelt_profile(
     config: &SandboxConfig,
     initial_program: Option<&std::path::Path>,
 ) -> String {
@@ -173,43 +177,6 @@ pub async fn generate_seatbelt_profile(
         rules.push("(deny network*)".to_string());
         // Always allow local/unix sockets
         rules.push("(allow network* (local unix))".to_string());
-        if !config.allow_net.is_empty() {
-            // Allow DNS lookups via mDNSResponder (needed for hostname resolution)
-            rules.push(
-                "(allow network* (remote unix-socket (path-literal \"/var/run/mDNSResponder\")))"
-                    .to_string(),
-            );
-            // Resolve all hostnames to IPs in parallel — Seatbelt's `ip` predicate requires IP literals
-            let lookups: Vec<_> = config
-                .allow_net
-                .iter()
-                .map(|host| {
-                    let host = host.clone();
-                    tokio::spawn(async move {
-                        match tokio::net::lookup_host(format!("{host}:0")).await {
-                            Ok(addrs) => {
-                                let ips: Vec<_> = addrs.map(|a| a.ip()).collect();
-                                (host, ips)
-                            }
-                            Err(_) => (host, vec![]),
-                        }
-                    })
-                })
-                .collect();
-            for handle in lookups {
-                if let Ok((host, ips)) = handle.await {
-                    if ips.is_empty() {
-                        // Resolution failed — use the value directly (might be an IP already)
-                        let host = sbpl_escape(&host);
-                        rules.push(format!("(allow network* (remote ip \"{host}:*\"))"));
-                    } else {
-                        for ip in ips {
-                            rules.push(format!("(allow network* (remote ip \"{ip}:*\"))"));
-                        }
-                    }
-                }
-            }
-        }
     }
 
     if config.deny_process {
@@ -234,6 +201,7 @@ pub async fn generate_seatbelt_profile(
 mod tests {
     // `Path` and `PathBuf` come from the parent module.
     use super::*;
+    use crate::sandbox::SANDBOX_EXEC;
     use std::{fs, process::Command};
 
     #[tokio::test]
@@ -242,7 +210,7 @@ mod tests {
             deny_write: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(allow file-write* (subpath \"/tmp\"))"));
         assert!(!profile.contains("(deny file-read*)"));
@@ -255,7 +223,7 @@ mod tests {
             deny_net: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         assert!(profile.contains("(deny network*)"));
         assert!(!profile.contains("(deny file-write*)"));
     }
@@ -266,27 +234,23 @@ mod tests {
             allow_write: vec![PathBuf::from("/tmp/mydir")],
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(allow file-write* (subpath \"/tmp/mydir\"))"));
     }
 
     #[tokio::test]
-    async fn test_allow_net_per_host() {
-        // Test with an IP address directly (no DNS resolution needed)
+    async fn test_allow_net_writes_no_host_rules() {
+        // `sandbox-exec` rejects `(remote ip "1.2.3.4:*")` with "host must be *
+        // or localhost in network address", so a host never reaches the profile.
         let config = SandboxConfig {
             allow_net: vec!["1.2.3.4".to_string()],
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         assert!(profile.contains("(deny network*)"));
-        assert!(profile.contains("(allow network* (remote ip \"1.2.3.4:*\"))"));
-        // mDNSResponder rule should appear exactly once
-        assert_eq!(
-            profile.matches("mDNSResponder").count(),
-            1,
-            "mDNSResponder rule should appear once"
-        );
+        assert!(!profile.contains("remote ip"), "{profile}");
+        assert!(!profile.contains("mDNSResponder"), "{profile}");
     }
 
     #[tokio::test]
@@ -295,7 +259,7 @@ mod tests {
             deny_read: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         assert!(profile.contains("(deny file-read*)"));
         assert!(profile.contains("(allow file-read* (subpath \"/usr\"))"));
         assert!(profile.contains("(allow file-read* (subpath \"/System\"))"));
@@ -318,10 +282,10 @@ mod tests {
             allow_read: vec![allowed_file.clone()],
             ..Default::default()
         };
-        config.resolve_paths();
-        let profile = generate_seatbelt_profile(&config, Some(Path::new("/bin/sh"))).await;
+        config.resolve_paths(&[]).unwrap();
+        let profile = generate_seatbelt_profile(&config, Some(Path::new("/bin/sh")));
         let read = |path: &std::path::Path| {
-            Command::new("sandbox-exec")
+            Command::new(SANDBOX_EXEC)
                 .current_dir("/")
                 .args(["-p", &profile, "--", "/bin/sh", "-c", "cat \"$1\"", "sh"])
                 .arg(path)
@@ -344,7 +308,7 @@ mod tests {
             deny_read: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         // `/private` is derived now rather than written by hand, so assert it
         // explicitly: it is what made Ruby under `/private/tmp` start again.
         for ancestor in ["/private", "/private/var", "/var", "/opt"] {
@@ -369,7 +333,7 @@ mod tests {
             deny_read: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         let data_dir = &*crate::env::MISE_DATA_DIR;
         let mut checked = 0;
         for ancestor in data_dir.ancestors().skip(1) {
@@ -408,8 +372,8 @@ mod tests {
             allow_write: vec![writable.clone()],
             ..Default::default()
         };
-        config.resolve_paths();
-        let profile = generate_seatbelt_profile(&config, None).await;
+        config.resolve_paths(&[]).unwrap();
+        let profile = generate_seatbelt_profile(&config, None);
 
         // A write-allowed path is implicitly readable, so it needs the walk too.
         for path in [&readable, &writable] {
@@ -466,7 +430,7 @@ mod tests {
             deny_read: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         assert_eq!(
             profile
                 .matches("(allow file-read-metadata (literal \"/private\"))")
@@ -497,8 +461,8 @@ mod tests {
             allow_read: vec![nested],
             ..Default::default()
         };
-        config.resolve_paths();
-        let profile = generate_seatbelt_profile(&config, None).await;
+        config.resolve_paths(&[]).unwrap();
+        let profile = generate_seatbelt_profile(&config, None);
 
         // Assert both halves: the two disagreeing is the signature of the bug,
         // so a read that still works is part of what is being pinned.
@@ -507,7 +471,7 @@ path = ARGV[0]
 puts "realpath #{File.realpath(path)}"
 puts "read #{File.read(path)}"
 "#;
-        let output = Command::new("sandbox-exec")
+        let output = Command::new(SANDBOX_EXEC)
             .args([
                 "-p",
                 &profile,
@@ -551,17 +515,17 @@ puts "read #{File.read(path)}"
             allow_read: vec![configured.clone()],
             ..Default::default()
         };
-        config.resolve_paths();
+        config.resolve_paths(&[]).unwrap();
         assert_eq!(config.allow_read, vec![target.join("deep")]);
         assert_eq!(config.symlinked_allow_paths, vec![configured.clone()]);
 
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         let script = r#"
 path = ARGV[0]
 puts "realpath #{File.realpath(path)}"
 puts "read #{File.read(path)}"
 "#;
-        let output = Command::new("sandbox-exec")
+        let output = Command::new(SANDBOX_EXEC)
             .args([
                 "-p",
                 &profile,
@@ -595,9 +559,9 @@ puts "read #{File.read(path)}"
             deny_read: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         let run = |program: &str, args: &[&str]| {
-            Command::new("sandbox-exec")
+            Command::new(SANDBOX_EXEC)
                 .args(["-p", &profile, "--", program])
                 .args(args)
                 .output()
@@ -636,7 +600,7 @@ puts "read #{File.read(path)}"
             deny_env: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, None).await;
+        let profile = generate_seatbelt_profile(&config, None);
         assert!(profile.contains("(deny file-read*)"));
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(deny network*)"));
@@ -648,7 +612,7 @@ puts "read #{File.read(path)}"
             deny_process: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, Some(Path::new("/usr/bin/ruby"))).await;
+        let profile = generate_seatbelt_profile(&config, Some(Path::new("/usr/bin/ruby")));
         assert!(profile.contains("(deny process-fork)"));
         assert!(profile.contains("(deny process-exec)"));
         assert!(profile.contains("(allow process-exec (literal \"/usr/bin/ruby\"))"));
@@ -661,7 +625,7 @@ puts "read #{File.read(path)}"
             deny_process: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config, Some(Path::new("/usr/bin/ruby"))).await;
+        let profile = generate_seatbelt_profile(&config, Some(Path::new("/usr/bin/ruby")));
         let script = r#"
 puts "ruby started"
 begin
@@ -675,7 +639,7 @@ rescue SystemCallError
 end
 puts "child processes blocked"
 "#;
-        let output = Command::new("sandbox-exec")
+        let output = Command::new(SANDBOX_EXEC)
             .args([
                 "-p",
                 &profile,

@@ -48,3 +48,66 @@ file = "http://localhost:${HTTP_PORT}/test/extends-task"
 EOF
 
 assert_fail "mise run remote_extends_task" "which was not found"
+
+#################################################################################
+# A remote task with its own `env` run as a sub-task or dependency must run the
+# downloaded file, not its URL as a local path
+# Reproduces: https://github.com/jdx/mise/issues/15175
+#################################################################################
+
+cat <<EOF2 >mise.toml
+[tasks.remote_env]
+file = "http://localhost:${HTTP_PORT}/test/env-task"
+env.FOO = "1"
+
+[tasks.sub]
+run = [{ task = "remote_env" }]
+
+[tasks.dep]
+depends = ["remote_env"]
+run = "echo dep done"
+EOF2
+
+assert_contains "mise run remote_env" "env-task FOO=1"
+assert_contains "mise run sub" "env-task FOO=1"
+assert_contains "mise run dep" "env-task FOO=1"
+assert_not_contains "mise run sub 2>&1" "No such file"
+assert_not_contains "mise run dep 2>&1" "No such file"
+
+# A remote cleanup task with its own `env` keeps its post phase: it runs after
+# its parent, even when the parent fails
+cat <<EOF2 >mise.toml
+[tasks.remote_cleanup]
+file = "http://localhost:${HTTP_PORT}/test/env-task"
+env.FOO = "1"
+
+[tasks.deploy]
+depends_post = ["remote_cleanup"]
+run = "echo deploying && exit 1"
+EOF2
+
+assert_fail "mise run deploy" "env-task FOO=1"
+assert_contains "mise tasks deps deploy" "remote_cleanup (post)"
+assert_contains "mise run deploy 2>&1 | grep -E '^deploying|env-task FOO=1' | tr '\n' ' '" "deploying env-task FOO=1"
+
+# The same remote task depended on with different env is two occurrences, and each one
+# keeps its own dependencies
+cat <<EOF2 >mise.toml
+[tasks.prepare]
+run = "echo prepared"
+
+[tasks.remote_dep]
+file = "http://localhost:${HTTP_PORT}/test/env-task"
+depends = ["prepare"]
+
+[tasks.parent]
+depends = [{ task = "remote_dep", env = { FOO = "one" } }, { task = "remote_dep", env = { FOO = "two" } }]
+EOF2
+
+assert "mise tasks deps parent" "parent
+├── remote_dep
+│   └── prepare
+└── remote_dep
+    └── prepare"
+assert_contains "mise run parent" "env-task FOO=one"
+assert_contains "mise run parent" "env-task FOO=two"

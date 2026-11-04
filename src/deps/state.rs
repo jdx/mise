@@ -31,6 +31,10 @@ pub(crate) struct DepsState {
     /// when `seen_outputs` was recorded.
     #[serde(default)]
     pub output_rule_hashes: BTreeMap<String, String>,
+    /// provider_id → (relative output path → stale marker generation the
+    /// provider last ran against)
+    #[serde(default)]
+    pub stale_marker_generations: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl DepsState {
@@ -98,6 +102,28 @@ impl DepsState {
     /// Get the output-rule identity used to record a provider's seen outputs.
     pub(crate) fn get_output_rules(&self, provider_id: &str) -> Option<&String> {
         self.output_rule_hashes.get(provider_id)
+    }
+
+    /// Get the stale marker generation a provider last ran against for an output.
+    pub(crate) fn get_stale_marker_generation(
+        &self,
+        provider_id: &str,
+        output: &str,
+    ) -> Option<&str> {
+        self.stale_marker_generations
+            .get(provider_id)?
+            .get(output)
+            .map(String::as_str)
+    }
+
+    /// Record the stale marker generations a provider ran against.
+    pub(crate) fn set_stale_marker_generations(
+        &mut self,
+        provider_id: &str,
+        generations: BTreeMap<String, String>,
+    ) {
+        self.stale_marker_generations
+            .insert(provider_id.to_string(), generations);
     }
 
     /// Record the output-rule identity associated with a provider's outputs.

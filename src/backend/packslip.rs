@@ -23,6 +23,7 @@ use packslip::model::{
     repository, repository_subpath, tag_version,
 };
 use packslip::sigstore::{GITHUB_ISSUER, Policy, Trust};
+use serde::{Deserialize, Serialize};
 
 use crate::args::BackendArg;
 use crate::backend::options::VersionOrder;
@@ -32,7 +33,9 @@ use crate::backend::{
     Backend, BackendType, MISE_BINS_DIR, SecurityFeature, VersionInfo,
     runtime_path_for_install_path,
 };
+use crate::cache::CacheManagerBuilder;
 use crate::config::{Config, Settings, SettingsExt};
+use crate::dirs;
 use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
@@ -41,7 +44,7 @@ use crate::lockfile::PlatformInfo;
 use crate::packslip_forge::{self, ForgeExpect};
 use crate::packslip_pins::{self, Observed};
 use crate::platform::Platform;
-use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, scalar_value_to_string};
 
 /// The backend installs only from a signed manifest, which is a property of
 /// the format rather than a rough edge, so nothing is held back by a setting.
@@ -95,9 +98,25 @@ impl<'a> PackslipOptions<'a> {
         self.raw.get_string("issuer")
     }
 
-    /// The file name of the repository workflow that signs releases.
-    fn workflow(&self) -> Option<String> {
-        self.raw.get_string("workflow")
+    /// The file names of the repository workflows that may sign releases:
+    /// one name, or a list of them when the signing workflow changed.
+    fn workflows(&self, project: &str) -> Result<Option<Vec<String>>> {
+        let Some(value) = self.raw.opts.get("workflow") else {
+            return Ok(None);
+        };
+        let names: Option<Vec<String>> = match value {
+            toml::Value::Array(items) => items
+                .iter()
+                .map(|item| item.as_str().map(str::to_string))
+                .collect(),
+            other => scalar_value_to_string(other).map(|name| vec![name]),
+        };
+        match names {
+            Some(names) if !names.is_empty() => Ok(Some(names)),
+            _ => bail!(
+                "packslip:{project}: `workflow` must be a workflow file name or a list of them"
+            ),
+        }
     }
 
     /// Accept a key-signed bundle with no transparency log entry.
@@ -165,13 +184,59 @@ fn release_url_tag(url: &str) -> Option<String> {
     (!tag.is_empty()).then(|| tag.into_owned())
 }
 
-/// The text of a release list at `url`, or `None` when the repository keeps
-/// none. A resolution reads the list for every release it looks at, so one
-/// command would otherwise fetch the same file over and over, and wait on a
-/// 404 each time. An answer is reused for a few seconds, which covers a
-/// command and no more: a long-running process (`mise mcp`, `mise watch`) reads
-/// the list again, so a withdrawal is still noticed.
-async fn fetch_github_list(url: &str) -> Result<Option<String>> {
+/// The text of a signed release list at `url` (a vendor's or a stamper's), or
+/// `None` when there is none. A resolution reads the list for every release it
+/// looks at, so one command would otherwise fetch the same file over and over,
+/// and wait on a 404 each time. An answer is reused for a few seconds, which
+/// covers a command and no more: a long-running process (`mise mcp`, `mise
+/// watch`) reads the list again, so a withdrawal is still noticed.
+///
+/// Every command still asks the host. What it saves across commands is the
+/// body: the last copy is kept with its validator, and a `304 Not Modified`
+/// answer reuses it. The text is verified by the caller either way, exactly
+/// as a fresh download would be.
+pub(crate) async fn fetch_policy_text(url: &str) -> Result<Option<String>> {
+    fetch_policy_text_via(url, None).await
+}
+
+/// [`fetch_policy_text`] for the list of a github.com repository's project
+/// (`sub` is its path in the repository, if any), which mise-versions answers
+/// before `url` on raw.githubusercontent.com is asked.
+async fn fetch_github_policy_text(
+    repo: &str,
+    sub: Option<&str>,
+    url: &str,
+) -> Result<Option<String>> {
+    fetch_policy_text_via(url, Some((repo, sub))).await
+}
+
+/// What mise-versions says about a repository's list: `Some` when it knows,
+/// `None` when the caller has to read the file from GitHub. The mirror
+/// answers for public repositories, and a list is nearly always absent, so
+/// asking raw.githubusercontent.com every time is what a shared CI runner's
+/// rate limit fails on. A rule in `url_replacements` for `url` makes the
+/// replacement the source, and any trouble with the mirror is the same as it
+/// not knowing: GitHub still has the file, and a private repository's is
+/// readable only with the user's token.
+async fn mirrored_policy_text(url: &str, repo: &str, sub: Option<&str>) -> Option<Option<String>> {
+    if crate::versions_host::github_api_url_is_replaced(url) {
+        return None;
+    }
+    match crate::versions_host::github_packslip_list(repo, sub).await {
+        Ok(Some(crate::versions_host::PackslipList::Present(text))) => Some(Some(text)),
+        Ok(Some(crate::versions_host::PackslipList::Absent)) => Some(None),
+        Ok(None) => None,
+        Err(err) => {
+            debug!("mise-versions did not answer for the release list of {repo}: {err:#}");
+            None
+        }
+    }
+}
+
+async fn fetch_policy_text_via(
+    url: &str,
+    mirror: Option<(&str, Option<&str>)>,
+) -> Result<Option<String>> {
     type Fetched = Arc<tokio::sync::OnceCell<(std::time::Instant, Option<String>)>>;
     const REUSE: std::time::Duration = std::time::Duration::from_secs(30);
     static FETCHED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Fetched>>> =
@@ -191,21 +256,102 @@ async fn fetch_github_list(url: &str) -> Result<Option<String>> {
     };
     let (_, text) = cell
         .get_or_try_init(|| async {
-            let headers = github::get_headers(url)?;
-            let text = match HTTP_FETCH
-                .get_text_request(url)
-                .headers(&headers)
-                .send()
-                .await
-            {
-                Ok(text) => Some(text),
-                Err(err) if crate::http::error_code(&err) == Some(404) => None,
-                Err(err) => return Err(err),
+            let mirrored = match mirror {
+                Some((repo, sub)) => mirrored_policy_text(url, repo, sub).await,
+                None => None,
             };
-            Ok((std::time::Instant::now(), text))
+            let text = match mirrored {
+                Some(text) => text,
+                None => {
+                    let store = dirs::CACHE.join("packslip").join("policy");
+                    revalidate_policy_text(url, &store).await?
+                }
+            };
+            Ok::<_, eyre::Report>((std::time::Instant::now(), text))
         })
         .await?;
     Ok(text.clone())
+}
+
+/// The last copy of a policy file and the validator its host sent with it.
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredPolicy {
+    url: String,
+    etag: Option<String>,
+    last_modified: Option<String>,
+    text: String,
+}
+
+fn stored_policy_path(store: &Path, url: &str) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    store.join(format!(
+        "{}.json",
+        hex::encode(Sha256::digest(url.as_bytes()))
+    ))
+}
+
+/// One conditional request for the policy file at `url`, with no reuse
+/// within the process.
+async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String>> {
+    use reqwest::StatusCode;
+    use reqwest::header::{ETAG, HeaderValue, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
+
+    let path = stored_policy_path(store, url);
+    let stored = file::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<StoredPolicy>(&text).ok())
+        .filter(|stored| stored.url == url);
+    let mut headers = crate::http::host_auth_headers(&url.parse()?)?;
+    if let Some(stored) = &stored {
+        if let Some(etag) = stored.etag.as_deref() {
+            headers.insert(IF_NONE_MATCH, HeaderValue::from_str(etag)?);
+        } else if let Some(last_modified) = stored.last_modified.as_deref() {
+            headers.insert(IF_MODIFIED_SINCE, HeaderValue::from_str(last_modified)?);
+        }
+    }
+    let resp = match HTTP_FETCH.get_async_with_headers(url, &headers).await {
+        Ok(resp) => resp,
+        Err(err) if crate::http::error_code(&err) == Some(404) => {
+            // Nothing to revalidate next time.
+            let _ = std::fs::remove_file(&path);
+            return Ok(None);
+        }
+        Err(err) => return Err(err),
+    };
+    if resp.status() == StatusCode::NOT_MODIFIED {
+        // A host only says this to the validator sent, which came with this text.
+        return match stored {
+            Some(stored) => Ok(Some(stored.text)),
+            None => bail!("{url} answered 304 Not Modified to an unconditional request"),
+        };
+    }
+    let header = |name| {
+        resp.headers()
+            .get(name)
+            .and_then(|value: &HeaderValue| value.to_str().ok())
+            .map(str::to_string)
+    };
+    // A weak ETag is enough: reused text is verified again, signature,
+    // expiry and sequence, before anything trusts it.
+    let etag = header(ETAG);
+    let last_modified = header(LAST_MODIFIED);
+    let text = crate::http::buffer_body(resp).await?.text().await?;
+    if etag.is_some() || last_modified.is_some() {
+        let stored = StoredPolicy {
+            url: url.to_string(),
+            etag,
+            last_modified,
+            text: text.clone(),
+        };
+        let written = file::create_dir_all(store)
+            .and_then(|()| file::write_atomic(&path, serde_json::to_vec(&stored)?));
+        if let Err(err) = written {
+            debug!("could not keep {url} for revalidation: {err:#}");
+        }
+    } else {
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(Some(text))
 }
 
 /// The signed release list of a project on its own domain.
@@ -278,6 +424,50 @@ where
         }
     }
     Ok(None)
+}
+
+/// Cut `matches` after `query` when it names one of them, so that a caller
+/// taking the last match gets that exact version, whatever else matched.
+fn ends_at_exact(matches: &mut Vec<String>, query: &str) -> bool {
+    let Some(index) = matches.iter().position(|v| v == query) else {
+        return false;
+    };
+    matches.truncate(index + 1);
+    true
+}
+
+/// The oldest-first `matches` for `query`, ending at the newest one `admits`
+/// accepts, which is the one a resolution takes. The matches are tried newest
+/// first, as `latest` tries its candidates. An exact version is left alone: it
+/// names its release, and install says why that release is refused. When
+/// every match is refused this is an error, since an empty answer would send
+/// resolution on to install `query` as written, which fails for want of a
+/// release by that name.
+async fn eligible_matches<F, Fut>(
+    project: &str,
+    query: &str,
+    mut matches: Vec<String>,
+    admits: F,
+) -> Result<Vec<String>>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<bool>>,
+{
+    if matches.is_empty() || ends_at_exact(&mut matches, query) {
+        return Ok(matches);
+    }
+    let newest_first = matches.iter().rev().cloned().collect();
+    let Some(eligible) = first_eligible(newest_first, admits).await? else {
+        bail!(
+            "no release of packslip:{project} matching {query} can be installed; the warnings above, or MISE_DEBUG=1 output, say why each was skipped"
+        );
+    };
+    let keep = matches
+        .iter()
+        .position(|v| *v == eligible)
+        .map_or(0, |index| index + 1);
+    matches.truncate(keep);
+    Ok(matches)
 }
 
 fn github_recommendation(
@@ -580,30 +770,56 @@ fn locate_entry(install_path: &Path, rel: &str, wanted: fn(&Path) -> bool) -> Op
 
 /// What the consumer pinned: the forge identity a name implies, or the key
 /// or identity given in the tool options.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum Pin {
     /// A GitHub or GitLab project with no signer given: its releases are
     /// verified by the forge's repository ID (see [`packslip_forge`]), with
     /// this policy for the name it is requested under.
     Forge(Policy),
     Identity(Policy),
+    /// The workflows a `workflow` option names, any one of which may have
+    /// signed: the forge policy narrowed to each, several for a project
+    /// whose signing workflow changed across the releases the registry
+    /// covers. The release is still held to the repository ID, as under
+    /// [`Pin::Forge`].
+    Workflows(Vec<Policy>),
     Key(packslip::minisign::PublicKey),
 }
 
+/// The text of the `.pub` file a pinned key names, or none when the value
+/// is the key line itself. A minisign key line is also a valid relative
+/// path, so it is read as a key first: a file of that name in the working
+/// directory, which may be anybody's, must not take the place of the key
+/// that was pinned.
+pub(crate) fn pubkey_file_text(value: &str) -> Result<Option<String>> {
+    pubkey_file_text_with(value, Path::is_file)
+}
+
+fn pubkey_file_text_with(value: &str, is_file: impl Fn(&Path) -> bool) -> Result<Option<String>> {
+    if packslip::minisign::PublicKey::parse(value).is_ok() || !is_file(Path::new(value)) {
+        return Ok(None);
+    }
+    Ok(Some(file::read_to_string(value)?))
+}
+
+/// The key a pin gives as a minisign public key line or as the path of a
+/// `.pub` file; see [`pubkey_file_text`].
+pub(crate) fn pinned_key(value: &str) -> Result<packslip::minisign::PublicKey> {
+    let text = pubkey_file_text(value)?;
+    packslip::minisign::PublicKey::parse(text.as_deref().unwrap_or(value)).map_err(|e| eyre!("{e}"))
+}
+
 fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
-    // An identity pin, not a forge one: forge verification derives its own
-    // repository-wide policy from the bundle and would ignore the workflow.
-    if let Some(workflow) = opts.workflow() {
-        return Ok(Pin::Identity(workflow_policy(project, opts, &workflow)?));
+    // Verified under the workflow policies, not the forge's: forge
+    // verification derives its own repository-wide policy from the bundle
+    // and would ignore the workflow. The repository ID is checked after.
+    if let Some(workflows) = opts.workflows(project)? {
+        return Ok(Pin::Workflows(workflow_policies(
+            project, opts, &workflows,
+        )?));
     }
     if let Some(pubkey) = opts.pubkey() {
-        let text = if Path::new(&pubkey).is_file() {
-            file::read_to_string(&pubkey)?
-        } else {
-            pubkey
-        };
-        let key = packslip::minisign::PublicKey::parse(&text)
-            .map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
+        let key = pinned_key(&pubkey).map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
         return Ok(Pin::Key(key));
     }
     let explicit = Policy {
@@ -622,9 +838,14 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
     }
 }
 
-/// The forge policy narrowed to one workflow file run on a tag, so a
-/// workflow on a branch of the same repository cannot sign a release.
-fn workflow_policy(project: &str, opts: &PackslipOptions<'_>, workflow: &str) -> Result<Policy> {
+/// The forge policy narrowed to each named workflow file run on a tag, so a
+/// workflow on a branch of the same repository cannot sign a release. An
+/// entry may name another ref, for a project that signs from a branch.
+fn workflow_policies(
+    project: &str,
+    opts: &PackslipOptions<'_>,
+    workflows: &[String],
+) -> Result<Vec<Policy>> {
     if opts.pubkey().is_some()
         || opts.identity().is_some()
         || opts.identity_prefix().is_some()
@@ -634,19 +855,44 @@ fn workflow_policy(project: &str, opts: &PackslipOptions<'_>, workflow: &str) ->
             "packslip:{project}: `workflow` cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`"
         );
     }
-    let workflow = workflow.trim();
-    if workflow.is_empty() || workflow.contains(['/', '@']) {
-        bail!("packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`");
-    }
-    let mut policy = Policy::for_project(project)
+    let base = Policy::for_project(project)
         .filter(|policy| policy.issuer.as_deref() == Some(GITHUB_ISSUER))
         .ok_or_else(|| eyre!("packslip:{project}: `workflow` needs a github.com project"))?;
-    let repo = policy
+    let repo = base
         .identity_prefix
-        .take()
+        .as_deref()
         .ok_or_else(|| eyre!("packslip:{project}: no repository to pin `workflow` under"))?;
-    policy.identity_prefix = Some(format!("{repo}.github/workflows/{workflow}@refs/tags/"));
-    Ok(policy)
+    let mut policies = Vec::new();
+    for entry in workflows {
+        let (file, ref_) = match entry.trim().split_once('@') {
+            Some((file, ref_)) => (file, Some(ref_)),
+            None => (entry.trim(), None),
+        };
+        let bad_ref = ref_.is_some_and(|r| {
+            !(r.starts_with("refs/tags/") || r.starts_with("refs/heads/")) || r == "refs/heads/"
+        });
+        if file.is_empty() || file.contains(['/', '@']) || bad_ref {
+            bail!(
+                "packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`, optionally followed by `@refs/heads/<branch>` or `@refs/tags/`"
+            );
+        }
+        let mut policy = base.clone();
+        let path = format!("{repo}.github/workflows/{file}@");
+        match ref_ {
+            // A ref ending in `/` is a namespace, as in `@refs/tags/`.
+            None => policy.identity_prefix = Some(format!("{path}refs/tags/")),
+            Some(r) if r.ends_with('/') => policy.identity_prefix = Some(format!("{path}{r}")),
+            // Any other ref is that one ref, matched whole.
+            Some(r) => {
+                policy.identity_prefix = None;
+                policy.identity = Some(format!("{path}{r}"));
+            }
+        }
+        if !policies.contains(&policy) {
+            policies.push(policy);
+        }
+    }
+    Ok(policies)
 }
 
 impl Pin {
@@ -659,29 +905,83 @@ impl Pin {
         let Some(prefix) = value.as_str().filter(|prefix| !prefix.trim().is_empty()) else {
             bail!("packslip: list_identity_prefix must be a non-empty string");
         };
-        let (Self::Identity(policy) | Self::Forge(policy)) = self else {
+        let Some(policy) = self.first_policy() else {
             bail!("packslip: list_identity_prefix cannot be combined with pubkey");
         };
         if policy.issuer.as_deref().is_none_or(str::is_empty) {
             bail!("packslip: list_identity_prefix requires an issuer");
         }
-        Ok(Self::Identity(Policy {
+        let policy = Policy {
             issuer: policy.issuer.clone(),
             identity: None,
             identity_prefix: Some(prefix.to_string()),
-        }))
+        };
+        Ok(match self {
+            // A forge project's list is still held to the repository ID mise
+            // pinned: the option changes who may sign it, not which
+            // repository it must come from.
+            Pin::Forge(_) | Pin::Workflows(_) => Self::Workflows(vec![policy]),
+            Pin::Identity(_) | Pin::Key(_) => Self::Identity(policy),
+        })
     }
 
-    fn trust(&self) -> Trust<'_> {
+    /// The identity policy, or for several the first, which carries the issuer
+    /// they all share.
+    fn first_policy(&self) -> Option<&Policy> {
         match self {
-            Pin::Forge(policy) | Pin::Identity(policy) => Trust::Identity(policy),
-            Pin::Key(key) => Trust::Key(key),
+            Pin::Forge(policy) | Pin::Identity(policy) => Some(policy),
+            Pin::Workflows(policies) => policies.first(),
+            Pin::Key(_) => None,
+        }
+    }
+
+    /// The signers a `workflow` list names together, as the signer pin records
+    /// them: listing several says a release may move from one to another.
+    fn listed_signers(&self) -> Vec<String> {
+        let Pin::Workflows(policies) = self else {
+            return Vec::new();
+        };
+        if policies.len() < 2 {
+            return Vec::new();
+        }
+        policies
+            .iter()
+            .filter_map(|policy| policy.identity.as_ref().or(policy.identity_prefix.as_ref()))
+            .map(|identity| packslip_pins::signer_of("sigstore-oidc", identity))
+            .collect()
+    }
+
+    /// What may have signed: one trust, or one per accepted identity.
+    fn trusts(&self) -> Vec<Trust<'_>> {
+        match self {
+            Pin::Forge(policy) | Pin::Identity(policy) => vec![Trust::Identity(policy)],
+            Pin::Workflows(policies) => policies.iter().map(Trust::Identity).collect(),
+            Pin::Key(key) => vec![Trust::Key(key)],
+        }
+    }
+
+    /// Run `verify` against each accepted signer and keep the first success;
+    /// when none match, report every refusal.
+    fn verify_any<T>(&self, mut verify: impl FnMut(&Trust<'_>) -> Result<T>) -> Result<T> {
+        let mut refusals = Vec::new();
+        for trust in self.trusts() {
+            match verify(&trust) {
+                Ok(verified) => return Ok(verified),
+                Err(err) => refusals.push(err.to_string()),
+            }
+        }
+        match refusals.len() {
+            1 => bail!("{}", refusals[0]),
+            _ => bail!("no accepted signer matched:\n  {}", refusals.join("\n  ")),
         }
     }
 
     /// What a forge project's `bundle` must be signed by, given the lock
-    /// entries its install or lock resolution already has; none for a pin
-    /// the tool options give, which the options alone decide.
+    /// entries its install or lock resolution already has; none for an
+    /// identity or a key the tool options give, which the options alone
+    /// decide. A `workflow` option only narrows the forge's policy to named
+    /// workflow files, so it is held to the repository ID like the forge pin
+    /// it narrows.
     async fn forge<'a>(
         &self,
         project: &str,
@@ -689,7 +989,9 @@ impl Pin {
         bundle: &str,
     ) -> Result<Option<ForgeExpect>> {
         match self {
-            Pin::Forge(_) => Ok(Some(ForgeExpect::new(project, lock, bundle).await?)),
+            Pin::Forge(_) | Pin::Workflows(_) => {
+                Ok(Some(ForgeExpect::new(project, lock, bundle).await?))
+            }
             Pin::Identity(_) | Pin::Key(_) => Ok(None),
         }
     }
@@ -732,19 +1034,30 @@ fn verify_bundle(
             require_log,
             trusted_root: &root,
         };
-        if let Some(forge) = forge {
+        if let Some(forge) = forge
+            && !matches!(pin, Pin::Workflows(_))
+        {
             let verified = forge.verify(bundle, options, artifacts)?;
             return Ok(Accepted {
                 verified: verified.verified,
                 check: Some(verified.check),
             });
         }
-        let verified =
-            packslip::verify(bundle, &pin.trust(), options, artifacts).map_err(|e| eyre!("{e}"))?;
-        Ok(Accepted {
-            verified,
-            check: None,
-        })
+        let verified = pin.verify_any(|trust| {
+            packslip::verify(bundle, trust, options, artifacts).map_err(|e| eyre!("{e}"))
+        })?;
+        // A workflow pin, verified under its own policies, is held to the
+        // repository ID as one verified under the forge's is.
+        let check = match forge {
+            Some(forge) => Some(forge.check(
+                bundle,
+                &verified.project,
+                &verified.key_id,
+                verified.issuer.as_deref(),
+            )?),
+            None => None,
+        };
+        Ok(Accepted { verified, check })
     })
 }
 
@@ -752,13 +1065,96 @@ fn verify_bundle(
 /// repository ID, so a renamed repository's list, signed under its new
 /// name, still speaks for it. Any other list must name `project` itself,
 /// which the caller checks.
+///
+/// One resolution reads the same list several times (for the recommendation,
+/// the versions, and each candidate), so the signature check of a given text
+/// under a given pin and this machine's pins is done once per process. Only
+/// the latest text is kept for each project and signer. Expiry is checked
+/// every time.
+///
+/// `lock` is the selected version's lock entries, whose repository IDs the
+/// list is held to as its bundles are; none when no version is selected yet.
 async fn verify_project_release_list(
     project: &str,
     bundle: &str,
     pin: &Pin,
     require_log: bool,
+    lock: &[&PlatformInfo],
 ) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
-    let Some(forge) = pin.forge(project, [], bundle).await? else {
+    use sha2::{Digest, Sha256};
+    struct Verified {
+        text: String,
+        pins: String,
+        list: ReleaseListStatement,
+        forge: Option<ForgePin>,
+    }
+    static VERIFIED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Verified>>> =
+        std::sync::LazyLock::new(Default::default);
+    let key = release_list_cache_key(project, pin, require_log, lock);
+    let text = hex::encode(Sha256::digest(bundle.as_bytes()));
+    let pins = pins_digest()?;
+    if let Some(verified) = VERIFIED.lock().unwrap().get(&key)
+        && verified.text == text
+        && verified.pins == pins
+    {
+        check_list_current(&verified.list)?;
+        return Ok((verified.list.clone(), verified.forge.clone()));
+    }
+    let (list, forge) =
+        verify_project_release_list_uncached(project, bundle, pin, require_log, lock).await?;
+    let verified = Verified {
+        text,
+        pins,
+        list: list.clone(),
+        forge: forge.clone(),
+    };
+    VERIFIED.lock().unwrap().insert(key, verified);
+    Ok((list, forge))
+}
+
+/// What a verified release list is cached under: the project, the pin, and
+/// the repository IDs its lock entries commit to, since a list one lockfile
+/// refuses must not be served to it from a verification made without it.
+fn release_list_cache_key(
+    project: &str,
+    pin: &Pin,
+    require_log: bool,
+    lock: &[&PlatformInfo],
+) -> String {
+    let ids: std::collections::BTreeSet<String> = lock
+        .iter()
+        .filter_map(|info| packslip_forge::lock_pin(project, info))
+        .map(|pin| pin.repository_id)
+        .collect();
+    let ids = ids.into_iter().join(",");
+    format!("{project}\0{pin:?}\0{require_log}\0{ids}")
+}
+
+/// A digest of this machine's signer pins, every project's: a pin left under a
+/// repository's former name holds its releases too, so a cached verification
+/// is reused only while no pin anywhere has changed.
+fn pins_digest() -> Result<String> {
+    pins_digest_at(&packslip_pins::pins_file())
+}
+
+fn pins_digest_at(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let text = match std::fs::read(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => return Err(err).wrap_err_with(|| format!("reading {}", path.display())),
+    };
+    Ok(hex::encode(Sha256::digest(&text)))
+}
+
+async fn verify_project_release_list_uncached(
+    project: &str,
+    bundle: &str,
+    pin: &Pin,
+    require_log: bool,
+    lock: &[&PlatformInfo],
+) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
+    let Some(forge) = pin.forge(project, lock.iter().copied(), bundle).await? else {
         return Ok((verify_release_list(bundle, pin, require_log)?, None));
     };
     file::run_blocking(|| {
@@ -767,9 +1163,27 @@ async fn verify_project_release_list(
             require_log,
             trusted_root: &root,
         };
-        let verified = forge.verify_list(bundle, options)?;
-        check_list_current(&verified.verified.list)?;
-        Ok((verified.verified.list, verified.check.pin))
+        // A workflow pin's list, or one a `list_identity_prefix` signs, is
+        // verified under its policies and then held to the repository ID by
+        // the certificate's source repository, which a list signer's
+        // workflow need not belong to.
+        let (list, check) = if matches!(pin, Pin::Workflows(_)) {
+            let verified = pin.verify_any(|trust| {
+                packslip::verify_release_list(bundle, trust, options).map_err(|e| eyre!("{e}"))
+            })?;
+            let check = forge.check_source(
+                bundle,
+                &verified.list.predicate.project,
+                &verified.key_id,
+                verified.issuer.as_deref(),
+            )?;
+            (verified.list, check)
+        } else {
+            let verified = forge.verify_list(bundle, options)?;
+            (verified.verified.list, verified.check)
+        };
+        check_list_current(&list)?;
+        Ok((list, check.pin))
     })
 }
 
@@ -794,8 +1208,9 @@ pub(crate) fn verify_release_list(
             require_log,
             trusted_root: &root,
         };
-        let verified = packslip::verify_release_list(bundle, &pin.trust(), options)
-            .map_err(|e| eyre!("{e}"))?;
+        let verified = pin.verify_any(|trust| {
+            packslip::verify_release_list(bundle, trust, options).map_err(|e| eyre!("{e}"))
+        })?;
         check_list_current(&verified.list)?;
         Ok(verified.list)
     })
@@ -814,9 +1229,11 @@ fn selection_already_made(tv: &ToolVersion) -> bool {
     tv.resolved_from_lockfile() || tv.request_pinned_this_version()
 }
 
+/// Refuse a release newer than the cutoff; see [`verified_age_allowed`].
 fn check_verified_age(
     logged_at: Option<&str>,
     published_at: &str,
+    allow_unlogged: bool,
     before: Option<jiff::Timestamp>,
 ) -> Result<()> {
     let Some(before) = before else {
@@ -824,9 +1241,12 @@ fn check_verified_age(
     };
     let (time, source) = match logged_at {
         Some(time) => (time, "transparency log"),
-        None => (published_at, "unlogged manifest"),
+        None if allow_unlogged => (published_at, "unlogged manifest"),
+        None => bail!(
+            "packslip release has no transparency-log time, so only the manifest itself says how old it is; refusing to bypass minimum_release_age"
+        ),
     };
-    if !verified_age_allowed(logged_at, published_at, Some(before))? {
+    if !verified_age_allowed(logged_at, published_at, allow_unlogged, Some(before))? {
         bail!(
             "packslip release was recorded by the {source} at {time}, after the allowed cutoff {before}; refusing to bypass minimum_release_age"
         );
@@ -850,16 +1270,26 @@ fn refuse_if_withdrawn(project: &str, version: &str, entry: &ReleaseRef) -> Resu
     Ok(())
 }
 
+/// Whether a release is old enough for the cutoff, by the time the
+/// transparency log recorded it. The manifest's own `published_at` dates it
+/// only when the user agreed to take unlogged bundles (`allow_unlogged`):
+/// a logged bundle can verify while its entry carries no time, and with
+/// nothing else to date it by, it is too new.
 fn verified_age_allowed(
     logged_at: Option<&str>,
     published_at: &str,
+    allow_unlogged: bool,
     before: Option<jiff::Timestamp>,
 ) -> Result<bool> {
     let Some(before) = before else {
         return Ok(true);
     };
-    let recorded: jiff::Timestamp = logged_at
-        .unwrap_or(published_at)
+    let recorded = match logged_at {
+        Some(time) => time,
+        None if allow_unlogged => published_at,
+        None => return Ok(false),
+    };
+    let recorded: jiff::Timestamp = recorded
         .parse()
         .wrap_err("invalid verified packslip timestamp")?;
     Ok(recorded <= before)
@@ -877,6 +1307,7 @@ fn check_sequence(
 }
 
 /// Where a release's packslip is.
+#[derive(Debug, Clone, Serialize)]
 struct Located {
     url: String,
     /// The digest a signed release list recorded for the bundle, if any.
@@ -888,6 +1319,7 @@ struct Located {
 }
 
 /// What the vendor's own signed list says about a version.
+#[derive(Debug, Clone, Serialize)]
 enum Vendor {
     /// The list names the version.
     Listed(Located),
@@ -922,6 +1354,100 @@ fn check_list_still_missing(project: &str, located: &Located, check: Option<&Che
     }
 }
 
+/// Why a candidate is dropped when its verified release time is too new.
+const AFTER_CUTOFF: &str = "verified release time is after the allowed cutoff";
+
+/// How long resolution reuses a release it verified.
+///
+/// Only resolution reads this: it decides which candidate a fuzzy request
+/// picks, and `mise install`, `mise lock` and `mise use` verify the chosen
+/// release from scratch whatever it says. Only a verification that passed is
+/// kept, so a stale entry can at worst pick a release install then refuses,
+/// never admit one. The key holds everything the verdict rests on that can be
+/// read without downloading the bundle (see [`ResolutionVerificationKey`]),
+/// and the cache file name carries the mise build, so a new trusted root or
+/// verifier starts over. What the key cannot hold is a bundle that no signed
+/// digest pins (a release on a repository with no signed list, no stamp)
+/// being replaced in place, and a forge's answer about a renamed repository;
+/// a day bounds how long resolution could lean on either.
+const RESOLUTION_VERIFICATION_TTL: std::time::Duration =
+    std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Everything a release's verification for resolution depends on that is
+/// known before its bundle is downloaded. A cached verification is reused
+/// only under the same key.
+#[derive(Serialize)]
+struct ResolutionVerificationKey<'a> {
+    project: &'a str,
+    version: &'a str,
+    /// The tool options the signer pin comes from, with a key file's text
+    /// in place of its path.
+    signer: BTreeMap<&'static str, String>,
+    /// The stamp followed: its host, manifest URL and digest.
+    stamp: Option<(&'a str, &'a str, Option<&'a str>)>,
+    /// What the vendor's signed list, read fresh, says about the version.
+    vendor: &'a Vendor,
+    /// The signers this machine accepted before, which the bundle's signer is
+    /// checked against: the project's pin, or one a rename left under
+    /// another name.
+    pins: String,
+}
+
+/// The [`ResolutionVerificationKey`] of a release, as the text compared.
+fn resolution_verification_key(
+    project: &str,
+    version: &str,
+    opts: &PackslipOptions<'_>,
+    stamp: Option<&crate::packslip_stamps::Stamp>,
+    vendor: &Vendor,
+    pins: String,
+) -> Result<String> {
+    let mut signer = BTreeMap::new();
+    for key in [
+        "pubkey",
+        "identity",
+        "identity_prefix",
+        "issuer",
+        "workflow",
+        "allow_unlogged",
+    ] {
+        if let Some(value) = opts.raw.opts.get(key) {
+            signer.insert(key, value.to_string());
+        }
+    }
+    if let Some(pubkey) = opts.pubkey()
+        && let Some(text) = pubkey_file_text(&pubkey)?
+    {
+        signer.insert("pubkey_file", text);
+    }
+    let key = ResolutionVerificationKey {
+        project,
+        version,
+        signer,
+        stamp: stamp.map(|stamp| {
+            (
+                stamp.host.as_str(),
+                stamp.entry.packslip.as_str(),
+                stamp.digest.as_deref(),
+            )
+        }),
+        vendor,
+        pins,
+    };
+    Ok(serde_json::to_string(&key)?)
+}
+
+/// What resolution keeps of a verified release: the statement and the
+/// times the release-age cutoff is checked against, which is applied again
+/// on every read, as is the choice of artifact for this host.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ResolutionVerification {
+    key: String,
+    statement: String,
+    logged_at: Option<String>,
+    published_at: String,
+}
+
 impl PackslipBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
@@ -936,27 +1462,36 @@ impl PackslipBackend {
         repository(project).map(|(_, owner, repo)| format!("{owner}/{repo}"))
     }
 
-    /// Whether mise-versions stands in for api.github.com. It catalogs the
-    /// versions of a registry tool's preferred backend, which for a packslip
-    /// tool is the same listing [`Self::vendor_versions`] makes (its update
-    /// job runs `mise ls-remote`), and it mirrors that repository's releases.
-    /// Which of those versions this client accepts is still decided here:
-    /// the signed list, stamps and every manifest are read and verified on
-    /// each resolution, so a stale catalog can only hold back a new release,
-    /// never admit one that policy refuses.
-    fn versions_host_applies(&self) -> bool {
-        Settings::get().use_versions_host
-            && crate::backend::backend_arg_is_preferred_registry_backend(&self.ba)
+    /// The tool whose catalog on mise-versions stands in for api.github.com,
+    /// if there is one. mise-versions catalogs the versions of a registry
+    /// tool's preferred backend, which for a packslip tool is the same listing
+    /// [`Self::vendor_versions`] makes (its update job runs `mise ls-remote`),
+    /// and it mirrors that repository's releases. Which of those versions this
+    /// client accepts is still decided here: the signed list, stamps and every
+    /// manifest are read and verified on each resolution, so a stale catalog
+    /// can only hold back a new release, never admit one that policy refuses.
+    ///
+    /// The tool is this arg's own registry entry, or the one registry tool
+    /// whose preferred backend an explicit `packslip:jdx/fnox` names. Registry
+    /// options the explicit arg does not inherit (fnox's `workflow`) do not
+    /// rule it out, by the same argument: a version they kept out of the
+    /// catalog is only held back, and every version in it is still verified
+    /// with this arg's own options.
+    fn versions_host_tool(&self) -> Option<&'static str> {
+        if !Settings::get().use_versions_host {
+            return None;
+        }
+        crate::backend::versions_host_tool(&self.ba, false)
     }
 
     /// Every release carrying a packslip, oldest first, from mise-versions.
     /// `None` sends the caller to GitHub, for a tool the host does not
     /// describe or has nothing for.
     async fn mirrored_versions(&self) -> Result<Option<Vec<VersionInfo>>> {
-        if !self.versions_host_applies() {
+        let Some(tool) = self.versions_host_tool() else {
             return Ok(None);
-        }
-        let versions = match crate::versions_host::list_versions(&self.ba.short).await {
+        };
+        let versions = match crate::versions_host::list_versions(tool).await {
             Ok(Some(versions)) => versions,
             Ok(None) => return Ok(None),
             Err(err) => {
@@ -973,15 +1508,88 @@ impl PackslipBackend {
 
     /// The release tag mise-versions records for `version`, so its release
     /// mirror can be asked for that one release rather than GitHub for all.
+    /// A cached listing answers first; one that does not name the version yet
+    /// is fetched again. A tag only says where to look: the release it names
+    /// must still carry the packslip.
     async fn mirrored_tag(&self, project: &str, version: &str) -> Result<Option<String>> {
-        let Some(versions) = self.mirrored_versions().await? else {
+        let Some(repo) = Self::repo(project) else {
             return Ok(None);
         };
-        Ok(versions
-            .iter()
-            .filter(|v| v.version == version)
-            .filter_map(|v| v.release_url.as_deref().and_then(release_url_tag))
-            .find(|tag| tag_version(tag, project).as_deref() == Some(version)))
+        if self.versions_host_tool().is_none() {
+            return Ok(None);
+        }
+        let tag = |versions: &[VersionInfo]| {
+            versions
+                .iter()
+                .filter(|v| v.version == version)
+                .filter_map(|v| v.release_url.as_deref().and_then(release_url_tag))
+                .find(|tag| tag_version(tag, project).as_deref() == Some(version))
+        };
+        if let Some(tag) = tag(&self.vendor_listing(project, &repo, false).await?) {
+            return Ok(Some(tag));
+        }
+        Ok(tag(&self.vendor_listing(project, &repo, true).await?))
+    }
+
+    /// Every release of a github.com project carrying a packslip, oldest
+    /// first, as the release mirror lists them: before the vendor's signed
+    /// list or any stamp has a say. This is only where the candidates come
+    /// from, so it is kept like any backend's version list, for
+    /// `fetch_remote_versions_cache`. What is done with it is not: the signed
+    /// list and the stamps are applied fresh on every resolution, and every
+    /// manifest is verified, so a stale copy can only hold back a new release,
+    /// never admit one that policy refuses.
+    async fn vendor_listing(
+        &self,
+        project: &str,
+        repo: &str,
+        refresh: bool,
+    ) -> Result<Vec<VersionInfo>> {
+        // A listing from the versions host lags GitHub, so it is not reused
+        // once the host is turned off.
+        let context = if self.versions_host_tool().is_some() {
+            "packslip-vendor-listing"
+        } else {
+            "packslip-vendor-listing-direct"
+        };
+        let cache = self.get_remote_version_cache_with_context(Some(context));
+        let mut cache = cache.lock().await;
+        if Settings::get().offline() {
+            return Ok(crate::backend::cached_remote_versions_offline(
+                &self.ba, &cache,
+            ));
+        }
+        let fetch = || self.fetch_vendor_listing(project, repo);
+        if refresh {
+            cache.refresh_async(fetch).await
+        } else {
+            cache.get_or_try_init_async(fetch).await.cloned()
+        }
+    }
+
+    async fn fetch_vendor_listing(&self, project: &str, repo: &str) -> Result<Vec<VersionInfo>> {
+        if let Some(versions) = self.mirrored_versions().await? {
+            return Ok(versions);
+        }
+        let asset_name = bundle_name(project);
+        // GitHub's prerelease flag is not consulted: the version says.
+        let mut versions: Vec<VersionInfo> =
+            github::list_release_versions_with_asset(repo, &asset_name)
+                .await?
+                .into_iter()
+                .filter_map(|r| {
+                    version_info(
+                        tag_version(&r.tag_name, project),
+                        r.released_at,
+                        Some(format!(
+                            "https://github.com/{repo}/releases/tag/{}",
+                            r.tag_name
+                        )),
+                    )
+                })
+                .collect();
+        versions.reverse();
+        Ok(versions)
     }
 
     async fn release_list(
@@ -989,14 +1597,19 @@ impl PackslipBackend {
         project: &str,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
+        lock: &[&PlatformInfo],
     ) -> Result<ReleaseListStatement> {
         let pin = pin.for_release_list(opts)?;
         let url = well_known_url(project);
-        let text = HTTP_FETCH.get_text(&url).await.wrap_err_with(|| {
-            format!("fetching the release list of packslip:{project} from {url}")
-        })?;
+        let text = fetch_policy_text(&url)
+            .await
+            .transpose()
+            .unwrap_or_else(|| Err(eyre!("{url} answered 404 Not Found")))
+            .wrap_err_with(|| {
+                format!("fetching the release list of packslip:{project} from {url}")
+            })?;
         let (list, forge) =
-            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged(), lock)
                 .await
                 .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
@@ -1020,18 +1633,21 @@ impl PackslipBackend {
         repo: &str,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
+        lock: &[&PlatformInfo],
     ) -> Result<Option<ReleaseListStatement>> {
         let pin = pin.for_release_list(opts)?;
         let path = match repository_subpath(project) {
             Some(sub) => format!(".well-known/packslip/{sub}.json"),
             None => ".well-known/packslip.json".to_string(),
         };
-        // The CDN, not the contents API: the list has to be read on every
-        // resolution, and api.github.com's rate limit is what fails first for
-        // users without a token. The CDN serves the default branch for `HEAD`
-        // and takes the same token for a private repository.
+        // mise-versions first, which tells a repository with no list from one
+        // whose list it could not read. Then the CDN, not the contents API:
+        // the list has to be read on every resolution, and api.github.com's
+        // rate limit is what fails first for users without a token. The CDN
+        // serves the default branch for `HEAD` and takes the same token for a
+        // private repository.
         let url = format!("https://raw.githubusercontent.com/{repo}/HEAD/{path}");
-        let Some(text) = fetch_github_list(&url)
+        let Some(text) = fetch_github_policy_text(repo, repository_subpath(project), &url)
             .await
             .wrap_err_with(|| format!("fetching the release list of packslip:{project}"))?
         else {
@@ -1039,7 +1655,7 @@ impl PackslipBackend {
             return Ok(None);
         };
         let (list, forge) =
-            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged(), lock)
                 .await
                 .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
@@ -1064,8 +1680,11 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
     ) -> Result<Vendor> {
+        // The version is chosen, so the list is held to the repository IDs
+        // its lock entries commit to, as the bundle will be.
+        let lock: Vec<&PlatformInfo> = tv.lock_platforms.values().collect();
         if let Some(repo) = Self::repo(project) {
-            let Some(list) = self.github_list(project, &repo, pin, opts).await? else {
+            let Some(list) = self.github_list(project, &repo, pin, opts, &lock).await? else {
                 return Ok(Vendor::NoList);
             };
             let Some(entry) = list
@@ -1083,7 +1702,7 @@ impl PackslipBackend {
                 list_missing: false,
             }));
         }
-        let list = self.release_list(project, pin, opts).await?;
+        let list = self.release_list(project, pin, opts, &lock).await?;
         let Some(entry) = list
             .predicate
             .releases
@@ -1111,6 +1730,16 @@ impl PackslipBackend {
         opts: &PackslipOptions<'_>,
     ) -> Result<Located> {
         let vendor = self.vendor_entry(project, tv, pin, opts).await?;
+        self.locate_vendor_bundle(project, tv, vendor).await
+    }
+
+    /// Where the bundle is, given what the vendor's signed list said.
+    async fn locate_vendor_bundle(
+        &self,
+        project: &str,
+        tv: &ToolVersion,
+        vendor: Vendor,
+    ) -> Result<Located> {
         let list_missing = vendor.list_missing();
         if let Vendor::Listed(located) = vendor {
             return Ok(located);
@@ -1167,6 +1796,21 @@ impl PackslipBackend {
         opts: &PackslipOptions<'_>,
         stamp: Option<&crate::packslip_stamps::Stamp>,
     ) -> Result<(Statement, Accepted)> {
+        let vendor = self.vendor_entry(project, tv, pin, opts).await?;
+        self.verified_vendor_release(project, tv, pin, opts, stamp, vendor)
+            .await
+    }
+
+    /// [`Self::verified_release`] with the vendor's signed list already read.
+    async fn verified_vendor_release(
+        &self,
+        project: &str,
+        tv: &ToolVersion,
+        pin: &Pin,
+        opts: &PackslipOptions<'_>,
+        stamp: Option<&crate::packslip_stamps::Stamp>,
+        vendor: Vendor,
+    ) -> Result<(Statement, Accepted)> {
         use sha2::{Digest, Sha256};
 
         // With a stamp in hand the manifest is already named, so the vendor is
@@ -1182,7 +1826,6 @@ impl PackslipBackend {
                         stamp.entry.packslip
                     );
                 }
-                let vendor = self.vendor_entry(project, tv, pin, opts).await?;
                 let located = Located {
                     url: stamp.entry.packslip.clone(),
                     digest: None,
@@ -1191,7 +1834,7 @@ impl PackslipBackend {
                 (located, vendor.digest())
             }
             None => {
-                let mut located = self.locate_bundle(project, tv, pin, opts).await?;
+                let mut located = self.locate_vendor_bundle(project, tv, vendor).await?;
                 let digest = located.digest.take();
                 (located, digest)
             }
@@ -1225,6 +1868,7 @@ impl PackslipBackend {
         }
         let scheme = verified.scheme.to_string();
         let attested_by = verified.attested_by.to_string();
+        let listed = pin.listed_signers();
         packslip_pins::check(
             project,
             Observed {
@@ -1235,6 +1879,7 @@ impl PackslipBackend {
                 provenance: verified.provenance_linked,
                 logged: verified.logged_at.is_some(),
                 forge: accepted.check.as_ref(),
+                listed: &listed,
             },
         )?;
         let payload = packslip::sigstore::peek_statement(&text).map_err(|e| eyre!("{e}"))?;
@@ -1250,17 +1895,17 @@ impl PackslipBackend {
     ) -> Result<Option<String>> {
         let Some(repo) = Self::repo(project) else {
             return Ok(self
-                .release_list(project, pin, opts)
+                .release_list(project, pin, opts, &[])
                 .await?
                 .predicate
                 .latest);
         };
-        let list = self.github_list(project, &repo, pin, opts).await?;
+        let list = self.github_list(project, &repo, pin, opts, &[]).await?;
         if let Some(latest) = list.as_ref().and_then(|l| l.predicate.latest.as_ref()) {
             return Ok(Some(latest.clone()));
         }
         // The release mirror serves any public repo, unlike the per-tool
-        // catalog `versions_host_applies` guards.
+        // catalog `versions_host_tool` guards.
         let release = match github::get_release_with_versions_host(&repo, "latest", true).await {
             Ok(release) => release,
             Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
@@ -1293,18 +1938,21 @@ impl PackslipBackend {
             },
             None => None,
         };
-        let (statement, Accepted { verified, .. }) = self
-            .verified_release(project, &tv, pin, opts, stamp)
+        let verified = self
+            .verified_for_resolution(project, &tv, pin, opts, stamp)
             .await?;
+        let statement: Statement = serde_json::from_str(&verified.statement)?;
         // Parse errors are verification errors, not age-policy exclusions.
-        if !verified_age_allowed(
+        let past_cutoff = !verified_age_allowed(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
-        )? {
-            return Ok(Some(
-                "verified release time is after the allowed cutoff".into(),
-            ));
+        )?;
+        // An installed version is checked against the host too, so that
+        // AFTER_CUTOFF returned for it means the cutoff is its only exclusion.
+        if past_cutoff && !self.is_installed_version(version) {
+            return Ok(Some(AFTER_CUTOFF.into()));
         }
         let artifact = match select_compatible_artifact(
             &statement.predicate.artifacts,
@@ -1318,16 +1966,111 @@ impl PackslipBackend {
             Err(err) if err.is::<NoHostArtifact>() => return Ok(Some(err.to_string())),
             Err(err) => return Err(err),
         };
-        let requirements = crate::packslip_requirements::check(artifact, &BTreeMap::new()).await;
+        // A required command can only warn, and a warning is not an
+        // exclusion, so resolving starts none of them: the manifest names
+        // the command, and the config naming the manifest may be untrusted.
+        let requirements = crate::packslip_requirements::check_host(artifact).await;
         if !requirements.failures.is_empty() && opts.raw.get("ignore_requirements") != Some("true")
         {
             return Ok(Some(requirements.failures.join("; ")));
         }
+        if past_cutoff {
+            return Ok(Some(AFTER_CUTOFF.into()));
+        }
         Ok(None)
     }
 
-    async fn policy_versions(&self, raw_opts: &ToolVersionOptions) -> Result<Vec<VersionInfo>> {
-        let mut versions = self.vendor_versions(raw_opts).await?;
+    fn is_installed_version(&self, version: &str) -> bool {
+        self.list_installed_versions().iter().any(|v| v == version)
+    }
+
+    /// [`Self::verified_release`] for choosing among candidates, reusing a
+    /// verification that passed within [`RESOLUTION_VERIFICATION_TTL`] under
+    /// the same key. The vendor's signed list is read fresh first: a
+    /// withdrawal or a new digest pin is never answered from the cache.
+    /// Installing never calls this.
+    async fn verified_for_resolution(
+        &self,
+        project: &str,
+        tv: &ToolVersion,
+        pin: &Pin,
+        opts: &PackslipOptions<'_>,
+        stamp: Option<&crate::packslip_stamps::Stamp>,
+    ) -> Result<ResolutionVerification> {
+        let vendor = self.vendor_entry(project, tv, pin, opts).await?;
+        let key = resolution_verification_key(
+            project,
+            &tv.version,
+            opts,
+            stamp,
+            &vendor,
+            pins_digest()?,
+        )?;
+        let cache = CacheManagerBuilder::new(
+            self.ba
+                .cache_path()
+                .join("packslip_verified")
+                .join(format!("{}.msgpack.z", tv.version)),
+        )
+        .with_cache_key(key.clone())
+        .with_fresh_duration(Some(RESOLUTION_VERIFICATION_TTL))
+        .build::<ResolutionVerification>();
+        let verify = || async {
+            debug!(
+                "packslip:{project}@{}: verifying for resolution",
+                tv.version
+            );
+            let (statement, Accepted { verified, .. }) = self
+                .verified_vendor_release(project, tv, pin, opts, stamp, vendor.clone())
+                .await?;
+            Ok(ResolutionVerification {
+                key: key.clone(),
+                statement: serde_json::to_string(&statement)?,
+                logged_at: verified.logged_at,
+                published_at: verified.published_at,
+            })
+        };
+        // The file name holds only a short hash of the key, so the key is
+        // compared whole.
+        cache
+            .get_or_try_init_async_if(verify, |cached| cached.key == key)
+            .await
+    }
+
+    /// Whether `version` verifies and policy admits it on this host, warning
+    /// when it is skipped. A verification failure is an error, not a reason to
+    /// try the next candidate.
+    async fn admits(
+        &self,
+        project: &str,
+        version: String,
+        opts: &PackslipOptions<'_>,
+        pin: &Pin,
+        before: Option<jiff::Timestamp>,
+        stamps: Option<&crate::packslip_stamps::Stamps>,
+    ) -> Result<bool> {
+        if let Some(reason) = self
+            .candidate_exclusion(project, &version, opts, pin, before, stamps)
+            .await?
+        {
+            // A version that minimum_release_age holds back is what the user
+            // asked for, not a problem, so it is only debug output.
+            if reason == AFTER_CUTOFF {
+                debug!("packslip:{project}: skipping {version}: {reason}");
+            } else {
+                warn!("packslip:{project}: skipping {version}: {reason}");
+            }
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    async fn policy_versions(
+        &self,
+        raw_opts: &ToolVersionOptions,
+        refresh: bool,
+    ) -> Result<Vec<VersionInfo>> {
+        let mut versions = self.vendor_versions(raw_opts, refresh).await?;
         // Only what a trusted stamper lists is released, as far as mise is
         // concerned; the rest is not offered.
         let project = self.project()?;
@@ -1370,46 +2113,26 @@ impl PackslipBackend {
             if dst.exists() || dst.is_symlink() {
                 file::remove_all(&dst)?;
             }
-            file::make_symlink_or_copy(&src, &dst)?;
+            super::mise_bins::link(&src, &dst)?;
         }
         Ok(())
     }
 
     /// Every version the vendor published, before stamps are applied.
-    async fn vendor_versions(&self, raw_opts: &ToolVersionOptions) -> Result<Vec<VersionInfo>> {
+    async fn vendor_versions(
+        &self,
+        raw_opts: &ToolVersionOptions,
+        refresh: bool,
+    ) -> Result<Vec<VersionInfo>> {
         let project = self.project()?;
         let opts = PackslipOptions::new(raw_opts);
         let pin = pin(&project, &opts)?;
         if let Some(repo) = Self::repo(&project) {
-            let mut versions = match self.mirrored_versions().await? {
-                Some(versions) => versions,
-                None => {
-                    let asset_name = bundle_name(&project);
-                    // GitHub's prerelease flag is not consulted: the version says.
-                    let mut versions: Vec<VersionInfo> =
-                        github::list_releases_including_prereleases(&repo)
-                            .await?
-                            .into_iter()
-                            .filter(|r| r.assets.iter().any(|a| a.name == asset_name))
-                            .filter_map(|r| {
-                                version_info(
-                                    tag_version(&r.tag_name, &project),
-                                    Some(r.released_at().to_string()),
-                                    Some(format!(
-                                        "https://github.com/{repo}/releases/tag/{}",
-                                        r.tag_name
-                                    )),
-                                )
-                            })
-                            .collect();
-                    versions.reverse();
-                    versions
-                }
-            };
+            let mut versions = self.vendor_listing(&project, &repo, refresh).await?;
             // The repository's own signed list, when it keeps one, is the
             // last word on what it names: a withdrawn release goes, and a
             // release whose tag names no version is added.
-            if let Some(list) = self.github_list(&project, &repo, &pin, &opts).await? {
+            if let Some(list) = self.github_list(&project, &repo, &pin, &opts, &[]).await? {
                 for entry in &list.predicate.releases {
                     if entry.is_yanked() {
                         versions.retain(|v| v.version != entry.version);
@@ -1426,7 +2149,7 @@ impl PackslipBackend {
             }
             return Ok(versions);
         }
-        let list = self.release_list(&project, &pin, &opts).await?;
+        let list = self.release_list(&project, &pin, &opts, &[]).await?;
         let mut versions: Vec<VersionInfo> = list
             .predicate
             .releases
@@ -1451,6 +2174,7 @@ pub(crate) struct PendingPin {
     provenance: bool,
     logged: bool,
     forge: Option<Check>,
+    listed: Vec<String>,
 }
 
 impl PendingPin {
@@ -1465,6 +2189,7 @@ impl PendingPin {
                 provenance: self.provenance,
                 logged: self.logged,
                 forge: self.forge.as_ref(),
+                listed: &self.listed,
             },
         )?;
         Ok(())
@@ -1573,7 +2298,14 @@ impl PackslipBackend {
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
         ctx.pr.set_message("download packslip".into());
-        crate::packslip::download_file(&located.url, &bundle_path, Some(ctx.pr.as_ref())).await?;
+        crate::packslip::download_file(
+            &located.url,
+            &bundle_path,
+            None,
+            Some(ctx.pr.as_ref()),
+            Some(crate::packslip::MAX_MANIFEST_BYTES),
+        )
+        .await?;
         let pinned: Vec<&String> = located.digest.iter().chain(vendor_digest.iter()).collect();
         if !pinned.is_empty() {
             let (actual, _) = packslip::digest_file(&bundle_path)?;
@@ -1636,6 +2368,7 @@ impl PackslipBackend {
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
 
@@ -1645,6 +2378,7 @@ impl PackslipBackend {
         let attested_by = verified.attested_by.to_string();
         // Nothing is recorded until the release is accepted in full, so a
         // refused install leaves no pin behind.
+        let listed = pin.listed_signers();
         let observed = Observed {
             scheme: &scheme,
             key_id: &verified.key_id,
@@ -1653,6 +2387,7 @@ impl PackslipBackend {
             provenance: verified.provenance_linked,
             logged: verified.logged_at.is_some(),
             forge: check,
+            listed: &listed,
         };
         packslip_pins::check(&project, observed)?;
         let signer = format!(
@@ -1662,11 +2397,11 @@ impl PackslipBackend {
         let platform_key = self.get_platform_key();
         // The signer describes the release, so every platform's lock entry
         // speaks for it, not only this host's. After a rename it is the same
-        // workflow of the same repository, by the forge check, under the
-        // repository's new name.
+        // workflow of the same repository, by the forge check against the
+        // entry's own repository ID, under the repository's new name.
         for info in tv.lock_platforms.values() {
             if let Some(locked) = &info.signer
-                && !packslip_forge::lock_signer_continues(locked, &signer, check)
+                && !packslip_forge::lock_signer_continues(info, &signer, check)
             {
                 bail!(
                     "mise.lock says {} signed {}, but this release is signed by {signer}; remove the entry from mise.lock to accept the new signer",
@@ -1730,7 +2465,19 @@ impl PackslipBackend {
         let file_path = tv.download_path().join(&artifact.name);
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("download {}", artifact.name));
-        crate::packslip::download_file(&url, &file_path, Some(ctx.pr.as_ref())).await?;
+        // The signed digest names the artifact, so a copy kept earlier can stand in
+        // for the download; `verify_bundle` below still checks the result.
+        let signed = statement
+            .digest_of(&artifact.name)
+            .map(|sha256| format!("sha256:{sha256}"));
+        crate::packslip::download_file(
+            &url,
+            &file_path,
+            signed.as_deref(),
+            Some(ctx.pr.as_ref()),
+            None,
+        )
+        .await?;
 
         // The signed digest and size first, then what the lockfile remembers:
         // a lock entry written from an earlier packslip keeps its checksum and
@@ -1817,6 +2564,7 @@ impl PackslipBackend {
                 provenance: observed.provenance,
                 logged: observed.logged,
                 forge: observed.forge.cloned(),
+                listed,
             },
         ))
     }
@@ -1824,6 +2572,10 @@ impl PackslipBackend {
 
 #[async_trait]
 impl Backend for PackslipBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_packslip_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Packslip
     }
@@ -1863,7 +2615,7 @@ impl Backend for PackslipBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        self.policy_versions(&opts).await
+        self.policy_versions(&opts, false).await
     }
 
     async fn list_remote_versions_with_info_and_options(
@@ -1871,7 +2623,7 @@ impl Backend for PackslipBackend {
         config: &Arc<Config>,
         listing_opts: &ToolVersionOptions,
         selection_opts: &ToolVersionOptions,
-        _refresh: bool,
+        refresh: bool,
         has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
         // A cached accepted-version set cannot reflect changed stamper trust,
@@ -1890,7 +2642,7 @@ impl Backend for PackslipBackend {
             // Written back so that a later offline command has something to
             // serve. Like the shared path, the cache holds the prerelease
             // superset and the filter below is applied on the way out.
-            let versions = self.policy_versions(selection_opts).await?;
+            let versions = self.policy_versions(selection_opts, refresh).await?;
             if versions.is_empty() {
                 cache.clear()?;
             } else if let Err(err) = cache.write(&versions) {
@@ -1949,13 +2701,14 @@ impl Backend for PackslipBackend {
             );
             return Ok(candidates.into_iter().next());
         }
-        // Read policy directly: a cached version list must not hide new yanks,
-        // changed stampers, or a missing previously accepted signed list.
+        // Read policy directly: the vendor's listing may come from the cache,
+        // but new yanks, changed stampers, or a missing previously accepted
+        // signed list must not be hidden by it.
         let project = self.project()?;
         let opts = PackslipOptions::new(selection_opts);
         let pin = pin(&project, &opts)?;
         let recommendation = self.recommendation(&project, &opts, &pin).await?;
-        let versions = self.vendor_versions(selection_opts).await?;
+        let versions = self.vendor_versions(selection_opts, refresh).await?;
         let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
         let candidates = latest_candidates(
             versions,
@@ -1970,21 +2723,59 @@ impl Backend for PackslipBackend {
                 "packslip:{project}: skipping recommended {preferred}: absent, withdrawn, or excluded prerelease"
             );
         }
+        let stamps = stamps.as_ref();
         first_eligible(candidates, |version| {
-            let project = &project;
-            let opts = &opts;
-            let pin = &pin;
-            let stamps = stamps.as_ref();
-            async move {
-                if let Some(reason) = self
-                    .candidate_exclusion(project, &version, opts, pin, before, stamps)
-                    .await?
-                {
-                    warn!("packslip:{project}: skipping {version}: {reason}");
-                    return Ok(false);
-                }
-                Ok(true)
-            }
+            self.admits(&project, version, &opts, &pin, before, stamps)
+        })
+        .await
+    }
+
+    /// The matches for a request such as `1` or `1.2`, oldest first. Every
+    /// caller takes the last one, so it has to be one installing accepts:
+    /// the newest matches are walked the way `latest` walks its candidates,
+    /// and the ones whose manifest policy refuses here (the release-age
+    /// cutoff by its logged time, a missing stamp, no artifact or an unmet
+    /// requirement on this host) are dropped, rather than handed to install
+    /// to refuse. An exact version is left alone: it names its release, and
+    /// install says why that release is refused.
+    async fn list_versions_matching_with_selection_options(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+        before_date: Option<jiff::Timestamp>,
+        refresh: bool,
+    ) -> Result<Vec<String>> {
+        let versions = self
+            .list_remote_versions_with_info_with_selection_options(config, selection_opts, refresh)
+            .await?;
+        // The listing's dates drop what is plainly too new without verifying
+        // it; the walk below checks the logged time of what is left.
+        let versions = match before_date {
+            Some(before) => VersionInfo::filter_by_date(versions, before),
+            None => versions,
+        };
+        let versions = versions.into_iter().map(|v| v.version).collect();
+        let filter = !self.include_prereleases(selection_opts);
+        let versions = self.fuzzy_match_filter(versions, query, filter);
+        let mut versions = self.version_order(selection_opts)?.order(versions);
+        // No match and an exact version need no pin built or stamps fetched
+        // to be left alone. Offline, policy cannot be read, as for `latest`.
+        if ends_at_exact(&mut versions, query) {
+            return Ok(versions);
+        }
+        if versions.is_empty() || Settings::get().offline() {
+            return Ok(versions);
+        }
+        let before =
+            crate::backend::effective_latest_before_date(self, selection_opts, before_date)?;
+        let project = self.project()?;
+        let opts = PackslipOptions::new(selection_opts);
+        let pin = pin(&project, &opts)?;
+        let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
+        let stamps = stamps.as_ref();
+        eligible_matches(&project, query, versions, |version| {
+            self.admits(&project, version, &opts, &pin, before, stamps)
         })
         .await
     }
@@ -2130,6 +2921,7 @@ impl Backend for PackslipBackend {
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
         let host = HostPlatform::from_platform(&target.platform);
@@ -2406,13 +3198,153 @@ mod tests {
             server.url()
         );
         let (a, b, c) = tokio::join!(
-            fetch_github_list(&url),
-            fetch_github_list(&url),
-            fetch_github_list(&url)
+            fetch_policy_text(&url),
+            fetch_policy_text(&url),
+            fetch_policy_text(&url)
         );
-        for fetched in [a, b, c, fetch_github_list(&url).await] {
+        for fetched in [a, b, c, fetch_policy_text(&url).await] {
             assert_eq!(fetched.unwrap().as_deref(), Some("{}"));
         }
+        list.assert_async().await;
+    }
+
+    /// Points mise-versions at `server`, so a release list lookup for a
+    /// github.com repository can be answered, or failed, by the test.
+    fn mirror_at(server: &mockito::ServerGuard) {
+        use confique::Layer;
+        let mut replacements = indexmap::IndexMap::new();
+        replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.url_replacements = Some(replacements);
+        settings.http_retries = Some(0);
+        Settings::reset(Some(settings));
+    }
+
+    #[tokio::test]
+    async fn the_mirror_answers_for_a_repository_before_raw_is_asked() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        mirror_at(&server);
+        let base = server.url();
+        let raw = |name: &str| format!("{base}/{name}/HEAD/.well-known/packslip.json");
+
+        // No list at the mirror: raw, which would only say 404 too, is not asked.
+        let absent = server
+            .mock("GET", "/api/github/repos/o/mirror-absent/packslip-list")
+            .with_body(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let absent_raw = server
+            .mock("GET", "/mirror-absent/HEAD/.well-known/packslip.json")
+            .expect(0)
+            .create_async()
+            .await;
+        assert_eq!(
+            fetch_github_policy_text("o/mirror-absent", None, &raw("mirror-absent"))
+                .await
+                .unwrap(),
+            None
+        );
+        absent.assert_async().await;
+        absent_raw.assert_async().await;
+
+        // A list at the mirror is its exact text.
+        let present = server
+            .mock(
+                "GET",
+                "/api/github/repos/o/mirror-present/packslip-list/tools/x",
+            )
+            .with_body(r#"{"present":true,"text":"{\"a\":1}","fetched_at":"2026-10-26T12:00:00Z"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        assert_eq!(
+            fetch_github_policy_text("o/mirror-present", Some("tools/x"), &raw("mirror-present"))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{\"a\":1}")
+        );
+        present.assert_async().await;
+
+        // A mirror that cannot tell (rate limited, down) or does not serve the
+        // repository (private) sends mise to GitHub, which still has the file.
+        for (name, status) in [
+            ("mirror-503", 503),
+            ("mirror-429", 429),
+            ("mirror-404", 404),
+        ] {
+            let mirror = server
+                .mock(
+                    "GET",
+                    format!("/api/github/repos/o/{name}/packslip-list").as_str(),
+                )
+                .with_status(status)
+                .expect(1)
+                .create_async()
+                .await;
+            let list = server
+                .mock(
+                    "GET",
+                    format!("/{name}/HEAD/.well-known/packslip.json").as_str(),
+                )
+                .with_body("{}")
+                .expect(1)
+                .create_async()
+                .await;
+            assert_eq!(
+                fetch_github_policy_text(&format!("o/{name}"), None, &raw(name))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("{}"),
+                "{name}"
+            );
+            mirror.assert_async().await;
+            list.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_url_replacement_for_the_list_keeps_the_mirror_out_of_it() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        {
+            use confique::Layer;
+            let mut replacements = indexmap::IndexMap::new();
+            replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+            replacements.insert(
+                "https://raw.githubusercontent.com".to_string(),
+                server.url(),
+            );
+            let mut settings = mise_settings::SettingsPartial::empty();
+            settings.url_replacements = Some(replacements);
+            settings.http_retries = Some(0);
+            Settings::reset(Some(settings));
+        }
+        let mirror = server
+            .mock("GET", "/api/github/repos/o/replaced/packslip-list")
+            .expect(0)
+            .create_async()
+            .await;
+        let list = server
+            .mock("GET", "/o/replaced/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = "https://raw.githubusercontent.com/o/replaced/HEAD/.well-known/packslip.json";
+        assert_eq!(
+            fetch_github_policy_text("o/replaced", None, url)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{}")
+        );
+        mirror.assert_async().await;
         list.assert_async().await;
     }
 
@@ -2427,8 +3359,8 @@ mod tests {
             .create_async()
             .await;
         let url = format!("{}/missing/HEAD/.well-known/packslip.json", server.url());
-        assert_eq!(fetch_github_list(&url).await.unwrap(), None);
-        assert_eq!(fetch_github_list(&url).await.unwrap(), None);
+        assert_eq!(fetch_policy_text(&url).await.unwrap(), None);
+        assert_eq!(fetch_policy_text(&url).await.unwrap(), None);
         missing.assert_async().await;
     }
 
@@ -2443,7 +3375,7 @@ mod tests {
             .create_async()
             .await;
         let url = format!("{}/retried/HEAD/.well-known/packslip.json", server.url());
-        assert!(fetch_github_list(&url).await.is_err());
+        assert!(fetch_policy_text(&url).await.is_err());
         failing.remove_async().await;
         let _working = server
             .mock("GET", "/retried/HEAD/.well-known/packslip.json")
@@ -2451,9 +3383,273 @@ mod tests {
             .create_async()
             .await;
         assert_eq!(
-            fetch_github_list(&url).await.unwrap().as_deref(),
+            fetch_policy_text(&url).await.unwrap().as_deref(),
             Some("{}")
         );
+    }
+
+    /// Each command asks again, but a list the host says is unchanged is
+    /// not downloaded again.
+    #[tokio::test]
+    async fn an_unchanged_release_list_is_revalidated_not_downloaded() {
+        let _config = Config::get().await.unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let path = "/revalidated/HEAD/.well-known/packslip.json";
+        let url = format!("{}{path}", server.url());
+        let first = server
+            .mock("GET", path)
+            .match_header("if-none-match", mockito::Matcher::Missing)
+            .with_header("etag", "\"v1\"")
+            .with_body("{\"v\":1}")
+            .expect(1)
+            .create_async()
+            .await;
+        assert_eq!(
+            revalidate_policy_text(&url, store.path()).await.unwrap(),
+            Some("{\"v\":1}".to_string())
+        );
+        first.assert_async().await;
+
+        let unchanged = server
+            .mock("GET", path)
+            .match_header("if-none-match", "\"v1\"")
+            .with_status(304)
+            .expect(1)
+            .create_async()
+            .await;
+        assert_eq!(
+            revalidate_policy_text(&url, store.path()).await.unwrap(),
+            Some("{\"v\":1}".to_string())
+        );
+        unchanged.assert_async().await;
+        unchanged.remove_async().await;
+
+        // A changed list replaces the copy and its validator.
+        let changed = server
+            .mock("GET", path)
+            .match_header("if-none-match", "\"v1\"")
+            .with_header("etag", "\"v2\"")
+            .with_body("{\"v\":2}")
+            .expect(1)
+            .create_async()
+            .await;
+        assert_eq!(
+            revalidate_policy_text(&url, store.path()).await.unwrap(),
+            Some("{\"v\":2}".to_string())
+        );
+        changed.assert_async().await;
+        changed.remove_async().await;
+
+        // A list that is gone is gone: nothing is served from the copy, and
+        // the next request is unconditional.
+        let gone = server
+            .mock("GET", path)
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        assert_eq!(
+            revalidate_policy_text(&url, store.path()).await.unwrap(),
+            None
+        );
+        gone.assert_async().await;
+        assert!(!stored_policy_path(store.path(), &url).exists());
+    }
+
+    /// Without a validator there is nothing to revalidate against, so nothing
+    /// is kept.
+    #[tokio::test]
+    async fn a_release_list_without_a_validator_is_not_kept() {
+        let _config = Config::get().await.unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let path = "/unvalidated/HEAD/.well-known/packslip.json";
+        let url = format!("{}{path}", server.url());
+        let list = server
+            .mock("GET", path)
+            .match_header("if-none-match", mockito::Matcher::Missing)
+            .match_header("if-modified-since", mockito::Matcher::Missing)
+            .with_body("{}")
+            .expect(2)
+            .create_async()
+            .await;
+        for _ in 0..2 {
+            assert_eq!(
+                revalidate_policy_text(&url, store.path()).await.unwrap(),
+                Some("{}".to_string())
+            );
+        }
+        list.assert_async().await;
+        assert!(!stored_policy_path(store.path(), &url).exists());
+    }
+
+    /// A verification is reused only for the same signer options, stamp, and
+    /// vendor answer.
+    #[tokio::test]
+    async fn a_cached_verification_is_keyed_by_what_it_rests_on() {
+        let _config = Config::get().await.unwrap();
+        let project = "github.com/example/keyed";
+        let opts = |pairs: &[(&str, &str)]| {
+            let mut raw = ToolVersionOptions::default();
+            for (key, value) in pairs {
+                raw.opts
+                    .insert(key.to_string(), toml::Value::String(value.to_string()));
+            }
+            raw
+        };
+        let listed = |digest: &str| {
+            Vendor::Listed(Located {
+                url: "https://example.com/packslip.sigstore.json".into(),
+                digest: Some(digest.into()),
+                list_missing: false,
+            })
+        };
+        let key = |raw: &ToolVersionOptions, vendor: &Vendor| {
+            resolution_verification_key(
+                project,
+                "1.0.0",
+                &PackslipOptions::new(raw),
+                None,
+                vendor,
+                "pins".into(),
+            )
+            .unwrap()
+        };
+        let base = key(&opts(&[]), &Vendor::NoList);
+        assert_eq!(base, key(&opts(&[]), &Vendor::NoList));
+        // Options that only choose an artifact are applied on every read.
+        assert_eq!(base, key(&opts(&[("variant", "musl")]), &Vendor::NoList));
+        for changed in [
+            key(&opts(&[("workflow", "release.yml")]), &Vendor::NoList),
+            key(
+                &opts(&[("identity_prefix", "https://example.com/")]),
+                &Vendor::NoList,
+            ),
+            key(&opts(&[("allow_unlogged", "true")]), &Vendor::NoList),
+            key(&opts(&[]), &Vendor::Unlisted),
+            key(&opts(&[]), &listed("aaaa")),
+        ] {
+            assert_ne!(base, changed);
+        }
+        assert_ne!(
+            key(&opts(&[]), &listed("aaaa")),
+            key(&opts(&[]), &listed("bbbb"))
+        );
+
+        let stamp = |digest: &str| crate::packslip_stamps::Stamp {
+            host: "stamps.example.com".into(),
+            entry: serde_json::from_value(serde_json::json!({
+                "version": "1.0.0",
+                "packslip": "https://stamps.example.com/packslip.sigstore.json",
+                "published_at": "2026-01-01T00:00:00Z",
+            }))
+            .unwrap(),
+            digest: Some(digest.into()),
+        };
+        let stamped = |digest: &str| {
+            resolution_verification_key(
+                project,
+                "1.0.0",
+                &PackslipOptions::new(&opts(&[])),
+                Some(&stamp(digest)),
+                &Vendor::NoList,
+                "pins".into(),
+            )
+            .unwrap()
+        };
+        assert_ne!(base, stamped("aaaa"));
+        assert_ne!(stamped("aaaa"), stamped("bbbb"));
+
+        // Any pin this machine accepted can hold the release, including one a
+        // rename left under another name, so any change to them is a new key.
+        let pinned = |pins: &str| {
+            resolution_verification_key(
+                project,
+                "1.0.0",
+                &PackslipOptions::new(&opts(&[])),
+                None,
+                &Vendor::NoList,
+                pins.into(),
+            )
+            .unwrap()
+        };
+        assert_eq!(base, pinned("pins"));
+        assert_ne!(base, pinned("other pins"));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let none = pins_digest_at(&path).unwrap();
+        std::fs::write(
+            &path,
+            "[pins.\"github.com/example/old-name\"]\nscheme = \"sigstore-oidc\"\n",
+        )
+        .unwrap();
+        assert_ne!(none, pins_digest_at(&path).unwrap());
+    }
+
+    /// `latest` and a prefix such as `1` skip the same refused releases: a
+    /// prefix resolves to the newest match `latest` would also accept, older
+    /// than the refused newest one.
+    #[tokio::test]
+    async fn a_prefix_skips_what_latest_skips() {
+        let refused = ["2.0.0", "1.2.0"];
+        let check = |v: String| async move { Ok(!refused.contains(&v.as_str())) };
+        let versions = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]
+            .iter()
+            .map(|v| version_info(Some(v.to_string()), None, None).unwrap())
+            .collect();
+        let latest = first_eligible(
+            latest_candidates(versions, None, false, VersionOrder::Semver),
+            check,
+        )
+        .await
+        .unwrap();
+        assert_eq!(latest.as_deref(), Some("1.1.0"));
+
+        let matches = |list: &[&str]| list.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        let resolved = eligible_matches(
+            "github.com/example/walk",
+            "1",
+            matches(&["1.0.0", "1.1.0", "1.2.0"]),
+            check,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved, ["1.0.0", "1.1.0"]);
+        assert_eq!(resolved.last(), latest.as_ref());
+
+        // An exact version is not checked; install says why it is refused.
+        let unchecked = |_: String| async { bail!("an exact version is not walked") };
+        // Whatever else matched it, the exact version is the one taken.
+        assert_eq!(
+            eligible_matches(
+                "github.com/example/walk",
+                "1.2.0",
+                matches(&["1.1.0", "1.2.0", "1.2.1"]),
+                unchecked
+            )
+            .await
+            .unwrap(),
+            ["1.1.0", "1.2.0"]
+        );
+        // No match is not a refusal.
+        assert!(
+            eligible_matches("github.com/example/walk", "3", vec![], unchecked)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        // Every match refused is an error rather than an empty answer.
+        let err = eligible_matches("github.com/example/walk", "2", matches(&["2.0.0"]), check)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("matching 2 can be installed"));
+        // A verification failure stops the walk.
+        let failing = |_: String| async { bail!("signature failure") };
+        let err = eligible_matches("github.com/example/walk", "1", matches(&["1.0.0"]), failing)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("signature failure"));
     }
 
     #[tokio::test]
@@ -2561,18 +3757,44 @@ mod tests {
     }
 
     #[test]
+    fn a_pubkey_line_is_never_looked_up_as_a_file() {
+        let key = |seed| packslip::minisign::SecretKey::from_seed([seed; 32]).public_key();
+        let (pinned, other) = (key(7), key(8));
+        let line = pinned.to_file().lines().nth(1).unwrap().to_string();
+        // A key line is a valid relative path: whatever a file of that name
+        // in the working directory holds, the line is the key.
+        assert_eq!(pubkey_file_text_with(&line, |_| true).unwrap(), None);
+        assert_eq!(pinned_key(&line).unwrap(), pinned);
+
+        // A path is still read, and something that is neither is an error.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vendor.pub");
+        file::write(&path, other.to_file()).unwrap();
+        let raw: ToolVersionOptions =
+            toml::from_str(&format!("pubkey = {:?}", path.to_str().unwrap())).unwrap();
+        let Pin::Key(read) = pin("tool.example.com", &PackslipOptions::new(&raw)).unwrap() else {
+            panic!("expected a key");
+        };
+        assert_eq!(read, other);
+        let raw: ToolVersionOptions = toml::from_str(r#"pubkey = "not a key""#).unwrap();
+        let err = pin("tool.example.com", &PackslipOptions::new(&raw))
+            .expect_err("not a key, not a file");
+        assert!(err.to_string().contains("pubkey"), "{err}");
+    }
+
+    #[test]
     fn workflow_option_pins_one_workflow_on_tags() {
         let policy = |project: &str, toml: &str| {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         };
-        let Pin::Identity(policy) = policy(
-            "github.com/max-sixty/worktrunk",
-            r#"workflow = "release.yaml""#,
-        )
-        .unwrap() else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(
+            policy(
+                "github.com/max-sixty/worktrunk",
+                r#"workflow = "release.yaml""#,
+            )
+            .unwrap(),
+        );
         assert_eq!(policy.issuer.as_deref(), Some(GITHUB_ISSUER));
         assert_eq!(policy.identity, None);
         assert_eq!(
@@ -2582,9 +3804,7 @@ mod tests {
             )
         );
         // A monorepo tool is pinned by its repository's workflow.
-        let Pin::Identity(policy) = policy_for("github.com/o/r/tool") else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(policy_for("github.com/o/r/tool"));
         assert_eq!(
             policy.identity_prefix.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
@@ -2605,7 +3825,7 @@ mod tests {
         }
         for bad in [
             r#"workflow = "a/b.yaml""#,
-            r#"workflow = "b.yaml@refs/heads/main""#,
+            r#"workflow = "b.yaml@main""#,
             r#"workflow = " ""#,
         ] {
             let raw: ToolVersionOptions = toml::from_str(bad).unwrap();
@@ -2625,6 +3845,242 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         }
+    }
+
+    #[tokio::test]
+    async fn a_list_signer_override_keeps_the_repository_id_check() {
+        // jdx/hk's v2.3.0 packslip, signed as GitHub repository 922514152;
+        // it stands in for a list signed by the same workflow.
+        const HK: &str = include_str!("../../test/fixtures/packslip-forge/hk-v2.3.0.sigstore.json");
+        let project = "github.com/jdx/hk";
+        let prefix = "https://github.com/jdx/hk/.github/workflows/release.yml@";
+        let recreated = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: Some("1".into()),
+            ..Default::default()
+        };
+        for options in [
+            format!("list_identity_prefix = {prefix:?}"),
+            format!("workflow = \"release.yml\"\nlist_identity_prefix = {prefix:?}"),
+        ] {
+            let raw: ToolVersionOptions = toml::from_str(&options).unwrap();
+            let opts = PackslipOptions::new(&raw);
+            let list_pin = pin(project, &opts)
+                .unwrap()
+                .for_release_list(&opts)
+                .unwrap();
+            let Pin::Workflows(policies) = &list_pin else {
+                panic!("expected the list to stay held to the repository: {list_pin:?}");
+            };
+            assert_eq!(policies[0].identity_prefix.as_deref(), Some(prefix));
+            // The list is held to what the lockfile pins, as bundles are.
+            let forge = list_pin
+                .forge(project, [&recreated], HK)
+                .await
+                .unwrap()
+                .expect("a forge expectation for the list");
+            let err = forge
+                .check_source(
+                    HK,
+                    project,
+                    "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v2.3.0",
+                    Some(GITHUB_ISSUER),
+                )
+                .unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("mise.lock pins GitHub repository ID 1 for it"),
+                "{err}"
+            );
+        }
+        // A project off the forges has no repository to hold the list to.
+        let raw: ToolVersionOptions = toml::from_str(&format!(
+            "issuer = {GITHUB_ISSUER:?}\nidentity_prefix = {prefix:?}\nlist_identity_prefix = {prefix:?}"
+        ))
+        .unwrap();
+        let opts = PackslipOptions::new(&raw);
+        let list_pin = pin("tool.example.com", &opts)
+            .unwrap()
+            .for_release_list(&opts)
+            .unwrap();
+        assert!(matches!(list_pin, Pin::Identity(_)), "{list_pin:?}");
+    }
+
+    #[test]
+    fn a_verified_release_list_is_cached_per_lock_commitment() {
+        let project = "github.com/jdx/hk";
+        let pin = Pin::Forge(Policy::for_project(project).unwrap());
+        let entry = |id: Option<&str>| PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: id.map(str::to_string),
+            ..Default::default()
+        };
+        let (pinned, other, unpinned) = (entry(Some("922514152")), entry(Some("1")), entry(None));
+        let key = |lock: &[&PlatformInfo]| release_list_cache_key(project, &pin, true, lock);
+        // A list verified without the lockfile, or under one that pins
+        // another repository, is not the verification a lockfile gets.
+        assert_ne!(key(&[]), key(&[&pinned]));
+        assert_ne!(key(&[&pinned]), key(&[&other]));
+        assert_ne!(key(&[&pinned]), key(&[&pinned, &other]));
+        // Entries that commit to the same repository share one.
+        assert_eq!(key(&[&pinned]), key(&[&pinned, &pinned]));
+        assert_eq!(key(&[&pinned, &other]), key(&[&other, &pinned]));
+        // An entry with no ID commits to no repository.
+        assert_eq!(key(&[]), key(&[&unpinned]));
+    }
+
+    #[tokio::test]
+    async fn a_workflow_pin_is_held_to_the_repository_id() {
+        // jdx/hk's v2.3.0 packslip, signed by its release.yml as GitHub
+        // repository 922514152.
+        const HK: &str = include_str!("../../test/fixtures/packslip-forge/hk-v2.3.0.sigstore.json");
+        let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
+        let project = "github.com/jdx/hk";
+        let pin = pin(project, &PackslipOptions::new(&raw)).unwrap();
+        let recreated = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: Some("1".into()),
+            ..Default::default()
+        };
+        let forge = pin.forge(project, [&recreated], HK).await.unwrap();
+        let err = verify_bundle(HK, &pin, forge.as_ref(), true, &[])
+            .err()
+            .expect("a release from another repository under the pinned name");
+        assert!(
+            err.to_string()
+                .contains("mise.lock pins GitHub repository ID 1 for it"),
+            "{err}"
+        );
+
+        // With no ID pinned yet, the release is accepted and its ID is what
+        // the signer pin and lock entries record.
+        let forge = pin.forge(project, [], HK).await.unwrap();
+        let accepted = verify_bundle(HK, &pin, forge.as_ref(), true, &[]).unwrap();
+        let recorded = accepted.check.and_then(|check| check.pin);
+        assert_eq!(
+            recorded.map(|pin| pin.repository_id),
+            Some("922514152".into())
+        );
+    }
+
+    /// The one workflow policy a `workflow` option gives.
+    fn one_workflow(pin: Pin) -> Policy {
+        match pin {
+            Pin::Workflows(mut policies) if policies.len() == 1 => policies.remove(0),
+            pin => panic!("expected one workflow, got {pin:?}"),
+        }
+    }
+
+    #[test]
+    fn workflow_list_accepts_each_named_workflow_on_tags() {
+        let pin_for = |toml: &str| {
+            let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
+            pin("github.com/o/r", &PackslipOptions::new(&raw))
+        };
+        let Pin::Workflows(policies) =
+            pin_for(r#"workflow = ["release-plz.yml", "release.yml", "release.yml"]"#).unwrap()
+        else {
+            panic!("expected several workflows");
+        };
+        let prefixes: Vec<_> = policies
+            .iter()
+            .map(|policy| policy.identity_prefix.as_deref().unwrap())
+            .collect();
+        assert_eq!(
+            prefixes,
+            [
+                "https://github.com/o/r/.github/workflows/release-plz.yml@refs/tags/",
+                "https://github.com/o/r/.github/workflows/release.yml@refs/tags/",
+            ]
+        );
+        assert!(
+            policies
+                .iter()
+                .all(|p| p.issuer.as_deref() == Some(GITHUB_ISSUER))
+        );
+        // A one-item list is the same pin as the bare name.
+        assert_eq!(
+            one_workflow(pin_for(r#"workflow = ["release.yml"]"#).unwrap()),
+            one_workflow(pin_for(r#"workflow = "release.yml""#).unwrap())
+        );
+        for bad in [
+            "workflow = []",
+            r#"workflow = [1]"#,
+            r#"workflow = ["a/b.yml"]"#,
+            r#"workflow = ["release.yml", " "]"#,
+        ] {
+            assert!(pin_for(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn workflow_entry_may_name_a_ref() {
+        let pin_for = |toml: &str| {
+            let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
+            pin("github.com/o/r", &PackslipOptions::new(&raw))
+        };
+        let policy = one_workflow(pin_for(r#"workflow = "release.yml@refs/heads/main""#).unwrap());
+        assert_eq!(
+            policy.identity.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/heads/main")
+        );
+        assert_eq!(policy.identity_prefix, None);
+        let policy = one_workflow(pin_for(r#"workflow = "release.yml@refs/tags/""#).unwrap());
+        assert_eq!(
+            policy.identity_prefix.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
+        );
+        let Pin::Workflows(policies) =
+            pin_for(r#"workflow = ["a.yml@refs/heads/main", "b.yml"]"#).unwrap()
+        else {
+            panic!("expected several workflows");
+        };
+        assert_eq!(policies.len(), 2);
+        for bad in [
+            r#"workflow = "release.yml@main""#,
+            r#"workflow = "release.yml@""#,
+            r#"workflow = "release.yml@refs/pull/1/merge""#,
+            r#"workflow = "release.yml@refs/heads/""#,
+        ] {
+            assert!(pin_for(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn several_signers_pass_when_any_one_verifies() {
+        let policy = |name: &str| Policy {
+            issuer: Some(GITHUB_ISSUER.to_string()),
+            identity: None,
+            identity_prefix: Some(name.to_string()),
+        };
+        let pin = Pin::Workflows(vec![policy("a"), policy("b")]);
+        let accepted = pin
+            .verify_any(|trust| match trust {
+                Trust::Identity(p) if p.identity_prefix.as_deref() == Some("b") => Ok("b"),
+                _ => bail!("not me"),
+            })
+            .unwrap();
+        assert_eq!(accepted, "b");
+        let err = pin.verify_any::<()>(|_| bail!("nope")).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "no accepted signer matched:\n  nope\n  nope"
+        );
+        // One signer reports its own refusal unchanged.
+        let single = Pin::Identity(policy("a"));
+        assert_eq!(
+            single
+                .verify_any::<()>(|_| bail!("nope"))
+                .unwrap_err()
+                .to_string(),
+            "nope"
+        );
     }
 
     #[test]
@@ -2865,13 +4321,29 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
         let before = Some("2026-09-03T00:00:00Z".parse().unwrap());
         let old = "2026-09-01T00:00:00Z";
         let new = "2026-09-04T00:00:00Z";
-        assert!(check_verified_age(Some(new), old, before).is_err());
-        assert!(check_verified_age(Some(old), new, before).is_ok());
-        assert!(check_verified_age(None, old, before).is_ok());
-        assert!(check_verified_age(None, new, before).is_err());
-        assert!(check_verified_age(Some(new), old, None).is_ok());
-        assert!(check_verified_age(Some("invalid"), old, before).is_err());
-        assert!(check_verified_age(Some("2026-09-03T00:00:00Z"), old, before).is_ok());
+        for allow_unlogged in [false, true] {
+            assert!(check_verified_age(Some(new), old, allow_unlogged, before).is_err());
+            assert!(check_verified_age(Some(old), new, allow_unlogged, before).is_ok());
+            assert!(check_verified_age(Some(new), old, allow_unlogged, None).is_ok());
+            assert!(check_verified_age(Some("invalid"), old, allow_unlogged, before).is_err());
+            assert!(
+                check_verified_age(Some("2026-09-03T00:00:00Z"), old, allow_unlogged, before)
+                    .is_ok()
+            );
+            assert!(check_verified_age(None, new, allow_unlogged, before).is_err());
+        }
+        // Only a bundle the user agreed to take unlogged is dated by its
+        // manifest. A logged bundle whose entry carries no time has nothing
+        // else to go by, so it is too new for a cutoff.
+        assert!(check_verified_age(None, old, true, before).is_ok());
+        let err = check_verified_age(None, old, false, before).unwrap_err();
+        assert!(
+            err.to_string().contains("no transparency-log time"),
+            "{err}"
+        );
+        assert!(verified_age_allowed(None, old, true, before).unwrap());
+        assert!(!verified_age_allowed(None, old, false, before).unwrap());
+        assert!(check_verified_age(None, old, false, None).is_ok());
     }
 
     #[test]

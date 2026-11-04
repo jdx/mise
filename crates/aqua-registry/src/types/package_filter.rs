@@ -39,9 +39,10 @@ impl AquaPackage {
             if c.args.len() != 1 {
                 return Err("semver() takes exactly one argument".to_string().into());
             }
-            let requirements = c.args[0]
-                .as_string()
-                .unwrap()
+            let Some(requirements) = c.args[0].as_string() else {
+                return Err("semver() takes a string argument".to_string().into());
+            };
+            let requirements = requirements
                 .replace(' ', "")
                 .split(',')
                 .map(AquaRequirement::parse)

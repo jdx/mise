@@ -1,6 +1,6 @@
 //! Host requirements describe prerequisites, not dependencies to install.
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use eyre::{Result, bail};
@@ -137,10 +137,43 @@ async fn os_version() -> Option<String> {
     version
 }
 
-async fn library_present(name: &str) -> Option<bool> {
+/// The loader cache's names, read at most once per [`check_host`]: the
+/// manifest decides how many libraries are asked about, and `ldconfig -p`
+/// gives the same answer for all of them. `None` inside means it could not
+/// be read.
+type LoaderCache = tokio::sync::OnceCell<Option<BTreeSet<String>>>;
+
+/// The names `ldconfig -p` resolves to an existing file of this
+/// architecture.
+#[cfg(target_os = "linux")]
+fn loader_cache_names(cache: &str) -> BTreeSet<String> {
+    let arch = std::env::consts::ARCH;
+    cache
+        .lines()
+        .filter(|line| {
+            let native = match arch {
+                "x86_64" => line.contains("x86-64"),
+                "aarch64" => line.contains("AArch64"),
+                _ => true,
+            };
+            native
+                && line
+                    .split("=>")
+                    .nth(1)
+                    .is_some_and(|p| std::path::Path::new(p.trim()).is_file())
+        })
+        .filter_map(|line| line.split_whitespace().next())
+        .map(str::to_owned)
+        .collect()
+}
+
+async fn library_present(name: &str, loader_cache: &LoaderCache) -> Option<bool> {
     if !file::is_plain_file_name(name) {
         return None;
     }
+    // Only Linux has a loader cache to read.
+    #[cfg(not(target_os = "linux"))]
+    let _ = loader_cache;
     #[cfg(target_os = "linux")]
     {
         let mut paths: Vec<PathBuf> = std::env::var_os("LD_LIBRARY_PATH")
@@ -152,20 +185,13 @@ async fn library_present(name: &str) -> Option<bool> {
         }
         // Cache failure is unknown, not proof of absence. The cache normally
         // covers distribution-specific multiarch directories as well.
-        let cache = probe("/sbin/ldconfig", &["-p"]).await?;
-        let arch = std::env::consts::ARCH;
-        Some(cache.lines().any(|line| {
-            line.split_whitespace().next() == Some(name)
-                && match arch {
-                    "x86_64" => line.contains("x86-64"),
-                    "aarch64" => line.contains("AArch64"),
-                    _ => true,
-                }
-                && line
-                    .split("=>")
-                    .nth(1)
-                    .is_some_and(|p| std::path::Path::new(p.trim()).is_file())
-        }))
+        let names = loader_cache
+            .get_or_init(|| async {
+                let cache = probe("/sbin/ldconfig", &["-p"]).await?;
+                Some(loader_cache_names(&cache))
+            })
+            .await;
+        Some(names.as_ref()?.contains(name))
     }
     #[cfg(target_os = "macos")]
     {
@@ -210,9 +236,25 @@ fn check_min(report: &mut Report, label: &str, actual: Option<&str>, min: &str, 
     }
 }
 
-/// `commands` contains paths resolved from the install's active mise toolset.
-/// Ambient PATH supplies commands not managed by that toolset.
-pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) -> Report {
+/// The command to start for a `--version` probe, and the directory to start
+/// it in: the command's own. A command found through a relative `PATH` entry
+/// such as `./bin` is relative to mise's working directory, so it is made
+/// absolute first, or it would not be found from its own directory.
+fn probe_location(path: PathBuf) -> (PathBuf, PathBuf) {
+    let path = std::path::absolute(&path).unwrap_or(path);
+    let dir = path
+        .parent()
+        .filter(|dir| dir.is_absolute())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    (path, dir)
+}
+
+/// Everything that can fail an artifact: the OS, glibc and shared
+/// libraries. It starts only fixed system programs, never one the manifest
+/// names, so resolving a version can call it for a manifest that config
+/// nobody trusted points at.
+pub async fn check_host(artifact: &Artifact) -> Report {
     let mut report = Report::default();
     let Some(req) = &artifact.requires else {
         return report;
@@ -224,8 +266,9 @@ pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) ->
         let glibc = glibc_version().await;
         check_min(&mut report, "glibc", glibc.as_deref(), min, true);
     }
+    let loader_cache = LoaderCache::new();
     for lib in req.libs.iter().flatten() {
-        match library_present(lib).await {
+        match library_present(lib, &loader_cache).await {
             Some(true) => {}
             Some(false) => report.failures.push(format!(
                 "shared library {lib} was not found by the host loader search"
@@ -235,6 +278,19 @@ pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) ->
                 .push(format!("cannot check shared library {lib}")),
         }
     }
+    report
+}
+
+/// [`check_host`], and every command the manifest requires, each started
+/// with `--version` when it names a minimum. A command can only add a
+/// warning, so only an install, about to use the artifact, calls this.
+/// `commands` contains paths resolved from the install's active mise toolset.
+/// Ambient PATH supplies commands not managed by that toolset.
+pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) -> Report {
+    let mut report = check_host(artifact).await;
+    let Some(req) = &artifact.requires else {
+        return report;
+    };
     for bin in &req.bin {
         let path = commands
             .get(&bin.name)
@@ -255,7 +311,14 @@ pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) ->
             continue;
         };
         if let Some(min) = &bin.min {
+            // Beside the command, not in the user's project: the manifest
+            // picks the command, and some (rustup's proxies, yarn, mvn) load
+            // code that files in the working directory name even for
+            // `--version`. Whoever can write beside the command could
+            // already replace it.
+            let (path, dir) = probe_location(path);
             let output = CmdLineRunner::new(path)
+                .current_dir(dir)
                 .arg("--version")
                 .env("MISE_AUTO_INSTALL", "0")
                 .read_isolated(64 * 1024)
@@ -320,5 +383,78 @@ mod tests {
         }
         assert_eq!(version_from_output("tool v1.2 built 2026"), None);
         assert_eq!(version_from_output("openjdk 21-ea 2026-09-04"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn the_loader_cache_is_read_once_for_every_library() {
+        let exe = std::env::current_exe().unwrap();
+        let exe = exe.display();
+        let names = loader_cache_names(&format!(
+            "3 libs found in cache `/etc/ld.so.cache'\n\
+             \tlibhere.so.1 (libc6,x86-64,AArch64) => {exe}\n\
+             \tlibgone.so.1 (libc6,x86-64,AArch64) => {exe}.gone\n\
+             \tlibother.so.1 (libc6,other) => {exe}\n"
+        ));
+        assert!(names.contains("libhere.so.1"));
+        assert!(!names.contains("libgone.so.1"));
+        if matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            assert_eq!(names.len(), 1);
+        }
+
+        // What the cache already holds answers; `ldconfig` is not run again
+        // for each name the manifest lists.
+        let cache = LoaderCache::new_with(Some(Some(names)));
+        assert_eq!(library_present("libhere.so.1", &cache).await, Some(true));
+        assert_eq!(library_present("libgone.so.1", &cache).await, Some(false));
+        // A cache that could not be read stays unknown for every name.
+        let unread = LoaderCache::new_with(Some(None));
+        assert_eq!(library_present("libhere.so.1", &unread).await, None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn required_commands_run_only_for_an_install_and_outside_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path().canonicalize().unwrap();
+        let tool = dir.join("tool");
+        let ran_in = dir.join("ran-in");
+        let script = "#!/bin/sh\npwd -P > \"${0%/*}/ran-in\"\necho tool 1.0\n";
+        file::write(&tool, script).unwrap();
+        file::make_executable(&tool).unwrap();
+        let artifact: Artifact = serde_json::from_value(serde_json::json!({
+            "name": "a.tar.gz", "size": 1, "format": "tar.gz",
+            "requires": {"bin": [{"name": "tool", "min": "2"}]},
+        }))
+        .unwrap();
+
+        // What resolution asks starts nothing the manifest names.
+        let report = check_host(&artifact).await;
+        assert!(report.failures.is_empty() && report.warnings.is_empty());
+        assert!(!ran_in.exists());
+
+        // An install does, beside the command rather than where mise runs.
+        let report = check(&artifact, &BTreeMap::from([("tool".into(), tool.clone())])).await;
+        assert!(report.failures.is_empty());
+        assert_eq!(report.warnings, ["tool 1.0 is below required 2"]);
+        assert_eq!(
+            file::read_to_string(&ran_in).unwrap().trim_end(),
+            dir.to_str().unwrap()
+        );
+
+        // A command found through a relative PATH entry, such as `./bin`, is
+        // relative to where mise runs: it is still found from its own
+        // directory, and its version still read.
+        file::remove_file(&ran_in).unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        let up = "../".repeat(cwd.components().count() - 1);
+        let relative = PathBuf::from(up).join(tool.strip_prefix("/").unwrap());
+        assert!(relative.is_relative() && relative.is_file(), "{relative:?}");
+        let report = check(&artifact, &BTreeMap::from([("tool".into(), relative)])).await;
+        assert_eq!(report.warnings, ["tool 1.0 is below required 2"]);
+        assert_eq!(
+            file::read_to_string(&ran_in).unwrap().trim_end(),
+            dir.to_str().unwrap()
+        );
     }
 }

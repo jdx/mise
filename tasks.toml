@@ -76,7 +76,7 @@ run = [
   "mise x usage -- usage generate markdown -m --out-dir docs/cli --url-prefix /cli --link-extension .html --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
   # usage-lib renders <SUBCOMMAND> for any command with subcommands. `mise bootstrap`
   # can run without a subcommand, so normalize the generated markdown.
-  "perl -0pi -e 's/mise (bootstrap( dotfiles (history|origin))?) \\[FLAGS\\] <SUBCOMMAND>/mise $1 [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/bootstrap/dotfiles.md docs/cli/bootstrap/dotfiles/history.md docs/cli/bootstrap/dotfiles/origin.md docs/cli/index.md",
+  "perl -0pi -e 's/mise bootstrap \\[FLAGS\\] <SUBCOMMAND>/mise bootstrap [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/index.md",
   "node --test docs/.vitepress/cli-reference.test.ts",
   "node docs/.vitepress/cli-reference.ts",
   "markdownlint --fix docs/cli",
@@ -110,16 +110,10 @@ run = [
 ["render:help"]
 description = 'Render help documentation'
 depends = ["build"]
-# markdown-magic scans docs/cli while render:usage replaces that directory.
-# When both tasks are part of `mise run render`, wait for the replacement to finish.
-wait_for = ["render:usage"]
 env = { NO_COLOR = "1" }
 sources = ["mise"]
 outputs = ["README.md"]
-run = [
-  "mise render-help",
-  "mise run show-output-on-failure -- mise x node npm:markdown-magic -- md-magic",
-]
+run = "mise render-help"
 
 ["render:llms"]
 description = 'Generate docs/public/llms.txt (docs index for AI agents)'
@@ -154,11 +148,11 @@ run = "cargo insta test --all-features --accept --unreferenced delete"
 [test]
 description = "run all tests"
 alias = 't'
-run = ["mise tasks run test:unit", "mise tasks run test:e2e"]
+run = ["mise tasks run test:unit", "mise tasks run test:e2e --all"]
 
 ["test:unit"]
 description = "run unit tests"
-run = "cargo test --all-features"
+run = "cargo test --all-features --workspace"
 env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
 
 ["test:unit-ci"]
@@ -170,11 +164,6 @@ run = [
   "cargo nextest run --profile ${NEXTEST_PROFILE:-ci} --workspace --exclude mise --ignore-rust-version --no-fail-fast",
   "cargo test --doc --workspace --exclude mise --ignore-rust-version",
 ]
-
-["test:e2e"]
-description = "run end-to-end tests"
-depends = ["build"]
-run = "e2e/run_all_tests"
 
 ["test:shuffle"]
 description = 'Run tests with shuffling enabled'

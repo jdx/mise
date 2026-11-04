@@ -24,14 +24,17 @@
 //! [`crate::github::resolve_token_for_api_url`] can parse the host correctly; a bare hostname
 //! would be silently misrouted for GitHub Enterprise Server tenants. After token resolution,
 //! the API URL is routed through [`crate::http::apply_url_replacements`] so attestation
-//! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests.
+//! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests. A
+//! replacement that changes the host drops the token, which was resolved for the original host.
 
 use std::path::Path;
 
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
-pub use mise_sigstore::{AttestationError, CosignIdentity, SlsaArtifact, SlsaSignerIdentity};
+pub use mise_sigstore::{
+    Attestation, AttestationError, CosignIdentity, SlsaArtifact, SlsaSignerIdentity,
+};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
@@ -81,19 +84,37 @@ fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
     crate::github::resolve_token_for_api_url(url)
 }
 
-fn routed_api_url(api_url: &str, has_credentials: bool) -> AttestationResult<String> {
+/// Apply `url_replacements` to the attestation API base URL with the credential rules
+/// [`crate::http`] applies to any rewritten request: credentials resolved for the original
+/// host are dropped when the rule changes the host, then an HTTPS-to-HTTP downgrade is
+/// refused for whatever credentials are left.
+///
+/// `token` is the token resolved for `api_url`. Returns the URL to use and the token that
+/// may still be sent to it.
+fn routed_api_url(
+    api_url: &str,
+    token: Option<String>,
+) -> AttestationResult<(String, Option<String>)> {
     let Ok(mut url) = url::Url::parse(api_url) else {
         debug!("invalid GitHub attestation API URL, skipping url_replacements: {api_url}");
-        return Ok(api_url.to_string());
+        return Ok((api_url.to_string(), token));
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
-    crate::http::ensure_secure_url_replacement(&original, &url, has_credentials)
+    // mise-sigstore builds the Authorization header itself, so the token is scoped here;
+    // `clear_cross_host_credentials` only has inherited userinfo left to strip.
+    let token = token.filter(|_| url.host() == original.host());
+    crate::http::clear_cross_host_credentials(
+        &mut reqwest::header::HeaderMap::new(),
+        &original,
+        &mut url,
+    );
+    crate::http::ensure_secure_url_replacement(&original, &url, token.is_some())
         .map_err(|err| AttestationError::Verification(err.to_string()))?;
     if url == original {
-        Ok(api_url.to_string())
+        Ok((api_url.to_string(), token))
     } else {
-        Ok(url.to_string())
+        Ok((url.to_string(), token))
     }
 }
 
@@ -133,8 +154,7 @@ fn mise_retry_config() -> RetryConfig {
 }
 
 fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
-    let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url, token.is_some())?;
+    let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))?;
     let mut builder = AttestationClient::builder()
         .base_url(&base_url)
         .retry_config(mise_retry_config());
@@ -195,75 +215,31 @@ async fn verify_attestation_uncached(
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
     let mut digest = None;
+    let mut mirror_err = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
-        match crate::versions_host::github_attestations(
-            &format!("{owner}/{repo}"),
-            &format!("sha256:{artifact_digest}"),
+        match verify_with_mirror(
+            artifact_path,
+            owner,
+            repo,
+            expected_workflow,
+            None,
+            &artifact_digest,
         )
         .await
         {
-            Ok(Some(attestations)) => {
-                trace!(
-                    "got {} GitHub attestations for {owner}/{repo}@sha256:{artifact_digest} from mise-versions",
-                    attestations.len()
-                );
-                if attestations.is_empty() {
-                    if !mirror_may_answer_none() {
-                        debug!(
-                            "mise-versions has no GitHub attestations for {owner}/{repo}; paranoid mode asks GitHub"
-                        );
-                    } else {
-                        return Err(AttestationError::NoAttestations);
-                    }
-                } else if attestations.iter().any(|a| !a.has_inline_bundle()) {
-                    debug!(
-                        "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
-                    );
-                } else {
-                    // GitHub may append attestations for a digest after mise-versions first
-                    // caches it. Treat only a successful verification as authoritative so an
-                    // incomplete cached set can still be refreshed from GitHub directly.
-                    match classify_cached_attestation_verification(
-                        mise_sigstore::verify_github_attestation_sources(
-                            artifact_path,
-                            &attestations,
-                            expected_workflow,
-                        )
-                        .await,
-                    ) {
-                        // Anyone can attest any digest from their own
-                        // repository; GitHub's API only lists the requested
-                        // repository's, but a mirror could list anyone's.
-                        CachedAttestationVerification::Verified(sources)
-                            if crate::github::attested_by_repository(owner, repo, &sources)
-                                .await =>
-                        {
-                            return Ok(true);
-                        }
-                        CachedAttestationVerification::Verified(sources) => warn!(
-                            "mise-versions returned attestations for {owner}/{repo} made by {}; verifying with GitHub instead",
-                            sources.join(", ")
-                        ),
-                        CachedAttestationVerification::Retry(None) => debug!(
-                            "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API"
-                        ),
-                        CachedAttestationVerification::Retry(Some(err)) => debug!(
-                            "mise-versions GitHub attestation verification failed overall for {owner}/{repo}; falling back to GitHub API: {}",
-                            err.diagnostic_summary()
-                        ),
-                    }
-                }
-            }
-            Ok(None) => {}
-            Err(err) => debug!("mise-versions GitHub attestations lookup failed: {err:#}"),
+            MirrorVerdict::Done(result) => return result,
+            MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
         digest = Some(artifact_digest);
     }
 
-    let token = resolve_token_for_wrapper(api_url);
-    let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL), token.is_some())?;
-    if let Some(digest) = digest {
+    let (base_url, token) = routed_api_url(
+        api_url.unwrap_or(crate::github::API_URL),
+        resolve_token_for_wrapper(api_url),
+    )?;
+    let result = if let Some(digest) = digest {
         mise_sigstore::verify_github_attestation_with_base_url_and_digest(
             mise_sigstore::GithubAttestationRequest {
                 artifact_path,
@@ -288,13 +264,39 @@ async fn verify_attestation_uncached(
             mise_retry_config(),
         )
         .await
+    };
+    accept_renamed_repository(owner, repo, api_url, result)
+        .await
+        .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+}
+
+/// Attestations name the repository as it was when they were made, so after
+/// a rename or transfer GitHub lists some under a name that was not
+/// requested. Accept those when GitHub confirms both names are one
+/// repository. [`crate::github::canonical_repo`] refuses to answer when
+/// `url_replacements` reroutes the API: the host that picked the
+/// attestations must not also vouch for the rename.
+async fn accept_renamed_repository(
+    owner: &str,
+    repo: &str,
+    api_url: Option<&str>,
+    result: AttestationResult<bool>,
+) -> AttestationResult<bool> {
+    let on_github = api_url.is_none_or(|url| url.trim_end_matches('/') == crate::github::API_URL);
+    match result {
+        Err(AttestationError::RepositoryMismatch { found, .. })
+            if on_github && crate::github::attested_by_repository(owner, repo, &found).await =>
+        {
+            Ok(true)
+        }
+        result => result,
     }
 }
 
 /// Verify a GitHub artifact attestation filtered by predicate type.
 ///
-/// The versions-host cache is keyed by digest only, so predicate-filtered
-/// requests go directly to the GitHub attestations API.
+/// mise-versions serves every attestation for a digest, so the filter is
+/// applied here, the way GitHub's `predicate_type` parameter applies it.
 pub async fn verify_attestation_with_predicate_type(
     artifact_path: &Path,
     owner: &str,
@@ -318,6 +320,23 @@ pub async fn verify_attestation_with_predicate_type(
     };
 
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+    let mut mirror_err = None;
+    if use_versions_host_for_attestations(api_url, use_versions_host) {
+        match verify_with_mirror(
+            artifact_path,
+            owner,
+            repo,
+            expected_workflow,
+            Some(predicate_type),
+            &artifact_digest,
+        )
+        .await
+        {
+            MirrorVerdict::Done(result) => return result,
+            MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
+        }
+    }
     let client = attestation_client(api_url.unwrap_or(crate::github::API_URL))?;
     let attestations = client
         .fetch_attestations(FetchParams {
@@ -327,13 +346,17 @@ pub async fn verify_attestation_with_predicate_type(
             limit: 30,
             predicate_type: Some(predicate_type.to_string()),
         })
-        .await?;
-    mise_sigstore::verify_github_attestation_with_attestations(
+        .await
+        .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))?;
+    let result = mise_sigstore::verify_github_attestation_with_attestations(
         artifact_path,
         &attestations,
+        owner,
+        repo,
         expected_workflow,
     )
-    .await
+    .await;
+    accept_renamed_repository(owner, repo, api_url, result).await
 }
 
 /// Reason the pre-download attestation probe could not complete.
@@ -380,39 +403,32 @@ pub async fn detect_attestations(
     digest: &str,
     use_versions_host: bool,
 ) -> Result<bool, DetectError> {
+    let mut mirror_err = None;
     if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
-        match crate::versions_host::github_attestations(&format!("{owner}/{repo}"), digest).await {
-            Ok(Some(attestations)) if !attestations.is_empty() || mirror_may_answer_none() => {
-                trace!(
-                    "got {} GitHub attestation probes for {owner}/{repo}@{digest} from mise-versions",
-                    attestations.len()
-                );
-                return Ok(!attestations.is_empty());
-            }
-            Ok(Some(_)) => debug!(
-                "mise-versions has no attestations for {owner}/{repo}@{digest}; paranoid mode asks GitHub"
-            ),
-            Ok(None) => {}
-            Err(err) => debug!("mise-versions GitHub attestation probe failed: {err:#}"),
+        match detect_with_mirror(owner, repo, digest, None).await {
+            MirrorVerdict::Done(found) => return found,
+            MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
 
-    let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url, token.is_some()).map_err(DetectError::SourceCreation)?;
+    let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))
+        .map_err(DetectError::SourceCreation)?;
     let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
         .map_err(DetectError::SourceCreation)?;
     let artifact_ref = ArtifactRef::from_digest(digest);
     let attestations = source
         .fetch_attestations(&artifact_ref)
         .await
-        .map_err(DetectError::Fetch)?;
+        .map_err(|err| {
+            DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+        })?;
     Ok(!attestations.is_empty())
 }
 
 /// Probe the GitHub attestation API for the given digest and predicate type.
-///
-/// The versions-host cache is keyed by digest only, so predicate-filtered
-/// requests go directly to the GitHub attestations API.
+/// From mise-versions, filtered here, as in
+/// [`verify_attestation_with_predicate_type`].
 pub async fn detect_attestations_with_predicate_type(
     owner: &str,
     repo: &str,
@@ -424,6 +440,14 @@ pub async fn detect_attestations_with_predicate_type(
     let Some(predicate_type) = predicate_type else {
         return detect_attestations(owner, repo, api_url, digest, use_versions_host).await;
     };
+    let mut mirror_err = None;
+    if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
+        match detect_with_mirror(owner, repo, digest, Some(predicate_type)).await {
+            MirrorVerdict::Done(found) => return found,
+            MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
+        }
+    }
 
     let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
     let digest = if digest.contains(':') {
@@ -440,7 +464,9 @@ pub async fn detect_attestations_with_predicate_type(
             predicate_type: Some(predicate_type.to_string()),
         })
         .await
-        .map_err(DetectError::Fetch)?;
+        .map_err(|err| {
+            DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+        })?;
     Ok(!attestations.is_empty())
 }
 
@@ -449,8 +475,442 @@ pub async fn detect_attestations_with_predicate_type(
 /// records no provenance, so paranoid mode confirms it with GitHub instead,
 /// at the cost of one API call per unattested artifact. "Yes" needs no
 /// confirmation: it only leads to verification.
+/// How long a set of attestations from mise-versions is kept on disk.
+const MIRRORED_ATTESTATIONS_TTL: std::time::Duration =
+    std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+type MirroredAttestations = Option<Vec<mise_sigstore::Attestation>>;
+type MirroredAttestationsCell = std::sync::Arc<tokio::sync::OnceCell<MirroredAttestations>>;
+static MIRRORED_ATTESTATIONS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, MirroredAttestationsCell>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// mise-versions' attestations for `repo` at `digest`, asked for once per
+/// command and kept in the cache dir.
+///
+/// The set for a digest only grows, and every caller verifies what it gets
+/// against the artifact and asks GitHub when that fails, so a kept set
+/// answers as well as a fresh one. `mise lock` asks for one digest to detect
+/// provenance and again to verify it, and again for every platform sharing
+/// the artifact; reinstalling a build asks again. Within a command every
+/// answer is shared; only a non-empty set is written to disk, since an empty
+/// one may predate the attestation. Paranoid mode always asks.
+///
+/// Routing is checked before either cache is read: once `url_replacements`
+/// sends this repository's endpoints elsewhere, that replacement is the only
+/// source, and a set kept from mise-versions earlier must not answer for it.
+async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<MirroredAttestations> {
+    if !crate::versions_host::enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    if mise_settings::Settings::get().paranoid.provenance() {
+        return crate::versions_host::github_attestations(repo, digest).await;
+    }
+    let key = mirrored_attestations_key(repo, digest);
+    let cell = MIRRORED_ATTESTATIONS
+        .lock()
+        .unwrap()
+        .entry(key.clone())
+        .or_default()
+        .clone();
+    cell.get_or_try_init(async || {
+        mirrored_attestations_cache(&key)
+            .get_or_try_init_async_if(
+                || crate::versions_host::github_attestations(repo, digest),
+                keep_mirrored_attestations,
+            )
+            .await
+    })
+    .await
+    .cloned()
+}
+
+fn mirrored_attestations_key(repo: &str, digest: &str) -> String {
+    format!(
+        "attestations-{}",
+        crate::hash::hash_to_str(&(repo.to_ascii_lowercase(), digest))
+    )
+}
+
+fn mirrored_attestations_cache(key: &str) -> crate::cache::CacheManager<MirroredAttestations> {
+    crate::cache::CacheManagerBuilder::new(
+        crate::dirs::CACHE
+            .join("github")
+            .join(format!("{key}.msgpack.z")),
+    )
+    .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
+    .build()
+}
+
+/// Only a complete set is kept: one missing a bundle is asked for again next
+/// time rather than failing for a week.
+fn keep_mirrored_attestations(attestations: &MirroredAttestations) -> bool {
+    attestations
+        .as_ref()
+        .is_some_and(|a| !a.is_empty() && a.iter().all(|a| a.has_inline_bundle()))
+}
+
+/// mise-versions' attestations for `repo` at `digest`, asked for again past
+/// the copy [`mirrored_attestations`] keeps, which may predate one GitHub
+/// added since. A complete answer replaces that copy, on disk and for the
+/// rest of this command, so later checks don't ask again.
+async fn refreshed_mirrored_attestations(
+    repo: &str,
+    digest: &str,
+) -> eyre::Result<MirroredAttestations> {
+    let fresh = crate::versions_host::github_attestations(repo, digest).await?;
+    if keep_mirrored_attestations(&fresh) && !mise_settings::Settings::get().paranoid.provenance() {
+        let key = mirrored_attestations_key(repo, digest);
+        if let Err(err) = mirrored_attestations_cache(&key).write(&fresh) {
+            debug!("failed to keep refreshed attestations for {repo}: {err:#}");
+        }
+        MIRRORED_ATTESTATIONS.lock().unwrap().insert(
+            key,
+            std::sync::Arc::new(tokio::sync::OnceCell::new_with(Some(fresh.clone()))),
+        );
+    }
+    Ok(fresh)
+}
+
+/// What mise-versions settled about an artifact's attestations: `T` is a
+/// verification's result, or a probe's.
+enum MirrorVerdict<T = AttestationResult<bool>> {
+    /// The answer: verified, or why not.
+    Done(T),
+    /// GitHub has to answer: paranoid mode confirming what mise-versions
+    /// said, or a repository mise-versions doesn't know (a private one) while
+    /// the user has a token to read it with.
+    AskGithub,
+    /// mise-versions failed in a way GitHub is asked to make up for (see
+    /// [`crate::github::MirrorAnswer`]). GitHub answers, and when its
+    /// lookup fails too, the error names both failures; whether that fails
+    /// the install is `provenance_api_failures_fatal`'s to say, as for any
+    /// failed lookup.
+    RetryGithub(eyre::Report),
+}
+
+/// The verdict once mise-versions failed to answer for `full`.
+fn mirror_error_verdict(full: &str, err: eyre::Report) -> MirrorVerdict {
+    if crate::versions_host::retries_on_github(&err) {
+        return MirrorVerdict::RetryGithub(err);
+    }
+    MirrorVerdict::Done(Err(mirror_failure(full, &err)))
+}
+
+/// GitHub's attestation `err` for `owner/repo`, after mise-versions failed
+/// with `mirror_err`: a failed lookup names both failures and stays a lookup
+/// failure ([`is_api_failure`]); anything else, such as an attestation that
+/// doesn't verify, is GitHub's answer alone.
+fn after_mirror_failure(
+    err: AttestationError,
+    owner: &str,
+    repo: &str,
+    mirror_err: Option<&eyre::Report>,
+) -> AttestationError {
+    match mirror_err {
+        Some(mirror_err) if is_api_failure(&err) => {
+            let failed = crate::versions_host::GithubRetryFailed::new(
+                &format!("GitHub attestations of {owner}/{repo}"),
+                mirror_err,
+                eyre::Report::new(err),
+            );
+            AttestationError::Api(format!("{:#}", eyre::Report::new(failed)))
+        }
+        _ => err,
+    }
+}
+
+/// Verify `artifact_path` against mise-versions' attestations for `owner/repo`,
+/// keeping only those of `predicate_type` when it is set.
+///
+/// Normal usage asks api.github.com, whose rate limit is 60 requests an hour
+/// without a token, only when mise-versions errors
+/// ([`MirrorVerdict::RetryGithub`]). A set kept from an earlier command may
+/// predate an attestation GitHub added since, so one that doesn't verify is
+/// asked for again before the failure stands; mise-versions refreshes its own
+/// copy within half an hour of a release.
+async fn verify_with_mirror(
+    artifact_path: &Path,
+    owner: &str,
+    repo: &str,
+    expected_workflow: Option<&str>,
+    predicate_type: Option<&str>,
+    artifact_digest: &str,
+) -> MirrorVerdict {
+    let full = format!("{owner}/{repo}");
+    if !crate::versions_host::enabled_for_github_repo(&full) {
+        // url_replacements reroutes this repository's attestations; the
+        // replacement answers, not mise-versions.
+        return MirrorVerdict::AskGithub;
+    }
+    let digest = format!("sha256:{artifact_digest}");
+    for fresh in [false, true] {
+        let found = if fresh {
+            refreshed_mirrored_attestations(&full, &digest).await
+        } else {
+            mirrored_attestations(&full, &digest).await
+        };
+        let attestations = match found {
+            Ok(Some(attestations)) => attestations,
+            Ok(None) => {
+                return verdict_after_attestation_404(
+                    &full,
+                    repo_listing(&full).await,
+                    !mirror_may_answer_none(),
+                    || resolve_token_for_wrapper(None).is_some(),
+                );
+            }
+            // Paranoid mode has GitHub confirm mise-versions anyway, so it
+            // asks GitHub when mise-versions can't answer.
+            Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
+            Err(err) => return mirror_error_verdict(&full, err),
+        };
+        trace!(
+            "got {} GitHub attestations for {full}@{digest} from mise-versions",
+            attestations.len()
+        );
+        if attestations.is_empty() {
+            // Not kept on disk, so already as fresh as mise-versions has it.
+            return no_attestations_verdict(&full);
+        }
+        // Before the predicate filter, which can't read a missing bundle and
+        // would pass it off as "no attestations".
+        if attestations.iter().any(|a| !a.has_inline_bundle()) {
+            if !fresh {
+                continue;
+            }
+            if !mirror_may_answer_none() {
+                return MirrorVerdict::AskGithub;
+            }
+            return MirrorVerdict::Done(Err(AttestationError::Api(format!(
+                "mise-versions returned attestations for {full} without their bundles"
+            ))));
+        }
+        let selected: Vec<_> = attestations
+            .into_iter()
+            .filter(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)))
+            .collect();
+        if selected.is_empty() {
+            if fresh {
+                return no_attestations_verdict(&full);
+            }
+            continue;
+        }
+        match classify_cached_attestation_verification(
+            mise_sigstore::verify_github_attestation_sources(
+                artifact_path,
+                &selected,
+                expected_workflow,
+            )
+            .await,
+        ) {
+            // Anyone can attest any digest from their own repository;
+            // GitHub's API only lists the requested repository's, but a
+            // mirror could list anyone's.
+            CachedAttestationVerification::Verified(sources)
+                if crate::github::attested_by_repository(owner, repo, &sources).await =>
+            {
+                return MirrorVerdict::Done(Ok(true));
+            }
+            CachedAttestationVerification::Verified(sources) => {
+                let made_by = sources.join(", ");
+                if !mirror_may_answer_none() {
+                    warn!(
+                        "mise-versions returned attestations for {full} made by {made_by}; verifying with GitHub instead"
+                    );
+                    return MirrorVerdict::AskGithub;
+                }
+                return MirrorVerdict::Done(Err(AttestationError::Verification(format!(
+                    "the attestations mise-versions has for {full} were made by {made_by}"
+                ))));
+            }
+            CachedAttestationVerification::Retry(err) if fresh => {
+                if !mirror_may_answer_none() {
+                    debug!(
+                        "mise-versions GitHub attestations did not verify for {full}; paranoid mode asks GitHub"
+                    );
+                    return MirrorVerdict::AskGithub;
+                }
+                return MirrorVerdict::Done(Err(err.unwrap_or_else(|| {
+                    AttestationError::Verification(format!(
+                        "no attestation mise-versions has for {full} verified this artifact"
+                    ))
+                })));
+            }
+            CachedAttestationVerification::Retry(_) => debug!(
+                "GitHub attestations kept for {full} did not verify; asking mise-versions again"
+            ),
+        }
+    }
+    unreachable!("the second pass always returns")
+}
+
+/// Whether mise-versions' attestations for `owner/repo` at `digest` include
+/// any of `predicate_type` (any at all when `None`), with the same verdicts
+/// as [`verify_with_mirror`].
+async fn detect_with_mirror(
+    owner: &str,
+    repo: &str,
+    digest: &str,
+    predicate_type: Option<&str>,
+) -> MirrorVerdict<Result<bool, DetectError>> {
+    let full = format!("{owner}/{repo}");
+    if !crate::versions_host::enabled_for_github_repo(&full) {
+        // Rerouted by url_replacements, as in `verify_with_mirror`.
+        return MirrorVerdict::AskGithub;
+    }
+    let digest = if digest.contains(':') {
+        digest.to_string()
+    } else {
+        format!("sha256:{digest}")
+    };
+    // As in `verify_with_mirror`: a set kept from earlier may predate the
+    // attestation looked for, so a miss is asked of mise-versions again.
+    for fresh in [false, true] {
+        let found = if fresh {
+            refreshed_mirrored_attestations(&full, &digest).await
+        } else {
+            mirrored_attestations(&full, &digest).await
+        };
+        let attestations = match found {
+            Ok(Some(attestations)) => attestations,
+            Ok(None) => {
+                return detect_verdict(verdict_after_attestation_404(
+                    &full,
+                    repo_listing(&full).await,
+                    !mirror_may_answer_none(),
+                    || resolve_token_for_wrapper(None).is_some(),
+                ));
+            }
+            Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
+            Err(err) => return detect_verdict(mirror_error_verdict(&full, err)),
+        };
+        trace!(
+            "got {} GitHub attestation probes for {full}@{digest} from mise-versions",
+            attestations.len()
+        );
+        // Only a predicate filter reads the bundles; whether any attestation
+        // exists doesn't depend on them.
+        if predicate_type.is_some() && attestations.iter().any(|a| !a.has_inline_bundle()) {
+            if !fresh {
+                continue;
+            }
+            if !mirror_may_answer_none() {
+                return MirrorVerdict::AskGithub;
+            }
+            return MirrorVerdict::Done(Err(DetectError::Fetch(AttestationError::Api(format!(
+                "mise-versions returned attestations for {full} without their bundles"
+            )))));
+        }
+        let found = attestations
+            .iter()
+            .any(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)));
+        // An empty set is never kept on disk, so it is already fresh.
+        if found || attestations.is_empty() || fresh {
+            if !found && !mirror_may_answer_none() {
+                debug!(
+                    "mise-versions has no attestations for {full}@{digest}; paranoid mode asks GitHub"
+                );
+                return MirrorVerdict::AskGithub;
+            }
+            return MirrorVerdict::Done(Ok(found));
+        }
+    }
+    unreachable!("the second pass always returns")
+}
+
+fn no_attestations_verdict(full: &str) -> MirrorVerdict {
+    if mirror_may_answer_none() {
+        MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+    } else {
+        debug!("mise-versions has no GitHub attestations for {full}; paranoid mode asks GitHub");
+        MirrorVerdict::AskGithub
+    }
+}
+
+/// What mise-versions' release listing says about a repository whose
+/// attestations it answered 404 for.
+enum RepoListing {
+    /// It lists the repository: a public one with no attestations for that
+    /// digest.
+    Listed,
+    /// A 404 here too: the repository is private or gone.
+    Unknown,
+    /// The listing failed, so mise can't tell which.
+    Failed(eyre::Report),
+}
+
+async fn repo_listing(full: &str) -> RepoListing {
+    match crate::versions_host::github_releases(full, 1).await {
+        Ok(Some(_)) => RepoListing::Listed,
+        Ok(None) => RepoListing::Unknown,
+        Err(err) => RepoListing::Failed(err),
+    }
+}
+
+/// The verdict after mise-versions answered 404 for `full`'s attestations.
+/// A failed listing is a failed lookup, not "no attestations": that would
+/// let the install go on unchecked. It is retried on GitHub when
+/// mise-versions errored ([`mirror_error_verdict`]), and
+/// `provenance_api_failures_fatal` decides what a failed lookup does.
+/// Paranoid mode asks GitHub instead.
+fn verdict_after_attestation_404(
+    full: &str,
+    listing: RepoListing,
+    paranoid: bool,
+    has_token: impl FnOnce() -> bool,
+) -> MirrorVerdict {
+    match listing {
+        RepoListing::Listed if paranoid => MirrorVerdict::AskGithub,
+        RepoListing::Listed => MirrorVerdict::Done(Err(AttestationError::NoAttestations)),
+        // Only here is a token needed, so only here is it resolved: that
+        // may run the user's credential helper.
+        // Paranoid mode has GitHub confirm what mise-versions can't settle.
+        RepoListing::Unknown if paranoid => MirrorVerdict::AskGithub,
+        RepoListing::Unknown => unknown_repo_verdict(full, has_token()),
+        RepoListing::Failed(_) if paranoid => MirrorVerdict::AskGithub,
+        RepoListing::Failed(err) => mirror_error_verdict(full, err),
+    }
+}
+
+/// A verification's verdict for a probe: no attestations is `Ok(false)` and
+/// any other failure a fetch error.
+fn detect_verdict(verdict: MirrorVerdict) -> MirrorVerdict<Result<bool, DetectError>> {
+    match verdict {
+        MirrorVerdict::AskGithub => MirrorVerdict::AskGithub,
+        MirrorVerdict::RetryGithub(err) => MirrorVerdict::RetryGithub(err),
+        MirrorVerdict::Done(Err(AttestationError::NoAttestations)) => {
+            MirrorVerdict::Done(Ok(false))
+        }
+        MirrorVerdict::Done(Err(err)) => MirrorVerdict::Done(Err(DetectError::Fetch(err))),
+        MirrorVerdict::Done(Ok(found)) => MirrorVerdict::Done(Ok(found)),
+    }
+}
+
+/// mise-versions doesn't serve `full`, which is private or gone. Only the
+/// user's token can read a private repository's attestations; the
+/// attestation client sends a token, not netrc credentials.
+fn unknown_repo_verdict(full: &str, has_token: bool) -> MirrorVerdict {
+    if has_token {
+        debug!("mise-versions does not know {full}; asking GitHub, which may hold it privately");
+        return MirrorVerdict::AskGithub;
+    }
+    MirrorVerdict::Done(Err(AttestationError::Api(format!(
+        "GitHub repository {full} not found (404 from mise-versions.jdx.dev, which mise asks \
+         before api.github.com). If the repository is private, set GITHUB_TOKEN; to ask \
+         GitHub directly, set use_versions_host = false."
+    ))))
+}
+
+fn mirror_failure(full: &str, err: &eyre::Report) -> AttestationError {
+    AttestationError::Api(format!(
+        "{} {err:#}",
+        crate::github::versions_host_failure(&format!("GitHub attestations of {full}"))
+    ))
+}
+
 fn mirror_may_answer_none() -> bool {
-    !mise_settings::Settings::get().paranoid
+    !mise_settings::Settings::get().paranoid.provenance()
 }
 
 fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: bool) -> bool {
@@ -472,26 +932,40 @@ pub async fn verify_slsa_provenance(
     signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    if !mise_settings::Settings::get().generate_lockfiles() {
-        return mise_sigstore::verify_slsa_provenance(
+    let verify = async {
+        let result = mise_sigstore::verify_slsa_provenance(
             artifact_path,
             provenance_path,
             min_level,
             signer,
         )
         .await;
+        match renamed_slsa_source(&result, provenance_path, signer, None).await {
+            Some(renamed) => {
+                mise_sigstore::verify_slsa_provenance(
+                    artifact_path,
+                    provenance_path,
+                    min_level,
+                    SlsaSignerIdentity {
+                        source_repository: Some(&renamed),
+                        ..signer
+                    },
+                )
+                .await
+            }
+            None => result,
+        }
+    };
+    if !mise_settings::Settings::get().generate_lockfiles() {
+        return verify.await;
     }
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let provenance_digest = mise_sigstore::calculate_file_digest(provenance_path).await?;
     let key = format!(
-        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}",
-        signer.identity, signer.issuer
+        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}:{:?}:{:?}",
+        signer.identity, signer.issuer, signer.source_repository, signer.source_tag
     );
-    shared_verification(
-        key,
-        mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level, signer),
-    )
-    .await
+    shared_verification(key, verify).await
 }
 
 pub async fn verify_slsa_provenance_artifacts(
@@ -500,9 +974,85 @@ pub async fn verify_slsa_provenance_artifacts(
     min_level: u8,
     signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
+    verify_slsa_provenance_artifacts_with(provenance_path, artifacts, min_level, signer, None).await
+}
+
+/// Stands in for GitHub's answer to "are these one repository?" in tests.
+type ConfirmRename<'a> = Option<&'a (dyn Fn(&str, &str, &str) -> bool + Sync)>;
+
+async fn verify_slsa_provenance_artifacts_with(
+    provenance_path: &Path,
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
+    confirm: ConfirmRename<'_>,
+) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level, signer)
-        .await
+    let result = mise_sigstore::verify_slsa_provenance_artifacts(
+        provenance_path,
+        artifacts,
+        min_level,
+        signer,
+    )
+    .await;
+    match renamed_slsa_source(&result, provenance_path, signer, confirm).await {
+        Some(renamed) => {
+            mise_sigstore::verify_slsa_provenance_artifacts(
+                provenance_path,
+                artifacts,
+                min_level,
+                SlsaSignerIdentity {
+                    source_repository: Some(&renamed),
+                    ..signer
+                },
+            )
+            .await
+        }
+        None => result,
+    }
+}
+
+/// When `result` failed because the provenance was built in a repository
+/// `signer` doesn't accept, the name `signer.source_repository` had when it
+/// was built, if GitHub confirms that both names are one repository (renamed
+/// or transferred since). Provenance names the repository as it was when it
+/// was signed. The caller verifies again in full with that name.
+///
+/// Only api.github.com itself can confirm a rename:
+/// [`crate::github::canonical_repo`] refuses when `url_replacements`
+/// reroutes it, since that host may have served the provenance.
+async fn renamed_slsa_source(
+    result: &AttestationResult<bool>,
+    provenance_path: &Path,
+    signer: SlsaSignerIdentity<'_>,
+    confirm: ConfirmRename<'_>,
+) -> Option<String> {
+    if result.is_ok() {
+        return None;
+    }
+    let (owner, repo) = signer
+        .source_repository
+        .and_then(mise_sigstore::normalize_github_repository)?
+        .split_once('/')?;
+    let unaccepted =
+        mise_sigstore::slsa_provenance_unaccepted_source_repositories(provenance_path, signer)
+            .await
+            .ok()?;
+    // A handful at most; each one costs GitHub API requests.
+    for other in unaccepted.into_iter().take(3) {
+        let confirmed = match confirm {
+            Some(confirm) => confirm(owner, repo, &other),
+            None => {
+                crate::github::attested_by_repository(owner, repo, std::slice::from_ref(&other))
+                    .await
+            }
+        };
+        if confirmed {
+            debug!("SLSA provenance for {owner}/{repo} was built in {other}, its former name");
+            return Some(other);
+        }
+    }
+    None
 }
 
 pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
@@ -552,9 +1102,196 @@ pub async fn verify_cosign_signature_with_key(
     .await
 }
 
+/// Verify attestations against a sha512 digest and return the `owner/repo`
+/// each verified one was built from. Passthrough — no token needed, but the TUF
+/// root follows `url_replacements` like every other check here.
+pub async fn verify_github_attestation_sources_for_sha512(
+    sha512: &[u8],
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+) -> AttestationResult<Vec<String>> {
+    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::verify_github_attestation_sources_for_sha512(
+        sha512,
+        attestations,
+        signer_workflow,
+    )
+    .await
+}
+
+/// [`verify_github_attestation_sources_for_sha512`] for GitHub Actions or
+/// gitlab.com CI provenance; each source is `github.com/owner/repo` or
+/// `gitlab.com/group/project`.
+pub async fn verify_forge_attestation_sources_for_sha512(
+    sha512: &[u8],
+    attestations: &[Attestation],
+) -> AttestationResult<Vec<String>> {
+    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::verify_forge_attestation_sources_for_sha512(sha512, attestations).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn listed() -> RepoListing {
+        RepoListing::Listed
+    }
+    fn unknown() -> RepoListing {
+        RepoListing::Unknown
+    }
+    /// A listing that failed with `status` (`None`: no connection).
+    fn failed_with(status: Option<u16>) -> RepoListing {
+        RepoListing::Failed(
+            crate::versions_host::VersionsHostUnavailable {
+                status,
+                message: format!("HTTP {status:?}"),
+            }
+            .into(),
+        )
+    }
+    fn failed() -> RepoListing {
+        failed_with(Some(503))
+    }
+
+    #[test]
+    fn test_attestation_404_verdict_by_listing() {
+        let verdict = |listing, paranoid, has_token| {
+            verdict_after_attestation_404("o/r", listing, paranoid, || has_token)
+        };
+        // Listed: a public repository without attestations for the digest.
+        assert!(matches!(
+            verdict(listed(), false, false),
+            MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+        ));
+        // Unknown: private or gone; GitHub only with a token.
+        assert!(matches!(
+            verdict(unknown(), false, false),
+            MirrorVerdict::Done(Err(AttestationError::Api(_)))
+        ));
+        assert!(matches!(
+            verdict(unknown(), false, true),
+            MirrorVerdict::AskGithub
+        ));
+        // Failed listing: never "no attestations". mise-versions erroring
+        // (no connection, 429, 5xx) retries the lookup on GitHub, token or
+        // not; a 403 (the mirror disabled) is a failed lookup.
+        for listing in [failed(), failed_with(None), failed_with(Some(429))] {
+            assert!(matches!(
+                verdict(listing, false, false),
+                MirrorVerdict::RetryGithub(_)
+            ));
+        }
+        assert!(matches!(
+            verdict(failed(), false, true),
+            MirrorVerdict::RetryGithub(_)
+        ));
+        assert!(matches!(
+            verdict(failed_with(Some(403)), false, false),
+            MirrorVerdict::Done(Err(AttestationError::Api(_)))
+        ));
+        // Paranoid mode asks GitHub whenever mise-versions can't settle it.
+        assert!(matches!(
+            verdict(listed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+        // An unlisted repository without a token: paranoid mode still asks GitHub.
+        assert!(matches!(
+            verdict(unknown(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+        assert!(matches!(
+            verdict(failed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+    }
+
+    #[test]
+    fn test_attestation_404_resolves_a_token_only_for_an_unknown_repo() {
+        // Resolving a token may run a credential helper; a listed repository
+        // or a failed listing never needs one.
+        for listing in [listed(), failed()] {
+            let _ = verdict_after_attestation_404("o/r", listing, false, || {
+                panic!("token resolved for a repository mise-versions can answer for")
+            });
+        }
+    }
+
+    #[test]
+    fn test_attestation_404_probe_by_listing() {
+        let probe = |listing, paranoid, has_token| {
+            detect_verdict(verdict_after_attestation_404(
+                "o/r",
+                listing,
+                paranoid,
+                || has_token,
+            ))
+        };
+        assert!(matches!(
+            probe(listed(), false, false),
+            MirrorVerdict::Done(Ok(false))
+        ));
+        assert!(matches!(
+            probe(unknown(), false, false),
+            MirrorVerdict::Done(Err(DetectError::Fetch(AttestationError::Api(_))))
+        ));
+        assert!(matches!(
+            probe(unknown(), false, true),
+            MirrorVerdict::AskGithub
+        ));
+        assert!(matches!(
+            probe(failed(), false, false),
+            MirrorVerdict::RetryGithub(_)
+        ));
+        assert!(matches!(
+            probe(failed_with(Some(403)), false, false),
+            MirrorVerdict::Done(Err(DetectError::Fetch(AttestationError::Api(_))))
+        ));
+        assert!(matches!(
+            probe(listed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+        assert!(matches!(
+            probe(failed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+    }
+
+    #[test]
+    fn test_github_failure_after_mirror_failure_names_both() {
+        let mirror_err: eyre::Report = crate::versions_host::VersionsHostUnavailable {
+            status: Some(503),
+            message: "HTTP status server error (503 Service Unavailable)".to_string(),
+        }
+        .into();
+        let err = after_mirror_failure(
+            AttestationError::Api("HTTP 403 rate limit exceeded".to_string()),
+            "o",
+            "r",
+            Some(&mirror_err),
+        );
+        // Still a failed lookup, for provenance_api_failures_fatal.
+        assert!(is_api_failure(&err));
+        let message = err.to_string();
+        assert!(message.contains("mise-versions.jdx.dev"), "{message}");
+        assert!(message.contains("503 Service Unavailable"), "{message}");
+        assert!(message.contains("api.github.com"), "{message}");
+        assert!(message.contains("rate limit exceeded"), "{message}");
+        // GitHub's own answer stands alone.
+        assert!(matches!(
+            after_mirror_failure(
+                AttestationError::NoAttestations,
+                "o",
+                "r",
+                Some(&mirror_err)
+            ),
+            AttestationError::NoAttestations
+        ));
+        assert!(matches!(
+            after_mirror_failure(AttestationError::Api("x".into()), "o", "r", None),
+            AttestationError::Api(m) if m == "x"
+        ));
+    }
     use crate::env as mise_env;
     use confique::Layer;
 
@@ -727,6 +1464,47 @@ mod tests {
         )));
     }
 
+    #[tokio::test]
+    async fn test_mirrored_attestations_survive_the_disk_cache() {
+        // The bundle is arbitrary JSON; it has to come back out of the
+        // msgpack cache file as the same value for verification to use it.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("attestations.msgpack.z");
+        let bundle = serde_json::json!({
+            "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+            "verificationMaterial": {"tlogEntries": [{"logIndex": "1", "integratedTime": 2}]},
+            "dsseEnvelope": {"payload": "e30=", "signatures": [{"sig": "AA=="}]},
+        });
+        let attestation: mise_sigstore::Attestation =
+            serde_json::from_value(serde_json::json!({"bundle": bundle, "bundle_url": null}))
+                .unwrap();
+        let write = crate::cache::CacheManagerBuilder::new(&path)
+            .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
+            .build::<MirroredAttestations>();
+        write.write(&Some(vec![attestation])).unwrap();
+
+        let read = crate::cache::CacheManagerBuilder::new(&path)
+            .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
+            .build::<MirroredAttestations>();
+        let cached = read
+            .get_or_try_init_async_if(
+                async || -> eyre::Result<MirroredAttestations> {
+                    panic!("a fresh cached set must not be fetched again")
+                },
+                |a| a.as_ref().is_some_and(|a| !a.is_empty()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.len(), 1);
+        assert!(cached[0].has_inline_bundle());
+        assert_eq!(
+            serde_json::to_value(&cached[0]).unwrap()["bundle"],
+            bundle,
+            "the bundle changed on its way through the cache"
+        );
+    }
+
     #[test]
     fn test_cached_attestation_verification_accepts_only_success() {
         assert!(matches!(
@@ -747,15 +1525,192 @@ mod tests {
         ));
     }
 
+    /// slsa-github-generator provenance for sops v3.9.0, built in
+    /// getsops/sops, which was mozilla/sops until its transfer.
+    fn sops_provenance() -> &'static Path {
+        Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../mise-sigstore/tests/fixtures/sops_v3_9_0.intoto.jsonl"
+        ))
+    }
+
+    fn sops_artifact() -> SlsaArtifact {
+        SlsaArtifact {
+            name: "sops-v3.9.0.linux.amd64".to_string(),
+            sha256: "0d65660fbe785647ff4f1764d7f69edf598f79d6d79ebbef4a501909b6ff6b82".to_string(),
+        }
+    }
+
+    /// The generator's identity, expecting sops under its former name.
+    const SOPS_SIGNER_BEFORE_TRANSFER: SlsaSignerIdentity<'static> = SlsaSignerIdentity {
+        identity: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.0.0",
+        issuer: "https://token.actions.githubusercontent.com",
+        source_repository: Some("mozilla/sops"),
+        source_tag: None,
+    };
+
+    /// Verifies the sops provenance against `SOPS_SIGNER_BEFORE_TRANSFER`,
+    /// with `confirm` standing in for api.github.com's answer to whether two
+    /// names are one repository. Each verification is a full Sigstore check,
+    /// so each test runs only one to stay within the per-test time limit.
+    fn verify_sops_rename(
+        confirm: &(dyn Fn(&str, &str, &str) -> bool + Sync),
+    ) -> AttestationResult<bool> {
+        let _settings = SettingsGuard::new(None);
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(verify_slsa_provenance_artifacts_with(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SOPS_SIGNER_BEFORE_TRANSFER,
+                Some(confirm),
+            ))
+    }
+
+    #[test]
+    fn test_slsa_refuses_a_rename_github_does_not_confirm() {
+        // Without GitHub's word, provenance built in getsops/sops is not
+        // mozilla/sops's.
+        let err = verify_sops_rename(&|_, _, _| false).unwrap_err();
+        assert!(err.to_string().contains("built in getsops/sops"), "{err}");
+    }
+
+    #[test]
+    fn test_slsa_accepts_a_rename_github_confirms() {
+        // api.github.com says getsops/sops is mozilla/sops, transferred.
+        let confirmed = verify_sops_rename(&|owner, repo, other| {
+            (owner, repo, other) == ("mozilla", "sops", "getsops/sops")
+        });
+        assert!(confirmed.unwrap());
+    }
+
+    fn verify_sops_v3_9_0_as(tag: &str) -> AttestationResult<bool> {
+        let _settings = SettingsGuard::new(None);
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(verify_slsa_provenance_artifacts(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SlsaSignerIdentity {
+                    source_repository: Some("getsops/sops"),
+                    source_tag: Some(tag),
+                    ..SOPS_SIGNER_BEFORE_TRANSFER
+                },
+            ))
+    }
+
+    #[test]
+    fn test_slsa_rejects_provenance_of_another_release() {
+        // A host serving sops v3.9.0's genuine artifact and provenance as
+        // v3.10.0: the generator signs every release with one identity.
+        let err = verify_sops_v3_9_0_as("v3.10.0").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("built from refs/tags/v3.9.0, expected refs/tags/v3.10.0"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_slsa_accepts_provenance_of_its_release() {
+        assert!(verify_sops_v3_9_0_as("v3.9.0").unwrap());
+    }
+
+    #[test]
+    fn test_slsa_rename_cannot_be_confirmed_by_a_mirror() {
+        // A host standing in for api.github.com claims both names are one
+        // repository. It must not get to vouch for the provenance it may
+        // have served.
+        let mut mirror = mockito::Server::new();
+        let lookups = ["mozilla/sops", "getsops/sops"].map(|repo| {
+            mirror
+                .mock("GET", format!("/repos/{repo}").as_str())
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"id": 1, "full_name": "getsops/sops"}"#)
+                .expect(0)
+                .create()
+        });
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => mirror.url(),
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let err = runtime
+            .block_on(verify_slsa_provenance_artifacts(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SOPS_SIGNER_BEFORE_TRANSFER,
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("built in getsops/sops"), "{err}");
+        for lookup in lookups {
+            lookup.assert();
+        }
+    }
+
+    #[test]
+    fn test_rerouted_api_cannot_confirm_a_rename() {
+        // The host that stands in for api.github.com also picked the
+        // attestations, so it must not get to say that the repository that
+        // made them is the requested one under an older name.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://github-proxy.invalid".to_string(),
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let err = runtime
+            .block_on(crate::github::canonical_repo("erlang/rebar3"))
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("only GitHub can confirm a repository rename"),
+            "{err}"
+        );
+
+        let result = runtime.block_on(accept_renamed_repository(
+            "erlang",
+            "rebar3",
+            None,
+            Err(AttestationError::RepositoryMismatch {
+                expected: "erlang/rebar3".to_string(),
+                found: vec!["jdx/mise".to_string()],
+            }),
+        ));
+        assert!(
+            matches!(result, Err(AttestationError::RepositoryMismatch { .. })),
+            "{result:?}"
+        );
+    }
+
+    fn original_host_token() -> Option<String> {
+        Some("ghp_original_host".to_string())
+    }
+
     #[test]
     fn test_routed_api_url_applies_simple_url_replacement() {
         let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
             "https://api.github.com".to_string() => "https://github-proxy.example.com".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/");
+        // The token was resolved for api.github.com; the proxy does not get it.
+        assert_eq!(token, None);
     }
 
     #[test]
@@ -764,30 +1719,77 @@ mod tests {
             "regex:^https://api\\.github\\.com".to_string() => "https://github-proxy.example.com/api".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/api/");
+        assert_eq!(token, None);
     }
 
     #[test]
     fn test_routed_api_url_keeps_original_url_without_replacement() {
         let _settings = SettingsGuard::new(None);
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, crate::github::API_URL);
+        assert_eq!(token, original_host_token());
+    }
+
+    #[test]
+    fn test_routed_api_url_keeps_token_on_same_host_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://api.github.com/proxy".to_string(),
+        }));
+
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
+
+        assert_eq!(routed, "https://api.github.com/proxy/");
+        assert_eq!(token, original_host_token());
+    }
+
+    #[test]
+    fn test_routed_api_url_drops_inherited_userinfo_on_cross_host_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "regex:^https://(.*)ghe\\.example\\.com".to_string()
+                => "https://${1}github-proxy.example.com".to_string(),
+        }));
+
+        let (routed, token) = routed_api_url(
+            "https://user:password@ghe.example.com/api/v3",
+            original_host_token(),
+        )
+        .unwrap();
+
+        assert_eq!(routed, "https://github-proxy.example.com/api/v3");
+        assert_eq!(token, None);
     }
 
     #[test]
     fn test_routed_api_url_rejects_credential_downgrade() {
         let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
-            "https://api.github.com".to_string() => "http://github-proxy.example.com".to_string(),
+            "https://api.github.com".to_string() => "http://api.github.com".to_string(),
         }));
 
-        let err = routed_api_url(crate::github::API_URL, true).unwrap_err();
+        let err = routed_api_url(crate::github::API_URL, original_host_token()).unwrap_err();
 
         assert!(err.to_string().contains("refusing to send credentials"));
         assert!(!is_api_failure(&err));
+    }
+
+    #[test]
+    fn test_routed_api_url_drops_token_on_cross_host_downgrade() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "http://github-proxy.example.com".to_string(),
+        }));
+
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
+
+        assert_eq!(routed, "http://github-proxy.example.com/");
+        assert_eq!(token, None);
     }
 
     #[test]
@@ -797,7 +1799,7 @@ mod tests {
                 => "http://user:password@github-proxy.example.com".to_string(),
         }));
 
-        let err = routed_api_url(crate::github::API_URL, false).unwrap_err();
+        let err = routed_api_url(crate::github::API_URL, None).unwrap_err();
 
         assert!(err.to_string().contains("refusing to send credentials"));
         assert!(!err.to_string().contains("password"));
@@ -855,6 +1857,29 @@ mod tests {
             Some(crate::github::API_URL),
             true
         ));
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_attestations_defer_to_a_repository_url_replacement() {
+        // A set this command already got from mise-versions, then a rule that
+        // reroutes only this repository: the kept set must not answer for it.
+        let repo = "acme/attested-tool";
+        let digest = "sha256:0";
+        let key = format!(
+            "attestations-{}",
+            crate::hash::hash_to_str(&(repo.to_ascii_lowercase(), digest))
+        );
+        let attestation: mise_sigstore::Attestation =
+            serde_json::from_value(serde_json::json!({"bundle": {}, "bundle_url": null})).unwrap();
+        let cell = MirroredAttestationsCell::default();
+        cell.set(Some(vec![attestation])).unwrap();
+        MIRRORED_ATTESTATIONS.lock().unwrap().insert(key, cell);
+
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com/repos/acme/attested-tool/".to_string()
+                => "https://github-proxy.example.com/repos/acme/attested-tool/".to_string(),
+        }));
+        assert!(mirrored_attestations(repo, digest).await.unwrap().is_none());
     }
 
     #[test]

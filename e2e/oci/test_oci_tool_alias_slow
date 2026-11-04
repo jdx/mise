@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# The config embedded in the image does not carry `[tool_alias]`, so a tool the
+# alias supplied the backend for must be written as its resolved backend.
+# Otherwise `mise which` inside the container can't find it.
+export MISE_EXPERIMENTAL=1
+
+cat >mise.toml <<'EOF'
+[tool_alias]
+myjq = "aqua:jqlang/jq"
+
+[tools]
+myjq = "1.8.1"
+EOF
+
+mise install >/dev/null 2>&1
+assert_succeed "mise oci build -o ./out --from scratch --no-mise"
+
+manifest="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' out/index.json)"
+mkdir rootfs
+for blob in $(jq -r '.layers[].digest | ltrimstr("sha256:")' "out/blobs/sha256/$manifest"); do
+  tar -xzf "out/blobs/sha256/$blob" -C rootfs
+done
+assert_contains "cat rootfs/etc/mise/config.toml" '"aqua:jqlang/jq" = "1.8.1"'
+assert_not_contains "cat rootfs/etc/mise/config.toml" "myjq"
+
+# The tool is packaged where a mise reading that config looks for it, and
+# that mise finds it without installing anything.
+assert_succeed "test -d rootfs/mise/installs/aqua-jqlang-jq/1.8.1"
+image_mise="env MISE_AUTO_INSTALL=0 MISE_DATA_DIR=$PWD/rootfs/mise MISE_CONFIG_DIR=$PWD/rootfs/etc/mise MISE_CACHE_DIR=$PWD/rootfs-cache MISE_STATE_DIR=$PWD/rootfs-state mise"
+assert_contains "$image_mise which -C / jq" "$PWD/rootfs/mise/installs/aqua-jqlang-jq/1.8.1"

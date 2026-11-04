@@ -65,11 +65,12 @@ explicit_backend = true
 EOF
 cat >"$NPM_BIN/npm" <<'EOF'
 #!/usr/bin/env bash
-if [[ $1 == view && $3 == versions ]]; then
+# npm view --json=<bool> --prefix <dir> -- <package> <fields>...
+if [[ $1 == view && $5 == -- && $7 == versions ]]; then
   echo '{"versions":["1.0.1"],"time":{}}'
   exit 0
 fi
-if [[ $1 == view && $3 == version && $4 == deprecated ]]; then
+if [[ $1 == view && $5 == -- && $7 == version && $8 == deprecated ]]; then
   exit 0
 fi
 echo "unexpected npm invocation: $*" >&2

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# spm packages are built from source, so `mise lock` records no download URL
+# for them. --locked mode must not require one.
+
+export MISE_LOCKFILE=1
+
+cat <<'EOF' >mise.toml
+[tools]
+"spm:acme/SwiftTool" = "1.0.0"
+EOF
+
+cat <<'EOF' >mise.lock
+[[tools."spm:acme/SwiftTool"]]
+version = "1.0.0"
+backend = "spm:acme/SwiftTool"
+EOF
+
+# dry-run exercises the locked-mode lockfile-URL check without swift or network
+assert_contains "mise install --locked --dry-run 2>&1" "would install"

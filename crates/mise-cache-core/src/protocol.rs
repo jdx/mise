@@ -1,16 +1,16 @@
 use super::*;
 
 pub const PROTOCOL_VERSION: u8 = 1;
-pub(crate) const PROTOCOL_HEADER: &str = "mise-cache-protocol";
-pub(crate) const NAMESPACE_HEADER: &str = "mise-cache-namespace";
+pub(crate) const PROTOCOL_HEADER: &str = "mbx-cache-protocol";
+pub(crate) const NAMESPACE_HEADER: &str = "mbx-cache-namespace";
 pub const ACTION_RESULT_MEDIA_TYPE: &str = "application/vnd.mise.cache-action-result.v1+json";
 pub const DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+json";
 pub const CLIENT_METADATA_MEDIA_TYPE: &str = "application/vnd.mise.cache-client-metadata.v1+json";
 pub const BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 pub const BLOB_PACK_MEDIA_TYPE: &str = "application/vnd.mise.cache-blob-pack.v1";
 pub(crate) const DIGEST_LIST_MEDIA_TYPE: &str = "application/vnd.mise.cache-digests.v1+json";
-pub(crate) const BLOB_PACK_BLOBS_HEADER: &str = "mise-cache-pack-blobs";
-pub(crate) const BLOB_PACK_BYTES_HEADER: &str = "mise-cache-pack-bytes";
+pub(crate) const BLOB_PACK_BLOBS_HEADER: &str = "mbx-cache-pack-blobs";
+pub(crate) const BLOB_PACK_BYTES_HEADER: &str = "mbx-cache-pack-bytes";
 pub(crate) const BLOB_PACK_MAGIC: &[u8; 8] = b"MISEPK01";
 pub(crate) const BLOB_PACK_HEADER_BYTES: u64 = 1 + 32 + 8;
 pub(crate) const MAX_STAGED_BLOB_PACK_BYTES: u64 = 256 * 1024 * 1024;

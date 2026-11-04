@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# `mise x` and shims run prefer-offline, but still install missing tools. The
+# GitHub release metadata that install needs must come from mise-versions, not
+# api.github.com: unauthenticated users get 60 API requests an hour.
+
+output="$(MISE_DEBUG=1 mise x github:jdx/communique@1.3.5 -- communique --version 2>&1)" || {
+  echo "$output"
+  fail "mise x failed to install or run communique"
+}
+
+if [[ $output == *"GET https://api.github.com/"* ]]; then
+  echo "$output"
+  fail "mise x asked api.github.com for release metadata"
+fi
+if [[ $output != *"GET https://mise-versions.jdx.dev/api/github/repos/jdx/communique/releases/"* ]]; then
+  echo "$output"
+  fail "mise x did not ask mise-versions for the release"
+fi
+assert_contains "mise x github:jdx/communique@1.3.5 -- communique --version" "1.3.5"

@@ -17,11 +17,43 @@ pub fn self_update_available() -> bool {
     }
     let has_disable = env::MISE_SELF_UPDATE_DISABLED_PATH.is_some();
     let has_instructions = env::MISE_SELF_UPDATE_INSTRUCTIONS.is_some();
-    !(has_disable || has_instructions)
+    !(has_disable || has_instructions || installed_by_winget())
 }
 
 #[cfg(not(feature = "self_update"))]
 pub fn self_update_available() -> bool {
+    false
+}
+
+/// Shown for a WinGet install, which has no instructions file to read.
+#[cfg(feature = "self_update")]
+const WINGET_UPGRADE_HINT: &str =
+    "mise was installed by WinGet, update it with:\n\n  winget upgrade jdx.mise\n";
+
+/// Whether `exe` lives in WinGet's package or link directories. Updating such a
+/// binary in place makes WinGet refuse to manage the package afterwards
+/// ("Unable to remove Portable package as it has been modified").
+#[cfg(feature = "self_update")]
+fn is_winget_path(exe: &std::path::Path) -> bool {
+    let path = exe.to_string_lossy().replace('\\', "/").to_lowercase();
+    // Per-user installs live under `AppData\Local\Microsoft\WinGet`, machine-scope
+    // ones under `Program Files\WinGet`.
+    ["/microsoft/winget", "/program files/winget"]
+        .iter()
+        .any(|root| {
+            path.contains(&format!("{root}/packages/")) || path.contains(&format!("{root}/links/"))
+        })
+}
+
+/// Whether this mise was installed by WinGet, which is the official build.
+#[cfg(feature = "self_update")]
+pub fn installed_by_winget() -> bool {
+    is_winget_path(&env::MISE_BIN)
+        || std::fs::canonicalize(&*env::MISE_BIN).is_ok_and(|p| is_winget_path(&p))
+}
+
+#[cfg(not(feature = "self_update"))]
+pub fn installed_by_winget() -> bool {
     false
 }
 
@@ -49,6 +81,10 @@ pub fn upgrade_instructions_text() -> Option<String> {
         && let Some(msg) = read_instructions_file(path)
     {
         return Some(msg);
+    }
+    #[cfg(feature = "self_update")]
+    if installed_by_winget() && *env::MISE_SELF_UPDATE_AVAILABLE != Some(true) {
+        return Some(WINGET_UPGRADE_HINT.to_string());
     }
     None
 }
@@ -82,4 +118,34 @@ pub(crate) fn append_self_update_instructions(mut message: String) -> String {
         message.push_str(SELF_UPDATE_DISABLED_HINT);
     }
     message
+}
+
+#[cfg(all(test, feature = "self_update"))]
+mod tests {
+    use super::is_winget_path;
+    use std::path::Path;
+
+    #[test]
+    fn detects_winget_package_and_link_paths() {
+        for p in [
+            r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_8wekyb3d8bbwe\mise\bin\mise.exe",
+            r"C:\Users\me\AppData\Local\Microsoft\WinGet\Links\mise.exe",
+            "c:/users/me/appdata/local/microsoft/winget/packages/jdx.mise/mise.exe",
+            r"C:\Program Files\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_8wekyb3d8bbwe\mise.exe",
+            r"C:\Program Files\WinGet\Links\mise.exe",
+        ] {
+            assert!(is_winget_path(Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn ignores_other_paths() {
+        for p in [
+            r"C:\Users\me\.local\bin\mise.exe",
+            "/usr/local/bin/mise",
+            r"C:\Users\me\AppData\Local\mise\bin\mise.exe",
+        ] {
+            assert!(!is_winget_path(Path::new(p)), "{p}");
+        }
+    }
 }

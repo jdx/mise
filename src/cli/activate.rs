@@ -17,33 +17,38 @@ use eyre::Result;
 /// only prints the script. Activation updates tools and environment variables as
 /// this shell changes directories.
 ///
-/// Add the appropriate example below once to your interactive startup file:
+/// Add the matching example below once to your interactive startup file:
 /// ~/.bashrc for Bash, ~/.zshrc for Zsh, ~/.config/fish/config.fish for Fish,
-/// or $PROFILE for PowerShell. See the getting-started guide for other shells.
+/// or $PROFILE for PowerShell. For Nushell, Elvish and other shells, see
+/// https://mise.jdx.dev/shell-setup.html.
 ///
 /// The mise executable must be on PATH before that line runs. Otherwise use its
 /// absolute path, for example `eval "$(~/.local/bin/mise activate zsh)"`.
 ///
 /// Use `mise exec -- command` for scripts and CI that do not need interactive hooks.
-/// Customize status output with the `status` settings.
+/// The `status.*` settings control the messages mise prints when you change
+/// directories.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
-    example(r#"eval "$(mise activate bash)""#, help = "Activate mise in Bash."),
-    example(r#"eval "$(mise activate zsh)""#, help = "Activate mise in Zsh."),
-    example("mise activate fish | source", help = "Activate mise in Fish."),
-    example("execx($(mise activate xonsh))", help = "Activate mise in Xonsh."),
+    example(r#"eval "$(mise activate bash)""#, help = "Activate mise in Bash"),
+    example(r#"eval "$(mise activate zsh)""#, help = "Activate mise in Zsh"),
+    example("mise activate fish | source", help = "Activate mise in Fish"),
+    example("execx($(mise activate xonsh))", help = "Activate mise in Xonsh"),
     example(
         "(&mise activate pwsh) | Out-String | Invoke-Expression",
-        help = "Activate mise in PowerShell."
+        help = "Activate mise in PowerShell"
     )
 )]
 pub(crate) struct Activate {
     /// Shell type to generate the script for
+    ///
+    /// Defaults to the shell named by MISE_SHELL or SHELL. mise reports an error when
+    /// neither names a supported shell, as in PowerShell and cmd on Windows.
     #[usage(value_enum)]
     shell_type: Option<ShellType>,
 
-    /// Suppress non-error messages
+    /// Suppress non-error messages from the hook that runs at each prompt
     #[usage(long, short)]
     quiet: bool,
 
@@ -51,23 +56,22 @@ pub(crate) struct Activate {
     #[usage(long, short, hide = true, value_enum)]
     shell: Option<ShellType>,
 
-    /// Do not automatically call hook-env
+    /// Do not run hook-env automatically
     ///
-    /// This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
-    /// you can call `mise hook-env` manually which will output the env vars to stdout without actually
-    /// modifying the environment. That way you can do things like `mise hook-env --trace` to get more
-    /// information or just see the values that hook-env is outputting.
+    /// Use it for debugging: after `eval "$(mise activate zsh --no-hook-env)"`, run
+    /// `mise hook-env` yourself to print the shell code it would evaluate, or
+    /// `mise hook-env --trace` for more detail.
     #[usage(long)]
     no_hook_env: bool,
 
-    /// Use shims instead of modifying PATH
+    /// Put the shims directory on PATH instead of updating PATH at each prompt
     ///
-    /// Effectively the same as:
+    /// Roughly equivalent to:
     ///
     ///     PATH="$HOME/.local/share/mise/shims:$PATH"
     ///
-    /// `mise activate --shims` does not support all the features of `mise activate`.
-    /// See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
+    /// Shims do not support every feature of `mise activate`; see
+    /// https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path.
     #[usage(long, verbatim_doc_comment)]
     shims: bool,
 

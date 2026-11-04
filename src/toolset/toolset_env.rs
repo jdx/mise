@@ -44,10 +44,11 @@ impl Toolset {
     /// directories first. A farm already on the pristine PATH keeps its place: `PathEnv`
     /// already puts tool paths ahead of it, and a shared directory such as
     /// `~/.local/bin` must not be reordered.
-    fn child_path(&self, paths: impl IntoIterator<Item = PathBuf>) -> String {
+    fn child_path_env(&self, paths: impl IntoIterator<Item = PathBuf>) -> PathEnv {
         let mut pristine = pristine_path_without_install_dirs();
         let mut shim_farms = Vec::new();
         let mut shim_boundary = None;
+        let mut inserted_farms = Vec::new();
         if self.has_lazy_declarations() {
             shim_farms = crate::shims::shim_farm_dirs();
             for (index, path) in pristine.iter().enumerate() {
@@ -61,6 +62,20 @@ impl Toolset {
                 }
             }
             if let Some(boundary) = shim_boundary {
+                // A farm the inherited PATH lacks is placed there by mise, so it is
+                // managed even though it keeps the inherited entries' position.
+                inserted_farms = shim_farms
+                    .iter()
+                    .filter(|farm| {
+                        !pristine.iter().any(|path| {
+                            file::paths_eq(
+                                &file::canonicalize_or_self(path),
+                                &file::canonicalize_or_self(farm),
+                            )
+                        })
+                    })
+                    .cloned()
+                    .collect();
                 pristine.retain(|path| {
                     !shim_farms.iter().any(|farm| {
                         file::paths_eq(
@@ -73,6 +88,9 @@ impl Toolset {
             }
         }
         let mut path_env = PathEnv::from_iter(pristine.iter().cloned());
+        for farm in inserted_farms {
+            path_env.mark_managed(farm);
+        }
         for p in paths {
             path_env.add(p);
         }
@@ -81,7 +99,23 @@ impl Toolset {
                 path_env.add(dir);
             }
         }
-        path_env.to_string()
+        path_env
+    }
+
+    fn child_path(&self, paths: impl IntoIterator<Item = PathBuf>) -> String {
+        self.child_path_env(paths).to_string()
+    }
+
+    /// The entries mise puts on PATH ahead of the inherited ones, in the order
+    /// they take in the PATH `env_with_path` returns. A directory the inherited
+    /// PATH already had, such as `~/.cargo/bin`, is included when mise moves it
+    /// forward.
+    pub async fn managed_path_entries(&self, config: &Arc<Config>) -> Result<Vec<PathBuf>> {
+        // The cache-aware lookup `mise env` uses, so the two cannot disagree.
+        let (_, _, user_paths, tool_paths, _) = self.env_with_path_and_split(config).await?;
+        Ok(self
+            .child_path_env(user_paths.into_iter().chain(tool_paths))
+            .managed_entries())
     }
 
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
@@ -147,6 +181,9 @@ impl InstallDependencyContext {
         for path in add_paths {
             path_env.add(path);
         }
+        for path in config.path_dirs_append().await?.clone() {
+            path_env.add(path);
+        }
         for path in pristine_path_without_install_dirs() {
             path_env.add(path);
         }
@@ -171,6 +208,9 @@ impl Toolset {
             path_env.add(p.clone());
         }
         for p in self.list_paths(config).await {
+            path_env.add(p);
+        }
+        for p in config.path_dirs_append().await?.clone() {
             path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
@@ -207,12 +247,17 @@ impl Toolset {
 
         // Save to cache if enabled and no uncacheable directives
         // Use save_env_cache_split to ensure cache is compatible with env_with_path_and_split
-        if CachedEnv::is_enabled()
-            && !env_results.has_uncacheable
-            && let Err(e) =
+        if CachedEnv::is_enabled() {
+            if env_results.has_uncacheable {
+                debug!(
+                    "env_cache: not caching the environment: it has decrypted or redacted values \
+                     (see env_cache_redacted) or a directive that is not cacheable"
+                );
+            } else if let Err(e) =
                 self.save_env_cache_split(config, &env, &user_paths, &tool_paths, &env_results)
-        {
-            debug!("env_cache: failed to save: {}", e);
+            {
+                debug!("env_cache: failed to save: {}", e);
+            }
         }
 
         // Inject GitHub OAuth token (if configured) after cache save so the
@@ -271,12 +316,17 @@ impl Toolset {
         env.insert(PATH_KEY.to_string(), path_env.to_string());
 
         // Save to cache if enabled and no uncacheable directives
-        if CachedEnv::is_enabled()
-            && !env_results.has_uncacheable
-            && let Err(e) =
+        if CachedEnv::is_enabled() {
+            if env_results.has_uncacheable {
+                debug!(
+                    "env_cache: not caching the environment: it has decrypted or redacted values \
+                     (see env_cache_redacted) or a directive that is not cacheable"
+                );
+            } else if let Err(e) =
                 self.save_env_cache_split(config, &env, &user_paths, &tool_paths, &env_results)
-        {
-            debug!("env_cache: failed to save: {}", e);
+            {
+                debug!("env_cache: failed to save: {}", e);
+            }
         }
 
         // Inject GitHub OAuth token (if configured) after cache save so the
@@ -296,7 +346,16 @@ impl Toolset {
     pub async fn try_load_env_cache_full(&self, config: &Arc<Config>) -> Result<Option<CachedEnv>> {
         config.env_results().await?;
         let cache_key = self.compute_env_cache_key(config)?;
-        CachedEnv::load(&cache_key)
+        let cached = CachedEnv::load(&cache_key)?;
+        if let Some(cached) = &cached {
+            // A hit skips the directives that registered these, so mask them again.
+            config.add_redactions_excluding(
+                cached.redactions.iter().cloned(),
+                &cached.env,
+                &cached.redaction_exclusions,
+            );
+        }
+        Ok(cached)
     }
 
     /// Try to load environment from cache (returns reconstructed EnvMap)
@@ -367,6 +426,8 @@ impl Toolset {
             env_remove: env_results.env_remove.clone(),
             user_paths: user_paths.to_vec(),
             tool_paths: tool_paths.to_vec(),
+            redactions: env_results.redactions.clone(),
+            redaction_exclusions: env_results.redaction_exclusions.clone(),
             created_at: now,
             watch_files,
             watch_file_mtimes,
@@ -380,10 +441,16 @@ impl Toolset {
     /// Compute the cache key for the current configuration
     fn compute_env_cache_key(&self, config: &Arc<Config>) -> Result<String> {
         // Collect config files with their mtimes
+        // Included fragments are inputs too: editing one changes the env without
+        // touching the file that includes it.
         let config_files: Vec<(PathBuf, u64)> = config
             .config_files
-            .keys()
-            .map(|p| (p.clone(), get_file_mtime(p).unwrap_or(0)))
+            .iter()
+            .flat_map(|(p, cf)| std::iter::once(p.clone()).chain(cf.included_paths()))
+            .map(|p| {
+                let mtime = get_file_mtime(&p).unwrap_or(0);
+                (p, mtime)
+            })
             .collect();
 
         // Treat sibling mise.lock files as config inputs for cache invalidation
@@ -564,6 +631,9 @@ impl Toolset {
             path_env.add(p.clone());
         }
         for p in self.list_paths(config).await {
+            path_env.add(p);
+        }
+        for p in config.path_dirs_append().await?.clone() {
             path_env.add(p);
         }
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());

@@ -8,13 +8,16 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::normalize_idiomatic_contents;
+use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::lockfile::PlatformInfo;
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
 use async_trait::async_trait;
@@ -65,8 +68,11 @@ impl RubyPlugin {
         for package in packages {
             pr.set_message(format!("install default gem: {}", package));
             let gem = self.gem_path(tv);
+            // `gem install` also installs `*.gem` files from its working
+            // directory, so keep it out of the project's.
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
+                .current_dir(tv.install_path())
                 .arg("install")
                 .envs(config.env().await?)
                 .env_values(tv.install_env());
@@ -141,7 +147,13 @@ impl RubyPlugin {
         let tarball_path = tv.download_path().join(&filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file_stored(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
+            Some(pr),
+        )
+        .await?;
 
         Ok(tarball_path)
     }
@@ -257,6 +269,22 @@ impl Backend for RubyPlugin {
         // No modification to RUBYLIB
         Ok(map)
     }
+
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        self.lock_options(target)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        self.lock_info(tv, target).await
+    }
 }
 
 /// The archive a lockfile already pins for this platform, as `(url, filename)`.
@@ -274,6 +302,36 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    /// A Windows host locks every platform of a shared lockfile, so the options
+    /// that distinguish a Linux entry must be resolved here too.
+    #[test]
+    fn lockfile_options_are_resolved_for_non_windows_targets() {
+        use crate::config::settings::SettingsPartial;
+        use crate::platform::Platform;
+        use crate::toolset::ToolSource;
+        use confique::Layer;
+
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        settings.ruby.compile = Some(false);
+        Settings::reset(Some(settings));
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.4.8", ToolSource::Unknown).unwrap();
+        let target = |platform: &str| PlatformTarget::new(Platform::parse(platform).unwrap());
+
+        let linux = backend
+            .resolve_lockfile_options(&request, &target("linux-x64"))
+            .unwrap();
+        assert_eq!(linux["compile"], "false");
+        assert_eq!(linux["precompiled_url"], "jdx/ruby");
+
+        let windows = backend
+            .resolve_lockfile_options(&request, &target("windows-x64"))
+            .unwrap();
+        assert!(windows.is_empty());
+    }
 
     /// A lockfile pins the archive whose checksum `verify_checksum` will apply,
     /// so a locked URL has to be used verbatim rather than re-resolved to a

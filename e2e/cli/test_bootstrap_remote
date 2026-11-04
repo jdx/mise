@@ -269,8 +269,11 @@ assert_contains \
 assert_fail "test -e '$install_target'"
 
 : >"$ssh_log"
-assert_succeed "mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise='$install_target' --yes --skip tools"
+install_out=$(mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise="$install_target" --yes --skip tools 2>&1)
 assert_succeed "test -x '$install_target'"
+# the shell activation blocks call mise by name, so only PATH can fix this
+assert_contains_text "$install_out" "$install_target is not on install.test's login PATH; add $HOME/installed bin to PATH"
+assert_not_contains_text "$install_out" "mise_shell_activate"
 assert_succeed "'$install_target' version"
 assert_contains "cat $ssh_log" "mise-install"
 assert_contains "cat $ssh_log" "'$install_target' --cd"

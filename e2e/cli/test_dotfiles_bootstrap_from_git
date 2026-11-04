@@ -86,7 +86,7 @@ assert "cat $C/.config/mise/templates/gitconfig.tera" 'name = "{{ vars.name }}"'
 # the bootstrap that followed rendered the template on C from the shared source
 assert "cat $C/.gitconfig-shared" 'name = "shared"'
 assert_contains "cat $C/.config/mise/config.local.toml" 'url = "file://'
-assert_contains "$c bootstrap dotfiles status" "mode sync"
+assert_contains "$c bootstrap dotfiles status" "Mode: sync"
 assert "$c bootstrap dotfiles history --json | jq -r '[.[].trigger] | index(\"apply\") != null'" "true"
 # running it again is a sync, not a second setup
 assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles"
@@ -157,7 +157,7 @@ printf '[env]\nD_ONLY = "1"\n' >"$D/.config/mise/config.toml"
 assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" "need a decision"
 assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" "nothing was bootstrapped"
 assert "cat $D/.config/mise/config.toml" $'[env]\nD_ONLY = "1"'
-assert_contains "$d bootstrap dotfiles status" "sharing is paused for the entire setup"
+assert_contains "$d bootstrap dotfiles status" "paused for the entire setup"
 # --keep-local publishes a saved version this fresh machine does not have yet
 assert_fail "$d dot pull --keep-local $D/.config/mise/config.toml --yes" "no saved version on this machine yet"
 assert_succeed "$d bootstrap dotfiles pull --take-remote $D/.config/mise/config.toml --yes"
@@ -181,7 +181,7 @@ assert_succeed "MISE_EXPERIMENTAL=0 $e bootstrap --adopt file://$plain --yes --o
 # checkout and does not connect it as a shared setup repository.
 assert_succeed "test -d $E/.config/mise/.git"
 assert_contains "cat $E/.config/mise/config.toml" 'PLAIN = "1"'
-assert_contains "$e bootstrap dotfiles status" "Setup repository: none"
+assert_contains "$e bootstrap dotfiles status" "mise dot origin set <url>"
 
 # ---- the repository's default branch is followed, not `main` by its name
 other="$PWD/other.git"

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The harness pins lockfile_mode to merge through the environment, which would
+# override the mode this test selects in config.
+unset MISE_LOCKFILE_MODE
+
+# A tool declared in both config.toml and conf.d/*.toml has one request per
+# file. Upgrading it must replace the old lock entry for each of them, or the
+# stale one keeps `latest` bound to the old version and `outdated` re-offers it.
+export MISE_LOCKFILE=1
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[settings]
+lockfile_mode = "generate"
+
+[tools]
+dummy = "latest"
+TOML
+mkdir -p "$MISE_CONFIG_DIR/conf.d"
+cat >"$MISE_CONFIG_DIR/conf.d/100-extra.toml" <<'TOML'
+[tools]
+dummy = "latest"
+TOML
+
+mise install dummy@1.0.0
+cat >"$MISE_CONFIG_DIR/mise.lock" <<'LOCK'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+LOCK
+
+mise upgrade dummy
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "1.0.0"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "2.0.0"'
+assert_empty "mise outdated dummy"

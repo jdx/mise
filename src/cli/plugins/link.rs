@@ -10,17 +10,22 @@ use crate::{dirs, file};
 
 /// Link a local plugin directory into mise for development
 ///
-/// Edits in the source directory take effect without reinstalling the plugin. Pass
-/// both a name and directory, or only a directory to infer the name after stripping
-/// a known prefix such as `mise-` or `vfox-`. This does not install a tool version.
+/// Edits in the source directory take effect without reinstalling the plugin.
+/// Pass a name and a directory, or only a directory to name the plugin after it
+/// without an `asdf-`, `mise-`, or `vfox-` prefix. Use the bare name, without a
+/// `vfox:` or `package:` prefix: mise detects the plugin type from the
+/// directory. This does not install a tool version.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ln",
     verbatim_doc_comment,
-    example(r###"mise plugins link my-tool ./mise-my-tool"###),
+    example(
+        r###"mise plugins link my-tool ./mise-my-tool"###,
+        help = r###"Link ./mise-my-tool as the plugin my-tool"###
+    ),
     example(
         r###"mise plugins link ./mise-my-tool"###,
-        help = r###"Alternative: infer the name "my-tool""###
+        help = r###"Infer the name my-tool from the directory"###
     ),
     example(
         r###"mise ls-remote my-tool"###,
@@ -28,17 +33,15 @@ use crate::{dirs, file};
     )
 )]
 pub(super) struct PluginsLink {
-    /// The name of the plugin
-    /// With one argument, this is the plugin directory and the name is inferred
+    /// The plugin name, or the plugin directory when DIR is omitted
     #[usage(verbatim_doc_comment)]
     name: String,
 
-    /// The local path to the plugin
-    /// e.g.: ./mise-my-tool
+    /// The local path to the plugin, such as ./mise-my-tool
     #[usage(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     dir: Option<PathBuf>,
 
-    /// Overwrite existing plugin
+    /// Replace an existing plugin with the same name
     #[usage(long, short = 'f')]
     force: bool,
 }

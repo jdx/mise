@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::args::BackendArg;
 use crate::backend::options::BackendOptions;
+use crate::backend::static_helpers::lock_checksum;
 use crate::backend::{
     Backend, VersionInfo, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
@@ -22,7 +23,7 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
 use async_trait::async_trait;
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::Result;
 use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
@@ -87,8 +88,15 @@ fn is_shorthand_java_request(requested_version: &str) -> bool {
 
 impl JavaPlugin {
     pub(super) fn new() -> Self {
+        Self::from_arg(plugins::core::new_backend_arg("java"))
+    }
+
+    /// Build a plugin for `ba`. The shared core instance has no options, so a request
+    /// with inline options such as `java[release_type=ea]` needs its own instance for
+    /// version listing to see them.
+    pub(super) fn from_arg(ba: BackendArg) -> Self {
         let settings = Settings::get();
-        let ba = Arc::new(plugins::core::new_backend_arg("java"));
+        let ba = Arc::new(ba);
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
                 ba.cache_path().join("java_metadata_ea.msgpack.z"),
@@ -105,6 +113,8 @@ impl JavaPlugin {
         }
     }
 
+    /// Metadata keyed by full version string (`<vendor>-<version>`). The cache does not
+    /// depend on `java.shorthand_vendor`; shorthand versions are added when listing.
     async fn fetch_java_metadata(
         &self,
         release_type: &str,
@@ -174,10 +184,6 @@ impl JavaPlugin {
         m: JavaMetadata,
         platform: &Platform,
     ) {
-        // add openjdk short versions like "java@17.0.0" which default to openjdk
-        if m.vendor == Settings::get().java.shorthand_vendor {
-            metadata.insert(m.version.to_string(), m.clone());
-        }
         metadata.insert(m.to_version_string(platform), m);
     }
 
@@ -209,7 +215,13 @@ impl JavaPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file_stored(
+            &m.url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key(), &m.url).as_deref(),
+            Some(pr),
+        )
+        .await?;
 
         let platform_key = self.get_platform_key();
         if !tv.lock_platforms.contains_key(&platform_key) {
@@ -344,19 +356,19 @@ impl JavaPlugin {
         JavaOptions::new(&raw_opts).release_type().to_string()
     }
 
-    fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
-        if regex!(r"^\d").is_match(&tv.version) {
-            // undo openjdk shorthand
-            format!("{}-{}", Settings::get().java.shorthand_vendor, tv.version)
-        } else {
-            tv.version.clone()
-        }
-    }
-
     async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
-        let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let metadata = self.fetch_java_metadata(&release_type).await?;
+        let locked_url = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|p| p.url.as_deref());
+        let v = java_metadata_key(
+            metadata,
+            &tv.version,
+            &Settings::get().java.shorthand_vendor,
+            |m| locked_url == Some(m.url.as_str()) || is_openjdk_install(&tv.install_path()),
+        );
         find_java_metadata(metadata, &v, &tv.version, &current_java_platform())
     }
 
@@ -390,10 +402,9 @@ impl JavaPlugin {
         opts: &ToolVersionOptions,
     ) -> Result<Vec<VersionInfo>> {
         let release_type = JavaOptions::new(opts).release_type().to_string();
-        let versions = self
-            .fetch_java_metadata(&release_type)
-            .await?
-            .iter()
+        let metadata = self.fetch_java_metadata(&release_type).await?;
+        let versions = with_shorthand_versions(metadata, &Settings::get().java.shorthand_vendor)
+            .into_iter()
             .sorted_by_cached_key(|(v, m)| {
                 let is_shorthand = regex!(r"^\d").is_match(v);
                 let vendor = &m.vendor;
@@ -437,7 +448,7 @@ impl JavaPlugin {
                 )
             })
             .map(|(v, m)| VersionInfo {
-                version: v.clone(),
+                version: v.to_string(),
                 created_at: m.created_at.clone(),
                 // The regex is a denylist heuristic, not a total grammar:
                 // a match proves "prerelease", a miss proves nothing.
@@ -522,11 +533,20 @@ impl Backend for JavaPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        let version = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let metadata = self
             .fetch_java_metadata_for_target(&release_type, target)
             .await?;
+        let locked_url = tv
+            .lock_platforms
+            .get(&target.to_key())
+            .and_then(|p| p.url.as_deref());
+        let version = java_metadata_key(
+            &metadata,
+            &tv.version,
+            &Settings::get().java.shorthand_vendor,
+            |m| locked_url == Some(m.url.as_str()) || is_openjdk_install(&tv.install_path()),
+        );
         let m = find_java_metadata(&metadata, &version, &tv.version, &target.platform)?;
 
         Ok(PlatformInfo {
@@ -592,7 +612,7 @@ impl Backend for JavaPlugin {
         let platform_key = self.get_platform_key();
         let (metadata, tarball_path) =
             if let Some(platform_info) = tv.lock_platforms.get(&platform_key) {
-                if let Some(ref url) = platform_info.url {
+                if let Some(url) = platform_info.url.clone() {
                     // Use the filename from the URL, not the platform key
                     let filename = url.split('/').next_back().unwrap();
                     debug!("Using existing URL from lockfile for {}: {}", filename, url);
@@ -602,35 +622,47 @@ impl Backend for JavaPlugin {
                     if !tarball_path.exists() {
                         debug!("File not found, downloading from cached URL: {}", url);
                         // Download using the lockfile URL, not JavaMetadata
-                        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
-                            .await?;
+                        let pinned = lock_checksum(&tv, &platform_key, &url);
+                        HTTP.download_file_stored(
+                            &url,
+                            &tarball_path,
+                            pinned.as_deref(),
+                            Some(ctx.pr.as_ref()),
+                        )
+                        .await?;
                         // Optionally verify checksum if present
                         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
                     } else {
                         ctx.pr.set_message(format!("cached {filename}"));
                     }
 
-                    // Fetch metadata for installation (for install/move logic)
-                    let metadata = self.tv_to_metadata(&tv).await?;
-                    (metadata, tarball_path)
+                    // The lockfile already names the build, so the catalog is not consulted.
+                    (
+                        JavaMetadata::from_locked(
+                            &tv.version,
+                            &url,
+                            &Settings::get().java.shorthand_vendor,
+                        ),
+                        tarball_path,
+                    )
                 } else {
                     // No URL in lockfile, fall back to metadata
                     let metadata = self.tv_to_metadata(&tv).await?;
                     let tarball_path = self
                         .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
                         .await?;
-                    (metadata, tarball_path)
+                    (metadata.clone(), tarball_path)
                 }
             } else {
                 let metadata = self.tv_to_metadata(&tv).await?;
                 let tarball_path = self
                     .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
                     .await?;
-                (metadata, tarball_path)
+                (metadata.clone(), tarball_path)
             };
 
         ctx.pr.next_operation();
-        self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path, &metadata)?;
         ctx.pr.next_operation();
         self.verify(&tv, ctx.pr.as_ref())?;
 
@@ -648,6 +680,12 @@ impl Backend for JavaPlugin {
             tv.install_path().to_string_lossy().into(),
         )]);
         Ok(map)
+    }
+
+    /// A `-musl` query matches versions without the suffix, which the shared
+    /// matcher would not select.
+    fn fuzzy_match_stays_within_shared_matcher(&self) -> bool {
+        false
     }
 
     fn fuzzy_match_filter(
@@ -693,18 +731,84 @@ impl Backend for JavaPlugin {
     }
 }
 
+/// Every metadata entry under its full version string, plus a shorthand entry like
+/// "17.0.2" for each release from `shorthand_vendor`, which `java_metadata_key` turns
+/// back into "<vendor>-17.0.2" on install. Entries are visited in key order so the
+/// shorthand points at the canonical "<vendor>-<version>" entry when one exists: digits
+/// sort before the letters of a feature or image type such as "-jre-".
+fn with_shorthand_versions<'a>(
+    metadata: &'a HashMap<String, JavaMetadata>,
+    shorthand_vendor: &str,
+) -> Vec<(&'a str, &'a JavaMetadata)> {
+    let mut shorthand: BTreeMap<&str, &JavaMetadata> = BTreeMap::new();
+    for (_, m) in metadata
+        .iter()
+        .filter(|(_, m)| m.vendor == shorthand_vendor)
+        .sorted_by_key(|(k, _)| *k)
+    {
+        shorthand.entry(m.version.as_str()).or_insert(m);
+    }
+    metadata
+        .iter()
+        .map(|(k, m)| (k.as_str(), m))
+        .chain(shorthand)
+        .collect()
+}
+
+/// The metadata key for `version`: a vendor-prefixed version as is, and a shorthand
+/// version such as "21.0.4+7" with the `shorthand_vendor` prefix.
+///
+/// Shorthand versions meant OpenJDK builds before the default vendor became Temurin.
+/// A shorthand version that `shorthand_vendor` does not publish, such as "21.0.2"
+/// (Temurin calls it "21.0.2+13"), maps to the OpenJDK build only when `is_openjdk_build`
+/// confirms that this version already is that build: installed from it, or locked to
+/// its URL. A version being resolved fresh, such as `java@12.0.2`, which Temurin does not
+/// publish, never falls back, so installing agrees with `ls-remote`.
+fn java_metadata_key(
+    metadata: &HashMap<String, JavaMetadata>,
+    version: &str,
+    shorthand_vendor: &str,
+    is_openjdk_build: impl FnOnce(&JavaMetadata) -> bool,
+) -> String {
+    if !regex!(r"^\d").is_match(version) {
+        return version.to_string();
+    }
+    let key = format!("{shorthand_vendor}-{version}");
+    if metadata.contains_key(&key) {
+        return key;
+    }
+    let openjdk_key = format!("openjdk-{version}");
+    match metadata.get(&openjdk_key) {
+        Some(m) if is_openjdk_build(m) => openjdk_key,
+        _ => key,
+    }
+}
+
+/// Whether `install_path` holds a jdk.java.net OpenJDK build, going by the
+/// `IMPLEMENTOR` line of the JDK's `release` file.
+fn is_openjdk_install(install_path: &Path) -> bool {
+    fs::read_to_string(install_path.join("release")).is_ok_and(|release| {
+        release
+            .lines()
+            .any(|line| line.trim() == r#"IMPLEMENTOR="Oracle Corporation""#)
+    })
+}
+
 fn find_java_metadata<'a>(
     metadata: &'a HashMap<String, JavaMetadata>,
     version: &str,
     requested_version: &str,
     platform: &Platform,
 ) -> Result<&'a JavaMetadata> {
+    // A version with no build for this platform is an unsupported target, so `mise lock`
+    // skips the platform instead of failing the whole run.
     metadata.get(version).ok_or_else(|| {
-        eyre!(
+        crate::errors::Error::UnsupportedTarget(format!(
             "no metadata found for version {} on {}",
             requested_version,
             platform.to_key()
-        )
+        ))
+        .into()
     })
 }
 
@@ -782,6 +886,28 @@ impl Display for JavaMetadata {
 }
 
 impl JavaMetadata {
+    /// The parts of a catalog entry that installing needs, rebuilt from the lockfile so
+    /// an install of a locked build does not fetch the catalog. `version` is the locked
+    /// version such as "zulu-21.0.1", `url` the locked download URL, and `shorthand_vendor`
+    /// the vendor a numeric version like "21.0.1" stands for.
+    fn from_locked(version: &str, url: &str, shorthand_vendor: &str) -> Self {
+        let mut parts = version.split('-');
+        let vendor = match parts.next() {
+            Some(v) if !v.starts_with(|c: char| c.is_ascii_digit()) => v.to_string(),
+            _ => shorthand_vendor.to_string(),
+        };
+        Self {
+            url: url.to_string(),
+            vendor,
+            version: version
+                .split('-')
+                .find(|p| p.starts_with(|c: char| c.is_ascii_digit()))
+                .unwrap_or_default()
+                .to_string(),
+            ..Default::default()
+        }
+    }
+
     fn to_version_string(&self, platform: &Platform) -> String {
         let mut v = vec![self.vendor.clone()];
         if self
@@ -840,6 +966,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn java_locked_metadata_keeps_vendor_and_version() {
+        let url = "https://cdn.azul.com/zulu/bin/zulu21.30.15-ca-jdk21.0.1-macosx_aarch64.tar.gz";
+        let m = JavaMetadata::from_locked("zulu-21.0.1", url, "temurin");
+        assert_eq!((m.vendor.as_str(), m.version.as_str()), ("zulu", "21.0.1"));
+        assert_eq!(m.url, url);
+        let m = JavaMetadata::from_locked("21.0.1", url, "zulu");
+        assert_eq!((m.vendor.as_str(), m.version.as_str()), ("zulu", "21.0.1"));
+    }
+
+    #[test]
     fn java_missing_metadata_includes_version_and_platform() {
         let metadata = HashMap::new();
         for key in [
@@ -858,6 +994,22 @@ mod tests {
     }
 
     #[test]
+    fn java_missing_metadata_is_an_unsupported_target() {
+        let platform = Platform::parse("linux-arm64-musl").unwrap();
+        let error = find_java_metadata(
+            &HashMap::new(),
+            "oracle-graalvm-25",
+            "oracle-graalvm-25",
+            &platform,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<crate::errors::Error>(),
+            Some(crate::errors::Error::UnsupportedTarget(_))
+        ));
+    }
+
+    #[test]
     fn java_missing_metadata_preserves_requested_version() {
         let platform = Platform::parse("windows-arm64").unwrap();
         let error = find_java_metadata(&HashMap::new(), "openjdk-8", "8", &platform).unwrap_err();
@@ -873,6 +1025,51 @@ mod tests {
         let metadata = HashMap::from([("openjdk-8".to_string(), JavaMetadata::default())]);
         let found = find_java_metadata(&metadata, "openjdk-8", "8", &platform).unwrap();
         assert!(std::ptr::eq(found, &metadata["openjdk-8"]));
+    }
+
+    #[test]
+    fn java_metadata_key_falls_back_only_for_existing_openjdk_builds() {
+        let metadata = HashMap::from([
+            ("openjdk-12.0.2".to_string(), JavaMetadata::default()),
+            ("openjdk-21.0.2".to_string(), JavaMetadata::default()),
+            ("temurin-21.0.2+13".to_string(), JavaMetadata::default()),
+            ("openjdk-25".to_string(), JavaMetadata::default()),
+            ("temurin-25".to_string(), JavaMetadata::default()),
+        ]);
+        let key =
+            |version, is_openjdk| java_metadata_key(&metadata, version, "temurin", |_| is_openjdk);
+        // an OpenJDK shorthand version installed or locked before the default became Temurin
+        assert_eq!(key("21.0.2", true), "openjdk-21.0.2");
+        // a fresh request for a version Temurin does not publish finds nothing
+        assert_eq!(key("21.0.2", false), "temurin-21.0.2");
+        assert_eq!(key("12.0.2", false), "temurin-12.0.2");
+        assert_eq!(key("21.0.2+13", true), "temurin-21.0.2+13");
+        // the shorthand vendor wins when both vendors publish the version
+        assert_eq!(key("25", true), "temurin-25");
+        assert_eq!(key("21.0.3", true), "temurin-21.0.3");
+        assert_eq!(key("zulu-21.0.2", true), "zulu-21.0.2");
+        assert_eq!(
+            java_metadata_key(&metadata, "21.0.2", "openjdk", |_| false),
+            "openjdk-21.0.2"
+        );
+    }
+
+    #[test]
+    fn openjdk_install_is_read_from_the_release_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_openjdk_install(dir.path()));
+        fs::write(
+            dir.path().join("release"),
+            "IMPLEMENTOR=\"Eclipse Adoptium\"\nJAVA_VERSION=\"21.0.2\"\n",
+        )
+        .unwrap();
+        assert!(!is_openjdk_install(dir.path()));
+        fs::write(
+            dir.path().join("release"),
+            "IMPLEMENTOR=\"Oracle Corporation\"\nJAVA_VERSION=\"21.0.2\"\n",
+        )
+        .unwrap();
+        assert!(is_openjdk_install(dir.path()));
     }
 
     fn opts_with_release_type(release_type: &str) -> ToolVersionOptions {
@@ -926,6 +1123,79 @@ mod tests {
                 .lockfile_options("temurin-17", "temurin")
                 .is_empty()
         );
+    }
+
+    fn java_metadata(vendor: &str, image_type: &str, version: &str) -> JavaMetadata {
+        JavaMetadata {
+            vendor: vendor.to_string(),
+            image_type: Some(image_type.to_string()),
+            version: version.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// The cached metadata must not depend on `java.shorthand_vendor`, or changing the
+    /// vendor keeps listing the previous vendor's shorthand versions until the cache expires.
+    #[test]
+    fn shorthand_versions_follow_the_current_vendor() {
+        let platform = Platform::parse("linux-x64").unwrap();
+        let mut metadata = HashMap::new();
+        for m in [
+            java_metadata("openjdk", "jdk", "21.0.2"),
+            java_metadata("openjdk", "jre", "21.0.2"),
+            java_metadata("temurin", "jdk", "21.0.5+11"),
+        ] {
+            JavaPlugin::insert_java_metadata(&mut metadata, m, &platform);
+        }
+        assert_eq!(
+            metadata.keys().sorted().collect_vec(),
+            ["openjdk-21.0.2", "openjdk-jre-21.0.2", "temurin-21.0.5+11"]
+        );
+
+        let shorthand = |vendor| {
+            with_shorthand_versions(&metadata, vendor)
+                .into_iter()
+                .filter(|(v, _)| v.starts_with(|c: char| c.is_ascii_digit()))
+                .map(|(v, m)| (v, m.vendor.as_str(), m.image_type.as_deref()))
+                .collect_vec()
+        };
+        assert_eq!(shorthand("openjdk"), [("21.0.2", "openjdk", Some("jdk"))]);
+        assert_eq!(
+            shorthand("temurin"),
+            [("21.0.5+11", "temurin", Some("jdk"))]
+        );
+    }
+
+    /// Core plugins are shared instances without options, so `java[release_type=ea]`
+    /// needs its own instance for version listing to select early-access builds.
+    #[test]
+    fn inline_release_type_reaches_the_java_backend() {
+        let backend =
+            crate::backend::arg_to_backend(BackendArg::from("java[release_type=ea]")).unwrap();
+        let opts = backend.ba().resolve_opts_with_layers(None, None, None);
+        assert_eq!(JavaOptions::new(opts.effective()).release_type(), "ea");
+
+        let shared = crate::backend::arg_to_backend(BackendArg::from("java")).unwrap();
+        assert!(shared.ba().explicit_opts().is_none());
+        assert_eq!(backend.id(), shared.id());
+        assert_eq!(backend.ba().installs_path(), shared.ba().installs_path());
+        assert_eq!(backend.ba().cache_path(), shared.ba().cache_path());
+
+        // An alias such as `[tool_alias] myjava = "core:java"` keeps its options too,
+        // and still uses the shared instance's paths.
+        let aliased = crate::backend::arg_to_backend(BackendArg::new_raw(
+            "myjava".to_string(),
+            Some("core:java".to_string()),
+            "myjava".to_string(),
+            Some(crate::toolset::parse_tool_options("release_type=ea")),
+            crate::args::BackendResolution::new(true),
+        ))
+        .unwrap();
+        let opts = aliased.ba().resolve_opts_with_layers(None, None, None);
+        assert_eq!(JavaOptions::new(opts.effective()).release_type(), "ea");
+        assert_eq!(aliased.id(), shared.id());
+        assert_eq!(aliased.ba().installs_path(), shared.ba().installs_path());
+        assert_eq!(aliased.ba().cache_path(), shared.ba().cache_path());
     }
 
     fn match_versions(versions: &[&str], query: &str) -> Vec<String> {

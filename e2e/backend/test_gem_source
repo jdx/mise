@@ -92,3 +92,8 @@ assert "cat requests.log" "/acme/api/v1/versions/internal-cli.json Basic"
 assert_not_contains_text "$output" "$TOKEN"
 # The credential travels as a header, so the logged URL has no userinfo at all.
 assert_contains_text "$output" "GET http://127.0.0.1:${port}/acme/api/v1/versions/internal-cli.json"
+
+# `mise tool` prints the rendered options, and the token is not among them.
+assert_not_contains "mise tool gem:internal-cli" "$TOKEN"
+assert_not_contains "mise tool --json gem:internal-cli" "$TOKEN"
+assert_not_contains "mise tool --tool-options gem:internal-cli" "$TOKEN"

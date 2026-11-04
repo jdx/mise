@@ -18,9 +18,12 @@ use tokio::sync::mpsc;
 pub type TaskKey = (String, Vec<String>, Vec<(String, String)>, TaskRunPhase);
 
 fn env_key(task: &Task) -> Vec<(String, String)> {
+    // A remote file task moves its own `env` into `overlay_env` when it is fetched, so both
+    // count: the key of a task has to be the same before and after.
     task.env
         .0
         .iter()
+        .chain(task.overlay_env.iter().map(|(d, _)| d))
         .filter_map(|d| match d {
             EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
             _ => None,
@@ -111,6 +114,29 @@ pub struct Deps {
     // not clone, notify waiters via tx None
 }
 
+/// Fetch a task's remote `file` so it has a local path before it joins the graph.
+///
+/// This has to happen before the task is keyed: fetching moves the task's own `env` into the
+/// overlay, which changes its [`task_key`], so a task added to the graph unfetched would sit
+/// there beside its fetched copy and run its URL as a local path.
+async fn fetch_remote_task(
+    fetcher: &TaskFetcher,
+    config: &Arc<Config>,
+    task: Task,
+) -> eyre::Result<Task> {
+    if !task
+        .file
+        .as_ref()
+        .is_some_and(|f| TaskFetcher::is_remote_source(&f.to_string_lossy()))
+    {
+        return Ok(task);
+    }
+    let run_phase = task.run_phase;
+    let mut tasks = vec![task];
+    fetcher.fetch_tasks(config, &mut tasks).await?;
+    Ok(tasks.remove(0).with_run_phase(run_phase))
+}
+
 /// Extract a hashable key from a task, including env vars set via dependencies
 pub(crate) fn task_key(task: &Task) -> TaskKey {
     (
@@ -128,22 +154,36 @@ fn same_task_without_phase(task: &Task, other: &Task) -> bool {
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, Some(1)).await
+        Self::new_with_cycle_limit(config, tasks, Some(1), TaskFetcher::new).await
     }
 
+    /// Builds the graph for a command that inspects it without running it, such as
+    /// `mise tasks deps`. A `git::` task file that experimental gates is left unfetched (see
+    /// [`TaskFetcher`]) instead of failing the graph.
+    pub async fn new_for_inspection(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
+        Self::new_with_cycle_limit(config, tasks, Some(1), TaskFetcher::for_inspection).await
+    }
+
+    /// Like [`Self::new_for_inspection`], but reports every cycle rather than the first, for
+    /// `mise tasks validate`. It does not warn about an unfetched `git::` file, since validate
+    /// reports each validated one as an issue.
     pub async fn new_for_validation(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, None).await
+        Self::new_with_cycle_limit(config, tasks, None, |no_cache| {
+            TaskFetcher::for_inspection(no_cache).without_warning()
+        })
+        .await
     }
 
     async fn new_with_cycle_limit(
         config: &Arc<Config>,
         tasks: Vec<Task>,
         cycle_limit: Option<usize>,
+        new_fetcher: fn(bool) -> TaskFetcher,
     ) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::<TaskKey>::new();
         let mut direct_post_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
         let mut dep_edges: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
         let mut wait_edges = Vec::new();
@@ -156,33 +196,35 @@ impl Deps {
 
         // first we add all tasks to the graph, create a stack of work for this function, and
         // store the index of each task in the graph
+        let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+        let fetcher = new_fetcher(no_cache);
         for t in &tasks {
-            let t = t.clone().with_run_phase(TaskRunPhase::Normal);
+            let t = fetch_remote_task(
+                &fetcher,
+                config,
+                t.clone().with_run_phase(TaskRunPhase::Normal),
+            )
+            .await?;
             stack.push(t.clone());
             add_idx(&t, &mut graph);
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
-        let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
-        let fetcher = TaskFetcher::new(no_cache);
         while let Some(mut a) = stack.pop() {
-            if seen.contains(&a) {
+            // Keyed like the graph, not by `Task` equality, which leaves out the overlay env a
+            // fetched remote task holds its dependency env in.
+            if !seen.insert(task_key(&a)) {
                 // prevent infinite loop
                 continue;
-            }
-            // Fetch remote task files so file-based tasks have local paths
-            // before we try to parse their usage specs or execute them.
-            if a.file
-                .as_ref()
-                .is_some_and(|f| TaskFetcher::is_remote_source(&f.to_string_lossy()))
-            {
-                let mut tasks_to_fetch = vec![a];
-                fetcher.fetch_tasks(config, &mut tasks_to_fetch).await?;
-                a = tasks_to_fetch.into_iter().next().unwrap();
             }
             // Re-render runtime templates with usage values (including defaults)
             // so {{usage.*}} resolves before graph construction and freshness checks.
             if a.has_usage_runtime_templates() {
-                let usage_values = parse_usage_values_from_task(config, &a).await?;
+                // A `git::` file left unfetched (experimental is off) can't be read, so its usage
+                // defaults come from the task's TOML alone.
+                let usage_values = match TaskFetcher::toml_only(&a) {
+                    Some(toml_only) => parse_usage_values_from_task(config, &toml_only).await?,
+                    None => parse_usage_values_from_task(config, &a).await?,
+                };
                 if !usage_values.is_empty() {
                     a.render_runtime_templates_with_usage(config, &usage_values)
                         .await?;
@@ -194,7 +236,7 @@ impl Deps {
             graph[a_idx] = a.clone();
             let resolved = a.resolve_depends(config, &all_tasks_to_run).await?;
             for b in resolved.depends {
-                let b = b.with_run_phase(a.run_phase);
+                let b = fetch_remote_task(&fetcher, config, b.with_run_phase(a.run_phase)).await?;
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());
                 dep_edges
@@ -207,7 +249,8 @@ impl Deps {
                 wait_edges.push((task_key(&a), b));
             }
             for b in resolved.depends_post {
-                let b = b.with_run_phase(TaskRunPhase::Post);
+                let b = fetch_remote_task(&fetcher, config, b.with_run_phase(TaskRunPhase::Post))
+                    .await?;
                 add_idx(&b, &mut graph);
                 direct_post_parents
                     .entry(task_key(&b))
@@ -215,7 +258,6 @@ impl Deps {
                     .insert(task_key(&a));
                 stack.push(b.clone());
             }
-            seen.insert(a);
         }
 
         // A post task's regular dependencies are part of the same cleanup

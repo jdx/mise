@@ -26,6 +26,17 @@ cat >mise.toml <<EOF
 EOF
 assert_fail "mise install -f http:my-tool" "Checksum mismatch"
 
+# Without a declared checksum, generating the lockfile hashes the local file
+# for every platform instead of handing the file:// url to the http client.
+cat >mise.toml <<EOF
+[tools]
+"http:my-tool" = { version = "1.0.0", url = "file://$ARCHIVE" }
+EOF
+touch mise.lock
+assert_succeed "MISE_LOCKFILE_MODE=generate mise lock"
+assert_contains "cat mise.lock" "file://$ARCHIVE"
+assert_contains "cat mise.lock" "sha256:$SHA256"
+
 # A missing file names the path instead of a generic URL error.
 cat >mise.toml <<EOF
 [tools]

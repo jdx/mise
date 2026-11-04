@@ -8,28 +8,36 @@ use crate::system;
 use crate::system::files::FileState;
 use crate::ui::table::MiseTable;
 
-/// Show the status of dotfiles from `[dotfiles]`
+/// Show the state of your dotfiles and their history
 ///
-/// Template entries are rendered to compare their output; trusted template
-/// functions may execute. JSON includes each entry's origin and uses the states
-/// `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+/// Lists the `[dotfiles]` entries that need attention, and counts the rest;
+/// `--verbose` lists every entry. Each has a state: `applied`, `missing`,
+/// `differs`, `source missing`, `tracked`, `would remove` for an `absent` entry
+/// whose target is still there, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as
+/// one for an inactive profile, says `not on this machine`. Then shows the history state in sections: Tracking, Repository,
+/// Conflicts, Automatic capture, and Bootstrap, ending with the next steps.
 ///
-/// Files deployed by a dotfile group that is no longer selected or declared
-/// are listed as `orphaned`; `mise dot apply --prune` removes them.
+/// Files a dotfile group deployed that no active entry deploys now are listed
+/// as `orphaned`: the group was deselected or removed, or a new `exclude` or a
+/// deleted source dropped them. `mise dot apply --prune` removes them.
 ///
-/// The management state of every declaration (applied, missing, differs,
-/// tracked) followed by the history state: what is tracked, the latest
-/// checkpoint, unfinished operations, and whether edits are saved
-/// automatically.
+/// Template entries are rendered to compare their output, so trusted template
+/// functions may run. `--json` prints `files`, `edits`, and `history`, with
+/// each entry's origin and a state of `applied`, `missing`, `differs`,
+/// `source_missing`, or `tracked`. Orphaned files appear in a separate
+/// `orphaned` array with the state `orphaned`, or `orphaned_changed` when the
+/// file was modified after it was deployed. See
+/// https://mise.jdx.dev/dotfiles/reference.html#status-states for every state.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ls",
-    verbatim_doc_comment,
+    example("mise dot status", help = "Show what needs attention"),
+    example("mise dot status --verbose", help = "List every entry"),
+    example("mise dot status ~/.zshrc", help = "Show one target"),
+    example("mise dot status --json", help = "Print the state as JSON"),
     example(
-        r###"mise dot status
-mise dot status ~/.zshrc
-mise dot status --json
-mise dot status --missing # exit 1 if anything is out of sync"###
+        "mise dot status --missing",
+        help = "Exit 1 if anything is out of date, for scripts and CI"
     )
 )]
 pub(crate) struct DotfilesStatus {
@@ -44,12 +52,21 @@ pub(crate) struct DotfilesStatus {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured dotfiles are not in their desired
-    /// state (missing, source missing, differs)
-    #[usage(long, verbatim_doc_comment)]
+    /// Exit with code 1 if any dotfile is not in its desired state (missing,
+    /// source missing, or differs)
+    #[usage(long)]
     missing: bool,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// List every entry, including those already applied or tracked
+    ///
+    /// By default the table lists only entries that need attention or have
+    /// omitted files, with a one-line summary of the rest. Naming targets
+    /// lists them regardless.
+    #[usage(long, short = 'v')]
+    verbose: bool,
+
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     prompt_secrets: bool,
 }
@@ -73,6 +90,7 @@ impl DotfilesStatus {
         // tracked row can say how many of its files every save leaves out
         let history = super::history_status::report().await?;
         let mut file_rows: Vec<Vec<String>> = vec![];
+        let mut settled = 0usize;
         let mut json_files = vec![];
         for req in &files {
             // an absent entry that cannot be checked (a directory at the
@@ -90,9 +108,22 @@ impl DotfilesStatus {
                 _ => (0, 0),
             };
             let absent = matches!(state, FileState::Applied)
-                .then(|| system::files::permissions_target_absent(req))
+                .then(|| {
+                    system::files::permissions_target_absent(req)
+                        .or_else(|| system::files::symlink_target_copied(req))
+                })
                 .flatten();
+            // a tracked entry whose variants all name other machines, or
+            // tie, is neither saved nor pulled here
+            let unselected = match state {
+                FileState::Tracked => unselected_variants(req),
+                _ => None,
+            };
             let state_str = match &state {
+                FileState::Tracked if unselected.is_some() => unselected
+                    .as_ref()
+                    .map(|(state, _)| state.clone())
+                    .unwrap_or_default(),
                 FileState::Applied if removal => "absent".to_string(),
                 FileState::Applied => match absent {
                     Some(reason) => format!("applied ({reason})"),
@@ -132,6 +163,9 @@ impl DotfilesStatus {
                     "omitted": omitted,
                     "nested": nested,
                 });
+                if let Some((_, reason)) = &unselected {
+                    entry["reason"] = json!(reason);
+                }
                 if let Some(permissions) = req.permissions {
                     entry["permissions"] = json!(format!("{permissions:04o}"));
                 }
@@ -147,12 +181,22 @@ impl DotfilesStatus {
                     entry["reason"] = json!(reason);
                 }
                 json_files.push(entry);
+            } else if !self.verbose
+                && self.targets.is_empty()
+                && omitted == 0
+                && nested == 0
+                && matches!(state, FileState::Applied | FileState::Tracked)
+                && unselected.is_none()
+                && absent.is_none()
+            {
+                settled += 1;
             } else {
                 file_rows.push(vec![
                     req.target_raw.clone(),
                     req.mode.name().to_string(),
                     match req.mode {
                         system::files::FileMode::Content => "inline".to_string(),
+                        system::files::FileMode::Fnox => "fnox".to_string(),
                         system::files::FileMode::Absent => "-".to_string(),
                         system::files::FileMode::Permissions => "-".to_string(),
                         _ => req.source.display_user(),
@@ -227,7 +271,7 @@ impl DotfilesStatus {
         let mut edit_rows: Vec<Vec<String>> = vec![];
         let mut json_edits = vec![];
         for req in &edits {
-            let state = match system::edits::check(&config, req) {
+            let state = match system::edits::check_selected(&config, req, &edits) {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
@@ -252,6 +296,11 @@ impl DotfilesStatus {
                         FileState::Tracked => "tracked",
                     },
                 }));
+            } else if !self.verbose
+                && self.targets.is_empty()
+                && matches!(state, FileState::Applied | FileState::Tracked)
+            {
+                settled += 1;
             } else {
                 edit_rows.push(vec![
                     req.path_raw.clone(),
@@ -265,7 +314,7 @@ impl DotfilesStatus {
         // the hint goes to stderr, so an empty --json result explains itself
         // too without anything landing in the parsed output
         if files.is_empty() && edits.is_empty() {
-            super::warn_if_dotfiles_ignored();
+            super::warn_if_dotfiles_ignored(&config);
         }
         if self.json {
             let mut out = json!({
@@ -279,8 +328,26 @@ impl DotfilesStatus {
             }
             miseprintln!("{}", serde_json::to_string_pretty(&out)?);
         } else {
-            if file_rows.is_empty() && edit_rows.is_empty() {
+            // entries tracked through history (on a machine that adopted a
+            // shared setup, say) are reported by the history block below,
+            // so "nothing configured" would read as "nothing tracked"
+            if file_rows.is_empty()
+                && edit_rows.is_empty()
+                && settled == 0
+                && history.tracked_entries == 0
+            {
                 info!("nothing configured in [dotfiles]");
+            }
+            if settled > 0 {
+                miseprintln!(
+                    "✓ {settled} {} up to date{}",
+                    if settled == 1 { "entry" } else { "entries" },
+                    if file_rows.is_empty() && edit_rows.is_empty() {
+                        " (`--verbose` lists them)"
+                    } else {
+                        " (`--verbose` lists them all)"
+                    }
+                );
             }
             if !file_rows.is_empty() {
                 let mut table =
@@ -305,6 +372,36 @@ impl DotfilesStatus {
             return Err(crate::request_exit(1));
         }
         Ok(())
+    }
+}
+
+/// The variant names of a tracked entry that no variant selects on this
+/// machine, such as one declared for a profile that is not active.
+fn unselected_variants(req: &system::files::FileRequest) -> Option<(String, String)> {
+    use crate::system::history::select;
+    let names = |variants: &[select::Variant]| {
+        variants
+            .iter()
+            .map(|variant| variant.selector_name())
+            .collect::<Vec<_>>()
+    };
+    match select::select(&req.variants, &select::active_environments()) {
+        select::Selection::NoMatch => {
+            let names = names(&req.variants).join(", ");
+            Some((
+                format!("not on this machine (variants: {names})"),
+                format!("no variant matches this machine: {names}"),
+            ))
+        }
+        // a tie is a declaration error: the entry is skipped until it is fixed
+        select::Selection::Ambiguous(variants) => {
+            let names = names(&variants).join(" and ");
+            Some((
+                format!("ambiguous variants ({names} match equally)"),
+                format!("ambiguous variants: {names} match this machine equally"),
+            ))
+        }
+        select::Selection::Single | select::Selection::Variant(_) => None,
     }
 }
 

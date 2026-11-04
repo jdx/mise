@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# watch_files runs are hooks in effect: --no-hooks, MISE_NO_HOOKS, the
+# no_hooks setting, and safe mode must all skip them.
+
+cat <<EOF >mise.toml
+[[watch_files]]
+patterns = ["watched.txt"]
+run = "echo WATCH_FILES_RAN"
+EOF
+
+touch watched.txt
+
+change_watched_file() {
+  eval "$(mise hook-env -s bash)"
+  sleep 1
+  printf "changed" >>watched.txt
+}
+
+change_watched_file
+assert_contains "mise hook-env -s bash 2>&1" "WATCH_FILES_RAN"
+
+change_watched_file
+assert_not_contains "mise --no-hooks hook-env -s bash 2>&1" "WATCH_FILES_RAN"
+
+change_watched_file
+assert_not_contains "MISE_NO_HOOKS=1 mise hook-env -s bash 2>&1" "WATCH_FILES_RAN"
+
+change_watched_file
+assert_not_contains "MISE_SAFE=1 mise hook-env -s bash 2>&1" "WATCH_FILES_RAN"
+
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+no_hooks = true
+EOF
+change_watched_file
+assert_not_contains "mise hook-env -s bash 2>&1" "WATCH_FILES_RAN"

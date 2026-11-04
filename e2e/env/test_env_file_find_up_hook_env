@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# `find_up` under an activated shell: hook-env has to re-resolve `{{cwd}}` on every directory change,
+# load the nearest file for each directory, and notice an edit to a file it loaded.
+mkdir -p proj/sub other
+echo 'FROM_PROJ=proj' >proj/.env
+echo 'SHARED=sub' >proj/sub/.env
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = "{{cwd}}/.env", find_up = true }
+TOML
+
+eval "$(mise activate bash --status)"
+_mise_hook
+
+cd proj/sub || exit 1
+_mise_hook
+assert "echo $FROM_PROJ" "proj"
+assert "echo $SHARED" "sub"
+
+cd ../../other || exit 1
+_mise_hook
+assert "echo ${FROM_PROJ:-unset}" "unset"
+assert "echo ${SHARED:-unset}" "unset"
+
+cd ../proj || exit 1
+_mise_hook
+assert "echo $FROM_PROJ" "proj"
+assert "echo ${SHARED:-unset}" "unset"
+
+# Editing a loaded file is picked up without changing directory.
+echo 'FROM_PROJ=edited' >.env
+_mise_hook
+assert "echo $FROM_PROJ" "edited"
+
+# An absolute path starts at its own directory, so a subdirectory still sees its parent's file.
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[env]
+_.file = { path = "$PWD/.env", find_up = true }
+TOML
+cd sub || exit 1
+_mise_hook
+assert "echo $FROM_PROJ" "edited"
+# Only the absolute path can find the file from a directory outside the project.
+cd ../../other || exit 1
+_mise_hook
+assert "echo $FROM_PROJ" "edited"

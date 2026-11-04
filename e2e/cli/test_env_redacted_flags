@@ -113,3 +113,35 @@ TOML
 
 assert_contains "mise env --redacted" "SOURCED_SECRET=sourced_secret_val"
 assert_not_contains "mise env --redacted" "NORMAL_VAR=normal"
+
+# Test --redacted honors redact = false exclusions from redactions patterns
+cat <<'TOML' >mise.toml
+redactions = ["*_TOKEN"]
+[env]
+SECRET_TOKEN = "s3cret"
+TEST_TOKEN = { value = "not-sensitive", redact = false }
+TOOLS_TOKEN = { value = "tools-not-sensitive", tools = true, redact = false }
+TOML
+
+assert_contains "mise env --redacted" "SECRET_TOKEN=s3cret"
+assert_not_contains "mise env --redacted" "TEST_TOKEN"
+assert_not_contains "mise env --redacted" "TOOLS_TOKEN"
+assert_not_contains "mise env -J --redacted" '"TEST_TOKEN"'
+assert_not_contains "mise env -D --redacted" "TEST_TOKEN"
+assert_not_contains "mise env --redacted --values" "not-sensitive"
+assert_contains "mise env --json-extended --redacted" '"SECRET_TOKEN"'
+assert_not_contains "mise env --json-extended --redacted" '"TEST_TOKEN"'
+
+# A later tools = true assignment without redact = false clears an earlier
+# exemption: here the global config exempts the key and the project sets it.
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[env]
+LAYERED_TOKEN = { value = "exempt", redact = false }
+TOML
+cat <<'TOML' >mise.toml
+redactions = ["*_TOKEN"]
+[env]
+LAYERED_TOKEN = { value = "layered-secret", tools = true }
+TOML
+assert_contains "mise env --redacted" "LAYERED_TOKEN=layered-secret"
+rm "$MISE_CONFIG_DIR/config.toml"

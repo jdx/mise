@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+
+# The MCP server must not trust a project on a client's behalf: run_task and
+# install_tool refuse until the user runs `mise trust`.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+marker="$PWD/task-ran"
+# Tasks only, so the config loads without trust and only the MCP check stands
+# between a client and the task.
+cat >mise.toml <<EOF
+[tasks.touch]
+run = "touch '$marker'"
+EOF
+
+cat >mcp_call.py <<'EOF'
+import json
+import subprocess
+import sys
+
+proc = subprocess.Popen(["mise", "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL)
+
+
+def send(msg):
+    proc.stdin.write((json.dumps(msg) + "\n").encode())
+    proc.stdin.flush()
+
+
+send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+    "protocolVersion": "2025-03-26", "capabilities": {},
+    "clientInfo": {"name": "test-client", "version": "1.0.0"}}})
+proc.stdout.readline()
+send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+send({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+      "params": {"name": sys.argv[1], "arguments": json.loads(sys.argv[2])}})
+response = json.loads(proc.stdout.readline())
+proc.terminate()
+if "error" in response:
+    print(response["error"]["message"])
+    sys.exit(1)
+result = response["result"]
+print("status=error" if result.get("isError") else "status=ok")
+print(result["content"][0]["text"])
+EOF
+
+run_touch="python3 mcp_call.py run_task '{\"task\": \"touch\"}'"
+install_dummy="python3 mcp_call.py install_tool '{\"tool\": \"dummy\", \"version\": \"1.0.0\"}'"
+
+assert_contains "$run_touch" "status=error"
+assert_contains "$run_touch" "Ask the user to review it and run:
+  mise trust "
+assert_fail "test -e '$marker'"
+# Refusing must not trust the project as a side effect.
+assert_contains "mise trust --show" "untrusted"
+
+assert_contains "$install_dummy" "status=error
+Refusing to act on untrusted config."
+assert_fail "mise where dummy@1.0.0"
+
+mise trust
+assert_contains "$run_touch" "status=ok"
+assert "test -e '$marker' && echo ran" "ran"
+assert_contains "$install_dummy" '"version": "1.0.0"'
+
+# The check above covers the project config. Anything else the child reaches
+# must stay untrusted too: here a templated task include in a subdirectory of
+# the now-trusted project, which `mise run` on its own would trust and render.
+include_marker="$PWD/include-rendered"
+mkdir -p sub/mise-tasks
+cat >sub/mise-tasks/ci.toml <<EOF
+[render]
+description = "{{ exec(command='touch $include_marker') }}"
+run = "echo rendered"
+EOF
+run_render="cd sub && python3 ../mcp_call.py run_task '{\"task\": \"render\"}'"
+assert_contains "$run_render" "status=error"
+assert_contains "$run_render" "are not trusted"
+assert_fail "test -e '$include_marker'"
+# Nothing was trusted on the way: a second request is refused the same way.
+assert_contains "$run_render" "are not trusted"
+
+mise trust sub
+assert_contains "$run_render" "status=ok"
+assert_contains "$run_render" "rendered"
+
+# A project can hold scripts and no config file. A template-free task file
+# loads without trust because typing `mise run` is the consent to run it, and
+# a client's request is not.
+script_marker="$PWD/script-ran"
+mkdir -p ../scripts_only/mise-tasks
+cat >../scripts_only/mise-tasks/build <<EOF
+#!/bin/sh
+touch '$script_marker'
+EOF
+chmod +x ../scripts_only/mise-tasks/build
+run_script="cd ../scripts_only && python3 ../workdir/mcp_call.py run_task '{\"task\": \"build\"}'"
+assert_contains "$run_script" "status=error"
+assert_contains "$run_script" "not trusted"
+assert_fail "test -e '$script_marker'"
+mise trust ../scripts_only
+assert_contains "$run_script" "status=ok"
+assert "test -e '$script_marker' && rm '$script_marker' && echo ran" "ran"
+
+# A script given by path is not one of the project's tasks, even from a trusted
+# project.
+cp ../scripts_only/mise-tasks/build ../build.sh
+run_path="python3 mcp_call.py run_task '{\"task\": \"../build.sh\"}'"
+assert_fail_contains "$run_path" "not a file path"
+assert_fail "test -e '$script_marker'"
+
+# The trust check sees the tasks with the arguments they run with: the
+# client's, and those of a `run` entry.
+mkdir -p ../with_args
+cat >../with_args/mise.toml <<'EOF'
+[tasks.pick]
+usage = 'arg "[target]" default="missing"'
+depends = ["{{usage.target}}"]
+run = "echo picked"
+
+[tasks.real]
+run = "echo REAL-DEP"
+
+[tasks.nested]
+run = [{ task = "pick", args = ["real"] }]
+
+[tasks.outer]
+run = [{ task = "inner" }]
+
+[tasks.inner]
+depends = ["not-defined"]
+run = "echo INNER-RAN"
+EOF
+mise trust ../with_args
+run_pick="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"pick\", \"args\": [\"real\"]}'"
+assert_contains "$run_pick" "status=ok"
+assert_contains "$run_pick" "REAL-DEP"
+run_nested="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"nested\"}'"
+assert_contains "$run_nested" "status=ok"
+assert_contains "$run_nested" "REAL-DEP"
+
+# With dependencies skipped, a task a `run` entry starts runs without them,
+# so a dependency nobody defined does not stop the check.
+run_outer="cd ../with_args && MISE_TASK_SKIP_DEPENDS=1 python3 ../workdir/mcp_call.py run_task '{\"task\": \"outer\"}'"
+assert_contains "$run_outer" "status=ok"
+assert_contains "$run_outer" "INNER-RAN"
+
+# A `//` name with a `:` is a monorepo task name, so the server lets it
+# through, but the child resolves it as a task only: a file at the path it
+# spells never runs, even one created after the server checked the name.
+race_marker="$PWD/race-ran"
+mkdir -p ../race
+cat >"../race/x:build" <<EOF
+#!/bin/sh
+touch '$race_marker'
+EOF
+chmod +x "../race/x:build"
+race_dir="$(cd ../race && pwd)"
+# `//` names are monorepo task names, so the project is a monorepo root
+mkdir -p ../mono
+cat >../mono/mise.toml <<'EOF'
+monorepo_root = true
+
+[tasks.build]
+run = "echo BUILD"
+EOF
+mise trust ../mono
+run_race="cd ../mono && python3 ../workdir/mcp_call.py run_task '{\"task\": \"/$race_dir/x:build\"}' || true"
+assert_not_contains "$run_race" "status=ok"
+assert_fail "test -e '$race_marker'"
+
+# A `mise run` that a task makes is the project's own and still runs scripts.
+cat >>../with_args/mise.toml <<'EOF'
+
+[tasks.adhoc]
+run = "mise run ./helper.sh"
+EOF
+cat >../with_args/helper.sh <<'EOF'
+#!/bin/sh
+echo HELPER-RAN
+EOF
+chmod +x ../with_args/helper.sh
+run_adhoc="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"adhoc\"}'"
+assert_contains "$run_adhoc" "status=ok"
+assert_contains "$run_adhoc" "HELPER-RAN"

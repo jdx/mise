@@ -1,0 +1,754 @@
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use demand::Input;
+use eyre::{Result, bail};
+use indexmap::IndexMap;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
+use tera::{Kwargs, State, TeraResult, Value};
+
+use crate::host::{Config, ConfigMap};
+use crate::resources::ResourceOrigin;
+pub use mise_config::secrets::{SecretOptionsTomlConfig, SecretTomlConfig};
+use mise_util::env_diff::EnvMap;
+use mise_util::tera::{
+    BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SecretDeclaration {
+    pub name: String,
+    pub env: String,
+    pub description: Option<String>,
+    pub allow_empty: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretState {
+    Available,
+    Missing,
+    Empty,
+    InvalidUnicode,
+}
+
+impl std::fmt::Display for SecretState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Available => write!(f, "available"),
+            Self::Missing => write!(f, "missing"),
+            Self::Empty => write!(f, "empty"),
+            Self::InvalidUnicode => write!(f, "invalid_unicode"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SecretStatus {
+    pub name: String,
+    pub env: String,
+    pub state: SecretState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct SecretResolution {
+    declarations: IndexMap<String, SecretDeclaration>,
+    values: IndexMap<String, String>,
+    redaction_env: EnvMap,
+    unavailable: IndexMap<String, String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SecretValues {
+    resolution: Arc<Mutex<SecretResolution>>,
+    prompt: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "required bootstrap secrets are unavailable: {details}. Supply them in the environment (for example, `fnox exec -- mise bootstrap ...`) or pass --prompt-secrets"
+)]
+struct SecretUnavailable {
+    details: String,
+}
+
+pub(crate) fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
+    let mut merged: IndexMap<String, (SecretDeclaration, ResourceOrigin)> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for (name, declaration) in secrets_from_config_files(&config_files)? {
+            if let Some(existing) = merged.get(&name) {
+                if existing.0 == declaration.0 {
+                    continue;
+                }
+                bail!(
+                    "conflicting bootstrap secret declarations for {name}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    existing.1.conflict_description(),
+                    declaration.1.conflict_description(),
+                );
+            }
+            merged.insert(name, declaration);
+        }
+    }
+    Ok(merged
+        .into_values()
+        .map(|(declaration, _)| declaration)
+        .collect())
+}
+
+fn secrets_from_config_files(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<String, (SecretDeclaration, ResourceOrigin)>> {
+    let mut merged = IndexMap::new();
+    for (path, cf) in config_files {
+        if let Some(bootstrap) = cf.bootstrap_config() {
+            let origin = ResourceOrigin {
+                config: path.clone(),
+                config_root: cf.config_root(),
+                environment: crate::host::environments_for_config_path(path),
+                source: None,
+            };
+            for (name, declaration) in bootstrap.secrets {
+                let declaration = declaration_from_toml(name.clone(), declaration)?;
+                merged
+                    .entry(name)
+                    .or_insert_with(|| (declaration, origin.clone()));
+            }
+        }
+    }
+    Ok(merged)
+}
+
+pub fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
+    Ok(declarations_from_config(config)?
+        .into_iter()
+        .map(|declaration| SecretStatus {
+            state: env_state(&declaration),
+            name: declaration.name,
+            env: declaration.env,
+            description: declaration.description,
+        })
+        .collect())
+}
+
+pub fn resolve(config: &Config, prompt: bool) -> Result<SecretValues> {
+    let declarations = declarations_from_config(config)?
+        .into_iter()
+        .map(|declaration| (declaration.name.clone(), declaration))
+        .collect();
+    Ok(SecretValues {
+        resolution: Arc::new(Mutex::new(SecretResolution {
+            declarations,
+            ..Default::default()
+        })),
+        prompt,
+    })
+}
+
+impl SecretValues {
+    pub fn used_statuses(&self) -> Result<Vec<SecretStatus>> {
+        let resolution = self
+            .resolution
+            .lock()
+            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
+        Ok(resolution
+            .declarations
+            .values()
+            .filter(|declaration| {
+                resolution.values.contains_key(&declaration.name)
+                    || resolution.unavailable.contains_key(&declaration.name)
+            })
+            .map(|declaration| SecretStatus {
+                state: if resolution.values.contains_key(&declaration.name) {
+                    SecretState::Available
+                } else {
+                    env_state(declaration)
+                },
+                name: declaration.name.clone(),
+                env: declaration.env.clone(),
+                description: declaration.description.clone(),
+            })
+            .collect())
+    }
+
+    pub(crate) fn render(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        target: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        self.render_inner(Some((config, config_path)), input, base, target)
+    }
+
+    pub(crate) fn render_dotfile(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        self.render_dotfile_with(config, input, base, config_path, None)
+    }
+
+    /// Like [`Self::render_dotfile`], but `secret()` renders a placeholder
+    /// instead of reading the secret, so a template can be rendered to learn
+    /// which secrets it needs before any of them is read or prompted for.
+    /// [`Self::resolve_names`] gives the values to put in their place.
+    ///
+    /// A placeholder has to reach the output as it is: a filter that encodes
+    /// or drops it would leave nothing to put the value in place of, and is
+    /// an error.
+    pub(crate) fn render_dotfile_deferred(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        let calls = Arc::new(Mutex::new(BTreeMap::new()));
+        let rendered =
+            self.render_dotfile_with(config, input, base, config_path, Some(calls.clone()))?;
+        let calls = calls
+            .lock()
+            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
+        let found = deferred_counts(&rendered);
+        for (name, called) in calls.iter() {
+            if found.get(name).copied().unwrap_or(0) < *called {
+                bail!(
+                    "secret(name=\"{name}\") has to be inserted as it is here: a filter or other expression changed or dropped it"
+                );
+            }
+        }
+        Ok(rendered)
+    }
+
+    /// Read or prompt for `names`, the way `secret()` does.
+    pub(crate) fn resolve_names(
+        &self,
+        config: &Config,
+        names: &BTreeSet<String>,
+    ) -> Result<BTreeMap<String, String>> {
+        let used = Arc::new(Mutex::new(BTreeSet::new()));
+        let mut values = BTreeMap::new();
+        for name in names {
+            let value = resolve_secret(&self.resolution, &used, self.prompt, name)
+                .map_err(|err| eyre::eyre!(err))?;
+            values.insert(name.clone(), value);
+        }
+        self.finish_render(Some(config), used, Ok(String::new()))?;
+        Ok(values)
+    }
+
+    fn render_dotfile_with(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+        deferred: Option<DeferredCalls>,
+    ) -> Result<String> {
+        let mut tera = get_tera(Some(base));
+        let used = match &mut tera {
+            TeraEngine::V2(tera) => self.register_v2(tera, deferred),
+            TeraEngine::V1(tera) => self.register_v1(tera, deferred),
+        };
+        let rendered = crate::host::render_config_str(
+            &mut tera,
+            input,
+            config.bootstrap_tera_ctx(config_path),
+            config_path,
+        );
+        self.finish_render(Some(config), used, rendered)
+    }
+
+    pub(crate) fn render_dotfile_for_oci(
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        const MESSAGE: &str = "bootstrap secrets cannot be embedded in persistent OCI image layers";
+        let mut tera = get_tera_for_oci(Some(base));
+        match &mut tera {
+            TeraEngine::V2(tera) => tera
+                .register_function("secret", |_: Kwargs, _: &State| -> TeraResult<Value> {
+                    Err(tera::Error::message(MESSAGE))
+                }),
+            TeraEngine::V1(tera) => tera.register_function(
+                "secret",
+                |_: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+                    Err(tera1::Error::msg(MESSAGE))
+                },
+            ),
+        }
+        let mut context = config.bootstrap_tera_ctx(config_path).clone();
+        context.remove("env");
+        render_str(&mut tera, input, &context).map_err(Into::into)
+    }
+
+    fn render_inner(
+        &self,
+        config: Option<(&Config, &Path)>,
+        input: &str,
+        base: &Path,
+        target: &Path,
+    ) -> Result<String> {
+        let mut tera = get_tera_v2(Some(base));
+        let used = self.register_v2(&mut tera, None);
+        let mut context = BASE_CONTEXT.clone();
+        // Independently selected bootstrap roots keep their legacy template
+        // context until scoped composition and execution semantics are defined.
+        if let Some((config, config_path)) = config
+            && !config.is_in_selected_bootstrap_root(config_path)
+        {
+            context.insert("vars", &config.vars());
+        }
+        context.insert("config_root", &base.to_string_lossy());
+        context.insert("target", &target.to_string_lossy());
+        let rendered = match config {
+            Some((_, config_path)) => crate::host::render_config_str(
+                &mut TeraEngine::V2(Box::new(tera)),
+                input,
+                &context,
+                config_path,
+            ),
+            None => render_str_v2(&mut tera, input, &context),
+        };
+        self.finish_render(config.map(|(config, _)| config), used, rendered)
+    }
+
+    /// With `deferred`, `secret()` renders a placeholder and counts the call
+    /// there instead of reading the secret.
+    fn register_v2(
+        &self,
+        tera: &mut tera::Tera,
+        deferred: Option<DeferredCalls>,
+    ) -> Arc<Mutex<BTreeSet<String>>> {
+        let resolution = self.resolution.clone();
+        let used = Arc::new(Mutex::new(BTreeSet::new()));
+        let used_by_function = used.clone();
+        let prompt = self.prompt;
+        tera.register_function(
+            "secret",
+            move |args: Kwargs, _: &State| -> TeraResult<Value> {
+                let name = args.must_get::<&str>("name")?;
+                let value = match &deferred {
+                    Some(calls) => deferred_placeholder(&resolution, calls, name),
+                    None => resolve_secret(&resolution, &used_by_function, prompt, name),
+                };
+                value.map(Value::from).map_err(tera::Error::message)
+            },
+        );
+        used
+    }
+
+    fn register_v1(
+        &self,
+        tera: &mut tera1::Tera,
+        deferred: Option<DeferredCalls>,
+    ) -> Arc<Mutex<BTreeSet<String>>> {
+        let resolution = self.resolution.clone();
+        let used = Arc::new(Mutex::new(BTreeSet::new()));
+        let used_by_function = used.clone();
+        let prompt = self.prompt;
+        tera.register_function(
+            "secret",
+            move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+                let name = args
+                    .get("name")
+                    .and_then(JsonValue::as_str)
+                    .ok_or_else(|| tera1::Error::msg("missing required argument: name"))?;
+                let value = match &deferred {
+                    Some(calls) => deferred_placeholder(&resolution, calls, name),
+                    None => resolve_secret(&resolution, &used_by_function, prompt, name),
+                };
+                value.map(JsonValue::from).map_err(tera1::Error::msg)
+            },
+        );
+        used
+    }
+
+    fn finish_render(
+        &self,
+        config: Option<&Config>,
+        used: Arc<Mutex<BTreeSet<String>>>,
+        rendered: TeraResult<String>,
+    ) -> Result<String> {
+        let resolution = self
+            .resolution
+            .lock()
+            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
+        if let Some(config) = config {
+            config.add_redactions_excluding(
+                resolution.redaction_env.keys().cloned().collect(),
+                &resolution.redaction_env,
+                &BTreeSet::new(),
+            );
+        }
+        let used = used
+            .lock()
+            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
+        let unavailable = used
+            .iter()
+            .filter_map(|name| resolution.unavailable.get(name))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !unavailable.is_empty() {
+            return Err(SecretUnavailable {
+                details: unavailable.join(", "),
+            }
+            .into());
+        }
+        rendered.map_err(Into::into)
+    }
+
+    #[cfg(test)]
+    fn from_values(values: impl IntoIterator<Item = (String, String)>) -> Self {
+        Self {
+            resolution: Arc::new(Mutex::new(SecretResolution {
+                values: values.into_iter().collect(),
+                ..Default::default()
+            })),
+            prompt: false,
+        }
+    }
+}
+
+const DEFERRED_OPEN: &str = "‹secret:";
+const DEFERRED_CLOSE: char = '›';
+
+/// How many times each name was called in one deferred render.
+type DeferredCalls = Arc<Mutex<BTreeMap<String, usize>>>;
+
+/// The text `secret()` renders for `name` in a deferred render: readable in a
+/// diff, valid inside a JSON, TOML, YAML or INI string, and never a legal
+/// secret name character, so [`deferred_counts`] cannot mistake other text for
+/// one. The secret itself is neither read nor prompted for.
+pub(crate) fn deferred_text(name: &str) -> String {
+    format!("{DEFERRED_OPEN}{name}{DEFERRED_CLOSE}")
+}
+
+fn deferred_placeholder(
+    resolution: &Arc<Mutex<SecretResolution>>,
+    calls: &DeferredCalls,
+    name: &str,
+) -> std::result::Result<String, String> {
+    let resolution = resolution
+        .lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?;
+    if !resolution.declarations.contains_key(name) {
+        return Err(format!(
+            "bootstrap secret '{name}' is not declared in [bootstrap.secrets]"
+        ));
+    }
+    *calls
+        .lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?
+        .entry(name.to_string())
+        .or_default() += 1;
+    Ok(deferred_text(name))
+}
+
+/// Whether `text` holds a placeholder.
+pub(crate) fn has_deferred(text: &str) -> bool {
+    text.contains(DEFERRED_OPEN)
+}
+
+/// The secret names whose placeholders appear in `text`.
+pub(crate) fn deferred_names(text: &str) -> BTreeSet<String> {
+    deferred_counts(text).into_keys().collect()
+}
+
+/// How many placeholders for each name appear in `text`.
+fn deferred_counts(text: &str) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(DEFERRED_OPEN) {
+        let after = &rest[start + DEFERRED_OPEN.len()..];
+        let Some(end) = after.find(DEFERRED_CLOSE) else {
+            break;
+        };
+        *counts.entry(after[..end].to_string()).or_default() += 1;
+        rest = &after[end + DEFERRED_CLOSE.len_utf8()..];
+    }
+    counts
+}
+
+fn resolve_secret(
+    resolution: &Arc<Mutex<SecretResolution>>,
+    used: &Arc<Mutex<BTreeSet<String>>>,
+    prompt: bool,
+    name: &str,
+) -> std::result::Result<String, String> {
+    used.lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?
+        .insert(name.to_string());
+    let mut resolution = resolution
+        .lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?;
+    if let Some(value) = resolution.values.get(name) {
+        return Ok(value.clone());
+    }
+    if resolution.unavailable.contains_key(name) {
+        return Ok(String::new());
+    }
+    let declaration = resolution.declarations.get(name).cloned().ok_or_else(|| {
+        format!("bootstrap secret '{name}' is not declared in [bootstrap.secrets]")
+    })?;
+    match resolve_declaration(&declaration, prompt) {
+        Ok(value) => {
+            resolution
+                .redaction_env
+                .insert(declaration.env, value.clone());
+            resolution.values.insert(name.to_string(), value.clone());
+            Ok(value)
+        }
+        Err(detail) => {
+            resolution.unavailable.insert(name.to_string(), detail);
+            Ok(String::new())
+        }
+    }
+}
+
+pub(crate) fn is_unavailable(error: &eyre::Report) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.downcast_ref::<SecretUnavailable>().is_some())
+}
+
+fn resolve_declaration(declaration: &SecretDeclaration, prompt: bool) -> Result<String, String> {
+    let value = match std::env::var_os(&declaration.env) {
+        Some(value) => match value.into_string() {
+            Ok(value) if declaration.allow_empty || !value.is_empty() => Some(value),
+            Ok(_) => None,
+            Err(_) => {
+                return Err(format!(
+                    "{} ({}) contains non-Unicode data",
+                    declaration.name, declaration.env
+                ));
+            }
+        },
+        None => None,
+    };
+    let value = match value {
+        Some(value) => value,
+        None if prompt => prompt_value(declaration).map_err(|error| error.to_string())?,
+        None => return Err(format!("{} ({})", declaration.name, declaration.env)),
+    };
+    if value.is_empty() && !declaration.allow_empty {
+        return Err(format!(
+            "{} ({}) must not be empty",
+            declaration.name, declaration.env
+        ));
+    }
+    Ok(value)
+}
+
+fn declaration_from_toml(name: String, declaration: SecretTomlConfig) -> Result<SecretDeclaration> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "_.-".contains(character))
+    {
+        bail!("invalid bootstrap secret name '{name}': use ASCII letters, digits, '.', '_' or '-'");
+    }
+    let (env, description, allow_empty) = match declaration {
+        SecretTomlConfig::Env(env) => (env, None, false),
+        SecretTomlConfig::Options(options) => {
+            (options.env, options.description, options.allow_empty)
+        }
+    };
+    if !valid_env_name(&env) {
+        bail!("bootstrap secret '{name}' has invalid environment variable name '{env}'");
+    }
+    Ok(SecretDeclaration {
+        name,
+        env,
+        description,
+        allow_empty,
+    })
+}
+
+fn valid_env_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters
+        .next()
+        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+fn env_state(declaration: &SecretDeclaration) -> SecretState {
+    match std::env::var_os(&declaration.env) {
+        None => SecretState::Missing,
+        Some(value) => match value.into_string() {
+            Err(_) => SecretState::InvalidUnicode,
+            Ok(value) if value.is_empty() && !declaration.allow_empty => SecretState::Empty,
+            Ok(_) => SecretState::Available,
+        },
+    }
+}
+
+fn prompt_value(declaration: &SecretDeclaration) -> Result<String> {
+    if !console::user_attended_stderr() {
+        bail!(
+            "cannot prompt for bootstrap secret '{}' without an interactive terminal",
+            declaration.name
+        );
+    }
+    let prompt = declaration
+        .description
+        .clone()
+        .unwrap_or_else(|| format!("Enter bootstrap secret {}", declaration.name));
+    Ok(Input::new(&prompt)
+        .password(true)
+        .theme(&mise_ui::theme::get_theme())
+        .run()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_names() {
+        assert!(valid_env_name("CACHE_TOKEN"));
+        assert!(!valid_env_name("CACHE-TOKEN"));
+        assert!(
+            declaration_from_toml(
+                "cache.token".to_string(),
+                SecretTomlConfig::Env("CACHE_TOKEN".to_string()),
+            )
+            .is_ok()
+        );
+        assert!(
+            declaration_from_toml(
+                "cache token".to_string(),
+                SecretTomlConfig::Env("CACHE_TOKEN".to_string()),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn finds_deferred_placeholders() {
+        let text = "a = \"‹secret:token›\"\nb = \"Bearer ‹secret:cache.token›\" # ‹secret:token›";
+        assert!(has_deferred(text));
+        assert_eq!(
+            deferred_names(text),
+            BTreeSet::from(["cache.token".to_string(), "token".to_string()])
+        );
+        assert!(!has_deferred("a = \"secret:token\""));
+        assert!(deferred_names("a = \"‹secret:unterminated\"").is_empty());
+    }
+
+    #[test]
+    fn deferred_placeholders_cover_declared_names_only() {
+        let resolution = Arc::new(Mutex::new(SecretResolution {
+            declarations: IndexMap::from([(
+                "token".to_string(),
+                SecretDeclaration {
+                    name: "token".to_string(),
+                    env: "TOKEN".to_string(),
+                    description: None,
+                    allow_empty: false,
+                },
+            )]),
+            ..Default::default()
+        }));
+        let calls = DeferredCalls::default();
+        assert_eq!(
+            deferred_placeholder(&resolution, &calls, "token").unwrap(),
+            "‹secret:token›"
+        );
+        assert!(deferred_placeholder(&resolution, &calls, "other").is_err());
+        assert_eq!(
+            *calls.lock().unwrap(),
+            BTreeMap::from([("token".into(), 1)])
+        );
+        assert!(resolution.lock().unwrap().values.is_empty());
+    }
+
+    #[test]
+    fn counts_the_placeholders_a_filter_would_hide() {
+        let text = "a = \"‹secret:token›\"\nb = \"‹secret:token›\"";
+        assert_eq!(
+            deferred_counts(text),
+            BTreeMap::from([("token".to_string(), 2)])
+        );
+        // an encoded or upper-cased placeholder no longer counts
+        assert!(deferred_counts("a = \"4oC5c2VjcmV0OnRva2Vu\"").is_empty());
+        assert!(deferred_counts("a = \"‹SECRET:TOKEN›\"").is_empty());
+    }
+
+    #[test]
+    fn renders_only_declared_secret_values() {
+        let values = SecretValues::from_values([("token".to_string(), "sensitive".to_string())]);
+        assert_eq!(
+            values
+                .render_inner(
+                    None,
+                    "token={{ secret(name=\"token\") }}",
+                    Path::new("/tmp"),
+                    Path::new("/etc/example"),
+                )
+                .unwrap(),
+            "token=sensitive"
+        );
+        assert!(
+            values
+                .render_inner(
+                    None,
+                    "{{ secret(name=\"missing\") }}",
+                    Path::new("/tmp"),
+                    Path::new("/etc/example"),
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn unavailable_secret_is_scoped_to_templates_that_use_it() {
+        let name = "token".to_string();
+        let values = SecretValues {
+            resolution: Arc::new(Mutex::new(SecretResolution {
+                declarations: [(
+                    name.clone(),
+                    SecretDeclaration {
+                        name: name.clone(),
+                        env: "MISE_TEST_UNAVAILABLE_SECRET".to_string(),
+                        description: None,
+                        allow_empty: false,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                unavailable: [(name, "token is unavailable".to_string())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            })),
+            prompt: false,
+        };
+        assert_eq!(
+            values
+                .render_inner(None, "literal", Path::new("/tmp"), Path::new("/etc/static"))
+                .unwrap(),
+            "literal"
+        );
+        assert!(
+            values
+                .render_inner(
+                    None,
+                    "{{ secret(name=\"token\") }}",
+                    Path::new("/tmp"),
+                    Path::new("/etc/secret"),
+                )
+                .is_err()
+        );
+    }
+}

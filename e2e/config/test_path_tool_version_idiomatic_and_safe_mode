@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# A "path:<dir>" tool version needs no install: its bin directory goes on PATH
+# as soon as the config loads. Idiomatic version files need trust for one, like
+# mise.toml and .tool-versions, and safe mode, which loads project config
+# without trust, ignores project path: versions, including those a project's
+# [tool_alias] produces.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+EOF
+
+mkdir -p proj/local/bin other
+printf '#!/bin/sh\necho PWNED\n' >proj/local/bin/evil
+chmod +x proj/local/bin/evil
+
+echo "=== an idiomatic version file with a path: version needs trust ==="
+echo "path:./local" >proj/.node-version
+assert_fail_contains "cd proj && MISE_YES=0 mise env 2>&1" "not trusted"
+assert_not_contains "cd proj && MISE_YES=0 mise hook-env -s bash 2>&1" "/proj/local/bin"
+assert_not_contains "cd proj && MISE_SAFE=1 mise env" "/proj/local"
+(cd proj && mise trust .)
+assert_contains "cd proj && MISE_YES=0 mise env" "/proj/local/bin"
+assert_not_contains "cd proj && MISE_SAFE=1 mise env" "/proj/local"
+# tracked-config loading skips it rather than prompting
+(cd proj && mise trust --untrust .)
+assert_contains "cd other && MISE_YES=0 MISE_DEBUG=1 mise ls --all-sources 2>&1" "skipping untrusted tracked config: ~/workdir/proj/.node-version"
+# a plain version still needs no trust
+echo "20" >proj/.node-version
+assert_contains "cd proj && MISE_YES=0 mise ls node 2>&1" "20"
+rm proj/.node-version
+
+echo "=== safe mode ignores project path: versions ==="
+(cd proj && mise trust .)
+for form in 'node = "path:./local"' 'node = { path = "./local" }' 'node = ["20", "path:./local"]'; do
+  printf '[tools]\n%s\n' "$form" >proj/mise.toml
+  assert_contains "cd proj && mise env" "/proj/local/bin"
+  assert_not_contains "cd proj && MISE_SAFE=1 mise env" "/proj/local"
+done
+rm proj/mise.toml
+echo "node path:./local" >proj/.tool-versions
+assert_contains "cd proj && mise env" "/proj/local/bin"
+assert_not_contains "cd proj && MISE_SAFE=1 mise env" "/proj/local"
+rm proj/.tool-versions
+
+echo "=== safe mode ignores project tool alias versions that point to a path ==="
+cat <<EOF >proj/mise.toml
+[tools]
+node = "local"
+
+[tool_alias.node.versions]
+local = "path:$PWD/proj/local"
+EOF
+assert_contains "cd proj && mise env" "/proj/local/bin"
+assert_not_contains "cd proj && MISE_SAFE=1 mise env" "/proj/local"
+# the alias can also rewrite a request that global config makes
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+[tools]
+node = "20"
+EOF
+cat <<EOF >proj/mise.toml
+[tool_alias.node.versions]
+20 = "path:$PWD/proj/local"
+EOF
+assert_contains "cd proj && mise env" "/proj/local/bin"
+assert_not_contains "cd proj && MISE_SAFE=1 mise env" "/proj/local"
+rm proj/mise.toml
+
+echo "=== global config is the operator's, in safe mode too ==="
+printf '[tools]\nnode = "path:%s"\n' "$PWD/proj/local" >"$MISE_CONFIG_DIR/config.toml"
+assert_contains "cd other && MISE_SAFE=1 mise env" "/proj/local/bin"

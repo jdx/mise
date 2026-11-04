@@ -1,10 +1,13 @@
 ---
-description: "System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...)."
+description: "Install and remove Arch Linux packages with pacman from mise.toml."
 ---
 
-# Arch packages (pacman)
+# Arch Linux packages (pacman)
 
-System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
+The `pacman` manager installs and removes packages on Arch Linux, Manjaro,
+EndeavourOS, and other Arch-based distributions. It uses
+[sudo](/bootstrap/packages/#sudo) when mise is not running as root. For AUR
+packages, use [`aur`](/bootstrap/packages/aur.html).
 
 ```toml
 [bootstrap.packages]
@@ -13,52 +16,53 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 "pacman:libreoffice-fresh" = { state = "absent" }
 ```
 
-For a rolling-release workstation, keep the whole system current using Arch's
-supported full-system upgrade workflow before adding packages. mise's scoped
-`upgrade` command is not a replacement for that workflow; see the partial-upgrade
-limitation below.
-
-## Preview and apply
-
 ```sh
-mise bootstrap packages status
 mise bootstrap packages apply --manager pacman --dry-run
 mise bootstrap packages apply --manager pacman
 ```
 
-These commands use the active `[bootstrap.packages]` declarations. To add and
-install a package together, use `mise bootstrap packages use pacman:openssl`.
-The manager must be available on the host; an explicit `--manager pacman` fails
-when it is unavailable.
+## Prerequisites
 
-## Behavior
+The manager is available on Linux when `pacman` is on `PATH`. On other machines,
+its entries show as [`skipped`](/bootstrap/packages/#choose-platforms). If
+`/var/lib/pacman/sync` has no package databases (fresh containers), mise runs
+`pacman -Sy` before installing.
 
-- Package state is checked with `pacman -Q` and `pacman -T` (read-only, never
-  elevates). An installed package that satisfies the requested name through
-  `Provides` counts as installed.
-- Missing packages are installed with `pacman -S --noconfirm --needed`,
-  elevated with sudo when necessary (see
-  [sudo](/bootstrap/packages/#sudo)). `--needed` makes installs
-  idempotent.
-- Packages declared with `state = "absent"` are removed with
-  `pacman -R --noconfirm`. Removal is based on pacman's installed package
-  database, so it works the same for official Arch packages and packages from
-  configured third-party repositories such as the Omarchy Package Repository.
-  mise does not cascade to dependents or remove orphaned dependencies.
-- If `/var/lib/pacman/sync` contains no databases (fresh containers), mise
-  runs `pacman -Sy` automatically before installing. Force a refresh with
-  `mise bootstrap packages apply --update`.
-- `mise bootstrap packages upgrade` runs `pacman -Sy` and then upgrades only the
-  configured packages. Requests satisfied through `Provides` are skipped to
-  avoid replacing the installed provider. Arch officially supports
-  only full-system upgrades (`pacman -Syu`) — upgrading individual packages is a
-  [partial upgrade](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported),
-  so prefer running `pacman -Syu` yourself on a rolling-release system.
+## Package names
 
-::: warning
-Arch repositories only carry the latest version of each package, so pacman
-entries cannot be installed at a pinned version — `mise bootstrap packages apply`
-skips pinned entries with a warning, though `mise bootstrap packages status` still
-reports a `version mismatch` for them. Declare packages that must be built from
-the Arch User Repository with the separate [`aur:` manager](./aur.md).
-:::
+Use the package name as `pacman -S` takes it, from any configured
+repository. An installed package that provides the requested name counts as
+installed.
+
+## Version pins
+
+Arch repositories carry only the current version of each package, so mise
+cannot install a pin. A pinned entry shows as `version mismatch` while another
+version is installed, and `apply` skips it with a warning.
+
+## What mise runs
+
+| Operation                       | Command                                                           |
+| ------------------------------- | ----------------------------------------------------------------- |
+| Check installed state (no sudo) | `pacman -Q` and `pacman -T`                                       |
+| Install                         | `pacman -S --noconfirm --needed -- <packages>`                    |
+| `apply --update`                | `pacman -Sy` first                                                |
+| Upgrade                         | `pacman -Sy`, then `pacman -S --noconfirm --needed -- <packages>` |
+| Remove                          | `pacman -R --noconfirm -- <packages>`                             |
+
+## Upgrade
+
+`mise bootstrap packages upgrade` refreshes the package databases and upgrades
+only the configured packages. That is a
+[partial upgrade](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported),
+which Arch does not support. On an Arch system, run `sudo pacman -Syu` yourself
+to keep everything current, and use `upgrade` only where you accept that risk.
+Entries satisfied by a package that provides the name are skipped, so the
+provider is not replaced.
+
+## Remove packages
+
+An entry with `state = "absent"` is removed with `pacman -R --noconfirm`. This
+works for packages from any configured repository. mise does not cascade the
+removal or remove orphaned dependencies, so pacman refuses to remove a package
+that another installed package still needs.

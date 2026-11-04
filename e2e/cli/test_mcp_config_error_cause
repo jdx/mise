@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# A resource read that fails to load config must say why, not only which file:
+# an MCP client cannot show the trust prompt, so the cause is all it gets.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+# The harness's MISE_YES=1 would answer the trust prompt with yes.
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+# [env] needs trust, so the config fails to load until `mise trust`.
+cat >mise.toml <<EOF
+[env]
+MCP_VAR = "value"
+EOF
+
+cat >mcp_read.py <<'EOF'
+import json
+import subprocess
+import sys
+
+proc = subprocess.Popen(["mise", "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL)
+
+
+def send(msg):
+    proc.stdin.write((json.dumps(msg) + "\n").encode())
+    proc.stdin.flush()
+
+
+send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+    "protocolVersion": "2025-03-26", "capabilities": {},
+    "clientInfo": {"name": "test-client", "version": "1.0.0"}}})
+proc.stdout.readline()
+send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+send({"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": sys.argv[1]}})
+response = json.loads(proc.stdout.readline())
+proc.terminate()
+if "error" in response:
+    print(response["error"]["message"])
+else:
+    print(response["result"]["contents"][0]["text"])
+EOF
+
+for uri in mise://tools mise://tasks mise://env mise://config; do
+  assert_contains "python3 mcp_read.py $uri" "Failed to load config: error parsing config file: "
+  assert_contains "python3 mcp_read.py $uri" "are not trusted"
+done
+
+mise trust
+assert_contains "python3 mcp_read.py mise://env" '"MCP_VAR": "value"'

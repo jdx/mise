@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# `mise lock` moves the lockfiles of a monorepo's config roots into the root
+# lockfile and deletes the originals. Safe mode reads the checkout without trust,
+# so nothing in it may turn a file outside the monorepo into such an original.
+
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset MISE_ENV
+
+mkdir -p other checkout/packages/a/mise.x
+cat >checkout/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/a"]
+EOF
+echo '[tools]' >checkout/packages/a/mise.toml
+echo '[tools]' >other/mise.toml
+printf 'lockfile_version = 3\n\n[[tools."http:deploy-cli"]]\nversion = "1.0.0"\nbackend = "http:deploy-cli"\n' >other/mise.lock
+echo 'version = 4' >other/Cargo.lock
+
+lock="cd checkout && MISE_SAFE=1 mise lock"
+
+# An environment name is part of a filename, not a path.
+echo 'env = ["x/../../../../other/Cargo"]' >checkout/.miserc.toml
+(eval "$lock" >lock.log 2>&1) || true
+assert_succeed "test -f other/Cargo.lock"
+assert_fail "test -e checkout/Cargo.lock"
+assert_contains "cat lock.log" "ignoring environment"
+
+# An override filename stays in the directory mise looks in.
+echo 'override_config_filenames = ["mise.toml", "../other/mise.toml"]' >checkout/.miserc.toml
+(eval "$lock" >lock.log 2>&1) || true
+assert_contains "cat other/mise.lock" "deploy-cli"
+assert_contains "cat lock.log" "ignoring override filename"
+rm checkout/.miserc.toml
+
+# A config directory below a config root can be a symlink out of the monorepo.
+echo '[tools]' >other/config.toml
+ln -s ../../../other checkout/packages/a/mise
+(eval "$lock" >lock.log 2>&1) || true
+assert_contains "cat other/mise.lock" "deploy-cli"
+assert_succeed "$lock"
+rm checkout/packages/a/mise
+
+# So can a config root's lockfile itself: it is not merged into the checkout.
+ln -s ../../../other/mise.lock checkout/packages/a/mise.lock
+(eval "$lock" >lock.log 2>&1) || true
+assert_succeed "test -L checkout/packages/a/mise.lock"
+assert_not_contains "cat lock.log" "migrated"
+assert_contains "cat other/mise.lock" "deploy-cli"
+rm checkout/packages/a/mise.lock
+
+# The config root's own lockfiles still migrate.
+echo 'env = ["staging"]' >checkout/.miserc.toml
+echo '[tools]' >checkout/packages/a/mise.staging.lock
+assert_contains "$lock" "migrated 1 subproject lockfile(s)"
+assert_fail "test -e checkout/packages/a/mise.staging.lock"
+assert_succeed "test -f checkout/mise.staging.lock"

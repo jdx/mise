@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# A url_replacements rule for one repository's tag list makes the replacement
+# the source of those tags; mise-versions is not asked for them. apache/ant is
+# a `version_source: github_tag` aqua package with no mise registry entry, so
+# its versions come from listing tags.
+
+HEADERS_LOG_DIR="$TMPDIR/github_tags_replacement_logs"
+mkdir -p "$HEADERS_LOG_DIR"
+start_http_server --headers-log "$HEADERS_LOG_DIR"
+
+cat <<EOF >mise.toml
+[settings]
+url_replacements = { "https://api.github.com/repos/apache/ant/tags" = "http://127.0.0.1:$HTTP_PORT/ant-tags" }
+EOF
+
+# The stand-in server has no tags, so listing fails; what matters is where the
+# requests went.
+output="$(MISE_DEBUG=1 mise latest aqua:apache/ant 2>&1 || true)"
+
+if [[ $output == *"mise-versions.jdx.dev/api/github/repos/apache/ant/tags"* ]] || [[ $output == *"mise-versions.jdx.dev/data/github/apache/ant/tags.json"* ]]; then
+  echo "$output"
+  fail "mise-versions was asked for tags although their URL is rerouted"
+fi
+if ! compgen -G "$HEADERS_LOG_DIR/request_*.json" >/dev/null; then
+  echo "$output"
+  fail "the url_replacements endpoint was not used"
+fi

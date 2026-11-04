@@ -35,7 +35,7 @@ pub enum AquaRegistryError {
     #[error("template error: {0}")]
     TemplateError(#[from] eyre::Error),
     #[error("yaml parse error: {0}")]
-    YamlError(#[from] serde_yaml::Error),
+    YamlError(#[from] serde_saphyr::Error),
     #[error("io error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("expression error: {0}")]

@@ -25,6 +25,9 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml
+mod paranoid;
+pub use paranoid::{Paranoid, ParanoidCategory};
+
 include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 
 pub enum SettingsType {
@@ -39,6 +42,7 @@ pub enum SettingsType {
     SetString,
     IndexMap,
     BoolOrString,
+    BoolOrList,
 }
 
 pub struct SettingsMeta {
@@ -52,6 +56,9 @@ pub struct SettingsMeta {
     pub global_only: bool,
     /// Consumed before config files are read, so a value in one can never apply.
     pub env_only: bool,
+    /// Early-init: read only from `miserc.toml` files and the environment, never from a config
+    /// file, because it decides which config files load.
+    pub rc: bool,
 }
 
 #[derive(
@@ -63,6 +70,7 @@ pub struct SettingsMeta {
     Default,
     strum::EnumString,
     strum::Display,
+    strum::VariantNames,
     PartialEq,
     Eq,
 )]
@@ -128,32 +136,30 @@ pub enum SystemDepsMode {
     Ignore,
 }
 
-/// How task output is presented. mise's task runner resolves it further; see
-/// `TaskOutputExt` there.
+/// What `[bootstrap.packages]` does with a `dnf:` package on an ostree-booted host.
 #[derive(
     Debug,
-    Default,
     Clone,
     Copy,
-    PartialEq,
-    strum::Display,
+    Serialize,
+    Deserialize,
+    Default,
     strum::EnumString,
-    strum::EnumIs,
-    serde::Serialize,
-    serde::Deserialize,
+    strum::Display,
+    PartialEq,
+    Eq,
 )]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum TaskOutput {
-    Interleave,
-    KeepOrder,
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SystemPackagesOstree {
+    /// refuse to change packages and explain why
     #[default]
-    Prefix,
-    Replacing,
-    Timed,
-    Quiet,
-    Silent,
+    Error,
+    /// layer the packages with `rpm-ostree install`, which takes effect on the next boot
+    Layer,
 }
+
+pub use mise_config::task::TaskOutput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PythonUvVenvAuto {
@@ -248,6 +254,97 @@ impl serde::Serialize for PythonUvVenvAuto {
     }
 }
 
+/// A setting that turns on automatic updates: `false`, `true` to check every
+/// matching `check_duration`, or its own check interval such as `"6h"`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum AutoUpdate {
+    #[default]
+    Off,
+    On,
+    Every(String),
+}
+
+impl AutoUpdate {
+    pub fn is_on(&self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    /// The check interval it sets itself, which overrides `check_duration`.
+    pub fn interval(&self) -> Option<&str> {
+        match self {
+            Self::Every(interval) => Some(interval),
+            Self::Off | Self::On => None,
+        }
+    }
+}
+
+impl From<bool> for AutoUpdate {
+    fn from(value: bool) -> Self {
+        if value { Self::On } else { Self::Off }
+    }
+}
+
+impl<'de> Deserialize<'de> for AutoUpdate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        struct AutoUpdateVisitor;
+
+        impl<'de> Visitor<'de> for AutoUpdateVisitor {
+            type Value = AutoUpdate;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or a duration such as \"6h\"")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<AutoUpdate, E>
+            where
+                E: de::Error,
+            {
+                Ok(value.into())
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<AutoUpdate, E>
+            where
+                E: de::Error,
+            {
+                let value = value.trim();
+                match value.to_ascii_lowercase().as_str() {
+                    "true" | "yes" | "y" | "on" | "1" => self.visit_bool(true),
+                    "false" | "no" | "n" | "off" | "0" | "" => self.visit_bool(false),
+                    _ => Ok(AutoUpdate::Every(value.to_string())),
+                }
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<AutoUpdate, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_any(AutoUpdateVisitor)
+    }
+}
+
+impl serde::Serialize for AutoUpdate {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            AutoUpdate::Off => serializer.serialize_bool(false),
+            AutoUpdate::On => serializer.serialize_bool(true),
+            AutoUpdate::Every(interval) => serializer.serialize_str(interval),
+        }
+    }
+}
+
 fn remove_empty_nested_settings(table: &mut toml::Table, prefix: &str) {
     table.retain(|key, value| {
         let path = if prefix.is_empty() {
@@ -263,21 +360,28 @@ fn remove_empty_nested_settings(table: &mut toml::Table, prefix: &str) {
     });
 }
 
-/// Replace secret values in a serialized settings table.
+/// Whether a setting or environment variable named `name` holds a credential,
+/// judged by the shape of the name: it ends in `_token`, `_key`, `_secret` or
+/// `_password`, in any case (`task.cache.remote_token`, `sops.age_key`,
+/// `MISE_FORGEJO_TOKEN`). Deciding by shape rather than by a list keeps a
+/// credential added later hidden by default. Names that hold a path, a flag or
+/// a command (`age_key_file`, `gh_cli_tokens`) do not match.
+pub fn is_secret_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    ["_token", "_key", "_secret", "_password"]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+}
+
+/// Replace secret values in a serialized settings table: every string value,
+/// at any depth, whose key [`is_secret_name`].
 pub fn redact_settings_table(table: &mut toml::Table) {
-    let Some(cache) = table
-        .get_mut("task")
-        .and_then(toml::Value::as_table_mut)
-        .and_then(|task| task.get_mut("cache"))
-        .and_then(toml::Value::as_table_mut)
-    else {
-        return;
-    };
-    if cache.contains_key("remote_token") {
-        cache.insert(
-            "remote_token".to_string(),
-            toml::Value::String("[redacted]".to_string()),
-        );
+    for (key, value) in table.iter_mut() {
+        match value {
+            toml::Value::Table(nested) => redact_settings_table(nested),
+            toml::Value::String(s) if is_secret_name(key) => *s = "[redacted]".to_string(),
+            _ => {}
+        }
     }
 }
 
@@ -292,9 +396,28 @@ impl Display for Settings {
     }
 }
 
+/// String settings that accept only the choices their settings.toml `enum` lists.
+///
+/// mise matches these against fixed values, so an unknown one is rejected when
+/// settings load ([`Settings::validate_string_choices`]) and before
+/// `mise settings set` writes it ([`validate_setting_choice`]).
+pub const STRICT_CHOICE_SETTINGS: &[&str] =
+    &["lockfile_mode", "status.missing_tools", "windows_shim_mode"];
+
+/// Reject `value` for `key` when `key` is one of [`STRICT_CHOICE_SETTINGS`] and
+/// `value` is not one of its [`setting_choices`].
+pub fn validate_setting_choice(key: &str, value: &str) -> Result<()> {
+    if STRICT_CHOICE_SETTINGS.contains(&key) {
+        validate_setting_enum_values(key, [value], setting_choices(key))?;
+    }
+    Ok(())
+}
+
 impl SettingsStatus {
+    /// Loaded settings are checked by [`Settings::validate_string_choices`], so the
+    /// default only covers settings that were built without loading.
     pub fn missing_tools(&self) -> SettingsStatusMissingTools {
-        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap()
+        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap_or_default()
     }
 }
 
@@ -309,6 +432,24 @@ where
         "false" | "no" | "0" => Ok(false),
         _ => Ok(true),
     }
+}
+
+/// Deserialize one path or a list of paths, so a setting that took a single path can take several
+/// without breaking the configs that already name one.
+fn path_or_paths<'de, D>(deserializer: D) -> Result<Vec<PathBuf>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(PathBuf),
+        Many(Vec<PathBuf>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(path) => vec![path],
+        OneOrMany::Many(paths) => paths,
+    })
 }
 
 fn set_by_comma<T, C>(input: &str) -> Result<C, <T as FromStr>::Err>

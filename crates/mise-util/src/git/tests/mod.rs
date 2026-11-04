@@ -178,6 +178,16 @@ fn update_resolves_short_branches_and_tags() {
         .update_tag("refs/tags/annotated-v1".to_string())
         .unwrap_or_else(|err| panic!("update_tag with full ref failed: {err:#}"));
     assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), release_sha);
+
+    // 64 hex digits look like a commit SHA, but here they can only name a ref.
+    let sha256_like = "0123456789abcdef".repeat(4);
+    git_in(&origin, &["branch", &sha256_like]);
+    let clone = tmp.path().join("clone-sha256-like");
+    git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+    let err = Git::new(&clone)
+        .update(Some(sha256_like))
+        .expect_err("a branch must not pass for a commit SHA");
+    assert!(format!("{err:#}").contains("is not a commit in"));
 }
 
 #[test]
@@ -240,6 +250,156 @@ fn works_when_the_remote_is_not_named_origin() {
         git_in(&clone, &["rev-parse", "--abbrev-ref", "HEAD"]),
         "other"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn git_errors_that_are_not_utf8_are_reported() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let git_in = |dir: &std::path::Path, args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("spawn git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git_in(&repo, &["-c", "init.defaultBranch=main", "init", "-q"]);
+
+    // git repeats the URL of a remote or submodule it cannot reach byte for
+    // byte in its error message, and nothing requires that URL to be UTF-8.
+    let mut url = tmp.path().to_str().unwrap().as_bytes().to_vec();
+    url.extend(b"/\xff\xfe\xfd.git\n");
+    let mut config = std::fs::read(repo.join(".git/config")).unwrap();
+    config.extend(b"[remote \"origin\"]\n\turl = ");
+    config.extend(&url);
+    std::fs::write(repo.join(".git/config"), config).unwrap();
+    let mut gitmodules = b"[submodule \"dep\"]\n\tpath = dep\n\turl = ".to_vec();
+    gitmodules.extend(&url);
+    std::fs::write(repo.join(".gitmodules"), gitmodules).unwrap();
+    let gitlink = format!("160000,{},dep", "1".repeat(40));
+    git_in(&repo, &["update-index", "--add", "--cacheinfo", &gitlink]);
+
+    let git = Git::new(&repo);
+    let err = git.update_tag("v1".to_string()).unwrap_err();
+    assert!(format!("{err:#}").contains("\u{fffd}.git"), "{err:#}");
+    let err = git.update_submodules().unwrap_err();
+    assert!(format!("{err:#}").contains("\u{fffd}.git"), "{err:#}");
+}
+
+#[test]
+fn ls_remote_args_end_options_before_the_remote() {
+    assert_eq!(
+        ls_remote_args(&["--tags", "--refs"], "--upload-pack=touch x", &["go*"]),
+        [
+            "ls-remote",
+            "--tags",
+            "--refs",
+            "--",
+            "--upload-pack=touch x",
+            "go*"
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn ls_remote_ignores_the_repository_it_is_run_in() {
+    struct RestoreCwd(std::path::PathBuf);
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.0).unwrap();
+        }
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let marker = tmp.path().join("marker");
+    // Files anyone can commit: to git, a directory that holds them is a bare repository.
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join("objects")).unwrap();
+    std::fs::create_dir_all(repo.join("refs")).unwrap();
+    std::fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(
+        repo.join("config"),
+        format!(
+            "[core]\n\tbare = true\n\tsshCommand = \"touch '{}'; false\"\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    // Stands in for ssh, so the test stays off the network.
+    let global = tmp.path().join("gitconfig");
+    std::fs::write(&global, "[core]\n\tsshCommand = false\n").unwrap();
+    let mut env = crate::testing::EnvVarGuard::new();
+    env.set("GIT_CONFIG_GLOBAL", &global);
+    env.set("GIT_CONFIG_NOSYSTEM", "1");
+    let remote = "ssh://git@example.invalid/x/y.git";
+
+    let _cwd = RestoreCwd(std::env::current_dir().unwrap());
+    std::env::set_current_dir(&repo).unwrap();
+    assert!(ls_remote(&[], remote, &["HEAD"]).await.is_err());
+    assert!(
+        !marker.exists(),
+        "ran the sshCommand of the current directory"
+    );
+
+    env.set("GIT_DIR", &repo);
+    assert!(ls_remote(&[], remote, &["HEAD"]).await.is_err());
+    assert!(!marker.exists(), "ran the sshCommand of $GIT_DIR");
+
+    // A remote that looks like an option stays a remote.
+    let upload_pack = format!("--upload-pack=touch '{}'", marker.display());
+    assert!(ls_remote(&[], &upload_pack, &["HEAD"]).await.is_err());
+    assert!(!marker.exists(), "read the remote as --upload-pack");
+}
+
+#[cfg(unix)]
+#[test]
+fn git_credential_fill_ignores_the_repository_it_is_run_in() {
+    let tmp = tempfile::tempdir().unwrap();
+    let marker = tmp.path().join("marker");
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join("objects")).unwrap();
+    std::fs::create_dir_all(repo.join("refs")).unwrap();
+    std::fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(
+        repo.join("config"),
+        format!(
+            "[core]\n\tbare = true\n[credential]\n\thelper = \"!touch '{}'; false\"\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    let global = tmp.path().join("gitconfig");
+    std::fs::write(&global, "").unwrap();
+    let mut env = crate::testing::EnvVarGuard::new();
+    env.set("GIT_CONFIG_GLOBAL", &global);
+    env.set("GIT_CONFIG_NOSYSTEM", "1");
+
+    struct RestoreCwd(std::path::PathBuf);
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.0).unwrap();
+        }
+    }
+    let _cwd = RestoreCwd(std::env::current_dir().unwrap());
+    std::env::set_current_dir(&repo).unwrap();
+    // Each call is cached per provider and host, so use names no other test asks for.
+    crate::tokens::get_git_credential_token("cwd-test", "cwd.example.invalid");
+    assert!(
+        !marker.exists(),
+        "ran the credential.helper of the current directory"
+    );
+
+    env.set("GIT_DIR", &repo);
+    crate::tokens::get_git_credential_token("git-dir-test", "git-dir.example.invalid");
+    assert!(!marker.exists(), "ran the credential.helper of $GIT_DIR");
 }
 
 mod worktree;

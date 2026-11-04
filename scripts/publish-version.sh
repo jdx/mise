@@ -50,7 +50,18 @@ for platform in windows-arm64 windows-x64; do
 done
 aws s3api head-object --bucket mise --key "$TAG/SHASUMS256.txt" >/dev/null
 
-for installer in install.sh install.sh.sig install.sh.minisig; do
+# Releases staged before the PowerShell installer existed never uploaded it, and
+# this script always runs from the default branch, so a recovery run for one of
+# them must still publish. When install.ps1 was staged, require its signatures.
+installers=(install.sh install.sh.sig install.sh.minisig)
+staged_ps1=$(aws s3api list-objects-v2 --bucket mise --prefix "$TAG/install.ps1" \
+	--query 'Contents[].Key' --output text | tr '\t' '\n')
+if grep -qxF "$TAG/install.ps1" <<<"$staged_ps1"; then
+	installers+=(install.ps1 install.ps1.sig install.ps1.minisig)
+else
+	echo "$TAG has no install.ps1; leaving the public PowerShell installer unchanged"
+fi
+for installer in "${installers[@]}"; do
 	aws s3api head-object --bucket mise --key "$TAG/$installer" >/dev/null
 done
 
@@ -71,7 +82,7 @@ aws s3 cp "$release_index" s3://mise/releases.tsv \
 
 # Promote the installer only after publishing the index it requires. The release
 # staging job uploads these files under the tag without changing the public URL.
-for installer in install.sh install.sh.sig install.sh.minisig; do
+for installer in "${installers[@]}"; do
 	aws s3 cp "s3://mise/$TAG/$installer" "s3://mise/$installer" \
 		--cache-control "max-age=86400,s-maxage=86400,public,immutable" \
 		--no-progress --content-type "text/plain"

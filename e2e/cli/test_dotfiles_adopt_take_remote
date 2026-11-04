@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Taking the repository's version of a file that already exists on a new
+# machine saves this machine's version first, so `mise dot undo` restores it:
+# after `mise dot pull --take-remote-all`, with `--adopt --take-remote-all`,
+# and when `--replace-history` discards this machine's own history.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/adopt-origin.git"
+git init -q --bare -b main "$origin"
+echo shared-bindings >~/.bindings
+echo shared-input >~/.input
+echo shared-manual >~/.manual
+echo shared-big >~/.big
+assert_succeed "mise dot track ~/.bindings ~/.input ~/.big --yes"
+assert_succeed "mise dot track ~/.manual --no-autosave --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+
+# a machine with its own home, configuration, and history store
+machine() {
+  local home="$1"
+  shift
+  (
+    cd "$home" || exit
+    env HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \
+      MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \
+      MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home" mise "$@"
+  )
+}
+new_machine() {
+  local home
+  home="$(dirname "$HOME")/$1"
+  mkdir -p "$home/.config/mise"
+  cat >"$home/.config/mise/config.toml" <<'TOML'
+[dotfiles]
+"~/.bindings" = { mode = "track" }
+"~/.input" = { mode = "track" }
+"~/.manual" = { mode = "track", autosave = false }
+"~/.big" = { mode = "track" }
+TOML
+  echo default-bindings >"$home/.bindings"
+  echo "$home"
+}
+export -f machine
+
+# The documented path: adoption pauses on the differing file, then a blanket
+# choice takes the repository's version.
+c="$(new_machine c)"
+assert_fail "machine $c bootstrap --adopt file://$origin --yes --only dotfiles"
+assert "cat $c/.bindings" "default-bindings"
+assert_succeed "machine $c dot pull --take-remote-all --yes"
+assert "cat $c/.bindings" "shared-bindings"
+assert "cat $c/.input" "shared-input"
+assert_succeed "machine $c dot undo --yes"
+assert "cat $c/.bindings" "default-bindings"
+assert_fail "test -e $c/.input"
+
+# --take-remote-all makes the same choice during adoption
+d="$(new_machine d)"
+assert_succeed "machine $d bootstrap --adopt file://$origin --take-remote-all --yes --only dotfiles"
+assert "cat $d/.bindings" "shared-bindings"
+assert "cat $d/.input" "shared-input"
+assert "cat $d/.manual" "shared-manual"
+assert_succeed "machine $d dot undo --yes"
+assert "cat $d/.bindings" "default-bindings"
+assert_fail "test -e $d/.input"
+# a manual-save file the adoption created goes too
+assert_fail "test -e $d/.manual"
+
+# a file history cannot save is never replaced
+g="$(new_machine g)"
+head -c 17000000 /dev/zero >"$g/.big"
+assert_fail "machine $g bootstrap --adopt file://$origin --take-remote-all --yes --only dotfiles 2>&1" "could not save this machine's version of"
+assert "stat -c %s $g/.big" "17000000"
+# nothing changed, so moving it aside and retrying sets the machine up
+assert_fail "git --git-dir=$g/.local/state/mise/history/repo.git rev-parse --verify -q main"
+mv "$g/.big" "$g/big.aside"
+assert_succeed "machine $g bootstrap --adopt file://$origin --take-remote-all --yes --only dotfiles"
+assert "cat $g/.big" "shared-big"
+assert "cat $g/.bindings" "shared-bindings"
+
+# A machine with history of its own: replacing it needs a decision for the
+# differing file, and keeps that history until one is made.
+b="$(new_machine b)"
+echo "b-only-edit" >>"$b/.bindings"
+assert_succeed "machine $b dot save"
+own=$(git --git-dir="$b/.local/state/mise/history/repo.git" rev-parse main)
+assert_fail "machine $b bootstrap --adopt file://$origin --replace-history --yes --only dotfiles 2>&1" "--take-remote-all"
+assert "git --git-dir=$b/.local/state/mise/history/repo.git rev-parse main" "$own"
+assert_fail "test -e $b/.local/state/mise/history/repo.git/shallow"
+assert_succeed "machine $b bootstrap --adopt file://$origin --replace-history --take-remote-all --yes --only dotfiles"
+assert "cat $b/.bindings" "shared-bindings"
+assert_succeed "git --git-dir=$b/.local/state/mise/history/repo.git merge-base --is-ancestor $(git --git-dir="$origin" rev-parse main) main"
+assert_fail "test -e $b/.local/state/mise/history/repo.git/shallow"
+assert_succeed "machine $b dot undo --yes"
+assert "cat $b/.bindings" $'default-bindings\nb-only-edit'
+
+# publishing an adopted machine's history leaves the first machine's files alone
+e="$(new_machine e)"
+assert_succeed "machine $e bootstrap --adopt file://$origin --take-remote-all --yes --only dotfiles"
+assert_succeed "machine $e dot sync"
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+assert "cat ~/.bindings" "shared-bindings"
+assert "cat ~/.input" "shared-input"

@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+# Completing a task's arguments must not run commands from a usage spec nobody
+# trusted. A config holding only [tasks] and a template-free task file both load
+# without trust, because tasks are inert until "mise run".
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+ran="$PWD/ran"
+mkdir -p "$ran" mise-tasks/nested
+
+cat <<EOF >mise.toml
+[tasks.named]
+run = "true"
+usage = '''
+arg "<target>"
+complete "target" run="touch $ran/named; echo from-run"
+'''
+
+[tasks.inline]
+run = "true"
+usage = '''
+arg "<target>" {
+  complete run="touch $ran/inline"
+}
+'''
+
+[tasks.flag]
+run = "true"
+usage = '''
+flag "--target <target>" {
+  complete run="touch $ran/flag"
+}
+'''
+
+[tasks.choices]
+run = "true"
+usage = '''
+arg "<target>" {
+  choices "declared" run="touch $ran/choices"
+}
+arg "[other]"
+'''
+
+[tasks.choices-run]
+run = "true"
+usage = '''
+arg "<target>" {
+  choices run="touch $ran/choices-run"
+}
+'''
+
+[tasks.mount]
+run = "true"
+usage = '''
+mount run="touch $ran/mount"
+'''
+
+[tasks.subcommand]
+run = "true"
+usage = '''
+cmd "sub" {
+  arg "<target>"
+  complete "target" run="touch $ran/subcommand"
+}
+'''
+
+# not a way to pass for one of the user's own global tasks
+[tasks.global]
+run = "true"
+global = true
+usage = '''
+arg "<target>"
+complete "target" run="touch $ran/global"
+'''
+EOF
+
+for script in mise-tasks/script mise-tasks/nested/script; do
+  cat <<EOF >"$script"
+#!/usr/bin/env bash
+#USAGE arg "<target>"
+#USAGE complete "target" run="touch $ran/${script//\//-}"
+EOF
+  chmod +x "$script"
+done
+
+press_tab() {
+  mise __complete_word__ --shell fish --line "$1"
+}
+
+# The spec that completion mounts names none of the commands, in safe mode either.
+assert_not_contains "mise tasks --usage" "touch"
+assert_not_contains "MISE_SAFE=1 mise tasks --usage" "touch"
+for line in 'mise run named ' 'mise named ' 'mise run choices undeclared ' 'mise run mount ' 'mise run script '; do
+  assert_not_contains_text "$(press_tab "$line")" 'from-run'
+done
+assert_empty "ls $ran"
+
+# What needs no command still completes.
+assert_contains_text "$(press_tab 'mise run choices ')" 'declared'
+assert_contains_text "$(press_tab 'mise run flag --')" '--target'
+
+# Trusting the project brings its commands back, except in safe mode.
+mise trust
+assert_not_contains "MISE_SAFE=1 mise tasks --usage" "touch"
+trusted="$(mise tasks --usage)"
+for name in named inline flag choices choices-run mount subcommand global mise-tasks-script mise-tasks-nested-script; do
+  assert_contains_text "$trusted" "touch $ran/$name"
+done
+assert_contains_text "$(press_tab 'mise run named ')" 'from-run'
+mise trust --untrust
+
+# Global tasks are the user's own.
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/global-script"
+#!/usr/bin/env bash
+#USAGE arg "<target>"
+#USAGE complete "target" run="echo from-global"
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/global-script"
+assert_not_contains "mise tasks --usage" "touch"
+assert_contains_text "$(MISE_SAFE=1 press_tab 'mise run global-script ')" 'from-global'

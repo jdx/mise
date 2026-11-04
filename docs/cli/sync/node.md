@@ -11,9 +11,9 @@ description: "Symlink node versions installed by nvm, nodenv, or Homebrew into m
 
 Symlink node versions installed by nvm, nodenv, or Homebrew into mise
 
-Use this to make versions installed by another version manager available to mise.
-
-This won't overwrite managed installs, runtime aliases, or links from other providers.
+Use this to make versions installed by another version manager available to
+mise. It does not overwrite managed installs, runtime aliases, or links from
+other providers. Pass one or more of --brew, --nodenv, and --nvm.
 
 ## Flags
 - **`--brew`** — Get tool versions from Homebrew
@@ -23,16 +23,18 @@ This won't overwrite managed installs, runtime aliases, or links from other prov
 
 ## Examples
 
+Use the node that Homebrew installed
+
 ```
-brew install node@20
+brew install node@24
 mise sync node --brew
-mise use -g node@20 # uses Homebrew-provided node
+mise use -g node@24
 ```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Node.js](/lang/node.html).
+- [Node.js](/lang/node.html#migrating-from-nvm-nodenv-or-homebrew).
 - [`mise sync <SUBCOMMAND>`](/cli/sync.html).
 - [Global flags and argument syntax](/cli/#global-flags).

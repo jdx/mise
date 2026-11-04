@@ -74,7 +74,35 @@ local function version_gt(a, b)
   return false
 end
 
-local function add_version(seen, versions, version)
+--- Map of release tag -> published_at (RFC 3339) from GitHub releases.
+--- Tags without a published release are simply absent (no date reported).
+local function release_dates()
+  local dates = {}
+  for page = 1, 5 do
+    local resp, err = http.try_get({
+      url = "https://api.github.com/repos/vlang/v/releases?per_page=100&page=" .. page,
+    })
+    if err ~= nil or resp.status_code ~= 200 then
+      break
+    end
+    local ok, releases = pcall(json.decode, resp.body)
+    if not ok or type(releases) ~= "table" or #releases == 0 then
+      break
+    end
+    for _, rel in ipairs(releases) do
+      if rel.tag_name and rel.published_at and not rel.draft then
+        dates[rel.tag_name] = rel.published_at
+      end
+    end
+    if #releases < 100 then
+      break
+    end
+  end
+  return dates
+end
+
+local function add_version(seen, versions, version, dates)
+  local tag = version
   version = version:gsub("^v", "")
   if seen[version] then
     return
@@ -84,19 +112,20 @@ local function add_version(seen, versions, version)
   end
   if version:match("^%d+%.%d+%.%d+$") or version:match("^weekly%.%d+%.%d+%.?%d*$") then
     seen[version] = true
-    table.insert(versions, { version = version })
+    table.insert(versions, { version = version, created_at = dates[tag] })
   end
 end
 
 function util.get_versions()
   local versions = {}
   local seen = {}
+  local dates = release_dates()
 
   local latest_resp, latest_err = http.get({
     url = "https://api.github.com/repos/vlang/v/releases/latest",
   })
   if latest_err == nil and latest_resp.status_code == 200 then
-    add_version(seen, versions, json.decode(latest_resp.body).tag_name)
+    add_version(seen, versions, json.decode(latest_resp.body).tag_name, dates)
   end
 
   for page = 1, 5 do
@@ -115,7 +144,7 @@ function util.get_versions()
       break
     end
     for _, tag in ipairs(tags) do
-      add_version(seen, versions, tag.name)
+      add_version(seen, versions, tag.name, dates)
     end
   end
 

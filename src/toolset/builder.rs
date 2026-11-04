@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::daemons::glue::DaemonSetExt;
 use eyre::Result;
 use itertools::Itertools;
 
@@ -79,6 +80,15 @@ impl ToolsetBuilder {
     /// that are not installed. Installing one resolves it with the install options.
     pub fn with_deferred_lazy_resolution(mut self) -> Self {
         self.resolve_options.defer_missing_lazy_tools = true;
+        self
+    }
+
+    /// For `auto_update`: the tool being updated resolves in full, while lazy tools
+    /// that are not installed stay unresolved, online or not, so one update does not
+    /// wait on remote version lookups for every other missing lazy tool.
+    pub fn with_deferred_lazy_resolution_online(mut self) -> Self {
+        self.resolve_options.defer_missing_lazy_tools = true;
+        self.resolve_options.defer_missing_lazy_online = true;
         self
     }
 
@@ -162,7 +172,7 @@ impl ToolsetBuilder {
         let daemons = if self.config_files.is_none() && matches!(self.scope, ConfigScope::All) {
             config.daemons()?
         } else {
-            scoped_daemons = crate::daemons::load(&scoped_files)?;
+            scoped_daemons = crate::daemons::glue::load(&scoped_files)?;
             &scoped_daemons
         };
         if !daemons.daemons.values().any(|daemon| daemon.tool.is_some()) {

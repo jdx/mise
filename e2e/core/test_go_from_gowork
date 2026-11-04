@@ -69,11 +69,20 @@ assert "GOWORK=./other/go.work mise current go" "1.24.3"
 # workspace first and only fails when it reads it -- so the member go.mod stays unread
 assert "GOWORK=$PWD/nope/go.work mise --cd api current go" ""
 
-# go.work's own `go` line is a floor, not the version the workspace is built with, so it
-# is not read -- including the full patch version `go work init` writes. The member go.mod
-# is still not consulted, so there is nothing left to resolve.
+# without a toolchain line, an exact `go` line implies `toolchain go1.24.0`, the shape
+# `go work init` writes. Go reads it that way, so mise does too, and it does not warn.
 cat >go.work <<GOWORK
 go 1.24.0
+
+use ./api
+GOWORK
+assert "mise --cd api current go" "1.24.0"
+assert_not_contains "mise --cd api current go 2>&1" "deprecated"
+
+# a `go X.Y` line names no Go release, so it is not read. The member go.mod is still not
+# consulted, so there is nothing left to resolve.
+cat >go.work <<GOWORK
+go 1.24
 
 use ./api
 GOWORK

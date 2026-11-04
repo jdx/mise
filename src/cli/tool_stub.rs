@@ -388,34 +388,24 @@ async fn execute_with_tool_request(
     }
 }
 
-/// Execute a tool stub
+/// Run a tool stub file
 ///
-/// Tool stubs are executable files containing TOML configuration that specify
-/// which tool to run and how to run it. They provide a convenient way to create
-/// portable, self-contained executables that automatically manage tool installation
-/// and execution.
-///
-/// A tool stub consists of:
-///
-/// - A shebang line: #!/usr/bin/env -S mise tool-stub
-/// - TOML configuration specifying the tool, version, and options
-/// - Optional comments describing the tool's purpose
-///
-/// Example stub file:
+/// A tool stub is an executable file whose shebang is
+/// `#!/usr/bin/env -S mise tool-stub` and whose body is TOML naming a tool,
+/// version, and executable. Running the stub runs this command, which installs
+/// the tool if needed and runs it with the stub's arguments. You rarely call it
+/// directly; create stubs with `mise generate tool-stub`.
 ///
 /// ```toml
 /// #!/usr/bin/env -S mise tool-stub
-/// # Node.js v20 development environment
+/// # Node.js 24
 ///
 /// tool = "node"
-/// version = "20.0.0"
+/// version = "24"
 /// bin = "node"
 /// ```
 ///
-/// The stub will automatically install the specified tool version if missing
-/// and execute it with any arguments passed to the stub.
-///
-/// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
+/// See https://mise.jdx.dev/dev-tools/tool-stubs.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     disable_help_flag = true,
@@ -425,17 +415,17 @@ async fn execute_with_tool_request(
 pub(crate) struct ToolStub {
     /// Path to the TOML tool stub file to execute
     ///
-    /// The stub file must contain TOML configuration specifying the tool
-    /// and version to run. At minimum, it should specify a 'version' field.
-    /// Other common fields include 'tool', 'bin', and backend-specific options.
+    /// Every field is optional: `version` defaults to `latest`, `tool` defaults
+    /// to the stub's file name (or `http:<file name>` when the stub sets `url` or
+    /// platform URLs), and `bin` defaults to the stub's file name. A stub can
+    /// also set backend-specific options.
     #[usage(value_name = "FILE", double_dash = "automatic")]
     pub file: PathBuf,
 
     /// Arguments to pass to the tool
     ///
-    /// All arguments after the stub file path will be forwarded to the
-    /// underlying tool. Use '--' to separate mise arguments from tool arguments
-    /// if needed.
+    /// Every argument after the stub path is passed to the tool unchanged,
+    /// including a literal `--`.
     #[usage(trailing_var_arg = true, allow_hyphen_values = true)]
     pub args: Vec<String>,
 }

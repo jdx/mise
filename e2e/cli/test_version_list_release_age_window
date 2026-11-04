@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+# A command that only needs a matching version keeps a cached version list for
+# the tool's release-age window (24h by default), not just
+# fetch_remote_versions_cache (1h): a release newer than the list could not be
+# picked before it reached that age anyway. Commands that report what is
+# newest still refetch after 1h.
+#
+# A local stand-in serves the versions host and logs each request.
+
+mkdir -p srv/data
+cat >srv/data/node.toml <<'TOML'
+[versions]
+"20.10.0" = { created_at = 2025-03-01T00:00:00.000Z }
+"20.11.1" = { created_at = 2025-04-01T00:00:00.000Z }
+"22.1.0" = { created_at = 2025-06-01T00:00:00.000Z }
+TOML
+
+start_http_server --handler - <<'PY'
+import http.server
+from pathlib import Path
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        with open("requests.log", "a") as log:
+            log.write(f"{path}\n")
+        file = Path("srv") / path.removeprefix("/versions/").lstrip("/")
+        if not path.startswith("/versions/data/") or not file.is_file():
+            self.send_response(404)
+            self.end_headers()
+            return
+        body = file.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        pass
+PY
+
+cat >mise.toml <<EOF
+[settings]
+url_replacements = { "https://mise-versions.jdx.dev" = "http://127.0.0.1:$HTTP_PORT/versions" }
+
+[tools]
+node = "20"
+EOF
+
+backdate_version_lists() {
+  find "$MISE_CACHE_DIR/node" -name 'remote_versions*' -exec touch -d "$1" {} +
+}
+
+: >requests.log
+assert_contains "mise install --dry-run 2>&1" "node@20.11.1"
+assert "cat requests.log" "/versions/data/node.toml"
+
+# Two hours later, install still uses the list.
+backdate_version_lists "2 hours ago"
+: >requests.log
+assert_contains "mise install --dry-run 2>&1" "node@20.11.1"
+assert_empty "cat requests.log"
+
+# Unless fetch_remote_versions_cache is set, which then applies as set.
+: >requests.log
+assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=1h mise install --dry-run 2>&1" "node@20.11.1"
+assert "cat requests.log" "/versions/data/node.toml"
+
+# A shorter minimum_release_age is a shorter window.
+backdate_version_lists "2 hours ago"
+: >requests.log
+assert_contains "MISE_MINIMUM_RELEASE_AGE=90m mise install --dry-run 2>&1" "node@20.11.1"
+assert "cat requests.log" "/versions/data/node.toml"
+
+# Past 24 hours, install fetches the list again.
+backdate_version_lists "25 hours ago"
+: >requests.log
+assert_contains "mise install --dry-run 2>&1" "node@20.11.1"
+assert "cat requests.log" "/versions/data/node.toml"
+
+# outdated reports what is newest, so it refetches a list older than 1h.
+backdate_version_lists "2 hours ago"
+: >requests.log
+assert_contains "mise outdated" "20.11.1"
+assert "cat requests.log" "/versions/data/node.toml"

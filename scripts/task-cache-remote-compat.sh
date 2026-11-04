@@ -24,12 +24,12 @@ response=$temp_dir/response
 nonce=$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')
 
 request_headers=(
-	-H 'mise-cache-protocol: 1'
-	-H "mise-cache-namespace: $namespace"
+	-H 'mbx-cache-protocol: 1'
+	-H "mbx-cache-namespace: $namespace"
 )
 isolation_headers=(
-	-H 'mise-cache-protocol: 1'
-	-H "mise-cache-namespace: ${namespace}-isolated"
+	-H 'mbx-cache-protocol: 1'
+	-H "mbx-cache-namespace: ${namespace}-isolated"
 )
 if [[ -n $token ]]; then
 	request_headers+=(-H "Authorization: Bearer $token")

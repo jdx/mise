@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# cargo reads `.cargo/config.toml` and rustup reads `rust-toolchain.toml` from
+# the working directory, and `gem install` installs `*.gem` files found there.
+# A shim can start these installs inside an untrusted project, so they must run
+# outside it.
+mkdir -p "$HOME/bin"
+cat >"$HOME/bin/cargo" <<'EOS'
+#!/usr/bin/env bash
+echo "$PWD" >>"$HOME/cargo-pwd"
+while (($#)); do
+  if [[ $1 == "--root" ]]; then
+    mkdir -p "$2/bin"
+    printf '#!/bin/sh\necho hi\n' >"$2/bin/cwd-test"
+    chmod +x "$2/bin/cwd-test"
+    exit 0
+  fi
+  shift
+done
+EOS
+cat >"$HOME/bin/gem" <<'EOS'
+#!/usr/bin/env bash
+echo "$PWD" >>"$HOME/gem-pwd"
+while (($#)); do
+  if [[ $1 == "--install-dir" ]]; then
+    mkdir -p "$2/bin"
+    printf '#!/bin/sh\necho hi\n' >"$2/bin/cwd-test-gem"
+    chmod +x "$2/bin/cwd-test-gem"
+    exit 0
+  fi
+  shift
+done
+EOS
+chmod u+x "$HOME/bin/cargo" "$HOME/bin/gem"
+export PATH="$HOME/bin:$PATH"
+export MISE_CARGO_BINSTALL=0
+
+mise install cargo:cwd-test@1.0.0
+assert_not_contains "cat '$HOME/cargo-pwd'" "$PWD"
+assert "cat '$HOME/cargo-pwd'" "$(mise where cargo:cwd-test@1.0.0)"
+
+mise install gem:cwd-test-gem@1.0.0
+assert_not_contains "cat '$HOME/gem-pwd'" "$PWD"
+assert "cat '$HOME/gem-pwd'" "$(mise where gem:cwd-test-gem@1.0.0)"

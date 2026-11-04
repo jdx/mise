@@ -3,18 +3,21 @@ use itertools::Itertools;
 use reqwest::Url;
 use reqwest::header::HeaderMap;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, mpsc};
 use tempfile::TempDir;
 use xx::file;
 
 use crate::error::Result;
+use crate::hook_dependencies::HookDependencyRecorder;
 use crate::hooks::available::AvailableVersion;
 use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
 use crate::hooks::backend_list_tools::BackendListToolsContext;
-use crate::hooks::backend_list_versions::BackendListVersionsContext;
+use crate::hooks::backend_list_versions::{
+    BackendListVersionsContext, BackendListVersionsResponse, BackendVersion,
+};
 use crate::hooks::backend_search_tools::BackendSearchToolsContext;
 use crate::hooks::backend_tools::BackendTool;
 use crate::hooks::backend_uninstall::BackendUninstallContext;
@@ -32,7 +35,9 @@ use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
 use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
 use crate::hooks::pre_uninstall::PreUninstallContext;
-use crate::http::{CLIENT, HttpHeadersResolver, retry_async};
+use crate::http::{
+    DownloadProgress, HttpHeadersResolver, client, download_to_file, no_redirect_client,
+};
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
 use crate::registry;
@@ -65,6 +70,12 @@ pub struct Vfox {
     /// instead of inheriting the process environment. This allows dependency tools'
     /// bin paths to be on PATH during version resolution and installation.
     pub cmd_env: Option<IndexMap<String, String>>,
+    /// When set, hooks run with `cmd_env` record here what their result
+    /// depends on: the variables Lua `os.getenv` reads, and what they declare
+    /// through `mise.cache` or the `cacheable` and `watch_files` fields of
+    /// their result. A caller that caches the result uses it to tell when the
+    /// result no longer applies.
+    pub hook_dependencies: Option<HookDependencyRecorder>,
     /// Shell command used by Lua `cmd.exec()`.
     pub default_inline_shell: Option<Vec<String>>,
     /// Whether the user asked for child stdio to be connected (mise's `raw`
@@ -87,6 +98,7 @@ pub struct Vfox {
     pub runtime_env_type: Option<String>,
     url_rewriter: Option<UrlRewriter>,
     http_headers_resolver: Option<HttpHeadersResolver>,
+    download_progress: Option<Arc<DownloadProgress>>,
     log_tx: Option<mpsc::Sender<String>>,
     log_handler: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
@@ -121,6 +133,7 @@ impl std::fmt::Debug for Vfox {
             .field("download_dir", &self.download_dir)
             .field("skip_verification", &self.skip_verification)
             .field("cmd_env", &self.cmd_env)
+            .field("hook_dependencies", &self.hook_dependencies)
             .field("github_token", &self.github_token.as_deref().map(|_| "***"))
             .field(
                 "github_token_resolver",
@@ -134,6 +147,10 @@ impl std::fmt::Debug for Vfox {
             .field(
                 "http_headers_resolver",
                 &self.http_headers_resolver.as_ref().map(|_| "<closure>"),
+            )
+            .field(
+                "download_progress",
+                &self.download_progress.as_ref().map(|_| "<closure>"),
             )
             .field(
                 "log_handler",
@@ -173,6 +190,15 @@ impl Vfox {
         F: Fn(&Url) -> HeaderMap + Send + Sync + 'static,
     {
         self.http_headers_resolver = Some(Arc::new(resolver));
+    }
+
+    /// Report the progress of the download an install does for a `PreInstall`
+    /// `url`: bytes written so far and the total, when the server sent one.
+    pub fn set_download_progress<F>(&mut self, handler: F)
+    where
+        F: Fn(u64, Option<u64>) + Send + Sync + 'static,
+    {
+        self.download_progress = Some(Arc::new(handler));
     }
 
     fn rewrite_url(&self, url: &mut Url) {
@@ -237,9 +263,23 @@ impl Vfox {
             .collect()
     }
 
+    /// Applies the settings every plugin gets: libc type and its own cache directory
+    fn configure_plugin(&self, plugin: &mut Plugin) {
+        plugin.runtime_env_type = self.runtime_env_type.clone();
+        // A path-like name such as `..` must not point the cache outside plugins/, and an
+        // unset cache root must not turn into a path relative to the working directory
+        let mut parts = Path::new(&plugin.name).components();
+        plugin.cache_dir_path = match (parts.next(), parts.next()) {
+            (Some(Component::Normal(name)), None) if !self.cache_dir.as_os_str().is_empty() => {
+                Some(self.cache_dir.join("plugins").join(name))
+            }
+            _ => None,
+        };
+    }
+
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
         let mut plugin = Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))?;
-        plugin.runtime_env_type = self.runtime_env_type.clone();
+        self.configure_plugin(&mut plugin);
         self.set_cmd_shell(&plugin)?;
         plugin.set_raw_stdio(self.raw_stdio)?;
         if let Some(runner) = &self.terminal_lock {
@@ -258,6 +298,9 @@ impl Vfox {
         let plugin = self.get_sdk(name)?;
         if let Some(env) = &self.cmd_env {
             plugin.set_cmd_env(env)?;
+        }
+        if let Some(recorder) = &self.hook_dependencies {
+            plugin.set_hook_dependencies(recorder.clone());
         }
         self.set_github_token(&plugin)?;
         Ok(plugin)
@@ -288,14 +331,14 @@ impl Vfox {
         let plugin_dir = self.plugin_dir.join(sdk);
         if plugin_dir.exists() {
             let mut plugin = Plugin::from_dir(&plugin_dir)?;
-            plugin.runtime_env_type = self.runtime_env_type.clone();
+            self.configure_plugin(&mut plugin);
             return Ok(plugin);
         }
 
         // Fall back to embedded plugin if available
         if let Some(embedded) = crate::embedded_plugins::get_embedded_plugin(sdk) {
             let mut plugin = Plugin::from_embedded(sdk, embedded)?;
-            plugin.runtime_env_type = self.runtime_env_type.clone();
+            self.configure_plugin(&mut plugin);
             return Ok(plugin);
         }
 
@@ -321,7 +364,7 @@ impl Vfox {
             xx::git::clone(url.as_ref(), &plugin_dir, &Default::default())?;
         }
         let mut plugin = Plugin::from_dir(&plugin_dir)?;
-        plugin.runtime_env_type = self.runtime_env_type.clone();
+        self.configure_plugin(&mut plugin);
         Ok(plugin)
     }
 
@@ -337,6 +380,8 @@ impl Vfox {
 mod backend;
 mod hooks;
 mod install;
+
+pub(crate) use install::ensure_symlinks_stay_within;
 
 /// Convert a `PreInstallAttestation` to the highest-priority `VerifiedAttestation` variant
 /// declared by the plugin. Priority: GitHub > SLSA > Cosign.
@@ -381,6 +426,7 @@ impl Default for Vfox {
             install_dir: home().join(".version-fox/installs"),
             skip_verification: false,
             cmd_env: None,
+            hook_dependencies: None,
             default_inline_shell: None,
             raw_stdio: false,
             terminal_lock: None,
@@ -389,6 +435,7 @@ impl Default for Vfox {
             runtime_env_type: None,
             url_rewriter: None,
             http_headers_resolver: None,
+            download_progress: None,
             log_tx: None,
             log_handler: None,
         }

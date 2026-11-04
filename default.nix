@@ -2,7 +2,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2026.10.4";
+  version = "2026.11.0";
 
   src = lib.cleanSource ./.;
 
@@ -19,7 +19,7 @@ rustPlatform.buildRustPackage {
   ];
   nativeCheckInputs = with pkgs; [
     git
-  ];
+  ] ++ lib.optionals stdenv.hostPlatform.isDarwin [ darwin.ps ];
   buildInputs = with pkgs; [
     bash
     coreutils

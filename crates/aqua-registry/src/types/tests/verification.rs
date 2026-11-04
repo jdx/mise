@@ -130,7 +130,7 @@ packages:
     checksum.merge(override_checksum);
     assert_eq!(
         checksum.replacements,
-        Some(HashMap::from([
+        Some(BTreeMap::from([
             ("darwin".to_string(), "mac".to_string()),
             ("arm64".to_string(), "aarch64".to_string()),
         ]))

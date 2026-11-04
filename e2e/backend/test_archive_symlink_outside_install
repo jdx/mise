@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# A release archive can ship symlinks. After unpacking, mise renames, chmods and
+# links paths under the install directory by name, which follows those links,
+# so an archive whose link leads out of the install directory must be refused
+# before any of that happens. Links that stay inside keep working.
+#
+# Served from a local stand-in for the GitHub API so the test needs no network.
+
+userbin="$TMPDIR/userbin"
+secret="$TMPDIR/secret"
+mkdir -p "$userbin"
+printf '#!/bin/sh\necho backup\n' >"$userbin/backup"
+chmod 0755 "$userbin/backup"
+echo "password" >"$secret"
+chmod 0600 "$secret"
+
+start_http_server --handler - "$userbin" "$secret" <<'PY'
+import http.server
+import io
+import json
+import sys
+import tarfile
+
+USERBIN, SECRET = sys.argv[1], sys.argv[2]
+
+
+def tarball(entries):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, kind, value in entries:
+            info = tarfile.TarInfo(name)
+            if kind == "link":
+                info.type = tarfile.SYMTYPE
+                info.linkname = value
+                tar.addfile(info)
+            elif kind == "dir":
+                info.type = tarfile.DIRTYPE
+                info.mode = 0o755
+                tar.addfile(info)
+            else:
+                data = value.encode()
+                info.size = len(data)
+                info.mode = 0o755
+                tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+ARCHIVES = {
+    # `bin` leads to a directory of the user's; rename_exe would rename in it.
+    "renamed": tarball([("bin", "link", USERBIN), ("README.md", "file", "readme\n")]),
+    # The only binary is a link to a file of the user's; it would be chmodded.
+    "chmod": tarball([("tool-linux-x64", "link", SECRET)]),
+    # A link that stays inside the archive is fine.
+    "inside": tarball(
+        [
+            ("libexec", "dir", ""),
+            ("libexec/tool", "file", "#!/bin/sh\necho inside\n"),
+            ("bin", "link", "libexec"),
+            ("README.md", "file", "readme\n"),
+        ]
+    ),
+}
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def reply(self, status, content_type, body):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def release(self, repo):
+        port = self.server.server_address[1]
+        return {
+            "tag_name": "v1.0.0",
+            "draft": False,
+            "prerelease": False,
+            "created_at": "2026-01-01T00:00:00Z",
+            "published_at": "2026-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "tool.tar.gz",
+                    "browser_download_url": f"http://127.0.0.1:{port}/download/{repo}.tar.gz",
+                    "url": f"http://127.0.0.1:{port}/api/assets/{repo}",
+                }
+            ],
+        }
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        parts = path.strip("/").split("/")
+        if path.startswith("/api/assets/"):
+            self.reply(200, "application/octet-stream", ARCHIVES[parts[-1]])
+        elif path.startswith("/download/"):
+            self.reply(200, "application/octet-stream", ARCHIVES[parts[-1].removesuffix(".tar.gz")])
+        elif len(parts) >= 4 and parts[0] == "repos" and parts[3] == "releases":
+            release = self.release(parts[2])
+            body = [release] if len(parts) == 4 else release
+            self.reply(200, "application/json", json.dumps(body).encode())
+        else:
+            self.reply(404, "text/plain", b"not found")
+PY
+
+export MISE_USE_VERSIONS_HOST=0
+API="http://127.0.0.1:$HTTP_PORT"
+
+# rename_exe through a shipped `bin` link would rename the user's own program.
+cat >mise.toml <<EOF
+[tools]
+"github:acme/renamed" = { version = "1.0.0", api_url = "$API", asset_pattern = "tool.tar.gz", rename_exe = "tool" }
+EOF
+assert_fail "mise install" "points outside of"
+assert "ls $userbin" "backup"
+
+# With no option, the single binary is chmodded; it must not reach the user's file.
+cat >mise.toml <<EOF
+[tools]
+"github:acme/chmod" = { version = "1.0.0", api_url = "$API", asset_pattern = "tool.tar.gz" }
+EOF
+assert_fail "mise install" "points outside of"
+assert "stat -c %a $secret" "600"
+
+# The http backend applies rename_exe after its own extraction.
+cat >mise.toml <<EOF
+[tools]
+"http:renamed" = { version = "1.0.0", url = "$API/download/renamed.tar.gz", rename_exe = "tool" }
+EOF
+assert_fail "mise install" "points outside of"
+assert "ls $userbin" "backup"
+
+# A link inside the install directory still installs.
+cat >mise.toml <<EOF
+[tools]
+"github:acme/inside" = { version = "1.0.0", api_url = "$API", asset_pattern = "tool.tar.gz" }
+EOF
+assert_succeed "mise install"
+assert "mise x -- tool" "inside"

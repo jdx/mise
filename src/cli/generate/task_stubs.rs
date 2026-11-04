@@ -5,25 +5,32 @@ use crate::file::display_path;
 use crate::shims::find_mise_shim_bin;
 use crate::task::Task;
 use eyre::{WrapErr, bail};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-/// Generate shims to run mise tasks
+/// Generate scripts that run mise tasks
 ///
-/// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
-/// so contributors to a project can execute mise tasks without installing mise into their system.
-/// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+/// Writes one executable stub per task into a directory, such as `bin/test` for
+/// the `test` task, that runs the task with mise. Pair them with
+/// `mise generate install-script` so contributors can run tasks without installing
+/// mise. When a task has subtasks, the parent's stub is written to
+/// `<parent>/_default`.
+///
+/// Hidden tasks and global tasks are skipped: the stubs are committed to the
+/// project, and global tasks come from each user's own config.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise tasks add test -- echo 'running tests'
-mise generate task-stubs
-./bin/test
-running tests"###
+        "mise generate task-stubs",
+        help = "Write a stub for each task into ./bin"
+    ),
+    example(
+        "mise generate task-stubs --mise-bin ./bin/mise",
+        help = "Make the stubs run the mise that `mise generate install-script` wrote"
     )
 )]
 pub(super) struct TaskStubs {
@@ -31,14 +38,20 @@ pub(super) struct TaskStubs {
     #[usage(long, short, verbatim_doc_comment, default="bin", value_hint=ValueHint::DirPath)]
     dir: PathBuf,
 
-    /// Path to a mise bin to use when running the task stub.
+    /// mise executable the stubs run; defaults to mise from PATH
     ///
-    /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
-    ///
-    /// On Windows a path is run as written, so that script needs its own launcher beside it:
-    /// generate it with `mise generate install-script --write ./bin/mise --windows`. The default
-    /// `mise` is a bare name and resolves off PATH, which needs nothing extra.
-    #[usage(long, short, verbatim_doc_comment, default = "mise")]
+    /// Use `--mise-bin ./bin/mise` with a script from `mise generate install-script`.
+    /// On Windows a path runs as written, so that script needs its `.cmd` launcher
+    /// beside it; generate it with
+    /// `mise generate install-script --write ./bin/mise --windows`. The default,
+    /// `mise`, is a bare name that resolves from PATH and needs nothing extra.
+    #[usage(
+        long,
+        short,
+        value_name = "PATH",
+        verbatim_doc_comment,
+        default = "mise"
+    )]
     mise_bin: PathBuf,
 
     /// What to write beside each stub for Windows to launch
@@ -51,7 +64,13 @@ pub(super) struct TaskStubs {
     /// every shell. It is a copy of the mise-shim.exe that ships with the Windows build, so it
     /// can only be generated on Windows, and it adds ~220KB per task to a directory that is
     /// normally committed.
-    #[usage(long, verbatim_doc_comment, value_enum, default = "cmd")]
+    #[usage(
+        long,
+        value_name = "KIND",
+        verbatim_doc_comment,
+        value_enum,
+        default = "cmd"
+    )]
     windows_launcher: WindowsLauncher,
 }
 
@@ -68,15 +87,29 @@ impl TaskStubs {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let launchers = Launchers::resolve(self.windows_launcher)?;
-        let tasks = config.tasks().await?;
+        let all_tasks = config.tasks().await?;
+        // Stubs are committed to the project, so they cover the project's own tasks only. A hidden
+        // task is not meant to be invoked directly, and a global task comes from the user's own
+        // config, which nobody else who checks the project out has.
+        let tasks = all_tasks
+            .values()
+            .filter(|task| !task.hide && !task.global)
+            .collect::<Vec<_>>();
         // Two paths per task, and they differ only for a task that came from a file: `name` keeps
         // the file's extension, `display_name` does not. The stub is named after the task, and the
         // file-named path is kept so a stub written under the old spelling can be migrated away.
-        let task_paths = tasks.values().map(Task::name_to_path).collect::<Vec<_>>();
+        let task_paths = tasks
+            .iter()
+            .map(|task| task.name_to_path())
+            .collect::<Vec<_>>();
         let base_paths = stub_base_paths(&tasks, &task_paths);
+        for ((task, legacy_path), base_path) in tasks.iter().zip(&task_paths).zip(&base_paths) {
+            ensure_inside_stub_dir(&task.display_name, legacy_path)?;
+            ensure_inside_stub_dir(&task.display_name, base_path)?;
+        }
         let paths = resolve_stub_paths(&self.dir, &base_paths)?;
         let stubs = tasks
-            .values()
+            .into_iter()
             .zip(task_paths)
             .zip(paths)
             .map(|((task, legacy_path), path)| {
@@ -161,13 +194,12 @@ impl TaskStubs {
         let mise_bin = shell_words::quote(&mise_bin);
         let display_name = &task.display_name;
         let script = format!(
-            r#"
-#!/bin/sh
+            r#"#!/bin/sh
 # generated by mise task-stubs
 exec {mise_bin} run {display_name} "$@"
 "#
         );
-        Ok(script.trim().to_string())
+        Ok(script)
     }
 
     fn generate_legacy(&self, task: &Task) -> Result<String> {
@@ -442,10 +474,10 @@ enum StubMigration {
 /// only there. Those keep their file-named paths, because renaming both onto one path would take a
 /// working project and fail its `task-stubs` run. Windows never reaches that branch, so the case
 /// this exists to fix is always unambiguous.
-fn stub_base_paths(tasks: &BTreeMap<String, Task>, task_paths: &[PathBuf]) -> Vec<PathBuf> {
+fn stub_base_paths(tasks: &[&Task], task_paths: &[PathBuf]) -> Vec<PathBuf> {
     let display_paths = tasks
-        .values()
-        .map(Task::display_name_to_path)
+        .iter()
+        .map(|task| task.display_name_to_path())
         .collect::<Vec<_>>();
     let mut counts: HashMap<&PathBuf, usize> = HashMap::new();
     for path in &display_paths {
@@ -462,6 +494,19 @@ fn stub_base_paths(tasks: &BTreeMap<String, Task>, task_paths: &[PathBuf]) -> Ve
             }
         })
         .collect()
+}
+
+/// A stub path is built from the task's name, which a config file chooses. Joined onto `--dir`,
+/// an absolute name or one with `..` would write (and later migrate away) a file outside it, and
+/// `validate_stub_paths` cannot tell what such a path really points at, so only a plain relative
+/// path is accepted.
+fn ensure_inside_stub_dir(task_name: &str, path: &Path) -> Result<()> {
+    if !file::is_safe_relative_path(&path.to_string_lossy()) {
+        bail!(
+            "cannot write task stub for {task_name} because its name does not stay inside the stub directory"
+        );
+    }
+    Ok(())
 }
 
 fn resolve_stub_paths(dir: &Path, task_paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
@@ -505,7 +550,9 @@ fn validate_stub_paths(
         match fs::symlink_metadata(&stub.legacy_path) {
             Ok(metadata) if metadata.file_type().is_file() => {
                 let existing = file::read_to_string(&stub.legacy_path)?;
-                if existing != stub.output && existing != stub.legacy_output {
+                if !is_stub_output(&existing, &stub.output)
+                    && !is_stub_output(&existing, &stub.legacy_output)
+                {
                     bail!(
                         "cannot create nested task stubs because {} is not the generated stub for task {}",
                         display_path(&stub.legacy_path),
@@ -536,8 +583,9 @@ fn validate_stub_paths(
             ),
             Ok(metadata) if metadata.file_type().is_file() => {
                 let existing = file::read_to_string(&stub.path)?;
-                let legacy_leaf = stub.legacy_path == stub.path && existing == stub.legacy_output;
-                if existing != stub.output && !legacy_leaf {
+                let legacy_leaf =
+                    stub.legacy_path == stub.path && is_stub_output(&existing, &stub.legacy_output);
+                if !is_stub_output(&existing, &stub.output) && !legacy_leaf {
                     bail!(
                         "cannot write task stub because {} is not a generated task stub",
                         display_path(&stub.path)
@@ -612,7 +660,8 @@ fn validate_generated_stub_directory(
     let default = path.join("_default");
     match fs::symlink_metadata(&default) {
         Ok(metadata)
-            if metadata.file_type().is_file() && file::read_to_string(&default)? == expected => {}
+            if metadata.file_type().is_file()
+                && is_stub_output(&file::read_to_string(&default)?, expected) => {}
         _ => bail!(
             "cannot replace task stub directory because {} does not contain the generated stub for task {}",
             display_path(path),
@@ -668,6 +717,14 @@ fn validate_generated_stub_tree(path: &Path, launchers: &Launchers) -> Result<us
     Ok(files)
 }
 
+/// Whether `existing` is the stub `generated` describes. The trailing newline is not compared:
+/// stubs written before they ended in one are still ours, as are stubs a formatter has since given
+/// one, so neither blocks regenerating them.
+fn is_stub_output(existing: &str, generated: &str) -> bool {
+    existing.strip_suffix('\n').unwrap_or(existing)
+        == generated.strip_suffix('\n').unwrap_or(generated)
+}
+
 fn is_generated_task_stub(contents: &str) -> bool {
     let mut lines = contents.lines();
     matches!(lines.next(), Some("#!/bin/sh"))
@@ -683,6 +740,43 @@ fn is_generated_task_stub(contents: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stub_is_ours_with_or_without_a_trailing_newline() {
+        let generated = "#!/bin/sh\nexec mise run xxx \"$@\"\n";
+        assert!(is_stub_output(generated, generated));
+        // Written by a mise that trimmed it off.
+        assert!(is_stub_output(generated.trim_end(), generated));
+        // Only the one newline is ignored; a trailing blank line is a change like any other.
+        assert!(!is_stub_output(&format!("{generated}\n"), generated));
+        // Anything else in the body is still someone else's file.
+        assert!(!is_stub_output(
+            "#!/bin/sh\nexec mise run yyy \"$@\"\n",
+            generated
+        ));
+    }
+
+    #[test]
+    fn stub_paths_must_stay_inside_the_stub_dir() {
+        for ok in ["build", "lint/js", "test.unit", "..foo"] {
+            assert!(
+                ensure_inside_stub_dir("t", Path::new(ok)).is_ok(),
+                "{ok:?} should be accepted"
+            );
+        }
+        for bad in [
+            "../.git/hooks/pre-commit",
+            "x/../../y",
+            "/tmp/out/x",
+            "",
+            "..",
+        ] {
+            assert!(
+                ensure_inside_stub_dir("t", Path::new(bad)).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+    }
 
     #[test]
     fn resolves_parent_and_nested_task_paths() {

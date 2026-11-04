@@ -84,7 +84,7 @@ export const commands: { [key: string]: Command } = {
         hide: true,
       },
       dotfiles: {
-        hide: false,
+        hide: true,
         subcommands: {
           add: {
             hide: false,
@@ -117,6 +117,9 @@ export const commands: { [key: string]: Command } = {
                 hide: false,
               },
               ls: {
+                hide: false,
+              },
+              purge: {
                 hide: false,
               },
               show: {
@@ -202,10 +205,10 @@ export const commands: { [key: string]: Command } = {
         hide: true,
         subcommands: {
           apply: {
-            hide: false,
+            hide: true,
           },
           status: {
-            hide: false,
+            hide: true,
           },
         },
       },
@@ -256,10 +259,10 @@ export const commands: { [key: string]: Command } = {
         hide: true,
         subcommands: {
           apply: {
-            hide: false,
+            hide: true,
           },
           status: {
-            hide: false,
+            hide: true,
           },
         },
       },
@@ -377,10 +380,10 @@ export const commands: { [key: string]: Command } = {
         hide: true,
         subcommands: {
           apply: {
-            hide: false,
+            hide: true,
           },
           status: {
-            hide: false,
+            hide: true,
           },
         },
       },
@@ -423,6 +426,9 @@ export const commands: { [key: string]: Command } = {
   config: {
     hide: false,
     subcommands: {
+      explain: {
+        hide: false,
+      },
       get: {
         hide: false,
       },
@@ -574,6 +580,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           ls: {
+            hide: false,
+          },
+          purge: {
             hide: false,
           },
           show: {
@@ -736,6 +745,9 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   "ls-remote": {
+    hide: false,
+  },
+  lsp: {
     hide: false,
   },
   mcp: {
@@ -919,7 +931,13 @@ export const commands: { [key: string]: Command } = {
       ls: {
         hide: false,
       },
+      rm: {
+        hide: false,
+      },
       run: {
+        hide: true,
+      },
+      set: {
         hide: false,
       },
       validate: {
@@ -990,6 +1008,20 @@ export const commands: { [key: string]: Command } = {
   },
   use: {
     hide: false,
+  },
+  vars: {
+    hide: false,
+    subcommands: {
+      ls: {
+        hide: false,
+      },
+      prompt: {
+        hide: false,
+      },
+      unset: {
+        hide: false,
+      },
+    },
   },
   version: {
     hide: false,

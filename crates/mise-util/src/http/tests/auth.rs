@@ -117,10 +117,8 @@ async fn test_github_rate_limited_403_is_retried() {
 
     assert_eq!(seen, 4, "exhausted limit should be retried: {err:?}");
     assert!(is_transient(&err), "{err:?}");
-    // The marker must not change what the user reads. The auth line is
-    // deliberately not asserted on: whether a token is attached depends on
-    // the environment the test runs in, and `is_github_api_url` matches the
-    // `/api/v3/` path used here. `github_forbidden_report` covers it.
+    // The marker must not change what the user reads. The auth line is not
+    // asserted on here: `github_forbidden_report` covers it.
     let msg = format!("{err:?}");
     assert!(
         msg.contains("github rate limit: 0/5000 (core), resets at 1789456621"),
@@ -321,11 +319,15 @@ async fn test_read_bounded_error_body_honors_deadline() {
     // A response body that trickles forever (staying under the byte cap and
     // the idle read_timeout) must still be abandoned at the deadline instead
     // of blocking indefinitely.
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         if let Ok((mut sock, _)) = listener.accept().await {
+            // Read the request first: a response sent before the client has
+            // written its request is an `UnexpectedMessage` to hyper.
+            let mut buf = [0u8; 1024];
+            let _ = sock.read(&mut buf).await;
             // No Content-Length + `close` → body is read until EOF, which the
             // server never sends; it just trickles one byte at a time.
             let _ = sock

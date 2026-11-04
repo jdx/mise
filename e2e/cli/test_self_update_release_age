@@ -33,8 +33,9 @@ assert "mise version --json | jq -r .latest" "$current"
 assert_contains "mise self-update --no-plugins 2>&1" "already up to date"
 
 # Changing the age must not reuse the previously selected version cache.
+# Under 7d the only eligible release is older than the running one, so latest is clamped to it.
 export MISE_MINIMUM_RELEASE_AGE=7d
-assert "mise version --json | jq -r .latest" "0.1.0"
+assert "mise version --json | jq -r .latest" "$current"
 export MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=24h
 assert "mise version --json | jq -r .latest" "$current"
 export MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=0s

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# A monorepo task run from the root sees the variables its subproject's daemons export
+export MISE_EXPERIMENTAL=1
+
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["subproject"]
+EOF
+
+mkdir -p subproject
+cat <<EOF >subproject/mise.toml
+[daemons.api]
+run = "unused"
+port = { auto = true, base = 3000 }
+
+[daemons.web]
+run = "unused"
+port = 4000
+
+[daemons.fixed]
+run = "unused"
+port = 5000
+
+[env]
+WEB_PORT = "explicit"
+
+[tasks.print-port]
+run = 'echo "API_PORT=<\$API_PORT> FIXED_PORT=<\$FIXED_PORT> WEB_PORT=<\$WEB_PORT>"'
+EOF
+
+assert "mise -C subproject exec -- printenv API_PORT" "3000"
+assert_contains "mise run //subproject:print-port" "API_PORT=<3000> FIXED_PORT=<5000> WEB_PORT=<explicit>"

@@ -10,6 +10,7 @@ import {
   type CaptureId,
   CUT_ON,
   frameAfter,
+  lapseRate,
   lastBefore,
   type ReelData,
   stepOf,
@@ -89,13 +90,14 @@ export function enteredInstall(c: Capture, name: string, at: number): Play[] {
     u.enter,
     u.enter + 0.02,
   );
+  const stop = lastBefore(c, CUT_ON, u.enter, u.end);
   return [
     t,
     play(
       at + playLen(t),
       u.enter + 0.02,
-      lastBefore(c, CUT_ON, u.enter, u.end),
-      LAPSE,
+      stop,
+      lapseRate(c, LAPSE, u.enter + 0.02, stop),
     ),
   ];
 }

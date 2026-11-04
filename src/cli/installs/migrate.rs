@@ -40,7 +40,7 @@ use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, install_state};
     ),
     example(
         r###"mise installs migrate node python@3.12.1"###,
-        help = r###"Move every installed node, and one python"###
+        help = r###"Move every installed node and one python version"###
     ),
     verbatim_doc_comment
 )]

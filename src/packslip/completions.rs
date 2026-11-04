@@ -90,6 +90,9 @@ pub fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
             &install,
             tv.request.options().get_string("variant").as_deref(),
         );
+        // What is selected does not depend on the executable: select once
+        // per release, not once per executable it lists.
+        let selected = super::selected_resources(&statement, artifact.as_ref());
         for bin in statement
             .predicate
             .artifacts
@@ -103,7 +106,8 @@ pub fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
         {
             let name = &bin.name;
             if safe_command(name)
-                && !super::completion_sources(
+                && !super::completion_sources_among(
+                    &selected,
                     &statement,
                     &install,
                     completion_shell.as_str(),

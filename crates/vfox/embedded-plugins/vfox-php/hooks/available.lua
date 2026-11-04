@@ -1,3 +1,44 @@
+local MONTHS = {
+    jan = "01", feb = "02", mar = "03", apr = "04", may = "05", jun = "06",
+    jul = "07", aug = "08", sep = "09", oct = "10", nov = "11", dec = "12",
+}
+
+--- Convert php.net dates such as "24 Sep 2026" or "01 March 2012" to RFC 3339
+--- (midnight UTC; php.net only publishes the day). Returns nil if unparsable.
+local function php_date(date)
+    local day, month, year = string.match(date or "", "^(%d+)%s+(%a+)%s+(%d%d%d%d)$")
+    local mm = month and MONTHS[month:sub(1, 3):lower()]
+    if not mm then
+        return nil
+    end
+    return string.format("%s-%s-%02dT00:00:00Z", year, mm, tonumber(day))
+end
+
+--- Map of version -> release date from php.net's official release list.
+--- Pre-releases are not listed there, so they get no date.
+local function release_dates(majors)
+    local http = require("http")
+    local json = require("json")
+    local dates = {}
+    for major, _ in pairs(majors) do
+        local resp, err = http.try_get({
+            url = "https://www.php.net/releases/index.php?json&max=1000&version=" .. major,
+        })
+        if err == nil and resp.status_code == 200 then
+            local ok, data = pcall(json.decode, resp.body)
+            if ok and type(data) == "table" then
+                for version, rel in pairs(data) do
+                    local created_at = type(rel) == "table" and php_date(rel.date) or nil
+                    if created_at then
+                        dates[version] = created_at
+                    end
+                end
+            end
+        end
+    end
+    return dates
+end
+
 --- Returns available PHP versions from GitHub php-src tags
 --- @param ctx table Context provided by vfox
 --- @return table Available versions
@@ -53,6 +94,15 @@ function PLUGIN:Available(ctx)
         if page > 20 then
             break
         end
+    end
+
+    local majors = {}
+    for _, entry in ipairs(result) do
+        majors[string.match(entry.version, "^(%d+)")] = true
+    end
+    local dates = release_dates(majors)
+    for _, entry in ipairs(result) do
+        entry.created_at = dates[entry.version]
     end
 
     -- Sort versions (newest first)

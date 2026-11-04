@@ -2,11 +2,12 @@ use eyre::Result;
 
 mod ls;
 
+/// [experimental] Inspect the project's secrets source
+///
+/// With no subcommand, lists secret names (same as `mise secrets ls`; the flags
+/// below are passed to it). See https://mise.jdx.dev/environments/secrets/fnox.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(
-    name = "secrets",
-    about = "[experimental] List the secret names this project's secrets source provides, without their values"
-)]
+#[usage(name = "secrets", verbatim_doc_comment)]
 pub(crate) struct Secrets {
     #[usage(subcommand)]
     command: Option<Commands>,
@@ -15,7 +16,7 @@ pub(crate) struct Secrets {
     #[usage(long, short = 'J')]
     pub json: bool,
 
-    /// Don't show table header
+    /// Do not print the table header
     #[usage(long)]
     pub no_header: bool,
 }

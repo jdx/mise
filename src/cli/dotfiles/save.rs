@@ -9,12 +9,39 @@ use crate::system::history::tracked::{display_to_tree_path, normalize_target};
 
 /// Save a checkpoint of the tracked files now
 ///
-/// Fails when history cannot save or a requested path is not tracked, so a
-/// script or an agent gets a trustworthy result; a save that finds nothing
-/// changed succeeds as a no-op. `--best-effort` turns save errors into a
-/// warning for `set -e` update scripts.
+/// Exits non-zero when history cannot save or a named path is not tracked.
+/// With no changes since the latest checkpoint, nothing is saved unless you
+/// pass `--description`, `--label`, `--task`, or a `--trigger` other than
+/// `save`.
+///
+/// `--best-effort` turns a failure to write the checkpoint, such as missing
+/// Git, into a warning for update scripts that run under `set -e`. A disabled
+/// history or an untracked path still fails.
+///
+/// A save re-encrypts the files it captures to the current
+/// `[history.encryption] recipients`. `--re-encrypt` also re-encrypts the
+/// encrypted files it does not capture: files with `autosave = false` that
+/// it does not name, and variants for other platforms. It re-encrypts their
+/// saved versions and saves no unsaved edit. Run it after changing recipients
+/// so a machine added to the list can read every file. This machine must be
+/// able to unlock each one; otherwise nothing is saved and the error lists
+/// each file it cannot unlock.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise dot save", help = "Save every tracked file that changed"),
+    example(
+        "mise dot save ~/.zshrc -d \"before the theme change\"",
+        help = "Save one file with a description"
+    ),
+    example(
+        "mise dot save --best-effort",
+        help = "Warn instead of failing in a script"
+    ),
+    example(
+        "mise dot save --re-encrypt",
+        help = "Re-encrypt every encrypted file after changing recipients"
+    )
+)]
 pub(crate) struct DotfilesSave {
     /// Paths to save; every one must be tracked
     #[usage(value_name = "PATH")]
@@ -24,11 +51,11 @@ pub(crate) struct DotfilesSave {
     #[usage(long, short, value_name = "TEXT")]
     description: Option<String>,
 
-    /// What is saving: save (the default), agent, or update
+    /// Record the checkpoint as a save, agent, or update checkpoint
     #[usage(long, value_name = "TRIGGER", default = "save")]
     trigger: String,
 
-    /// The task an agent is working on
+    /// The ID of the task an agent is working on, recorded with the checkpoint
     #[usage(long, value_name = "ID")]
     task: Option<String>,
 
@@ -36,9 +63,13 @@ pub(crate) struct DotfilesSave {
     #[usage(long, value_name = "LABEL")]
     label: Vec<String>,
 
-    /// Warn instead of failing when history cannot save
+    /// Warn instead of failing when the checkpoint cannot be written
     #[usage(long)]
     best_effort: bool,
+
+    /// Re-encrypt every saved encrypted file to the current recipients
+    #[usage(long)]
+    re_encrypt: bool,
 }
 
 impl DotfilesSave {
@@ -73,6 +104,95 @@ impl DotfilesSave {
             bail!("history is disabled (history.enabled = false)");
         }
         let (store, tracked, entries) = super::history::open().await?;
+        if !crate::system::history::local::active()
+            && tracked.invalid_local.iter().any(|invalid| {
+                self.paths.is_empty()
+                    || self.paths.iter().any(|path| {
+                        let path = normalize_target(path);
+                        path.starts_with(invalid) || invalid.starts_with(path)
+                    })
+            })
+        {
+            bail!(
+                "invalid local-only declaration: correct it before saving the affected shared paths"
+            );
+        }
+        // local-only paths are saved in this machine's own history, by the
+        // same command in the local scope
+        let mut shared = self.paths.clone();
+        let mut local_args = None;
+        if !tracked.local.is_empty() {
+            let (local, rest): (Vec<_>, Vec<_>) = self.paths.iter().cloned().partition(|path| {
+                let path = normalize_target(path);
+                tracked.local.iter().any(|local| path.starts_with(local))
+            });
+            shared = rest;
+            if self.paths.is_empty() || !local.is_empty() {
+                local_args = Some(self.local_args(&local));
+            }
+        }
+        let best_effort = self.best_effort;
+        let save_local = |args: Option<Vec<std::ffi::OsString>>| -> Result<()> {
+            let Some(args) = args else { return Ok(()) };
+            match crate::system::history::local::run(args) {
+                Err(err) if best_effort => {
+                    warn!("history save: {err:#}");
+                    Ok(())
+                }
+                result => result,
+            }
+        };
+        // local-only history holds no encrypted file, so a re-encryption can
+        // only fail in the shared one; saving that first keeps "nothing was
+        // saved" true of both
+        let re_encrypt = self.re_encrypt;
+        if !re_encrypt {
+            save_local(local_args.take())?;
+        }
+        if self.paths.is_empty() || !shared.is_empty() {
+            let mut this = self;
+            this.paths = shared;
+            this.save_shared(store, tracked, entries, trigger).await?;
+        }
+        save_local(local_args)
+    }
+
+    /// `mise dot save` arguments that save `paths` (all, when empty) in
+    /// the local-only history.
+    fn local_args(&self, paths: &[PathBuf]) -> Vec<std::ffi::OsString> {
+        let mut args: Vec<std::ffi::OsString> = vec![
+            "dot".into(),
+            "save".into(),
+            "--trigger".into(),
+            self.trigger.clone().into(),
+        ];
+        if let Some(description) = &self.description {
+            args.extend(["--description".into(), description.into()]);
+        }
+        if let Some(task) = &self.task {
+            args.extend(["--task".into(), task.into()]);
+        }
+        for label in &self.label {
+            args.extend(["--label".into(), label.into()]);
+        }
+        if self.best_effort {
+            args.push("--best-effort".into());
+        }
+        if self.re_encrypt {
+            args.push("--re-encrypt".into());
+        }
+        args.push("--".into());
+        args.extend(paths.iter().map(|path| path.clone().into_os_string()));
+        args
+    }
+
+    async fn save_shared(
+        self,
+        store: Store,
+        tracked: crate::system::history::tracked::TrackedSet,
+        entries: Vec<Entry>,
+        trigger: Trigger,
+    ) -> Result<()> {
         if !self.paths.is_empty() {
             let walk = tracked.walk()?;
             for path in &self.paths {
@@ -114,6 +234,7 @@ impl DotfilesSave {
         });
         draft.task = self.task.clone();
         draft.labels = self.label.clone();
+        draft.re_encrypt = self.re_encrypt;
         tokio::task::spawn_blocking(move || self.save_checkpoint(&store, &tracked, draft)).await?
     }
 
@@ -131,8 +252,13 @@ impl DotfilesSave {
         let _operation = crate::system::history::scope::take_operation_lock(store, tracked)?;
         match store.attempt(tracked, draft)? {
             Outcome::Created(entry) => {
+                let scope = if crate::system::history::local::active() {
+                    " (local-only)"
+                } else {
+                    ""
+                };
                 info!(
-                    "history: saved checkpoint {}: {}",
+                    "history{scope}: saved checkpoint {}: {}",
                     entry.id, entry.checkpoint.description
                 );
                 Ok(())

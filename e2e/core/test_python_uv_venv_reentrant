@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+# A mise started by `uv venv` (it probes mise's python shims) must not create the venv again,
+# or the shims re-enter mise without bound (discussions#14926).
+
+# uv runs the interpreter it is given, so this stands in for a probed shim: it records the marker
+# the `uv venv` child received, then hands over to the system python.
+cat >probe <<'EOF2'
+#!/bin/sh
+echo "marker=${__MISE_CREATING_VENV:-unset}" >>"$PWD/probe.log"
+exec python3 "$@"
+EOF2
+chmod +x probe
+
+cat >mise.toml <<EOF2
+[tools]
+uv = "0.5.4"
+
+[settings]
+python.uv_venv_auto = "create|source"
+python.uv_venv_create_args = ["--python", "$PWD/probe"]
+EOF2
+touch uv.lock
+mise i
+
+mise env >/dev/null
+assert "test -d .venv && echo created" "created"
+assert_contains "cat probe.log" "marker=1"
+
+# a mise started inside that child declines to create
+rm -rf .venv probe.log
+__MISE_CREATING_VENV=1 mise env >/dev/null
+assert_fail "test -d .venv"
+assert_fail "test -e probe.log"
+
+# `env._.python.venv` holds a lock on the venv while uv runs; a mise re-entered from the child
+# must not wait on it. The probe calls back into mise the way a probed shim does.
+rm -rf .venv probe.log
+cat >probe <<EOF2
+#!/bin/sh
+"$(command -v mise)" env >/dev/null || echo "nested mise failed" >>"\$PWD/probe.log"
+exec python3 "\$@"
+EOF2
+cat >mise.toml <<EOF2
+[tools]
+uv = "0.5.4"
+
+[env._.python]
+venv = {path = "my_venv", create = true}
+
+[settings]
+python.uv_venv_create_args = ["--python", "$PWD/probe"]
+EOF2
+rm uv.lock
+# the portable timeout is a shell function, so it runs in the test shell; a hang ends it with 124 and errexit fails the test
+timeout 120 mise env >/dev/null
+assert "test -d my_venv && echo created" "created"
+assert_fail "test -e probe.log"
+
+# the stdlib branch (`python3 -m venv`) gets the same marker
+rm -rf my_venv probe.log
+mkdir bin
+REAL_PYTHON3="$(command -v python3)"
+cat >bin/python3 <<EOF2
+#!/bin/sh
+echo "stdlib marker=\${__MISE_CREATING_VENV:-unset}" >>"\$PWD/probe.log"
+exec "$REAL_PYTHON3" "\$@"
+EOF2
+chmod +x bin/python3
+cat >mise.toml <<EOF2
+[env._.python]
+venv = {path = "my_venv", create = true}
+
+[settings]
+python.venv_stdlib = true
+EOF2
+PATH="$PWD/bin:$PATH" mise env >/dev/null
+assert "test -d my_venv && echo created" "created"
+assert_contains "cat probe.log" "stdlib marker=1"

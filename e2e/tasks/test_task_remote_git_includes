@@ -303,4 +303,30 @@ for artifact in "$ARTIFACT_TMPDIR"/* "$ARTIFACT_TMPDIR"/.[!.]* "$ARTIFACT_TMPDIR
   [[ $artifact_name == .tmp* ]] || fail "unexpected remote task artifact remains: $artifact"
 done
 
+#################################################################################
+# Test a first fetch from inside a git hook
+#################################################################################
+
+# `git commit` runs its hooks with GIT_INDEX_FILE pointing at the commit's
+# index. Cloning the include must not write the remote repository's index there.
+mise cache clear
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+    "git::${LOCAL_GIT_URL}//xtasks/lint?ref=v2025.1.17"
+]
+EOF
+
+cat <<'EOF' >.git/hooks/pre-commit
+#!/usr/bin/env bash
+exec mise run remote-task
+EOF
+chmod +x .git/hooks/pre-commit
+
+echo "hook" >hook-file.txt
+git add hook-file.txt
+assert_succeed "git commit -q -m 'commit from a hook'"
+assert "git ls-tree -r --name-only HEAD" "hook-file.txt"
+
 echo "All tests passed!"

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Each entry of a multi-entry tool installs with its own options: `rename_exe`
+# on the first entry must not rename the second entry's binary.
+
+export MISE_EXPERIMENTAL=1
+export MISE_GPG_VERIFY=false
+
+cat <<EOF >mise.toml
+[tools]
+"github:jdx/tiny" = [
+  { version = "2.0.0", rename_exe = "my-tiny" },
+  { version = "1.1.0" },
+]
+EOF
+
+mise install
+assert "ls '$MISE_DATA_DIR/installs/github-jdx-tiny/2.0.0/bin'" "my-tiny"
+assert "ls '$MISE_DATA_DIR/installs/github-jdx-tiny/1.1.0/bin'" "tiny"

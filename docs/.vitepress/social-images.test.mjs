@@ -159,7 +159,7 @@ test("built-page checks reject swapped images and empty alt text", () => {
 
 test("built-page checks offer the showreel as og:video on the homepage only", () => {
   const dir = mkdtempSync(join(tmpdir(), "showreel-validation-"));
-  const heading = "Dev tools, environments, and tasks";
+  const heading = "Dev tools, env vars, and tasks in one CLI";
   const home = socialCard(heading, "Description");
   const other = socialCard("Other page", "Description");
   // Just enough of an MP4 for the checks: a box size, then "ftyp".

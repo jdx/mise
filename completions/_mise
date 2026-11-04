@@ -81,8 +81,24 @@ _mise() {
         executables) _files -g '*(-/,*)' && __usage_ret=0 ;;
         commands) _command_names && __usage_ret=0 ;;
         extensions)
-            local __usage_glob="*.(${(j:|:)extensions})"
-            _files -g "$__usage_glob" && __usage_ret=0
+            # `_files -g` evaluates its argument as a glob, qualifiers and all, so the pattern is
+            # built only from names that cannot change its shape. Anything else on the line is
+            # dropped rather than quoted: `)(e:…:)` in an "extension" would otherwise run as
+            # code for every file the glob reached.
+            local __usage_extension
+            local -a __usage_safe=()
+            for __usage_extension in "${extensions[@]}"; do
+                [[ -n "$__usage_extension" && "$__usage_extension" != *[^[:alnum:]_.+-]* ]] &&
+                    __usage_safe+=("$__usage_extension")
+            done
+            # One name is written bare: `*.(toml)` would read its group as glob qualifiers.
+            if (( ${#__usage_safe[@]} == 1 )); then
+                _files -g "*.${__usage_safe[1]}" && __usage_ret=0
+            elif (( ${#__usage_safe[@]} )); then
+                _files -g "*.(${(j:|:)__usage_safe})" && __usage_ret=0
+            else
+                _files && __usage_ret=0
+            fi
             ;;
     esac
     return $__usage_ret

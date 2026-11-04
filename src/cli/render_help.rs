@@ -8,7 +8,7 @@ use itertools::Itertools;
 const IDIOMATIC_FILES_START: &str = "<!-- mise:idiomatic-version-files:start -->";
 const IDIOMATIC_FILES_END: &str = "<!-- mise:idiomatic-version-files:end -->";
 
-/// internal command to generate markdown from help
+/// [internal] Generate docs files from the CLI and the registry
 #[derive(Debug, usage_rs::Args)]
 #[usage(hide = true)]
 pub(crate) struct RenderHelp {}
@@ -20,16 +20,16 @@ impl RenderHelp {
         file::write("docs/.vitepress/cli_commands.ts", render_command_ts())?;
         render_idiomatic_version_files()?;
         if cfg!(windows) {
-            cmd!("prettier.cmd", "--write", "docs/.vitepress/cli_commands.ts").run()?;
+            cmd!("oxfmt.cmd", "--write", "docs/.vitepress/cli_commands.ts").run()?;
         } else {
-            cmd!("prettier", "--write", "docs/.vitepress/cli_commands.ts").run()?;
+            cmd!("oxfmt", "--write", "docs/.vitepress/cli_commands.ts").run()?;
         }
         Ok(())
     }
 }
 
 fn render_idiomatic_version_files() -> Result<()> {
-    let path = "docs/configuration.md";
+    let path = "docs/dev-tools/versions.md";
     let content = file::read_to_string(path)?;
     let start = content
         .find(IDIOMATIC_FILES_START)
@@ -152,11 +152,8 @@ mod tests {
     fn idiomatic_version_files_table_comes_from_baked_registry() {
         let table = render_idiomatic_version_files_table();
 
-        assert!(
-            table
-                .lines()
-                .any(|line| line.starts_with("| cmake ") && line.contains("`CMakeLists.txt`"))
-        );
+        // `cmake_minimum_required` is a floor, so cmake reads no idiomatic file
+        assert!(!table.lines().any(|line| line.starts_with("| cmake ")));
         assert!(table.lines().any(|line| {
             line.starts_with("| node ")
                 && line.contains("`.nvmrc`, `.node-version`, `package.json`")

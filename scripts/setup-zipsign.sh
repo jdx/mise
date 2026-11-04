@@ -7,7 +7,8 @@ if [ -z "$ZIPSIGN" ]; then
 fi
 
 if ! command -v zipsign >/dev/null 2>&1; then
-	cargo install zipsign
+	# --locked: build against the Cargo.lock zipsign published, not a fresh resolution
+	cargo install zipsign --version 0.2.2 --locked
 fi
 
 mkdir -p ~/.zipsign

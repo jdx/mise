@@ -11,7 +11,13 @@ import { listen } from "./listen";
 import { air, feed, PAN, tear } from "./props";
 
 type TicketId =
-  "tools" | "versions" | "env" | "tasks" | "dotfiles" | "machines" | "new";
+  | "tools"
+  | "versions"
+  | "env"
+  | "tasks"
+  | "dotfiles"
+  | "machines"
+  | "new";
 
 interface Spec {
   /** Where the ticket hangs: its stereo position. */

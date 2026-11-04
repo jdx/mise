@@ -12,6 +12,7 @@ use crate::install_before::{
     effective_minimum_release_age_for_tool, format_hidden_release_details,
     resolve_cli_minimum_release_age,
 };
+use crate::install_context::install_dependency_declarations;
 use crate::semver::split_version_prefix;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -21,6 +22,7 @@ use crate::toolset::{
     ToolVersion, Toolset, ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
     get_versions_needed_by_tracked_stubs,
 };
+use crate::toolset::{OutdatedSelection, OutdatedVersions};
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -43,49 +45,57 @@ struct ExplicitConfigBump {
 
 /// Upgrade outdated tools
 ///
-/// By default, this keeps the range specified in mise.toml: with node@20 set, it upgrades to
-/// the latest 20.x.x available. Use `--bump` to upgrade to the latest version overall and
-/// rewrite the version in mise.toml.
+/// By default, keeps the range in mise.toml: with `node = "20"`, it installs the
+/// newest 20.x release. Use `--bump` to upgrade to the newest release overall
+/// and update the version in mise.toml. Also updates mise.lock when lockfiles
+/// are enabled; see https://mise.jdx.dev/dev-tools/mise-lock.html
 ///
-/// This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
+/// The version you upgraded from is removed after the `upgrade.prune_after`
+/// setting's grace period unless a tracked config or tool stub still uses it.
+/// Pass `--prune` to remove it now or `--no-prune` to keep it.
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
-    example(r###"mise upgrade node"###, help = r###"Upgrades node to the latest version matching the range in mise.toml"###),
-    example(r###"mise upgrade node --bump"###, help = r###"Upgrades node to the latest version and bumps the version in mise.toml"###),
-    example(r###"mise upgrade"###, help = r###"Upgrades all configured tools within their current requests"###),
-    example(r###"mise upgrade --bump"###, help = r###"Upgrades all tools to the latest versions and bumps the version in mise.toml"###),
-    example(r###"mise upgrade --dry-run"###, help = r###"Just print what would be done, don't actually do it"###),
-    example(r###"mise upgrade node python"###, help = r###"Upgrades node and python within their current requests"###),
-    example(r###"mise upgrade --exclude go"###, help = r###"Upgrade all tools except go"###),
-    example(r###"mise upgrade --interactive"###, help = r###"Show a multiselect menu to choose which tools to upgrade"###),
-    example(r###"mise upgrade --local"###, help = r###"Only upgrade tools defined in local mise.toml, not global ones"###))]
+    example(r###"mise upgrade"###, help = r###"Upgrade every configured tool within its range"###),
+    example(r###"mise upgrade node"###, help = r###"Upgrade only node"###),
+    example(r###"mise upgrade --bump"###, help = r###"Upgrade every tool to its newest release and update mise.toml"###),
+    example(r###"mise upgrade --dry-run"###, help = r###"Show what would be upgraded"###),
+    example(r###"mise upgrade --exclude go"###, help = r###"Upgrade everything except go"###),
+    example(r###"mise upgrade --interactive"###, help = r###"Choose tools from a menu"###),
+    example(r###"mise upgrade --global claude"###, help = r###"Upgrade claude within the global config's request, leaving project config alone"###))]
 pub(crate) struct Upgrade {
-    /// Tool(s) to upgrade
-    /// e.g.: node@20 python@3.10
-    /// If not specified, all current tools will be upgraded
-    #[usage(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
+    /// Tools to upgrade, such as node@20 python@3.10
+    ///
+    /// Upgrades every configured tool when omitted.
+    #[usage(value_name = "INSTALLED_TOOL@VERSION")]
     tool: Vec<ToolArg>,
 
-    /// Upgrade to the latest version available, bumping the version in mise.toml
+    /// Upgrade past the configured range to the newest release, and update the config to match
     ///
-    /// For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
-    /// this will install 22.1.0 and set `node = "22.1.0"` in your config.
-    ///
-    /// With a bare tool, it keeps the same precision as what was there before, so if you instead had
-    /// `node = "20"`, it would change your config to `node = "22"`. When an explicit selector is
-    /// provided (`node@latest`, `node@3`, or `node@prefix:3`), that selector is persisted instead.
-    /// For version selectors, `settings.pin` persists the resolved concrete version. Requests from non-writable
-    /// sources are not persisted. For example, `mise upgrade node@latest --bump` writes `latest`.
-    #[usage(long, short = 'b', verbatim_doc_comment)]
+    /// The config keeps its precision: `node = "20"` becomes `node = "22"`, and
+    /// `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the
+    /// command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is
+    /// written instead; `mise upgrade node@latest --bump` writes `latest`. With
+    /// the `pin` setting on, a version request such as `node@3` is written as the
+    /// version it resolved to, and a bare `mise upgrade --bump` writes the
+    /// resolved version for every request that is not exact, such as `latest`
+    /// or `20`. Requests that do not come from a config file mise
+    /// can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+    #[usage(long, short = 'b')]
     bump: bool,
+
+    /// With --bump, write the resolved version instead of keeping the request's precision
+    ///
+    /// `node = "latest"` and `node = "20"` become `node = "24.14.0"`. A named
+    /// request such as `node@3` is written as the version it resolved to. Make
+    /// this the default with the `pin` setting (`MISE_PIN=1`).
+    #[usage(long, requires = "bump")]
+    pin: bool,
 
     /// Choose which tools to upgrade from a multiselect menu
     #[usage(long, short, verbatim_doc_comment, conflicts = "tool")]
     interactive: bool,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting
+    /// Number of jobs to run in parallel (default: the `jobs` setting)
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
@@ -93,64 +103,93 @@ pub(crate) struct Upgrade {
     #[usage(short = 'l', hide = true)]
     legacy_bump: bool,
 
-    /// Print what would be done without doing it
+    /// Show what would change without changing anything
     #[usage(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
-    /// Tool(s) to exclude from upgrading
-    /// e.g.: go python
+    /// Tools to exclude from upgrading, such as go python
     #[usage(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
     exclude: Vec<ToolArg>,
 
-    /// Like --dry-run but exits with code 1 if there are outdated tools
+    /// Like --dry-run, but exit with code 1 if there are outdated tools
     ///
-    /// This is useful for scripts to check if tools need to be upgraded.
-    #[usage(long, verbatim_doc_comment)]
+    /// Use it in scripts that check whether tools need upgrading.
+    #[usage(long)]
     dry_run_code: bool,
 
-    /// Upgrade all tools, including installed-but-inactive tools not present in the current config
-    #[usage(long, verbatim_doc_comment, conflicts = "local")]
+    /// Skip confirmation when installing missing plugin system dependencies.
+    /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
+    #[usage(skip)]
+    yes: bool,
+
+    /// Only upgrade installed tools; leave missing ones to `mise install`.
+    /// Set internally by `mise bootstrap --upgrade`, which installs first, so a
+    /// dry run would otherwise preview each missing tool twice.
+    #[usage(skip)]
+    installed_only: bool,
+
+    /// Also upgrade installed tools that the current config does not request
+    #[usage(long, verbatim_doc_comment, conflicts = ["local", "no_global"])]
     inactive: bool,
 
-    /// Only upgrade tools defined in local config files
+    /// Only upgrade tools defined in the global config
     ///
-    /// This will only upgrade tools that are defined in project-local mise.toml and
-    /// will skip tools defined in the global config (~/.config/mise/config.toml).
-    #[usage(long, verbatim_doc_comment)]
+    /// Upgrades the requests in the global and system config
+    /// (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project
+    /// config or a `MISE_<TOOL>_VERSION` environment variable sets its own
+    /// version of the tool. It runs as if from outside any project, so project
+    /// config, lockfiles, and `[env]` are neither read nor changed. Tools that
+    /// update themselves, such as coding agents, run this instead of their own
+    /// updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
+    #[usage(long, conflicts = ["local", "no_global", "inactive"])]
+    global: bool,
+
+    /// Deprecated alias for --no-global
+    ///
+    /// Removed in mise 2027.7.0.
+    #[usage(long, conflicts = ["global", "no_global"])]
     local: bool,
+
+    /// Only upgrade tools defined in project config files
+    ///
+    /// Skips tools defined in the global config (~/.config/mise/config.toml) and
+    /// tools set through `MISE_<TOOL>_VERSION` environment variables.
+    #[usage(long, conflicts = ["global", "local"])]
+    no_global: bool,
 
     /// Only upgrade to versions released before this date or older than this duration
     ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    /// This can be useful for reproducibility or security purposes.
+    /// Supports absolute dates such as "2024-06-01" and relative durations such as
+    /// "90d" or "1y".
     ///
-    /// This only affects fuzzy version matches like "20" or "latest".
-    /// Explicitly pinned versions like "22.5.0" are not filtered.
-    #[usage(long, alias = "before", verbatim_doc_comment)]
+    /// Applies only to requests that can match several versions, such as "20" or
+    /// "latest". Exact versions such as "22.5.0" are not filtered.
+    #[usage(long, alias = "before")]
     minimum_release_age: Option<String>,
 
     /// Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     monorepo: bool,
 
     /// Do not uninstall the versions that were upgraded away from
     ///
-    /// The old version is left in place and is not scheduled for removal. Use this when something
-    /// outside mise points at the install directory.
+    /// The old version is left in place and is not scheduled for removal. Use this when
+    /// something outside mise points at the install directory.
     ///
     /// Set `upgrade.auto_prune = false` to make this the default.
-    #[usage(long, verbatim_doc_comment, overrides = "prune")]
+    #[usage(long, overrides = "prune")]
     no_prune: bool,
 
     /// Immediately uninstall the versions that were upgraded away from
     ///
     /// Use this to bypass `upgrade.prune_after`, or to override
     /// `upgrade.auto_prune = false` for a single run.
-    #[usage(long, verbatim_doc_comment, overrides = "no_prune")]
+    #[usage(long, overrides = "no_prune")]
     prune: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
-    /// Implies `--jobs=1`
+    /// Connect the install commands' stdin, stdout, and stderr to the terminal
+    ///
+    /// Implies `--jobs=1`.
     #[usage(long, overrides = "jobs")]
     raw: bool,
 
@@ -168,6 +207,17 @@ enum PruneMode {
 }
 
 impl Upgrade {
+    /// a bare `mise upgrade` (every configured tool within its range, no
+    /// `--bump`), as run by `mise bootstrap --upgrade`
+    pub(crate) fn new_bare(dry_run: bool, yes: bool) -> Self {
+        Self {
+            dry_run,
+            yes,
+            installed_only: true,
+            ..Default::default()
+        }
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
@@ -191,22 +241,112 @@ impl Upgrade {
         ))
     }
 
-    /// Toolsets in this upgrade's scope. An `auto_update` upgrade works on the
-    /// global config's requests, so a `MISE_*_VERSION` in the environment
-    /// doesn't replace the request it was started to upgrade.
+    /// Toolsets in this upgrade's scope. An `auto_update` or `--global` upgrade
+    /// works on the global config's requests, so a `MISE_*_VERSION` in the
+    /// environment doesn't replace the request it was asked to upgrade.
+    /// Whether resolution leaves a lazy tool with nothing installed unresolved:
+    /// `auto_update` always does, and a bare upgrade does because it leaves that
+    /// tool alone. Naming a tool resolves it in full.
+    fn defers_missing_lazy(&self) -> bool {
+        self.for_auto_update || self.tool.is_empty()
+    }
+
     fn toolset_builder(&self) -> ToolsetBuilder {
         let builder = ToolsetBuilder::new().with_scope(self.scope());
-        if self.for_auto_update {
+        let builder = if self.for_auto_update {
+            builder
+                .without_runtime_env()
+                .with_deferred_lazy_resolution_online()
+        } else if self.global {
             builder.without_runtime_env()
+        } else {
+            builder
+        };
+        // A bare upgrade leaves a lazy tool with nothing installed alone, so it does
+        // not wait on that tool's remote version list either. Naming a tool resolves
+        // it in full.
+        if self.defers_missing_lazy() && !self.for_auto_update {
+            builder.with_deferred_lazy_resolution_online()
         } else {
             builder
         }
     }
 
+    /// A lazy tool with no version installed is waiting for its first run, so a
+    /// bare upgrade leaves it alone, as a bare `mise install` does, unless a tool
+    /// it upgrades depends on it. Naming the tool installs it, as `mise install
+    /// node` does. A tool left alone is not looked up at all, so a slow or
+    /// failing backend cannot hold up the upgrade. Returns the outdated tools
+    /// and the requests left alone, as configured, since `tool_request` may
+    /// already name the version it would move to.
+    async fn list_outdated_leaving_missing_lazy(
+        &self,
+        ts: &Toolset,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[ToolArg]>,
+        exclude_tools: Option<&[ToolArg]>,
+    ) -> (OutdatedVersions, Vec<ToolRequest>) {
+        let mut unrun = if self.tool.is_empty() {
+            ts.list_current_versions()
+                .into_iter()
+                .map(|(_, tv)| tv)
+                .filter(ToolVersion::is_unrun_lazy)
+                .map(|tv| tv.request)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+        let mut checked = ts
+            .list_outdated_versions_selecting(
+                config,
+                self.bump,
+                opts,
+                OutdatedSelection {
+                    filter_tools,
+                    exclude_tools,
+                    show_progress: self.show_resolution_progress(),
+                    select: &|tv| !unrun.contains(&tv.request),
+                },
+            )
+            .await;
+        // Put back what an upgraded tool depends on, and what that depends on.
+        let mut scanned = 0;
+        while scanned < checked.outdated.len() && !unrun.is_empty() {
+            let declarations =
+                install_dependency_declarations(&checked.outdated[scanned].tool_version.request);
+            scanned += 1;
+            let needed = unrun
+                .iter()
+                .filter(|request| declarations.matches(request.ba()))
+                .cloned()
+                .collect::<Vec<_>>();
+            if needed.is_empty() {
+                continue;
+            }
+            unrun.retain(|request| !needed.contains(request));
+            checked.extend(
+                ts.list_outdated_versions_selecting(
+                    config,
+                    self.bump,
+                    opts,
+                    OutdatedSelection {
+                        filter_tools,
+                        exclude_tools,
+                        show_progress: false,
+                        select: &|tv| needed.contains(&tv.request),
+                    },
+                )
+                .await,
+            );
+        }
+        (checked, unrun)
+    }
+
     fn scope(&self) -> ConfigScope {
-        if self.for_auto_update {
+        if self.for_auto_update || self.global {
             ConfigScope::GlobalOnly
-        } else if self.local {
+        } else if self.local || self.no_global {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
@@ -214,25 +354,47 @@ impl Upgrade {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
+        if self.local {
+            deprecated_at!(
+                "2027.1.0",
+                "2027.7.0",
+                "cli.upgrade.local",
+                "`mise upgrade --local` is deprecated. Use `mise upgrade --no-global` instead."
+            );
+        }
         if self.legacy_bump {
             deprecated_at!(
                 "2026.8.5",
                 "2027.8.5",
                 "cli.upgrade.bump-l",
-                "`mise upgrade -l` is deprecated. Use `mise upgrade -b` or `mise upgrade --bump` instead. After removal, `-l` will become shorthand for `--local`."
+                "`mise upgrade -l` is deprecated. Use `mise upgrade -b` or `mise upgrade --bump` instead."
             );
             self.bump = true;
         }
         if self.monorepo {
-            unimplemented!("mise upgrade --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise upgrade yet");
         }
-        let mut config = Config::get().await?;
+        if self.global && super::tool_update::needs_global_scope() {
+            // Its own update would wait for the lock that update holds.
+            if !self.is_dry_run() && super::tool_update::inside_update() {
+                warn!("skipping `mise upgrade --global`: it runs inside another mise update");
+                return Ok(());
+            }
+            return super::tool_update::rerun_in_global_scope();
+        }
+        // Like an `auto_update` upgrade, a global one rewrites the global config
+        // and lockfile, so it waits for any other update and reads config after.
+        let _update_lock = (self.global && !self.is_dry_run())
+            .then(crate::tool_update::lock_for_update)
+            .transpose()?;
+        let mut config = if _update_lock.is_some() {
+            Config::reset().await?
+        } else {
+            Config::get().await?
+        };
         let mut explicit_config_bumps = Vec::new();
         if self.bump && !self.tool.is_empty() {
-            let scope = self.scope();
-            let effective = ToolsetBuilder::new()
-                .with_scope(scope)
-                .build_unresolved(&config)?;
+            let effective = self.toolset_builder().build_unresolved(&config)?;
             for tool in &self.tool {
                 let Some(request) = tool.tvr.as_ref() else {
                     continue;
@@ -330,8 +492,11 @@ impl Upgrade {
             offline: false,
             refresh_remote_versions: false,
             inactive: self.inactive,
+            outdated_release_urls: false,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
+            defer_missing_lazy_online: false,
+            keep_moved_alias_pins: false,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -359,7 +524,7 @@ impl Upgrade {
             })
             .filter(|tools| !tools.is_empty())
             .unwrap_or_default();
-        let mut outdated = if !explicit_filter_tools.is_empty() {
+        let (mut checked, left_alone) = if !explicit_filter_tools.is_empty() {
             let mut explicit = ts
                 .list_outdated_versions_with_progress(
                     &config,
@@ -389,19 +554,70 @@ impl Upgrade {
                     .await,
                 );
             }
-            explicit
+            (explicit, vec![])
         } else {
-            ts.list_outdated_versions_with_progress(
+            self.list_outdated_leaving_missing_lazy(
+                &ts,
                 &config,
-                self.bump,
                 &opts,
                 filter_tools,
                 exclude_tools,
-                self.show_resolution_progress(),
             )
             .await
         };
-        if Settings::get().pin {
+        let mut outdated = std::mem::take(&mut checked.outdated);
+        let pin = self.pin || Settings::get().pin;
+        // Naming a tool without a version (`mise upgrade node --bump --pin`) pins
+        // just that tool; a named version is handled as an explicit bump.
+        let pin_all = pin && self.bump && self.tool.iter().all(|tool| tool.tvr.is_none());
+        if pin {
+            if pin_all {
+                // With `pin` on, a bare `--bump` also records exact versions for
+                // requests that are not exact, such as `latest` or `20`.
+                for (_, tv) in ts.list_current_versions() {
+                    let ToolRequest::Version { version, .. } = &tv.request else {
+                        continue;
+                    };
+                    // A request with no version in it (`java = "zulu"`, `nightly`)
+                    // names a moving target, and the backend-wide latest need not
+                    // belong to it. Only `latest` is resolved without a version.
+                    if version != "latest" && !version.chars().any(|c| c.is_ascii_digit()) {
+                        continue;
+                    }
+                    if self
+                        .exclude
+                        .iter()
+                        .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba()))
+                        || !(self.tool.is_empty()
+                            || self
+                                .tool
+                                .iter()
+                                .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba())))
+                    {
+                        continue;
+                    }
+                    // Replacing a multi-entry tool would drop the entries for
+                    // other platforms, as the ordinary bump path also avoids.
+                    if ts
+                        .versions
+                        .iter()
+                        .any(|(ba, tvl)| backend_args_match(ba, tv.ba()) && tvl.requests.len() > 1)
+                    {
+                        continue;
+                    }
+                    let Some((_, configured)) = effective_persistable_request(&ts, tv.ba()) else {
+                        continue;
+                    };
+                    let Some(path) = configured.source().path() else {
+                        continue;
+                    };
+                    explicit_config_bumps.push(ExplicitConfigBump {
+                        path: path.to_path_buf(),
+                        persisted_request: configured.clone(),
+                        request: configured.clone(),
+                    });
+                }
+            }
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
                     .iter()
@@ -424,10 +640,32 @@ impl Upgrade {
                 }
             }
         }
+        if pin_all {
+            explicit_config_bumps
+                .retain(|bump| bump.persisted_request.version() != bump.request.version());
+            // The exact version is what gets written, so the precision-keeping
+            // bump must not also be applied or previewed.
+            for o in &mut outdated {
+                if explicit_config_bumps.iter().any(|bump| {
+                    backend_args_match(o.tool_version.ba(), bump.request.ba())
+                        && o.tool_version.request.version() == bump.request.version()
+                }) {
+                    o.bump = None;
+                }
+            }
+        }
+        if self.installed_only {
+            outdated.retain(|o| o.current.is_some());
+        }
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
-            // only the requests that enable it.
-            outdated.retain(|o| crate::tool_update::enabled(&o.tool_version.request));
+            // only the requests that enable it. It also only moves an installed
+            // version forward: a request with nothing installed is missing, not
+            // outdated, and installing it is for `mise install` or a lazy tool's
+            // first run, whichever updater (prompt, service, launch) asked.
+            outdated.retain(|o| {
+                o.current.is_some() && crate::tool_update::enabled(&o.tool_version.request)
+            });
             if outdated.is_empty() {
                 // Nothing outdated can also mean a lookup failed and was only
                 // warned about. Check again so a failure isn't taken as "up to
@@ -453,12 +691,32 @@ impl Upgrade {
                 &opts,
                 filter_tools,
                 exclude_tools,
+                &left_alone,
             )
             .await;
         }
         if self.interactive && !outdated.is_empty() {
+            let offered = outdated
+                .iter()
+                .map(|o| o.tool_version.ba().clone())
+                .collect::<Vec<_>>();
             outdated = self.get_interactive_tool_set(&outdated)?;
-            if outdated.is_empty() {
+            if pin_all {
+                // A tool that was not selected is not upgraded, so its config
+                // must not move to a version that is not installed.
+                explicit_config_bumps.retain(|bump| {
+                    let deselected = offered
+                        .iter()
+                        .any(|ba| backend_args_match(ba, bump.request.ba()))
+                        && !outdated
+                            .iter()
+                            .any(|o| backend_args_match(o.tool_version.ba(), bump.request.ba()));
+                    !deselected
+                });
+            }
+            // Pins for requests that were not offered still apply when nothing
+            // was selected, as they do when something was.
+            if outdated.is_empty() && (!pin_all || explicit_config_bumps.is_empty()) {
                 return Ok(());
             }
         }
@@ -490,25 +748,42 @@ impl Upgrade {
                         crate::lockfile::LockfileUpdateMode::AllowLocked,
                     )
                     .await?;
+                    // The bump moved the active version without an install,
+                    // so nothing else relinks the skills.
+                    crate::packslip::auto_sync_skills(&config).await;
                 }
             }
             let bump_outdated = if self.bump {
                 Vec::new()
             } else {
-                ts.list_outdated_versions_filtered(
-                    &config,
-                    true,
-                    &opts,
-                    filter_tools,
-                    exclude_tools,
-                )
-                .await
-                .into_iter()
-                .filter(|o| o.bump.is_some())
-                .collect::<Vec<_>>()
+                // The note only reports, and installs nothing, so a missing lazy tool
+                // is left out even when a reported tool depends on it.
+                let bumps = ts
+                    .list_outdated_versions_selecting(
+                        &config,
+                        true,
+                        &opts,
+                        OutdatedSelection {
+                            filter_tools,
+                            exclude_tools,
+                            show_progress: false,
+                            select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
+                        },
+                    )
+                    .await;
+                // A tool whose backend-wide lookup failed may be out of date too.
+                checked.unchecked.extend(bumps.unchecked);
+                bumps
+                    .outdated
+                    .into_iter()
+                    .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
+                    .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
-                info!("All tools are up to date");
+                // A tool whose check failed may still be out of date.
+                if checked.unchecked.is_empty() {
+                    info!("All tools are up to date");
+                }
             } else if !bump_outdated.is_empty() {
                 let hidden = bump_outdated.len().saturating_sub(MAX_OUT_OF_RANGE_UPDATES);
                 let mut updates = bump_outdated
@@ -531,6 +806,7 @@ impl Upgrade {
             self.upgrade(&mut config, outdated, before_date, &explicit_config_bumps)
                 .await?;
         }
+        checked.warn_unchecked();
 
         Ok(())
     }
@@ -703,10 +979,22 @@ impl Upgrade {
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: self.inactive,
+                outdated_release_urls: false,
                 warn_not_in_lockfile: true,
                 defer_missing_lazy_tools: false,
+                defer_missing_lazy_online: false,
+                keep_moved_alias_pins: false,
+            },
+            // What resolves after the install leaves missing lazy tools alone, as the
+            // toolset builder did before it.
+            after_install_resolve: ResolveOptions {
+                defer_missing_lazy_tools: self.defers_missing_lazy(),
+                defer_missing_lazy_online: self.defers_missing_lazy(),
+                ..Default::default()
             },
             locked: false,
+            yes: self.yes || Settings::get().yes,
+            explicit_yes: self.yes || Settings::cli_yes(),
             ..Default::default()
         };
 
@@ -866,7 +1154,13 @@ impl Upgrade {
 
             // Rebuild symlinks BEFORE getting versions needed by tracked configs
             // This ensures "latest" symlinks point to the new versions, not the old ones
-            let ts = config.get_toolset().await?;
+            let ts = config
+                .get_toolset_with_opts(&ResolveOptions {
+                    defer_missing_lazy_tools: self.defers_missing_lazy(),
+                    defer_missing_lazy_online: self.defers_missing_lazy(),
+                    ..Default::default()
+                })
+                .await?;
             runtime_symlinks::rebuild_for_toolset(config, ts)
                 .await
                 .wrap_err("failed to rebuild runtime symlinks")?;
@@ -920,6 +1214,7 @@ impl Upgrade {
                     true,
                     false,
                     &upgraded_config_paths,
+                    self.defers_missing_lazy(),
                 )
                 .await?;
                 needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
@@ -979,7 +1274,7 @@ impl Upgrade {
                 hint!(
                     "upgrade_auto_prune",
                     "old tool versions are kept for {prune_after} before automatic pruning. Disable this for future upgrades with",
-                    "mise settings set upgrade.auto_prune false"
+                    "mise settings upgrade.auto_prune=false"
                 );
             }
 
@@ -1052,6 +1347,13 @@ impl Upgrade {
             crate::lockfile::LockfileUpdateMode::AllowLocked,
         )
         .await?;
+        // The sync inside install ran before the `latest` links moved, and this
+        // config memoized its toolset from then, so both resolved `latest` to
+        // the version just replaced.
+        if Settings::get().skills.auto_sync {
+            *config = Config::reset().await?;
+            crate::packslip::auto_sync_skills(config).await;
+        }
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all(
@@ -1116,6 +1418,10 @@ impl Upgrade {
     }
 
     fn get_interactive_tool_set(&self, outdated: &Vec<OutdatedInfo>) -> Result<Vec<OutdatedInfo>> {
+        if !console::user_attended_stderr() || !std::io::IsTerminal::is_terminal(&std::io::stdin())
+        {
+            eyre::bail!("--interactive requires an interactive terminal");
+        }
         ui::ctrlc::show_cursor_after_ctrl_c();
         let theme = crate::ui::theme::get_theme();
         let mut ms = demand::MultiSelect::new("mise upgrade")
@@ -1147,6 +1453,7 @@ impl Upgrade {
         opts: &ResolveOptions,
         filter_tools: Option<&[ToolArg]>,
         exclude_tools: Option<&[ToolArg]>,
+        left_alone: &[ToolRequest],
     ) {
         let list_versions = if opts.inactive {
             match ts.list_all_versions(config).await {
@@ -1164,6 +1471,9 @@ impl Upgrade {
             if let Some(exclude) = exclude_tools
                 && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
             {
+                continue;
+            }
+            if left_alone.contains(&tv.request) {
                 continue;
             }
             if let Some(tools) = filter_tools
@@ -1464,7 +1774,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r###"<bold><underline>Deprecation:</underline></bold>
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
-After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead."###
+Use `-b` or `--bump` instead.
+
+The `--local` flag is deprecated in favor of `--no-global`. mise warns about it from
+2027.1.0 and removes it in 2027.7.0."###
 );
 
 #[cfg(test)]

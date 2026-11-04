@@ -228,6 +228,10 @@ impl Shell for Pwsh {
                 if (-not (Test-Path variable:global:__mise_pwsh_previous_prompt_function)){{
                     $Global:__mise_pwsh_previous_prompt_function=$function:prompt
                     function global:prompt {{
+                        # Read first: every command below sets $?, and hook-env is a native
+                        # command. _mise_hook puts $LASTEXITCODE back; $? cannot be assigned,
+                        # but an ignored error makes it false again for the prompt it wraps.
+                        $previousSucceeded = $?
                         if (Test-Path -Path Function:\_mise_hook){{
                             # Skip only when the chpwd handler already ran hook-env for this
                             # exact directory and the MISE_* state has not changed since.
@@ -251,6 +255,7 @@ impl Shell for Pwsh {
                                 _mise_hook
                             }}
                         }}
+                        if (-not $previousSucceeded) {{ Write-Error '' -ErrorAction Ignore }}
                         & $__mise_pwsh_previous_prompt_function
                     }}
                 }}
@@ -398,19 +403,33 @@ impl Display for Pwsh {
     }
 }
 
+/// Every character PowerShell's tokenizer reads as a single quote (`CharTraits.IsSingleQuote`):
+/// the ASCII apostrophe and the typographic U+2018 `‘`, U+2019 `’`, U+201A `‚` and U+201B `‛`.
+/// Any of them closes a `'...'` literal unless it is doubled.
+const SINGLE_QUOTES: [char; 5] = ['\'', '\u{2018}', '\u{2019}', '\u{201a}', '\u{201b}'];
+
 /// Quote `input` for a PowerShell single-quoted string literal, without the surrounding quotes.
 ///
-/// Inside `'...'` every character is literal except `'`, which is written by doubling it. A
-/// backtick is *not* an escape there — that is only true inside `"..."` — so emitting `` `' ``
-/// left the quote closing the literal, and the line failed to parse rather than carrying an
-/// apostrophe. Allocates only when there is a quote to double, the way `xonsh_escape_sq` in the
-/// xonsh backend does for Python's rules.
+/// Inside `'...'` every character is literal except a single quote, which is written by doubling
+/// it. PowerShell counts the typographic quotes in [`SINGLE_QUOTES`] as single quotes too, so an
+/// undoubled `’` in a directory name ended the literal and handed the rest of the line to
+/// `Invoke-Expression` as statements; each is doubled with itself, as PowerShell's own
+/// `CodeGeneration.EscapeSingleQuotedStringContent` does. A backtick is *not* an escape there —
+/// that is only true inside `"..."` — so emitting `` `' `` left the quote closing the literal,
+/// and the line failed to parse rather than carrying an apostrophe. Allocates only when there is
+/// a quote to double, the way `xonsh_escape_sq` in the xonsh backend does for Python's rules.
 fn escape_sq(input: &str) -> Cow<'_, str> {
-    if input.contains('\'') {
-        Cow::Owned(input.replace('\'', "''"))
-    } else {
-        Cow::Borrowed(input)
+    if !input.contains(SINGLE_QUOTES) {
+        return Cow::Borrowed(input);
     }
+    let mut out = String::with_capacity(input.len() + 2);
+    for c in input.chars() {
+        out.push(c);
+        if SINGLE_QUOTES.contains(&c) {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
 }
 
 /// Quote an environment variable name for the `${Env:NAME}` form.
@@ -624,6 +643,32 @@ mod tests {
         assert_eq!(pwsh.set_env("EMPTY", ""), "${Env:EMPTY}=''\n");
         // two apostrophes in one value, and one at each edge
         assert_eq!(pwsh.set_env("K", "'a'b'"), "${Env:K}='''a''b'''\n");
+    }
+
+    /// PowerShell reads the typographic quotes U+2018–U+201B as single quotes as well, so an
+    /// undoubled `’` closed the literal and left `;whoami;#` for `Invoke-Expression` to run.
+    /// None of them is reserved in a file name, so a directory name, a version string or a
+    /// release archive's layout can carry one into `JAVA_HOME`, `PATH` or a hook variable.
+    #[test]
+    fn test_set_env_escapes_typographic_single_quotes() {
+        let pwsh = Pwsh::default();
+        assert_eq!(
+            pwsh.set_env("JAVA_HOME", "/tmp/clone/jdk\u{2019};whoami;#"),
+            "${Env:JAVA_HOME}='/tmp/clone/jdk\u{2019}\u{2019};whoami;#'\n"
+        );
+        // each one is doubled with itself, so the value round-trips unchanged
+        assert_eq!(
+            pwsh.set_env("Q", "\u{2018}a\u{2019}b\u{201a}c\u{201b}"),
+            "${Env:Q}='\u{2018}\u{2018}a\u{2019}\u{2019}b\u{201a}\u{201a}c\u{201b}\u{201b}'\n"
+        );
+        assert_eq!(
+            pwsh.prepend_env("PATH", "/tmp/clone/jdk\u{2019};whoami;#/bin"),
+            "${Env:PATH}='/tmp/clone/jdk\u{2019}\u{2019};whoami;#/bin'+[IO.Path]::PathSeparator+${env:PATH}\n"
+        );
+        assert_eq!(
+            pwsh.unset_env("IT\u{2019}S"),
+            "Remove-Item -ErrorAction SilentlyContinue -LiteralPath 'Env:/IT\u{2019}\u{2019}S'\n"
+        );
     }
 
     /// PATH is the value that matters most here: it carries the user's home directory, so an

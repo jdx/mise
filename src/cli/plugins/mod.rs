@@ -81,30 +81,38 @@ async fn join_plugin_tasks(
     }
 }
 
+/// Manage plugins
+///
+/// Plugins add tools, backends, environment directives, or bootstrap package
+/// managers to mise. Most tools need no plugin because most registry tools use
+/// built-in backends, and mise installs a missing plugin when a configured tool
+/// needs it.
+///
+/// With no subcommand, lists installed plugins (same as `mise plugins ls`; the
+/// flags below are passed to it). See https://mise.jdx.dev/plugins.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
+#[usage(
+    visible_alias = "p",
+    aliases = ["plugin", "plugin-list"],
+    verbatim_doc_comment
+)]
 pub(crate) struct Plugins {
     #[usage(subcommand)]
     command: Option<Commands>,
 
-    /// List all available remote plugins
-    ///
-    /// Same as `mise plugins ls-remote`
+    /// List all available remote plugins (same as `mise plugins ls-remote`)
     #[usage(short, long, hide = true)]
     pub all: bool,
 
-    /// Only show built-in (core) plugins
-    /// These are hidden by default
+    /// List the core tools built into mise instead of installed plugins
     #[usage(short, long, verbatim_doc_comment, conflicts = "all")]
     pub core: bool,
 
-    /// Show the git url for each plugin
-    /// e.g.: https://github.com/jdx/vfox-cmake.git
+    /// Show each plugin's Git URL, ref, and commit
     #[usage(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
-    /// Show the git refs for each plugin
-    /// e.g.: main 1234abc
+    /// Show each plugin's Git ref and commit, such as `main 1234abc`
     #[usage(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 

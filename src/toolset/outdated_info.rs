@@ -23,7 +23,7 @@ pub struct OutdatedInfo {
     #[tabled(skip)]
     pub tool_version: ToolVersion,
     pub requested: String,
-    #[tabled(display("Self::display_current"))]
+    #[tabled(display("Self::display_current", self))]
     pub current: Option<String>,
     #[tabled(display("Self::display_bump"))]
     pub bump: Option<String>,
@@ -118,25 +118,24 @@ impl OutdatedInfo {
         let use_backend_latest =
             bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
 
+        // The query `latest` was asked with, which says whether it went through
+        // the backend's stable-latest shortcut (see `resolved_release_url`).
+        let latest_query;
         let latest_result = if use_backend_latest {
             let prefix = prefixed_latest_query(&prefix, &prefix_version);
+            latest_query = prefix.clone().unwrap_or_else(|| "latest".to_string());
             // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
             t.latest_version(config, prefix, opts.before_date).await
         } else {
+            latest_query = tv.request.version();
             tv.latest_version_with_opts(config, opts)
                 .await
                 .map(Option::from)
         };
-        let latest = match latest_result {
-            Ok(Some(latest)) => latest,
-            Ok(None) => {
-                warn!("Error getting latest version for {t}: no latest version found");
-                return Ok(None);
-            }
-            Err(e) => {
-                warn!("Error getting latest version for {t}: {e:#}");
-                return Ok(None);
-            }
+        // The caller warns, and counts the tool as unchecked rather than up to
+        // date.
+        let Some(latest) = latest_result? else {
+            eyre::bail!("no latest version found");
         };
         let mut oi = Self::new(config, tv, latest)?;
         if opts.inactive && oi.source == ToolSource::Unknown {
@@ -169,30 +168,21 @@ impl OutdatedInfo {
             );
         }
         // Asked for after the up-to-date checks above, so a tool that is not
-        // going to be reported does not pay for the lookup. It reads the remote
-        // listing, which is cached and which resolution has usually just read,
-        // so this normally costs no extra request.
+        // going to be reported does not pay for the lookup, and only by callers
+        // that report it: it can read a version list resolution did not need.
         //
         // `oi.latest` rather than the requested version: what is wanted is where
         // to read about the version being offered, not the one already pinned.
-        oi.release_url = match t.get_version_info(config, &oi.latest).await {
-            Some(info) => info.release_url,
-            // A plain `latest` without prereleases does not come from that
-            // listing at all — `latest_version` takes the backend's
-            // stable-latest shortcut, which can name a release the cached
-            // listing has not caught up with. Looking that version up here then
-            // finds nothing, and the URL would go missing precisely for the
-            // freshest release. The shortcut carries the URL itself, so ask it
-            // rather than report nothing.
-            None => t
-                .latest_stable_version_info(config)
-                .await
-                .ok()
-                .flatten()
-                // Only if it is describing the version actually being reported.
-                .filter(|info| info.version == oi.latest)
-                .and_then(|info| info.release_url),
-        };
+        if opts.outdated_release_urls {
+            oi.release_url = t
+                .resolved_release_url(
+                    config,
+                    &oi.latest,
+                    &latest_query,
+                    &oi.tool_request.options(),
+                )
+                .await;
+        }
         if bump {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
@@ -245,11 +235,15 @@ impl OutdatedInfo {
         Ok(Some(oi))
     }
 
-    fn display_current(current: &Option<String>) -> String {
-        if let Some(current) = current {
-            current.to_string()
-        } else {
-            "[MISSING]".to_string()
+    pub fn is_unrun_lazy(&self) -> bool {
+        self.tool_version.is_unrun_lazy()
+    }
+
+    fn display_current(current: &Option<String>, oi: &Self) -> String {
+        match current {
+            Some(current) => current.to_string(),
+            None if oi.is_unrun_lazy() => "[MISSING] (lazy)".to_string(),
+            None => "[MISSING]".to_string(),
         }
     }
 
@@ -489,6 +483,12 @@ pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     Ok(())
 }
 
+/// Parses a purely dot-separated numeric version such as `2026.08.19`, which
+/// neither SemVer nor `versions` accept because of the leading zeros.
+fn numeric_components(v: &str) -> Option<Vec<u64>> {
+    v.split('.').map(|c| c.parse().ok()).collect()
+}
+
 /// Checks whether the current version is older than a backend-selected candidate.
 /// Uses SemVer precedence when possible, then the general version comparison;
 /// versions that cannot be ordered are considered outdated when they differ.
@@ -498,6 +498,8 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
     }
     if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
         c.lt(&l)
+    } else if let (Some(c), Some(l)) = (numeric_components(current), numeric_components(latest)) {
+        c < l
     } else {
         current != latest
     }
@@ -521,6 +523,8 @@ mod tests {
     /// candidates use different prefixes, while retaining non-SemVer comparisons.
     #[test]
     fn test_is_outdated_version() {
+        assert_eq!(is_outdated_version("2026.08.19", "2026.10.21"), true);
+        assert_eq!(is_outdated_version("2026.10.21", "2026.08.19"), false);
         assert_eq!(is_outdated_version("3.7b", "3.7c"), true);
         assert_eq!(is_outdated_version("3.7c", "3.7b"), false);
         assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);

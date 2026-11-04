@@ -30,6 +30,9 @@ pub struct Formula {
     /// build-time-only dependencies — needed for source builds, not pours
     #[serde(default)]
     pub build_dependencies: Vec<String>,
+    /// dependencies provided by macOS but required as formulae on Linux
+    #[serde(default)]
+    pub uses_from_macos: Vec<UsesFromMacos>,
     #[serde(default)]
     pub bottle: HashMap<String, BottleSpec>,
     /// per-bottle-tag overrides (e.g. different dependencies on some platforms)
@@ -46,6 +49,10 @@ pub struct Formula {
     /// homebrew/core commit this API snapshot was generated from
     #[serde(default)]
     pub tap_git_head: Option<String>,
+    /// declarative post-install actions from the Homebrew API, kept raw
+    /// because the step vocabulary is large and grows with brew
+    #[serde(default)]
+    pub post_install_steps: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -90,6 +97,57 @@ pub struct Variation {
     pub dependencies: Option<Vec<String>>,
     #[serde(default)]
     pub build_dependencies: Option<Vec<String>>,
+    #[serde(default)]
+    pub uses_from_macos: Option<Vec<UsesFromMacos>>,
+}
+
+/// Homebrew serializes untyped dependencies as names and typed ones as
+/// name-to-tag maps (e.g. {"bison": "build"}).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum UsesFromMacos {
+    Name(String),
+    Tagged(HashMap<String, UsesFromMacosTags>),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum UsesFromMacosTags {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl UsesFromMacosTags {
+    /// Whether the dependency has a given Homebrew dependency tag.
+    fn contains(&self, tag: &str) -> bool {
+        match self {
+            Self::One(value) => value == tag,
+            Self::Many(values) => values.iter().any(|value| value == tag),
+        }
+    }
+}
+
+impl UsesFromMacos {
+    /// Required runtime dependency name, excluding build, test, and optional tags.
+    pub fn runtime_name(&self) -> Option<&String> {
+        match self {
+            Self::Name(name) => Some(name),
+            Self::Tagged(deps) => deps.iter().find_map(|(name, tags)| {
+                (!tags.contains("build") && !tags.contains("test") && !tags.contains("optional"))
+                    .then_some(name)
+            }),
+        }
+    }
+
+    /// Required build dependency name, excluding optional dependencies.
+    pub fn build_name(&self) -> Option<&String> {
+        match self {
+            Self::Name(_) => None,
+            Self::Tagged(deps) => deps.iter().find_map(|(name, tags)| {
+                (tags.contains("build") && !tags.contains("optional")).then_some(name)
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,6 +203,16 @@ impl Formula {
             return deps;
         }
         &self.dependencies
+    }
+
+    /// macOS-provided dependencies for the given bottle tag, applying `variations`
+    pub fn uses_from_macos_for(&self, tag: &str) -> &[UsesFromMacos] {
+        if let Some(v) = self.variations.get(tag)
+            && let Some(deps) = &v.uses_from_macos
+        {
+            return deps;
+        }
+        &self.uses_from_macos
     }
 
     /// build-time dependencies for the given bottle tag, applying `variations`
@@ -277,6 +345,49 @@ mod tests {
         assert!(keg_only_formula(Some(":versioned_formula")).keg_only_for_target());
         assert!(keg_only_formula(Some("free-text reason")).keg_only_for_target());
         assert!(keg_only_formula(None).keg_only_for_target());
+    }
+
+    #[test]
+    fn uses_from_macos_variations_preserve_tags() {
+        let formula: Formula = serde_json::from_value(serde_json::json!({
+            "name": "freetype",
+            "versions": {"stable": "1.0"},
+            "uses_from_macos": [
+                "bzip2",
+                {"bison": "build"},
+                {"sqlite": "test"},
+                {"llvm": ["build", "test"]},
+                {"unneeded": "optional"},
+                {"suggested": "recommended"},
+                {"disabled-build": ["build", "optional"]}
+            ],
+            "variations": {
+                "arm64_linux": {"uses_from_macos": ["zlib"]},
+                "x86_64_linux": {"dependencies": ["libpng"]}
+            }
+        }))
+        .unwrap();
+
+        let deps = formula.uses_from_macos_for("x86_64_linux");
+        assert_eq!(deps[0].runtime_name().map(String::as_str), Some("bzip2"));
+        assert_eq!(deps[1].build_name().map(String::as_str), Some("bison"));
+        assert!(deps[1].runtime_name().is_none());
+        assert!(deps[2].runtime_name().is_none());
+        assert!(deps[2].build_name().is_none());
+        assert_eq!(deps[3].build_name().map(String::as_str), Some("llvm"));
+        assert!(deps[4].runtime_name().is_none());
+        assert!(deps[4].build_name().is_none());
+        assert_eq!(
+            deps[5].runtime_name().map(String::as_str),
+            Some("suggested")
+        );
+        assert!(deps[6].build_name().is_none());
+        assert_eq!(
+            formula.uses_from_macos_for("arm64_linux")[0]
+                .runtime_name()
+                .map(String::as_str),
+            Some("zlib")
+        );
     }
 
     #[test]

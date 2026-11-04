@@ -5,15 +5,15 @@ use itertools::Itertools;
 use crate::config::Config;
 use crate::toolset::install_state;
 
-/// List all available remote plugins
+/// List registry tools that have an asdf or vfox plugin backend
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, example(r###"mise plugins ls-remote"###), verbatim_doc_comment)]
+#[usage(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, example(r###"mise plugins ls-remote"###, help = "List registry tools with a plugin backend"), verbatim_doc_comment)]
 pub(super) struct PluginsLsRemote {
     /// Show the plugin source for each shorthand, e.g. vfox:jdx/vfox-poetry
     #[usage(short, long)]
     pub urls: bool,
 
-    /// Only show the name of each plugin, without the "*" marking installed plugins
+    /// Only show the name of each plugin, without the `*` marking installed plugins
     #[usage(long)]
     pub only_names: bool,
 }
@@ -51,6 +51,10 @@ impl PluginsLsRemote {
     }
 }
 
-const LONG_ABOUT: &str = r#"List all available remote plugins
+const LONG_ABOUT: &str = r#"List registry tools that have an asdf or vfox plugin backend
 
-These are the shorthand names from the registry: https://github.com/jdx/mise/blob/main/registry/"#;
+Each line is a registry shorthand that lists an asdf or vfox plugin among its
+backends; mise may still install the tool through another backend first. `*`
+marks plugins you have installed. Entries from the `shorthands_file` setting
+are listed too. Use `mise registry` to list every registry tool and its
+backends in order."#;

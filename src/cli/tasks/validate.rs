@@ -18,25 +18,46 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Serialize;
 
-/// Validate tasks for common errors and issues
+/// Check task definitions for errors
+///
+/// Checks each task for dependency cycles; references to tasks that do not
+/// exist; `#USAGE` specs that do not parse; invalid `timeout` values; aliases
+/// that more than one task uses; missing or non-executable file tasks; invalid
+/// `dir` paths and templates; missing shell executables; invalid `sources` and
+/// `outputs` globs; broken task references in `run` arrays, empty scripts, and
+/// tasks with nothing to run; required `daemons` that no readable `[daemons]`
+/// section declares; and `secrets` grants that conflict with the sandbox or
+/// `[env]`, or, when the config is trusted, that name keys missing from the
+/// secrets source.
+///
+/// Exits 1 if any error is found, so you can run it in CI. Warnings are
+/// reported but do not fail the command.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+#[usage(
     example(r###"mise tasks validate"###, help = r###"Validate all tasks"###),
-    example(r###"mise tasks validate build test"###, help = r###"Validate specific tasks"###),
-    example(r###"mise tasks validate --json"###, help = r###"Output results as JSON"###),
-    example(r###"mise tasks validate --errors-only"###, help = r###"Only show errors (skip warnings)"###))]
+    example(
+        r###"mise tasks validate build test"###,
+        help = r###"Validate specific tasks"###
+    ),
+    example(
+        r###"mise tasks validate --json"###,
+        help = r###"Output results as JSON"###
+    ),
+    example(
+        r###"mise tasks validate --errors-only"###,
+        help = r###"Only show errors (skip warnings)"###
+    )
+)]
 pub(super) struct TasksValidate {
-    /// Tasks to validate
-    /// If not specified, validates all tasks
-    #[usage(verbatim_doc_comment)]
+    /// Tasks to validate (default: all tasks)
     pub tasks: Option<Vec<String>>,
 
     /// Only show errors (skip warnings)
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub errors_only: bool,
 
     /// Output validation results in JSON format
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub json: bool,
 }
 
@@ -74,8 +95,13 @@ impl TasksValidate {
         // so we can properly validate remote tasks and circular dependencies
         let mut resolved_tasks: Vec<Task> = config.tasks().await?.values().cloned().collect();
         // always no_cache=false as the command doesn't take no-cache argument
-        // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-        TaskFetcher::new(false)
+        // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set.
+        // Every task is fetched because selection, aliases and references can come from a
+        // fetched file's `#MISE` header. With experimental off, `git::` task files stay
+        // unfetched; a validated one gets a ValidationIssue instead of a warning, and an
+        // unselected one is not mentioned.
+        TaskFetcher::for_inspection(false)
+            .without_warning()
             .fetch_tasks(&config, &mut resolved_tasks)
             .await?;
         let all_tasks: BTreeMap<String, Task> = resolved_tasks
@@ -253,6 +279,37 @@ impl TasksValidate {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
+        // A remote file left unfetched (a `git::` file with experimental off, or any remote
+        // file of project config in safe mode) can't be read, so its usage header and file
+        // are not checked; the rest of the task's TOML still is.
+        let unfetched = TaskFetcher::is_unfetched_remote_task(task);
+        if TaskFetcher::is_unfetched_git_task(task) && !crate::config::Settings::get().experimental
+        {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Warning,
+                category: "experimental".to_string(),
+                message: "Task file is a `git::` source, which is experimental; not fetched"
+                    .to_string(),
+                details: Some(
+                    "Enable it with `mise settings experimental=true` to validate the file"
+                        .to_string(),
+                ),
+            });
+        } else if unfetched {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Warning,
+                category: "safe_mode".to_string(),
+                message:
+                    "Task file is a remote source, which safe mode does not fetch; not validated"
+                        .to_string(),
+                details: Some(
+                    "Run `mise tasks validate` without MISE_SAFE to validate the file".to_string(),
+                ),
+            });
+        }
+
         // 1. Validate missing task references
         issues.extend(self.validate_missing_references(task, all_tasks, reference_tasks));
 
@@ -260,7 +317,10 @@ impl TasksValidate {
         issues.extend(Self::validate_daemon_references(task, config).await);
 
         // 2. Validate usage spec parsing
-        issues.extend(self.validate_usage_spec(task, config).await);
+        match TaskFetcher::toml_only(task) {
+            Some(toml_only) => issues.extend(self.validate_usage_spec(&toml_only, config).await),
+            None => issues.extend(self.validate_usage_spec(task, config).await),
+        }
 
         // 3. Validate timeout format
         issues.extend(self.validate_timeout(task));
@@ -269,7 +329,9 @@ impl TasksValidate {
         issues.extend(self.validate_aliases(task, all_tasks));
 
         // 5. Validate file existence
-        issues.extend(self.validate_file_existence(task));
+        if !unfetched {
+            issues.extend(self.validate_file_existence(task));
+        }
 
         // 6. Validate directory template
         issues.extend(self.validate_directory(task, config).await);
@@ -439,7 +501,7 @@ impl TasksValidate {
         // monorepo the daemon may be declared by a subproject, or a same-named
         // one in the caller's project may not be the one that would start.
         let scoped = match &task.config_root {
-            Some(root) => crate::daemons::runtime::config_for_root(config, root).await,
+            Some(root) => crate::daemons::glue::config_for_root(config, root).await,
             None => Ok(config.clone()),
         };
         // A malformed declaration fails the run, so it has to fail validation
@@ -834,7 +896,10 @@ impl TasksValidate {
 
         // Check if task has no run entries and no file
         // Allow tasks with dependencies but no run entries (meta/group tasks)
-        if task.run().is_empty()
+        // Check both platforms' commands, not just this one's: an empty `run_windows` beside a
+        // `run` skips the task on Windows, and a `run_windows` alone skips it everywhere else
+        if task.run.is_empty()
+            && task.run_windows.is_empty()
             && task.file.is_none()
             && task.depends.is_empty()
             && task.depends_post.is_empty()
@@ -1004,23 +1069,6 @@ fn graph_error_issue(task: &str, details: String) -> ValidationIssue {
         details: Some(details),
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r###"<bold><underline>Validation Checks:</underline></bold>
-
-The validate command performs the following checks:
-
-  • <bold>Circular Dependencies</bold>: Detects dependency cycles
-  • <bold>Missing References</bold>: Finds references to nonexistent tasks
-  • <bold>Usage Spec Parsing</bold>: Validates #USAGE directives and specs
-  • <bold>Timeout Format</bold>: Checks timeout values are valid durations
-  • <bold>Alias Conflicts</bold>: Detects duplicate aliases across tasks
-  • <bold>File Existence</bold>: Verifies file-based tasks exist
-  • <bold>Directory Templates</bold>: Validates directory paths and templates
-  • <bold>Shell Commands</bold>: Checks shell executables exist
-  • <bold>Glob Patterns</bold>: Validates source and output patterns
-  • <bold>Run Entries</bold>: Ensures tasks reference valid dependencies"###
-);
 
 #[cfg(test)]
 mod tests {

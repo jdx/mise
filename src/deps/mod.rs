@@ -1,17 +1,19 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use eyre::{Result, bail};
 
 use crate::config::{Config, Settings, SettingsExt};
-use crate::env;
-use crate::file::display_filename;
+use crate::file::{self, display_filename, display_path};
+use crate::hash::hash_to_str;
+use crate::{dirs, env};
 
 pub use engine::{DepsEngine, DepsOptions, DepsStepResult};
-pub(crate) use rule::DepsConfig;
 pub(crate) use rule::DepsTemplateContext;
+pub(crate) use rule::{DepsConfig, DepsDecl};
 
 pub(crate) mod deps_ordering;
 mod engine;
@@ -318,31 +320,36 @@ pub fn notify_if_stale(config: &Arc<Config>, effective_env: &BTreeMap<String, St
     }
 }
 
-/// Tracks directories created during this session that should be considered stale
-/// for deps freshness checks (e.g., venvs auto-created before deps runs)
-static STALE_OUTPUTS: LazyLock<Mutex<HashSet<PathBuf>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+/// Marker recording that mise created `path` (e.g. an auto-created venv). It
+/// lives on disk so later mise processes see it, and holds a generation that
+/// each provider tracking `path` records once it has run against it.
+fn stale_output_marker(path: &Path) -> PathBuf {
+    dirs::STATE
+        .join("deps")
+        .join("stale-outputs")
+        .join(hash_to_str(&path))
+}
 
 /// Mark a directory as freshly created (stale for deps purposes)
-pub(crate) fn mark_output_stale(path: PathBuf) {
-    if let Ok(mut set) = STALE_OUTPUTS.lock() {
-        set.insert(path);
+pub(crate) fn mark_output_stale(path: &Path) {
+    let marker = stale_output_marker(path);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let generation = format!("{}-{nanos}", std::process::id());
+    let written = marker
+        .parent()
+        .map_or(Ok(()), file::create_dir_all)
+        .and_then(|_| file::write_atomic(&marker, generation));
+    if let Err(e) = written {
+        warn!("failed to mark {} stale for deps: {e}", display_path(path));
     }
 }
 
-/// Check if a directory was created this session
-pub(crate) fn is_output_stale(path: &PathBuf) -> bool {
-    STALE_OUTPUTS
-        .lock()
-        .map(|set| set.contains(path))
-        .unwrap_or(false)
-}
-
-/// Clear stale status for a path (after deps runs successfully)
-pub(crate) fn clear_output_stale(path: &PathBuf) {
-    if let Ok(mut set) = STALE_OUTPUTS.lock() {
-        set.remove(path);
-    }
+/// The generation of the stale marker for `path`, if mise created it
+pub(crate) fn stale_output_generation(path: &Path) -> Option<String> {
+    std::fs::read_to_string(stale_output_marker(path)).ok()
 }
 
 /// Detect which built-in deps providers are applicable for a given directory

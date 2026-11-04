@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# A remote task file renders its #MISE headers like a local file task, so a
+# template in it needs the referencing config to be trusted, as a local task
+# include does. Listing tasks in an untrusted directory must not exec() it.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+marker="$PWD/remote-marker"
+mkdir -p srv
+cat <<EOF >srv/evil.sh
+#!/usr/bin/env bash
+#MISE description="{{ exec(command='touch $marker') }}evil"
+echo evil
+EOF
+cat <<'EOF' >srv/plain.sh
+#!/usr/bin/env bash
+#MISE description="a plain remote task"
+docker ps --format '{{.Names}}'
+EOF
+cat <<'EOF' >srv/templated.sh
+#!/usr/bin/env bash
+#MISE description="{{ 'rendered' }} remote task"
+echo templated
+EOF
+start_http_server --dir "$PWD/srv"
+
+cat <<EOF >mise.toml
+[tasks.evil]
+file = "http://localhost:${HTTP_PORT}/evil.sh"
+EOF
+
+assert_untrusted() {
+  local output
+  output=$(MISE_YES=0 mise "$@" 2>&1 || true)
+  [[ ! -f $marker ]] || fail "remote task template executed by untrusted 'mise $*'"
+  echo "$output" | grep -qi "not trusted" || fail "expected trust error from 'mise $*', got: $output"
+}
+assert_untrusted tasks ls
+assert_untrusted tasks info evil
+assert_untrusted tasks validate
+
+# A remote file with no template in its headers still loads without trust. Only the
+# headers render, so braces in the script itself do not count.
+cat <<EOF >mise.toml
+[tasks.plain]
+file = "http://localhost:${HTTP_PORT}/plain.sh"
+EOF
+assert_contains "MISE_YES=0 mise tasks ls" "a plain remote task"
+
+# Once the config is trusted, a templated remote file renders as before.
+cat <<EOF >mise.toml
+[tasks.templated]
+file = "http://localhost:${HTTP_PORT}/templated.sh"
+EOF
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD MISE_YES=0 mise tasks ls" "rendered remote task"

@@ -39,6 +39,7 @@ function PLUGIN:Available(ctx)
                 table.insert(result, {
                     version = version,
                     note = release.name or "",
+                    created_at = type(release.published_at) == "string" and release.published_at or nil,
                 })
             end
         end

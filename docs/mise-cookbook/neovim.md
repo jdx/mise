@@ -1,12 +1,13 @@
 ---
 description: "Highlight scripts embedded in mise.toml and metadata in file tasks, then add language-server features with otter.nvim."
+socialDescription: "Highlight mise task scripts in Neovim and add language-server features with otter.nvim."
 ---
 
-# Neovim Cookbook
+# Neovim
 
-Highlight scripts embedded in `mise.toml` and metadata in file tasks, then add
-language-server features with otter.nvim. These examples configure the editor;
-they do not change how mise executes tasks.
+Highlight the scripts embedded in `mise.toml` and the metadata comments in file
+tasks with Treesitter, then add language-server features to embedded scripts
+with otter.nvim.
 
 Before adding the queries, install the Treesitter parsers for `toml`, `bash`, and
 any injected languages you use (`kdl` for `#USAGE`, for example). Enable Treesitter
@@ -20,8 +21,9 @@ plugin specifications assume you already use lazy.nvim.
 
 ### Run commands
 
-Use [Treesitter](https://github.com/nvim-treesitter/nvim-treesitter) to enable syntax highlighting for the code in the run commands of your mise files.
-See the left side of the image for an example:
+Use [Treesitter](https://github.com/nvim-treesitter/nvim-treesitter) to highlight
+the code in the `run` commands of your mise files. The screenshot shows the
+result:
 
 ![run cmd syntax highlighting demo](./run-cmd-syntax-hl.png)
 
@@ -72,11 +74,10 @@ In your Neovim config, create an `after/queries/toml/injections.scm` file with t
 )
 ```
 
-The `is-mise?` predicate restricts the highlighting to mise files instead of all TOML files.
-If you don't need this distinction, remove the lines containing `(#is-mise?)`.
-Otherwise, make sure to also define the predicate somewhere in your Neovim config.
-
-For example, using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
+The `is-mise?` predicate restricts the highlighting to mise files instead of all
+TOML files. If you do not need this distinction, remove the lines containing
+`(#is-mise?)`. Otherwise, define the predicate in your Neovim config, for
+example with [`lazy.nvim`](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
@@ -107,10 +108,10 @@ The extracted name must match an installed Treesitter language; wrappers such as
 query. The Bash fallback controls highlighting only; mise's actual default shell
 is described in [TOML tasks](/tasks/toml-tasks.html#shell-shebang).
 
-### MISE and USAGE comments in file tasks
+### `#MISE` and `#USAGE` comments in file tasks {#mise-and-usage-comments-in-file-tasks}
 
-You can also use Treesitter to enable syntax highlighting for `#MISE` and `#USAGE` comments in file tasks.
-See the left side of the image for an example:
+Treesitter can also highlight the `#MISE` and `#USAGE` comments in file tasks.
+The screenshot shows the result:
 
 ![USAGE spec syntax highlighting demo](./usage-spec-syntax-hl.png)
 
@@ -122,14 +123,21 @@ In your Neovim config, create an `after/queries/bash/injections.scm` file with t
 ; ============================================================================
 ; #MISE comments - TOML injection
 ; ============================================================================
-; This injection captures comment lines starting with "#MISE " or "#[MISE]" or
-; "# [MISE]" and treats them as TOML code blocks for syntax highlighting.
+; This injection captures comment lines starting with "#MISE ", "# MISE ",
+; "#[MISE] " or "# [MISE] " and treats them as TOML code blocks for syntax
+; highlighting.
 ;
 ; #MISE format
 ; The (#offset!) directive skips the "#MISE " prefix (6 characters) from the source
 ((comment) @injection.content
   (#lua-match? @injection.content "^#MISE ")
   (#offset! @injection.content 0 6 0 1)
+  (#set! injection.language "toml"))
+
+; # MISE format
+((comment) @injection.content
+  (#lua-match? @injection.content "^# MISE ")
+  (#offset! @injection.content 0 7 0 1)
   (#set! injection.language "toml"))
 
 ; #[MISE] format
@@ -147,9 +155,9 @@ In your Neovim config, create an `after/queries/bash/injections.scm` file with t
 ; ============================================================================
 ; #USAGE comments - KDL injection
 ; ============================================================================
-; This injection captures consecutive comment lines starting with "#USAGE " or
-; "#[USAGE]" or "# [USAGE]" and treats them as a single KDL code block for
-; syntax highlighting.
+; This injection captures consecutive comment lines starting with "#USAGE ",
+; "# USAGE ", "#[USAGE] " or "# [USAGE] " and treats them as a single KDL code
+; block for syntax highlighting.
 ;
 ; #USAGE format
 ((comment) @injection.content
@@ -157,6 +165,13 @@ In your Neovim config, create an `after/queries/bash/injections.scm` file with t
   ; Extend the range one byte to the right, to include the trailing newline.
   ; see https://github.com/neovim/neovim/discussions/36669#discussioncomment-15054154
   (#offset! @injection.content 0 7 0 1)
+  (#set! injection.combined)
+  (#set! injection.language "kdl"))
+
+; # USAGE format
+((comment) @injection.content
+  (#lua-match? @injection.content "^# USAGE ")
+  (#offset! @injection.content 0 8 0 1)
   (#set! injection.combined)
   (#set! injection.language "kdl"))
 
@@ -173,32 +188,34 @@ In your Neovim config, create an `after/queries/bash/injections.scm` file with t
   (#offset! @injection.content 0 10 0 1)
   (#set! injection.combined)
   (#set! injection.language "kdl"))
-
-; NOTE: on neovim >= 0.12, you can use the multi node pattern instead of
-; combining injections:
-;
-; ((comment)+ @injection.content
-;   (#lua-match? @injection.content "^#USAGE ")
-;   (#offset! @injection.content 0 7 0 1)
-;   (#set! injection.language "kdl"))
-;
-; this is the preferred way as combined injections have multiple
-; limitations:
-; https://github.com/neovim/neovim/issues/32635
-
 ```
 
-These queries can also work with other grammars that represent `#` comments as
-`comment` nodes. Use `:InspectTree` to check the node names in your parser.
-Because Treesitter injections are per language, you need to add the same queries to each language's query file.
-For example, put them in `after/queries/python/injections.scm` to enable them for `Python` in addition to `bash`.
+These combined injections work on Neovim 0.11 and 0.12. Neovim 0.12 also accepts
+a multi-node pattern, `((comment)+ @injection.content ...)`, without
+`injection.combined`. That pattern requires every comment in a run of
+consecutive comments to match, so it does not highlight a `#USAGE` block that
+directly follows the shebang or a `#MISE` line, and Neovim 0.11 and earlier
+reject it with an `#offset!` error.
 
-For languages that use `//` as a comment delimiter, adjust the queries slightly:
+The same queries work with other grammars that represent `#` comments as
+`comment` nodes. Use `:InspectTree` to check the node names in your parser.
+Treesitter injections are per language, so add the queries to each language's
+query file. For example, put them in `after/queries/python/injections.scm` to
+enable them for Python as well as Bash.
+
+For languages with `//` comments, such as JavaScript, create
+`after/queries/javascript/injections.scm` with:
 
 ```query
+; extends
+
 ((comment) @injection.content
   (#lua-match? @injection.content "^//MISE ")
   (#offset! @injection.content 0 7 0 1)
+  (#set! injection.language "toml"))
+((comment) @injection.content
+  (#lua-match? @injection.content "^// MISE ")
+  (#offset! @injection.content 0 8 0 1)
   (#set! injection.language "toml"))
 ((comment) @injection.content
   (#lua-match? @injection.content "^//%[MISE%] ")
@@ -214,6 +231,11 @@ For languages that use `//` as a comment delimiter, adjust the queries slightly:
   (#set! injection.combined)
   (#set! injection.language "kdl"))
 ((comment) @injection.content
+  (#lua-match? @injection.content "^// USAGE ")
+  (#offset! @injection.content 0 9 0 1)
+  (#set! injection.combined)
+  (#set! injection.language "kdl"))
+((comment) @injection.content
   (#lua-match? @injection.content "^//%[USAGE%] ")
   (#offset! @injection.content 0 10 0 1)
   (#set! injection.combined)
@@ -225,11 +247,17 @@ For languages that use `//` as a comment delimiter, adjust the queries slightly:
   (#set! injection.language "kdl"))
 ```
 
-## Enable LSP for embedded lang in run commands
+Keep the `; extends` line. Without it, Neovim uses only the first
+`injections.scm` on `runtimepath`, and `after/` directories come last, so your
+file is ignored whenever Neovim or a plugin already provides injections for that
+language. To replace the bundled queries instead, put the file in
+`~/.config/nvim/queries/<lang>/` (not `after/`) and leave out `; extends`.
 
-Use [`otter.nvim`](https://github.com/jmbuhr/otter.nvim) to enable LSP features and code completion for code embedded in your mise files.
+## Add LSP features to embedded scripts {#enable-lsp-for-embedded-lang-in-run-commands}
 
-Again using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
+Use [`otter.nvim`](https://github.com/jmbuhr/otter.nvim) to enable LSP features
+and code completion for code embedded in your mise files. With
+[`lazy.nvim`](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
@@ -249,8 +277,12 @@ Again using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
 },
 ```
 
-This requires both the [injection queries](#run-commands) and a configured language
-server for each embedded language. otter.nvim creates the embedded buffers and
+This activates otter in every TOML buffer. To limit it to mise files, check the
+buffer name with the same patterns as the `is-mise?` predicate before calling
+`activate()`.
+
+otter.nvim needs both the [injection queries](#run-commands) and a configured
+language server for each embedded language. It creates the embedded buffers and
 routes requests; it does not install the language servers. See
 [otter.nvim's setup guide](https://github.com/jmbuhr/otter.nvim#how-do-i-use-otternvim).
 

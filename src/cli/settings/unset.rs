@@ -4,28 +4,46 @@ use toml_edit::DocumentMut;
 use crate::config::settings::SettingsFile;
 use crate::{config, file};
 
-/// Clear a setting
+/// Remove a setting from the global or project config
 ///
-/// This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
+/// Edits ~/.config/mise/config.toml, or the nearest project config with
+/// `--local`. The setting then falls back to its default or to a value from
+/// another config file.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["rm", "remove", "delete", "del"], example(r###"mise settings unset jobs"###), verbatim_doc_comment)]
+#[usage(
+    visible_aliases = ["rm", "remove", "delete", "del"],
+    example(r###"mise settings unset jobs"###, help = "Remove jobs from the global config"),
+    verbatim_doc_comment
+)]
 pub(super) struct SettingsUnset {
     /// The setting to remove
     pub key: String,
 
-    /// Use the local config file instead of the global one
+    /// Write to the nearest project config instead of the global config
+    ///
+    /// The nearest project config is the lowest-precedence TOML file in the
+    /// nearest directory that has one, or ./mise.toml.
     #[usage(long, short)]
     pub local: bool,
+
+    /// Write to the global override file, `config.override.toml`
+    ///
+    /// The override file outranks all project config, so the setting wins over
+    /// the same setting in a project's `mise.toml`.
+    #[usage(long = "override", conflicts = "local")]
+    pub override_file: bool,
 }
 
 impl SettingsUnset {
     pub(super) fn run(self) -> Result<()> {
-        unset(&self.key, self.local)
+        unset(&self.key, self.local, self.override_file)
     }
 }
 
-pub(super) fn unset(key: &str, local: bool) -> Result<()> {
-    let paths = if local {
+pub(super) fn unset(key: &str, local: bool, override_file: bool) -> Result<()> {
+    let paths = if override_file {
+        vec![config::override_config_path(None)?]
+    } else if local {
         vec![config::local_toml_config_path()]
     } else if key == "history.sync" && crate::env::MISE_GLOBAL_CONFIG_FILE.is_none() {
         vec![

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# `mode = "track-local"` keeps a file's history on this machine: saved,
+# listed, and restorable, but never in the shared history or its origin.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/local-origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p ~/.config/app
+echo shared-v1 >~/.config/app/settings.toml
+echo '{"window":1}' >~/.config/app/state.json
+echo local-v1 >~/.localrc
+mkdir -p ~/.private
+echo private-v1 >~/.private/state.json
+
+# declared local before the directory around it is first saved: versions
+# already in shared history stay there, as with untracking
+assert_succeed "mise dot track --local ~/.localrc ~/.config/app/state.json --yes"
+assert_succeed "mise dot track ~/.config/app --yes"
+# everything under a local directory is local
+assert_succeed "mise dot track --local ~/.private --yes"
+assert_fail "mise dot track ~/.private/state.json --yes 2>&1" "kept in local-only history"
+assert_contains "cat ~/.config/mise/config.toml" '"~/.localrc" = { mode = "track-local" }'
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+
+# a bare save saves both histories; each path is in exactly one of them
+echo local-v2 >~/.localrc
+echo '{"window":2}' >~/.config/app/state.json
+echo shared-v2 >~/.config/app/settings.toml
+assert_contains "mise dot save 2>&1" "(local-only): saved checkpoint"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin ls-tree -r --name-only main | grep -c -e localrc -e state.json -e private || true" "0"
+assert "git --git-dir=$origin log --all --format=%B | grep -c -e localrc -e state.json -e private || true" "0"
+assert_contains "git --git-dir=$HOME/.local/state/mise/history-local/history/repo.git show main:home/.private/state.json" "private-v1"
+assert "git --git-dir=$origin show main:home/.config/app/settings.toml" "shared-v2"
+assert_contains "git --git-dir=$HOME/.local/state/mise/history-local/history/repo.git show main:home/.localrc" "local-v2"
+
+# history and rollback of a local path go to the local history
+assert_contains "mise dot history --path ~/.localrc" "tracked"
+assert_succeed "mise dot rollback ~/.localrc --yes"
+assert "cat ~/.localrc" "local-v1"
+assert_contains "mise dot --local history" "rollback"
+assert_fail "mise dot rollback ~/.localrc ~/.config/app/settings.toml --yes 2>&1" "two histories"
+
+# a shared rollback of the directory never touches the local file inside it,
+# even once its records are rebuilt from Git
+rm -rf ~/.local/state/mise/history/index
+assert_succeed "mise dot rollback ~/.config/app --yes"
+assert "cat ~/.config/app/settings.toml" "shared-v1"
+assert "cat ~/.config/app/state.json" '{"window":2}'
+
+# capture labels both histories; watch --once reconciles both
+echo local-v3 >~/.localrc
+assert_succeed "mise dot capture --label tweak -- true"
+assert "mise dot --local history --label tweak --json | jq length" "2"
+assert_succeed "mise dot watch --once"
+
+# local-only history is never shared
+assert_fail "mise dot --local sync 2>&1" "never shared"
+assert_fail "mise dot --local add ~/.localrc 2>&1" "local-only history"
+assert "git --git-dir=$origin log --all --format=%B | grep -c -e localrc -e state.json || true" "0"
+
+# untracking keeps the file and its local history, and records nothing shared
+shared_head=$(git --git-dir="$HOME/.local/state/mise/history/repo.git" rev-parse main)
+assert_succeed "mise dot untrack ~/.localrc"
+assert "cat ~/.localrc" "local-v3"
+assert "git --git-dir=$HOME/.local/state/mise/history/repo.git rev-parse main" "$shared_head"
+assert_contains "git --git-dir=$HOME/.local/state/mise/history-local/history/repo.git log --format=%s main" "tracked"

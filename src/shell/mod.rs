@@ -15,6 +15,8 @@ mod pwsh;
 mod xonsh;
 mod zsh;
 
+pub use fish::escape as fish_escape;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
 pub enum ShellType {
     Bash,

@@ -5,18 +5,23 @@ use crate::shell::{EXAMPLE_SHELL, build_deactivation_script, require_shell};
 
 /// Print the script to disable mise in the current shell session
 ///
-/// The shell function installed by activation evaluates this output in supported
-/// shells. When calling the executable directly, evaluate or source its output
-/// with the appropriate shell syntax. This does not remove the startup-file line;
-/// new shells will activate mise again.
+/// In a shell where mise is activated, run `mise deactivate`: the activation
+/// function evaluates the script for you. Calling the executable directly
+/// (`command mise deactivate`) only prints the script, so evaluate it yourself as
+/// in the examples below. New shells still activate mise; remove the line from your
+/// shell startup file to stop that.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
+    example("mise deactivate", help = "Turn mise off in an activated shell"),
     example(
         r###"eval "$(command mise deactivate)""###,
         help = r###"Bash or Zsh, calling the executable rather than the activation function"###
     ),
-    example(r###"command mise deactivate | source"###, help = r###"Fish"###)
+    example(
+        r###"command mise deactivate | source"###,
+        help = r###"Fish, calling the executable rather than the activation function"###
+    )
 )]
 pub(crate) struct Deactivate {}
 

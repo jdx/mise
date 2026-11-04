@@ -10,19 +10,19 @@ use crate::ui::table::MiseTable;
 ///
 /// Every installation is listed separately, so variants of one version (made
 /// with different options, or pinned to different artifacts by lockfiles) can
-/// be told apart. The status column says which installation requests without
-/// a lockfile use (`selected`), which a lockfile adopted (`pinned`), and which
-/// live in a read-only shared installs directory (`shared`).
+/// be told apart. The Status column marks the installation mise uses when no
+/// lockfile pins one (`selected`), installations a lockfile pins (`pinned`), and
+/// installations in a read-only shared installs directory (`shared`).
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(
     visible_alias = "list",
     example(
         r###"mise installs ls"###,
-        help = r###"Every installation in the identity layout"###
+        help = r###"List every installation in the identity layout"###
     ),
     example(
         r###"mise installs ls node --json"###,
-        help = r###"The installations of node, as JSON"###
+        help = r###"List the installations of node as JSON"###
     ),
     verbatim_doc_comment
 )]
@@ -35,7 +35,7 @@ pub(super) struct InstallsLs {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Don't display headers
+    /// Do not print the table header
     #[usage(long)]
     no_header: bool,
 }
