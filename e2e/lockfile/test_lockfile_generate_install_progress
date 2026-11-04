@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+export MISE_LOCKFILE_MODE=generate
+
+# npm:prettier's lock records an aube graph, so a cold install prepares the
+# other platforms' entries in the background
+cat >mise.toml <<'TOML'
+[tools]
+"npm:prettier" = "3.9.10"
+TOML
+
+mise lock
+rm -rf "$MISE_DATA_DIR/installs" "$MISE_CACHE_DIR"
+
+# That preparation draws no rows of its own: only the lockfile write after
+# the install reports the targets it checked
+mise install >install.log 2>&1
+assert "grep -c 'targets checked' install.log" "1"
