@@ -6399,12 +6399,14 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             let folded = folded_source_links(req)?;
             // a regular file where the target directory (or a nested one)
             // should go blocks the whole entry, and so does a directory link
-            // the user made there: links written through it would land in
-            // wherever it points, outside the entry. Links above the target
-            // are not the entry's to judge.
+            // the user made beneath the target: links written through it
+            // would land in wherever it points, outside the entry. The target
+            // itself may be a link to the directory that holds the links, as
+            // may anything above it.
             for dir in needed_dirs(req)? {
                 if dir.exists() && !dir.is_dir()
-                    || file::is_symlink_or_junction(&dir)
+                    || dir != req.target
+                        && file::is_symlink_or_junction(&dir)
                         && !folded.iter().any(|(link, _)| *link == dir)
                 {
                     out.push(dir);
@@ -7084,7 +7086,8 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             let mut dirs = needed_dirs(req)?;
             dirs.sort_by_key(|dir| dir.components().count());
             for dir in dirs {
-                if (dir.exists() && !dir.is_dir() || file::is_symlink_or_junction(&dir))
+                if (dir.exists() && !dir.is_dir()
+                    || dir != req.target && file::is_symlink_or_junction(&dir))
                     && remove_existing(&dir)?
                 {
                     written.push(dir);

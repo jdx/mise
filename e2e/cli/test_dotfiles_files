@@ -937,3 +937,15 @@ EOF
 assert_succeed "MISE_CONFIG_FILE=$PWD/userlink2.toml mise dotfiles apply --yes --force"
 assert "readlink '$PWD/userlink2-old/deep'" "$PWD/userlink2-outside"
 assert "readlink '$PWD/userlink2-home/sub/deep/a.txt'" "$PWD/userlink2-src/sub/deep/a.txt"
+
+# The target itself may be a link to the directory that holds the links.
+mkdir -p userlink3-src userlink3-real
+echo "a" >userlink3-src/a.txt
+ln -s "$PWD/userlink3-real" userlink3-home
+cat <<EOF >userlink3.toml
+[dotfiles]
+"$PWD/userlink3-home" = { source = "userlink3-src", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink3.toml mise dotfiles apply --yes"
+assert "readlink '$PWD/userlink3-home'" "$PWD/userlink3-real"
+assert "readlink '$PWD/userlink3-real/a.txt'" "$PWD/userlink3-src/a.txt"
