@@ -5156,7 +5156,19 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let registry = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
     let tarball = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc, tarball: 'http://attacker.example/cli.tgz'}\n";
     let linked = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: link:../cli\n        version: link:../cli\npackages: {}\n";
-    for (graph, kept) in [(registry, true), (tarball, false), (linked, false)] {
+    let git = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: git+https://attacker.example/cli.git\npackages: {}\n";
+    let snapshot = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      dep: https://attacker.example/dep.tgz\n";
+    let overrides = "lockfileVersion: '9.0'\noverrides:\n  dep: portal:../dep\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages: {}\n";
+    let no_packages = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n";
+    for (graph, kept) in [
+        (registry, true),
+        (tarball, false),
+        (linked, false),
+        (git, false),
+        (snapshot, false),
+        (overrides, false),
+        (no_packages, false),
+    ] {
         let mut lockfile = Lockfile::default();
         lockfile
             .tools

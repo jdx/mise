@@ -5471,36 +5471,59 @@ impl Lockfile {
 }
 
 /// Whether an aube dependency graph resolves every package from the registry
-/// by integrity hash alone: no tarball URL, git or directory source, and no
-/// linked or file dependency in the importers.
+/// by integrity hash alone. It is an allowlist: only the sections a registry
+/// graph needs are accepted, every package resolves by `integrity`, and no
+/// package key, specifier or version carries a `:`, which every other source
+/// (`git+`, `https:`, `link:`, `file:`, `portal:`, `exec:`, `npm:` aliases)
+/// needs.
 fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
-    let only_integrity = lock
-        .graph
-        .get("packages")
-        .and_then(toml::Value::as_table)
-        .is_none_or(|packages| {
-            packages.values().all(|package| {
-                package
+    const SECTIONS: [&str; 6] = [
+        "lockfileVersion",
+        "settings",
+        "importers",
+        "packages",
+        "snapshots",
+        "time",
+    ];
+    const DEPENDENCIES: [&str; 3] = ["dependencies", "devDependencies", "optionalDependencies"];
+    let graph = &lock.graph;
+    let plain = |value: &toml::Value| value.as_str().is_some_and(|s| !s.contains(':'));
+    let table = |name: &str| graph.get(name).and_then(toml::Value::as_table);
+    let dependency_tables = |entry: &toml::Value| {
+        DEPENDENCIES
+            .iter()
+            .filter_map(|name| entry.get(name).and_then(toml::Value::as_table))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let (Some(importers), Some(packages)) = (table("importers"), table("packages")) else {
+        return false;
+    };
+    graph.keys().all(|key| SECTIONS.contains(&key.as_str()))
+        && packages.iter().all(|(key, package)| {
+            !key.contains(':')
+                && package
                     .get("resolution")
                     .and_then(toml::Value::as_table)
-                    .is_some_and(|resolution| resolution.keys().all(|key| key == "integrity"))
+                    .is_some_and(|resolution| resolution.keys().all(|k| k == "integrity"))
+        })
+        && importers.values().all(|importer| {
+            dependency_tables(importer).iter().all(|deps| {
+                deps.values().all(|dep| {
+                    ["specifier", "version"]
+                        .iter()
+                        .all(|field| dep.get(field).is_none_or(plain))
+                })
             })
-        });
-    let no_local_source = lock
-        .graph
-        .get("importers")
-        .and_then(toml::Value::as_table)
-        .is_none_or(|importers| {
-            importers
-                .values()
-                .filter_map(|importer| importer.as_table())
-                .flat_map(|importer| importer.values())
-                .filter_map(toml::Value::as_table)
-                .flat_map(|deps| deps.values())
-                .filter_map(|dep| dep.get("version").and_then(toml::Value::as_str))
-                .all(|version| !version.starts_with("link:") && !version.starts_with("file:"))
-        });
-    only_integrity && no_local_source
+        })
+        && table("snapshots").is_none_or(|snapshots| {
+            snapshots.iter().all(|(key, snapshot)| {
+                !key.contains(':')
+                    && dependency_tables(snapshot)
+                        .iter()
+                        .all(|deps| deps.values().all(plain))
+            })
+        })
 }
 
 fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
