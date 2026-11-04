@@ -2414,16 +2414,20 @@ impl Bootstrap {
             let config_pass_files = system::files::with_dependencies(&files, |req| {
                 is_config_target(&config, &req.target)
             });
+            let config_edits = edits
+                .iter()
+                .filter(|req| is_config_target(&config, &req.path))
+                .cloned()
+                .collect::<Vec<_>>();
+            // a dry run reads the live file to check an edit, which the copy
+            // about to replace it may have changed; the edits the new config
+            // keeps are previewed against the simulated one instead
             let config_pass_edits = if self.dry_run {
                 vec![]
             } else {
-                edits
-                    .iter()
-                    .filter(|req| is_config_target(&config, &req.path))
-                    .cloned()
-                    .collect()
+                config_edits.clone()
             };
-            if !config_pass_files.is_empty() || !config_pass_edits.is_empty() {
+            if !config_pass_files.is_empty() || !config_edits.is_empty() {
                 let pass = ConfigPass {
                     reload: &reload,
                     dry_run: self.dry_run,
@@ -2456,11 +2460,30 @@ impl Bootstrap {
                 files = system::files::files_from_config(&apply_config)?;
                 edits = system::edits::edits_from_config(&apply_config)?;
                 // a file the first pass wrote is not written again: a config
-                // edit that pass made would otherwise be copied back over
-                files.retain(|req| !done.contains(&format!("{req:?}")));
+                // edit that pass made would otherwise be copied back over.
+                // A dry run wrote nothing, so a planned file that a remaining
+                // entry depends on stays in the plan
+                if self.dry_run {
+                    let pending = files
+                        .iter()
+                        .map(|req| format!("{req:?}"))
+                        .filter(|req| !done.contains(req))
+                        .collect::<HashSet<_>>();
+                    files = system::files::with_dependencies(&files, |req| {
+                        pending.contains(&format!("{req:?}"))
+                    });
+                } else {
+                    files.retain(|req| !done.contains(&format!("{req:?}")));
+                }
                 config_files_written.extend(files.iter().cloned());
                 if !files.is_empty() || !edits.is_empty() {
                     let apply_config = &apply_config;
+                    // the new config may declare secrets and templates that the
+                    // first one did not
+                    let secrets = system::secrets::resolve(apply_config, self.prompt_secrets)?;
+                    if !self.dry_run {
+                        system::files::preflight_templates(apply_config, &files, &secrets)?;
+                    }
                     if !write_and_reload_with(&reload, self.dry_run, |written| {
                         self.apply_dotfiles(apply_config, &files, &edits, &secrets, written)
                     })? {

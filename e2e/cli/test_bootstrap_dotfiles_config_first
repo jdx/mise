@@ -28,3 +28,10 @@ assert_contains "cat $conf_d" ".greeting"
 printf '[dotfiles]\n"~/.second" = { source = "%s/home/greeting", mode = "copy" }\n' "$src" >"$src/reviewed.toml"
 assert_succeed "mise bootstrap --only dotfiles --yes"
 assert "cat ~/.second" "hello"
+
+# a secret and the template that reads it, both declared by the copied file
+echo 'token={{ secret(name="tok") }}' >"$src/home/secret.tmpl"
+printf '[bootstrap.secrets]\ntok = { env = "E2E_CONFIG_FIRST_TOKEN" }\n[dotfiles]\n"~/.secret" = { source = "%s/home/secret.tmpl", mode = "template" }\n' "$src" >"$src/reviewed.toml"
+export E2E_CONFIG_FIRST_TOKEN=abc
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.secret" "token=abc"
