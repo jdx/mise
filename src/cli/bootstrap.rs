@@ -2409,6 +2409,7 @@ impl Bootstrap {
             // `mise dot apply`. A dry run previews that write, then plans the
             // rest against the sources it would write.
             let mut config_files_written = files.clone();
+            let mut config_edits_written = edits.clone();
             let mut files = files;
             let mut edits = edits;
             let config_pass_files = system::files::with_dependencies(&files, |req| {
@@ -2476,6 +2477,16 @@ impl Bootstrap {
                     files.retain(|req| !done.contains(&format!("{req:?}")));
                 }
                 config_files_written.extend(files.iter().cloned());
+                // the edits the first pass applied count too, even when the
+                // new config no longer lists them
+                for req in &edits {
+                    if !config_edits_written
+                        .iter()
+                        .any(|seen| format!("{seen:?}") == format!("{req:?}"))
+                    {
+                        config_edits_written.push(req.clone());
+                    }
+                }
                 if !files.is_empty() || !edits.is_empty() {
                     let apply_config = &apply_config;
                     // the new config may declare secrets and templates that the
@@ -2500,8 +2511,11 @@ impl Bootstrap {
             if self.dry_run {
                 // the files the first pass would write count too, even when
                 // the new config no longer lists them
-                let config_files =
-                    config_files_after_dotfiles_dry_run(&config, &config_files_written, &edits)?;
+                let config_files = config_files_after_dotfiles_dry_run(
+                    &config,
+                    &config_files_written,
+                    &config_edits_written,
+                )?;
                 config = config.with_bootstrap_dry_run_config_files(config_files.clone())?;
                 hooks = system::hooks_from_config(&config);
                 dry_run_config_files = Some(config_files);
