@@ -258,6 +258,24 @@ assert "cat $HOME/realcfg/single.conf" "single"
 assert_succeed "mise dot unapply --group linked --yes"
 assert_fail "test -e $HOME/realcfg/single.conf"
 
+# Unapplying a group also drops the per-target record its symlink-each
+# links were tracked by, once none of those links is left.
+mkdir -p "$DOTS/stateful/sub"
+echo "a" >"$DOTS/stateful/a.txt"
+echo "b" >"$DOTS/stateful/sub/b.txt"
+cat <<EOF >mise.toml
+[dotfile_groups.stateful]
+root = "stateful"
+target = "~/.stateful"
+mode = "symlink-each"
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.stateful/sub/b.txt" "$DOTS/stateful/sub/b.txt"
+assert_contains "grep -l 'group = \"stateful\"' $MISE_STATE_DIR/dotfiles/*.toml" "dotfiles/"
+assert_succeed "mise dot unapply --group stateful --yes"
+assert_fail "test -e $HOME/.stateful/a.txt"
+assert_fail "grep -l 'group = \"stateful\"' $MISE_STATE_DIR/dotfiles/*.toml"
+
 # A declared group that fails to expand keeps its files: they are not
 # orphaned, and a prune leaves them.
 mkdir -p "$DOTS/keep"

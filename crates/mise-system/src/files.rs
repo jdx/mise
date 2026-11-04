@@ -3779,6 +3779,32 @@ fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
     Ok(())
 }
 
+/// Drop the `symlink-each` records of `group` whose links are all gone. A group's removal goes by
+/// its own record rather than the planner that clears an entry's state, so the per-target
+/// records would stay behind. A record that still names a link in place is kept: that link was
+/// left on purpose, and the record is what lets a later apply or unapply find it.
+pub(crate) fn forget_group_symlink_each_states(group: &str) {
+    for path in state_files(&dirs::STATE.join("dotfiles")) {
+        let Ok(state) = read_symlink_each_state(&path) else {
+            continue;
+        };
+        if state.group.as_deref() != Some(group)
+            || state
+                .links
+                .iter()
+                .any(|link| link_points_to(&link.source, &link.target))
+        {
+            continue;
+        }
+        if let Err(err) = file::remove_file(&path) {
+            warn!(
+                "files: failed to remove dotfiles state {}: {err}",
+                path.display_user()
+            );
+        }
+    }
+}
+
 fn target_state_path(req: &FileRequest) -> PathBuf {
     let target = lexical_normalize(&req.target);
     let dir = dirs::STATE.join("dotfiles").join("targets");
