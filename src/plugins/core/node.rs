@@ -284,6 +284,12 @@ impl NodePlugin {
         let settings = Settings::get();
         let platform_key = self.get_platform_key();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
+        // Safe mode drops a project lockfile's URL and keeps its checksum. Locked mode
+        // then downloads from the mirror, and the kept checksum still pins the file.
+        let pinned_by_checksum = ctx.locked
+            && tv.lock_platforms.get(&platform_key).is_some_and(|info| {
+                info.is_pinned_without_url() && info.install.as_deref() == lockfile_install
+            });
         if local.exists() {
             ctx.pr.set_message(format!("cached {tarball_name}"));
         } else {
@@ -294,7 +300,7 @@ impl NodePlugin {
                 .lock_platforms
                 .get(&platform_key)
                 .filter(|info| {
-                    info.url.as_deref() == Some(url.as_str())
+                    (info.url.as_deref() == Some(url.as_str()) || pinned_by_checksum)
                         && info.install.as_deref() == lockfile_install
                 })
                 .and_then(|info| info.pin_checksum().cloned());
@@ -304,6 +310,7 @@ impl NodePlugin {
         ctx.pr.next_operation();
         let url = url.to_string();
         let needs_checksum = settings.node.verify
+            && !pinned_by_checksum
             && tv
                 .lock_platforms
                 .get(&platform_key)
@@ -319,7 +326,8 @@ impl NodePlugin {
             None
         };
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        let artifact_changed = platform_info.url.as_deref() != Some(url.as_str())
+        let artifact_changed = (platform_info.url.as_deref() != Some(url.as_str())
+            && !pinned_by_checksum)
             || platform_info.install.as_deref() != lockfile_install;
         if artifact_changed {
             platform_info.checksum = None;
@@ -630,6 +638,10 @@ impl NodePlugin {
 impl Backend for NodePlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        true
     }
 
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
@@ -1171,6 +1183,11 @@ impl BuildOpts {
                 .and_then(|pi| pi.url.as_deref())
                 .map(Url::parse)
                 .transpose()?
+                .or_else(|| {
+                    locked_platform_info
+                        .filter(|pi| pi.is_pinned_without_url())
+                        .map(|_| default_source_tarball_url.clone())
+                })
                 .ok_or_else(|| {
                     eyre::eyre!(
                         "Invalid lockfile entry for node@{v} on platform {platform_key}: install = \"source\" requires url"
