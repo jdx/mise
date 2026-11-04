@@ -3779,6 +3779,39 @@ fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
     Ok(())
 }
 
+/// Drop the `symlink-each` records of `group` whose links are all gone. A group's removal goes by
+/// its own record rather than the planner that clears an entry's state, so the per-target
+/// records would stay behind. A record that still names a link in place is kept: that link was
+/// left on purpose, and the record is what lets a later apply or unapply find it.
+pub(crate) fn forget_group_symlink_each_states(group: &str) {
+    for path in state_files(&dirs::STATE.join("dotfiles")) {
+        let Ok(state) = read_symlink_each_state(&path) else {
+            continue;
+        };
+        if state.group.as_deref() != Some(group) || !state.links.iter().all(link_confirmed_gone) {
+            continue;
+        }
+        if let Err(err) = file::remove_file(&path) {
+            warn!(
+                "files: failed to remove dotfiles state {}: {err}",
+                path.display_user()
+            );
+        }
+    }
+}
+
+/// Whether `link`'s target is confirmed not to be that link: absent, not a link, or a link
+/// elsewhere. A path that cannot be inspected is not confirmed, so its record stays.
+fn link_confirmed_gone(link: &ManagedLink) -> bool {
+    match std::fs::symlink_metadata(&link.target) {
+        Err(err) => err.kind() == std::io::ErrorKind::NotFound,
+        Ok(_) if !file::is_symlink_or_junction(&link.target) => true,
+        Ok(_) => {
+            std::fs::read_link(&link.target).is_ok() && !link_points_to(&link.source, &link.target)
+        }
+    }
+}
+
 fn target_state_path(req: &FileRequest) -> PathBuf {
     let target = lexical_normalize(&req.target);
     let dir = dirs::STATE.join("dotfiles").join("targets");
@@ -4430,7 +4463,9 @@ fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         };
         let expected = req.source.join(&source_rel);
         if link_points_at(entry.path(), &dest, &expected)
-            && (!expected.exists() || is_excluded(&source_rel, &req.exclude))
+            // a dangling link in the source is still a source entry the walk deploys
+            && (std::fs::symlink_metadata(&expected).is_err()
+                || is_excluded(&source_rel, &req.exclude))
         {
             out.push(entry.path().to_path_buf());
         }

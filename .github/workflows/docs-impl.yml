@@ -54,7 +54,7 @@ jobs:
   # build the site without one.
   showreel:
     if: github.repository == 'jdx/mise' && inputs.trusted && github.event_name != 'pull_request'
-    runs-on: ${{ inputs.trusted && 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-docs-showreel' || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.trusted && 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-docs-showreel' || 'ubuntu-latest' }}
     env:
       # The mise the captures are recorded with, for the lookup's key and the
       # render alike: a release uses the mise it publishes (mise.jdx.dev/VERSION
