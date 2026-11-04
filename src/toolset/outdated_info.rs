@@ -412,12 +412,8 @@ pub fn compute_config_bumps_for_paths(
             }
 
             let current_version = requests[0].version();
-            let (prefix, _) = split_version_prefix(&current_version);
-            let old = current_version
-                .strip_prefix(&prefix)
-                .unwrap_or(&current_version);
-
-            if let Some(bumped) = check_semver_bump(old, cli_version)
+            let (prefix, old, bumped) = cli_config_bump(&current_version, cli_version);
+            if let Some(bumped) = bumped
                 && bumped != old
             {
                 let new_version = format!("{prefix}{bumped}");
@@ -463,6 +459,25 @@ pub fn compute_config_bumps_for_paths(
     }
 
     bumps
+}
+
+/// Splits a config request into its vendor prefix and bare version, and bumps
+/// the bare version to the one given on the command line.
+///
+/// The CLI version can carry the vendor prefix too (`java@temurin-27`). It is
+/// bumped bare, or the prefix is taken for the version and written twice
+/// (`temurin-temurin`). A CLI prefix replaces the config's, so `temurin-26`
+/// moves to `temurin-27` and a bare `26` follows `java@temurin-27` to the vendor.
+fn cli_config_bump(current: &str, cli_version: &str) -> (String, String, Option<String>) {
+    let (prefix, old) = split_version_prefix(current);
+    let (cli_prefix, cli_bare) = split_version_prefix(cli_version);
+    let prefix = if cli_prefix.is_empty() || matches!(cli_prefix.as_str(), "v" | "V") {
+        prefix
+    } else {
+        cli_prefix
+    };
+    let bumped = check_semver_bump(&old, &cli_bare);
+    (prefix, old, bumped)
 }
 
 /// Apply config bumps by writing the new versions to their config files.
@@ -512,12 +527,29 @@ mod tests {
     use test_log::test;
 
     use super::{
-        OutdatedInfo, bumped_request_version, check_semver_bump, is_outdated_version,
-        prefixed_latest_query, request_names_a_version,
+        OutdatedInfo, bumped_request_version, check_semver_bump, cli_config_bump,
+        is_outdated_version, prefixed_latest_query, request_names_a_version,
     };
     use crate::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
+
+    #[test]
+    fn test_cli_config_bump_keeps_vendor_prefix_once() {
+        let bump = |current, cli| {
+            let (prefix, _, bumped) = cli_config_bump(current, cli);
+            bumped.map(|b| format!("{prefix}{b}"))
+        };
+        assert_eq!(bump("temurin-26", "temurin-27"), Some("temurin-27".into()));
+        assert_eq!(
+            bump("temurin-26", "temurin-27.0.1+0"),
+            Some("temurin-27".into())
+        );
+        assert_eq!(bump("temurin-26", "27"), Some("temurin-27".into()));
+        assert_eq!(bump("26", "27"), Some("27".into()));
+        assert_eq!(bump("temurin-26", "temurin-26.0.1"), None);
+        assert_eq!(bump("1", "v2.0.0"), Some("2".into()));
+    }
 
     /// Guards against offering a downgrade when installed versions and backend
     /// candidates use different prefixes, while retaining non-SemVer comparisons.
