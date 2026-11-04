@@ -1,0 +1,47 @@
+description = "Improve keyboard comfort and usability with advanced customization"
+os = ["linux", "macos", "windows"]
+test = { cmd = "kanata --version", expected = "kanata {{version}}" }
+version_order = "semver"
+
+bins = ["kanata", "kanata_cmd_allowed"]
+
+[[backends]]
+full = "github:jtroo/kanata"
+platforms = [
+  "linux-x64",
+  "macos-x64",
+  "macos-arm64",
+  "windows-x64",
+  "windows-arm64",
+]
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "linux-binaries-x64.zip"
+filter_bins = ["kanata", "kanata_cmd_allowed"]
+rename_exe = { kanata_linux_x64 = "kanata", kanata_linux_cmd_allowed_x64 = "kanata_cmd_allowed" }
+
+[backends.options.platforms.macos-x64]
+asset_pattern = "macos-binaries-x64.zip"
+filter_bins = ["kanata", "kanata_cmd_allowed"]
+rename_exe = { kanata_macos_x64 = "kanata", kanata_macos_cmd_allowed_x64 = "kanata_cmd_allowed" }
+
+[backends.options.platforms.macos-arm64]
+asset_pattern = "macos-binaries-arm64.zip"
+filter_bins = ["kanata", "kanata_cmd_allowed"]
+rename_exe = { kanata_macos_arm64 = "kanata", kanata_macos_cmd_allowed_arm64 = "kanata_cmd_allowed" }
+
+# Windows ships several tty/gui and winIOv2/wintercept variants. Expose the gui
+# winIOv2 build as `kanata` (the upstream default) and its cmd_allowed
+# counterpart, and hide the other variants so they do not become shims.
+[backends.options.platforms.windows-x64]
+asset_pattern = "windows-binaries-x64.zip"
+filter_bins = ["kanata.exe", "kanata_cmd_allowed.exe"]
+rename_exe = { "kanata_windows_gui_winIOv2_x64.exe" = "kanata.exe", "kanata_windows_gui_winIOv2_cmd_allowed_x64.exe" = "kanata_cmd_allowed.exe" }
+
+[backends.options.platforms.windows-arm64]
+asset_pattern = "windows-binaries-arm64.zip"
+filter_bins = ["kanata.exe", "kanata_cmd_allowed.exe"]
+rename_exe = { "kanata_windows_gui_winIOv2_arm64.exe" = "kanata.exe", "kanata_windows_gui_winIOv2_cmd_allowed_arm64.exe" = "kanata_cmd_allowed.exe" }
+
+[[backends]]
+full = "cargo:kanata"
