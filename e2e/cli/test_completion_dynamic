@@ -59,8 +59,10 @@ shadowed="$(mise __complete_word__ --shell fish --line 'mise up')"
 assert_contains_text "$shadowed" $'upgrade\tUpgrade outdated tools'
 assert_not_contains_text "$shadowed" 'A task named like a built-in alias'
 flagged="$(mise __complete_word__ --shell fish --line 'mise --jobs 2 up')"
+assert_contains_text "$flagged" $'upgrade\tUpgrade outdated tools'
 assert_not_contains_text "$flagged" 'A task named like a built-in alias'
-valued="$(mise __complete_word__ --shell fish --line 'mise --cd -- up')"
+valued="$(mise __complete_word__ --shell fish --line 'mise --cd . up')"
+assert_contains_text "$valued" $'upgrade\tUpgrade outdated tools'
 assert_not_contains_text "$valued" 'A task named like a built-in alias'
 run_shadowed="$(mise __complete_word__ --shell fish --line 'mise run up')"
 assert_contains_text "$run_shadowed" $'upgrade\tA task named like a built-in alias'
