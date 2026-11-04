@@ -67,6 +67,8 @@ assert_fail_contains "mise run --output summary --timeout 2s hangs" "[hang2] als
 # A task's output is held up to its last 64 KiB.
 assert_fail_contains "mise run --output summary noisy" "[output truncated; showing last 64 KiB]"
 assert_fail_contains "mise run --output summary noisy" "[noisy] 20000"
+# The command the task ran stays, ahead of the notice.
+assert_fail_contains "mise run --output summary noisy" '[noisy] $ seq 1 20000'
 assert_not_contains "mise run --output summary noisy 2>&1 || true" "[noisy] 1
 "
 

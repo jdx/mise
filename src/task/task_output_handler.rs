@@ -44,9 +44,11 @@ impl Drop for SummaryState {
 /// verbose task cannot grow without bound.
 const SUMMARY_TAIL_BYTES: usize = 64 * 1024;
 
-/// One task's held output: the newest lines up to [`SUMMARY_TAIL_BYTES`].
+/// One task's held output: its first line, mise's `$ command` unless quiet,
+/// and the newest lines up to [`SUMMARY_TAIL_BYTES`].
 #[derive(Default)]
 pub(crate) struct SummaryBuffer {
+    first: Option<KeepOrderLine>,
     lines: VecDeque<KeepOrderLine>,
     bytes: usize,
     truncated: bool,
@@ -54,6 +56,10 @@ pub(crate) struct SummaryBuffer {
 
 impl SummaryBuffer {
     fn push(&mut self, line: KeepOrderLine) {
+        if self.first.is_none() {
+            self.first = Some(line);
+            return;
+        }
         let (KeepOrderLine::Stdout(_, text) | KeepOrderLine::Stderr(_, text)) = &line;
         self.bytes = self.bytes.saturating_add(text.len() + 1);
         self.lines.push_back(line);
@@ -71,16 +77,14 @@ impl SummaryBuffer {
 
     /// The lines to print, after a notice when older ones were dropped.
     fn into_lines(self, task: &Task) -> Vec<KeepOrderLine> {
-        let mut lines: Vec<KeepOrderLine> = self.lines.into();
+        let mut lines: Vec<KeepOrderLine> = self.first.into_iter().collect();
         if self.truncated {
-            lines.insert(
-                0,
-                KeepOrderLine::Stderr(
-                    task.estyled_prefix(),
-                    "[output truncated; showing last 64 KiB]".to_string(),
-                ),
-            );
+            lines.push(KeepOrderLine::Stderr(
+                task.estyled_prefix(),
+                "[output truncated; showing last 64 KiB]".to_string(),
+            ));
         }
+        lines.extend(self.lines);
         lines
     }
 }
