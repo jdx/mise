@@ -2278,8 +2278,10 @@ pub async fn unavailable_configured_tool_message(
                 "{bin_name} is provided by: {}\n",
                 others.join(", ")
             ));
+            msg.push_str("Switch to a version that provides it, or if the install is damaged, restore it with:\n");
+        } else {
+            msg.push_str("If the install is damaged, restore it with:\n");
         }
-        msg.push_str("If the install is damaged, restore it with:\n");
         for (tv, _) in &lacking {
             msg.push_str(&format!(
                 "mise install --force {}@{}\n",
