@@ -1360,7 +1360,12 @@ pub fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
 
 /// creates the filename portion of trust/ignore files, e.g.:
 fn hashed_path_filename(path: &Path) -> String {
-    let canonicalized_path = path.canonicalize().unwrap();
+    // canonicalize needs access to every ancestor, which a sandbox can deny (e.g. Codex
+    // "workspace write" on Windows), so fall back to the absolute path instead of panicking.
+    let canonicalized_path = path
+        .canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf());
     let hash = hash_to_str(&canonicalized_path);
     let trunc_str = |s: &OsStr| {
         let mut s = s.to_string_lossy().to_string();
@@ -1797,6 +1802,17 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn hashed_path_filename_survives_uncanonicalizable_path() {
+        // canonicalize fails for a missing path, as it does when a sandbox denies access
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("nope").join("mise.toml");
+        assert!(missing.canonicalize().is_err());
+        let name = hashed_path_filename(&missing);
+        assert!(name.starts_with("nope-mise.toml-"), "{name}");
+        assert_eq!(name, hashed_path_filename(&missing));
+    }
 
     #[tokio::test]
     async fn test_detect_config_file_type() {
