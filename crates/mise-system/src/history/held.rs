@@ -174,11 +174,8 @@ pub(crate) fn streams(
     walk: &super::tracked::Walk,
 ) -> Result<Streams> {
     let mut streams = Streams::default();
-    // one walk of the saved tree for every stream's comparison
-    let encrypted = match parent {
-        Some(head) => super::sync::files::encrypted_paths(repo, Some(head))?,
-        None => BTreeSet::new(),
-    };
+    // loaded when the first stream needs a comparison, then shared
+    let mut encrypted: Option<BTreeSet<String>> = None;
     for (index, entry) in walk.entries.iter().enumerate() {
         let stream = entry.tree_path(&entry.path)?;
         if held.always_holds(&stream) {
@@ -189,10 +186,18 @@ pub(crate) fn streams(
             .map(|head| repo.object_at(head, &stream))
             .transpose()?
             .flatten();
-        if held.holds(&stream, saved.as_ref())
-            || held.kept(&stream)
-            || live_matches_saved(repo, parent, walk, index, &stream, &encrypted)?
-        {
+        let unchanged = if held.holds(&stream, saved.as_ref()) || held.kept(&stream) {
+            true
+        } else {
+            let paths = match encrypted.take() {
+                Some(paths) => paths,
+                None => super::sync::files::encrypted_paths(repo, parent)?,
+            };
+            let unchanged = live_matches_saved(repo, parent, walk, index, &stream, &paths)?;
+            encrypted = Some(paths);
+            unchanged
+        };
+        if unchanged {
             streams.held.insert(stream);
         } else {
             streams.carry.push(index);
