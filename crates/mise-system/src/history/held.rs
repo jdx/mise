@@ -191,7 +191,15 @@ pub(crate) fn streams(
         } else {
             let paths = match encrypted.take() {
                 Some(paths) => paths,
-                None => super::sync::files::encrypted_prefixes(repo, parent)?,
+                // an unreadable manifest holds nothing, as it did when each
+                // file read it through `restored_object_at`
+                None => match super::sync::files::encrypted_prefixes(repo, parent) {
+                    Ok(paths) => paths,
+                    Err(_) => {
+                        streams.carry.push(index);
+                        continue;
+                    }
+                },
             };
             let unchanged = live_matches_saved(repo, parent, walk, index, &stream, &paths)?;
             encrypted = Some(paths);
@@ -602,6 +610,68 @@ mod tests {
         // a live edit is not the saved version
         std::fs::write(&file, "edited")?;
         assert!(!matches(&encrypted)?);
+        Ok(())
+    }
+
+    /// A parent whose enrollment manifest cannot be read holds nothing: the
+    /// stream is carried and the save goes on, as before the encrypted
+    /// paths were loaded once per save.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_manifest_carries_the_stream_instead_of_failing() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::checkpoint::test_checkpoint;
+        use crate::history::shadow::Overlay;
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-manifest-")
+            .tempdir_in(&roots.home)?;
+        let file = normalize(scratch.path()).join("plain.txt");
+        std::fs::write(&file, "plain")?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entry = TrackedEntry::new(file.clone(), "track", policy);
+        let stream = entry.tree_path(&file)?;
+        let mut walk = Walk {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        walk.files.insert(file, (0, policy));
+        let held = Held {
+            record: Some(Record::default()),
+            upstream: true,
+        };
+        let save = |manifest: Option<&[u8]>| -> Result<String> {
+            let mut overlays = vec![Overlay {
+                path: stream.clone(),
+                object: Some(("100644".into(), repo.hash_blob(b"plain")?)),
+            }];
+            if let Some(bytes) = manifest {
+                overlays.push(Overlay {
+                    path: crate::history::manifest::PATH.into(),
+                    object: Some(("100644".into(), repo.hash_blob(bytes)?)),
+                });
+            }
+            let tree = repo.compose(&repo.empty_object("tree")?, &overlays)?;
+            repo.write_checkpoint(Some(&tree), &test_checkpoint("saved", Some(&tree)))
+        };
+
+        // no manifest: nothing is encrypted and the unchanged file is held
+        let plain = save(None)?;
+        let result = super::streams(&repo, &held, Some(&plain), &walk)?;
+        assert!(result.held.contains(&stream) && result.carry.is_empty());
+
+        // a manifest that cannot be parsed is carried, not an error
+        let broken = save(Some(b"not a manifest"))?;
+        let result = super::streams(&repo, &held, Some(&broken), &walk)?;
+        assert!(result.held.is_empty());
+        assert_eq!(result.carry, vec![0]);
         Ok(())
     }
 
