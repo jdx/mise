@@ -322,6 +322,7 @@ mod tests {
     }
 
     /// `live_matches_saved` against the version `commit` holds of the stream.
+    #[cfg(unix)]
     fn check(
         repo: &HistoryRepo,
         commit: &str,
