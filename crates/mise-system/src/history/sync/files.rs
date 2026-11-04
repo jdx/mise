@@ -146,33 +146,43 @@ fn audit_history_cached(
     Ok(inspected)
 }
 
-/// Resolve encrypted files from the same committed enrollment metadata.
-pub(crate) fn encrypted_paths(
+/// The encrypted enrollment paths committed at `commit`, without listing its
+/// tree.
+pub(crate) fn encrypted_prefixes(
     repo: &HistoryRepo,
     commit: Option<&str>,
 ) -> Result<BTreeSet<String>> {
     let Some(commit) = commit else {
         return Ok(BTreeSet::new());
     };
-    let Some(manifest) = crate::history::manifest::Manifest::read(repo, commit)? else {
+    Ok(crate::history::manifest::Manifest::read(repo, commit)?
+        .map(|manifest| manifest.encrypted_paths())
+        .unwrap_or_default())
+}
+
+/// Whether a file path is an encrypted enrollment path or lies beneath one.
+pub(crate) fn is_encrypted(prefixes: &BTreeSet<String>, path: &str) -> bool {
+    prefixes.iter().any(|prefix| {
+        path == prefix
+            || path
+                .strip_prefix(prefix.as_str())
+                .is_some_and(|rest| rest.starts_with('/'))
+    })
+}
+
+/// Resolve encrypted files from the same committed enrollment metadata.
+pub(crate) fn encrypted_paths(
+    repo: &HistoryRepo,
+    commit: Option<&str>,
+) -> Result<BTreeSet<String>> {
+    let protected = encrypted_prefixes(repo, commit)?;
+    let Some(commit) = commit.filter(|_| !protected.is_empty()) else {
         return Ok(BTreeSet::new());
     };
-    let protected = manifest.encrypted_paths();
-    if protected.is_empty() {
-        return Ok(BTreeSet::new());
-    }
     Ok(repo
         .ls_tree(commit)?
         .into_iter()
-        .filter(|entry| {
-            protected.iter().any(|prefix| {
-                entry.path == *prefix
-                    || entry
-                        .path
-                        .strip_prefix(prefix)
-                        .is_some_and(|rest| rest.starts_with('/'))
-            })
-        })
+        .filter(|entry| is_encrypted(&protected, &entry.path))
         .map(|entry| entry.path)
         .collect())
 }
@@ -640,6 +650,9 @@ mod tests {
             encrypted_paths(&repo, Some(&encrypted)).unwrap(),
             BTreeSet::from(["home/secret.d/a".to_string()])
         );
+        let prefixes = encrypted_prefixes(&repo, Some(&encrypted)).unwrap();
+        assert!(is_encrypted(&prefixes, "home/secret.d/a"));
+        assert!(!is_encrypted(&prefixes, "home/secret.d2/b"));
         let plain = manifest(false).write(&repo, &tree).unwrap();
         assert!(encrypted_paths(&repo, Some(&plain)).unwrap().is_empty());
     }

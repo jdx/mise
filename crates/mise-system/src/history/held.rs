@@ -191,7 +191,7 @@ pub(crate) fn streams(
         } else {
             let paths = match encrypted.take() {
                 Some(paths) => paths,
-                None => super::sync::files::encrypted_paths(repo, parent)?,
+                None => super::sync::files::encrypted_prefixes(repo, parent)?,
             };
             let unchanged = live_matches_saved(repo, parent, walk, index, &stream, &paths)?;
             encrypted = Some(paths);
@@ -261,7 +261,7 @@ fn live_matches_saved(
         };
         let expected = if matches!(mode.as_str(), "040000" | "160000") {
             Some((mode, oid))
-        } else if encrypted.contains(&path) {
+        } else if super::sync::files::is_encrypted(encrypted, &path) {
             super::sync::files::decrypt(repo, &path, &(mode, oid), console::user_attended_stderr())
                 .ok()
         } else {
