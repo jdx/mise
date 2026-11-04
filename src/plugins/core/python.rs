@@ -991,6 +991,10 @@ impl Backend for PythonPlugin {
         &self.ba
     }
 
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        true
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         if cfg!(windows) || Settings::get().python_compile(CompilePurpose::Inspect) == Some(false) {
             // python-build-standalone is CPython only, so pypy comes from its own index — and only

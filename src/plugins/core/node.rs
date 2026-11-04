@@ -632,6 +632,10 @@ impl Backend for NodePlugin {
         &self.ba
     }
 
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        true
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 

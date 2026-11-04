@@ -5267,9 +5267,13 @@ pub trait Backend: Debug + Send + Sync {
                     || (self.resolves_locked_url_from_checksum() && p.is_pinned_without_url())
             });
             if !has_lockfile_url {
+                let hint = if Settings::safe_mode() {
+                    "safe mode ignores the URLs in a project lockfile, and this backend cannot resolve its download from a checksum alone; disable safe mode or locked mode"
+                } else {
+                    "Run `mise lock` to generate lockfile URLs, or disable locked mode"
+                };
                 bail!(
-                    "No lockfile URL found for {} on platform {} (--locked mode)\n\
-                    hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",
+                    "No lockfile URL found for {} on platform {} (--locked mode)\nhint: {hint}",
                     tv.style(),
                     platform_key
                 );
