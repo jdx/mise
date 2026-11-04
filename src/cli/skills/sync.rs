@@ -52,28 +52,6 @@ pub(super) struct SkillsSync {
 impl SkillsSync {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        // Without --dir, the project's directory takes the project's own
-        // tools, and the global ones go to --global, as auto_sync does. Where
-        // the two would be the same directory, it takes both.
-        let project_dir_is_home_dir = !self.global
-            && self.dir.is_none()
-            && config.project_root.as_ref().is_some_and(|root| {
-                crate::packslip::skills_target(root).dir
-                    == crate::packslip::skills_target(&dirs::HOME).dir
-            });
-        let skills = if self.global {
-            crate::packslip::global_skills(&config).await?
-        } else if self.dir.is_none() && !project_dir_is_home_dir {
-            crate::packslip::project_skills(&config).await?
-        } else {
-            crate::packslip::active_skills(&config).await?
-        };
-        for missing in &skills.missing {
-            warn!("{missing}");
-        }
-        let nothing_declared = skills.missing.is_empty();
-        let skills = skills.found;
-        let settings = Settings::get();
         let target = match (&self.dir, self.global) {
             (Some(dir), _) => crate::packslip::SkillsTarget::at(dir.clone()),
             (None, true) => crate::packslip::skills_target(&dirs::HOME),
@@ -85,6 +63,25 @@ impl SkillsSync {
                     .unwrap_or_else(std::env::current_dir)?,
             ),
         };
+        // Without --dir, the project's directory takes the project's own
+        // tools, and the global ones go to --global, as auto_sync does. Where
+        // the two would be the same directory, whether a project root is
+        // loaded or not, it takes both.
+        let skills = if self.global {
+            crate::packslip::global_skills(&config).await?
+        } else if self.dir.is_none()
+            && target.dir != crate::packslip::skills_target(&dirs::HOME).dir
+        {
+            crate::packslip::project_skills(&config).await?
+        } else {
+            crate::packslip::active_skills(&config).await?
+        };
+        for missing in &skills.missing {
+            warn!("{missing}");
+        }
+        let nothing_declared = skills.missing.is_empty();
+        let skills = skills.found;
+        let settings = Settings::get();
         let dir = target.dir.clone();
         let prune = self.prune || settings.skills.prune;
         if skills.is_empty() && !prune {

@@ -50,3 +50,9 @@ mkdir ../inherit
 cd ../inherit || exit 1
 mise skills sync --dir out >/dev/null
 assert_contains "cat out/skilled/SKILL.md" "# skilled 1.0.0"
+
+# From the home directory, where there is no project, a plain sync is the
+# global sync and must keep the global links even with --prune.
+cd "$HOME" || exit 1
+mise skills sync --prune
+assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
