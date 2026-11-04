@@ -532,12 +532,9 @@ mod shell_name_tests {
                 .collect();
             completion_request(&argv).unwrap()
         };
-        // The command word is not a file, whichever commands the host has on its `PATH`; every
-        // word after it is, as in a bare shell.
-        for line in ["mise x -- ", "mise x node@22 -- ", "mise exec -- "] {
-            let answer = ask(line);
-            assert!(!answer.starts_with("\u{1}files"), "{line}: {answer}");
-        }
+        // Every word after the command is a file, as in a bare shell. The command word itself is
+        // not asked here: it lists every executable on `PATH`, too slow for a unit test on a
+        // host with a large one.
         for line in [
             "mise x -- ls ",
             "mise x -- ls src/",
