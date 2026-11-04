@@ -8,8 +8,7 @@
 #
 # Requires usage >= 3.5.7, which stops the mounting CLI's flags from being inherited
 # into mounted commands (jdx/usage#738). `latest` only reaches it once it clears the
-# default 24h minimum_release_age, so opt out of the delay here. Since usage 7.2.0
-# (jdx/usage#1605), completion also offers the task's own `--help`, which prints its usage.
+# default 24h minimum_release_age, so opt out of the delay here.
 export MISE_MINIMUM_RELEASE_AGE=0s
 
 cat <<'EOF' >mise.toml
@@ -32,7 +31,7 @@ EOF
 mise usage >./mise.usage.kdl
 
 # only the task's own flags are offered after the task name — not mise globals like
-# --cd/--env/--jobs/--quiet/--raw/--silent/--verbose/--yes
+# --cd/--env/--jobs/--quiet/--raw/--silent/--verbose/--yes. usage 7.2.0 offers --help too.
 assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run deploy --" "--bump
 --env
 --help
