@@ -1302,7 +1302,7 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, scope: SkillsS
     let settings = Settings::get();
     if !settings.skills.auto_sync {
         if scope != SkillsScope::Global {
-            hint_skills(config).await;
+            hint_skills(config, scope).await;
         }
         return;
     }
@@ -1359,11 +1359,15 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, scope: SkillsS
 /// A tool may ship an agent skill that nothing links anywhere until
 /// `mise skills sync` runs, and with `skills.auto_sync` off nothing ever
 /// says so. Mention it once, and only when there is a skill to link.
-async fn hint_skills(config: &Arc<Config>) {
+async fn hint_skills(config: &Arc<Config>, scope: SkillsScope) {
     if !crate::hint::hint_would_display("skills") {
         return;
     }
-    let Ok(skills) = project_skills(config).await else {
+    let skills = match scope {
+        SkillsScope::Active => active_skills(config).await,
+        _ => project_skills(config).await,
+    };
+    let Ok(skills) = skills else {
         return;
     };
     if skills.found.is_empty() {
