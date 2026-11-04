@@ -174,14 +174,33 @@ fn shadowed_by_command(
     if spec.default_subcommand.is_none() {
         return false;
     }
-    // Only the first word that is not a flag picks a command.
-    let at_first_word = request
-        .split
-        .words
-        .get(1..request.split.cword)
-        .is_some_and(|before| before.iter().all(|w| w.starts_with('-')));
-    if !at_first_word {
+    // Only the first word that is not a flag, or a flag's separate value, picks a command.
+    let Some(before) = request.split.words.get(1..request.split.cword) else {
         return false;
+    };
+    let takes_value = |word: &str| {
+        let flag = |f: &&usage::SpecFlag| match word.strip_prefix("--") {
+            Some(long) => f.long.iter().any(|l| l == long),
+            None => word.chars().nth(1).is_some_and(|c| f.short.contains(&c)),
+        };
+        // `--jobs=2` and `-j2` carry their value; a short cluster such as `-xj` is not parsed.
+        !word.contains('=')
+            && (word.starts_with("--") || word.chars().count() == 2)
+            && spec
+                .cmd
+                .flags
+                .iter()
+                .find(flag)
+                .is_some_and(|f| f.arg.is_some())
+    };
+    let mut words = before.iter();
+    while let Some(word) = words.next() {
+        if !word.starts_with('-') {
+            return false;
+        }
+        if takes_value(word) {
+            words.next();
+        }
     }
     spec.cmd.subcommands.values().any(|cmd| {
         let named = cmd.name == value
