@@ -5505,7 +5505,13 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
                 && package
                     .get("resolution")
                     .and_then(toml::Value::as_table)
-                    .is_some_and(|resolution| resolution.keys().all(|k| k == "integrity"))
+                    .is_some_and(|resolution| {
+                        resolution.len() == 1
+                            && resolution
+                                .get("integrity")
+                                .and_then(toml::Value::as_str)
+                                .is_some_and(|integrity| !integrity.is_empty())
+                    })
         })
         && importers.values().all(|importer| {
             dependency_tables(importer).iter().all(|deps| {

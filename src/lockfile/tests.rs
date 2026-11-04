@@ -5160,7 +5160,9 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let snapshot = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      dep: https://attacker.example/dep.tgz\n";
     let overrides = "lockfileVersion: '9.0'\noverrides:\n  dep: portal:../dep\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages: {}\n";
     let no_packages = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n";
+    let empty_integrity = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {}\n";
     for (graph, kept) in [
+        (empty_integrity, false),
         (registry, true),
         (tarball, false),
         (linked, false),

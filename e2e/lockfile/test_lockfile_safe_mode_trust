@@ -51,4 +51,4 @@ rm mise.lock
 mise lock --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" "aube = "
 assert_succeed "MISE_SAFE=1 mise install --force --locked"
-assert_succeed "MISE_SAFE=1 mise x npm:prettier -- prettier --version"
+assert_contains "MISE_SAFE=1 mise x npm:prettier -- prettier --version" "3.3.3"
