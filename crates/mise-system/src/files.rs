@@ -3155,6 +3155,17 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
             link.display_user()
         )));
     }
+    // links already behind a user's directory link look applied, but apply must not leave them
+    // there: it needs --force to replace the link with a directory of links
+    if let Some(dir) = needed_dirs(req)?
+        .into_iter()
+        .find(|dir| blocking_dir_link(req, dir))
+    {
+        return Ok(FileState::Differs(format!(
+            "{} is a link to a directory; apply replaces it with a directory of links",
+            dir.display_user()
+        )));
+    }
     let stale = stale_links(req)?;
     let stale_reason = || format!("{} stale link(s)", stale.len());
     let files = walk_source_files(req)?;
@@ -4483,16 +4494,28 @@ fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
 /// Links recorded for this target that are no longer desired. Persistent
 /// ownership state keeps this proportional to the managed source tree instead
 /// of recursively walking a shared target such as the user's home directory.
+///
+/// A link beneath a directory link of the user's is not one: removing it would reach into
+/// wherever that link points.
 fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    match load_symlink_each_state(req) {
-        LoadedSymlinkEachState::Present(state) => Ok(tracked_stale_links(
-            &state,
-            &desired_symlink_each_state(req)?,
-        )),
-        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
-            legacy_stale_links(req)
+    let stale = match load_symlink_each_state(req) {
+        LoadedSymlinkEachState::Present(state) => {
+            tracked_stale_links(&state, &desired_symlink_each_state(req)?)
         }
-    }
+        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
+            legacy_stale_links(req)?
+        }
+    };
+    Ok(stale
+        .into_iter()
+        .filter(|path| {
+            !path
+                .ancestors()
+                .skip(1)
+                .take_while(|dir| *dir != req.target && dir.starts_with(&req.target))
+                .any(file::is_symlink_or_junction)
+        })
+        .collect())
 }
 
 fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
