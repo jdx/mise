@@ -43,6 +43,8 @@ impl Drop for SummaryState {
 /// for a command whose output it hides behind a progress bar, so a long or
 /// verbose task cannot grow without bound.
 const SUMMARY_TAIL_BYTES: usize = 64 * 1024;
+/// The longest first line held apart from the tail: mise's `$ command` line.
+const SUMMARY_FIRST_LINE_BYTES: usize = 4 * 1024;
 
 /// One task's held output: its first line, mise's `$ command` unless quiet,
 /// and the newest lines up to [`SUMMARY_TAIL_BYTES`].
@@ -56,11 +58,13 @@ pub(crate) struct SummaryBuffer {
 
 impl SummaryBuffer {
     fn push(&mut self, line: KeepOrderLine) {
-        if self.first.is_none() {
+        let (KeepOrderLine::Stdout(_, text) | KeepOrderLine::Stderr(_, text)) = &line;
+        // A short first line is kept outside the tail; a long one, such as a
+        // quiet task's first output, is part of it like any other.
+        if self.first.is_none() && self.lines.is_empty() && text.len() <= SUMMARY_FIRST_LINE_BYTES {
             self.first = Some(line);
             return;
         }
-        let (KeepOrderLine::Stdout(_, text) | KeepOrderLine::Stderr(_, text)) = &line;
         self.bytes = self.bytes.saturating_add(text.len() + 1);
         self.lines.push_back(line);
         // The newest line stays, however long it is.
