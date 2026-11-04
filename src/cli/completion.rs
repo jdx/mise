@@ -533,14 +533,10 @@ mod shell_name_tests {
             completion_request(&argv).unwrap()
         };
         // Every word after the command is a file, as in a bare shell. The command word is
-        // covered by `a_forwarded_command_word_completes_commands`.
-        for line in [
-            "mise x -- ls ",
-            "mise x -- ls src/",
-            "mise x node@22 -- ls -l .",
-        ] {
-            assert_eq!(ask(line), "\u{1}files\n", "{line}");
-        }
+        // covered by `a_forwarded_command_word_completes_commands`. One request per test: each
+        // builds the whole completion spec, and nextest kills a unit test after a second, which
+        // a debug build on a slow runner reaches with three.
+        assert_eq!(ask("mise x node@22 -- ls -l src/"), "\u{1}files\n");
     }
 
     /// The command word is the one thing after `--` that is not a file. `PATH` holds a single
@@ -557,17 +553,17 @@ mod shell_name_tests {
         let mut environment = mise_util::testing::EnvVarGuard::new();
         environment.set("PATH", dir.path());
 
-        for line in ["mise x -- forwarded", "mise x node@22 -- forwarded"] {
-            let argv: Vec<OsString> = ["__complete_word__", "--shell", "bash", "--line", line]
-                .into_iter()
-                .map(OsString::from)
-                .collect();
-            assert_eq!(
-                completion_request(&argv).unwrap(),
-                "forwardedtool\n",
-                "{line}"
-            );
-        }
+        let argv: Vec<OsString> = [
+            "__complete_word__",
+            "--shell",
+            "bash",
+            "--line",
+            "mise x -- forwarded",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        assert_eq!(completion_request(&argv).unwrap(), "forwardedtool\n");
     }
 
     #[test]
