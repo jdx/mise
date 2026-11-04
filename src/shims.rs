@@ -2209,22 +2209,21 @@ fn active_version_lacks_bin_message(
     Some(msg)
 }
 
-/// Executables a version's current backend metadata puts in its bin dirs. Empty when the install
-/// has none yet (or its metadata cannot be read), which says nothing about what a reinstall adds.
+/// Executables a version's bin dirs hold on disk. `None` when a listing failed, which says nothing
+/// about what the version ships.
 async fn offered_bins(
     config: &Arc<Config>,
     backend: &Arc<dyn Backend>,
     tv: &ToolVersion,
-) -> BTreeSet<String> {
+) -> Option<BTreeSet<String>> {
     let mut bins = BTreeSet::new();
-    for dir in backend.list_bin_paths(config, tv).await.unwrap_or_default() {
-        if dir.parent().is_some()
-            && let Ok(found) = list_executables_in_dir(&dir)
-        {
-            bins.extend(found);
+    for dir in backend.list_bin_paths(config, tv).await.ok()? {
+        if dir.parent().is_none() {
+            continue;
         }
+        bins.extend(list_executables_in_dir(&dir).ok()?);
     }
-    bins
+    Some(bins)
 }
 
 pub async fn unavailable_configured_tool_message(
@@ -2243,17 +2242,17 @@ pub async fn unavailable_configured_tool_message(
         return None;
     }
 
-    // A reinstall only helps when the version's metadata lists the executable. A version that
-    // ships other executables but not this one (an upstream rename, a registry alias) would be
-    // reinstalled into the same state.
+    // Other executables beside a missing one point at a rename (an upstream rename, a registry
+    // alias), where reinstalling yields the same install. The files on disk cannot tell that from
+    // a damaged install, so the message names both rather than promising either.
     let mut reinstall = vec![];
     let mut lacking = vec![];
     for (backend, tv) in versions {
-        let bins = offered_bins(config, &backend, &tv).await;
-        if bins.is_empty() || offers_bin(&bins, bin_name) {
-            reinstall.push(tv);
-        } else {
-            lacking.push((tv, bins));
+        match offered_bins(config, &backend, &tv).await {
+            Some(bins) if !bins.is_empty() && !offers_bin(&bins, bin_name) => {
+                lacking.push((tv, bins));
+            }
+            _ => reinstall.push(tv),
         }
     }
 
@@ -2265,6 +2264,27 @@ pub async fn unavailable_configured_tool_message(
                 tv.ba(),
                 tv.version,
                 bins.iter().join(", ")
+            ));
+        }
+        let others = ts
+            .list_rtvs_with_bin(config, bin_name)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|tv| format!("{}@{}", tv.ba(), tv.version))
+            .collect_vec();
+        if !others.is_empty() {
+            msg.push_str(&format!(
+                "{bin_name} is provided by: {}\n",
+                others.join(", ")
+            ));
+        }
+        msg.push_str("If the install is damaged, restore it with:\n");
+        for (tv, _) in &lacking {
+            msg.push_str(&format!(
+                "mise install --force {}@{}\n",
+                tv.ba(),
+                tv.version
             ));
         }
         return Some(msg.trim().to_string());
@@ -2696,9 +2716,45 @@ mod tests {
         let msg = unavailable_configured_tool_message(&config, &ts, "codex")
             .await
             .unwrap();
-        assert!(!msg.contains("install --force"), "{msg}");
+        assert!(!msg.contains("No executable found"), "{msg}");
         assert!(msg.contains("does not provide codex"), "{msg}");
         assert!(msg.contains("dekit"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn unavailable_tool_message_keeps_reinstall_when_version_ships_the_bin() {
+        let config = Config::get().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let mut ts = Toolset::new(ToolSource::Argument);
+
+        let ba = Arc::new(BackendArg::from("codex"));
+        let request = ToolRequest::new(ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request.clone(), "1.0.0".into());
+        let install_path = temp.path().join("codex");
+        let bin_dir = install_path.join("bin");
+        file::create_dir_all(&bin_dir).unwrap();
+        for name in ["codex", "dekit"] {
+            let bin = bin_dir.join(if cfg!(windows) {
+                format!("{name}.exe")
+            } else {
+                name.to_string()
+            });
+            fs::write(&bin, "").unwrap();
+            file::make_executable(&bin).unwrap();
+        }
+        tv.install_path = Some(install_path);
+
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+        tvl.versions.push(tv);
+        ts.versions.insert(ba, tvl);
+
+        // The bin is on disk, so the failure is not a rename and a reinstall is the advice.
+        let msg = unavailable_configured_tool_message(&config, &ts, "codex")
+            .await
+            .unwrap();
+        assert!(msg.contains("mise install --force codex@1.0.0"), "{msg}");
+        assert!(!msg.contains("does not provide codex"), "{msg}");
     }
 
     #[tokio::test]
@@ -2729,7 +2785,7 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not provide codex"), "{err}");
-        assert!(!err.contains("install --force"), "{err}");
+        assert!(!err.contains("No executable found"), "{err}");
     }
 
     #[tokio::test]
