@@ -239,10 +239,17 @@ impl ToolRequest {
     }
     /// Reapply registry defaults after an alias, prefix, or subtraction resolves
     /// across a backend boundary. Retain every non-registry option's provenance.
-    pub(super) fn with_registry_version(mut self, version: &str) -> Self {
+    pub(super) fn with_registry_version(self, version: &str) -> Self {
         let Some(backend) = self.ba().with_registry_version(version) else {
             return self;
         };
+        self.with_backend(backend)
+    }
+
+    /// This request installed by `backend`, with the registry's defaults for
+    /// that backend in place of those of its current one. Every other option
+    /// keeps its provenance.
+    pub fn with_backend(mut self, backend: BackendArg) -> Self {
         let mut options = ResolvedToolOptions::default();
         options.apply_registry(&backend.registry_opts(), &backend.full_without_opts());
         self.resolved_options()

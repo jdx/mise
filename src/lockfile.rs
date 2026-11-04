@@ -81,14 +81,16 @@ pub fn invalidate_caches() {
     }
 }
 
-pub const CURRENT_LOCKFILE_VERSION: u32 = 3;
+pub const CURRENT_LOCKFILE_VERSION: u32 = 4;
 const FORGE_IDS_LOCKFILE_VERSION: u32 = 3;
+const PACKAGE_PROVENANCE_LOCKFILE_VERSION: u32 = 4;
 // Keep the dates format bumps entered mise here. An older format gets a
 // warning six calendar months after the first newer format was introduced.
 const LOCKFILE_VERSION_DATES: &[(u32, jiff::civil::Date)] = &[
     (1, jiff::civil::date(2026, 8, 23)),
     (2, jiff::civil::date(2026, 9, 13)),
     (3, jiff::civil::date(2026, 9, 27)),
+    (4, jiff::civil::date(2026, 11, 3)),
 ];
 
 fn outdated_lockfile_version(version: u32, today: jiff::civil::Date) -> bool {
@@ -382,6 +384,20 @@ pub struct LockfileTool {
     pub aube: Option<GraphRef<AubeLock>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub uv: Option<GraphRef<UvLock>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provenance: Option<PackageProvenance>,
+}
+
+/// The source repository an `npm:` tool's package was built from, as the
+/// Sigstore provenance npm published for it showed when it was installed with
+/// `npm.provenance` on. A later install must show the same repository, so a
+/// release published from somewhere else is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackageProvenance {
+    /// The repository qualified by its forge: `github.com/owner/repo` or
+    /// `gitlab.com/group/project`. The forge fixes the OIDC issuer.
+    pub repository: String,
 }
 
 /// A native dependency sidecar directory a lockfile entry refers to.
@@ -1452,6 +1468,12 @@ impl Lockfile {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
+    /// The backend this lockfile locks `short` under; see [`locked_backend`].
+    pub fn locked_backend(&self, short: &str, version: Option<&str>) -> Option<String> {
+        let entries = self.tools_for(short)?.iter().collect::<Vec<_>>();
+        locked_backend(&entries, version)
+    }
+
     /// The version and recorded backend of each of `short`'s entries that
     /// names a backend.
     pub fn locked_backends(&self, short: &str) -> Vec<(String, String)> {
@@ -1671,6 +1693,18 @@ impl Lockfile {
             );
         }
 
+        if lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION
+            && lockfile
+                .tools
+                .values()
+                .flatten()
+                .any(|tool| tool.provenance.is_some())
+        {
+            bail!(
+                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; run `mise lock --upgrade`"
+            );
+        }
+
         if lockfile_version < 2
             && lockfile
                 .tools
@@ -1775,6 +1809,26 @@ impl Lockfile {
             );
         }
 
+        if self.lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION
+            && self
+                .tools
+                .values()
+                .flatten()
+                .any(|tool| tool.provenance.is_some())
+        {
+            // npm provenance is verified by default, so most lockfiles that hit
+            // this never asked for a pin; only the paranoid category warns.
+            let message = format!(
+                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; omitting it from revision {}. Run `mise lock --upgrade`, then `mise install --force` to verify and record it",
+                self.lockfile_version
+            );
+            if Settings::get().paranoid.provenance() {
+                warn!("{message}");
+            } else {
+                debug!("{message}");
+            }
+        }
+
         if self.lockfile_version > 0 {
             lockfile.insert(
                 "lockfile_version".to_string(),
@@ -1859,6 +1913,9 @@ impl Lockfile {
                             platform.repository_id = None;
                             platform.repository_owner_id = None;
                         }
+                    }
+                    if self.lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION {
+                        version.provenance = None;
                     }
                     let mut value = version.into_toml_value(self.lockfile_version > 0);
                     if let Some(uv) = uv {
@@ -2296,6 +2353,7 @@ impl Lockfile {
                 platforms,
                 aube: None,
                 uv: None,
+                provenance: None,
             });
         }
 
@@ -3297,6 +3355,12 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
                     && existing.backend == tool.backend
                 {
                     existing.aube = tool.aube;
+                }
+                if existing.provenance.is_none()
+                    && existing.backend.is_some()
+                    && existing.backend == tool.backend
+                {
+                    existing.provenance = tool.provenance;
                 }
             } else if keys.insert(key) {
                 root_tools.push(tool);
@@ -4946,6 +5010,9 @@ where
         if entry.uv.is_none() {
             entry.uv = tool.uv.clone();
         }
+        if entry.provenance.is_none() {
+            entry.provenance = tool.provenance.clone();
+        }
 
         // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
@@ -4970,6 +5037,19 @@ where
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
+            // The repository an npm package was built from does not depend on
+            // its install options, so a pin follows the same release into an
+            // entry written for changed options.
+            if let Some(provenance) = &existing_tool.provenance {
+                for ((version, _), entry) in by_key.iter_mut() {
+                    if *version == existing_tool.version
+                        && entry.backend == existing_tool.backend
+                        && entry.provenance.is_none()
+                    {
+                        entry.provenance = Some(provenance.clone());
+                    }
+                }
+            }
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
                 entry.specifiers.extend(existing_tool.specifiers.clone());
@@ -4978,6 +5058,9 @@ where
                 }
                 if entry.uv.is_none() {
                     entry.uv = existing_tool.uv.clone();
+                }
+                if entry.provenance.is_none() {
+                    entry.provenance = existing_tool.provenance.clone();
                 }
             }
             if !existing_tool.options.is_empty() {
@@ -5028,6 +5111,7 @@ where
                             platforms: BTreeMap::new(),
                             aube: existing_tool.aube.clone(),
                             uv: existing_tool.uv.clone(),
+                            provenance: existing_tool.provenance.clone(),
                         })
                         .platforms
                         .insert(platform_key.clone(), info.clone());
@@ -5043,7 +5127,11 @@ where
                     platforms: BTreeMap::new(),
                     aube: existing_tool.aube.clone(),
                     uv: existing_tool.uv.clone(),
+                    provenance: existing_tool.provenance.clone(),
                 });
+                if target.provenance.is_none() {
+                    target.provenance = existing_tool.provenance.clone();
+                }
                 target
                     .specifiers
                     .extend(existing_tool.specifiers.iter().cloned());
@@ -5383,6 +5471,26 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
 
     let trusted = lockfile_is_trusted(config, &lockfile_path);
     read_lockfile_at(lockfile_path, legacy_path, trusted)
+}
+
+/// Read the lockfile at `path` uncached, merged with the legacy monorepo
+/// lockfiles that migrate into it. Each is reduced to what it may decide
+/// unless its own config is trusted ([`Lockfile::drop_what_needs_trust`]).
+pub fn read_lockfile_as_trusted(config: &Config, path: &Path) -> Result<Lockfile> {
+    let read = |path: &Path| -> Result<Lockfile> {
+        let mut lockfile = Lockfile::read(path)?;
+        if !lockfile_is_trusted(config, path) {
+            lockfile.drop_what_needs_trust(path);
+        }
+        Ok(lockfile)
+    };
+    let mut lockfile = read(path)?;
+    for (source, target) in monorepo_lockfile_migration_paths(config) {
+        if target == path && source.exists() {
+            merge_lockfile_preserving_root(&mut lockfile, read(&source)?);
+        }
+    }
+    Ok(lockfile)
 }
 
 /// Read the lockfile at `lockfile_path`, merged with a legacy monorepo
@@ -6248,6 +6356,36 @@ pub(crate) fn ensure_locked_url_matches_version(
 /// This is used for backend discovery where we just need any entry's backend.
 /// The backend `short`'s lock entries record for `version`; see
 /// [`locked_backend`].
+/// The repository `mise.lock` pins the package to, whatever install options
+/// the entry was written with: the repository belongs to the package, so
+/// changing an option must not drop the pin before the install is verified.
+pub(crate) fn get_locked_npm_provenance(
+    config: &Config,
+    request: &ToolRequest,
+    short: &str,
+    version: &str,
+    backend: &str,
+) -> Option<PackageProvenance> {
+    if !Settings::get().lockfile_enabled() {
+        return None;
+    }
+    // Only the lockfile that owns the request: a tool an override config
+    // declares must not inherit a pin from the project's lockfile.
+    let lockfile = match request.lockfile_source()? {
+        ToolSource::MiseToml(path) => read_lockfile_for(config, path),
+        source if source.path().is_some() => {
+            Arc::new(read_lockfile_for_tool_source(config, source).ok()?)
+        }
+        _ => read_all_lockfiles(config),
+    };
+    lockfile
+        .tools_for(short)
+        .into_iter()
+        .flatten()
+        .filter(|tool| tool.version == version && tool.backend.as_deref() == Some(backend))
+        .find_map(|tool| tool.provenance.clone())
+}
+
 pub(crate) fn get_locked_backend_for_version(
     config: &Config,
     short: &str,
@@ -6388,6 +6526,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 platforms: Default::default(),
                 aube: None,
                 uv: None,
+                provenance: None,
             },
             toml::Value::Table(mut t) => {
                 let mut platforms = BTreeMap::new();
@@ -6426,6 +6565,10 @@ impl TryFrom<toml::Value> for LockfileTool {
                     .unwrap_or_default();
                 let aube = t.remove("aube").map(GraphRef::parse).transpose()?;
                 let uv = t.remove("uv").map(GraphRef::parse).transpose()?;
+                let provenance = t
+                    .remove("provenance")
+                    .map(|value| value.try_into())
+                    .transpose()?;
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
                 LockfileTool {
@@ -6444,6 +6587,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                     platforms,
                     aube,
                     uv,
+                    provenance,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -6488,6 +6632,12 @@ impl LockfileTool {
                 toml::Value::try_from(aube).expect("aube graph serialization"),
             );
         }
+        if let Some(provenance) = self.provenance {
+            table.insert(
+                "provenance".to_string(),
+                toml::Value::try_from(provenance).expect("package provenance serialization"),
+            );
+        }
         table.into()
     }
 }
@@ -6516,6 +6666,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
         platforms,
         aube: tv.aube_lock.clone(),
         uv: tv.uv_lock.clone(),
+        provenance: tv.npm_provenance.clone(),
     })
 }
 

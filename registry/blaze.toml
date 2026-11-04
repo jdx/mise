@@ -1,9 +1,7 @@
-bins = ["blaze", "cargo-blaze", "ra-jit", "cargo-ra-jit"]
+bins = ["blaze"]
 description = "Incremental Rust build daemon that recompiles only the functions an edit changed (formerly ra-jit)"
 os = ["linux", "macos"]
-# The nightly prints `ra-jit 0.0.0`, not its version, so the test reads the
-# usage line every build shares.
-test = { cmd = "ra-jit --help", expected = "usage: ra-jit" }
+test = { cmd = "blaze --version", expected = "blaze {{version}}" }
 version_order = "source"
 
 [[backends]]

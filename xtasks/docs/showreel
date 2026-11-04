@@ -40,7 +40,8 @@
 #
 # With --cache, a failure (the resolve, the captures, the tests, the render)
 # never fails the command: it warns, puts the last good render in
-# docs/public (or none), and exits 0, so the site builds either way.
+# docs/public (or none), and exits 0. The docs deploy fails when that leaves
+# no render.
 set -euo pipefail
 # Command substitutions keep `set -e`, so a failed step inside $(...) stops
 # the run instead of handing on an empty value. Bash before 4.4 (macOS's
@@ -237,7 +238,11 @@ restore() {
 	# The chapters track the render was made with (renders kept before it
 	# was kept with them serve the checkout's).
 	if [ -s "$dir/$chapters_vtt" ]; then
-		cp "$dir/$chapters_vtt" "$public/$chapters_vtt" || return 1
+		if ! { cp "$dir/$chapters_vtt" "$public/.$chapters_vtt.partial" && mv -f "$public/.$chapters_vtt.partial" "$public/$chapters_vtt"; }; then
+			rm -f "$public/.$chapters_vtt.partial"
+			clear_public
+			return 1
+		fi
 	fi
 	# Recently used, for pruning.
 	touch "$dir" || true
@@ -253,7 +258,7 @@ fallback() {
 	if [ -n "$good" ] && restore "$good"; then
 		warn "$1; the site keeps the last good showreel ($good)"
 	else
-		warn "$1; there is no earlier showreel to keep, so the site builds without one"
+		warn "$1; there is no earlier showreel to keep, so docs/public has none"
 	fi
 }
 

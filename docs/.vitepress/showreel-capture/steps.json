@@ -406,7 +406,7 @@
         "^--json +-- ",
         "^mise ~/work/api/mise.toml tools: hk@{{hk_new}}$",
         "^--junit-xml +-- Write step results as a JUnit XML report$",
-        "^linked ~/work/api/\\.claude/skills/hk-configure -> ",
+        "^linked ~/work/api/\\.agents/skills/hk-configure -> ",
         "^/home/you/\\.local/share/mise/installs/hk/{{hk_new}}/skills/hk-configure$"
       ],
       "shape": {
@@ -625,7 +625,7 @@
         }
       ],
       "expect": [
-        "^✔ \\[shop/postgres\\] started on port 5432$",
+        "^✔ pitchfork: \\[shop/postgres\\] started on port 5432$",
         "^\\[db\\] \\$ psql -Atc \"show server_version\"$",
         "^{{postgres_version}}$"
       ],
@@ -794,15 +794,20 @@
             "^mise-tasks/deploy$",
             "^\\.env$"
           ],
-          "reject": ["^\\.env\\.deploy$", "^\\.claude/", "^dist/"]
+          "reject": [
+            "^\\.env\\.deploy$",
+            "^\\.agents/",
+            "^\\.claude/",
+            "^dist/"
+          ]
         }
       ],
-      "expect": ["^✓ Lockfile written to ~/work/api/mise\\.lock$"],
+      "expect": ["^✓ Lockfile ready at ~/work/api/mise\\.lock$"],
       "shape": {
         "allow": [
           {
             "pattern": "mise WARN",
-            "after": "^✓ Lockfile written to ~/work/api/mise\\.lock$"
+            "after": "^lock\\b"
           }
         ]
       }

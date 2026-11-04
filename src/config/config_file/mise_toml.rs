@@ -1883,6 +1883,7 @@ impl ConfigFile for MiseToml {
             create_dir_all(parent)?;
         }
         file::write_atomic(&self.path, contents)?;
+        super::note_saved(&self.path);
         trust_after_write(&self.path)?;
         Ok(())
     }

@@ -589,7 +589,7 @@
       }
     ],
     "captures": ["C8"],
-    "visual": "Switch's last screen dissolves into C8's prompt over the first quarter beat. `hk = \"2.1.0\"` lights in [tools]; the terminal shortens and a slip tucks under it (\"Excerpt of hk's packslip · real keys, values abridged\"): 28 px rows read from the packslip statement mise saved when it installed each version (C8, off camera): `version`, `resources` (the completion shells and the skill names) and `identity`. `hk check --j` + Tab keycap lists 2 rows. `mise use hk@2.2.0` (its progress header cut) -> `mise ~/work/api/mise.toml tools: hk@2.2.0`; the card flips to \"2.2.0\"; the slip re-stamps from 2.2.0's statement. Tab lists 3 rows, `--junit-xml` lights; footnote \"In a shell with `mise activate`.\" `mise skills sync` prints `linked ~/work/api/.claude/skills/...` rows, dimmed; the drawn link takes the slip's place and lights only `2.2.0`. Caption 3 is read, then the drawn link folds away; the card and the dimmed, shortened terminal hold into the Environments ticket.",
+    "visual": "Switch's last screen dissolves into C8's prompt over the first quarter beat. `hk = \"2.1.0\"` lights in [tools]; the terminal shortens and a slip tucks under it (\"Excerpt of hk's packslip · real keys, values abridged\"): 28 px rows read from the packslip statement mise saved when it installed each version (C8, off camera): `version`, `resources` (the completion shells and the skill names) and `identity`. `hk check --j` + Tab keycap lists 2 rows. `mise use hk@2.2.0` (its progress header cut) -> `mise ~/work/api/mise.toml tools: hk@2.2.0`; the card flips to \"2.2.0\"; the slip re-stamps from 2.2.0's statement. Tab lists 3 rows, `--junit-xml` lights; footnote \"In a shell with `mise activate`.\" `mise skills sync` prints `linked ~/work/api/.agents/skills/...` rows, dimmed; the drawn link takes the slip's place and lights only `2.2.0`. Caption 3 is read, then the drawn link folds away; the card and the dimmed, shortened terminal hold into the Environments ticket.",
     "plan": [
       {
         "at": 0,
@@ -1177,7 +1177,7 @@
       }
     ],
     "captures": ["C14"],
-    "visual": "`cd ../shop`. The shop card: [tools] (pitchfork) folded, `[daemons] postgres = \"18\"`, [daemons_settings] folded, `[tasks.db] daemons = \"postgres\"` with `run = 'psql -Atc \"show server_version\"'`. No [settings] table, no badge. `mise run db` plays at real time: dimmed Postgres log lines under pitchfork's own readiness spinner (`waiting for command … pg_isready …`), then `✔ [shop/postgres] started on port 5432`, with caption 2; [daemons] lights sage; `[db] $ psql -Atc \"show server_version\"` prints the real server version, and a thread ties it to `postgres = \"18\"`. Postgres's log lines and their wrapped rows are dimmed to texture. The card and the terminal, on the server's version, hold into the Dotfiles ticket.",
+    "visual": "`cd ../shop`. The shop card: [tools] (pitchfork) folded, `[daemons] postgres = \"18\"`, [daemons_settings] folded, `[tasks.db] daemons = \"postgres\"` with `run = 'psql -Atc \"show server_version\"'`. No [settings] table, no badge. `mise run db` plays at real time: dimmed Postgres log lines under pitchfork's own readiness spinner (`waiting for command … pg_isready …`), then `✔ pitchfork: [shop/postgres] started on port 5432`, with caption 2; [daemons] lights sage; `[db] $ psql -Atc \"show server_version\"` prints the real server version, and a thread ties it to `postgres = \"18\"`. Postgres's log lines and their wrapped rows are dimmed to texture. The card and the terminal, on the server's version, hold into the Dotfiles ticket.",
     "plan": [
       {
         "at": 0,
@@ -1201,7 +1201,7 @@
         "at": 6,
         "end": 8.41,
         "name": "db",
-        "what": "`mise run db` at real time: the Postgres log lines (dimmed to texture, LOG_DIM) under pitchfork's readiness spinner, `✔ [shop/postgres] started on port 5432`, `[db] $ psql …`, the server's version (3 lines read)"
+        "what": "`mise run db` at real time: the Postgres log lines (dimmed to texture, LOG_DIM) under pitchfork's readiness spinner, `✔ pitchfork: [shop/postgres] started on port 5432`, `[db] $ psql …`, the server's version (3 lines read)"
       },
       {
         "at": 8.911,

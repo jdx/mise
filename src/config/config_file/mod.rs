@@ -653,6 +653,20 @@ static STRICT_TRUST: AtomicBool = AtomicBool::new(false);
 /// each. A file the `env_file` setting names has no config.
 static UNTRUSTED_ENV_FILES: Mutex<Vec<(PathBuf, Option<PathBuf>)>> = Mutex::new(Vec::new());
 
+/// The mise.toml files this process wrote, such as the one `mise use` or
+/// `mise unuse` edited. The lockfiles regenerated after an install include
+/// theirs, wherever they live.
+static SAVED_CONFIGS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+fn note_saved(path: &Path) {
+    SAVED_CONFIGS.lock().unwrap().push(path.to_path_buf());
+}
+
+/// The mise.toml files this process has written so far.
+pub fn saved_configs() -> Vec<PathBuf> {
+    SAVED_CONFIGS.lock().unwrap().clone()
+}
+
 /// Makes untrusted config skip instead of load or prompt, even for `mise trust`.
 pub fn require_strict_trust() {
     STRICT_TRUST.store(true, Ordering::Relaxed);

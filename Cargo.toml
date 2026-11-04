@@ -26,7 +26,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.11.0"
+version = "2026.11.1"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -194,11 +194,11 @@ petgraph = "0.8"
 phf = "0.14"
 rand = "0.10"
 rattler = { version = "0.55", default-features = false }
-rattler_conda_types = { version = "0.57", default-features = false }
-rattler_repodata_gateway = { version = "0.36", default-features = false, features = [
+rattler_conda_types = { version = "0.58", default-features = false }
+rattler_repodata_gateway = { version = "0.37", default-features = false, features = [
   "gateway",
 ] }
-rattler_solve = { version = "11", default-features = false, features = [
+rattler_solve = { version = "12", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.27", default-features = false }
