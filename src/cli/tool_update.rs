@@ -339,8 +339,12 @@ fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
     // Without `__MISE_BIN`, `MISE_BIN` is `current_exe()`, which on macOS is the
     // shim symlink a shim launch ran: executing it would run the tool instead.
     // A bare name is left for PATH lookup: canonicalizing it would resolve it
-    // against the current directory.
-    let bin = if env::MISE_BIN.is_absolute() {
+    // against the current directory. A relative path with a directory part is
+    // resolved here, before the child starts from the filesystem root.
+    let has_dir = env::MISE_BIN
+        .parent()
+        .is_some_and(|dir| !dir.as_os_str().is_empty());
+    let bin = if has_dir {
         crate::file::canonicalize_or_self(&env::MISE_BIN)
     } else {
         env::MISE_BIN.clone()
