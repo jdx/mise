@@ -332,7 +332,6 @@ remote git includes is an experimental feature. Enable it with `experimental = t
 `[settings]`, or with `MISE_EXPERIMENTAL=1`.
 :::
 
-
 ::: code-group
 
 ```toml [ssh]
