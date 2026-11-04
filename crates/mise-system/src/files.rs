@@ -6394,16 +6394,22 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             }
         }
         FileMode::SymlinkEach => {
-            // a regular file where the target directory (or a nested one)
-            // should go blocks the whole entry
-            for dir in needed_dirs(req)? {
-                if dir.exists() && !dir.is_dir() {
-                    out.push(dir);
-                }
-            }
             // a file seen through a folded link is the source itself, and
             // apply unfolds the link before it links anything there
             let folded = folded_source_links(req)?;
+            // a regular file where the target directory (or a nested one)
+            // should go blocks the whole entry, and so does a directory link
+            // the user made there: links written through it would land in
+            // wherever it points, outside the entry. Links above the target
+            // are not the entry's to judge.
+            for dir in needed_dirs(req)? {
+                if dir.exists() && !dir.is_dir()
+                    || file::is_symlink_or_junction(&dir)
+                        && !folded.iter().any(|(link, _)| *link == dir)
+                {
+                    out.push(dir);
+                }
+            }
             for (_source, target) in walk_source_files(req)? {
                 if folded.iter().any(|(link, _)| target.starts_with(link)) {
                     continue;
@@ -6942,7 +6948,12 @@ fn remove_empty_dirs_upward<'a>(
     {
         let mut dir = Some(start);
         while let Some(d) = dir {
-            if !may_remove(d) || !d.is_dir() || d.read_dir()?.next().is_some() {
+            // a link to a directory is somebody's own, never an empty directory of ours
+            if !may_remove(d)
+                || file::is_symlink_or_junction(d)
+                || !d.is_dir()
+                || d.read_dir()?.next().is_some()
+            {
                 break;
             }
             debug!("files: removing empty directory {}", d.display_user());
@@ -7069,7 +7080,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need
             for dir in needed_dirs(req)? {
-                if dir.exists() && !dir.is_dir() && remove_existing(&dir)? {
+                if (dir.exists() && !dir.is_dir() || file::is_symlink_or_junction(&dir))
+                    && remove_existing(&dir)?
+                {
                     written.push(dir);
                 }
             }
@@ -8994,6 +9007,21 @@ source = "oldrc""#,
         );
         assert!(target.join("entry").is_dir());
         assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_empty_dirs_upward_leaves_a_directory_link() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let empty = dir.path().join("empty");
+        std::fs::create_dir(&empty)?;
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&empty, &link)?;
+        let removed = remove_empty_dirs_upward([link.as_path()], |_| true)?;
+        assert!(removed.is_empty());
+        assert!(link.is_symlink());
+        assert!(empty.is_dir());
         Ok(())
     }
 

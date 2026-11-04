@@ -906,3 +906,20 @@ assert_contains "cat ~/.secret-dotfile" "phase=apply-time"
 for command in add apply diff edit status unapply; do
   assert_contains "mise dotfiles $command --help" "--prompt-secrets"
 done
+
+# A directory link the user made inside a symlink-each target is theirs: apply
+# does not write through it without --force, and unapply never removes it.
+mkdir -p userlink-src/sub userlink-old userlink-home
+echo "a" >userlink-src/sub/a.txt
+ln -s "$PWD/userlink-old" userlink-home/sub
+cat <<EOF >userlink.toml
+[dotfiles]
+"$PWD/userlink-home" = { source = "userlink-src", mode = "symlink-each" }
+EOF
+assert_fail "MISE_CONFIG_FILE=$PWD/userlink.toml mise dotfiles apply --yes"
+assert_fail "test -e '$PWD/userlink-old/a.txt'"
+assert "readlink '$PWD/userlink-home/sub'" "$PWD/userlink-old"
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink.toml mise dotfiles apply --yes --force"
+assert_fail "test -L '$PWD/userlink-home/sub'"
+assert "readlink '$PWD/userlink-home/sub/a.txt'" "$PWD/userlink-src/sub/a.txt"
+assert_fail "test -e '$PWD/userlink-old/a.txt'"
