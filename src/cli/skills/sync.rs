@@ -52,8 +52,19 @@ pub(super) struct SkillsSync {
 impl SkillsSync {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        // Without --dir, the project's directory takes the project's own
+        // tools, and the global ones go to --global, as auto_sync does. Where
+        // the two would be the same directory, it takes both.
+        let project_dir_is_home_dir = !self.global
+            && self.dir.is_none()
+            && config.project_root.as_ref().is_some_and(|root| {
+                crate::packslip::skills_target(root).dir
+                    == crate::packslip::skills_target(&dirs::HOME).dir
+            });
         let skills = if self.global {
             crate::packslip::global_skills(&config).await?
+        } else if self.dir.is_none() && !project_dir_is_home_dir {
+            crate::packslip::project_skills(&config).await?
         } else {
             crate::packslip::active_skills(&config).await?
         };

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# A tool that ships a skill, as a plugin whose install lays down a packslip
+# statement. Global tools link under HOME; a project's directory takes only
+# the tools its own config declares.
+mkdir -p plugin/bin
+cat >plugin/bin/list-all <<'SH'
+#!/usr/bin/env bash
+echo "1.0.0 2.0.0"
+SH
+cat >plugin/bin/install <<'SH'
+#!/usr/bin/env bash
+set -e
+mkdir -p "$ASDF_INSTALL_PATH/bin" "$ASDF_INSTALL_PATH/skill"
+echo "# skilled $ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/skill/SKILL.md"
+printf '#!/bin/sh\n' >"$ASDF_INSTALL_PATH/bin/skilled"
+chmod +x "$ASDF_INSTALL_PATH/bin/skilled"
+digest="$(printf 'a%.0s' $(seq 64))"
+cat >"$ASDF_INSTALL_PATH/.mise-packslip.json" <<JSON
+{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"skilled.tar.gz","digest":{"sha256":"$digest"}}],"predicateType":"https://packslip.dev/release/v1","predicate":{"project":"github.com/test/skilled","version":"$ASDF_INSTALL_VERSION","published_at":"2026-09-01T00:00:00Z","artifacts":[{"name":"skilled.tar.gz","size":1,"format":"tar.gz","bin":["bin/skilled"]}],"resources":[{"kind":"skill","name":"skilled","archive":"skill"}],"identity":{"scheme":"sigstore-oidc","key_id":"https://github.com/test/skilled/.github/workflows/release.yml@refs/tags/v$ASDF_INSTALL_VERSION","issuer":"https://token.actions.githubusercontent.com"}}}
+JSON
+SH
+chmod +x plugin/bin/list-all plugin/bin/install
+mise plugins link skilled "$PWD/plugin"
+
+export MISE_SKILLS_AUTO_SYNC=1
+export MISE_SKILLS_DIR=.agents/skills
+
+# A global tool lands under HOME and not in the project that merely inherits it.
+mkdir project
+cd project || exit 1
+echo '[env]
+FOO = "1"' >mise.toml
+mise use -g skilled@1.0.0
+assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert 'test -e .agents/skills/skilled; echo $?' "1"
+mise install skilled
+assert 'test -e .agents/skills/skilled; echo $?' "1"
+mise skills sync --prune
+assert 'test -e .agents/skills/skilled; echo $?' "1"
+
+# The project's own entry links it, at the project's version, and the home
+# directory keeps the global one.
+mise use skilled@2.0.0
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+
+# An explicit --dir still takes every active tool.
+mkdir ../inherit
+cd ../inherit || exit 1
+mise skills sync --dir out >/dev/null
+assert_contains "cat out/skilled/SKILL.md" "# skilled 1.0.0"
