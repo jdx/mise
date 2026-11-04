@@ -471,11 +471,13 @@ pub fn compute_config_bumps_for_paths(
 fn cli_config_bump(current: &str, cli_version: &str) -> Option<String> {
     let current = current.strip_prefix("prefix:").unwrap_or(current);
     let (prefix, old) = split_version_prefix(current);
+    // Nothing to bump: `latest` and a bare vendor (`temurin`) are moving targets,
+    // and bumping one would swap the word for the CLI version.
+    if !request_names_a_version(&old) {
+        return None;
+    }
     let (cli_prefix, cli_bare) = split_version_prefix(cli_version);
-    let new_prefix = if !request_names_a_version(&old)
-        || cli_prefix.is_empty()
-        || matches!(cli_prefix.as_str(), "v" | "V")
-    {
+    let new_prefix = if cli_prefix.is_empty() || matches!(cli_prefix.as_str(), "v" | "V") {
         prefix.clone()
     } else {
         cli_prefix
@@ -556,6 +558,8 @@ mod tests {
         assert_eq!(bump("26", "zulu-26"), Some("zulu-26".into()));
         // Channels keep their name and a `prefix:` wrapper is not doubled.
         assert_eq!(bump("latest", "temurin-27"), None);
+        assert_eq!(bump("temurin", "27"), None);
+        assert_eq!(bump("temurin", "temurin-27"), None);
         assert_eq!(bump("prefix:26", "zulu-26"), Some("zulu-26".into()));
         assert_eq!(bump("prefix:26", "27"), Some("27".into()));
         assert_eq!(bump("prefix:26", "26.0.1"), None);
