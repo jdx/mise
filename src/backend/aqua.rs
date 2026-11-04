@@ -5109,10 +5109,22 @@ fn elf_interpreter(path: &Path) -> Option<String> {
     None
 }
 
-/// Whether a `PT_INTERP` path is a loader Android provides: bionic's
-/// `/system/bin/linker64` on 64-bit and `/system/bin/linker` on 32-bit.
+/// Whether a `PT_INTERP` path is one of bionic's own loaders.
+///
+/// Android's interpreter is `/system/bin/linker64` on 64-bit and
+/// `/system/bin/linker` on 32-bit, with the ASan and runtime-APEX variants.
+/// Compared exactly: the path comes from the downloaded file, so a binary naming
+/// `/system/bin/linker_anything` must not pass as a loader Android provides.
 fn is_android_interpreter(interpreter: &str) -> bool {
-    interpreter.starts_with("/system/bin/linker") || interpreter.starts_with("/system/lib")
+    matches!(
+        interpreter,
+        "/system/bin/linker"
+            | "/system/bin/linker64"
+            | "/system/bin/linker_asan"
+            | "/system/bin/linker_asan64"
+            | "/apex/com.android.runtime/bin/linker"
+            | "/apex/com.android.runtime/bin/linker64"
+    )
 }
 
 fn le_u16(bytes: &[u8], offset: usize) -> Option<u16> {
@@ -6202,6 +6214,32 @@ no_asset: true
         let path = dir.path().join("runaway");
         std::fs::write(&path, &runaway).unwrap();
         assert_eq!(elf_interpreter(&path), None);
+    }
+
+    #[test]
+    fn test_android_loader_paths_are_exact() {
+        // Bionic's own linkers, including the ASan and runtime-APEX variants.
+        for loader in [
+            "/system/bin/linker",
+            "/system/bin/linker64",
+            "/system/bin/linker_asan",
+            "/system/bin/linker_asan64",
+            "/apex/com.android.runtime/bin/linker64",
+        ] {
+            assert!(is_android_interpreter(loader), "{loader}");
+        }
+
+        // The path comes from the file, so a prefix that only looks like a
+        // loader, or any other host loader, is not one.
+        for impostor in [
+            "/system/bin/linker_evil",
+            "/system/bin/linker64.old",
+            "/system/lib64/ld-android.so",
+            "/lib/ld-linux-aarch64.so.1",
+            "/lib/ld-musl-aarch64.so.1",
+        ] {
+            assert!(!is_android_interpreter(impostor), "{impostor}");
+        }
     }
 
     #[test]
