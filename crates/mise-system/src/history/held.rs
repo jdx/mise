@@ -167,6 +167,8 @@ pub(crate) struct Streams {
     pub(crate) carry: Vec<usize>,
 }
 
+/// Determine which tracked entries are held at their saved version and which
+/// must be carried into the next checkpoint.
 pub(crate) fn streams(
     repo: &HistoryRepo,
     held: &Held,

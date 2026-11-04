@@ -63,6 +63,8 @@ pub(crate) fn audit_history(
     audit_history_cached(repo, head, protected).map(|_| ())
 }
 
+/// Verify that all historical commits for protected paths contain only encrypted versions,
+/// caching verified head commits to avoid re-scanning the rev-list.
 fn audit_history_cached(
     repo: &HistoryRepo,
     head: &str,

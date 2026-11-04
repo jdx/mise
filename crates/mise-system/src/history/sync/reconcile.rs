@@ -34,10 +34,13 @@ pub(crate) struct Upstream {
     pub files: BTreeMap<String, Object>,
 }
 
+/// Build the upstream state from the fetched commit without interactivity.
 pub(crate) fn upstream(repo: &HistoryRepo, commit: Option<&str>) -> Result<Upstream> {
     upstream_with_interaction(repo, commit, false)
 }
 
+/// Build the upstream state from the fetched commit, decrypting files as needed
+/// and collecting any files that could not be unlocked.
 pub(crate) fn upstream_with_interaction(
     repo: &HistoryRepo,
     commit: Option<&str>,

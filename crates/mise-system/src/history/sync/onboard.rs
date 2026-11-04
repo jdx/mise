@@ -84,6 +84,7 @@ fn preview_store(store: &Store) -> Result<(tempfile::TempDir, Store)> {
     Ok((temp, preview))
 }
 
+/// Write a preview of the setup repository configuration to a temporary directory.
 fn preview_configuration(store: &Store) -> Result<tempfile::TempDir> {
     let temp = tempfile::tempdir()?;
     let repo = store
