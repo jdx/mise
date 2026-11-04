@@ -2218,7 +2218,9 @@ async fn offered_bins(
 ) -> Option<BTreeSet<String>> {
     let mut bins = BTreeSet::new();
     for dir in backend.list_bin_paths(config, tv).await.ok()? {
-        if dir.parent().is_none() {
+        // Backends list candidate dirs; one that does not exist holds nothing, unlike one that
+        // cannot be read.
+        if dir.parent().is_none() || !dir.exists() {
             continue;
         }
         bins.extend(list_executables_in_dir(&dir).ok()?);
