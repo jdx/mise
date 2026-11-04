@@ -1629,6 +1629,27 @@ fn test_lockfile_path_for_config_monorepo_root_routing() {
 }
 
 #[test]
+fn merge_keeps_a_provenance_pin_when_install_options_change() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let mut fresh = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    fresh.options = BTreeMap::from([("allow_builds".to_string(), "x".to_string())]);
+
+    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None);
+
+    let kept = merged
+        .iter()
+        .find(|tool| !tool.options.is_empty())
+        .expect("the entry for the new options");
+    assert_eq!(
+        kept.provenance.as_ref().map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
+    );
+}
+
+#[test]
 fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
     let existing = vec![basic_tool("20.0.0", "core:node")];
     let (mut merged, consumed) = merge_tool_entries(
