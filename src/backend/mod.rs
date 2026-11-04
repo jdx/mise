@@ -4731,7 +4731,18 @@ pub trait Backend: Debug + Send + Sync {
                             .await?
                     {
                         // A stable request still leaves out what the shared
-                        // matcher would treat as a pre-release.
+                        // matcher would treat as a pre-release, unless the
+                        // listing says it is not one.
+                        let flagged: HashMap<String, Option<bool>> = self
+                            .list_remote_versions_with_info_with_selection_options(
+                                config,
+                                selection_opts,
+                                fallback_refresh,
+                            )
+                            .await?
+                            .into_iter()
+                            .map(|v| (v.version, v.prerelease))
+                            .collect();
                         let versions: Vec<String> = self
                             .every_version_for_latest(
                                 config,
@@ -4742,7 +4753,9 @@ pub trait Backend: Debug + Send + Sync {
                             .await?
                             .into_iter()
                             .filter(|v| {
-                                !VERSION_REGEX.is_match(v) && !self.is_backend_prerelease(v)
+                                let stable_by_flag = flagged.get(v) == Some(&Some(false));
+                                (stable_by_flag || !VERSION_REGEX.is_match(v))
+                                    && !self.is_backend_prerelease(v)
                             })
                             .collect();
                         return Ok(find_match_in_list(&versions, resolved_query));
@@ -7283,13 +7296,18 @@ mod latest_version_tests {
         // Odin numbered its releases until 2020 and names them `dev-*` since.
         // Its own latest release is too new, and the only numeric one is years
         // old; `latest` must stay on the newest `dev-*` the cutoff allows.
-        let backend = LatestBackend::new("test-cutoff-non-numeric-latest-unflagged-rc")
+        let backend = LatestBackend::new("test-cutoff-non-numeric-latest-flagged-rc")
             .with_stable_info(dated("dev-2026-11a", "2026-11-03"))
             .with_remote_versions(vec![
                 dated("0.12.0", "2020-01-18"),
                 dated("dev-2026-09", "2026-09-01"),
                 dated("dev-2026-10", "2026-10-01"),
-                // Unflagged, but a pre-release by its name.
+                // A pre-release by its name, but the listing says it is not.
+                VersionInfo {
+                    prerelease: Some(false),
+                    ..dated("dev-2026-10-rc", "2026-10-10")
+                },
+                // Unflagged, and a pre-release by its name.
                 dated("1.0.0-rc.1", "2026-10-15"),
                 dated("dev-2026-11a", "2026-11-03"),
             ]);
@@ -7301,7 +7319,7 @@ mod latest_version_tests {
                 .await
                 .unwrap()
                 .as_deref(),
-            Some("dev-2026-10")
+            Some("dev-2026-10-rc")
         );
     }
 
