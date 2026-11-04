@@ -267,8 +267,13 @@ pub(super) fn discard_contentless_history(
             return Ok(());
         }
     }
+    // a save made since the check may hold files: leave the history alone
+    // then, and the unrelated-histories refusal that follows reports it
+    if repo.ref_oid(HistoryRepo::HISTORY_REF)?.as_deref() != Some(local.as_str()) {
+        return Ok(());
+    }
     info!("history: the local checkpoints hold no files; adopting the setup repository's history");
-    repo.delete_ref(HistoryRepo::HISTORY_REF)
+    repo.delete_history_head(&local)
 }
 
 /// The setup branch: the one asked for, else the branch this machine already
