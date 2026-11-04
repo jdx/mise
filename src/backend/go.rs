@@ -419,13 +419,19 @@ fn is_transient_go_network_failure(stderr: &str) -> bool {
         "tls handshake timeout",
         "timeout awaiting response headers",
         "unexpected eof",
+        ": eof",
+        "500 internal server error",
         "502 bad gateway",
         "503 service unavailable",
         "504 gateway timeout",
         "429 too many requests",
     ];
     let stderr = stderr.to_lowercase();
-    !stderr.contains("no such host") && MARKERS.iter().any(|m| stderr.contains(m))
+    // A compiler diagnostic such as `syntax error: unexpected EOF` is not a
+    // network failure.
+    !stderr.contains("no such host")
+        && !stderr.contains("syntax error")
+        && MARKERS.iter().any(|m| stderr.contains(m))
 }
 
 fn go_install_retry_error(first_error: eyre::Report, retry_error: eyre::Report) -> eyre::Report {
@@ -1103,6 +1109,15 @@ mod tests {
         ));
         assert!(is_transient_go_network_failure(
             "reading https://proxy.golang.org/x/@v/list: 503 Service Unavailable"
+        ));
+        assert!(is_transient_go_network_failure(
+            "go: x@v1.0.0: Get \"https://proxy.golang.org/x/@v/v1.0.0.info\": EOF"
+        ));
+        assert!(is_transient_go_network_failure(
+            "reading https://sum.golang.org/latest: 500 Internal Server Error"
+        ));
+        assert!(!is_transient_go_network_failure(
+            "./main.go:9:1: syntax error: unexpected EOF, expected }"
         ));
         assert!(!is_transient_go_network_failure(
             "go: x@2.8.0: unknown revision 2.8.0"
