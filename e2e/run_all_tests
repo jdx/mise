@@ -128,7 +128,9 @@ SHOW_PASSING_LOGS="${E2E_SHOW_PASSING_LOGS:-0}"
 pass_line() {
   local name="$1" log="$2" duration count
   duration="$(grep -m1 -E "^$name: [0-9]+s$" "$log" | sed 's/.*: //' || true)"
-  count="$(grep -c '^SUCCESS: ' "$log" || true)"
+  # assert.sh's ok() prints `SUCCESS: ` unstyled and green on GitHub Actions
+  # or a terminal; count both.
+  count="$(grep -cE $'^(SUCCESS: |\e\\[92m)' "$log" || true)"
   local details="${duration:-}"
   if [[ ${count:-0} -gt 0 ]]; then
     local noun=assertions
