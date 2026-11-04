@@ -327,6 +327,12 @@ include or a higher-precedence config. This is also required when
 Include a directory or a single TOML task file from a git repository with a
 `git::` URL:
 
+::: warning Experimental
+remote git includes is an experimental feature. Enable it with `experimental = true` under
+`[settings]`, or with `MISE_EXPERIMENTAL=1`.
+:::
+
+
 ::: code-group
 
 ```toml [ssh]
@@ -384,6 +390,11 @@ git::<protocol>://<repository>.git//<path>?ref=<ref>
 
 Include a task catalog published as an OCI artifact by prefixing an image
 reference with `oci::`:
+
+::: warning Experimental
+remote oci includes is an experimental feature. Enable it with `experimental = true` under
+`[settings]`, or with `MISE_EXPERIMENTAL=1`.
+:::
 
 ```toml
 [task_config]
