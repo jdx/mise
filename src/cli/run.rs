@@ -1448,8 +1448,11 @@ impl Run {
             if let Some(oh) = &this.output_handler
                 && oh.output(Some(&task)) == TaskOutput::Summary
             {
+                // An interrupted task's output may be all there is to go on;
+                // one stopped because a sibling failed says nothing more.
                 let outcome = match &result {
                     Ok(_) => SummaryOutcome::Passed,
+                    Err(_) if interrupted => SummaryOutcome::Failed,
                     Err(_) if cancelled => SummaryOutcome::Cancelled,
                     Err(_) => SummaryOutcome::Failed,
                 };

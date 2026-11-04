@@ -205,7 +205,9 @@ $ mise run --output summary test
 ```
 
 A task that mise stopped because another one failed prints
-`[name] cancelled`, and a dry run prints the commands it would run. `raw` and
+`[name] cancelled`, and a dry run prints the commands it would run. mise holds
+the last 64 KiB of each task's output, and prints what it holds for tasks still
+running when the run is interrupted or reaches its `--timeout`. `raw` and
 `interactive` tasks still get the terminal.
 
 A task that keeps running, such as a development server or a watcher, prints

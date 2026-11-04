@@ -10,6 +10,12 @@ run = "echo bad-stdout; echo bad-stderr >&2; exit 3"
 [tasks.both]
 depends = ["ok", "bad"]
 
+[tasks.hang]
+run = "echo before-timeout; sleep 30"
+
+[tasks.noisy]
+run = "seq 1 20000; exit 1"
+
 [tasks.fresh]
 run = "echo built > out.txt"
 sources = ["mise.toml"]
@@ -44,6 +50,15 @@ assert_not_contains "mise run --output summary --dry-run ok 2>&1" "passed"
 # With timings off, a pass says so without the time.
 assert_contains "mise run --output summary --no-timings ok 2>&1" "[ok] passed"
 assert_not_contains "mise run --output summary --no-timings ok 2>&1" "passed in"
+
+# A run that times out still prints what its running tasks wrote.
+assert_fail_contains "mise run --output summary --timeout 2s hang" "[hang] before-timeout"
+
+# A task's output is held up to its last 64 KiB.
+assert_fail_contains "mise run --output summary noisy" "[output truncated; showing last 64 KiB]"
+assert_fail_contains "mise run --output summary noisy" "[noisy] 20000"
+assert_not_contains "mise run --output summary noisy 2>&1 || true" "[noisy] 1
+"
 
 # MISE_TASK_OUTPUT selects it, and it is no one's default.
 assert_contains "MISE_TASK_OUTPUT=summary mise run ok 2>&1" "[ok] passed in"

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::config::Settings;
 use crate::task::task_helpers::{task_gets_keep_order_slot, task_needs_permit};
@@ -18,7 +18,7 @@ type SummaryMap = Arc<Mutex<SummaryState>>;
 /// each task that ran took.
 #[derive(Default)]
 pub struct SummaryState {
-    buffers: IndexMap<Task, Vec<KeepOrderLine>>,
+    buffers: IndexMap<Task, SummaryBuffer>,
     /// Tasks that ran a command, with how long they took when timings are on.
     durations: HashMap<Task, Option<Duration>>,
     /// Tasks whose output came from the artifact cache rather than a run.
@@ -26,6 +26,63 @@ pub struct SummaryState {
     /// Tasks whose summary is printed: what mise says about them later, such
     /// as the run's closing `task failed`, prints at once.
     finished: HashSet<Task>,
+}
+
+/// A run that ends before its results are shown, such as on `--timeout`,
+/// drops the state with output still held: print it then, since it may be all
+/// there is to go on.
+impl Drop for SummaryState {
+    fn drop(&mut self) {
+        for (task, buffer) in std::mem::take(&mut self.buffers) {
+            KeepOrderState::print_lines(&buffer.into_lines(&task));
+        }
+    }
+}
+
+/// How much of a task's output `summary` holds: the last lines, as mise keeps
+/// for a command whose output it hides behind a progress bar, so a long or
+/// verbose task cannot grow without bound.
+const SUMMARY_TAIL_BYTES: usize = 64 * 1024;
+
+/// One task's held output: the newest lines up to [`SUMMARY_TAIL_BYTES`].
+#[derive(Default)]
+pub(crate) struct SummaryBuffer {
+    lines: VecDeque<KeepOrderLine>,
+    bytes: usize,
+    truncated: bool,
+}
+
+impl SummaryBuffer {
+    fn push(&mut self, line: KeepOrderLine) {
+        let (KeepOrderLine::Stdout(_, text) | KeepOrderLine::Stderr(_, text)) = &line;
+        self.bytes = self.bytes.saturating_add(text.len() + 1);
+        self.lines.push_back(line);
+        // The newest line stays, however long it is.
+        while self.bytes > SUMMARY_TAIL_BYTES && self.lines.len() > 1 {
+            let Some(KeepOrderLine::Stdout(_, old) | KeepOrderLine::Stderr(_, old)) =
+                self.lines.pop_front()
+            else {
+                break;
+            };
+            self.bytes = self.bytes.saturating_sub(old.len() + 1);
+            self.truncated = true;
+        }
+    }
+
+    /// The lines to print, after a notice when older ones were dropped.
+    fn into_lines(self, task: &Task) -> Vec<KeepOrderLine> {
+        let mut lines: Vec<KeepOrderLine> = self.lines.into();
+        if self.truncated {
+            lines.insert(
+                0,
+                KeepOrderLine::Stderr(
+                    task.estyled_prefix(),
+                    "[output truncated; showing last 64 KiB]".to_string(),
+                ),
+            );
+        }
+        lines
+    }
 }
 
 /// How a task ended, for its `summary` output.
@@ -620,6 +677,7 @@ impl OutputHandler {
         let mut state = self.summary_state.lock().unwrap();
         let buffer = state.buffers.entry(task.clone()).or_default();
         buffer.push(KeepOrderLine::Stdout(prefix.to_string(), line.to_string()));
+        drop(state);
     }
 
     /// Hold a line a task, or mise about it, wrote to stderr (`summary`).
@@ -647,7 +705,11 @@ impl OutputHandler {
             let mut state = self.summary_state.lock().unwrap();
             state.finished.insert(task.clone());
             (
-                state.buffers.shift_remove(task).unwrap_or_default(),
+                state
+                    .buffers
+                    .shift_remove(task)
+                    .map(|b| b.into_lines(task))
+                    .unwrap_or_default(),
                 state.durations.remove(task),
                 state.replayed.remove(task),
             )
@@ -680,8 +742,8 @@ impl OutputHandler {
     /// after an interrupt: their output may be all there is to go on.
     pub(crate) fn flush_summaries(&self) {
         let buffers = std::mem::take(&mut self.summary_state.lock().unwrap().buffers);
-        for lines in buffers.values() {
-            KeepOrderState::print_lines(lines);
+        for (task, buffer) in buffers {
+            KeepOrderState::print_lines(&buffer.into_lines(&task));
         }
     }
 
