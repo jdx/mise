@@ -262,12 +262,19 @@ fn live_matches_saved(
         let expected = if matches!(mode.as_str(), "040000" | "160000") {
             Some((mode, oid))
         } else if super::sync::files::is_encrypted(encrypted, &path) {
-            super::sync::files::decrypt(repo, &path, &(mode, oid), console::user_attended_stderr())
-                .ok()
+            // a version this machine cannot decrypt is not one it holds
+            match super::sync::files::decrypt(
+                repo,
+                &path,
+                &(mode, oid),
+                console::user_attended_stderr(),
+            ) {
+                Ok(decrypted) => Some(decrypted),
+                Err(_) => return Ok(false),
+            }
         } else {
             Some((mode, oid))
         };
-        // a version this machine cannot decrypt is not one it holds
         if expected != object {
             return Ok(false);
         }
