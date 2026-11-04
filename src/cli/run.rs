@@ -395,6 +395,10 @@ pub(crate) struct Run {
     #[usage(skip)]
     pub telemetry: Option<otel::TaskRunTelemetry>,
 
+    /// Where this run records its tasks for `mise tasks history`; `None` when recording is off.
+    #[usage(skip)]
+    pub task_history: Option<Arc<crate::task::task_history::TaskHistory>>,
+
     /// Set by launchers that start tasks without a person asking for them.
     #[usage(skip)]
     pub secrets_denied: Option<crate::secrets::SecretsDenied>,
@@ -1031,6 +1035,10 @@ impl Run {
         // finalized even when the run is cancelled by --timeout:
         // TaskRunTelemetry finishes on drop.
         self.telemetry = telemetry;
+        if !self.dry_run {
+            self.task_history =
+                crate::task::task_history::TaskHistory::recorder(&config).map(Arc::new);
+        }
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
@@ -1316,6 +1324,7 @@ impl Run {
                 .as_ref()
                 .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
+            let started = (std::time::SystemTime::now(), std::time::Instant::now());
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1433,6 +1442,18 @@ impl Run {
                     #[cfg(windows)]
                     crate::cmd::CmdLineRunner::kill_all();
                 }
+            }
+            if let Some(history) = &this.task_history {
+                record_task_run(
+                    history,
+                    &ctx.config,
+                    &task,
+                    started,
+                    &result,
+                    panicked,
+                    cancelled,
+                )
+                .await;
             }
             // Close the task's span with real timing and status.
             if let (Some(t), Some(span)) = (&this.telemetry, otel_span) {
@@ -1811,6 +1832,39 @@ impl Run {
 
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.output_handler.as_ref().unwrap().quiet(task)
+    }
+}
+
+/// Record how a task ended for `mise tasks history`. A task with nothing to run, such as one
+/// that only names dependencies, is not recorded: its duration is only the wait for them.
+async fn record_task_run(
+    history: &Arc<crate::task::task_history::TaskHistory>,
+    config: &Config,
+    task: &Task,
+    (started, timer): (std::time::SystemTime, std::time::Instant),
+    result: &Result<crate::task::task_executor::TaskRunOutcome>,
+    panicked: bool,
+    cancelled: bool,
+) {
+    use crate::task::task_history::{RunStatus, TaskRun};
+    if task.file.is_none() && task.run().is_empty() {
+        return;
+    }
+    let duration = timer.elapsed();
+    let (status, exit_code) = match result {
+        Ok(outcome) if outcome.restored => (RunStatus::Cached, None),
+        Ok(outcome) if outcome.did_work => (RunStatus::Ok, Some(0)),
+        Ok(_) => (RunStatus::Skipped, None),
+        Err(_) if panicked => (RunStatus::Failed, Some(1)),
+        Err(err) if cancelled => (RunStatus::Cancelled, Error::get_exit_status(err)),
+        Err(err) => (RunStatus::Failed, Error::get_exit_status(err)),
+    };
+    let args = task.args.iter().map(|a| config.redact(a)).collect();
+    let run = TaskRun::new(&task.name, args, started, duration, status, exit_code);
+    let history = history.clone();
+    // The write takes a file lock, so it stays off the async workers.
+    if let Err(err) = tokio::task::spawn_blocking(move || history.record(run)).await {
+        debug!("task history: {err}");
     }
 }
 

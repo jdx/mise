@@ -1308,6 +1308,7 @@ impl Cli {
                         context_builder: Default::default(),
                         executor: None,
                         telemetry: None,
+                        task_history: None,
                         secrets_denied: None,
                         cli_secrets: None,
                         secrets: vec![],

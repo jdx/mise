@@ -331,6 +331,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("tasks deps", Read),
     ("tasks edit", Write),
     ("tasks graph", Read),
+    ("tasks history", Read),
     ("tasks info", Read),
     ("tasks ls", Read),
     ("tasks rm", Destructive),

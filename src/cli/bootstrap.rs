@@ -3025,6 +3025,7 @@ impl Bootstrap {
             context_builder: Default::default(),
             executor: None,
             telemetry: None,
+            task_history: None,
             secrets_denied: Some(crate::secrets::SecretsDenied::Bootstrap),
             cli_secrets: None,
             secrets: vec![],

@@ -436,6 +436,8 @@ pub struct TaskExecutor {
 pub struct TaskRunOutcome {
     pub did_work: bool,
     pub cache_key: Option<String>,
+    /// The task's result was restored from the artifact cache instead of running.
+    pub restored: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -834,6 +836,7 @@ impl TaskExecutor {
                             return Ok(TaskRunOutcome {
                                 did_work: false,
                                 cache_key: Some(cache.key().to_string()),
+                                restored: false,
                             });
                         }
                         // The run may change the outputs and fail before it marks its key, so
@@ -868,6 +871,7 @@ impl TaskExecutor {
                         return Ok(TaskRunOutcome {
                             did_work: false,
                             cache_key: Some(cache.key().to_string()),
+                            restored: false,
                         });
                     }
                     if bypass_cache {
@@ -924,6 +928,7 @@ impl TaskExecutor {
                                     return Ok(TaskRunOutcome {
                                         did_work: true,
                                         cache_key: Some(cache.key().to_string()),
+                                        restored: true,
                                     });
                                 }
                                 TaskCacheRestore::Miss(reason) => reason,
@@ -1233,6 +1238,7 @@ impl TaskExecutor {
         Ok(TaskRunOutcome {
             did_work: true,
             cache_key,
+            restored: false,
         })
     }
 
