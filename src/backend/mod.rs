@@ -4732,8 +4732,8 @@ pub trait Backend: Debug + Send + Sync {
                     {
                         // A stable request still leaves out what the shared
                         // matcher would treat as a pre-release, unless the
-                        // listing says it is not one.
-                        let flagged: HashMap<String, Option<bool>> = self
+                        // listing says it is not one, and moving channels.
+                        let flagged: HashMap<String, VersionInfo> = self
                             .list_remote_versions_with_info_with_selection_options(
                                 config,
                                 selection_opts,
@@ -4741,7 +4741,7 @@ pub trait Backend: Debug + Send + Sync {
                             )
                             .await?
                             .into_iter()
-                            .map(|v| (v.version, v.prerelease))
+                            .map(|v| (v.version.clone(), v))
                             .collect();
                         let versions: Vec<String> = self
                             .every_version_for_latest(
@@ -4753,7 +4753,12 @@ pub trait Backend: Debug + Send + Sync {
                             .await?
                             .into_iter()
                             .filter(|v| {
-                                let stable_by_flag = flagged.get(v) == Some(&Some(false));
+                                let info = flagged.get(v);
+                                if info.is_some_and(|i| i.rolling) {
+                                    return false;
+                                }
+                                let stable_by_flag =
+                                    info.is_some_and(|i| i.prerelease == Some(false));
                                 (stable_by_flag || !VERSION_REGEX.is_match(v))
                                     && !self.is_backend_prerelease(v)
                             })
@@ -7296,7 +7301,7 @@ mod latest_version_tests {
         // Odin numbered its releases until 2020 and names them `dev-*` since.
         // Its own latest release is too new, and the only numeric one is years
         // old; `latest` must stay on the newest `dev-*` the cutoff allows.
-        let backend = LatestBackend::new("test-cutoff-non-numeric-latest-flagged-rc")
+        let backend = LatestBackend::new("test-cutoff-non-numeric-latest-rolling-edge")
             .with_stable_info(dated("dev-2026-11a", "2026-11-03"))
             .with_remote_versions(vec![
                 dated("0.12.0", "2020-01-18"),
@@ -7309,6 +7314,11 @@ mod latest_version_tests {
                 },
                 // Unflagged, and a pre-release by its name.
                 dated("1.0.0-rc.1", "2026-10-15"),
+                // A moving channel whose current build the cutoff allows.
+                VersionInfo {
+                    rolling: true,
+                    ..dated("edge", "2026-10-20")
+                },
                 dated("dev-2026-11a", "2026-11-03"),
             ]);
         let before = parse_into_timestamp("2026-11-02").unwrap();
