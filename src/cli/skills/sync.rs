@@ -70,7 +70,10 @@ impl SkillsSync {
         let skills = if self.global {
             crate::packslip::global_skills(&config).await?
         } else if self.dir.is_none()
-            && target.dir != crate::packslip::skills_target(&dirs::HOME).dir
+            && !crate::packslip::same_dir(
+                &target.dir,
+                &crate::packslip::skills_target(&dirs::HOME).dir,
+            )
         {
             crate::packslip::project_skills(&config).await?
         } else {

@@ -1264,10 +1264,7 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
     // project and the home directory share one skills directory (a project
     // rooted at home, or an absolute `skills.dir`), one pass writes there with
     // the tools of both, and a second would undo or prune it.
-    let shared = config
-        .project_root
-        .as_ref()
-        .is_some_and(|root| skills_target(root).dir == skills_target(&crate::dirs::HOME).dir);
+    let shared = project_shares_home_dir(config);
     if let Some(root) = &config.project_root {
         let scope = if shared {
             SkillsScope::Active
@@ -1295,7 +1292,33 @@ enum SkillsScope {
 /// [`auto_sync_skills`] for a global change such as `mise use -g`: the links
 /// go under the home directory, as `mise skills sync --global` writes them.
 pub async fn auto_sync_global_skills(config: &Arc<Config>) {
-    auto_sync_skills_into(config, &crate::dirs::HOME, SkillsScope::Global).await;
+    // A project whose directory is the home one has links for its own tools
+    // there too, which a global-only pass would replace or prune.
+    let scope = if project_shares_home_dir(config) {
+        SkillsScope::Active
+    } else {
+        SkillsScope::Global
+    };
+    auto_sync_skills_into(config, &crate::dirs::HOME, scope).await;
+}
+
+fn project_shares_home_dir(config: &Config) -> bool {
+    config.project_root.as_ref().is_some_and(|root| {
+        same_dir(
+            &skills_target(root).dir,
+            &skills_target(&crate::dirs::HOME).dir,
+        )
+    })
+}
+
+/// Whether two skills directories are the same one, through symlinks such as
+/// a home directory reached by its physical path.
+pub fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b
+        || match (a.canonicalize(), b.canonicalize()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        }
 }
 
 async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, scope: SkillsScope) {
