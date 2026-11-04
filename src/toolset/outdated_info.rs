@@ -412,11 +412,9 @@ pub fn compute_config_bumps_for_paths(
             }
 
             let current_version = requests[0].version();
-            let (prefix, old, bumped) = cli_config_bump(&current_version, cli_version);
-            if let Some(bumped) = bumped
-                && bumped != old
+            if let Some(new_version) = cli_config_bump(&current_version, cli_version)
+                && new_version != current_version
             {
-                let new_version = format!("{prefix}{bumped}");
                 let new_request = match requests[0].clone() {
                     ToolRequest::Version {
                         version: _,
@@ -438,7 +436,7 @@ pub fn compute_config_bumps_for_paths(
                         source,
                         lockfile_scope,
                     } => ToolRequest::Prefix {
-                        prefix: format!("{prefix}{bumped}"),
+                        prefix: new_version.clone(),
                         backend,
                         options,
                         source,
@@ -468,16 +466,18 @@ pub fn compute_config_bumps_for_paths(
 /// bumped bare, or the prefix is taken for the version and written twice
 /// (`temurin-temurin`). A CLI prefix replaces the config's, so `temurin-26`
 /// moves to `temurin-27` and a bare `26` follows `java@temurin-27` to the vendor.
-fn cli_config_bump(current: &str, cli_version: &str) -> (String, String, Option<String>) {
+fn cli_config_bump(current: &str, cli_version: &str) -> Option<String> {
     let (prefix, old) = split_version_prefix(current);
     let (cli_prefix, cli_bare) = split_version_prefix(cli_version);
-    let prefix = if cli_prefix.is_empty() || matches!(cli_prefix.as_str(), "v" | "V") {
-        prefix
+    let new_prefix = if cli_prefix.is_empty() || matches!(cli_prefix.as_str(), "v" | "V") {
+        prefix.clone()
     } else {
         cli_prefix
     };
-    let bumped = check_semver_bump(&old, &cli_bare);
-    (prefix, old, bumped)
+    // A vendor switch at the same version (`temurin-26` to `zulu-26`) is a bump too.
+    let bumped = check_semver_bump(&old, &cli_bare)
+        .or_else(|| (new_prefix != prefix).then(|| old.clone()))?;
+    Some(format!("{new_prefix}{bumped}"))
 }
 
 /// Apply config bumps by writing the new versions to their config files.
@@ -536,10 +536,7 @@ mod tests {
 
     #[test]
     fn test_cli_config_bump_keeps_vendor_prefix_once() {
-        let bump = |current, cli| {
-            let (prefix, _, bumped) = cli_config_bump(current, cli);
-            bumped.map(|b| format!("{prefix}{b}"))
-        };
+        let bump = |current, cli| cli_config_bump(current, cli).filter(|new| new != current);
         assert_eq!(bump("temurin-26", "temurin-27"), Some("temurin-27".into()));
         assert_eq!(
             bump("temurin-26", "temurin-27.0.1+0"),
@@ -549,6 +546,8 @@ mod tests {
         assert_eq!(bump("26", "27"), Some("27".into()));
         assert_eq!(bump("temurin-26", "temurin-26.0.1"), None);
         assert_eq!(bump("1", "v2.0.0"), Some("2".into()));
+        assert_eq!(bump("temurin-26", "zulu-26"), Some("zulu-26".into()));
+        assert_eq!(bump("26", "zulu-26"), Some("zulu-26".into()));
     }
 
     /// Guards against offering a downgrade when installed versions and backend
