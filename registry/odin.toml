@@ -8,6 +8,7 @@ full = "github:odin-lang/Odin"
 
 [backends.options]
 bin_path = "."
+strip_components = 1
 
 [[backends]]
 full = "asdf:jtakakura/asdf-odin"
