@@ -533,6 +533,71 @@ mod tests {
         Ok(())
     }
 
+    /// An encrypted file saved as ciphertext is held when the live file is
+    /// the plaintext it decrypts to, and only when its path is known to be
+    /// encrypted.
+    #[cfg(unix)]
+    #[test]
+    fn an_encrypted_file_is_held_when_live_matches_its_plaintext() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::checkpoint::test_checkpoint;
+        use crate::history::shadow::Overlay;
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+        use age::secrecy::ExposeSecret;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let key = age::x25519::Identity::generate();
+        let mut environment = mise_util::testing::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(key.to_public())];
+
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-encrypted-")
+            .tempdir_in(&roots.home)?;
+        let file = normalize(scratch.path()).join("secret.txt");
+        std::fs::write(&file, "private contents")?;
+
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entry = TrackedEntry::new(file.clone(), "track", policy);
+        let stream = entry.tree_path(&file)?;
+        let ciphertext = crate::history::sync::files::encode(
+            &stream,
+            "100644",
+            b"private contents",
+            "scheme",
+            &recipients,
+        )?;
+        let overlay = Overlay {
+            path: stream.clone(),
+            object: Some(("100644".into(), repo.hash_blob(&ciphertext)?)),
+        };
+        let tree = repo.compose(&repo.empty_object("tree")?, &[overlay])?;
+        let saved = repo.write_checkpoint(Some(&tree), &test_checkpoint("saved", Some(&tree)))?;
+
+        let mut walk = Walk {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        walk.files.insert(file.clone(), (0, policy));
+        let encrypted = BTreeSet::from([stream.clone()]);
+        let matches = |encrypted: &BTreeSet<String>| {
+            live_matches_saved(&repo, Some(&saved), &walk, 0, &stream, encrypted)
+        };
+        // the live plaintext is what the saved ciphertext decrypts to
+        assert!(matches(&encrypted)?);
+        // without knowing the path is encrypted, the ciphertext is compared as is
+        assert!(!matches(&BTreeSet::new())?);
+        // a live edit is not the saved version
+        std::fs::write(&file, "edited")?;
+        assert!(!matches(&encrypted)?);
+        Ok(())
+    }
+
     #[test]
     fn without_an_upstream_every_stream_is_held() {
         let held = Held {
