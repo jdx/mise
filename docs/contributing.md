@@ -267,8 +267,8 @@ A passing test prints one line, with its time and the number of assertions
 that passed: `PASS: cli/test_version (2s, 4 assertions)`. A failing test prints
 everything it wrote, and the run ends with `E2E: ran 3 tests (2 passed, 1
 failed)` and the failed tests' names. Set `E2E_SHOW_PASSING_LOGS=1` to see
-passing tests' output too. Tests' output is printed once each finishes, not
-as it runs.
+passing tests' output too. Output is printed in the order the tests were
+given, each once it and the tests before it have finished, not as it runs.
 
 `--all` runs up to four tests at a time; set `E2E_JOBS` to change that, or to
 run selected tests in parallel. `TEST_TRANCHE` and `TEST_TRANCHE_COUNT` split

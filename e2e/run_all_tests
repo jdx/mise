@@ -138,7 +138,8 @@ pass_line() {
     details="${details:+$details, }$count $noun"
   fi
   echo "PASS: $name${details:+ ($details)}" >&2
-  grep 'not marked as slow' "$log" >&2 || true
+  # The console warning, and on GitHub Actions its annotation, worded apart.
+  grep -E 'not marked as slow|Slow test not marked' "$log" >&2 || true
 }
 
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
