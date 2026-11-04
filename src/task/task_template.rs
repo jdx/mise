@@ -28,6 +28,7 @@ impl Task {
     /// - run, run_windows: Local overrides completely (if non-empty)
     /// - tools: Deep merge (local tools added/override template)
     /// - env: Deep merge (template first, then local overrides)
+    /// - tags: Union (template first, then local)
     /// - vars: Deep merge (template first, then local overrides)
     /// - depends, depends_post, wait_for: Local overrides completely (if non-empty)
     /// - dir: Local overrides; defaults to None if not in template
@@ -120,6 +121,15 @@ impl Task {
         if self.aliases.is_empty() && !template.aliases.is_empty() {
             self.aliases = template.aliases.clone();
         }
+
+        // tags: union, template first, so a task adds tags to the ones its template gives
+        let mut tags = template.tags.clone();
+        for tag in std::mem::take(&mut self.tags) {
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        }
+        self.tags = tags;
 
         // confirm: use template only if local not set
         if self.confirm.is_none() {

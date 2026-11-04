@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, de::Error as _};
 use super::shapes::{
     RustCacheDecl, SilentDecl, TaskAlias, TaskCacheDecl, TaskConfirmDecl, TaskDaemonsDecl,
     TaskDepends, TaskDependsPost, TaskLockDecl, TaskOutputDecl, TaskOutputsDecl, TaskRunDecl,
-    TaskSecretsDecl, TaskSourcesDecl, TaskWaitFor,
+    TaskSecretsDecl, TaskSourcesDecl, TaskTags, TaskWaitFor,
 };
 use super::{
     G7_TEXT, RunEntry, Silent, TaskCacheConfig, TaskConfirm, TaskDaemons, TaskDep, TaskLock,
@@ -53,6 +53,9 @@ pub struct TaskDecl {
     /// description of task
     #[serde(default)]
     pub description: String,
+    #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
+    #[schemars(with = "TaskTags")]
+    pub tags: Vec<String>,
     /// directory to run script in, default is the project's base directory
     #[serde(default)]
     #[schemars(extend("default" = "{{ config_root }}"))]
@@ -206,6 +209,9 @@ pub struct TaskTemplate {
         deserialize_with = "crate::de::deserialize_arr"
     )]
     pub aliases: Vec<String>,
+    /// Added to the tags of every task that uses the template
+    #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
+    pub tags: Vec<String>,
     #[serde(default)]
     pub confirm: Option<TaskConfirm>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]

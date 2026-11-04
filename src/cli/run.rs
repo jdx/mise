@@ -89,6 +89,10 @@ use tokio::sync::Mutex;
         help = r###"Run every task that matches a pattern"###
     ),
     example(
+        r###"mise run --tag lint"###,
+        help = r###"Run every task tagged "lint""###
+    ),
+    example(
         r###"mise run //services/api:build"###,
         help = r###"Run a task in a monorepo project"###
     ),
@@ -362,6 +366,14 @@ pub(crate) struct Run {
     #[usage(long, conflicts = "dry_run")]
     pub task_cache_stats: bool,
 
+    /// Run only the matching tasks that have this tag; repeat to accept any of several
+    ///
+    /// With no task name, selects every task with the tag, as if the task were
+    /// `**`. The tags come from each task's `tags` property. Dependencies run
+    /// whatever their tags.
+    #[usage(long, value_name = "TAG", conflicts = "all")]
+    pub tag: Vec<String>,
+
     /// Stop the run if it takes longer than this, e.g. 30s or 5m
     ///
     /// Overrides the `task.timeout` setting.
@@ -445,6 +457,27 @@ fn affected_task_args(args: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Keep the tasks `--tag` selects: those with at least one of `tags`. No tags keeps every task.
+/// `args` are the words the tasks were matched from; the first names a task, for the error when
+/// none is left.
+fn retain_tagged(tasks: &mut Vec<Task>, tags: &[String], args: &[String]) -> Result<()> {
+    if tags.is_empty() {
+        return Ok(());
+    }
+    tasks.retain(|task| task.has_any_tag(tags));
+    if tasks.is_empty() {
+        let tags = style::ered(tags.join(" or "));
+        match args.first().map(String::as_str) {
+            None | Some("**") => bail!("no task has the tag {tags}"),
+            Some(pattern) => bail!(
+                "no task matching {} has the tag {tags}",
+                style::ered(pattern)
+            ),
+        }
+    }
+    Ok(())
+}
+
 async fn get_affected_task_list(
     config: &Arc<Config>,
     args: &[String],
@@ -452,6 +485,7 @@ async fn get_affected_task_list(
     revisions: crate::task::workspace::git::WorkspaceGitRevisions,
     explain: bool,
     json: bool,
+    tags: &[String],
 ) -> Result<Vec<Task>> {
     let workspace_root = config
         .monorepo_root()
@@ -521,6 +555,10 @@ async fn get_affected_task_list(
                 .map(crate::file::desymlink_path)
                 .is_some_and(|root| affected_roots.contains(&root))
     });
+    // Unlike a plain run, finding no task here is not an error: nothing affected may have one.
+    if !tags.is_empty() {
+        tasks.retain(|task| task.has_any_tag(tags));
+    }
     if json {
         display_affected_json(&revisions, &workspace_root, &graph, &affected, &tasks)?;
     } else if explain {
@@ -688,7 +726,12 @@ impl Run {
             return Ok(());
         }
 
-        let task = self.task.clone().unwrap_or_else(|| "default".to_string());
+        // `--tag` with no task name picks from every task rather than the default one.
+        let default_task = if self.tag.is_empty() { "default" } else { "**" };
+        let task = self
+            .task
+            .clone()
+            .unwrap_or_else(|| default_task.to_string());
 
         Settings::ensure_not_safe("running tasks")?;
 
@@ -778,11 +821,15 @@ impl Run {
                 ),
                 self.affected_explain,
                 self.affected_json,
+                &self.tag,
             )
             .await?
         } else {
             get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
         };
+        if !self.affected {
+            retain_tagged(&mut task_list, &self.tag, &args)?;
+        }
         if self.affected_json {
             return Ok(());
         }

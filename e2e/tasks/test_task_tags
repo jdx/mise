@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[task_templates.check]
+tags = "lint"
+
+[tasks.clippy]
+tags = "lint"
+run = 'echo ran-clippy'
+
+[tasks.shellcheck]
+extends = "check"
+run = 'echo ran-shellcheck'
+
+[tasks."test:unit"]
+tags = ["test"]
+run = 'echo ran-unit'
+
+[tasks."test:e2e"]
+tags = ["test", "slow"]
+run = 'echo ran-e2e'
+
+[tasks.build]
+run = 'echo ran-build'
+EOF
+
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/fmt
+#!/usr/bin/env bash
+#MISE tags=["format"]
+echo ran-fmt
+EOF
+chmod +x mise-tasks/fmt
+
+# tasks ls --json reports each task's tags, an empty list when it has none
+assert_json_partial_array "mise tasks ls --json" "name,tags" '[
+  {"name": "build", "tags": []},
+  {"name": "clippy", "tags": ["lint"]},
+  {"name": "fmt", "tags": ["format"]},
+  {"name": "shellcheck", "tags": ["lint"]},
+  {"name": "test:e2e", "tags": ["test", "slow"]},
+  {"name": "test:unit", "tags": ["test"]}
+]'
+
+# tasks ls --tag filters; repeating it accepts any of the tags
+assert "mise tasks ls --tag lint --name-only" "clippy
+shellcheck"
+assert "mise tasks ls --tag format --tag slow --name-only" "fmt
+test:e2e"
+assert "mise tasks --tag test --name-only" "test:e2e
+test:unit"
+
+# run --tag with no task name runs every tagged task, including one tagged by its template
+assert_contains "mise run --tag lint" "ran-clippy"
+assert_contains "mise run --tag lint" "ran-shellcheck"
+assert_not_contains "mise run --tag lint" "ran-build"
+assert_not_contains "mise run --tag lint" "ran-unit"
+
+# with a pattern, run --tag keeps the matching tasks that have the tag
+assert "mise run --tag slow 'test:*'" "ran-e2e"
+assert_contains "mise run --tag lint --tag format" "ran-fmt"
+
+# selecting nothing is an error
+assert_fail_contains "mise run --tag nope" "no task has the tag nope"
+assert_fail_contains "mise run --tag lint 'test:*'" "no task matching test:* has the tag lint"

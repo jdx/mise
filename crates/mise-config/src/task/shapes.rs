@@ -29,6 +29,21 @@ pub enum TaskAlias {
 #[derive(JsonSchema)]
 pub struct TaskAliasName(pub String);
 
+// A task, or a template, may name its tags as one string or a list of them.
+#[derive(JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum TaskTags {
+    /// what kind of task this is, such as `test` or `lint`; `mise run --tag` and `mise tasks ls --tag` select tasks by it
+    One(String),
+    /// what kind of task this is, such as `test`, `lint` or `slow`; `mise run --tag` and `mise tasks ls --tag` select tasks by them
+    Many(Vec<TaskTagName>),
+}
+
+/// a tag, such as `test`, `lint` or `slow`
+#[derive(JsonSchema)]
+pub struct TaskTagName(pub String);
+
 /// resources this task holds while its commands run, so runs that need the same one wait their turn
 #[derive(JsonSchema)]
 #[serde(untagged)]

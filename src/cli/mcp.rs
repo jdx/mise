@@ -548,6 +548,7 @@ impl ServerHandler for MiseServer {
                         "name": name,
                         "description": task.description.clone(),
                         "aliases": task.aliases,
+                        "tags": task.tags,
                         "source": task.config_source.to_string_lossy(),
                         "config_sources": task
                             .config_sources()

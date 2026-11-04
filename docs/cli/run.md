@@ -132,6 +132,9 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--task-cache-explain`** — [experimental] Explain the inputs that produced each task's artifact cache key
 - **`--task-cache-explain-json`** — [experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)
 - **`--task-cache-stats`** — [experimental] Report artifact cache hits, restored bytes, and time saved
+- **`--tag <TAG>`** — Run only the matching tasks that have this tag; repeat to accept any of several
+
+  With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
 - **`--timeout <TIMEOUT>`** — Stop the run if it takes longer than this, e.g. 30s or 5m
 
   Overrides the `task.timeout` setting.
@@ -181,6 +184,12 @@ Run every task that matches a pattern
 
 ```
 mise run 'test:*'
+```
+
+Run every task tagged "lint"
+
+```
+mise run --tag lint
 ```
 
 Run a task in a monorepo project

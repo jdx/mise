@@ -9001,6 +9001,11 @@ Set `task.run_auto_install = false` to make this the default.
 \fB\-\-task\-cache\-stats\fR
 [experimental] Report artifact cache hits, restored bytes, and time saved
 .TP
+\fB\-\-tag\fR \fI<TAG>\fR
+Run only the matching tasks that have this tag; repeat to accept any of several
+
+With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
+.TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Stop the run if it takes longer than this, e.g. 30s or 5m
 
@@ -9057,6 +9062,12 @@ Run every task that matches a pattern
 .PP
 .RS 4
 mise run 'test:*'
+.RE
+.PP
+Run every task tagged "lint"
+.PP
+.RS 4
+mise run \-\-tag lint
 .RE
 .PP
 Run a task in a monorepo project
@@ -10221,6 +10232,9 @@ Show hidden tasks
 \fB\-\-name\-only\fR
 Print only task names, one per line (for fzf and similar tools)
 .TP
+\fB\-\-tag\fR \fI<TAG>\fR
+Only show tasks that have this tag; repeat to accept any of several
+.TP
 \fB\-\-no\-header\fR
 Do not print the table header
 .TP
@@ -10594,6 +10608,9 @@ Show hidden tasks
 \fB\-\-name\-only\fR
 Print only task names, one per line (for fzf and similar tools)
 .TP
+\fB\-\-tag\fR \fI<TAG>\fR
+Only show tasks that have this tag; repeat to accept any of several
+.TP
 \fB\-\-no\-header\fR
 Do not print the table header
 .TP
@@ -10625,6 +10642,12 @@ List tasks from every monorepo project
 .PP
 .RS 4
 mise tasks ls \-\-all
+.RE
+.PP
+List the tasks tagged "lint"
+.PP
+.RS 4
+mise tasks ls \-\-tag lint
 .RE
 .PP
 Pick a task name interactively
