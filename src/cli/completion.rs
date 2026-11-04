@@ -524,6 +524,29 @@ mod shell_name_tests {
     }
 
     #[test]
+    fn a_forwarded_command_completes_files_after_its_first_word() {
+        let ask = |line: &str| {
+            let argv: Vec<OsString> = ["__complete_word__", "--shell", "bash", "--line", line]
+                .into_iter()
+                .map(OsString::from)
+                .collect();
+            completion_request(&argv).unwrap()
+        };
+        // The command word is a command; every word after it is a file, as in a bare shell.
+        for line in ["mise x -- ", "mise x node@22 -- ", "mise exec -- "] {
+            let answer = ask(line);
+            assert!(answer.lines().any(|name| name == "ls"), "{line}: {answer}");
+        }
+        for line in [
+            "mise x -- ls ",
+            "mise x -- ls src/",
+            "mise x node@22 -- ls -l .",
+        ] {
+            assert_eq!(ask(line), "\u{1}files\n", "{line}");
+        }
+    }
+
+    #[test]
     fn a_candidate_cannot_forge_a_protocol_line() {
         // The zsh script globs for what follows `\x01extensions`, and a glob qualifier there
         // runs code. Neither a name opening with the marker nor one carrying it onto a line of

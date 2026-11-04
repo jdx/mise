@@ -918,7 +918,9 @@ Runs the command with your terminal and environment and saves a checkpoint befor
                 arg <LABEL>
             }
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true {
+                complete type=command_args
+            }
             example "mise dot capture -- brew upgrade" help="Record what an upgrade changes"
             example "mise dot capture --label \"theme switch\" -- ./switch-theme.sh" help="Label the operation in history"
         }
@@ -2202,7 +2204,9 @@ warning. Use `--continue-on-error` to visit the rest after a failure.
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Run only in repositories at these paths, as written in config or expanded" required=#false var=#true
-            arg "<-- COMMAND>…" help="Command and arguments to run in each repository" var=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run in each repository" var=#true {
+                complete type=command_args
+            }
             example "mise bootstrap repos exec -- git status --short" help="Show uncommitted changes in every repository"
             example "mise bootstrap repos exec ~/src/mise -- git log -1" help="Run a command in one repository"
             example "mise bootstrap repos exec --continue-on-error -- git fetch" help="Fetch every repository, even after one fails"
@@ -3079,7 +3083,9 @@ Runs the command with your terminal and environment and saves a checkpoint befor
             arg <LABEL>
         }
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
+        arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true {
+            complete type=command_args
+        }
         example "mise dot capture -- brew upgrade" help="Record what an upgrade changes"
         example "mise dot capture --label \"theme switch\" -- ./switch-theme.sh" help="Label the operation in history"
     }
@@ -3810,7 +3816,9 @@ SystemRoot and TEMP.
     flag --secrets-all help="[experimental] Give the command every secret the project can inject, except file secrets" conflicts=--secrets
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tools to add or override, such as `node@24 python@3.13`" required=#false var=#true
-    arg "[-- COMMAND]…" help="Executable and arguments to run directly, after `--`" required=#false var=#true conflicts=--command required_unless=--command
+    arg "[-- COMMAND]…" help="Executable and arguments to run directly, after `--`" required=#false var=#true conflicts=--command required_unless=--command {
+        complete type=command_args
+    }
     example "mise exec node@24 -- node ./app.js" help="Run app.js with node 24"
     example "mise x node@24 python@3.13 -c \"node -v && python -V\"" help="Run a shell command string"
     example "mise x -C ~/work/api -- npm test" help="Run in another project's directory"
@@ -6605,7 +6613,9 @@ See https://mise.jdx.dev/bootstrap/github-relay.html
     flag --global-config-directory hide=#true
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[DESTINATION]" help="OpenSSH destination or SSH config alias (required)" required=#false
-    arg "[COMMAND]…" help="Command to execute after --; omit for an interactive shell" required=#false double_dash=automatic var=#true
+    arg "[COMMAND]…" help="Command to execute after --; omit for an interactive shell" required=#false double_dash=automatic var=#true {
+        complete type=command_args
+    }
     example "mise ssh devbox --github-relay-read-only --github-relay-repo you/setup -- git clone https://github.com/you/setup.git" help="Let devbox clone one private repository"
     example "mise ssh devbox --github-relay-read-only --github-relay-all-repos" help="Open a shell that can read every repository your credentials can read"
     example "mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a" help="Run a command over plain SSH with an identity file, port, and option"
