@@ -336,7 +336,9 @@ const GLOBAL_SCOPE_ENV: &str = "__MISE_GLOBAL_SCOPE";
 /// The current environments (`-E`) carry over, since they choose which global
 /// files apply.
 fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
-    let mut command = Command::new(&*env::MISE_BIN);
+    // Without `__MISE_BIN`, `MISE_BIN` is `current_exe()`, which on macOS is the
+    // shim symlink a shim launch ran: executing it would run the tool instead.
+    let mut command = Command::new(crate::file::canonicalize_or_self(&env::MISE_BIN));
     command
         .args(args)
         .env_clear()
