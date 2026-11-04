@@ -186,6 +186,28 @@ set [`task.quiet`](/configuration/settings.html#task.quiet) under `[settings]`.
 A task can also set its own `quiet` or `silent` property. The `quiet` output
 style is deprecated; use `--output interleave --quiet` instead.
 
+### Read the output of the last run
+
+mise keeps the combined stdout and stderr of each task's last run, so output
+that `replacing`, `timed` or `silent` hid can be read without running the task
+again:
+
+```sh
+mise run --output replacing test
+mise tasks log test          # print the output of the last run
+mise tasks log test --path   # print where the log is kept
+```
+
+Each run replaces the task's previous log, and a log keeps only its last 4 MiB.
+Logs live under mise's state directory (`~/.local/state/mise/task-logs`), one
+per task per project. Values that mise redacts in the terminal are redacted in
+the log too. When a task fails under `replacing` or `timed`, mise prints the
+log's path after the error.
+
+mise logs only output it reads. A `raw` or `interactive` task gets the terminal
+itself, and so does an `interleave` task when nothing needs redacting, so their
+runs leave no log (and remove the one an earlier run left).
+
 ## Interactive input
 
 Unless a task is `interactive` or `raw`, stdin is connected only with

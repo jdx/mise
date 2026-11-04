@@ -944,6 +944,9 @@ Show the monorepo project graph
 \fBtasks info\fR
 Show a task's definition
 .TP
+\fBtasks log\fR
+Print the output of a task's last run
+.TP
 \fBtasks ls\fR
 List available tasks
 .TP
@@ -10552,6 +10555,43 @@ Get the full structured task definition
 .PP
 .RS 4
 mise tasks info test \-\-json
+.RE
+.SH "MISE TASKS LOG"
+Print the output of a task's last run
+
+mise keeps the combined stdout and stderr of each task's most recent run, after redaction, so output that `replacing`, `timed`, `silent` or a truncated terminal hid can be read without running the task again. Each run replaces the task's previous log, and a log keeps at most its last 4 MiB.
+
+mise only logs output it reads: a `raw` or `interactive` task, or an `interleave` task without redactions (whose output goes straight to the terminal), has no log.
+.PP
+\fBUsage:\fR mise tasks log [OPTIONS] <TASK>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-path\fR
+Print the path of the log file instead of its contents
+
+The path is printed even when the task has no log yet.
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TASK>\fR
+Name of the task
+\fBExamples:\fR
+.PP
+Print the output of the last run of the test task
+.PP
+.RS 4
+mise tasks log test
+.RE
+.PP
+Print where that log is kept
+.PP
+.RS 4
+mise tasks log test \-\-path
 .RE
 .SH "MISE TASKS LS"
 List available tasks

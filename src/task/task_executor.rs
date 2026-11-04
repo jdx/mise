@@ -16,6 +16,7 @@ use crate::task::task_list::split_task_spec;
 use crate::task::task_lock;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_run_log::TaskRunLog;
 use crate::task::task_scheduler::{Cover, SchedMsg};
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
@@ -88,6 +89,8 @@ struct TaskExecContext<'a> {
     env_remove: &'a BTreeSet<String>,
     prefix: &'a str,
     output_capture: Option<&'a TaskOutputCapture>,
+    /// This run's output, kept for `mise tasks log`.
+    run_log: &'a Arc<TaskRunLog>,
     allow_during_interruption: bool,
     /// Context of this task's live OpenTelemetry span, used to correlate
     /// exported log records with the task that produced them.
@@ -532,6 +535,24 @@ impl TaskExecutor {
         self.output_handler.eprint(task, prefix, line);
     }
 
+    /// Writes the run's log. A failed task whose style hid its output names the log, so
+    /// the rest can be read without running the task again; styles that printed every
+    /// line add nothing.
+    fn finish_run_log(&self, task: &Task, prefix: &str, run_log: &TaskRunLog, failed: bool) {
+        let Some(path) = run_log.finish(task) else {
+            return;
+        };
+        if failed
+            && !self.quiet(Some(task))
+            && matches!(
+                self.output(Some(task)),
+                TaskOutput::Replacing | TaskOutput::Timed
+            )
+        {
+            self.eprint(task, prefix, &format!("full output: {}", path.display()));
+        }
+    }
+
     fn output(&self, task: Option<&Task>) -> crate::task::task_output::TaskOutput {
         self.output_handler.output(task)
     }
@@ -945,6 +966,7 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
+        let run_log = Arc::new(TaskRunLog::default());
         // Resolved here, after the skip, confirmation and cache checks: a task that does not
         // run never asks fnox. Held until every run entry ends, then dropped, which deletes
         // any secret files.
@@ -1123,6 +1145,7 @@ impl TaskExecutor {
             env_remove: &env_remove,
             prefix: &prefix,
             output_capture: output_capture.as_ref(),
+            run_log: &run_log,
             allow_during_interruption,
             otel_span_cx: otel_span_cx.as_ref(),
             secrets: spawn_secrets.as_ref(),
@@ -1131,54 +1154,64 @@ impl TaskExecutor {
 
         let timer = std::time::Instant::now();
 
-        if let Some(file) = task_file {
-            let exec_start = std::time::Instant::now();
-            Self::check_interruption(allow_during_interruption)?;
-            remove_auto_output(task, config).await?;
-            self.exec_file(config, &file, confirm_guard, exec_ctx)
-                .await?;
-            trace!(
-                "task {} exec_file took {}ms (total {}ms)",
-                task.name,
-                exec_start.elapsed().as_millis(),
-                total_start.elapsed().as_millis()
-            );
-        } else {
-            let rendered_run_scripts = task
-                .render_run_scripts_with_args(
-                    config,
-                    self.cd.clone(),
-                    &task.args,
-                    &env,
-                    extra_vars.clone(),
+        // Every run entry's output goes to the task's log, which is written whether the
+        // entries pass or fail, so the body runs in a block that the error leaves.
+        let exec_result: Result<()> = async {
+            if let Some(file) = task_file {
+                let exec_start = std::time::Instant::now();
+                Self::check_interruption(allow_during_interruption)?;
+                remove_auto_output(task, config).await?;
+                self.exec_file(config, &file, confirm_guard, exec_ctx)
+                    .await?;
+                trace!(
+                    "task {} exec_file took {}ms (total {}ms)",
+                    task.name,
+                    exec_start.elapsed().as_millis(),
+                    total_start.elapsed().as_millis()
+                );
+            } else {
+                let rendered_run_scripts = task
+                    .render_run_scripts_with_args(
+                        config,
+                        self.cd.clone(),
+                        &task.args,
+                        &env,
+                        extra_vars.clone(),
+                    )
+                    .await?;
+
+                let exec_start = std::time::Instant::now();
+                Self::check_interruption(allow_during_interruption)?;
+                remove_auto_output(task, config).await?;
+                self.exec_task_run_entries(
+                    rendered_run_scripts,
+                    TaskRunEntriesContext {
+                        config,
+                        exec: exec_ctx,
+                        task_env: &task_env,
+                        sched_tx,
+                        existing_guard: confirm_guard,
+                        completion_state: &completion_state,
+                        semaphore,
+                        permit,
+                        holds_locks: task_locks.as_ref().is_some_and(|held| !held.is_empty()),
+                    },
                 )
                 .await?;
-
-            let exec_start = std::time::Instant::now();
-            Self::check_interruption(allow_during_interruption)?;
-            remove_auto_output(task, config).await?;
-            self.exec_task_run_entries(
-                rendered_run_scripts,
-                TaskRunEntriesContext {
-                    config,
-                    exec: exec_ctx,
-                    task_env: &task_env,
-                    sched_tx,
-                    existing_guard: confirm_guard,
-                    completion_state: &completion_state,
-                    semaphore,
-                    permit,
-                    holds_locks: task_locks.as_ref().is_some_and(|held| !held.is_empty()),
-                },
-            )
-            .await?;
-            trace!(
-                "task {} exec_task_run_entries took {}ms (total {}ms)",
-                task.name,
-                exec_start.elapsed().as_millis(),
-                total_start.elapsed().as_millis()
-            );
+                trace!(
+                    "task {} exec_task_run_entries took {}ms (total {}ms)",
+                    task.name,
+                    exec_start.elapsed().as_millis(),
+                    total_start.elapsed().as_millis()
+                );
+            }
+            Ok(())
         }
+        .await;
+        if !self.dry_run {
+            self.finish_run_log(task, &prefix, &run_log, exec_result.is_err());
+        }
+        exec_result?;
 
         let execution_duration = timer.elapsed();
         if self.task_timings(Some(task))
@@ -1673,6 +1706,7 @@ impl TaskExecutor {
             true => "$".to_string(),
             false => format!("$ {display_script}"),
         };
+        ctx.run_log.push(config.redact(&cmd).trim());
         if !self.quiet(Some(ctx.task)) {
             let msg = style::ebold(trunc(ctx.prefix, config.redact(&cmd).trim()))
                 .bright()
@@ -1939,6 +1973,8 @@ impl TaskExecutor {
     ) -> Result<()> {
         let args = ctx.task.args.iter().cloned().collect_vec();
 
+        let header = format!("$ {} {}", display_path(file), args.join(" "));
+        ctx.run_log.push(config.redact(&header).trim());
         if !self.quiet(Some(ctx.task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "))
                 .trim()
@@ -2015,6 +2051,7 @@ impl TaskExecutor {
             env_remove,
             prefix,
             output_capture,
+            run_log,
             allow_during_interruption,
             otel_span_cx,
             secrets,
@@ -2232,6 +2269,16 @@ impl TaskExecutor {
             );
         }
 
+        // The task log reads the streams only where mise already pipes them. `interleave`
+        // hands a task without redactions the terminal itself, and piping it just to keep a
+        // log would change what the task sees (colors, progress bars, isatty checks).
+        let logs_output = !raw
+            && (!matches!(output, TaskOutput::Interleave | TaskOutput::Quiet)
+                || needs_redaction
+                || output_capture.is_some()
+                || forwards_output);
+        let captures_output = output_capture.is_some() || logs_output;
+
         match output {
             TaskOutput::Prefix => {
                 if !task.silent.suppresses_stdout() {
@@ -2242,7 +2289,7 @@ impl TaskExecutor {
                             prefix_println!(prefix, "{line}");
                         }
                     });
-                } else if output_capture.is_some() {
+                } else if captures_output {
                     cmd = cmd.with_on_stdout(|_| {});
                 } else {
                     cmd = cmd.stdout(Stdio::null());
@@ -2255,7 +2302,7 @@ impl TaskExecutor {
                             self.eprint(task, prefix, &line);
                         }
                     });
-                } else if output_capture.is_some() {
+                } else if captures_output {
                     cmd = cmd.with_on_stderr(|_| {});
                 } else {
                     cmd = cmd.stderr(Stdio::null());
@@ -2272,7 +2319,7 @@ impl TaskExecutor {
                             .unwrap()
                             .on_stdout(&task_clone, prefix_str.clone(), line);
                     });
-                } else if output_capture.is_some() {
+                } else if captures_output {
                     cmd = cmd.with_on_stdout(|_| {});
                 } else {
                     cmd = cmd.stdout(Stdio::null());
@@ -2287,7 +2334,7 @@ impl TaskExecutor {
                             .unwrap()
                             .on_stderr(&task_clone, prefix_str.clone(), line);
                     });
-                } else if output_capture.is_some() {
+                } else if captures_output {
                     cmd = cmd.with_on_stderr(|_| {});
                 } else {
                     cmd = cmd.stderr(Stdio::null());
@@ -2296,14 +2343,14 @@ impl TaskExecutor {
             TaskOutput::Replacing => {
                 // Replacing mode shows a progress indicator unless both streams are suppressed
                 if task.silent.suppresses_stdout() {
-                    if output_capture.is_some() {
+                    if captures_output {
                         cmd = cmd.with_on_stdout(|_| {});
                     } else {
                         cmd = cmd.stdout(Stdio::null());
                     }
                 }
                 if task.silent.suppresses_stderr() {
-                    if output_capture.is_some() {
+                    if captures_output {
                         cmd = cmd.with_on_stderr(|_| {});
                     } else {
                         cmd = cmd.stderr(Stdio::null());
@@ -2324,7 +2371,7 @@ impl TaskExecutor {
                             .unwrap()
                             .insert(prefix.to_string(), (SystemTime::now(), vec![line]));
                     });
-                } else if output_capture.is_some() {
+                } else if captures_output {
                     cmd = cmd.with_on_stdout(|_| {});
                 } else {
                     cmd = cmd.stdout(Stdio::null());
@@ -2337,14 +2384,14 @@ impl TaskExecutor {
                             self.eprint(task, prefix, &line);
                         }
                     });
-                } else if output_capture.is_some() {
+                } else if captures_output {
                     cmd = cmd.with_on_stderr(|_| {});
                 } else {
                     cmd = cmd.stderr(Stdio::null());
                 }
             }
             TaskOutput::Silent => {
-                if output_capture.is_some() {
+                if captures_output {
                     cmd = cmd.with_on_stdout(|_| {}).with_on_stderr(|_| {});
                 } else {
                     cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
@@ -2388,6 +2435,14 @@ impl TaskExecutor {
                     }
                 }
             }
+        }
+        if logs_output {
+            run_log.mark_captured();
+            let stdout = run_log.clone();
+            let stderr = run_log.clone();
+            cmd = cmd
+                .with_stdout_observer(move |line| stdout.push(line))
+                .with_stderr_observer(move |line| stderr.push(line));
         }
         if let Some(output_capture) = output_capture {
             let stdout = output_capture.clone();

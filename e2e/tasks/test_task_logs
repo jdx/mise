@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# mise keeps each task's output from its last run, readable with `mise tasks log`.
+
+cat <<EOF >mise.toml
+[env]
+LOG_TOKEN = { value = "log-secret-value-e2e", redact = true }
+
+[tasks.pass]
+run = 'echo "pass out \$RUN_ID"; echo "pass err" >&2'
+
+[tasks.fail]
+run = 'echo "fail out"; echo "fail err" >&2; exit 3'
+
+[tasks.secret]
+run = 'echo "token=\$LOG_TOKEN"'
+
+[tasks.plain]
+run = 'echo plain'
+EOF
+
+# a passing task: stdout and stderr both land in the log, with the command line
+RUN_ID=first mise run --output prefix pass
+assert_contains "mise tasks log pass" "pass out first"
+assert_contains "mise tasks log pass" "pass err"
+assert_contains "mise tasks log pass" '$ echo'
+
+# the newest run replaces the older log
+RUN_ID=second mise run --output prefix pass
+assert_contains "mise tasks log pass" "pass out second"
+assert_not_contains "mise tasks log pass" "pass out first"
+
+# a failing task is logged too
+assert_fail "mise run --output prefix fail"
+assert_contains "mise tasks log fail" "fail out"
+assert_contains "mise tasks log fail" "fail err"
+
+# a failure under an output style that hides lines names the log
+assert_fail_contains "mise run --output replacing fail" "full output: "
+
+# redacted values stay redacted in the log; interleave pipes output when it redacts
+mise run --output interleave secret
+assert_contains "mise tasks log secret" "token=[redacted]"
+assert_not_contains "mise tasks log secret" "log-secret-value-e2e"
+
+# --path prints where the log is, under the state dir
+assert_contains "mise tasks log pass --path" "$MISE_STATE_DIR/task-logs/"
+assert "cat \"\$(mise tasks log pass --path)\" | grep -c 'pass out second'" "1"
+
+# a raw run hands the task the terminal, so it leaves no log and removes the older one
+mise run --output prefix plain
+assert_contains "mise tasks log plain" "plain"
+mise run --raw plain
+assert_fail_contains "mise tasks log plain" "no log for task plain"
