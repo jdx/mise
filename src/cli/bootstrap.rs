@@ -2998,6 +2998,8 @@ impl Bootstrap {
             args: vec![],
             args_last: vec![],
             all: false,
+            at: None,
+            at_setup: None,
             affected: false,
             affected_base: None,
             affected_head: None,

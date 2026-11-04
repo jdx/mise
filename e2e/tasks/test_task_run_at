@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+# `mise run --at REV` runs tasks in a temporary git worktree of REV, with that
+# revision's config, and removes the worktree afterwards.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+export MISE_TMP_DIR="$PWD/tmp"
+git config --global user.email e2e@example.com
+git config --global user.name e2e
+# The submodule below is cloned from a local path.
+git config --global protocol.file.allow always
+
+mkdir sub
+git -C sub init -q
+echo sub-v1 >sub/version.txt
+git -C sub add version.txt
+git -C sub commit -qm v1
+
+mkdir repo
+cd repo || exit 1
+git init -q
+git submodule add -q ../sub sub
+mkdir -p pkg
+touch pkg/.keep
+cat <<'EOF' >mise.toml
+[tasks.hi]
+run = "echo version-one"
+
+[tasks.where]
+run = "basename $PWD; echo source=$MISE_RUN_AT_SOURCE"
+
+[tasks.sub]
+run = "cat sub/version.txt; cat \"$(git -C sub rev-parse --git-path objects/info/alternates)\""
+
+[tasks.fail]
+run = "exit 7"
+EOF
+git add mise.toml .gitmodules sub pkg/.keep
+git commit -qm one
+
+echo sub-v2 >../sub/version.txt
+git -C ../sub commit -qam v2
+git -C sub pull -q
+cat <<'EOF' >mise.toml
+[tasks.hi]
+run = "echo version-two"
+EOF
+git add mise.toml sub
+git commit -qm two
+
+# Normal mode: the first `mise run` trusts the checkout, and the worktree
+# shares that trust.
+assert "mise run hi" "version-two"
+assert "mise run --at HEAD~1 hi" "version-one"
+assert "mise run --at HEAD hi" "version-two"
+assert_contains "mise run --at HEAD~1 where" "repo"
+assert_contains "mise run --at HEAD~1 where" "source=$PWD"
+
+# Submodules are initialized from the local clone, at REV's commit.
+assert_contains "mise run --at HEAD~1 sub" "sub-v1"
+assert_contains "mise run --at HEAD~1 sub" "modules/sub"
+
+# Flags after the task belong to it; `-C` and `--at` before it are mise's.
+assert "mise -C pkg run --at=HEAD~1 hi" "version-one"
+
+# A setup command runs first, in the worktree; its failure stops the run.
+assert_contains "mise run --at HEAD~1 --at-setup 'echo setup-ran >setup.txt' where ::: hi" "version-one"
+assert_fail "mise run --at HEAD~1 --at-setup 'exit 1' hi" "--at-setup command failed"
+
+# The task's exit code comes back.
+assert_fail "mise run --at HEAD~1 fail"
+
+assert 'mise run --at HEAD~1 fail || echo exit=$?' "exit=7"
+assert_fail "mise run --at no-such-rev hi" "is not a commit"
+
+# The user's checkout is untouched and every temporary worktree is gone.
+assert "git status --porcelain" ""
+assert "git log -1 --format=%s" "two"
+assert "cat mise.toml" '[tasks.hi]
+run = "echo version-two"'
+assert "git worktree list --porcelain | grep -c '^worktree '" "1"
+assert "ls -A $MISE_TMP_DIR/run-at" ""
+
+# A config at REV is refused, before anything runs, when the main checkout is
+# not trusted. `--yes` (MISE_YES=1 here) does not trust it either.
+mise trust --ignore
+assert_fail "mise run --at HEAD~1 --at-setup 'touch \$MISE_RUN_AT_SOURCE/../setup-ran' hi" "is not trusted"
+assert_fail "test -e ../setup-ran"
+assert_fail "mise run --at HEAD~1 hi" "shares the trust of the repository's main checkout"
+assert_fail "MISE_YES=1 mise run --yes --at HEAD~1 hi" "is not trusted"
+assert "git worktree list --porcelain | grep -c '^worktree '" "1"
+assert "ls -A $MISE_TMP_DIR/run-at" ""
+mise trust
+assert "mise run --at HEAD~1 hi" "version-one"
+
+# Paranoid mode binds trust to a path and its contents, so config in the
+# worktree, a new path on every run, is never trusted.
+assert_fail "MISE_PARANOID=1 mise run --at HEAD~1 hi" "Paranoid mode"
+assert "git worktree list --porcelain | grep -c '^worktree '" "1"
+assert "ls -A $MISE_TMP_DIR/run-at" ""

@@ -93,6 +93,7 @@ mod registry;
 mod render_help;
 mod reshim;
 pub(crate) mod run;
+mod run_at;
 mod search;
 mod secrets;
 #[cfg_attr(not(feature = "self_update"), path = "self_update_stub.rs")]
@@ -852,6 +853,53 @@ fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String>
     result
 }
 
+/// The command line, without the program name, for the `mise` that `mise run --at` starts in
+/// its worktree: `args` (a full `argv`) without the options the parent has acted on. Those are
+/// `--at` and `--at-setup`, and `--cd`, which would send the child back to the user's checkout.
+/// Only options before the first task name are mise's; the rest belongs to the tasks.
+pub(crate) fn run_at_child_args(args: &[String]) -> Vec<String> {
+    const CONSUMED: [&str; 4] = ["--at", "--at-setup", "--cd", "-C"];
+    let cmd = Cli::command();
+    let args = preprocess_args_for_naked_run(cmd, args);
+    let (flags_with_values, _) = get_all_run_flags(cmd);
+    let mut result = Vec::with_capacity(args.len());
+    let mut seen_subcommand = false;
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--" || (seen_subcommand && !arg.starts_with('-')) {
+            result.extend_from_slice(&args[i..]);
+            break;
+        }
+        i += 1;
+        if !arg.starts_with('-') {
+            seen_subcommand = true;
+            result.push(arg.clone());
+            continue;
+        }
+        let (name, attached) = match arg.split_once('=') {
+            Some((name, _)) => (name, true),
+            None if !arg.starts_with("--") && arg.len() > 2 => (arg.get(..2).unwrap_or(arg), true),
+            None => (arg.as_str(), false),
+        };
+        if CONSUMED.contains(&name) {
+            if !attached {
+                i += 1;
+            }
+            continue;
+        }
+        result.push(arg.clone());
+        if !attached
+            && flags_with_values.iter().any(|f| f == name)
+            && args.get(i).is_some_and(|next| !next.starts_with('-'))
+        {
+            result.push(args[i].clone());
+            i += 1;
+        }
+    }
+    result
+}
+
 /// Unescape task args that were escaped by escape_task_args
 pub(crate) fn unescape_task_args(args: &[String]) -> Vec<String> {
     args.iter()
@@ -1281,6 +1329,8 @@ impl Cli {
                         args: self.task_args.unwrap_or_default(),
                         args_last: self.task_args_last,
                         all: false,
+                        at: None,
+                        at_setup: None,
                         affected: false,
                         affected_base: None,
                         affected_head: None,
@@ -2382,6 +2432,26 @@ mod tests {
         assert_eq!(
             unescape_task_args(&run.args_last),
             ["mise", "x", "node@latest", "--", "npx", "--version"]
+        );
+    }
+
+    #[test]
+    fn test_run_at_child_args_drops_the_options_the_parent_acted_on() {
+        let args = |line: &str| line.split(' ').map(str::to_string).collect::<Vec<_>>();
+        assert_eq!(
+            run_at_child_args(&args(
+                "mise -C pkg -q run --at main -j 2 --at-setup=true -Cx build --at y ::: lint"
+            )),
+            args("-q run -j 2 build --at y ::: lint")
+        );
+        assert_eq!(
+            run_at_child_args(&args("mise --cd=pkg run --at=HEAD~1 --cd dir -- t --at z")),
+            args("run -- t --at z")
+        );
+        // A naked run gains its `run`.
+        assert_eq!(
+            run_at_child_args(&args("mise -q mytask")),
+            args("-q run mytask")
         );
     }
 

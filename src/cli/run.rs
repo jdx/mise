@@ -93,6 +93,10 @@ use tokio::sync::Mutex;
         help = r###"Run a task in a monorepo project"###
     ),
     example(
+        r###"mise run --at main test"###,
+        help = r###"Run "test" as it is on main, in a temporary git worktree"###
+    ),
+    example(
         r###"mise run --secrets DEPLOY_KEY deploy"###,
         help = r###"Give "deploy" the DEPLOY_KEY secret (experimental); its dependencies do not get it"###
     ),
@@ -163,6 +167,26 @@ pub(crate) struct Run {
     /// `MISE_AFFECTED_UNTRACKED`.
     #[usage(long, requires = "affected")]
     pub affected_untracked: bool,
+
+    /// Run the tasks at another git revision, in a temporary worktree
+    ///
+    /// Checks REV out into a detached `git worktree` under mise's temporary
+    /// directory, with its submodules, and runs the tasks there with that
+    /// revision's own config and tasks. The worktree is removed afterwards,
+    /// also when a task fails or is interrupted. Ignored files such as build
+    /// caches are not there; use `--at-setup` to prepare them.
+    ///
+    /// The config at REV is trusted only if the repository's main checkout
+    /// is; it is never trusted on its own, by a prompt, or by `--yes`.
+    #[usage(long, value_name = "REV")]
+    pub at: Option<String>,
+
+    /// Run this shell command in the `--at` worktree before the tasks
+    ///
+    /// It runs in the same directory as the tasks, outside mise's environment,
+    /// with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from.
+    #[usage(long, requires = "at", value_name = "CMD")]
+    pub at_setup: Option<String>,
 
     /// Open the task picker with tasks from every project in the monorepo
     #[usage(long, conflicts = ["task", "affected"])]
@@ -691,6 +715,11 @@ impl Run {
         let task = self.task.clone().unwrap_or_else(|| "default".to_string());
 
         Settings::ensure_not_safe("running tasks")?;
+
+        if let Some(rev) = &self.at {
+            let args = crate::cli::run_at_child_args(&env::ARGS.read().unwrap());
+            return super::run_at::run(rev, self.at_setup.as_deref(), args).await;
+        }
 
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);

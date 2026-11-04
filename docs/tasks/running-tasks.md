@@ -268,6 +268,49 @@ mise's own `--env` and `--quiet`:
 mise watch -E dev --watchexec-env LOG_LEVEL=debug build
 ```
 
+## Run tasks at another revision
+
+`--at REV` runs tasks as they are at another git commit, without touching your
+checkout. It answers questions like "does this test fail on `main` too?":
+
+```sh
+mise run --at main test
+mise run --at HEAD~1 bench > before.txt
+```
+
+mise checks REV out into a detached
+[`git worktree`](https://git-scm.com/docs/git-worktree) under its temporary
+directory, runs the tasks there with that revision's own config, tasks and
+tools, and removes the worktree afterwards, also when a task fails, the run
+times out (`--timeout`) or you press Ctrl-C. The run exits with the tasks'
+status. Uncommitted changes in your checkout play no part: REV is a commit.
+
+- The tasks run in the same directory, relative to the repository root, as
+  the one you ran mise from. The worktree directory has your checkout's name.
+- Submodules are initialized at REV, using your clones of them as a reference,
+  so only objects they lack are fetched.
+- Ignored files are not there: a fresh worktree has no `target/`,
+  `node_modules/` or `.env`. Pass `--at-setup CMD` to prepare them. It runs in
+  the tasks' directory before they start, as a plain shell command outside
+  mise's environment, with `MISE_RUN_AT_SOURCE` set to your checkout and
+  `MISE_RUN_AT_REV` to the commit. The tasks get both variables too:
+
+  ```sh
+  mise run --at main --at-setup 'cp -R "$MISE_RUN_AT_SOURCE/node_modules" .' test
+  ```
+
+- Config is looked up from the worktree, so a `mise.toml` in a directory above
+  your checkout (other than the global config) does not apply.
+
+The config at REV is the config of the same project, at another commit, so it
+shares the [trust](/cli/trust.html) of the repository's main checkout, as any
+linked worktree does. If the main checkout is not trusted, `--at` refuses to
+run before anything starts. It never trusts the config at REV on its own: not
+by a prompt, not with `--yes`, and not the way `mise run` trusts the config of
+the directory you run it in. In [paranoid mode](/paranoid.html), which ties
+trust to a file's path and contents, a config at REV is never trusted, because
+the worktree is a new path on every run.
+
 ## Task environment {#task-environment}
 
 Tasks run with the project's [environment variables](/environments/) and tools,
