@@ -398,16 +398,17 @@ With mise 2026.9.15:
 - **C3, C5, C18, C19:** the install summary `✓ installed N tools in …`.
   While a download is slow, the progress header also shows a rate such as
   `128 kB/s`.
-- **C17:** `mise lock` ends with `mise WARN  missing: npm:prettier@3.9.9`,
+- **C17:** `mise lock` ends with `mise WARN  missing: npm:prettier@3.9.10`,
   printed by the shell hook at the next prompt: the lock's aube sidecar
   moves prettier's install key, and the copy `mise use` installed no
-  longer counts. This is a mise bug; the scene cuts at
-  `✓ Lockfile written to ~/work/api/mise.lock`.
-- **C17:** `✓ Lockfile written to ~/work/api/mise.lock` is sometimes erased
-  in the same instant it prints (1 of the 2 final runs): the progress
-  display's last clear takes its row, and the `mise WARN` lands there. The
-  shape check still sees it first; a scene that holds the finished screen
-  must cut on the frame it shows.
+  longer counts. This is a mise bug. Up to 2026.11.0, `mise lock` also
+  warns that unofficial-builds' `SHASUMS256.txt` (the musl targets) is
+  not signed, among its progress rows. The scene holds on the frame
+  before the first `lock` progress row, so `mise WARN` is allowed only
+  after one.
+- **C17:** `✓ Lockfile ready at ~/work/api/mise.lock` is sometimes erased
+  in the same instant it prints: the progress display's last clear takes
+  its row, and the `mise WARN` lands there. The shape check still sees it.
 - **C2, C11, C12, C19:** the order of the parallel `lint`, `test` and
   `build` lines changes from run to run, and so does the order of C17's
   provenance downloads.

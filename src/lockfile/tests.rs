@@ -13,6 +13,7 @@ fn test_retain_unsuperseded_unbound_entries() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     };
     let mut lockfile = Lockfile::default();
     lockfile.tools.insert(
@@ -102,7 +103,9 @@ fn test_outdated_lockfile_version_waits_six_months_after_newer_format() {
     assert!(outdated_lockfile_version(1, date(2027, 3, 14)));
     assert!(!outdated_lockfile_version(2, date(2027, 3, 27)));
     assert!(outdated_lockfile_version(2, date(2027, 3, 28)));
-    assert!(!outdated_lockfile_version(3, date(2028, 1, 1)));
+    assert!(!outdated_lockfile_version(3, date(2027, 5, 3)));
+    assert!(outdated_lockfile_version(3, date(2027, 5, 4)));
+    assert!(!outdated_lockfile_version(4, date(2028, 1, 1)));
 }
 
 #[test]
@@ -331,6 +334,7 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     }
 }
 
@@ -568,16 +572,17 @@ fn new_lockfiles_write_current_version_and_request_bindings() {
             platforms: BTreeMap::new(),
             aube: None,
             uv: None,
+            provenance: None,
         }],
     );
 
     lockfile.save(&path).unwrap();
     let contents = file::read_to_string(&path).unwrap();
-    assert!(contents.contains("lockfile_version = 3"));
+    assert!(contents.contains("lockfile_version = 4"));
     assert!(contents.contains("specifiers = [\"1\"]"));
 
     let reloaded = Lockfile::read(&path).unwrap();
-    assert_eq!(reloaded.lockfile_version(), 3);
+    assert_eq!(reloaded.lockfile_version(), CURRENT_LOCKFILE_VERSION);
     assert_eq!(
         reloaded.tools["dummy"][0].specifiers,
         BTreeSet::from(["1".to_string()])
@@ -624,7 +629,7 @@ fn forge_ids_require_explicit_upgrade_and_write_inline() {
     lockfile.upgrade();
     lockfile.save(&path).unwrap();
     let contents = file::read_to_string(&path).unwrap();
-    assert!(contents.contains("lockfile_version = 3"), "{contents}");
+    assert!(contents.contains("lockfile_version = 4"), "{contents}");
     assert!(
         contents.contains("repository_ids = { repository = \"922514152\", owner = \"216188\" }"),
         "{contents}"
@@ -664,6 +669,71 @@ fn forge_ids_require_version_three_when_reading() {
             .to_string()
             .contains("forge repository IDs require lockfile revision 3")
     );
+}
+
+#[test]
+fn package_provenance_requires_revision_four_when_reading() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(
+        &path,
+        "lockfile_version = 3\n[[tools.\"npm:example\"]]\nversion = \"1.0.0\"\nbackend = \"npm:example\"\nprovenance = { repository = \"github.com/example/tool\" }\n",
+    )
+    .unwrap();
+
+    let error = Lockfile::read(&path).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("npm package provenance requires lockfile revision 4")
+    );
+}
+
+#[test]
+fn package_provenance_is_written_only_from_revision_four() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(&path, "lockfile_version = 3\n[tools]\n").unwrap();
+    let mut lockfile = Lockfile::read(&path).unwrap();
+    let mut tool = basic_tool("1.0.0", "npm:example");
+    tool.provenance = Some(PackageProvenance {
+        repository: "gitlab.com/group/sub/project".into(),
+    });
+    lockfile.tools.insert("npm:example".into(), vec![tool]);
+
+    lockfile.save(&path).unwrap();
+    let contents = file::read_to_string(&path).unwrap();
+    assert!(contents.contains("lockfile_version = 3"), "{contents}");
+    assert!(!contents.contains("provenance"), "{contents}");
+
+    lockfile.upgrade();
+    lockfile.save(&path).unwrap();
+    let contents = file::read_to_string(&path).unwrap();
+    assert!(contents.contains("lockfile_version = 4"), "{contents}");
+    assert!(
+        contents.contains("repository = \"gitlab.com/group/sub/project\""),
+        "{contents}"
+    );
+    let reloaded = Lockfile::read(&path).unwrap();
+    assert_eq!(
+        reloaded.tools["npm:example"][0].provenance,
+        Some(PackageProvenance {
+            repository: "gitlab.com/group/sub/project".into()
+        })
+    );
+}
+
+#[test]
+fn package_provenance_rejects_unknown_keys() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(
+        &path,
+        "lockfile_version = 4\n[[tools.\"npm:example\"]]\nversion = \"1.0.0\"\nbackend = \"npm:example\"\nprovenance = { repository = \"github.com/example/tool\", issuer = \"x\" }\n",
+    )
+    .unwrap();
+
+    assert!(Lockfile::read(&path).is_err());
 }
 
 #[test]
@@ -769,12 +839,12 @@ fn legacy_lockfiles_remain_unversioned_when_rewritten() {
 fn future_lockfile_versions_are_rejected() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mise.lock");
-    file::write(&path, "lockfile_version = 4\n[tools]\n").unwrap();
+    file::write(&path, "lockfile_version = 5\n[tools]\n").unwrap();
 
     let err = Lockfile::read(&path).unwrap_err();
     assert!(
         err.to_string()
-            .contains("unsupported lockfile version 4; this mise supports up to version 3")
+            .contains("unsupported lockfile version 5; this mise supports up to version 4")
     );
 }
 
@@ -792,6 +862,7 @@ fn request_binding_moves_between_versions_with_matching_options() {
                 platforms: BTreeMap::new(),
                 aube: None,
                 uv: None,
+                provenance: None,
             },
             basic_tool("1.1.0", "asdf:dummy"),
         ],
@@ -819,6 +890,7 @@ fn failed_request_binding_preserves_the_existing_binding() {
             platforms: BTreeMap::new(),
             aube: None,
             uv: None,
+            provenance: None,
         }],
     );
 
@@ -986,6 +1058,7 @@ fn tool_with_conda_dep(version: &str, backend: &str, platform: &str, dep: &str) 
         platforms,
         aube: None,
         uv: None,
+        provenance: None,
     }
 }
 
@@ -1132,6 +1205,7 @@ fn test_save_uses_array_format() {
         platforms,
         aube: None,
         uv: None,
+        provenance: None,
     };
 
     lockfile.tools.insert("node".to_string(), vec![tool]);
@@ -1273,6 +1347,7 @@ fn test_options_field_not_serialized_when_empty() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     };
     lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -1303,6 +1378,7 @@ fn test_options_field_serialized_when_present() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     };
     lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -1550,6 +1626,27 @@ fn test_lockfile_path_for_config_monorepo_root_routing() {
     );
     assert_eq!(path, PathBuf::from("/repo/mise.lock"));
     assert!(!is_local);
+}
+
+#[test]
+fn merge_keeps_a_provenance_pin_when_install_options_change() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let mut fresh = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    fresh.options = BTreeMap::from([("allow_builds".to_string(), "x".to_string())]);
+
+    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None);
+
+    let kept = merged
+        .iter()
+        .find(|tool| !tool.options.is_empty())
+        .expect("the entry for the new options");
+    assert_eq!(
+        kept.provenance.as_ref().map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
+    );
 }
 
 #[test]
@@ -1838,6 +1935,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         platforms,
         aube: None,
         uv: None,
+        provenance: None,
     }];
     let mut options = BTreeMap::new();
     options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
@@ -1857,6 +1955,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
             platforms: fresh_platforms,
             aube: None,
             uv: None,
+            provenance: None,
         }],
         Some(&existing),
         |_, _| Some(options.clone()),
@@ -1883,6 +1982,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     });
     let mut merged = vec![basic_tool("22.0.0", "core:node")];
     preserve_absent_tool_entries(&mut merged, Some(&fragmented), &HashSet::new());
@@ -1924,6 +2024,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
         platforms: existing_platforms,
         aube: None,
         uv: None,
+        provenance: None,
     }];
 
     let mut new_options = BTreeMap::new();
@@ -1945,6 +2046,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
         platforms: fresh_platforms,
         aube: None,
         uv: None,
+        provenance: None,
     }];
 
     let (merged, consumed) =
@@ -1991,6 +2093,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2006,6 +2109,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
     ];
     let fresh = vec![
@@ -2023,6 +2127,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2038,6 +2143,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
     ];
 
@@ -2093,6 +2199,7 @@ fn locked_backend_inherits_only_an_unambiguous_backend() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     };
     let aqua_old = entry("1.57.0", "aqua:jdx/hk");
     let aqua_new = entry("1.58.1", "aqua:jdx/hk");
@@ -2197,6 +2304,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
         )]),
         aube: None,
         uv: None,
+        provenance: None,
     }];
     let fresh = vec![LockfileTool {
         version: "1.0.0".to_string(),
@@ -2212,6 +2320,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
         )]),
         aube: None,
         uv: None,
+        provenance: None,
     }];
 
     let (merged, consumed) =
@@ -2241,6 +2350,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         )]),
         aube: None,
         uv: None,
+        provenance: None,
     }];
     let fresh = vec![LockfileTool {
         version: "26.0.1".to_string(),
@@ -2250,6 +2360,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     }];
 
     let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
@@ -2278,6 +2389,7 @@ fn test_merge_tool_entries_keeps_other_platform_option_variants() {
         )]),
         aube: None,
         uv: None,
+        provenance: None,
     };
     let existing = vec![
         variant("shellcheck-*.zip", "windows-x64", "sha256:WIN"),
@@ -2321,6 +2433,7 @@ fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
             .collect(),
         aube: None,
         uv: None,
+        provenance: None,
     };
     let existing = vec![tool(
         "shellcheck-*.old",
@@ -2361,6 +2474,7 @@ fn test_merge_tool_entries_retained_variants_do_not_count_as_fresh() {
             .collect(),
         aube: None,
         uv: None,
+        provenance: None,
     };
     let existing = vec![
         tool("a", &["windows-x64"]),
@@ -2421,6 +2535,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2436,6 +2551,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
     ];
     let fresh = vec![LockfileTool {
@@ -2452,6 +2568,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
         )]),
         aube: None,
         uv: None,
+        provenance: None,
     }];
 
     let (merged, consumed) =
@@ -2477,6 +2594,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     }];
     let fresh = vec![LockfileTool {
         version: "1.0.0".to_string(),
@@ -2486,6 +2604,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         platforms: BTreeMap::new(),
         aube: None,
         uv: None,
+        provenance: None,
     }];
     let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
 
@@ -2559,6 +2678,7 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2575,6 +2695,7 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
             )]),
             aube: None,
             uv: None,
+            provenance: None,
         },
     ];
 
@@ -2760,6 +2881,7 @@ fn test_merge_lockfile_for_lookup_keeps_request_bindings_enabled() {
                 platforms: BTreeMap::new(),
                 aube: None,
                 uv: None,
+                provenance: None,
             }],
         );
         let mut other = Lockfile {
@@ -2836,6 +2958,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
             platforms: BTreeMap::new(),
             aube: None,
             uv: None,
+            provenance: None,
         }],
     );
     primary.save(&primary_path).unwrap();
@@ -2984,6 +3107,7 @@ fn test_conda_packages_serialization() {
             platforms,
             aube: None,
             uv: None,
+            provenance: None,
         }],
     );
 
@@ -3074,6 +3198,7 @@ fn test_cleanup_unreferenced_conda_packages() {
             platforms,
             aube: None,
             uv: None,
+            provenance: None,
         }],
     );
 
@@ -3190,6 +3315,7 @@ fn test_retain_tools_by_short_or_backend_preserves_legacy_keyed_entries() {
             platforms: BTreeMap::new(),
             aube: None,
             uv: None,
+            provenance: None,
         }],
     );
 
@@ -4818,6 +4944,7 @@ fn test_lockfile_write_refuses_credential_queries() {
         )]),
         aube: None,
         uv: None,
+        provenance: None,
     };
     lockfile
         .tools

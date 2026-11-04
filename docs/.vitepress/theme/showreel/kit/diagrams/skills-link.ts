@@ -1,6 +1,6 @@
 // The drawn link (packslip, ART.md §12.7): what `mise skills sync` did,
 // drawn from its own `linked … -> …` rows. One row per linked skill, 64 px
-// apart: on the left the project's path (`.claude/skills/<skill>`) as a
+// apart: on the left the project's path (`.agents/skills/<skill>`) as a
 // chip; on the right the install directory it points into, abridged with
 // `…` around the version segment; between them a paper arrow drawn on. Only
 // the active version's segment lights (tools pink on its band).
@@ -61,10 +61,13 @@ export function linkedRows(
   return out;
 }
 
-/** A link's project side: its path from `.claude/` on (the whole path if it has none). */
+/**
+ * A link's project side: its path from the agents' directory on, `.agents/`
+ * (mise's default) or `.claude/` (the whole path if it has neither).
+ */
 export function projectPath(p: string): string {
-  const i = p.indexOf("/.claude/");
-  return i >= 0 ? p.slice(i + 1) : p;
+  const m = /\/(\.agents|\.claude)\//.exec(p);
+  return m ? p.slice(m.index + 1) : p;
 }
 
 /**

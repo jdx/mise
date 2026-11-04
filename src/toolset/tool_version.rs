@@ -64,6 +64,8 @@ pub struct ToolVersion {
     /// Portable dependency graph used by embedded aube installs.
     pub aube_lock: Option<crate::lockfile::GraphRef<AubeLock>>,
     pub uv_lock: Option<crate::lockfile::GraphRef<crate::lockfile::UvLock>>,
+    /// The source repository the lockfile pins this `npm:` tool's package to.
+    pub npm_provenance: Option<crate::lockfile::PackageProvenance>,
     pub uv_python: Option<(PathBuf, String)>,
     /// Install satisfaction computed during dry-run installs.
     pub install_satisfied: Option<bool>,
@@ -170,6 +172,7 @@ impl ToolVersion {
             install_path_is_explicit: false,
             conda_packages: Default::default(),
             aube_lock: None,
+            npm_provenance: None,
             uv_lock: None,
             uv_python: None,
             install_satisfied: None,
@@ -351,6 +354,7 @@ impl ToolVersion {
         tv.lock_platforms = lt.platforms;
         tv.aube_lock = lt.aube;
         tv.uv_lock = lt.uv;
+        tv.npm_provenance = lt.provenance;
         tv
     }
 
@@ -1924,6 +1928,7 @@ mod tests {
                 platforms: Default::default(),
                 aube: None,
                 uv: None,
+                provenance: None,
             };
             ToolVersion::from_lockfile(request, lt).request.options()
         };
@@ -1946,6 +1951,7 @@ mod tests {
                 platforms: Default::default(),
                 aube: None,
                 uv: None,
+                provenance: None,
             };
             ToolVersion::from_lockfile(request, lt).request.options()
         };
@@ -1969,6 +1975,7 @@ mod tests {
                 platforms: Default::default(),
                 aube: None,
                 uv: None,
+                provenance: None,
             };
             ToolVersion::from_lockfile(request, lt).request.options()
         };
@@ -2020,6 +2027,7 @@ mod tests {
             platforms: Default::default(),
             aube: None,
             uv: None,
+            provenance: None,
         };
 
         let tv = ToolVersion::from_lockfile(request, lt);

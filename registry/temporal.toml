@@ -1,11 +1,4 @@
-backends = ["aqua:temporalio/temporal", "asdf:asdf-community/asdf-temporal"]
-bins = [
-  "tdbg",
-  "temporal",
-  "temporal-cassandra-tool",
-  "temporal-elasticsearch-tool",
-  "temporal-server",
-  "temporal-sql-tool",
-]
-description = "Temporal service and CLI"
+backends = ["aqua:temporalio/cli", "asdf:asdf-community/asdf-temporal"]
+bins = ["temporal"]
+description = "Temporal CLI with a built-in dev server"
 version_order = "semver"

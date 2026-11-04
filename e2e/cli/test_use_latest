@@ -18,7 +18,7 @@ touch mise.lock
 assert "mise use dummy@1 tiny@1"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
-lockfile_version = 3
+lockfile_version = 4
 
 [[tools.dummy]]
 version = \"1.0.0\"
@@ -37,7 +37,7 @@ assert "mise tool tiny --active" "1.0.0"
 assert "mise use dummy@latest"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
-lockfile_version = 3
+lockfile_version = 4
 
 [[tools.dummy]]
 version = \"2.0.0\"
