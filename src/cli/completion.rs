@@ -195,7 +195,8 @@ fn shadowed_by_command(
     };
     let mut words = before.iter();
     while let Some(word) = words.next() {
-        if !word.starts_with('-') {
+        // After `--` the next word is a task, not a command.
+        if !word.starts_with('-') || word == "--" {
             return false;
         }
         if takes_value(word) {
