@@ -1262,8 +1262,16 @@ impl Backend for NPMBackend {
             );
         }
         // A checksum without an aube lock installs a downloaded local archive,
-        // which aube builds no provenance subject for.
-        if Self::provenance_enabled() && options.checksum().is_some() && tv.aube_lock.is_none() {
+        // which aube builds no provenance subject for. Only the paranoid
+        // category treats that as an error; `npm.provenance` alone, which is
+        // on by default, leaves such an install unchecked.
+        // A tool whose lockfile entry pins a repository is refused too, before
+        // any install script can run.
+        let pinned = Self::provenance_enabled() && tv.npm_provenance.is_some();
+        if (Self::provenance_required() || pinned)
+            && options.checksum().is_some()
+            && tv.aube_lock.is_none()
+        {
             eyre::bail!(
                 "npm:{} has a checksum and no aube lock, so it installs a local archive that provenance cannot be verified for; \
                  lock the tool, or turn off npm.provenance and the paranoid provenance category",
@@ -1280,12 +1288,26 @@ impl Backend for NPMBackend {
             }
             None => Vec::new(),
         };
-        // Only the embedded aube runs the verifier. Skipping it silently under
-        // another installer would install without the check the user asked for.
-        if Self::provenance_enabled() && !matches!(package_manager, NpmPackageManager::Aube) {
-            eyre::bail!(
-                "npm:{} installs with {package_manager}, which cannot verify provenance; \
-                 set npm.package_manager to aube, or turn off npm.provenance and the paranoid provenance category",
+        // Only the embedded aube runs the verifier. The paranoid category, and a
+        // repository pinned in mise.lock, refuse another installer rather than
+        // install without the check; `npm.provenance` alone, which is on by
+        // default, leaves it unchecked.
+        if !matches!(package_manager, NpmPackageManager::Aube) {
+            let pinned = Self::provenance_enabled() && tv.npm_provenance.is_some();
+            if Self::provenance_required() || pinned {
+                eyre::bail!(
+                    "npm:{} installs with {package_manager}, which cannot verify provenance{}; \
+                     set npm.package_manager to aube, or turn off npm.provenance and the paranoid provenance category",
+                    self.display_tool_name(),
+                    if pinned {
+                        ", and mise.lock pins it to a repository"
+                    } else {
+                        ""
+                    }
+                );
+            }
+            debug!(
+                "npm:{} installs with {package_manager}, which cannot verify provenance",
                 self.display_tool_name()
             );
         }
@@ -2169,6 +2191,12 @@ impl NPMBackend {
     fn provenance_enabled() -> bool {
         let settings = Settings::get();
         settings.npm.provenance || settings.paranoid.provenance()
+    }
+
+    /// Whether the paranoid `provenance` category is on, which makes an
+    /// install that cannot be verified an error instead of an unchecked install.
+    fn provenance_required() -> bool {
+        Settings::get().paranoid.provenance()
     }
 
     /// The verifier for an install with provenance on, pinned to the

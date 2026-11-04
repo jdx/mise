@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
-# With npm.provenance on, the first install records the
+# npm provenance is verified by default. The first install records the
 # repository the package was built from, and later installs must show the same
 # one. Needs the public npm registry: @sigstore/bundle@3.1.0 publishes SLSA
 # provenance from GitHub Actions.
 
-export MISE_NPM_PROVENANCE=1
 for mode in generate merge; do
   mkdir "$mode"
   cat >"$mode/mise.toml" <<'TOML'
@@ -19,6 +18,7 @@ TOML
   # "already installed" without running the verifier.
   mise -C "$mode" uninstall npm:@sigstore/bundle@3.1.0 >/dev/null 2>&1 || true
 
+  assert "mise -C $mode settings get npm.provenance" "true"
   assert_succeed "mise -C $mode install"
   assert_contains "cat $mode/mise.lock" "lockfile_version = 4"
   assert_contains "cat $mode/mise.lock" 'repository = "github.com/sigstore/sigstore-js"'

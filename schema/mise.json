@@ -2666,7 +2666,7 @@
               "enum": ["auto", "npm", "aube", "aube_cli", "bun", "pnpm"]
             },
             "provenance": {
-              "default": false,
+              "default": true,
               "description": "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package.",
               "type": "boolean"
             },

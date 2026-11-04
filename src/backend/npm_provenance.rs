@@ -21,6 +21,7 @@ use base64::Engine as _;
 use miette::miette;
 
 use crate::backend::npm_registry;
+use crate::config::Settings;
 use crate::github::sigstore::{Attestation, verify_forge_attestation_sources_for_sha512};
 use crate::http::HTTP;
 
@@ -145,17 +146,30 @@ async fn verify_subject(
     }
 
     let url = attestations_url(&registry, name, version);
-    let response = match HTTP.json::<AttestationsResponse, _>(&url).await {
-        Ok(response) => response,
+    let body = match HTTP.get_text(&url).await {
+        Ok(body) => body,
         Err(err) if is_not_found(&err) => {
             return unverified(pinned, name, version, "publishes no attestations");
         }
         Err(err) => {
-            return Err(err.wrap_err(format!(
-                "failed to fetch npm attestations for {name}@{version}"
-            )));
+            // As for the other provenance lookups, an unreachable API is
+            // `provenance_api_failures_fatal`'s to say, unless the lockfile
+            // pins a repository, which only a lookup can satisfy.
+            if pinned.is_some() || Settings::get().provenance_api_failures_fatal {
+                return Err(err.wrap_err(format!(
+                    "failed to fetch npm attestations for {name}@{version}"
+                )));
+            }
+            warn!(
+                "failed to fetch npm attestations for {name}@{version}, installing without verifying its provenance: {err:#}"
+            );
+            return Ok(None);
         }
     };
+    // An answer that arrived but cannot be read is never a lookup failure:
+    // it is refused whatever `provenance_api_failures_fatal` says.
+    let response: AttestationsResponse = serde_json::from_str(&body)
+        .map_err(|e| eyre::eyre!("npm attestations for {name}@{version} are malformed: {e}"))?;
     // npm also returns its own publish attestation, which names no repository
     // and is not provenance; a package with only that has none to verify.
     let provenance = select_provenance(response.attestations)

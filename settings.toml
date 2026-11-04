@@ -2664,10 +2664,10 @@ rust_type = "NpmPackageManager"
 type = "String"
 
 [npm.provenance]
-default = false
+default = true
 description = "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package."
 docs = """
-When on, `mise install` fetches the attestations the public npm registry holds
+On by default. `mise install` fetches the attestations the public npm registry holds
 for the tool's package and requires the SLSA provenance among them to verify
 against the integrity hash the install locks. A package that publishes no
 provenance, or a private registry that serves none, installs as it does with
@@ -2679,8 +2679,16 @@ The first install with this on records the repository the provenance names in
 `mise.lock` (lockfile revision 4). Later installs of that version must show the
 same repository, and a package that has stopped publishing provenance is
 refused.
-[`paranoid`](/configuration/settings.html#paranoid) turns it on for the
-`provenance` category.
+
+Only the embedded aube package manager verifies provenance. An install through
+another [`npm.package_manager`](#npm.package_manager), and one of a local archive
+pinned only by a checksum, installs unchecked. The `provenance` category of
+[`paranoid`](/configuration/settings.html#paranoid) turns verification on even
+when this is off, and makes those installs an error instead. If npm's
+attestation lookup fails, [`provenance_api_failures_fatal`](/configuration/settings.html#provenance_api_failures_fatal)
+decides whether the install fails or goes on unchecked, unless `mise.lock` pins a
+repository. Set this to `false` to skip verification, for example behind a
+network that blocks Sigstore's trust roots.
 """
 env = "MISE_NPM_PROVENANCE"
 type = "Bool"
@@ -3002,7 +3010,8 @@ default = true
 description = "Fail an install when a provenance API, such as GitHub's attestation API, cannot be reached or queried."
 docs = """
 Applies to GitHub artifact attestation lookups for aqua and github backend
-tools, and to SLSA provenance lookups for github backend tools. Set to `false`
+tools, to SLSA provenance lookups for github backend tools, and to the attestation
+lookups of [`npm.provenance`](#npm.provenance). Set to `false`
 to warn and install without that check, for example on a build network that
 cannot reach the GitHub API. Checksum failures, provenance that fails
 verification, and provenance that the lockfile already requires for the tool
