@@ -63,6 +63,18 @@ reset_dummy
 mise reshim
 assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"
 
+# A hardlink shim must use its own binary, not another mise on PATH.
+fresh_state hardlink-shim
+reset_dummy
+mise reshim
+mkdir -p "$MISE_DATA_DIR/bin"
+cp "$(command -v mise)" "$MISE_DATA_DIR/bin/runner-copy"
+rm "$MISE_DATA_DIR/shims/dummy"
+ln "$MISE_DATA_DIR/bin/runner-copy" "$MISE_DATA_DIR/shims/dummy"
+printf '#!/bin/sh\nexit 97\n' > "$MISE_DATA_DIR/bin/mise"
+chmod +x "$MISE_DATA_DIR/bin/mise"
+assert "PATH=\"$MISE_DATA_DIR/bin:\$PATH\" \"$MISE_DATA_DIR/shims/dummy\"" "This is Dummy 1.1.0!"
+
 # Only the tool being launched is checked.
 fresh_state other-command
 reset_dummy
