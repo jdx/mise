@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# `go install` downloads modules itself, so a dropped stream from the module
+# proxy must be retried with the same version rather than falling back to the
+# unprefixed one. A fake `go` fails the first $(cat go-fails) calls.
+cat >"$HOME/bin/go" <<'GO'
+#!/usr/bin/env bash
+n=$(($(cat "$HOME/go-count" 2>/dev/null || echo 0) + 1))
+echo "$n" >"$HOME/go-count"
+printf '%s\n' "$*" >>"$HOME/go-invocations"
+if [ "$n" -le "$(cat "$HOME/go-fails")" ]; then
+  echo "go: reading https://sum.golang.org/tile/8/0/x276/526: stream error: stream ID 59; INTERNAL_ERROR; received from peer" >&2
+  exit 1
+fi
+GO
+chmod +x "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+
+cat >mise.toml <<'TOML'
+[settings]
+experimental = true
+TOML
+
+reset() {
+  echo "$1" >"$HOME/go-fails"
+  rm -f "$HOME/go-count" "$HOME/go-invocations"
+}
+
+# A transient failure is retried with the same version and then succeeds.
+reset 1
+MISE_HTTP_RETRIES=3 mise install 'go:example.com/tool@1.2.3'
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "2"
+assert "sort -u '$HOME/go-invocations'" 'install -mod=mod example.com/tool@v1.2.3'
+
+# Exhausted retries report the network error and never try the unprefixed version.
+reset 99
+if MISE_HTTP_RETRIES=2 mise install 'go:example.com/other@1.2.3' >"$HOME/exhausted" 2>&1; then
+  echo 'expected exhausted retries to fail' >&2
+  exit 1
+fi
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "3"
+assert "sort -u '$HOME/go-invocations'" 'install -mod=mod example.com/other@v1.2.3'
+assert_contains "cat '$HOME/exhausted'" 'stream error'
+assert_not_contains "cat '$HOME/exhausted'" "Retry without the 'v' prefix"
+
+# http_retries=0 turns retries off.
+reset 99
+if MISE_HTTP_RETRIES=0 mise install 'go:example.com/zero@v1.2.3' >/dev/null 2>&1; then
+  echo 'expected install without retries to fail' >&2
+  exit 1
+fi
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "1"
+
+# Installs keep their retries under prefer-offline, which only bounds lookups.
+reset 1
+MISE_PREFER_OFFLINE=1 MISE_HTTP_RETRIES=1 mise install 'go:example.com/offline@v1.2.3'
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "2"
+
+# Raw mode still classifies the failure.
+reset 1
+MISE_RAW=1 MISE_HTTP_RETRIES=1 mise install 'go:example.com/raw@v1.2.3'
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "2"

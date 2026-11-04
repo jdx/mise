@@ -312,7 +312,10 @@ impl Backend for GoBackend {
                 Ok(env) => env,
                 Err(e) => return (Err(e), String::new()),
             };
+            // Raw mode hands `go` mise's own stderr, which would leave nothing to
+            // classify and send every network failure down the non-transient path.
             let result = cmd
+                .never_raw()
                 .arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
                 .with_stderr_observer(move |line| {
@@ -344,7 +347,7 @@ impl Backend for GoBackend {
         // setting and backoff; a failure that is not transient is returned as is.
         let install = async |v: String| {
             let mut backoff =
-                mise_util::http::default_backoff_strategy(Settings::get().http_retries());
+                mise_util::http::default_backoff_strategy(Settings::get().http_retries);
             let mut attempt = 1;
             loop {
                 let (result, stderr) = install_once(&v).await;
