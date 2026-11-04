@@ -174,8 +174,9 @@ pub(crate) fn streams(
     walk: &super::tracked::Walk,
 ) -> Result<Streams> {
     let mut streams = Streams::default();
-    // loaded when the first stream needs a comparison, then shared
-    let mut encrypted: Option<BTreeSet<String>> = None;
+    // loaded when the first stream needs a comparison, then shared; `Some(None)`
+    // is a manifest that could not be read, which holds nothing and is not retried
+    let mut encrypted: Option<Option<BTreeSet<String>>> = None;
     for (index, entry) in walk.entries.iter().enumerate() {
         let stream = entry.tree_path(&entry.path)?;
         if held.always_holds(&stream) {
@@ -189,21 +190,12 @@ pub(crate) fn streams(
         let unchanged = if held.holds(&stream, saved.as_ref()) || held.kept(&stream) {
             true
         } else {
-            let paths = match encrypted.take() {
-                Some(paths) => paths,
-                // an unreadable manifest holds nothing, as it did when each
-                // file read it through `restored_object_at`
-                None => match super::sync::files::encrypted_prefixes(repo, parent) {
-                    Ok(paths) => paths,
-                    Err(_) => {
-                        streams.carry.push(index);
-                        continue;
-                    }
-                },
-            };
-            let unchanged = live_matches_saved(repo, parent, walk, index, &stream, &paths)?;
-            encrypted = Some(paths);
-            unchanged
+            match encrypted
+                .get_or_insert_with(|| super::sync::files::encrypted_prefixes(repo, parent).ok())
+            {
+                Some(paths) => live_matches_saved(repo, parent, walk, index, &stream, paths)?,
+                None => false,
+            }
         };
         if unchanged {
             streams.held.insert(stream);
@@ -695,25 +687,39 @@ mod tests {
         let scratch = tempfile::Builder::new()
             .prefix(".history-held-manifest-")
             .tempdir_in(&roots.home)?;
-        let file = normalize(scratch.path()).join("plain.txt");
-        std::fs::write(&file, "plain")?;
         let policy = FilePolicy::for_mode(FileMode::Track);
-        let entry = TrackedEntry::new(file.clone(), "track", policy);
-        let stream = entry.tree_path(&file)?;
+        // two streams, so the unreadable manifest is met more than once
+        let files = ["one.txt", "two.txt"].map(|name| normalize(scratch.path()).join(name));
+        let entries = files
+            .clone()
+            .map(|file| TrackedEntry::new(file, "track", policy));
+        let streams = entries
+            .iter()
+            .zip(&files)
+            .map(|(entry, file)| entry.tree_path(file))
+            .collect::<Result<Vec<_>>>()?;
         let mut walk = Walk {
-            entries: vec![entry],
+            entries: entries.to_vec(),
             ..Default::default()
         };
-        walk.files.insert(file, (0, policy));
+        for (index, file) in files.iter().enumerate() {
+            std::fs::write(file, "plain")?;
+            walk.files.insert(file.clone(), (index, policy));
+        }
         let held = Held {
             record: Some(Record::default()),
             upstream: true,
         };
         let save = |manifest: Option<&[u8]>| -> Result<String> {
-            let mut overlays = vec![Overlay {
-                path: stream.clone(),
-                object: Some(("100644".into(), repo.hash_blob(b"plain")?)),
-            }];
+            let mut overlays = streams
+                .iter()
+                .map(|stream| {
+                    Ok(Overlay {
+                        path: stream.clone(),
+                        object: Some(("100644".into(), repo.hash_blob(b"plain")?)),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
             if let Some(bytes) = manifest {
                 overlays.push(Overlay {
                     path: crate::history::manifest::PATH.into(),
@@ -727,13 +733,14 @@ mod tests {
         // no manifest: nothing is encrypted and the unchanged file is held
         let plain = save(None)?;
         let result = super::streams(&repo, &held, Some(&plain), &walk)?;
-        assert!(result.held.contains(&stream) && result.carry.is_empty());
+        assert_eq!(result.held, streams.iter().cloned().collect());
+        assert!(result.carry.is_empty());
 
         // a manifest that cannot be parsed is carried, not an error
         let broken = save(Some(b"not a manifest"))?;
         let result = super::streams(&repo, &held, Some(&broken), &walk)?;
         assert!(result.held.is_empty());
-        assert_eq!(result.carry, vec![0]);
+        assert_eq!(result.carry, vec![0, 1]);
         Ok(())
     }
 
