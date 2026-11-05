@@ -19,6 +19,7 @@ use crate::env;
 use crate::file::display_path;
 use crate::otel;
 use crate::task::has_any_usage_spec;
+use crate::task::run_report::{RunReport, RunReportWriter, TaskReportStatus};
 use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
@@ -220,6 +221,22 @@ pub(crate) struct Run {
     #[usage(long, short)]
     pub raw: bool,
 
+    /// Write a JSON report of every task the run scheduled to this file when
+    /// the run ends
+    ///
+    /// Written on success, failure, Ctrl-C and `--timeout`. Each task gets a
+    /// status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or
+    /// `not_run`), its exit code, duration and timestamps. Tasks the run starts
+    /// do not inherit `MISE_TASK_REPORT_FILE`.
+    #[usage(
+        long,
+        value_name = "PATH",
+        env = "MISE_TASK_REPORT_FILE",
+        conflicts = "dry_run",
+        value_hint = ValueHint::FilePath
+    )]
+    pub report_file: Option<PathBuf>,
+
     /// [experimental] Give the named tasks these secrets (comma-separated); their
     /// dependencies and subtasks do not get them
     ///
@@ -400,6 +417,10 @@ pub(crate) struct Run {
 
     #[usage(skip)]
     pub telemetry: Option<otel::TaskRunTelemetry>,
+
+    /// What `--report-file` writes, shared with the task jobs.
+    #[usage(skip)]
+    pub run_report: Option<Arc<RunReport>>,
 
     /// Set by launchers that start tasks without a person asking for them.
     #[usage(skip)]
@@ -684,6 +705,44 @@ impl Run {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
+        let report_path = self
+            .report_file
+            .clone()
+            .filter(|path| !path.as_os_str().is_empty() && !self.only_prints_help());
+        let Some(report_path) = report_path else {
+            return self.run_tasks().await;
+        };
+        // `mise run` rejects the flag or its env var with `--dry-run`, but a bare
+        // `mise --dry-run <task>` builds this command without that check, so it is
+        // repeated here: a dry run runs nothing to report.
+        if self.dry_run {
+            bail!(
+                "--report-file ({}) cannot be used with --dry-run",
+                crate::task::run_report::REPORT_FILE_ENV
+            );
+        }
+        // Resolved now, against the directory the run was started from.
+        let report_path = std::env::current_dir()?.join(report_path);
+        let report = Arc::new(RunReport::new());
+        self.run_report = Some(report.clone());
+        // Writes on drop too, for a Ctrl-C that drops this future before it returns.
+        let writer = RunReportWriter::new(report_path, report);
+        let result = self.run_tasks().await;
+        let path = writer.path().to_path_buf();
+        let written = writer.finish(result.is_err(), ctrlc::is_cancelled());
+        match (result, written) {
+            (Ok(()), Err(err)) => {
+                Err(err.wrap_err(format!("failed to write {}", display_path(&path))))
+            }
+            (result, Err(err)) => {
+                warn!("failed to write {}: {err:#}", display_path(&path));
+                result
+            }
+            (result, Ok(())) => result,
+        }
+    }
+
+    async fn run_tasks(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
             miseprint!("{}", render_subcommand_help("run", false))?;
@@ -1050,6 +1109,7 @@ impl Run {
         // is idempotent and marks the root span as an error unless the run
         // already succeeded.
         let telemetry = self.telemetry.clone();
+        let run_report = self.run_report.clone();
         let result = if let Some(timeout) = timeout {
             let run = self.parallelize_tasks(config, execution_tasks, previewed_tools);
             tokio::pin!(run);
@@ -1060,6 +1120,11 @@ impl Run {
                     // and their children would outlive mise. It is dropped only
                     // afterwards: that aborts the jobs, whose commands would
                     // leave the running list before they could be stopped.
+                    // Marked first, so a task that ends on the termination is
+                    // reported as cancelled rather than failed.
+                    if let Some(report) = &run_report {
+                        report.mark_timed_out();
+                    }
                     RUN_TIMED_OUT.store(true, Ordering::SeqCst);
                     crate::cmd::CmdLineRunner::terminate_all().await;
                     Err(eyre!("mise run timed out after {:?}", timeout))
@@ -1088,6 +1153,11 @@ impl Run {
 
         // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
         let tasks = self.prepare_tasks(&config, tasks).await?;
+        if let Some(report) = &self.run_report {
+            for task in tasks.all_in_creation_order() {
+                report.schedule(task);
+            }
+        }
         let num_tasks = tasks.all().count();
 
         // Step 2: Setup output handler and validate tasks
@@ -1104,6 +1174,9 @@ impl Run {
         self.setup_executor()?;
         if let (Some(t), Some(executor)) = (&self.telemetry, &mut self.executor) {
             executor.output_forwarder = t.output_forwarder();
+        }
+        if let Some(executor) = &mut self.executor {
+            executor.run_report = self.run_report.clone();
         }
 
         // Validate every scheduled invocation before starting the scheduler so
@@ -1323,6 +1396,7 @@ impl Run {
                 .as_ref()
                 .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
+            let report_id = this.run_report.as_ref().map(|report| report.start(&task));
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1399,12 +1473,13 @@ impl Run {
                     let was_stopping =
                         this.add_failed_task(task.clone(), status) || this.is_interrupted();
                     // A task that exited on its own, or panicked, failed even
-                    // if another failure came first; only one mise killed is
-                    // cancelled.
+                    // if another failure came first; only one mise killed, or a
+                    // parent whose nested tasks mise stopped, is cancelled.
                     cancelled |= was_stopping
                         && !this.continue_on_error
                         && !panicked
-                        && Error::is_killed_by_signal(err);
+                        && (Error::is_killed_by_signal(err)
+                            || Error::is_task_sequence_aborted(err));
                     was_stopping
                 };
                 // the executor already printed a secrets resolve failure itself
@@ -1440,6 +1515,14 @@ impl Run {
                     #[cfg(windows)]
                     crate::cmd::CmdLineRunner::kill_all();
                 }
+            }
+            if let (Some(report), Some(id)) = (&this.run_report, report_id) {
+                // After a Ctrl-C, a task that fails was stopped by it: many programs exit
+                // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
+                // ends with "task sequence aborted".
+                let cancelled = cancelled || (ctrlc::is_cancelled() && !panicked);
+                let (status, exit_code) = report_status(&result, panicked, cancelled);
+                report.finish(id, status, exit_code);
             }
             // Close the task's span with real timing and status.
             if let (Some(t), Some(span)) = (&this.telemetry, otel_span) {
@@ -1503,6 +1586,10 @@ impl Run {
             self.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
         }
         self.add_failed_task(task.clone(), Error::get_exit_status(&err));
+        if let Some(report) = &self.run_report {
+            let id = report.start(&task);
+            report.finish(id, TaskReportStatus::Failed, Error::get_exit_status(&err));
+        }
         if !self.continue_on_error {
             #[cfg(unix)]
             crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
@@ -1838,6 +1925,36 @@ impl Run {
 
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.output_handler.as_ref().unwrap().quiet(task)
+    }
+}
+
+/// How a finished task job appears in the run report.
+fn report_status(
+    result: &Result<crate::task::task_executor::TaskRunOutcome>,
+    panicked: bool,
+    cancelled: bool,
+) -> (TaskReportStatus, Option<i32>) {
+    match result {
+        Ok(outcome) if outcome.restored => (TaskReportStatus::Cached, None),
+        Ok(outcome) if !outcome.did_work => (TaskReportStatus::Skipped, None),
+        Ok(_) => (TaskReportStatus::Passed, Some(0)),
+        // Abandoned before it started: the run never reached it.
+        Err(err) if Error::is_task_interrupted_before_start(err) => {
+            (TaskReportStatus::NotRun, None)
+        }
+        Err(err) => {
+            let exit_code = if panicked {
+                Some(1)
+            } else {
+                Error::get_exit_status(err)
+            };
+            let status = if cancelled {
+                TaskReportStatus::Cancelled
+            } else {
+                TaskReportStatus::Failed
+            };
+            (status, exit_code)
+        }
     }
 }
 

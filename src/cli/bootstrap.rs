@@ -3135,6 +3135,8 @@ impl Bootstrap {
             task_cache_explain: false,
             task_cache_explain_json: false,
             task_cache_stats: false,
+            report_file: None,
+            run_report: None,
             timeout: None,
             lock_timeout: None,
             skip_deps: false,
