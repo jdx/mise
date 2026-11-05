@@ -173,15 +173,28 @@ impl Drop for ChildGuard {
     fn drop(&mut self) {
         // The child is still running here only when this process is ending at once, on a second
         // Ctrl-C. The child got that Ctrl-C too, and a `mise` stops its tasks on it; give it the
-        // time to, so the tasks are not left running in a deleted directory, then kill it.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while std::time::Instant::now() < deadline {
+        // time to, so the tasks are not left running in a deleted directory, then kill it and
+        // wait for it to go before the worktree does.
+        if self.exited_within(std::time::Duration::from_secs(5)) {
+            return;
+        }
+        if self.0.start_kill().is_ok() && !self.exited_within(std::time::Duration::from_secs(2)) {
+            warn!("mise run --at: the task runner did not exit after being killed");
+        }
+    }
+}
+
+impl ChildGuard {
+    /// Whether the child has exited, or cannot be waited for, within `limit`.
+    fn exited_within(&mut self, limit: std::time::Duration) -> bool {
+        let deadline = std::time::Instant::now() + limit;
+        loop {
             match self.0.try_wait() {
+                Ok(Some(_)) | Err(_) => return true,
+                Ok(None) if std::time::Instant::now() >= deadline => return false,
                 Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
-                Ok(Some(_)) | Err(_) => return,
             }
         }
-        let _ = self.0.start_kill();
     }
 }
 
