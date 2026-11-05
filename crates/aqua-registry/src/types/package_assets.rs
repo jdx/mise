@@ -196,7 +196,7 @@ impl AquaPackage {
         {
             return name.to_string();
         }
-        let download = if self.asset.is_empty() {
+        let download = if self.package_type() == AquaPackageType::Http || self.asset.is_empty() {
             self.url(v, os, arch)
         } else {
             self.asset(v, os, arch)

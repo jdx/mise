@@ -404,3 +404,19 @@ fn test_raw_windows_exe_name_guards_and_inference() {
         "sonar.exe"
     );
 }
+
+#[test]
+fn test_raw_windows_exe_name_uses_url_for_http_packages() {
+    let pkg = AquaPackage {
+        r#type: Some(AquaPackageType::Http),
+        asset: "tool".to_string(),
+        url: "https://example.com/{{.Version}}/tool.exe".to_string(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+}
