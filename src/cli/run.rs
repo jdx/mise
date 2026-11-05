@@ -1697,7 +1697,13 @@ impl Run {
                     true,
                 ),
             };
-            if let (Some(history), Some(id)) = (&this.task_history, history_run) {
+            if let (Some(history), Some(id)) = (&this.task_history, history_run)
+                && result
+                    .as_ref()
+                    .is_err_and(Error::is_task_interrupted_before_start)
+            {
+                history.discard(id);
+            } else if let (Some(history), Some(id)) = (&this.task_history, history_run) {
                 // Provisional, for a `--timeout` that aborts this job before it records:
                 // the same rule as below, without what other jobs may still report.
                 let stopped = (ctrlc::is_cancelled() && !panicked)

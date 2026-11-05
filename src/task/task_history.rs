@@ -244,6 +244,12 @@ impl TaskHistory {
         }
     }
 
+    /// Forget a run whose task never started, such as one abandoned when the run was
+    /// interrupted: it has no duration or result to record.
+    pub fn discard(&self, id: PendingRunId) {
+        self.pending.lock().unwrap().remove(&id.0);
+    }
+
     /// Record how a started run ended, with its redacted arguments, unless
     /// [`Self::take_cancelled`] already took it.
     pub fn finish(
@@ -609,6 +615,18 @@ mod tests {
         assert_eq!(statuses.len(), 2);
         assert!(statuses.contains(&RunStatus::Ok));
         assert!(statuses.contains(&RunStatus::Cancelled));
+    }
+
+    #[test]
+    fn a_discarded_run_is_never_recorded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
+        let id = history.start("build", vec![], resolved());
+        history.discard(id);
+        // neither a later report nor a timeout records it
+        history.finish(id, vec![], RunStatus::Cancelled, None);
+        assert!(history.take_cancelled(|a| a.to_string()).is_empty());
+        assert!(history.runs(Some("build")).unwrap().is_empty());
     }
 
     #[test]
