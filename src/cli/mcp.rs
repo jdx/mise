@@ -543,7 +543,20 @@ impl ServerHandler for MiseServer {
                         data: None,
                     })?;
 
-                let task_list: Vec<_> = tasks.iter().map(|(name, task)| {
+                // Read remote task files first, as `mise tasks ls --json` does, so metadata from
+                // their `#MISE` headers, such as `tags`, is in the listing.
+                let names = tasks.keys().cloned().collect::<Vec<_>>();
+                let mut fetched = tasks.values().cloned().collect::<Vec<_>>();
+                crate::task::task_fetcher::TaskFetcher::for_inspection(false)
+                    .without_warning()
+                    .fetch_tasks(&config, &mut fetched)
+                    .await
+                    .map_err(|e| ErrorData {
+                        code: ErrorCode::INTERNAL_ERROR,
+                        message: Cow::Owned(format!("Failed to fetch remote tasks: {e:#}")),
+                        data: None,
+                    })?;
+                let task_list: Vec<_> = names.iter().zip(&fetched).map(|(name, task)| {
                     json!({
                         "name": name,
                         "description": task.description.clone(),

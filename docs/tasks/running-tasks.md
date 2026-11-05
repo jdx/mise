@@ -117,7 +117,7 @@ run = "cargo clippy"
 tags = "lint"
 run = "shellcheck scripts/*.sh"
 
-[tasks.e2e]
+[tasks."test:e2e"]
 tags = ["test", "slow"]
 run = "./e2e/run"
 ```
@@ -127,7 +127,7 @@ run = "./e2e/run"
 ```sh
 mise run --tag lint                # clippy and shellcheck
 mise run --tag lint --tag test     # every task tagged lint or test
-mise run --tag slow 'test:*'      # only the test:* tasks tagged slow
+mise run --tag slow 'test:*'      # test:e2e, the only test:* task tagged slow
 mise tasks ls --tag lint           # list them instead
 ```
 

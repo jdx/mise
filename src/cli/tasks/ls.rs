@@ -185,7 +185,6 @@ impl TasksLs {
             .filter(|t| self.hidden || !t.hide)
             .filter(|t| !(self.local || self.no_global) || !t.global)
             .filter(|t| !self.global || t.global)
-            .filter(|t| self.tag.is_empty() || t.has_any_tag(&self.tag))
             .cloned()
             .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();
@@ -202,6 +201,10 @@ impl TasksLs {
             fetcher
         };
         fetcher.fetch_tasks(&config, &mut tasks).await?;
+        // After the fetch, so a remote task's `#MISE tags` header counts.
+        if !self.tag.is_empty() {
+            tasks.retain(|t| t.has_any_tag(&self.tag));
+        }
 
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)

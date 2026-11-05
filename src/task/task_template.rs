@@ -258,6 +258,23 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_template_tags_are_combined() {
+        let mut task = Task {
+            tags: vec!["slow".to_string(), "lint".to_string()],
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            tags: vec!["lint".to_string(), "test".to_string()],
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        // the template's tags first, then the task's own, each once
+        assert_eq!(task.tags, ["lint", "test", "slow"]);
+    }
+
+    #[test]
     fn test_merge_template_run_override() {
         let mut task = Task {
             run: vec![RunEntry::Script("local command".to_string())],

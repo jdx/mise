@@ -315,6 +315,7 @@ mod tests {
 #MISE description="remote description"
 #MISE hide=true
 #MISE quiet=true
+#MISE tags=["lint"]
 #MISE tools={node="24", python="3.12"}
 echo ok
 "#,
@@ -334,6 +335,7 @@ echo ok
             config_root: Some(config_root.path().to_path_buf()),
             file: Some(PathBuf::from(&source)),
             args: vec!["--fix".into()],
+            tags: vec!["slow".into()],
             tools: [("python".into(), TaskToolValue::String("3.13".into()))]
                 .into_iter()
                 .collect(),
@@ -353,6 +355,8 @@ echo ok
         assert_eq!(task.description, "toml description");
         assert!(task.hide);
         assert!(task.quiet);
+        // the header's tags, then the TOML's
+        assert_eq!(task.tags, ["lint", "slow"]);
         assert_eq!(task.args, ["--fix"]);
         assert_eq!(task.config_root.as_deref(), Some(config_root.path()));
         assert_eq!(task.remote_file_source.as_deref(), Some(source.as_str()));

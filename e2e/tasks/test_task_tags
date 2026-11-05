@@ -20,6 +20,11 @@ run = 'echo ran-unit'
 tags = ["test", "slow"]
 run = 'echo ran-e2e'
 
+[tasks.package]
+tags = "release"
+depends = ["build"]
+run = 'echo ran-package'
+
 [tasks.build]
 run = 'echo ran-build'
 EOF
@@ -37,6 +42,7 @@ assert_json_partial_array "mise tasks ls --json" "name,tags" '[
   {"name": "build", "tags": []},
   {"name": "clippy", "tags": ["lint"]},
   {"name": "fmt", "tags": ["format"]},
+  {"name": "package", "tags": ["release"]},
   {"name": "shellcheck", "tags": ["lint"]},
   {"name": "test:e2e", "tags": ["test", "slow"]},
   {"name": "test:unit", "tags": ["test"]}
@@ -59,7 +65,28 @@ assert_not_contains "mise run --tag lint" "ran-unit"
 # with a pattern, run --tag keeps the matching tasks that have the tag
 assert "mise run --tag slow 'test:*'" "ran-e2e"
 assert_contains "mise run --tag lint --tag format" "ran-fmt"
+assert_contains "mise run --tag lint --tag format" "ran-clippy"
+
+# a selected task's dependencies run whatever their tags
+assert_contains "mise run --tag release" "ran-build"
+assert_contains "mise run --tag release" "ran-package"
 
 # selecting nothing is an error
 assert_fail_contains "mise run --tag nope" "no task has the tag nope"
 assert_fail_contains "mise run --tag lint 'test:*'" "no task matching test:* has the tag lint"
+
+# a remote task file's #MISE header tags count, though its TOML has none
+mkdir -p srv
+cat <<'EOF' >srv/remote.sh
+#!/usr/bin/env bash
+#MISE tags=["remote"]
+echo ran-remote
+EOF
+start_http_server --dir "$PWD/srv"
+cat <<EOF >>mise.toml
+
+[tasks.remote]
+file = "http://localhost:${HTTP_PORT}/remote.sh"
+EOF
+assert "mise tasks ls --tag remote --name-only" "remote"
+assert_contains "mise run --tag remote" "ran-remote"
