@@ -1,5 +1,58 @@
 # Changelog
 
+## [2026.11.2](https://github.com/jdx/mise/releases/tag/v2026.11.2) - 2026-11-05
+
+### 🚀 Features
+
+- **(task)** add a summary output style that prints only what failed by @jdx in [#15403](https://github.com/jdx/mise/pull/15403)
+- **(task)** write a JSON report of a run with --report-file by @jdx in [#15405](https://github.com/jdx/mise/pull/15405)
+- **(task)** add task tags and select tasks with --tag by @jdx in [#15406](https://github.com/jdx/mise/pull/15406)
+- **(task)** run tasks at another revision with mise run --at by @jdx in [#15410](https://github.com/jdx/mise/pull/15410)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** keep .exe on raw Windows downloads when completion is off by @jdx in [#15412](https://github.com/jdx/mise/pull/15412)
+- **(bootstrap)** stop spawning git for each encrypted file in history snapshots by @jdx in [#15393](https://github.com/jdx/mise/pull/15393)
+- **(bootstrap)** apply mise's own config before planning the other dotfiles by @jdx in [#15387](https://github.com/jdx/mise/pull/15387)
+- **(completion)** keep built-in descriptions when a task shares a command's name by @jdx in [#15385](https://github.com/jdx/mise/pull/15385)
+- **(config)** do not panic when a config path cannot be canonicalized by @jdx in [#15383](https://github.com/jdx/mise/pull/15383)
+- **(dotfiles)** adopt the origin's history when the local checkpoints hold no files by @jdx in [#15394](https://github.com/jdx/mise/pull/15394)
+- **(dotfiles)** clear symlink-each state when a group is removed by @jdx in [#15390](https://github.com/jdx/mise/pull/15390)
+- **(dotfiles)** keep links to dangling symlink-each sources by @jdx in [#15395](https://github.com/jdx/mise/pull/15395)
+- **(dotfiles)** do not follow user directory links in a symlink-each target by @jdx in [#15399](https://github.com/jdx/mise/pull/15399)
+- **(exec)** complete files after the command in mise exec by @jdx in [#15396](https://github.com/jdx/mise/pull/15396)
+- **(go)** retry transient go install network failures by @jdx in [#15384](https://github.com/jdx/mise/pull/15384)
+- **(lock)** keep the vendor prefix once when moving a prefixed request by @jdx in [#15386](https://github.com/jdx/mise/pull/15386)
+- **(lock)** resolve core tool downloads from checksum in safe mode by @jdx in [#15392](https://github.com/jdx/mise/pull/15392)
+- **(lock)** keep a registry-only aube graph when a lockfile is not trusted by @jdx in [#15401](https://github.com/jdx/mise/pull/15401)
+- **(lock)** bind the bumped request when a version argument rewrites the config by @jdx in [#15404](https://github.com/jdx/mise/pull/15404)
+- **(shim)** stop suggesting a reinstall when the version ships other executables by @jdx in [#15388](https://github.com/jdx/mise/pull/15388)
+- **(shim)** run mise, not the shim, for a due auto_update by @jdx in [#15389](https://github.com/jdx/mise/pull/15389)
+- **(skills)** link only a project's own tools into its skills directory by @jdx in [#15391](https://github.com/jdx/mise/pull/15391)
+
+### 📚 Documentation
+
+- make mise.toml reference keys findable in site search by @jdx in [#15375](https://github.com/jdx/mise/pull/15375)
+
+### 🧪 Testing
+
+- **(e2e)** print one line for each passing test by default by @jdx in [#15402](https://github.com/jdx/mise/pull/15402)
+
+### 📦️ Dependency Updates
+
+- update node.js to v26 by @renovate[bot] in [#15355](https://github.com/jdx/mise/pull/15355)
+- update rust crate usage-cli to v7.2.0 by @renovate[bot] in [#15354](https://github.com/jdx/mise/pull/15354)
+- lock file maintenance by @renovate[bot] in [#15343](https://github.com/jdx/mise/pull/15343)
+
+### 📦 Registry
+
+- use temporalio/cli for temporal by @jdx in [#15373](https://github.com/jdx/mise/pull/15373)
+- fix odin shim on windows by @jdx in [#15400](https://github.com/jdx/mise/pull/15400)
+
+### Ci
+
+- **(docs)** run the showreel job on the large Namespace profile by @jdx in [#15397](https://github.com/jdx/mise/pull/15397)
+
 ## [2026.11.1](https://github.com/jdx/mise/releases/tag/v2026.11.1) - 2026-11-04
 
 ### 🚀 Features
