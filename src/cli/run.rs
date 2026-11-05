@@ -3,6 +3,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set when `--timeout` stops the run: the tasks it kills were cut short, not
+/// stopped because another failed, so `summary` shows what they printed.
+static RUN_TIMED_OUT: AtomicBool = AtomicBool::new(false);
 use std::time::Duration;
 
 use super::args::ToolArg;
@@ -18,7 +23,7 @@ use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
-use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_output_handler::{OutputHandler, SummaryOutcome};
 use crate::task::task_scheduler::RunLoopHooks;
 use crate::task::{Deps, Task, TaskCacheMode, usage_command_for_args};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
@@ -197,6 +202,7 @@ pub(crate) struct Run {
     /// - `replacing` - Stdout is replaced each time, stderr is printed as is
     /// - `timed` - Only show stdout lines if they are displayed for more than 1 second
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+    /// - `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
     /// - `quiet` - Deprecated; use `--output interleave --quiet`
     /// - `silent` - Do not show any output, including the task's stdout and stderr, except errors
     #[usage(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
@@ -1054,6 +1060,7 @@ impl Run {
                     // and their children would outlive mise. It is dropped only
                     // afterwards: that aborts the jobs, whose commands would
                     // leave the running list before they could be stopped.
+                    RUN_TIMED_OUT.store(true, Ordering::SeqCst);
                     crate::cmd::CmdLineRunner::terminate_all().await;
                     Err(eyre!("mise run timed out after {:?}", timeout))
                 }
@@ -1444,6 +1451,21 @@ impl Run {
             {
                 oh.keep_order_state.lock().unwrap().on_task_finished(&task);
             }
+            if let Some(oh) = &this.output_handler
+                && oh.output(Some(&task)) == TaskOutput::Summary
+            {
+                // An interrupted task's output may be all there is to go on;
+                // one stopped because a sibling failed says nothing more.
+                let outcome = match &result {
+                    Ok(_) => SummaryOutcome::Passed,
+                    Err(_) if interrupted || RUN_TIMED_OUT.load(Ordering::SeqCst) => {
+                        SummaryOutcome::Failed
+                    }
+                    Err(_) if cancelled => SummaryOutcome::Cancelled,
+                    Err(_) => SummaryOutcome::Failed,
+                };
+                oh.finish_summary(&task, outcome);
+            }
             let mut deps = deps_for_remove.lock().await;
             if result
                 .as_ref()
@@ -1488,6 +1510,11 @@ impl Run {
             crate::cmd::CmdLineRunner::kill_all();
         }
         self.retire_keep_order_slot(&task);
+        if let Some(oh) = &self.output_handler
+            && oh.output(Some(&task)) == TaskOutput::Summary
+        {
+            oh.finish_summary(&task, SummaryOutcome::Failed);
+        }
         // The task never started, but its failure is what stopped the run, so
         // it still gets a span; otherwise the trace's only error is the root.
         if let Some(t) = &self.telemetry {
