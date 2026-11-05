@@ -1271,7 +1271,7 @@ impl Run {
                     crate::cmd::CmdLineRunner::terminate_all().await;
                     if let (Some(history), Some(runs)) = (task_history, cancelled) {
                         let write = tokio::task::spawn_blocking(move || {
-                            history.record_cancelled(runs, Duration::from_secs(1))
+                            history.record_cancelled(runs, Duration::from_secs(2))
                         });
                         if let Err(err) = write.await {
                             debug!("task history: {err}");

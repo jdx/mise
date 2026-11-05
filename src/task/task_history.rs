@@ -284,11 +284,23 @@ impl TaskHistory {
             .collect()
     }
 
-    /// Write runs from [`Self::take_cancelled`], waiting at most `lock_wait` for each task's
-    /// lock: mise is exiting, and a run that cannot be written is only logged.
-    pub fn record_cancelled(&self, runs: Vec<TaskRun>, lock_wait: Duration) {
-        for run in runs {
-            if let Err(err) = self.try_record_with(run, lock_wait) {
+    /// Write runs from [`Self::take_cancelled`] within `budget` in all: mise is exiting, so
+    /// each write waits for its lock only for the time left, and the runs left when it runs
+    /// out are skipped and logged. Runs of one task share a lock, so a wait per run would
+    /// add up.
+    pub fn record_cancelled(&self, runs: Vec<TaskRun>, budget: Duration) {
+        let deadline = Instant::now() + budget;
+        let total = runs.len();
+        for (i, run) in runs.into_iter().enumerate() {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                debug!(
+                    "task history: out of time, {} cancelled runs not recorded",
+                    total - i
+                );
+                return;
+            }
+            if let Err(err) = self.try_record_with(run, left) {
                 debug!("task history: failed to record cancelled run: {err:#}");
             }
         }
@@ -646,11 +658,12 @@ mod tests {
         std::thread::scope(|s| {
             s.spawn(|| {
                 let started = Instant::now();
-                history.record_cancelled(
-                    vec![run("build", 1, 1, RunStatus::Cancelled)],
-                    Duration::from_millis(50),
-                );
-                assert!(started.elapsed() < Duration::from_secs(5));
+                let runs = (0..10)
+                    .map(|i| run("build", i, 1, RunStatus::Cancelled))
+                    .collect();
+                // one budget for all ten, not 200ms each
+                history.record_cancelled(runs, Duration::from_millis(200));
+                assert!(started.elapsed() < Duration::from_secs(1));
             });
         });
         assert!(history.runs(Some("build")).unwrap().is_empty());
