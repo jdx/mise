@@ -54,6 +54,10 @@ assert_contains "mise tasks history" "failed (3)"
 mise run fresh
 mise run fresh
 assert "mise tasks history fresh --json | jq -r '.[-1].status'" "skipped"
+# A skipped run is stored without arguments: its env, and the secrets it
+# would register for redaction, was never resolved.
+mise run fresh skipped-arg
+assert "mise tasks history fresh --json | jq -c '.[-1] | [.status, .args]'" '["skipped",[]]'
 mise run all
 assert "mise tasks history --json | jq '[.[] | select(.task == \"all\")] | length'" "0"
 

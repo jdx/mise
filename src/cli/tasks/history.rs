@@ -37,7 +37,7 @@ use crate::ui::table::MiseTable;
 pub(super) struct TasksHistory {
     /// Only show runs of this task
     task: Option<String>,
-    /// Show one line per task: runs, failures, median and last duration
+    /// Show one line per task: runs, failures, median and last duration, last status
     #[usage(short, long)]
     summary: bool,
     /// Output in JSON format
@@ -51,12 +51,12 @@ impl TasksHistory {
         // Runs are recorded under the task's full name, so an alias or the `:task` shorthand
         // finds them; a task that no longer exists still shows its old runs.
         let task = match &self.task {
-            Some(name) => Some(
-                super::info::find_task(&config, name)
-                    .await?
-                    .map(|t| t.name)
-                    .unwrap_or_else(|| name.clone()),
-            ),
+            Some(name) => Some(match super::info::find_task(&config, name).await? {
+                Some(task) => task.name,
+                // A removed monorepo task was recorded as `//app:build`; `:build` still
+                // expands to it.
+                None => crate::task::expand_colon_task_syntax(name, &config)?,
+            }),
             None => None,
         };
         let history = TaskHistory::for_config(&config);

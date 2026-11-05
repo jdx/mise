@@ -19,7 +19,7 @@ Show recent task runs and how long they took
 - **`[TASK]`** — Only show runs of this task
 
 ## Flags
-- **`-s --summary`** — Show one line per task: runs, failures, median and last duration
+- **`-s --summary`** — Show one line per task: runs, failures, median and last duration, last status
 - **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
 

@@ -291,6 +291,11 @@ each task (20 by default). Set
 recording. Recording never fails a run, and `mise run --dry-run` records
 nothing.
 
+Arguments are stored redacted, like terminal output, with URL credentials
+removed. A run that ends before its task's environment is resolved, such as one
+skipped because its sources are fresh, is stored without arguments, since the
+secrets that environment would register are not known yet.
+
 ## Rerun tasks when files change
 
 [`mise watch`](/cli/watch.html) runs a task and runs it again when its sources

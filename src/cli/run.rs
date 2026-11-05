@@ -1347,10 +1347,15 @@ impl Run {
                 .as_ref()
                 .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
+            let env_resolved = this
+                .task_history
+                .as_ref()
+                .map(|_| Arc::new(std::sync::atomic::AtomicBool::new(false)));
             let history_run = this
                 .task_history
                 .as_ref()
-                .and_then(|history| start_task_run(history, &task));
+                .zip(env_resolved.clone())
+                .and_then(|(history, flag)| start_task_run(history, &task, flag));
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1363,6 +1368,7 @@ impl Run {
                 otel_span_cx,
                 injected,
                 covered,
+                env_resolved,
             }))
             .catch_unwind()
             .await
@@ -1889,11 +1895,12 @@ impl Run {
 fn start_task_run(
     history: &crate::task::task_history::TaskHistory,
     task: &Task,
+    env_resolved: Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<crate::task::task_history::PendingRunId> {
     if task.file.is_none() && task.run().is_empty() {
         return None;
     }
-    Some(history.start(&task.name, task.args.clone()))
+    Some(history.start(&task.name, task.args.clone(), env_resolved))
 }
 
 /// Task arguments as history stores them: URL credentials removed, as terminal output does,

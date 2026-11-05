@@ -18,8 +18,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use eyre::{Result, WrapErr};
@@ -32,6 +32,8 @@ use crate::hash::hash_sha256_to_str;
 use crate::lock_file::LockFile;
 
 const FORMAT_VERSION: u8 = 1;
+/// The longest a run waits for a task's history lock before it gives up on the record.
+const LOCK_WAIT: Duration = Duration::from_secs(2);
 
 /// How a recorded run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -149,6 +151,7 @@ pub struct TaskHistory {
 struct PendingRun {
     task: String,
     args: Vec<String>,
+    env_resolved: Arc<AtomicBool>,
     started: SystemTime,
     timer: Instant,
     /// When the task returned, set by [`TaskHistory::ended`] before its result is reported.
@@ -193,12 +196,20 @@ impl TaskHistory {
 
     /// Note that a run of `task` started now; [`Self::finish`] records how it ended. `args`
     /// are kept in memory as given: they are redacted when the run is recorded, once the
-    /// task's env has registered its secrets.
-    pub fn start(&self, task: &str, args: Vec<String>) -> PendingRunId {
+    /// task's env has registered its secrets. The executor sets `env_resolved` once it has;
+    /// a run that ends before that, such as a skipped one, is recorded without arguments,
+    /// since a secret its env would have registered is not known to the redactor.
+    pub fn start(
+        &self,
+        task: &str,
+        args: Vec<String>,
+        env_resolved: Arc<AtomicBool>,
+    ) -> PendingRunId {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let run = PendingRun {
             task: task.to_string(),
             args,
+            env_resolved,
             started: SystemTime::now(),
             timer: Instant::now(),
             ended: None,
@@ -265,7 +276,7 @@ impl TaskHistory {
     /// lock: mise is exiting, and a run that cannot be written is only logged.
     pub fn record_cancelled(&self, runs: Vec<TaskRun>, lock_wait: Duration) {
         for run in runs {
-            if let Err(err) = self.try_record_with(run, Some(lock_wait)) {
+            if let Err(err) = self.try_record_with(run, lock_wait) {
                 debug!("task history: failed to record cancelled run: {err:#}");
             }
         }
@@ -282,30 +293,27 @@ impl TaskHistory {
         }
     }
 
+    /// A writer holds the lock for a few milliseconds; one held longer, by a stopped
+    /// process, costs this run its record instead of holding the task up.
     fn try_record(&self, run: TaskRun) -> Result<()> {
-        self.try_record_with(run, None)
+        self.try_record_with(run, LOCK_WAIT)
     }
 
-    /// `lock_wait` bounds the wait for the task's lock; `None` waits as long as it takes.
-    fn try_record_with(&self, run: TaskRun, lock_wait: Option<Duration>) -> Result<()> {
+    /// `lock_wait` bounds the wait for the task's lock.
+    fn try_record_with(&self, run: TaskRun, lock_wait: Duration) -> Result<()> {
         let name = short_hash(&run.task);
         let path = self.dir.join(format!("{name}.json"));
         create_private_dir(&self.dir)?;
         let lock_path = self.dir.join(format!("{name}.lock"));
-        let _lock = match lock_wait {
-            None => LockFile::at(&lock_path).lock()?,
-            Some(wait) => {
-                let deadline = Instant::now() + wait;
-                loop {
-                    if let Some(lock) = LockFile::at(&lock_path).try_lock()? {
-                        break lock;
-                    }
-                    if Instant::now() >= deadline {
-                        eyre::bail!("{} is locked", file::display_path(&lock_path));
-                    }
-                    std::thread::sleep(Duration::from_millis(10));
-                }
+        let deadline = Instant::now() + lock_wait;
+        let _lock = loop {
+            if let Some(lock) = LockFile::at(&lock_path).try_lock()? {
+                break lock;
             }
+            if Instant::now() >= deadline {
+                eyre::bail!("{} is locked", file::display_path(&lock_path));
+            }
+            std::thread::sleep(Duration::from_millis(10));
         };
         let mut runs = read_file(&path).unwrap_or_default();
         runs.push(run);
@@ -361,14 +369,12 @@ impl TaskHistory {
 impl PendingRun {
     fn into_run(self, status: RunStatus, exit_code: Option<i32>) -> TaskRun {
         let duration = self.ended.unwrap_or_else(|| self.timer.elapsed());
-        TaskRun::new(
-            &self.task,
-            self.args,
-            self.started,
-            duration,
-            status,
-            exit_code,
-        )
+        let args = if self.env_resolved.load(Ordering::SeqCst) {
+            self.args
+        } else {
+            vec![]
+        };
+        TaskRun::new(&self.task, args, self.started, duration, status, exit_code)
     }
 }
 
@@ -446,6 +452,29 @@ fn summarize(runs: Vec<TaskRun>) -> Vec<TaskSummary> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn resolved() -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(true))
+    }
+
+    #[test]
+    fn a_run_that_ends_before_its_env_resolves_keeps_no_args() {
+        let tmp = tempfile::tempdir().unwrap();
+        let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
+        let flag = Arc::new(AtomicBool::new(false));
+        let skipped = history.start("build", vec!["secret".into()], flag.clone());
+        history.finish(skipped, vec!["secret".into()], RunStatus::Skipped, None);
+        flag.store(true, Ordering::SeqCst);
+        let ran = history.start("build", vec!["x".into()], flag);
+        history.finish(ran, vec!["x".into()], RunStatus::Ok, Some(0));
+        let args: Vec<_> = history
+            .runs(Some("build"))
+            .unwrap()
+            .into_iter()
+            .map(|r| r.args)
+            .collect();
+        assert_eq!(args, vec![vec![], vec!["x".to_string()]]);
+    }
 
     fn run(task: &str, secs: u64, ms: u64, status: RunStatus) -> TaskRun {
         TaskRun::new(
@@ -525,8 +554,8 @@ mod tests {
     fn cancelled_runs_are_recorded_once_and_redacted() {
         let tmp = tempfile::tempdir().unwrap();
         let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
-        let done = history.start("build", vec!["a".into()]);
-        let stuck = history.start("build", vec!["hunter2".into()]);
+        let done = history.start("build", vec!["a".into()], resolved());
+        let stuck = history.start("build", vec!["hunter2".into()], resolved());
         history.finish(done, vec!["a".into()], RunStatus::Ok, Some(0));
         let cancelled = history.take_cancelled(|a| a.replace("hunter2", "[redacted]"));
         assert_eq!(cancelled[0].args, vec!["[redacted]"]);
@@ -567,8 +596,8 @@ mod tests {
     fn a_timeout_keeps_runs_that_ended_and_drops_runs_that_start_after() {
         let tmp = tempfile::tempdir().unwrap();
         let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
-        let returned = history.start("build", vec![]);
-        let running = history.start("build", vec![]);
+        let returned = history.start("build", vec![], resolved());
+        let running = history.start("build", vec![], resolved());
         history.ended(returned);
         let cancelled = history.take_cancelled(|a| a.to_string());
         assert_eq!(cancelled.len(), 1);
@@ -576,7 +605,7 @@ mod tests {
         // the job that had returned reports its own result; the killed one is ignored
         history.finish(returned, vec![], RunStatus::Ok, Some(0));
         history.finish(running, vec![], RunStatus::Failed, Some(143));
-        let late = history.start("build", vec![]);
+        let late = history.start("build", vec![], resolved());
         history.ended(late);
         history.finish(late, vec![], RunStatus::Failed, Some(1));
         let mut statuses: Vec<_> = history
