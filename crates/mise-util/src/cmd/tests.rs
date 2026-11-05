@@ -485,6 +485,50 @@ async fn test_on_spawn_runs_only_once_the_process_started() {
     assert_eq!(spawned.load(Ordering::SeqCst), 1);
 }
 
+#[test]
+fn test_on_spawn_runs_for_a_synchronous_execute() {
+    let spawned = Arc::new(AtomicUsize::new(0));
+    let counter = spawned.clone();
+    super::CmdLineRunner::new("sh")
+        .args(["-c", "exit 0"])
+        .with_on_spawn(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })
+        .execute()
+        .unwrap();
+    assert_eq!(spawned.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn test_capped_lines_split_a_long_line_on_character_boundaries() {
+    let input = "ab\r\néééé\nlast".as_bytes();
+    let mut lines = super::CappedLines::with_max(input, 5);
+    let mut seen = Vec::new();
+    while let Some(line) = lines.next_line().await.unwrap() {
+        seen.push(line);
+    }
+    // "éééé\n" is 9 bytes: a 5-byte piece would cut the third "é", so it moves on
+    assert_eq!(seen, ["ab", "éé", "éé", "last"]);
+
+    // a line exactly the limit long is one line, not a line and an empty one
+    let mut lines = super::CappedLines::with_max("abcde\nf".as_bytes(), 5);
+    assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("abcde"));
+    assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("f"));
+    assert_eq!(lines.next_line().await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn test_capped_lines_bound_output_without_newlines() {
+    let input = vec![b'x'; super::MAX_LINE_BYTES * 3 + 7];
+    let mut lines = super::CappedLines::new(input.as_slice());
+    let mut lengths = Vec::new();
+    while let Some(line) = lines.next_line().await.unwrap() {
+        lengths.push(line.len());
+    }
+    let max = super::MAX_LINE_BYTES;
+    assert_eq!(lengths, [max, max, max, 7]);
+}
+
 #[tokio::test]
 async fn test_execute_async_skips_pre_cancelled_command() {
     let err = super::CmdLineRunner::new("sh")

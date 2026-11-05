@@ -112,6 +112,69 @@ where
 
 type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
 
+/// The longest line mise reads from a command in one piece. Output with no newline is
+/// passed on in pieces of this size, so a command cannot make mise hold an unbounded line.
+const MAX_LINE_BYTES: usize = 1024 * 1024;
+
+/// Like tokio's `Lines`, but a line longer than `max` bytes arrives in pieces, cut on
+/// character boundaries.
+struct CappedLines<R> {
+    reader: R,
+    max: usize,
+    /// The start of a character that the previous piece cut through.
+    carry: Vec<u8>,
+}
+
+impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
+    fn new(reader: R) -> Self {
+        Self::with_max(reader, MAX_LINE_BYTES)
+    }
+
+    fn with_max(reader: R, max: usize) -> Self {
+        Self {
+            reader,
+            max,
+            carry: Vec::new(),
+        }
+    }
+
+    async fn next_line(&mut self) -> std::io::Result<Option<String>> {
+        let mut buf = std::mem::take(&mut self.carry);
+        // A carried partial character is at most 3 bytes, so the limit stays positive.
+        let limit = self.max.saturating_sub(buf.len()).max(4) as u64;
+        let read = (&mut self.reader)
+            .take(limit)
+            .read_until(b'\n', &mut buf)
+            .await?;
+        if read == 0 && buf.is_empty() {
+            return Ok(None);
+        }
+        if buf.last() == Some(&b'\n') {
+            buf.pop();
+            if buf.last() == Some(&b'\r') {
+                buf.pop();
+            }
+        } else if read as u64 == limit {
+            // A line exactly `max` long ends here: take its newline, so it is not
+            // followed by an empty line.
+            if self.reader.fill_buf().await?.first() == Some(&b'\n') {
+                self.reader.consume(1);
+                if buf.last() == Some(&b'\r') {
+                    buf.pop();
+                }
+            } else if let Err(err) = std::str::from_utf8(&buf)
+                && err.error_len().is_none()
+            {
+                // The piece ends inside a character: finish it with the next piece.
+                self.carry = buf.split_off(err.valid_up_to());
+            }
+        }
+        String::from_utf8(buf)
+            .map(Some)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+    }
+}
+
 fn chain_observers<'a, F: Fn(&str) + Send + 'a>(
     previous: Option<OutputObserver<'a>>,
     next: F,
@@ -1523,7 +1586,7 @@ impl<'a> CmdLineRunner<'a> {
             let name = self.to_string();
             let tx = tx.clone();
             tokio::spawn(async move {
-                let mut lines = TokioBufReader::new(stdout).lines();
+                let mut lines = CappedLines::new(TokioBufReader::new(stdout));
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {
@@ -1542,7 +1605,7 @@ impl<'a> CmdLineRunner<'a> {
             let name = self.to_string();
             let tx = tx.clone();
             tokio::spawn(async move {
-                let mut lines = TokioBufReader::new(stderr).lines();
+                let mut lines = CappedLines::new(TokioBufReader::new(stderr));
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {
@@ -2163,10 +2226,19 @@ impl<'a> CmdLineRunner<'a> {
         true
     }
 
+    /// Spawns the command, then runs the [`Self::with_on_spawn`] callback once it started.
+    fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+        let child = self.spawn_std_child_with_etxtbsy_retry()?;
+        if let Some(on_spawn) = self.on_spawn.take() {
+            on_spawn();
+        }
+        Ok(child)
+    }
+
     /// Retry spawning a process if it fails with ETXTBSY (Text file busy).
     /// This can happen on Linux when executing a binary that was just written/extracted,
     /// as the file descriptor may not be fully closed yet.
-    fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+    fn spawn_std_child_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
         let mut leader = self.prepare_spawn();
         #[cfg(windows)]
         {
