@@ -494,7 +494,7 @@ impl Git {
     /// Returns the root of the working tree that contains `self.dir`.
     pub fn toplevel(&self) -> Result<PathBuf> {
         Ok(git_cmd_read!(&self.dir, "rev-parse", "--show-toplevel")?
-            .trim()
+            .trim_end_matches(['\r', '\n'])
             .into())
     }
 

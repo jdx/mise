@@ -46,9 +46,27 @@ pub struct WorkspaceChanges {
     working_tree: BTreeSet<PathBuf>,
     merge_base: Option<String>,
     head: String,
+    /// The sources that were actually compared, after defaults and the checkout check.
+    sources: AffectedSources,
 }
 
 impl WorkspaceChanges {
+    /// Describes what was compared, such as `HEAD~1...HEAD` or `uncommitted, untracked`,
+    /// for an explanation header.
+    pub fn compared(&self, revisions: &WorkspaceGitRevisions) -> String {
+        let mut parts = Vec::new();
+        if self.sources.committed {
+            parts.push(format!("{}...{}", revisions.base, revisions.head));
+        }
+        if self.sources.uncommitted {
+            parts.push("uncommitted".to_string());
+        }
+        if self.sources.untracked {
+            parts.push("untracked".to_string());
+        }
+        parts.join(", ")
+    }
+
     /// The (before, after) contents to compare for a path, one pair per source it changed in.
     ///
     /// A path changed in both the committed range and the working tree yields two pairs,
@@ -158,6 +176,7 @@ impl WorkspaceGitRevisions {
             working_tree,
             merge_base,
             head: self.head.clone(),
+            sources,
         })
     }
 }

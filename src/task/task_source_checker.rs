@@ -285,7 +285,7 @@ pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
 /// `**/../x` has no well-defined expansion — the `..` would have to apply to
 /// whatever each match of `**` resolved to — so callers leave such a pattern
 /// exactly as written rather than inventing a meaning for it.
-fn parent_dir_pops_glob(pattern: &Path) -> bool {
+pub(crate) fn parent_dir_pops_glob(pattern: &Path) -> bool {
     let mut stack: Vec<bool> = Vec::new();
     for component in pattern.components() {
         match component {

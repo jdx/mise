@@ -544,15 +544,15 @@ async fn get_source_affected_task_list(
 ) -> Result<Vec<Task>> {
     use crate::task::task_affected::affected_task_reasons;
 
-    let dir = config
-        .project_root
-        .clone()
-        .or_else(|| crate::dirs::CWD.clone())
-        .unwrap_or_default();
-    let repo_root = crate::git::Git::new(&dir)
-        .toplevel()
-        .wrap_err("--affected needs a Git repository")?;
-    let repo_root = repo_root.canonicalize().unwrap_or(repo_root);
+    // The checkout the command runs in, even when the config that defines the tasks sits
+    // above it, outside Git.
+    let repo_root = crate::dirs::CWD
+        .iter()
+        .chain(config.project_root.iter())
+        .find_map(|dir| crate::git::Git::new(dir).toplevel().ok())
+        .ok_or_else(|| eyre!("--affected needs a Git repository"))?;
+    // dunce, because Git does not accept the `\\?\` paths `canonicalize` gives on Windows.
+    let repo_root = dunce::canonicalize(&repo_root).unwrap_or(repo_root);
     let changes = revisions.changed_paths(&repo_root)?;
     let tasks = get_task_lists(config, args, true, only, false).await?;
     // As in a monorepo, only the pattern matches are filtered: `Run::run` resolves their
@@ -587,7 +587,7 @@ async fn get_source_affected_task_list(
         };
         miseprintln!("{}", serde_json::to_string_pretty(&output)?);
     } else if explain {
-        display_source_affected_explanation(&revisions, &selected, &skipped)?;
+        display_source_affected_explanation(&changes.compared(&revisions), &selected, &skipped)?;
     }
     Ok(selected.into_iter().map(|(task, _)| task).collect())
 }
@@ -606,7 +606,7 @@ struct AffectedSourceTaskOutput<'a> {
 }
 
 fn display_source_affected_explanation(
-    revisions: &crate::task::workspace::git::WorkspaceGitRevisions,
+    compared: &str,
     selected: &[(
         Task,
         BTreeSet<crate::task::task_affected::AffectedTaskReason>,
@@ -616,9 +616,8 @@ fn display_source_affected_explanation(
     use crate::task::task_affected::AffectedTaskReason;
 
     miseprintln!(
-        "Affected tasks ({}...{}):{}",
-        revisions.base,
-        revisions.head,
+        "Affected tasks ({}):{}",
+        display_affected_text(compared),
         if selected.is_empty() { " none" } else { "" }
     );
     for (task, reasons) in selected {
@@ -630,6 +629,9 @@ fn display_source_affected_explanation(
                 }
                 AffectedTaskReason::TaskConfig { path } => {
                     miseprintln!("    changed task config: {}", display_affected_path(path));
+                }
+                AffectedTaskReason::TaskFile { path } => {
+                    miseprintln!("    changed task file: {}", display_affected_path(path));
                 }
                 AffectedTaskReason::NoSources => {
                     miseprintln!("    no sources declared");
@@ -903,7 +905,8 @@ impl Run {
         } else {
             get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
         };
-        if self.affected_json {
+        // Nothing was affected, so there is nothing to install tools or dependencies for.
+        if self.affected_json || (self.affected && task_list.is_empty()) {
             return Ok(());
         }
         warn_secrets_flag_in_task_args(&task_list);

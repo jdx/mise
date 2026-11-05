@@ -59,7 +59,7 @@ assert_json "mise run --affected --affected-json 'test:*'" '{
 assert "test ! -e affected.log"
 
 output=$(mise run --affected --affected-explain --force --jobs 1 'test:*')
-assert_contains "echo \"$output\"" "Affected tasks (HEAD~1...HEAD):"
+assert_contains "echo \"$output\"" "Affected tasks (HEAD~1...HEAD, uncommitted, untracked):"
 assert_contains "echo \"$output\"" "changed source: src/lib.rs"
 assert_contains "echo \"$output\"" "no sources declared"
 assert_contains "echo \"$output\"" "Unaffected tasks:"
@@ -131,3 +131,51 @@ git commit -qm add-ci
 echo changed >>src/lib.rs
 mise run --affected --affected-uncommitted --force --jobs 1 ci
 assert "sort affected.log" $'ci\ndocs'
+
+# Explain names only what it compared.
+git checkout -q src/lib.rs
+echo changed >>docs/index.md
+output=$(mise run --affected --affected-uncommitted --affected-explain --dry-run 'test:docs')
+assert_contains "echo \"$output\"" "Affected tasks (uncommitted):"
+assert_not_contains "echo \"$output\"" "HEAD~1...HEAD"
+git checkout -q docs/index.md
+
+# A task directory reached through a symlink matches the paths Git reports,
+# and so does a literal `file` script.
+mkdir -p real/src scripts
+ln -s real link
+echo initial >real/src/lib.rs
+cat <<'EOF' >scripts/build.sh
+#!/usr/bin/env bash
+echo script >>"$AFFECTED_LOG"
+EOF
+chmod +x scripts/build.sh
+cat <<'EOF' >>mise.toml
+
+[tasks.linked]
+dir = "link"
+sources = ["src/**"]
+run = 'echo linked >> "$AFFECTED_LOG"'
+
+[tasks.script]
+sources = ["inputs/**"]
+file = "scripts/build.sh"
+
+[tasks.args]
+usage = 'arg "<name>"'
+sources = ["{{usage.name}}/**"]
+run = 'echo args >> "$AFFECTED_LOG"'
+EOF
+git add .
+git commit -qm add-linked
+
+echo changed >>real/src/lib.rs
+assert_contains "mise run --affected --affected-uncommitted --affected-explain --dry-run linked" "changed source: real/src/lib.rs"
+: >affected.log
+mise run --affected --affected-uncommitted --force --jobs 1 linked ::: script
+assert "cat affected.log" "linked"
+git checkout -q real/src/lib.rs
+
+echo '# changed' >>scripts/build.sh
+assert_contains "mise run --affected --affected-uncommitted --affected-explain --dry-run script" "changed task file: scripts/build.sh"
+assert_contains "mise run --affected --affected-uncommitted --affected-json args" '"type": "argument-sources"'

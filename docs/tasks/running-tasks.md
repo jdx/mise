@@ -247,7 +247,9 @@ mise run --affected 'test:*'
 mise run --affected --affected-explain --dry-run 'test:*'
 ```
 
-A task is also affected when a changed file is the config file that defines it.
+A task is also affected when a changed file is the config file that defines it
+or the script its `file` names. Symlinks in the task directory and in its
+`sources` are followed, as Git reports each file by its own path.
 A task without `sources` might read any file, so mise runs it whenever anything
 changed. When nothing changed, `--affected` runs nothing. Dependencies of a
 selected task still run, and the usual
@@ -259,7 +261,7 @@ mise counts the same changes as in a monorepo: the commits between
 plus uncommitted and untracked files when the head is checked out. The
 `--affected-committed`, `--affected-uncommitted`, and `--affected-untracked`
 flags narrow that, and `--affected-json` prints the selected tasks with their
-reasons (`changed-source`, `task-config`, `no-sources`, or `argument-sources`
+reasons (`changed-source`, `task-config`, `task-file`, `no-sources`, or `argument-sources`
 for sources that use <span v-pre>`{{ usage.* }}`</span>). See
 [Run affected tasks](/tasks/workspace-graph.html#affected-tasks) for how mise
 picks the revisions in CI.
