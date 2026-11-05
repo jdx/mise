@@ -28,8 +28,23 @@ const SOURCE_ENV: &str = "MISE_RUN_AT_SOURCE";
 const REV_ENV: &str = "MISE_RUN_AT_REV";
 
 /// Runs `child_args` (a `mise` command line without the program name) in a temporary
-/// worktree of `rev`, after `setup`, and removes the worktree whatever the outcome.
-pub(crate) async fn run(rev: &str, setup: Option<&str>, child_args: Vec<String>) -> Result<()> {
+/// worktree of `rev`, after `setup`, and removes the worktree whatever the outcome. With
+/// `dry_run`, `setup` is printed instead of run, and the child previews the tasks.
+pub(crate) async fn run(
+    rev: &str,
+    setup: Option<&str>,
+    dry_run: bool,
+    child_args: Vec<String>,
+) -> Result<()> {
+    // The child and the tasks have this set. A `--at` there would start a worktree of its own,
+    // and one that the argument stripping missed would start another, forever.
+    if std::env::var_os(REV_ENV).is_some() {
+        bail!("mise run --at cannot run inside another `mise run --at` ({REV_ENV} is set)");
+    }
+    // Ctrl-C reaches the child (it shares the terminal's process group) and the tasks stop as
+    // they would without `--at`, as does git while it makes the worktree. This process waits for
+    // that, then removes the worktree.
+    ctrlc::exit_on_ctrl_c(false);
     let cwd = std::env::current_dir()?.canonicalize()?;
     let toplevel = git_read(&cwd, ["rev-parse", "--show-toplevel"])
         .wrap_err("mise run --at needs a git repository")?;
@@ -62,10 +77,9 @@ pub(crate) async fn run(rev: &str, setup: Option<&str>, child_args: Vec<String>)
     }
     check_trust(&worktree.path, &subdir, rev)?;
 
-    // Ctrl-C reaches the child (it shares the terminal's process group) and the tasks stop as
-    // they would without `--at`. This process waits for that, then removes the worktree.
-    ctrlc::exit_on_ctrl_c(false);
-    if let Some(setup) = setup {
+    if let Some(setup) = setup.filter(|_| dry_run) {
+        info!("--at-setup (not run with --dry-run): {setup}");
+    } else if let Some(setup) = setup {
         let status = wait(setup_command(setup), &dir, &toplevel, &sha)
             .await
             .wrap_err("mise run --at: failed to start the --at-setup command")?;
@@ -74,12 +88,7 @@ pub(crate) async fn run(rev: &str, setup: Option<&str>, child_args: Vec<String>)
         }
     }
     let mut child = tokio::process::Command::new(&*env::MISE_BIN);
-    child
-        .args(&child_args)
-        // `--cd` was applied here already and is not in `child_args`; the variable would
-        // point the child back at the user's checkout.
-        .env_remove("MISE_CD")
-        .env(REQUIRE_EXPLICIT_TRUST_ENV, "1");
+    child.args(&child_args).env(REQUIRE_EXPLICIT_TRUST_ENV, "1");
     let status = wait(child, &dir, &toplevel, &sha)
         .await
         .wrap_err("mise run --at: failed to start mise")?;
@@ -134,6 +143,9 @@ async fn wait(
     // A `GIT_DIR` inherited from a git hook would point the tasks' git at the user's checkout.
     sanitize_git_command(cmd.as_std_mut());
     cmd.current_dir(dir)
+        // `--cd` was applied here already and is not in the child's arguments; the variable
+        // would send the child, or a `mise` in the setup command, back to the user's checkout.
+        .env_remove("MISE_CD")
         .env(SOURCE_ENV, toplevel)
         .env(REV_ENV, sha)
         .stdin(Stdio::inherit())

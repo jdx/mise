@@ -863,17 +863,23 @@ pub(crate) fn run_at_child_args(args: &[String]) -> Vec<String> {
     let args = preprocess_args_for_naked_run(cmd, args);
     let (flags_with_values, _) = get_all_run_flags(cmd);
     let mut result = Vec::with_capacity(args.len());
-    let mut seen_subcommand = false;
+    // The command path is `run` (`r`), or `tasks run` (`t`/`task`, then `run`/`r`).
+    let mut in_tasks = false;
+    let mut seen_run = false;
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
-        if arg == "--" || (seen_subcommand && !arg.starts_with('-')) {
+        if arg == "--" || (seen_run && !arg.starts_with('-')) {
             result.extend_from_slice(&args[i..]);
             break;
         }
         i += 1;
         if !arg.starts_with('-') {
-            seen_subcommand = true;
+            if !in_tasks && matches!(arg.as_str(), "tasks" | "task" | "t") {
+                in_tasks = true;
+            } else {
+                seen_run = true;
+            }
             result.push(arg.clone());
             continue;
         }
@@ -2447,6 +2453,15 @@ mod tests {
         assert_eq!(
             run_at_child_args(&args("mise --cd=pkg run --at=HEAD~1 --cd dir -- t --at z")),
             args("run -- t --at z")
+        );
+        // `tasks run` is the same command, under two words.
+        assert_eq!(
+            run_at_child_args(&args("mise tasks run --at HEAD hi --at x")),
+            args("tasks run hi --at x")
+        );
+        assert_eq!(
+            run_at_child_args(&args("mise t r --at=HEAD -C d hi")),
+            args("t r hi")
         );
         // A naked run gains its `run`.
         assert_eq!(

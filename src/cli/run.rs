@@ -718,7 +718,7 @@ impl Run {
 
         if let Some(rev) = &self.at {
             let args = crate::cli::run_at_child_args(&env::ARGS.read().unwrap());
-            return super::run_at::run(rev, self.at_setup.as_deref(), args).await;
+            return super::run_at::run(rev, self.at_setup.as_deref(), self.dry_run, args).await;
         }
 
         // Unescape task args early so we can check for help flags

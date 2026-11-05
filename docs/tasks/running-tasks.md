@@ -299,6 +299,11 @@ status. Uncommitted changes in your checkout play no part: REV is a commit.
   mise run --at main --at-setup 'cp -R "$MISE_RUN_AT_SOURCE/node_modules" .' test
   ```
 
+  With `--dry-run`, mise prints the setup command instead of running it.
+
+- A `mise run --at` inside a `--at` run (where `MISE_RUN_AT_REV` is set) is
+  refused.
+
 - Config is looked up from the worktree, so a `mise.toml` in a directory above
   your checkout (other than the global config) does not apply.
 

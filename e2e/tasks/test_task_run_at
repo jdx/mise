@@ -68,6 +68,19 @@ assert "mise -C pkg run --at=HEAD~1 hi" "version-one"
 assert_contains "mise run --at HEAD~1 --at-setup 'echo setup-ran >setup.txt' where ::: hi" "version-one"
 assert_fail "mise run --at HEAD~1 --at-setup 'exit 1' hi" "--at-setup command failed"
 
+# A mise in the setup command runs in the worktree, not where MISE_CD points.
+assert "MISE_CD=$PWD mise run --at HEAD~1 --at-setup 'mise run hi >\"\$MISE_RUN_AT_SOURCE/../setup-out\"' hi" "version-one"
+assert "cat ../setup-out" "version-one"
+
+# --dry-run prints the setup command instead of running it.
+assert_contains "mise run --dry-run --at HEAD~1 --at-setup 'touch \"\$MISE_RUN_AT_SOURCE/../dry-ran\"' hi 2>&1" "not run with --dry-run"
+assert_fail "test -e ../dry-ran"
+
+# `mise tasks run` is `mise run`, and a mise inside a --at run cannot start another.
+assert "mise tasks run --at HEAD~1 hi" "version-one"
+assert "mise t r --at HEAD~1 hi" "version-one"
+assert_fail "MISE_RUN_AT_REV=x mise run --at HEAD~1 hi" "cannot run inside another"
+
 # The task's exit code comes back.
 assert_fail "mise run --at HEAD~1 fail"
 
@@ -75,12 +88,12 @@ assert 'mise run --at HEAD~1 fail || echo exit=$?' "exit=7"
 assert_fail "mise run --at no-such-rev hi" "is not a commit"
 
 # The user's checkout is untouched and every temporary worktree is gone.
-assert "git status --porcelain" ""
+assert_empty "git status --porcelain"
 assert "git log -1 --format=%s" "two"
 assert "cat mise.toml" '[tasks.hi]
 run = "echo version-two"'
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert "ls -A $MISE_TMP_DIR/run-at" ""
+assert_empty "ls -A $MISE_TMP_DIR/run-at"
 
 # A config at REV is refused, before anything runs, when the main checkout is
 # not trusted. `--yes` (MISE_YES=1 here) does not trust it either.
@@ -90,12 +103,14 @@ assert_fail "test -e ../setup-ran"
 assert_fail "mise run --at HEAD~1 hi" "shares the trust of the repository's main checkout"
 assert_fail "MISE_YES=1 mise run --yes --at HEAD~1 hi" "is not trusted"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert "ls -A $MISE_TMP_DIR/run-at" ""
+assert_empty "ls -A $MISE_TMP_DIR/run-at"
 mise trust
 assert "mise run --at HEAD~1 hi" "version-one"
 
 # Paranoid mode binds trust to a path and its contents, so config in the
 # worktree, a new path on every run, is never trusted.
 assert_fail "MISE_PARANOID=1 mise run --at HEAD~1 hi" "Paranoid mode"
+# The `config` category alone does it.
+assert_fail "MISE_PARANOID=config mise run --at HEAD~1 hi" "Paranoid mode"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert "ls -A $MISE_TMP_DIR/run-at" ""
+assert_empty "ls -A $MISE_TMP_DIR/run-at"
