@@ -3843,6 +3843,7 @@ impl AquaBackend {
             .iter()
             .map(|name| join_registry_path(&install_path, name))
             .map_ok(|path| complete_windows_ext(path, pkg, os(), v))
+            .map_ok(|path| complete_raw_windows_exe(path, pkg, os(), arch(), v))
             .collect::<Result<_>>()?;
         let first_bin_path = bin_paths
             .first()
@@ -4092,6 +4093,7 @@ impl AquaBackend {
 
             let mut path = join_registry_path(install_path, fallback_name)?;
             path = complete_windows_ext(path, pkg, os, version);
+            path = complete_raw_windows_exe(path, pkg, os, arch, version);
 
             return Ok(vec![AquaFileLink {
                 src: path.clone(),
@@ -4152,7 +4154,9 @@ impl AquaBackend {
                     link.as_deref().unwrap_or(f.name.as_str()),
                 )?;
                 src = complete_windows_ext(src, pkg, os, version);
+                src = complete_raw_windows_exe(src, pkg, os, arch, version);
                 dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
+                dst = complete_raw_windows_exe(dst, pkg, os, arch, version);
 
                 Ok(AquaFileLink {
                     src,
@@ -4558,6 +4562,28 @@ fn complete_windows_ext(
         return path;
     };
     let completed = pkg.complete_windows_ext_to_file_src(&file_name, version, target_os);
+    if completed != file_name {
+        path.set_file_name(completed);
+    }
+    path
+}
+
+/// Keeps the `.exe` of a raw Windows download whose recipe turns
+/// `complete_windows_ext` off, which `complete_windows_ext` would leave bare.
+fn complete_raw_windows_exe(
+    mut path: PathBuf,
+    pkg: &AquaPackage,
+    target_os: &str,
+    arch: &str,
+    version: &str,
+) -> PathBuf {
+    let Some(file_name) = path
+        .file_name()
+        .map(|file_name| file_name.to_string_lossy().into_owned())
+    else {
+        return path;
+    };
+    let completed = pkg.raw_windows_exe_name(&file_name, version, target_os, arch);
     if completed != file_name {
         path.set_file_name(completed);
     }
