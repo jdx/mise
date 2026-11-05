@@ -202,7 +202,14 @@ impl AquaPackage {
             self.asset(v, os, arch)
         };
         match download {
-            Ok(download) if download.ends_with(".exe") => append_str_ext(name, ".exe"),
+            Ok(download)
+                if download
+                    .split(['?', '#'])
+                    .next()
+                    .is_some_and(|path| path.ends_with(".exe")) =>
+            {
+                append_str_ext(name, ".exe")
+            }
             _ => name.to_string(),
         }
     }
