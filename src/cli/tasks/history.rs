@@ -1,6 +1,5 @@
 use comfy_table::Cell;
 use eyre::Result;
-use itertools::Itertools;
 
 use crate::config::Config;
 use crate::task::task_history::{TaskHistory, TaskRun, TaskSummary};
@@ -54,9 +53,7 @@ impl TasksHistory {
         let task = match &self.task {
             Some(name) => Some(
                 super::info::find_task(&config, name)
-                    .await
-                    .ok()
-                    .flatten()
+                    .await?
                     .map(|t| t.name)
                     .unwrap_or_else(|| name.clone()),
             ),
@@ -86,11 +83,11 @@ fn print_runs(runs: &[TaskRun]) -> Result<()> {
     let mut table = MiseTable::new(false, &["Task", "Started", "Duration", "Status", "Args"]);
     for run in runs {
         table.add_row(vec![
-            Cell::new(&run.task),
+            Cell::new(escape_control(&run.task)),
             Cell::new(local_time(&run.started_at)),
             Cell::new(format_ms(run.duration_ms)),
             Cell::new(status(run.status.as_str(), run.exit_code)),
-            Cell::new(run.args.iter().join(" ")),
+            Cell::new(escape_control(&shell_words::join(&run.args))),
         ]);
     }
     table.print()
@@ -103,7 +100,7 @@ fn print_summaries(summaries: &[TaskSummary]) -> Result<()> {
     );
     for s in summaries {
         table.add_row(vec![
-            Cell::new(&s.task),
+            Cell::new(escape_control(&s.task)),
             Cell::new(s.runs),
             Cell::new(s.failures),
             Cell::new(s.median_ms.map(format_ms).unwrap_or_else(|| "-".into())),
@@ -112,6 +109,20 @@ fn print_summaries(summaries: &[TaskSummary]) -> Result<()> {
         ]);
     }
     table.print()
+}
+
+/// Recorded text with its control characters escaped, so an argument holding an escape
+/// sequence cannot drive the terminal the table prints to.
+fn escape_control(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_debug().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 fn status(status: &str, exit_code: Option<i32>) -> String {
@@ -134,4 +145,18 @@ fn local_time(started_at: &str) -> String {
                 .to_string()
         })
         .unwrap_or_else(|_| started_at.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_keep_their_boundaries_and_escape_control_characters() {
+        let args = vec!["a b".to_string(), "".to_string(), "\x1b[2Jx".to_string()];
+        assert_eq!(
+            escape_control(&shell_words::join(&args)),
+            r"'a b' '' '\u{1b}[2Jx'"
+        );
+    }
 }

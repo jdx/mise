@@ -23,6 +23,12 @@ cache = { enabled = true }
 
 [tasks.all]
 depends = ["ok"]
+
+[tasks.echo]
+run = 'true'
+
+[tasks.slow]
+run = 'sleep 30'
 EOF
 printf 'one\n' >input.txt
 
@@ -74,3 +80,16 @@ assert "mise tasks history bad --json | jq 'length'" "1"
 MISE_TASK_HISTORY=false mise run bad || true
 MISE_TASK_HISTORY_LIMIT=0 mise run bad || true
 assert "mise tasks history bad --json | jq 'length'" "1"
+
+# A dry run is not recorded.
+mise run --dry-run ok
+assert "mise tasks history ok --json | jq 'length'" "2"
+
+# URL credentials are not saved, and the table keeps argument boundaries.
+mise run echo https://user:hunter2@example.com/x 'a b'
+assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "hunter2"
+assert_contains "mise tasks history echo" "'a b'"
+
+# A task stopped by --timeout is recorded as cancelled.
+assert_fail "mise run --timeout 1s slow"
+assert "mise tasks history slow --json | jq -c '[.[].status]'" '["cancelled"]'
