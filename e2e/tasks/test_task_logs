@@ -13,7 +13,7 @@ run = 'echo "pass out \$RUN_ID"; echo "pass err" >&2'
 run = 'echo "fail out"; echo "fail err" >&2; exit 3'
 
 [tasks.secret]
-run = 'echo "token=\$LOG_TOKEN"'
+run = 'echo "token=\$LOG_TOKEN"; echo "url=https://bob:hunter2@example.com/x"'
 
 [tasks.plain]
 run = 'echo plain'
@@ -42,6 +42,9 @@ assert_fail_contains "mise run --output replacing fail" "full output: "
 mise run --output interleave secret
 assert_contains "mise tasks log secret" "token=[redacted]"
 assert_not_contains "mise tasks log secret" "log-secret-value-e2e"
+# URL credentials are hidden too, as mise's logger hides them
+assert_contains "mise tasks log secret" "url=https://[redacted]@example.com/x"
+assert_not_contains "mise tasks log secret" "hunter2"
 
 # --path prints where the log is, under the state dir
 assert_contains "mise tasks log pass --path" "$MISE_STATE_DIR/task-logs/"

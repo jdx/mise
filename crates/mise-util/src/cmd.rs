@@ -182,6 +182,15 @@ impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
 
     /// Where to end a piece of `buf`, which is longer than `max` and holds no newline in
     /// its first `max` bytes.
+    ///
+    /// The rule, which keeps every cut cheap: after settling on a character boundary, look
+    /// only at the window [cut − longest + 1, cut + longest − 1], so a cut costs at most the
+    /// secrets times that window, whatever the buffer holds. When a secret occurrence spans
+    /// the cut, move the cut forward once, to the end of the earliest spanning occurrence,
+    /// which the lookahead has already read. Never walk back across the buffer: with `aaaa`
+    /// registered, a long run of `a` would otherwise walk back to the start for every piece.
+    /// A run of overlapping occurrences can leave a fragment shorter than a secret on the far
+    /// side of the moved cut, and a fragment shorter than a secret is not the secret.
     fn cut(&self, buf: &[u8]) -> usize {
         let mut cut = self.max;
         if let Err(err) = std::str::from_utf8(&buf[..cut])
@@ -189,14 +198,10 @@ impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
         {
             cut = err.valid_up_to();
         }
-        while let Some((start, end)) = self.secret_across(buf, cut) {
-            if start == 0 {
-                // A secret longer than a piece: keep it whole in this one.
-                return end;
-            }
-            cut = start;
+        match self.secret_across(buf, cut) {
+            Some((_, end)) => end,
+            None => cut,
         }
-        cut
     }
 
     /// The earliest registered secret in `buf` that starts before `cut` and ends after it.

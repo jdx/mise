@@ -554,7 +554,7 @@ async fn test_capped_lines_never_cut_a_secret_at_the_limit() {
     let input = format!("{}{secret}{}", "x".repeat(max - 5), "y".repeat(100));
     let pieces = capped_pieces(input.as_bytes(), None, &[secret]).await;
     assert_eq!(pieces.concat(), input, "no output lost or repeated");
-    assert!(pieces.iter().all(|piece| piece.len() <= max));
+    assert!(pieces.iter().all(|piece| piece.len() < max + secret.len()));
     let redactor = crate::redactions::Redactor::new([secret.to_string()]);
     let shown: Vec<String> = pieces.iter().map(|piece| redactor.redact(piece)).collect();
     assert_eq!(shown.concat().matches("[redacted]").count(), 1);
@@ -568,16 +568,36 @@ async fn test_capped_lines_never_cut_a_secret_at_the_limit() {
 
 #[tokio::test]
 async fn test_capped_lines_keep_overlapping_secrets_and_characters_whole() {
-    // "é" is two bytes; "bcd" and "cdé" overlap, and the cut at 8 falls inside both
+    // "é" is bytes 8 and 9: a cut at 9 moves back to 8, which falls inside "cdé", so it
+    // moves forward to that secret's end
     let input = "aaaaabcdéfff";
-    let pieces = capped_pieces(input.as_bytes(), Some(8), &["bcd", "cdé"]).await;
-    assert_eq!(pieces.concat(), input);
-    assert_eq!(pieces[0], "aaaaa");
-    assert!(pieces[1].starts_with("bcdé"));
+    let pieces = capped_pieces(input.as_bytes(), Some(9), &["bcd", "cdé"]).await;
+    assert_eq!(pieces, ["aaaaabcdé", "fff"]);
     // a secret longer than a piece stays whole, in one longer piece
     let pieces = capped_pieces(b"abcdefgh-z", Some(3), &["abcdefgh"]).await;
     assert_eq!(pieces[0], "abcdefgh");
     assert_eq!(pieces.concat(), "abcdefgh-z");
+}
+
+#[tokio::test]
+async fn test_capped_lines_cut_a_run_of_a_self_overlapping_secret_in_linear_time() {
+    // every position of the run starts an "aaaa", so each cut lands inside one
+    let input = vec![b'a'; super::MAX_LINE_BYTES * 4 + 3];
+    let started = std::time::Instant::now();
+    let pieces = capped_pieces(&input, None, &["aaaa"]).await;
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "{elapsed:?}"
+    );
+    assert_eq!(pieces.concat().len(), input.len());
+    // each cut moves forward past one occurrence, so pieces stay full-sized
+    assert!(pieces.len() <= 5, "{} pieces", pieces.len());
+    assert!(
+        pieces
+            .iter()
+            .all(|piece| piece.len() < super::MAX_LINE_BYTES + 4)
+    );
 }
 
 #[tokio::test]

@@ -67,6 +67,10 @@ impl TaskRunLog {
     }
 
     pub(crate) fn push(&self, line: &str) {
+        // The runner already hid the registered secrets. A file outlives the terminal, so
+        // also redact the way mise's logger does: global secrets and URL credentials.
+        let line = mise_util::redactions::redact_output(line);
+        let line = line.as_str();
         let mut tail = self.tail.lock().unwrap();
         let line = if line.len() + 1 > LINE_BUDGET {
             // Keep the end of an oversized line, cut on a character boundary.
@@ -198,6 +202,16 @@ mod tests {
             log.push(line);
         }
         log
+    }
+
+    #[test]
+    fn url_credentials_are_redacted() {
+        let log = captured(&["fetch https://bob:hunter2@example.com/x"]);
+        let tail = log.tail.lock().unwrap();
+        assert_eq!(
+            tail.lines.back().map(String::as_str),
+            Some("fetch https://[redacted]@example.com/x")
+        );
     }
 
     #[test]
