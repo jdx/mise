@@ -139,6 +139,8 @@ pub struct CmdLineRunner<'a> {
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
     stderr_as_stdout: bool,
     observe_stdout: Option<OutputObserver<'a>>,
+    /// Called once, after the process started and before its output is read.
+    on_spawn: Option<Box<dyn FnOnce() + Send + 'a>>,
     observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
@@ -903,6 +905,7 @@ impl<'a> CmdLineRunner<'a> {
             on_stderr: None,
             stderr_as_stdout: false,
             observe_stdout: None,
+            on_spawn: None,
             observe_stderr: None,
             timeout: None,
             sandbox: None,
@@ -1068,6 +1071,13 @@ impl<'a> CmdLineRunner<'a> {
     /// Add an observer for each stderr line. See [`Self::with_stdout_observer`].
     pub fn with_stderr_observer<F: Fn(&str) + Send + 'a>(mut self, observer: F) -> Self {
         self.observe_stderr = Some(chain_observers(self.observe_stderr.take(), observer));
+        self
+    }
+
+    /// Run `on_spawn` once the process has started. It does not run when the command is
+    /// cancelled first or fails to start, such as a missing program or a permission error.
+    pub fn with_on_spawn<F: FnOnce() + Send + 'a>(mut self, on_spawn: F) -> Self {
+        self.on_spawn = Some(Box::new(on_spawn));
         self
     }
 
@@ -2193,7 +2203,16 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
+    /// Spawns the command, then runs the [`Self::with_on_spawn`] callback once it started.
     async fn spawn_async_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
+        let child = self.spawn_child_with_etxtbsy_retry().await?;
+        if let Some(on_spawn) = self.on_spawn.take() {
+            on_spawn();
+        }
+        Ok(child)
+    }
+
+    async fn spawn_child_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
         let mut leader = self.prepare_spawn();
         #[cfg(windows)]
         {

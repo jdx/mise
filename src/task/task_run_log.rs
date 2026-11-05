@@ -155,19 +155,18 @@ fn create_private_dir(dir: &Path) -> Result<()> {
 }
 
 /// Where the last run of `task` is logged: one file per task name per project. A global task
-/// is the same task in every project, so its key also holds the project it runs in.
+/// is the same task in every project, so its key also holds the project it runs in; run
+/// outside any project, it has one log of its own.
 pub fn log_path(task: &Task, config: &Config) -> PathBuf {
     let root = task
         .config_root
         .clone()
         .unwrap_or_else(|| task.config_source.clone());
-    let project = is_global_task(task).then(|| {
-        config
-            .project_root
-            .clone()
-            .or_else(|| dirs::CWD.clone())
-            .unwrap_or_default()
-    });
+    // Outside any project there is nothing to tell runs apart by, and the directory would
+    // make `mise run` and `mise tasks log` disagree, so such runs share one log.
+    let project = is_global_task(task)
+        .then(|| config.project_root.clone())
+        .flatten();
     dirs::STATE.join("task-logs").join(format!(
         "{}.log",
         log_key(&root, project.as_deref(), &task.name)

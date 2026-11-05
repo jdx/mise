@@ -2546,10 +2546,11 @@ impl TaskExecutor {
         }
         // Apply sandbox async (DNS resolution for macOS) before spawning.
         cmd.apply_sandbox().await?;
-        // Only now does this run replace the task's log: a run that failed before spawning
-        // anything says nothing about the task's output, so the last log stays.
-        run_log.mark_spawned(logs_output);
+        // The run replaces the task's log only once its process started: a run cancelled
+        // first, or whose program is missing or not executable, keeps the last log.
+        let spawned_log = run_log.clone();
         let result = cmd
+            .with_on_spawn(move || spawned_log.mark_spawned(logs_output))
             .execute_async_with_cancel_check(|| {
                 !allow_during_interruption && crate::ui::ctrlc::is_cancelled()
             })

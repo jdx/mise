@@ -464,6 +464,28 @@ async fn test_cmd_line_runner_read_bounded() {
 }
 
 #[tokio::test]
+async fn test_on_spawn_runs_only_once_the_process_started() {
+    let spawned = Arc::new(AtomicUsize::new(0));
+    let runner = |program: &str| {
+        let spawned = spawned.clone();
+        super::CmdLineRunner::new(program)
+            .args(["-c", "exit 3"])
+            .with_on_spawn(move || {
+                spawned.fetch_add(1, Ordering::SeqCst);
+            })
+    };
+    let cancelled = runner("sh").execute_async_with_cancel_check(|| true).await;
+    assert!(cancelled.is_err());
+    let missing = runner("mise-test-missing-program").execute_async().await;
+    assert!(missing.is_err());
+    assert_eq!(spawned.load(Ordering::SeqCst), 0);
+    // a command that starts and then fails has spawned
+    let failed = runner("sh").execute_async().await;
+    assert!(failed.is_err());
+    assert_eq!(spawned.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn test_execute_async_skips_pre_cancelled_command() {
     let err = super::CmdLineRunner::new("sh")
         .args(["-c", "exit 0"])
