@@ -52,3 +52,8 @@ mise run --output prefix plain
 assert_contains "mise tasks log plain" "plain"
 mise run --raw plain
 assert_fail_contains "mise tasks log plain" "no log for task plain"
+
+# logs are private to their owner
+log_file="$(mise tasks log pass --path)"
+assert_contains "stat -c %a $log_file" "600"
+assert_contains "stat -c %a $MISE_STATE_DIR/task-logs" "700"

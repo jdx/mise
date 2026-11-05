@@ -200,8 +200,9 @@ mise tasks log test --path   # print where the log is kept
 
 Each run replaces the task's previous log, and a log keeps only its last 4 MiB.
 Logs live under mise's state directory (`~/.local/state/mise/task-logs`), one
-per task per project. Values that mise redacts in the terminal are redacted in
-the log too. When a task fails under `replacing` or `timed`, mise prints the
+per task per project (a global task gets one per project it runs in), and only
+you can read them. Values that mise redacts in the terminal are redacted in the
+log too. A run that fails before its command starts keeps the previous log. When a task fails under `replacing` or `timed`, mise prints the
 log's path after the error.
 
 mise logs only output it reads. A `raw` or `interactive` task gets the terminal

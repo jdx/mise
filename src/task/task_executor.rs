@@ -538,8 +538,15 @@ impl TaskExecutor {
     /// Writes the run's log. A failed task whose style hid its output names the log, so
     /// the rest can be read without running the task again; styles that printed every
     /// line add nothing.
-    fn finish_run_log(&self, task: &Task, prefix: &str, run_log: &TaskRunLog, failed: bool) {
-        let Some(path) = run_log.finish(task) else {
+    fn finish_run_log(
+        &self,
+        config: &Config,
+        task: &Task,
+        prefix: &str,
+        run_log: &TaskRunLog,
+        failed: bool,
+    ) {
+        let Some(path) = run_log.finish(task, config) else {
             return;
         };
         if failed
@@ -1209,7 +1216,7 @@ impl TaskExecutor {
         }
         .await;
         if !self.dry_run {
-            self.finish_run_log(task, &prefix, &run_log, exec_result.is_err());
+            self.finish_run_log(config, task, &prefix, &run_log, exec_result.is_err());
         }
         exec_result?;
 
@@ -2437,7 +2444,6 @@ impl TaskExecutor {
             }
         }
         if logs_output {
-            run_log.mark_captured();
             let stdout = run_log.clone();
             let stderr = run_log.clone();
             cmd = cmd
@@ -2498,6 +2504,9 @@ impl TaskExecutor {
         }
         // Apply sandbox async (DNS resolution for macOS) before spawning.
         cmd.apply_sandbox().await?;
+        // Only now does this run replace the task's log: a run that failed before spawning
+        // anything says nothing about the task's output, so the last log stays.
+        run_log.mark_spawned(logs_output);
         let result = cmd
             .execute_async_with_cancel_check(|| {
                 !allow_during_interruption && crate::ui::ctrlc::is_cancelled()

@@ -48,7 +48,7 @@ impl TasksLog {
                 self.task
             );
         };
-        let path = task_run_log::log_path(&task);
+        let path = task_run_log::log_path(&task, &config);
         if self.path {
             miseprintln!("{}", path.display());
             return Ok(());
