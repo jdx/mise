@@ -274,7 +274,13 @@ impl TaskHistory {
         taken
             .into_iter()
             .map(|(_, mut run)| {
-                run.args = run.args.iter().map(|a| redact(a)).collect();
+                // Read before redacting: the env can finish resolving in between, and an
+                // argument redacted before its secret was registered must not be kept.
+                run.args = if run.env_resolved.load(Ordering::SeqCst) {
+                    run.args.iter().map(|a| redact(a)).collect()
+                } else {
+                    vec![]
+                };
                 let (status, exit_code) = match run.ended {
                     Some(ended) => (ended.status, ended.exit_code),
                     None => (RunStatus::Cancelled, None),
@@ -603,6 +609,20 @@ mod tests {
         assert_eq!(statuses.len(), 2);
         assert!(statuses.contains(&RunStatus::Ok));
         assert!(statuses.contains(&RunStatus::Cancelled));
+    }
+
+    #[test]
+    fn a_cancelled_run_whose_env_resolves_during_redaction_drops_its_args() {
+        let tmp = tempfile::tempdir().unwrap();
+        let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
+        let env_resolved = Arc::new(AtomicBool::new(false));
+        history.start("build", vec!["hunter2".into()], env_resolved.clone());
+        // the env finishes resolving, registering the secret, after the redactor saw it
+        let cancelled = history.take_cancelled(|a| {
+            env_resolved.store(true, Ordering::SeqCst);
+            a.to_string()
+        });
+        assert!(cancelled[0].args.is_empty());
     }
 
     #[cfg(unix)]
