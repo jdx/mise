@@ -39,7 +39,7 @@ pub struct WorkspaceGitRevisions {
 
 /// Changed workspace paths, remembering which source each came from so a path's
 /// before and after content is read from the right side.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WorkspaceChanges {
     pub paths: BTreeSet<PathBuf>,
     committed: BTreeSet<PathBuf>,
@@ -65,6 +65,30 @@ impl WorkspaceChanges {
             parts.push("untracked".to_string());
         }
         parts.join(", ")
+    }
+
+    /// Revisions for another checkout, such as a submodule, that compare the same kinds of
+    /// change as these changes did.
+    pub fn revisions_for(&self, base: &str, head: &str) -> WorkspaceGitRevisions {
+        WorkspaceGitRevisions {
+            base: base.to_string(),
+            head: head.to_string(),
+            sources: self.sources,
+        }
+    }
+
+    /// Revisions for another checkout that compare only the working-tree part of these
+    /// changes, or `None` when they include no working-tree change.
+    pub fn working_tree_revisions(&self) -> Option<WorkspaceGitRevisions> {
+        let sources = AffectedSources {
+            committed: false,
+            ..self.sources
+        };
+        sources.wants_working_tree().then(|| WorkspaceGitRevisions {
+            base: DEFAULT_HEAD.to_string(),
+            head: DEFAULT_HEAD.to_string(),
+            sources,
+        })
     }
 
     /// The (before, after) contents to compare for a path, one pair per source it changed in.

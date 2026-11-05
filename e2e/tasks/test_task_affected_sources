@@ -204,7 +204,7 @@ git commit -qm add-built
 mise run built
 : >affected.log
 mise run built
-assert "cat affected.log" ""
+assert "test ! -s affected.log"
 echo '# changed' >>scripts/built.sh
 mise run --affected --affected-uncommitted built
 assert "cat affected.log" "built"
@@ -232,3 +232,39 @@ echo changed >>nested/lib/a.txt
 output=$(cd nested && mise run --affected --affected-uncommitted --affected-explain --dry-run 'test:unit' ::: inner)
 assert_contains "echo \"$output\"" "changed source: src/lib.rs"
 assert_contains "echo \"$output\"" "changed source: lib/a.txt"
+git checkout -q src/lib.rs
+
+# A submodule compares the commits its gitlink records, since the parent's
+# commit IDs (such as $GITHUB_SHA in CI) do not exist there.
+upstream="$HOME/sub-upstream"
+mkdir -p "$upstream/lib"
+echo initial >"$upstream/lib/a.txt"
+git -C "$upstream" init -q
+git -C "$upstream" config user.email test@example.com
+git -C "$upstream" config user.name Test
+git -C "$upstream" add .
+git -C "$upstream" commit -qm initial
+git -c protocol.file.allow=always submodule add -q "$upstream" sub
+cat <<'EOF' >>mise.toml
+
+[tasks.sub]
+dir = "sub"
+sources = ["lib/**"]
+run = 'echo sub >> "$AFFECTED_LOG"'
+EOF
+git add .
+git commit -qm add-sub
+git -C sub config user.email test@example.com
+git -C sub config user.name Test
+echo changed >>sub/lib/a.txt
+git -C sub commit -qam sub-change
+git add sub
+git commit -qm bump-sub
+base=$(git rev-parse HEAD~1)
+head=$(git rev-parse HEAD)
+assert_contains "mise run --affected --affected-committed --affected-base $base --affected-head $head --affected-explain --dry-run sub" "changed source: lib/a.txt"
+
+# A task whose directory is in the submodule still sees changes to the parent
+# config that defines it, while the submodule is clean.
+echo '# comment' >>mise.toml
+assert_contains "mise run --affected --affected-uncommitted --affected-explain --dry-run sub" "changed task config: mise.toml"

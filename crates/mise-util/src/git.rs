@@ -491,6 +491,29 @@ impl Git {
             .into())
     }
 
+    /// Returns the object ID at `path` in `revision`, such as the commit a submodule's
+    /// gitlink records, or `None` when the revision has nothing there.
+    pub fn object_at(&self, revision: &str, path: &Path) -> Result<Option<String>> {
+        validate_revision("revision", revision)?;
+        let path = path
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        let spec = format!("{revision}:{path}");
+        let output = git_cmd!(&self.dir, "rev-parse", "--verify", "--quiet", &spec)
+            .stdout_capture()
+            .stderr_null()
+            .unchecked()
+            .run()
+            .wrap_err_with(|| format!("git rev-parse {spec} failed"))?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        let id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok((!id.is_empty()).then_some(id))
+    }
+
     /// Returns the root of the working tree that contains `self.dir`.
     pub fn toplevel(&self) -> Result<PathBuf> {
         Ok(git_cmd_read!(&self.dir, "rev-parse", "--show-toplevel")?

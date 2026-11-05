@@ -42,12 +42,12 @@ pub enum AffectedTaskReason {
     ArgumentSources,
 }
 
-/// The changed files of each Git checkout that holds a task, read once per checkout.
+/// The changed files of each Git checkout a task's files are in, read once per checkout.
 pub struct AffectedRepos<'a> {
     revisions: &'a WorkspaceGitRevisions,
     /// Canonical checkout roots and their changes; the first is the default checkout.
     repos: Vec<(PathBuf, WorkspaceChanges)>,
-    /// Which entry of `repos` holds each task directory looked up so far.
+    /// Which entry of `repos` holds each directory looked up so far.
     dirs: BTreeMap<PathBuf, usize>,
 }
 
@@ -73,27 +73,63 @@ impl<'a> AffectedRepos<'a> {
         self.repos[0].1.compared(self.revisions)
     }
 
-    fn for_dir(&mut self, dir: &Path) -> Result<(&Path, &BTreeSet<PathBuf>)> {
-        let index = match self.dirs.get(dir) {
-            Some(index) => *index,
-            None => {
-                let index = match checkout_root(dir) {
-                    Some(root) => match self.repos.iter().position(|(r, _)| *r == root) {
-                        Some(index) => index,
-                        None => {
-                            let changes = self.revisions.changed_paths(&root)?;
-                            self.repos.push((root, changes));
-                            self.repos.len() - 1
-                        }
-                    },
-                    None => 0,
-                };
-                self.dirs.insert(dir.to_path_buf(), index);
-                index
-            }
+    /// The index of the checkout that holds `dir`, or of the default checkout when no
+    /// checkout does.
+    fn index_for(&mut self, dir: &Path) -> usize {
+        if let Some(index) = self.dirs.get(dir) {
+            return *index;
+        }
+        let index = match checkout_root(dir) {
+            Some(root) => match self.repos.iter().position(|(r, _)| *r == root) {
+                Some(index) => index,
+                None => {
+                    let changes = self.nested_changes(&root);
+                    self.repos.push((root, changes));
+                    self.repos.len() - 1
+                }
+            },
+            None => 0,
         };
-        let (root, changes) = &self.repos[index];
-        Ok((root, &changes.paths))
+        self.dirs.insert(dir.to_path_buf(), index);
+        index
+    }
+
+    /// Changes in a checkout other than the default one, such as a submodule.
+    ///
+    /// The default checkout's revisions, such as `$GITHUB_SHA`, may not exist there. A
+    /// submodule of the default checkout compares the commits its gitlink records at the
+    /// base and head; any other checkout tries the same revision names. When neither
+    /// works, only the working tree counts, and only if it counted in the default checkout.
+    fn nested_changes(&self, root: &Path) -> WorkspaceChanges {
+        let (default_root, default_changes) = &self.repos[0];
+        let mut candidates = Vec::new();
+        if let Ok(relative) = root.strip_prefix(default_root) {
+            let git = Git::new(default_root);
+            if let (Ok(Some(base)), Ok(Some(head))) = (
+                git.object_at(&self.revisions.base, relative),
+                git.object_at(&self.revisions.head, relative),
+            ) {
+                candidates.push(default_changes.revisions_for(&base, &head));
+            }
+        }
+        candidates.push(default_changes.revisions_for(&self.revisions.base, &self.revisions.head));
+        candidates.extend(default_changes.working_tree_revisions());
+        for revisions in candidates {
+            match revisions.changed_paths(root) {
+                Ok(changes) => return changes,
+                Err(err) => debug!(
+                    "--affected: cannot compare {}...{} in {}: {err}",
+                    revisions.base,
+                    revisions.head,
+                    root.display()
+                ),
+            }
+        }
+        warn!(
+            "--affected: no changes could be read in {}; its tasks count as unchanged",
+            root.display()
+        );
+        WorkspaceChanges::default()
     }
 }
 
@@ -112,12 +148,14 @@ fn serialize_lossy<S: Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S
 
 /// Returns why the changed files affect `task`, or an empty set when they do not.
 ///
-/// Changes are read from the Git checkout that contains the task's directory, as the
-/// up-to-date check looks at the task's own files: a task in a submodule or a nested
-/// checkout sees that checkout's changes, and one in the parent sees the parent's. A
-/// task outside any checkout uses the one `mise` runs in. Freshness checks treat a task
-/// without `sources` as always stale, so such a task is affected by any change; with no
-/// change at all, nothing is.
+/// Changes are read from every Git checkout that holds one of the task's files: its
+/// directory, its config files and `file` script, and the leading directories of its
+/// `sources`. A task in a submodule therefore sees the submodule's changes, and also the
+/// parent's when it is defined there or its sources reach into it. Paths are reported
+/// relative to their own checkout, as Git reports them. A file outside every checkout
+/// counts against the checkout `mise` runs in. Freshness checks treat a task without
+/// `sources` as always stale, so such a task is affected by any change in those
+/// checkouts; with no change at all, nothing is.
 pub async fn affected_task_reasons(
     task: &Task,
     config: &Arc<Config>,
@@ -130,52 +168,98 @@ pub async fn affected_task_reasons(
     } else {
         dirs::CWD.clone().unwrap_or_default().join(cwd)
     });
-    let (repo_root, changes) = repos.for_dir(&cwd)?;
-    if changes.is_empty() {
-        return Ok(reasons);
-    }
-    if task.sources.is_empty() {
-        reasons.insert(AffectedTaskReason::NoSources);
-        return Ok(reasons);
-    }
-    if task
+    let config_paths = task
+        .config_sources()
+        .into_iter()
+        .map(|source| {
+            if source.is_absolute() {
+                source.to_path_buf()
+            } else {
+                cwd.join(source)
+            }
+        })
+        .collect::<Vec<_>>();
+    let file = task
+        .file_path(config)
+        .await?
+        .map(|file| lexical_normalize(&file));
+    let argument_sources = task
         .sources
         .iter()
-        .any(|source| super::tera_template_has_usage_ref(source))
-    {
-        reasons.insert(AffectedTaskReason::ArgumentSources);
-        return Ok(reasons);
-    }
+        .any(|source| super::tera_template_has_usage_ref(source));
     // Git reports each file by its path in the repository, with no symlink in it. The
     // up-to-date check reaches the same files through whatever links the task's directory
     // and patterns go through, so resolve those links before matching.
     let real_cwd = resolve_dirs(&cwd);
-    let patterns = task
-        .sources
-        .iter()
-        .map(|source| resolve_pattern(&cwd, source))
-        .collect::<Vec<_>>();
-    reasons.extend(
-        changed_sources(repo_root, &real_cwd, &patterns, changes)
-            .into_iter()
-            .map(|path| AffectedTaskReason::ChangedSource { path }),
+    let patterns = if argument_sources {
+        Vec::new()
+    } else {
+        task.sources
+            .iter()
+            .map(|source| resolve_pattern(&cwd, source))
+            .collect::<Vec<_>>()
+    };
+
+    let mut dirs = vec![cwd.clone()];
+    dirs.extend(
+        config_paths
+            .iter()
+            .chain(&file)
+            .filter_map(|p| p.parent().map(Path::to_path_buf)),
     );
-    for config_source in task.config_sources() {
-        let path = if config_source.is_absolute() {
-            config_source.to_path_buf()
-        } else {
-            cwd.join(config_source)
-        };
-        for path in changed_definition(repo_root, &path, changes) {
-            reasons.insert(AffectedTaskReason::TaskConfig { path });
+    dirs.extend(patterns.iter().map(|pattern| literal_dir(pattern)));
+    let indexes = dirs
+        .iter()
+        .map(|dir| repos.index_for(dir))
+        .collect::<BTreeSet<_>>();
+
+    let mut any_change = false;
+    for index in indexes {
+        let (repo_root, changes) = &repos.repos[index];
+        let changes = &changes.paths;
+        if changes.is_empty() {
+            continue;
+        }
+        any_change = true;
+        reasons.extend(
+            changed_sources(repo_root, &real_cwd, &patterns, changes)
+                .into_iter()
+                .map(|path| AffectedTaskReason::ChangedSource { path }),
+        );
+        for path in &config_paths {
+            for path in changed_definition(repo_root, path, changes) {
+                reasons.insert(AffectedTaskReason::TaskConfig { path });
+            }
+        }
+        if let Some(file) = &file {
+            for path in changed_definition(repo_root, file, changes) {
+                reasons.insert(AffectedTaskReason::TaskFile { path });
+            }
         }
     }
-    if let Some(file) = task.file_path(config).await? {
-        for path in changed_definition(repo_root, &lexical_normalize(&file), changes) {
-            reasons.insert(AffectedTaskReason::TaskFile { path });
-        }
+    if any_change && task.sources.is_empty() {
+        reasons.insert(AffectedTaskReason::NoSources);
+    } else if any_change && argument_sources {
+        reasons.insert(AffectedTaskReason::ArgumentSources);
     }
     Ok(reasons)
+}
+
+/// The directory a resolved pattern starts from: its components before the first glob.
+fn literal_dir(pattern: &str) -> PathBuf {
+    let body = pattern.strip_prefix('!').unwrap_or(pattern);
+    let mut dir = PathBuf::new();
+    for component in Path::new(body).components() {
+        if component
+            .as_os_str()
+            .to_string_lossy()
+            .contains(['*', '?', '[', '{'])
+        {
+            break;
+        }
+        dir.push(component);
+    }
+    dir
 }
 
 /// Returns the changed paths that name the file at `path`: the file itself, which Git
