@@ -1580,7 +1580,14 @@ impl Run {
                 ),
             };
             if let (Some(history), Some(id)) = (&this.task_history, history_run) {
-                history.ended(id);
+                // Provisional, for a `--timeout` that aborts this job before it records:
+                // the same rule as below, without what other jobs may still report.
+                let stopped = (ctrlc::is_cancelled() && !panicked)
+                    || result
+                        .as_ref()
+                        .is_err_and(|err| !panicked && Error::is_sigint(err));
+                let (status, exit_code) = history_status(&result, panicked, stopped);
+                history.ended(id, status, exit_code);
             }
             let otel_end = std::time::SystemTime::now();
             // If the task executed or restored outputs and has sources defined,
@@ -1679,24 +1686,16 @@ impl Run {
                     crate::cmd::CmdLineRunner::kill_all();
                 }
             }
+            // After a Ctrl-C, a task that fails was stopped by it: many programs exit
+            // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
+            // ends with "task sequence aborted". The run report and task history share
+            // this one answer, so they never disagree about a run.
+            let stopped = cancelled || (ctrlc::is_cancelled() && !panicked);
             if let (Some(history), Some(id)) = (&this.task_history, history_run) {
-                finish_task_run(
-                    history,
-                    &ctx.config,
-                    &task,
-                    id,
-                    &result,
-                    panicked,
-                    cancelled,
-                )
-                .await;
+                finish_task_run(history, &ctx.config, &task, id, &result, panicked, stopped).await;
             }
             if let (Some(report), Some(id)) = (&this.run_report, report_id) {
-                // After a Ctrl-C, a task that fails was stopped by it: many programs exit
-                // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
-                // ends with "task sequence aborted".
-                let cancelled = cancelled || (ctrlc::is_cancelled() && !panicked);
-                let (status, exit_code) = report_status(&result, panicked, cancelled);
+                let (status, exit_code) = report_status(&result, panicked, stopped);
                 report.finish(id, status, exit_code);
             }
             // Close the task's span with real timing and status.
@@ -2136,15 +2135,7 @@ async fn finish_task_run(
     panicked: bool,
     cancelled: bool,
 ) {
-    use crate::task::task_history::RunStatus;
-    let (status, exit_code) = match result {
-        Ok(outcome) if outcome.restored => (RunStatus::Cached, None),
-        Ok(outcome) if outcome.did_work => (RunStatus::Ok, Some(0)),
-        Ok(_) => (RunStatus::Skipped, None),
-        Err(_) if panicked => (RunStatus::Failed, Some(1)),
-        Err(err) if cancelled => (RunStatus::Cancelled, Error::get_exit_status(err)),
-        Err(err) => (RunStatus::Failed, Error::get_exit_status(err)),
-    };
+    let (status, exit_code) = history_status(result, panicked, cancelled);
     // Redacted again now that the task's own env has registered its secrets.
     let args = history_args(config, task);
     let history = history.clone();
@@ -2153,6 +2144,23 @@ async fn finish_task_run(
         tokio::task::spawn_blocking(move || history.finish(id, args, status, exit_code)).await
     {
         debug!("task history: {err}");
+    }
+}
+
+/// How a finished task job appears in task history.
+fn history_status(
+    result: &Result<crate::task::task_executor::TaskRunOutcome>,
+    panicked: bool,
+    cancelled: bool,
+) -> (crate::task::task_history::RunStatus, Option<i32>) {
+    use crate::task::task_history::RunStatus;
+    match result {
+        Ok(outcome) if outcome.restored => (RunStatus::Cached, None),
+        Ok(outcome) if outcome.did_work => (RunStatus::Ok, Some(0)),
+        Ok(_) => (RunStatus::Skipped, None),
+        Err(_) if panicked => (RunStatus::Failed, Some(1)),
+        Err(err) if cancelled => (RunStatus::Cancelled, Error::get_exit_status(err)),
+        Err(err) => (RunStatus::Failed, Error::get_exit_status(err)),
     }
 }
 

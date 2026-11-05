@@ -154,8 +154,16 @@ struct PendingRun {
     env_resolved: Arc<AtomicBool>,
     started: SystemTime,
     timer: Instant,
-    /// When the task returned, set by [`TaskHistory::ended`] before its result is reported.
-    ended: Option<Duration>,
+    /// How long the task took and how it ended, set by [`TaskHistory::ended`] as soon as
+    /// its task returns.
+    ended: Option<Ended>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Ended {
+    duration: Duration,
+    status: RunStatus,
+    exit_code: Option<i32>,
 }
 
 /// A run [`TaskHistory::start`] is waiting to hear the end of.
@@ -222,11 +230,17 @@ impl TaskHistory {
         PendingRunId(id)
     }
 
-    /// Note that a started run's task returned. Called as soon as it does, with no await
-    /// before it, so a run that ended before `--timeout` keeps its own result.
-    pub fn ended(&self, id: PendingRunId) {
+    /// Note that a started run's task returned, and how. Called as soon as it does, with no
+    /// await before it, so a run that ended before `--timeout` is recorded with its own
+    /// result even if its job is aborted before [`Self::finish`].
+    pub fn ended(&self, id: PendingRunId, status: RunStatus, exit_code: Option<i32>) {
         if let Some(run) = self.pending.lock().unwrap().get_mut(&id.0) {
-            run.ended.get_or_insert(run.timer.elapsed());
+            let duration = run.timer.elapsed();
+            run.ended.get_or_insert(Ended {
+                duration,
+                status,
+                exit_code,
+            });
         }
     }
 
@@ -246,28 +260,26 @@ impl TaskHistory {
         self.record(run.into_run(status, exit_code));
     }
 
-    /// Mark every run still going as cancelled, for a run stopped before its jobs report.
-    /// Only memory is touched, so the caller can stop the tasks at once and write the runs
-    /// with [`Self::record_cancelled`] afterwards; a job that reports later is ignored.
-    /// A run whose task had already returned is left for its job to record.
+    /// Take every run not yet recorded, for a run stopped before its jobs report: one whose
+    /// task had returned keeps the result [`Self::ended`] noted, and one still going is
+    /// cancelled. Only memory is touched, so the caller can stop the tasks at once and write
+    /// the runs with [`Self::record_cancelled`] afterwards; a job that reports later is
+    /// ignored.
     pub fn take_cancelled(&self, redact: impl Fn(&str) -> String) -> Vec<TaskRun> {
         let taken: Vec<_> = {
             let mut pending = self.pending.lock().unwrap();
             self.cancelled.store(true, Ordering::SeqCst);
-            let ids: Vec<u64> = pending
-                .iter()
-                .filter(|(_, run)| run.ended.is_none())
-                .map(|(id, _)| *id)
-                .collect();
-            ids.iter()
-                .filter_map(|id| pending.remove_entry(id))
-                .collect()
+            pending.drain().collect()
         };
         taken
             .into_iter()
             .map(|(_, mut run)| {
                 run.args = run.args.iter().map(|a| redact(a)).collect();
-                run.into_run(RunStatus::Cancelled, None)
+                let (status, exit_code) = match run.ended {
+                    Some(ended) => (ended.status, ended.exit_code),
+                    None => (RunStatus::Cancelled, None),
+                };
+                run.into_run(status, exit_code)
             })
             .collect()
     }
@@ -368,7 +380,10 @@ impl TaskHistory {
 
 impl PendingRun {
     fn into_run(self, status: RunStatus, exit_code: Option<i32>) -> TaskRun {
-        let duration = self.ended.unwrap_or_else(|| self.timer.elapsed());
+        let duration = self
+            .ended
+            .map(|ended| ended.duration)
+            .unwrap_or_else(|| self.timer.elapsed());
         let args = if self.env_resolved.load(Ordering::SeqCst) {
             self.args
         } else {
@@ -598,15 +613,17 @@ mod tests {
         let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
         let returned = history.start("build", vec![], resolved());
         let running = history.start("build", vec![], resolved());
-        history.ended(returned);
-        let cancelled = history.take_cancelled(|a| a.to_string());
-        assert_eq!(cancelled.len(), 1);
-        history.record_cancelled(cancelled, Duration::from_secs(1));
-        // the job that had returned reports its own result; the killed one is ignored
-        history.finish(returned, vec![], RunStatus::Ok, Some(0));
+        history.ended(returned, RunStatus::Ok, Some(0));
+        // the timeout writes both: the one whose task returned with its own result, even
+        // though its job is aborted before it reports, and the other as cancelled
+        let taken = history.take_cancelled(|a| a.to_string());
+        assert_eq!(taken.len(), 2);
+        history.record_cancelled(taken, Duration::from_secs(1));
+        // late reports from either job are ignored
+        history.finish(returned, vec![], RunStatus::Failed, Some(1));
         history.finish(running, vec![], RunStatus::Failed, Some(143));
         let late = history.start("build", vec![], resolved());
-        history.ended(late);
+        history.ended(late, RunStatus::Failed, Some(1));
         history.finish(late, vec![], RunStatus::Failed, Some(1));
         let mut statuses: Vec<_> = history
             .runs(Some("build"))

@@ -27,6 +27,13 @@ depends = ["ok"]
 [tasks.echo]
 run = 'true'
 
+[tasks.trapped]
+run = """
+trap 'exit 1' INT
+touch "$TRAPPED_READY"
+while :; do sleep 0.1; done
+"""
+
 [tasks.slow]
 run = 'sleep 30; echo'
 env = { SLOW_TOKEN = { value = "slow-secret-e2e", redact = true } }
@@ -101,3 +108,13 @@ assert_fail "mise run --timeout 1s slow slow-secret-e2e"
 assert "mise tasks history slow --json | jq -c '[.[].status]'" '["cancelled"]'
 assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "slow-secret-e2e"
 assert "mise tasks history slow --json | jq -r '.[0].args[0]'" "[redacted]"
+
+# A task that traps Ctrl-C and exits non-zero was stopped by it: history calls
+# it cancelled, as the run report does.
+trapped_ready="$TMPDIR/task-history-trapped-ready"
+TRAPPED_READY="$trapped_ready" mise run trapped >/dev/null 2>&1 &
+mise_pid=$!
+wait_for_file "$trapped_ready" "trapped task" 30 "$mise_pid"
+kill -INT "$mise_pid"
+wait "$mise_pid" || true
+assert "mise tasks history trapped --json | jq -c '[.[].status]'" '["cancelled"]'
