@@ -59,6 +59,7 @@ pub mod task_lock;
 pub mod task_output;
 pub mod task_output_handler;
 pub mod task_results_display;
+pub mod task_run_log;
 pub mod task_scheduler;
 mod task_script_parser;
 pub mod task_source_checker;

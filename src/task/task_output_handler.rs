@@ -717,6 +717,15 @@ impl OutputHandler {
         buffer.push(KeepOrderLine::Stderr(prefix.to_string(), line.to_string()));
     }
 
+    /// Whether `summary` dropped some of a running task's output to stay in its limit.
+    pub(crate) fn summary_truncated(&self, task: &Task) -> bool {
+        let state = self.summary_state.lock().unwrap();
+        state
+            .buffers
+            .get(task)
+            .is_some_and(|buffer| buffer.truncated)
+    }
+
     /// Note that a task is up to date and its cached output is replayed.
     pub(crate) fn summary_up_to_date(&self, task: &Task) {
         let mut state = self.summary_state.lock().unwrap();

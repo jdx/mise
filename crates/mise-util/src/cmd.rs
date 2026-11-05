@@ -112,6 +112,197 @@ where
 
 type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
 
+/// The longest line mise reads from a command in one piece. Output with no newline is
+/// passed on in pieces of about this size, so a command cannot make mise hold an unbounded
+/// line.
+const MAX_LINE_BYTES: usize = 1024 * 1024;
+
+/// The longest URL scheme and authority a cut keeps whole, so the URL credential redaction
+/// that task logs apply sees `scheme://user:pw@` in one piece.
+const URL_AUTHORITY_BYTES: usize = 2048;
+
+/// Like tokio's `Lines`, but a line longer than `max` bytes arrives in pieces. The redactor
+/// sees one piece at a time, so where a piece ends is chosen with its match set; see
+/// [`Self::cut`].
+struct CappedLines<R> {
+    reader: R,
+    max: usize,
+    /// The command's redactor joined with the global one: what every piece is redacted with.
+    redactor: Redactor,
+    /// How far from `max` a cut may move: the longest secret or a URL authority.
+    reach: usize,
+    /// Bytes read past the previous cut or newline: the start of the next piece.
+    carry: Vec<u8>,
+}
+
+impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
+    fn new(reader: R, redactor: Redactor) -> Self {
+        Self::with_max(reader, MAX_LINE_BYTES, redactor)
+    }
+
+    fn with_max(reader: R, max: usize, redactor: Redactor) -> Self {
+        let reach = redactor.longest_pattern().max(URL_AUTHORITY_BYTES);
+        Self {
+            reader,
+            max,
+            redactor,
+            reach,
+            carry: Vec::new(),
+        }
+    }
+
+    async fn next_line(&mut self) -> std::io::Result<Option<String>> {
+        let mut buf = std::mem::take(&mut self.carry);
+        // Enough past `max` to see every match a cut near it could touch, and a `\r\n`.
+        let want = self.max + 3 * self.reach + 2;
+        if !buf.contains(&b'\n') && buf.len() < want {
+            (&mut self.reader)
+                .take((want - buf.len()) as u64)
+                .read_until(b'\n', &mut buf)
+                .await?;
+        }
+        if buf.is_empty() {
+            return Ok(None);
+        }
+        let newline = buf
+            .iter()
+            .position(|b| *b == b'\n')
+            // A line exactly `max` long may end with `\r\n`, one byte past `max`.
+            .filter(|at| *at <= self.max || (*at == self.max + 1 && buf[self.max] == b'\r'));
+        if let Some(at) = newline {
+            self.carry = buf.split_off(at + 1);
+            buf.pop();
+            if buf.last() == Some(&b'\r') {
+                buf.pop();
+            }
+        } else if buf.len() > self.max {
+            let cut = self.cut(&buf);
+            self.carry = buf.split_off(cut);
+            // A cut right before the line's end ends the line there.
+            if self.carry.first() == Some(&b'\n') {
+                self.carry.remove(0);
+                if buf.last() == Some(&b'\r') {
+                    buf.pop();
+                }
+            } else if self.carry.starts_with(b"\r\n") {
+                self.carry.drain(..2);
+            }
+        }
+        // Otherwise the output ended without a newline, and `buf` is its last line.
+        String::from_utf8(buf)
+            .map(Some)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+    }
+
+    /// Where to end a piece of `buf`, which is longer than `max` and holds no newline in
+    /// its first `max` bytes.
+    ///
+    /// Invariant: a cut never exposes a byte that redacting the whole line would hide. The
+    /// matches are the redactor's own (`Redactor::match_spans`, the overlapping matches that
+    /// `redact` replaces), so the two cannot drift apart. A cut is safe when every match it
+    /// crosses is still covered, on each side, by matches that lie wholly on that side: then
+    /// redacting each piece hides exactly the bytes redacting the line hides. (The text can
+    /// differ in how many `[redacted]` markers it shows: with `aaaa` registered, a run of
+    /// `a` that the line would redact as one is cut at an `aaaa` boundary and redacted per
+    /// piece. Keeping such a run whole would let one line grow without bound.) A URL
+    /// authority that holds credentials is never cut, so its userinfo is redacted too.
+    ///
+    /// The cut is the safe character boundary closest below `max`, else the closest above it,
+    /// within `reach` of `max`. Matches are found once per cut, in a window of a few times
+    /// `reach` around `max`, so the total is linear in the output. If no position in reach is
+    /// safe, which takes a chain of distinct overlapping secrets longer than `reach` with no
+    /// point where one ends as another starts, the piece ends at `max`.
+    fn cut(&self, buf: &[u8]) -> usize {
+        let reach = self.reach;
+        let from = self.max.saturating_sub(3 * reach);
+        let to = (self.max + 3 * reach).min(buf.len());
+        let window = &buf[from..to];
+        let mut spans: Vec<(usize, usize)> = self
+            .redactor
+            .match_spans(window)
+            .into_iter()
+            .map(|(s, e)| (from + s, from + e))
+            .collect();
+        spans.sort_unstable();
+        let urls: Vec<(usize, usize)> = url_authorities(window)
+            .map(|(s, e)| (from + s, from + e))
+            .collect();
+        let longest = self.redactor.longest_pattern();
+        // The piece may run to the end of what was read, but not past the line's `\n`.
+        let end = buf.len() - usize::from(buf.last() == Some(&b'\n'));
+        let boundary = |c: usize| c > 0 && (c == end || (c < end && (buf[c] & 0xC0) != 0x80));
+        let below = (self.max.saturating_sub(reach - 1)..=self.max).rev();
+        let above = self.max + 1..=(self.max + reach).min(end);
+        below
+            .chain(above)
+            .find(|&c| boundary(c) && cut_is_safe(&spans, &urls, longest, c))
+            .unwrap_or_else(|| match std::str::from_utf8(&buf[..self.max]) {
+                Err(err) if err.error_len().is_none() => err.valid_up_to(),
+                _ => self.max,
+            })
+    }
+}
+
+/// Whether cutting at `c` exposes no byte of a match, given `spans` (sorted, none longer than
+/// `longest`) and URL authorities `urls`. See [`CappedLines::cut`].
+fn cut_is_safe(
+    spans: &[(usize, usize)],
+    urls: &[(usize, usize)],
+    longest: usize,
+    c: usize,
+) -> bool {
+    if urls.iter().any(|&(s, e)| s < c && c < e) {
+        return false;
+    }
+    // Only matches starting within `2 * longest` of `c` can cross it or cover one that does.
+    let lo = spans.partition_point(|&(s, _)| s + 2 * longest < c);
+    let hi = spans.partition_point(|&(s, _)| s < c + longest);
+    let near = &spans[lo..hi];
+    let left: Vec<(usize, usize)> = near.iter().copied().filter(|&(_, e)| e <= c).collect();
+    let right: Vec<(usize, usize)> = near.iter().copied().filter(|&(s, _)| s >= c).collect();
+    near.iter()
+        .filter(|&&(s, e)| s < c && c < e)
+        .all(|&(s, e)| covers(&left, s, c) && covers(&right, c, e))
+}
+
+/// Whether `spans`, sorted by start, cover every byte of `from..to`.
+fn covers(spans: &[(usize, usize)], from: usize, to: usize) -> bool {
+    let mut reached = from;
+    for &(s, e) in spans {
+        if s > reached {
+            break;
+        }
+        reached = reached.max(e);
+    }
+    reached >= to
+}
+
+/// The `scheme://authority` spans in `buf` whose authority holds credentials (an `@`), each
+/// at most [`URL_AUTHORITY_BYTES`] long.
+fn url_authorities(buf: &[u8]) -> impl Iterator<Item = (usize, usize)> + '_ {
+    buf.windows(3)
+        .enumerate()
+        .filter(|(_, w)| *w == b"://")
+        .filter_map(move |(at, _)| {
+            let scheme = buf[..at]
+                .iter()
+                .rev()
+                .take(32)
+                .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
+                .count();
+            let start = at - scheme;
+            let authority = &buf[at + 3..];
+            let len = authority
+                .iter()
+                .take(URL_AUTHORITY_BYTES)
+                .position(|b| matches!(b, b'/' | b'?' | b'#') || b.is_ascii_whitespace())
+                .unwrap_or(authority.len().min(URL_AUTHORITY_BYTES));
+            authority[..len]
+                .contains(&b'@')
+                .then_some((start, at + 3 + len))
+        })
+}
+
 fn chain_observers<'a, F: Fn(&str) + Send + 'a>(
     previous: Option<OutputObserver<'a>>,
     next: F,
@@ -139,6 +330,8 @@ pub struct CmdLineRunner<'a> {
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
     stderr_as_stdout: bool,
     observe_stdout: Option<OutputObserver<'a>>,
+    /// Called once, after the process started and before its output is read.
+    on_spawn: Option<Box<dyn FnOnce() + Send + 'a>>,
     observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
@@ -903,6 +1096,7 @@ impl<'a> CmdLineRunner<'a> {
             on_stderr: None,
             stderr_as_stdout: false,
             observe_stdout: None,
+            on_spawn: None,
             observe_stderr: None,
             timeout: None,
             sandbox: None,
@@ -1042,6 +1236,19 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    /// This command's redactor joined with the global one: every value a line of output may
+    /// be redacted for, so [`CappedLines`] cuts a line only where redaction allows.
+    fn line_redactor(&self) -> Redactor {
+        let global = crate::redactions::GLOBAL_REDACTOR
+            .lock()
+            .unwrap()
+            .patterns_arc();
+        if global.is_empty() {
+            return self.redactor.clone();
+        }
+        self.redactor.with_additional(global.iter().cloned())
+    }
+
     pub fn with_on_stdout<F: Fn(String) + Send + 'a>(mut self, on_stdout: F) -> Self {
         self.on_stdout = Some(Box::new(on_stdout));
         self
@@ -1068,6 +1275,13 @@ impl<'a> CmdLineRunner<'a> {
     /// Add an observer for each stderr line. See [`Self::with_stdout_observer`].
     pub fn with_stderr_observer<F: Fn(&str) + Send + 'a>(mut self, observer: F) -> Self {
         self.observe_stderr = Some(chain_observers(self.observe_stderr.take(), observer));
+        self
+    }
+
+    /// Run `on_spawn` once the process has started. It does not run when the command is
+    /// cancelled first or fails to start, such as a missing program or a permission error.
+    pub fn with_on_spawn<F: FnOnce() + Send + 'a>(mut self, on_spawn: F) -> Self {
+        self.on_spawn = Some(Box::new(on_spawn));
         self
     }
 
@@ -1509,11 +1723,13 @@ impl<'a> CmdLineRunner<'a> {
         }
         trace!("Started process: {id} for {}", self.get_program());
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let line_redactor = self.line_redactor();
         if let Some(stdout) = cp.stdout.take() {
             let name = self.to_string();
             let tx = tx.clone();
+            let line_redactor = line_redactor.clone();
             tokio::spawn(async move {
-                let mut lines = TokioBufReader::new(stdout).lines();
+                let mut lines = CappedLines::new(TokioBufReader::new(stdout), line_redactor);
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {
@@ -1531,8 +1747,9 @@ impl<'a> CmdLineRunner<'a> {
         if let Some(stderr) = cp.stderr.take() {
             let name = self.to_string();
             let tx = tx.clone();
+            let line_redactor = line_redactor.clone();
             tokio::spawn(async move {
-                let mut lines = TokioBufReader::new(stderr).lines();
+                let mut lines = CappedLines::new(TokioBufReader::new(stderr), line_redactor);
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {
@@ -2153,10 +2370,19 @@ impl<'a> CmdLineRunner<'a> {
         true
     }
 
+    /// Spawns the command, then runs the [`Self::with_on_spawn`] callback once it started.
+    fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+        let child = self.spawn_std_child_with_etxtbsy_retry()?;
+        if let Some(on_spawn) = self.on_spawn.take() {
+            on_spawn();
+        }
+        Ok(child)
+    }
+
     /// Retry spawning a process if it fails with ETXTBSY (Text file busy).
     /// This can happen on Linux when executing a binary that was just written/extracted,
     /// as the file descriptor may not be fully closed yet.
-    fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+    fn spawn_std_child_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
         let mut leader = self.prepare_spawn();
         #[cfg(windows)]
         {
@@ -2193,7 +2419,16 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
+    /// Spawns the command, then runs the [`Self::with_on_spawn`] callback once it started.
     async fn spawn_async_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
+        let child = self.spawn_child_with_etxtbsy_retry().await?;
+        if let Some(on_spawn) = self.on_spawn.take() {
+            on_spawn();
+        }
+        Ok(child)
+    }
+
+    async fn spawn_child_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
         let mut leader = self.prepare_spawn();
         #[cfg(windows)]
         {

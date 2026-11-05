@@ -3406,6 +3406,11 @@
               "description": "How long a task waits for a lock another run holds before it fails.",
               "type": "string"
             },
+            "logs": {
+              "default": false,
+              "description": "Keep the output of each task's last run, for `mise tasks log`.",
+              "type": "boolean"
+            },
             "monorepo_depth": {
               "default": 5,
               "description": "Maximum directory depth for automatic monorepo discovery, which is deprecated.",

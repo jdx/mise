@@ -4349,6 +4349,20 @@ env = "MISE_TASK_LOCK_TIMEOUT"
 optional = true
 type = "Duration"
 
+[task.logs]
+default = false
+description = "Keep the output of each task's last run, for `mise tasks log`."
+docs = """
+When on, mise saves the combined stdout and stderr of each task's most recent
+run, redacted, under its state directory, and `mise tasks log <task>` prints
+it. Each run replaces the task's previous log, which keeps its last 4 MiB.
+Output that goes straight to the terminal (`raw`, `interactive`, or
+`interleave` with nothing to redact) is not logged. See
+[Read the output of the last run](/tasks/running-tasks.html#read-the-output-of-the-last-run).
+"""
+env = "MISE_TASK_LOGS"
+type = "Bool"
+
 [task.monorepo_depth]
 default = 5
 description = "Maximum directory depth for automatic monorepo discovery, which is deprecated."

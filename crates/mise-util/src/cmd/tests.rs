@@ -464,6 +464,223 @@ async fn test_cmd_line_runner_read_bounded() {
 }
 
 #[tokio::test]
+async fn test_on_spawn_runs_only_once_the_process_started() {
+    let spawned = Arc::new(AtomicUsize::new(0));
+    let runner = |program: &str| {
+        let spawned = spawned.clone();
+        super::CmdLineRunner::new(program)
+            .args(["-c", "exit 3"])
+            .with_on_spawn(move || {
+                spawned.fetch_add(1, Ordering::SeqCst);
+            })
+    };
+    let cancelled = runner("sh").execute_async_with_cancel_check(|| true).await;
+    assert!(cancelled.is_err());
+    let missing = runner("mise-test-missing-program").execute_async().await;
+    assert!(missing.is_err());
+    assert_eq!(spawned.load(Ordering::SeqCst), 0);
+    // a command that starts and then fails has spawned
+    let failed = runner("sh").execute_async().await;
+    assert!(failed.is_err());
+    assert_eq!(spawned.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_on_spawn_runs_for_a_synchronous_execute() {
+    let spawned = Arc::new(AtomicUsize::new(0));
+    let counter = spawned.clone();
+    super::CmdLineRunner::new("sh")
+        .args(["-c", "exit 0"])
+        .with_on_spawn(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })
+        .execute()
+        .unwrap();
+    assert_eq!(spawned.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn test_capped_lines_split_a_long_line_on_character_boundaries() {
+    let input = "ab\r\néééé\nlast".as_bytes();
+    let mut lines = super::CappedLines::with_max(input, 5, Default::default());
+    let mut seen = Vec::new();
+    while let Some(line) = lines.next_line().await.unwrap() {
+        seen.push(line);
+    }
+    // "éééé\n" is 9 bytes: a 5-byte piece would cut the third "é", so it moves on
+    assert_eq!(seen, ["ab", "éé", "éé", "last"]);
+
+    // a line exactly the limit long is one line, not a line and an empty one
+    let mut lines = super::CappedLines::with_max("abcde\nf".as_bytes(), 5, Default::default());
+    assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("abcde"));
+    assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("f"));
+    assert_eq!(lines.next_line().await.unwrap(), None);
+
+    // so is one that ends with CRLF, whose `\r` lies past the limit
+    let pieces = capped_pieces(b"abcde\r\nf\r\n", Some(5), &[]).await;
+    assert_eq!(pieces, ["abcde", "f"]);
+}
+
+#[tokio::test]
+async fn test_capped_lines_bound_output_without_newlines() {
+    let input = vec![b'x'; super::MAX_LINE_BYTES * 3 + 7];
+    let mut lines = super::CappedLines::new(input.as_slice(), Default::default());
+    let mut lengths = Vec::new();
+    while let Some(line) = lines.next_line().await.unwrap() {
+        lengths.push(line.len());
+    }
+    let max = super::MAX_LINE_BYTES;
+    assert_eq!(lengths, [max, max, max, 7]);
+}
+
+async fn capped_pieces(input: &[u8], max: Option<usize>, secrets: &[&str]) -> Vec<String> {
+    let redactor = crate::redactions::Redactor::new(secrets.iter().map(|s| s.to_string()));
+    let mut lines = match max {
+        Some(max) => super::CappedLines::with_max(input, max, redactor),
+        None => super::CappedLines::new(input, redactor),
+    };
+    let mut pieces = Vec::new();
+    while let Some(piece) = lines.next_line().await.unwrap() {
+        pieces.push(piece);
+    }
+    pieces
+}
+
+#[tokio::test]
+async fn test_capped_lines_never_cut_a_secret_at_the_limit() {
+    let secret = "s3cr3t-ToKeN-value";
+    let max = super::MAX_LINE_BYTES;
+    // the secret starts 5 bytes before the cut, so a plain cut would split it
+    let input = format!("{}{secret}{}", "x".repeat(max - 5), "y".repeat(100));
+    let pieces = capped_pieces(input.as_bytes(), None, &[secret]).await;
+    assert_eq!(pieces.concat(), input, "no output lost or repeated");
+    assert!(pieces.iter().all(|piece| piece.len() < max + secret.len()));
+    let redactor = crate::redactions::Redactor::new([secret.to_string()]);
+    let shown: Vec<String> = pieces.iter().map(|piece| redactor.redact(piece)).collect();
+    assert_eq!(shown.concat().matches("[redacted]").count(), 1);
+    for part in ["s3c", "ToKeN", "value", "t-T"] {
+        assert!(
+            shown.iter().all(|piece| !piece.contains(part)),
+            "{part} shown"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_capped_lines_keep_overlapping_secrets_and_characters_whole() {
+    // "é" is bytes 8 and 9, so 9 is no boundary; 8, 7 and 6 would expose part of "bcd" or
+    // "cdé", so the cut moves back to 5, where both start whole in the next piece
+    let input = "aaaaabcdéfff";
+    let pieces = capped_pieces(input.as_bytes(), Some(9), &["bcd", "cdé"]).await;
+    assert_eq!(pieces, ["aaaaa", "bcdéfff"]);
+    // a secret longer than a piece stays whole, in one longer piece
+    let pieces = capped_pieces(b"abcdefgh-z", Some(3), &["abcdefgh"]).await;
+    assert_eq!(pieces[0], "abcdefgh");
+    assert_eq!(pieces.concat(), "abcdefgh-z");
+}
+
+/// Which bytes of `text` redacting it would hide.
+fn hidden(redactor: &crate::redactions::Redactor, text: &str) -> Vec<bool> {
+    let mut mask = vec![false; text.len()];
+    for (s, e) in redactor.match_spans(text.as_bytes()) {
+        mask[s..e].iter_mut().for_each(|hidden| *hidden = true);
+    }
+    mask
+}
+
+#[tokio::test]
+async fn test_capped_lines_keep_distinct_overlapping_secrets_whole() {
+    let redactor = crate::redactions::Redactor::new(["abcde".into(), "cdefgh".into()]);
+    let pieces = capped_pieces(b"xabcdefghy", Some(5), &["abcde", "cdefgh"]).await;
+    assert_eq!(pieces, ["x", "abcdefgh", "y"]);
+    let shown: String = pieces.iter().map(|p| redactor.redact(p)).collect();
+    assert_eq!(shown, redactor.redact("xabcdefghy"));
+
+    let redactor = crate::redactions::Redactor::new(["secret".into(), "secret-long".into()]);
+    for max in 1..14 {
+        let pieces = capped_pieces(b"zzsecret-longzz", Some(max), &["secret", "secret-long"]).await;
+        let shown: String = pieces.iter().map(|p| redactor.redact(p)).collect();
+        assert!(!shown.contains("-long"), "max {max}: {shown}");
+        assert!(!shown.contains("secret"), "max {max}: {shown}");
+    }
+}
+
+#[tokio::test]
+async fn test_capped_lines_hide_what_redacting_the_whole_line_hides() {
+    let cases: &[(&str, &[&str])] = &[
+        ("xxabcdefghyyabcdezzcdefgh", &["abcde", "cdefgh"]),
+        (
+            "..secret-long..secret..secret-longer",
+            &["secret", "secret-long"],
+        ),
+        ("aaaaaaaaaaaaaaaaaaaaaaaaab", &["aaaa"]),
+        ("abababababab-ba-ab", &["aba", "bab"]),
+        ("ééabcéédéabcé", &["abcé", "édé"]),
+        ("no secrets in this line at all", &["zzz"]),
+    ];
+    for (line, secrets) in cases {
+        let redactor = crate::redactions::Redactor::new(secrets.iter().map(|s| s.to_string()));
+        let want = hidden(&redactor, line);
+        for max in 1..=line.len() + 1 {
+            // the line alone, and ended by `\n` or `\r\n`, which must add no empty line
+            for ending in ["", "\n", "\r\n"] {
+                let input = format!("{line}{ending}");
+                let pieces = capped_pieces(input.as_bytes(), Some(max), secrets).await;
+                if !ending.is_empty() && max >= 4 {
+                    // and the line after it starts right after the line end
+                    let input = format!("{line}{ending}next");
+                    let mut more = capped_pieces(input.as_bytes(), Some(max), secrets).await;
+                    assert_eq!(more.pop().as_deref(), Some("next"), "max {max} {ending:?}");
+                    assert_eq!(more, pieces, "max {max} {ending:?}");
+                }
+                assert_eq!(
+                    pieces.concat(),
+                    *line,
+                    "max {max} {ending:?}: lost or repeated output: {pieces:?}"
+                );
+                let got: Vec<bool> = pieces.iter().flat_map(|p| hidden(&redactor, p)).collect();
+                assert_eq!(got, want, "max {max} {ending:?}: {pieces:?}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_capped_lines_keep_url_credentials_whole() {
+    let line = "fetch https://bob:hunter2@example.com/x done";
+    for max in 1..line.len() {
+        let pieces = capped_pieces(line.as_bytes(), Some(max), &[]).await;
+        assert_eq!(pieces.concat(), line);
+        for piece in &pieces {
+            let shown = crate::redactions::redact_url_userinfo(piece);
+            assert!(!shown.contains("hunter2"), "max {max}: {pieces:?}");
+            assert!(!shown.contains("bob"), "max {max}: {pieces:?}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_capped_lines_cut_a_run_of_a_self_overlapping_secret_in_linear_time() {
+    // every position of the run starts an "aaaa", so each cut lands inside one
+    let input = vec![b'a'; super::MAX_LINE_BYTES * 4 + 3];
+    let started = std::time::Instant::now();
+    let pieces = capped_pieces(&input, None, &["aaaa"]).await;
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "{elapsed:?}"
+    );
+    assert_eq!(pieces.concat().len(), input.len());
+    // each cut moves forward past one occurrence, so pieces stay full-sized
+    assert!(pieces.len() <= 5, "{} pieces", pieces.len());
+    assert!(
+        pieces
+            .iter()
+            .all(|piece| piece.len() < super::MAX_LINE_BYTES + 4)
+    );
+}
+
+#[tokio::test]
 async fn test_execute_async_skips_pre_cancelled_command() {
     let err = super::CmdLineRunner::new("sh")
         .args(["-c", "exit 0"])
