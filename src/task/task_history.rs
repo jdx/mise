@@ -287,9 +287,14 @@ impl TaskHistory {
     /// Write runs from [`Self::take_cancelled`] within `budget` in all: mise is exiting, so
     /// each write waits for its lock only for the time left, and the runs left when it runs
     /// out are skipped and logged. Runs of one task share a lock, so a wait per run would
-    /// add up.
+    /// add up. Every run first gets one attempt that does not wait, so a held lock cannot
+    /// use up the budget of the tasks whose locks are free.
     pub fn record_cancelled(&self, runs: Vec<TaskRun>, budget: Duration) {
         let deadline = Instant::now() + budget;
+        let runs: Vec<TaskRun> = runs
+            .into_iter()
+            .filter(|run| self.try_record_with(run.clone(), Duration::ZERO).is_err())
+            .collect();
         let total = runs.len();
         for (i, run) in runs.into_iter().enumerate() {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -658,15 +663,19 @@ mod tests {
         std::thread::scope(|s| {
             s.spawn(|| {
                 let started = Instant::now();
-                let runs = (0..10)
+                let mut runs: Vec<_> = (0..10)
                     .map(|i| run("build", i, 1, RunStatus::Cancelled))
                     .collect();
+                // a run of another task, whose lock is free, comes after the held ones
+                runs.push(run("test", 20, 1, RunStatus::Cancelled));
                 // one budget for all ten, not 200ms each
                 history.record_cancelled(runs, Duration::from_millis(200));
                 assert!(started.elapsed() < Duration::from_secs(1));
             });
         });
         assert!(history.runs(Some("build")).unwrap().is_empty());
+        // the held lock did not use up the free one's chance
+        assert_eq!(history.runs(Some("test")).unwrap().len(), 1);
     }
 
     #[test]
