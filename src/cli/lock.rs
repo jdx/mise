@@ -1811,10 +1811,11 @@ impl Lock {
             };
             // A config bump rewrites the request, so bind what the config will
             // say rather than the version argument that caused the bump.
+            // The last argument for a tool wins, as it does for the config write.
             let specifier = run
                 .config_bumps
                 .iter()
-                .find(|bump| {
+                .rfind(|bump| {
                     bump.tool_name == ba.short
                         && tv.request.source().path() == Some(bump.config_path.as_path())
                 })
@@ -1831,6 +1832,11 @@ impl Lock {
                         all_bound = false;
                         continue;
                     };
+                    let requested = tv.request.version();
+                    if specifier != requested {
+                        // Generate mode already bound the argument's own spelling.
+                        lockfile.unbind_request(&ba.short, &requested, &options);
+                    }
                     all_bound &=
                         lockfile.bind_request(&ba.short, &specifier, &tv.version, &options);
                 }

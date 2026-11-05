@@ -1539,6 +1539,20 @@ impl Lockfile {
         moved
     }
 
+    /// Drop `specifier` from the entries of `short` locked with `options`.
+    pub fn unbind_request(
+        &mut self,
+        short: &str,
+        specifier: &str,
+        options: &BTreeMap<String, String>,
+    ) {
+        if let Some(tools) = self.tools_for_mut(short) {
+            for tool in tools.iter_mut().filter(|tool| &tool.options == options) {
+                tool.specifiers.remove(specifier);
+            }
+        }
+    }
+
     pub fn bind_request(
         &mut self,
         short: &str,
