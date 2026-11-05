@@ -2,7 +2,7 @@ use std::io::Write;
 
 use eyre::{Result, bail};
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::task::task_run_log;
 
@@ -10,6 +10,7 @@ use super::info::find_task;
 
 /// Print the output of a task's last run
 ///
+/// With the `task.logs` setting on (`MISE_TASK_LOGS=1`; it is off by default),
 /// mise keeps the combined stdout and stderr of each task's most recent run,
 /// after redaction, so output that `replacing`, `timed`, `silent` or a
 /// truncated terminal hid can be read without running the task again. Each run
@@ -56,10 +57,18 @@ impl TasksLog {
         }
         let contents = match std::fs::read(&path) {
             Ok(contents) => contents,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => bail!(
-                "no log for task {}: it has not run since mise started keeping logs, or its last run went straight to the terminal (raw, interactive, or interleave output that mise did not read)",
-                task.name
-            ),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                if !Settings::get().task.logs {
+                    bail!(
+                        "no log for task {}: task logs are off. Turn them on with `mise settings set task.logs true` or MISE_TASK_LOGS=1, then run the task again",
+                        task.name
+                    );
+                }
+                bail!(
+                    "no log for task {}: it has not run since task logs were turned on, or its last run went straight to the terminal (raw, interactive, or interleave output that mise did not read)",
+                    task.name
+                )
+            }
             Err(err) => bail!("failed to read {}: {err}", display_path(&path)),
         };
         let mut stdout = std::io::stdout().lock();

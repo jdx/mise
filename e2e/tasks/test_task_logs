@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# mise keeps each task's output from its last run, readable with `mise tasks log`.
+# With task.logs on, mise keeps each task's output from its last run, readable with
+# `mise tasks log`.
 
 cat <<EOF >mise.toml
 [env]
@@ -18,6 +19,15 @@ run = 'echo "token=\$LOG_TOKEN"; echo "url=https://bob:hunter2@example.com/x"'
 [tasks.plain]
 run = 'echo plain'
 EOF
+
+# logs are off by default: a run writes no log, and `mise tasks log` says how to turn them on
+mise run --output prefix pass
+mise run --output silent pass
+assert_fail "test -e $MISE_STATE_DIR/task-logs"
+assert_fail_contains "mise tasks log pass" "task logs are off"
+assert_fail_contains "mise tasks log pass" "MISE_TASK_LOGS=1"
+
+export MISE_TASK_LOGS=1
 
 # a passing task: stdout and stderr both land in the log, with the command line
 RUN_ID=first mise run --output prefix pass

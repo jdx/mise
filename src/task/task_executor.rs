@@ -546,6 +546,10 @@ impl TaskExecutor {
         run_log: &TaskRunLog,
         failed: bool,
     ) {
+        // Off, mise neither writes a log nor removes one an earlier run left.
+        if !Settings::get().task.logs {
+            return;
+        }
         let Some(path) = run_log.finish(task, config) else {
             return;
         };
@@ -2292,10 +2296,12 @@ impl TaskExecutor {
             );
         }
 
-        // The task log reads the streams only where mise already pipes them. `interleave`
-        // hands a task without redactions the terminal itself, and piping it just to keep a
-        // log would change what the task sees (colors, progress bars, isatty checks).
-        let logs_output = !raw
+        // Task logs are opt-in (`task.logs`); off, nothing is piped or kept for them. On, the
+        // log reads the streams only where mise already pipes them. `interleave` hands a task
+        // without redactions the terminal itself, and piping it just to keep a log would
+        // change what the task sees (colors, progress bars, isatty checks).
+        let logs_output = Settings::get().task.logs
+            && !raw
             && (!matches!(output, TaskOutput::Interleave | TaskOutput::Quiet)
                 || needs_redaction
                 || output_capture.is_some()

@@ -216,9 +216,18 @@ nothing in `summary` until it exits, or until the run is interrupted. Give it
 
 ### Read the output of the last run
 
+With the [`task.logs`](/configuration/settings.html#task.logs) setting on,
 mise keeps the combined stdout and stderr of each task's last run, so output
-that `replacing`, `timed`, `silent` or `summary` hid can be read without running the task
-again:
+that `replacing`, `timed`, `silent` or `summary` hid can be read without
+running the task again. Task logs are off by default; turn them on in
+`mise.toml`:
+
+```toml
+[settings]
+task.logs = true
+```
+
+or for one shell with `export MISE_TASK_LOGS=1`, then:
 
 ```sh
 mise run --output replacing test
