@@ -497,6 +497,9 @@ struct LockRun<'a> {
     /// Config edits this run makes. They are known before any target is bound
     /// so a lockfile binds the request the config will hold afterwards.
     config_bumps: Vec<crate::toolset::outdated_info::ConfigBump>,
+    /// Each version argument as a tool's short name and every spelling its
+    /// request can carry: as typed, and with its alias expanded.
+    argument_versions: BTreeSet<(String, String)>,
 }
 
 /// A lockfile target whose tools have been resolved but not yet written.
@@ -733,6 +736,7 @@ impl Lock {
         };
 
         let config_bumps = self.compute_config_bumps(&setup, &inputs);
+        let argument_versions = self.argument_versions(&config).await?;
         let run = LockRun {
             setup,
             settings,
@@ -740,6 +744,7 @@ impl Lock {
             resolve_options: &lock_resolve_options,
             inputs,
             config_bumps,
+            argument_versions,
         };
         let mut outcome = LockOutcome::default();
 
@@ -1385,6 +1390,20 @@ impl Lock {
         Ok(())
     }
 
+    async fn argument_versions(&self, config: &Config) -> Result<BTreeSet<(String, String)>> {
+        let mut versions = BTreeSet::new();
+        for arg in &self.tool {
+            let Some(tvr) = &arg.tvr else { continue };
+            let version = tvr.version();
+            if let Some(backend) = crate::backend::get(&arg.ba) {
+                let expanded = config.resolve_alias(&backend, &version).await?;
+                versions.insert((arg.ba.short.clone(), expanded));
+            }
+            versions.insert((arg.ba.short.clone(), version));
+        }
+        Ok(versions)
+    }
+
     /// The config edits for a specific version that doesn't match the current
     /// prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`).
     /// None under --bump, which is documented to leave config files untouched.
@@ -1812,11 +1831,9 @@ impl Lock {
                 .rfind(|bump| {
                     bump.tool_name == ba.short
                         && (tv.request.version() == bump.old_version
-                            || self.tool.iter().rev().any(|arg| {
-                                arg.ba.short == ba.short
-                                    && arg.tvr.as_ref().map(|r| r.version())
-                                        == Some(tv.request.version())
-                            }))
+                            || run
+                                .argument_versions
+                                .contains(&(ba.short.clone(), tv.request.version())))
                         && tv.request.source().path() == Some(bump.config_path.as_path())
                 })
                 .map_or_else(|| tv.request.version(), |bump| bump.new_request.version())
