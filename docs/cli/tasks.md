@@ -28,6 +28,7 @@ With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags.
 - **`-a --all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
 - **`--name-only`** — Print only task names, one per line (for fzf and similar tools)
+- **`--tag <TAG>`** — Only show tasks that have this tag; repeat to accept any of several
 - **`--no-header`** — Do not print the table header
 - **`--sort <COLUMN>`** — Column to sort by (default: name)
 

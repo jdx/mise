@@ -370,6 +370,22 @@ fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> 
 
 /// Push a failure onto `failed`, returning whether an earlier one was already
 /// there. See [`TaskExecutor::add_failed_task`].
+/// `filter_env` reads allowed names back from mise's own environment, which holds the report
+/// path of the `mise run` that started this one. `env` has that name only when the config or
+/// the task set it, so a name `env` lacks came from there and is dropped.
+fn strip_inherited_report_file(
+    env: &BTreeMap<String, String>,
+    filtered: &mut BTreeMap<String, String>,
+) {
+    let report_env = crate::task::run_report::REPORT_FILE_ENV;
+    if !env
+        .keys()
+        .any(|key| mise_util::env::env_key_eq(key, report_env))
+    {
+        filtered.retain(|key, _| !mise_util::env::env_key_eq(key, report_env));
+    }
+}
+
 fn record_failed_task(failed: &FailedTasks, task: Task, status: Option<i32>) -> bool {
     let mut failed = failed.lock().unwrap();
     let was_stopping = !failed.is_empty();
@@ -432,13 +448,15 @@ pub struct TaskExecutor {
     cli_secrets: Option<crate::secrets::CliSecretGrant>,
     /// Forwards task stdout/stderr to the OTEL log pipeline (when enabled).
     pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
+    /// What `mise run --report-file` writes; tasks a `run` entry injects are listed in it.
+    pub run_report: Option<Arc<crate::task::run_report::RunReport>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TaskRunOutcome {
     pub did_work: bool,
     pub cache_key: Option<String>,
-    /// The task's result was restored from the artifact cache instead of running.
+    /// The task's result came from the artifact cache instead of running it.
     pub restored: bool,
 }
 
@@ -493,6 +511,7 @@ impl TaskExecutor {
             secrets_denied: Self::secrets_denied_from(config.secrets_denied),
             cli_secrets: config.cli_secrets,
             output_forwarder: None,
+            run_report: None,
         }
     }
 
@@ -1502,6 +1521,13 @@ impl TaskExecutor {
         {
             return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
         }
+        // Listed now, like the run's own graph, so a task the run then never starts is
+        // reported as not run instead of missing.
+        if let Some(report) = &self.run_report {
+            for task in sub_deps.all_in_creation_order() {
+                report.schedule(task);
+            }
+        }
         // Give these tasks their keep-order slots now, while the order they were
         // written in is still known and before any of them can produce a line.
         // Reaching this from `&self` is fine: the state is behind the shared
@@ -1650,7 +1676,7 @@ impl TaskExecutor {
                 }
                 // Give a short time for the spawned task to finish cleanly
                 let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
-                return Err(eyre!("task sequence aborted due to failure"));
+                return Err(crate::errors::Error::TaskSequenceAborted.into());
             }
 
             // Try to receive the done signal with a short timeout
@@ -1671,7 +1697,7 @@ impl TaskExecutor {
 
         // Final check if we failed during the execution
         if self.is_stopping() && !self.continue_on_error && !allow_during_interruption {
-            return Err(eyre!("task sequence aborted due to failure"));
+            return Err(crate::errors::Error::TaskSequenceAborted.into());
         }
 
         let completion_state = sub_deps.lock().await.completion_state();
@@ -1885,6 +1911,7 @@ impl TaskExecutor {
             // environment, which still holds inherited secrets. A task that receives
             // secrets has no artifact cache, so grants never reach command inputs.
             mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
+            strip_inherited_report_file(resolved_env, &mut filtered);
             filtered
         } else {
             resolved_env.clone()
@@ -2110,6 +2137,7 @@ impl TaskExecutor {
             // environment, which still holds inherited secrets. `env_remove`
             // cannot undo this because the runner sets `env` afterwards.
             mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
+            strip_inherited_report_file(env, &mut filtered);
             sandbox_env = filtered;
             &sandbox_env
         } else {
@@ -2590,6 +2618,7 @@ impl TaskExecutor {
             // The same strip as for cache command inputs: filter_env reads allowed names back
             // from mise's own environment, which still holds inherited secrets.
             mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
+            strip_inherited_report_file(env, &mut filtered);
             filtered
         } else {
             env.clone()
@@ -3107,6 +3136,19 @@ impl TaskExecutor {
         } else {
             env.remove(crate::shims::TASK_TOOL_ARGS_ENV);
             env_remove.insert(crate::shims::TASK_TOOL_ARGS_ENV.to_string());
+        }
+        // The report this run writes is not the report of a `mise run` the task starts, which
+        // would otherwise overwrite it. A value the config or the task's env sets is passed
+        // on, even one equal to the inherited value.
+        let report_env = crate::task::run_report::REPORT_FILE_ENV;
+        if std::env::var_os(report_env).is_some()
+            && !env_keys
+                .mise
+                .iter()
+                .any(|key| mise_util::env::env_key_eq(key, report_env))
+        {
+            env.retain(|key, _| !mise_util::env::env_key_eq(key, report_env));
+            env_remove.insert(report_env.to_string());
         }
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();

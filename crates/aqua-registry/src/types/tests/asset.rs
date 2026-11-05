@@ -325,3 +325,112 @@ fn test_aqua_file_link_template() {
     let result = file.link(&pkg, "1.0.0", "linux", "amd64").unwrap();
     assert_eq!(result, Some("tool-alias".to_string()));
 }
+
+#[test]
+fn test_raw_windows_exe_name_follows_exe_url_when_completion_is_off() {
+    let pkg = AquaPackage {
+        url: "https://example.com/{{.Version}}/tool-{{.OS}}.exe".to_string(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar", "1.0.0", "linux", "amd64"),
+        "sonar"
+    );
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar.bat", "1.0.0", "windows", "amd64"),
+        "sonar.bat"
+    );
+
+    let bin = AquaPackage {
+        url: "https://example.com/{{.Version}}/tool.bin".to_string(),
+        ..pkg
+    };
+    assert_eq!(
+        bin.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar"
+    );
+}
+
+#[test]
+fn test_raw_windows_exe_name_guards_and_inference() {
+    let exe_url = "https://example.com/{{.Version}}/tool.exe".to_string();
+
+    let non_raw = AquaPackage {
+        url: exe_url.clone(),
+        format: "zip".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        non_raw.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar"
+    );
+
+    let completing = AquaPackage {
+        url: exe_url.clone(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(true),
+        ..Default::default()
+    };
+    assert_eq!(
+        completing.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar"
+    );
+
+    let inferred = AquaPackage {
+        url: exe_url,
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        inferred.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+
+    let from_asset = AquaPackage {
+        asset: "tool-{{.OS}}.exe".to_string(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        from_asset.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+}
+
+#[test]
+fn test_raw_windows_exe_name_uses_url_for_http_packages() {
+    let pkg = AquaPackage {
+        r#type: Some(AquaPackageType::Http),
+        asset: "tool".to_string(),
+        url: "https://example.com/{{.Version}}/tool.exe".to_string(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+}
+
+#[test]
+fn test_raw_windows_exe_name_ignores_url_query_and_fragment() {
+    let pkg = AquaPackage {
+        url: "https://example.com/{{.Version}}/tool.exe?download=1#frag".to_string(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+}

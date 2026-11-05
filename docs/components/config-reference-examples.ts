@@ -381,6 +381,15 @@ run = "cargo build"
 alias = ["t", "check"]
 run = "cargo test"
 `,
+  "tasks.<name>.tags": toml`
+[tasks.clippy]
+tags = "lint"
+run = "cargo clippy"
+
+[tasks.e2e]
+tags = ["test", "slow"]
+run = "./e2e/run"
+`,
   "tasks.<name>.depends": toml`
 [tasks.build]
 run = "cargo build"
