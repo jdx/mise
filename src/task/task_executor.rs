@@ -768,7 +768,11 @@ impl TaskExecutor {
         } = self
             .prepare_task_context(config, task, otel_span_cx.as_ref())
             .await?;
-        if let Some(flag) = &env_resolved {
+        // A granted secret registers its redaction only once fnox returns it, below, so a
+        // task with a grant that skips or stops before then keeps its args out of history.
+        if grant.is_empty()
+            && let Some(flag) = &env_resolved
+        {
             flag.store(true, std::sync::atomic::Ordering::SeqCst);
         }
         let task_file = self
@@ -1076,6 +1080,11 @@ impl TaskExecutor {
                     err
                 })?
         };
+        if spawn_secrets.is_some()
+            && let Some(flag) = &env_resolved
+        {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         // Taken once the task has decided to run and has its secrets, just before its first
         // command, so a skipped or restored task never waits, and held until every run entry
         // ends.

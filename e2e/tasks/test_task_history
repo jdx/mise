@@ -118,3 +118,30 @@ wait_for_file "$trapped_ready" "trapped task" 30 "$mise_pid"
 kill -INT "$mise_pid"
 wait "$mise_pid" || true
 assert "mise tasks history trapped --json | jq -c '[.[].status]'" '["cancelled"]'
+
+# A task granted a secret that it skips before fnox returns the value has no
+# redaction for it, so its arguments are not stored. One that runs has its
+# arguments redacted with the value fnox returned.
+mkdir -p "$HOME/bin"
+printf '#!/usr/bin/env bash\nexec python3 "%s" "$@"\n' "$TEST_ROOT/helpers/scripts/fnox_stub.py" >"$HOME/bin/fnox"
+chmod +x "$HOME/bin/fnox"
+export PATH="$HOME/bin:$PATH"
+export FNOX_STUB_LOG="$PWD/fnox-calls.jsonl"
+cat >>mise.toml <<'EOF'
+
+[secrets.fnox]
+
+[tasks.guarded]
+secrets = ["STRIPE_KEY"]
+skip_if = "true"
+run = 'true'
+
+[tasks.granted]
+secrets = ["STRIPE_KEY"]
+run = 'true'
+EOF
+mise run guarded stripe-s3cr3t-0003 </dev/null
+assert "mise tasks history guarded --json | jq -c '.[-1] | [.status, .args]'" '["skipped",[]]'
+mise run granted stripe-s3cr3t-0003 </dev/null
+assert "mise tasks history granted --json | jq -r '.[-1].args[0]'" "[redacted]"
+assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "stripe-s3cr3t-0003"
