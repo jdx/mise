@@ -64,6 +64,7 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
   - `replacing` - Stdout is replaced each time, stderr is printed as is
   - `timed` - Only show stdout lines if they are displayed for more than 1 second
   - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+  - `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
   - `quiet` - Deprecated; use `--output interleave --quiet`
   - `silent` - Do not show any output, including the task's stdout and stderr, except errors
 
@@ -74,6 +75,11 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`-r --raw`** — Connect the tasks directly to stdin, stdout, and stderr instead of reading their output by line
 
   Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
+- **`--report-file <PATH>`** — Write a JSON report of every task the run scheduled to this file when the run ends
+
+  Written on success, failure, Ctrl-C and `--timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+
+  **Environment Variable:** `MISE_TASK_REPORT_FILE`
 - **`--secrets <SECRET>`** — [experimental] Give the named tasks these secrets (comma-separated); their dependencies and subtasks do not get them
 
   Put this flag before the task name. Not allowed in safe mode.
@@ -132,6 +138,9 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--task-cache-explain`** — [experimental] Explain the inputs that produced each task's artifact cache key
 - **`--task-cache-explain-json`** — [experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)
 - **`--task-cache-stats`** — [experimental] Report artifact cache hits, restored bytes, and time saved
+- **`--tag <TAG>`** — Run only the matching tasks that have this tag; repeat to accept any of several
+
+  With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
 - **`--timeout <TIMEOUT>`** — Stop the run if it takes longer than this, e.g. 30s or 5m
 
   Overrides the `task.timeout` setting.
@@ -181,6 +190,12 @@ Run every task that matches a pattern
 
 ```
 mise run 'test:*'
+```
+
+Run every task tagged "lint"
+
+```
+mise run --tag lint
 ```
 
 Run a task in a monorepo project

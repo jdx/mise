@@ -44,6 +44,9 @@ pub enum Error {
         display_path(.0)
     )]
     UntrustedEnvFile(PathBuf),
+    /// A parent stopped waiting for its nested tasks because another task failed.
+    #[error("task sequence aborted due to failure")]
+    TaskSequenceAborted,
     #[error("{}", format_install_failures(.failed_installations))]
     InstallFailed {
         successful_installations: Vec<ToolVersion>,
@@ -153,6 +156,13 @@ impl Error {
 
     pub fn is_task_interrupted_before_start(err: &Report) -> bool {
         ProcessError::is_task_interrupted_before_start(err)
+    }
+
+    pub fn is_task_sequence_aborted(err: &Report) -> bool {
+        matches!(
+            err.downcast_ref::<Error>(),
+            Some(Error::TaskSequenceAborted)
+        )
     }
 
     pub(crate) fn is_argument_err(err: &Report) -> bool {

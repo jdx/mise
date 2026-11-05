@@ -1289,6 +1289,7 @@ impl Cli {
                         affected_committed: false,
                         affected_uncommitted: false,
                         affected_untracked: false,
+                        tag: vec![],
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
@@ -1317,6 +1318,11 @@ impl Cli {
                         task_cache_explain: false,
                         task_cache_explain_json: false,
                         task_cache_stats: false,
+                        // `mise run` reads this from its flag; a bare `mise <task>` has none.
+                        report_file: std::env::var_os(crate::task::run_report::REPORT_FILE_ENV)
+                            .filter(|path| !path.is_empty())
+                            .map(PathBuf::from),
+                        run_report: None,
                         timeout: None,
                         lock_timeout: None,
                         skip_deps: false,

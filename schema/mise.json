@@ -3432,6 +3432,7 @@
                 "interleave",
                 "keep-order",
                 "replacing",
+                "summary",
                 "timed",
                 "quiet",
                 "silent"
@@ -4047,6 +4048,22 @@
           "type": "string",
           "description": "description of task"
         },
+        "tags": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "what kind of task this is, such as `test` or `lint`; `mise run --tag` and `mise tasks ls --tag` select tasks by it"
+            },
+            {
+              "type": "array",
+              "description": "what kind of task this is, such as `test`, `lint` or `slow`; `mise run --tag` and `mise tasks ls --tag` select tasks by them",
+              "items": {
+                "type": "string",
+                "description": "a tag, such as `test`, `lint` or `slow`"
+              }
+            }
+          ]
+        },
         "dir": {
           "type": "string",
           "description": "directory to run script in, default is the project's base directory",
@@ -4220,12 +4237,13 @@
         },
         "output": {
           "type": "string",
-          "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
+          "description": "output style for this task (prefix, interleave, keep-order, replacing, summary, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
           "enum": [
             "prefix",
             "interleave",
             "keep-order",
             "replacing",
+            "summary",
             "timed",
             "quiet",
             "silent"

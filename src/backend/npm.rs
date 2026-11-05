@@ -2548,7 +2548,22 @@ impl NPMBackend {
             .and_then(|v| v.get(self.package_key()))
             .and_then(|v| v.get("specifier"))
             .and_then(toml::Value::as_str);
-        if requirement != Some(self.package_requirement(tv)?.as_str()) {
+        // The graph must also resolve the root to the locked version, apart from
+        // a peer suffix, or it would install another release than the lock names.
+        let resolved = lock
+            .graph
+            .get("importers")
+            .and_then(|v| v.get("."))
+            .and_then(|v| v.get("dependencies"))
+            .and_then(|v| v.get(self.package_key()))
+            .and_then(|v| v.get("version"))
+            .and_then(toml::Value::as_str);
+        // A dist-tag such as `next` is not a version yet: aube records the release
+        // it picked, so there is nothing to compare until the tag is resolved.
+        let resolves_locked_version = is_git_spec(&self.tool_name())
+            || versions::SemVer::new(&tv.version).is_none()
+            || resolved.is_some_and(|v| v.split('(').next() == Some(tv.version.as_str()));
+        if requirement != Some(self.package_requirement(tv)?.as_str()) || !resolves_locked_version {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.display_tool_name(),

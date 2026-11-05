@@ -5975,6 +5975,7 @@ How task output is displayed
 - `replacing` - Stdout is replaced each time, stderr is printed as is
 - `timed` - Only show stdout lines if they are displayed for more than 1 second
 - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+- `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
 - `quiet` - Deprecated; use `--output interleave --quiet`
 - `silent` - Do not show any output, including the task's stdout and stderr, except errors
 """#
@@ -5987,6 +5988,14 @@ Connect the tasks directly to stdin, stdout, and stderr instead of reading their
 
 Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
 """#
+    }
+    flag --report-file help="Write a JSON report of every task the run scheduled to this file when the run ends" conflicts=--dry-run env=MISE_TASK_REPORT_FILE {
+        long_help #"""
+Write a JSON report of every task the run scheduled to this file when the run ends
+
+Written on success, failure, Ctrl-C and `--timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+"""#
+        arg <PATH>
     }
     flag --secrets help="[experimental] Give the named tasks these secrets (comma-separated); their dependencies and subtasks do not get them" var=#true conflicts=--affected {
         long_help #"""
@@ -6091,6 +6100,14 @@ Set `task.run_auto_install = false` to make this the default.
     flag --task-cache-explain help="[experimental] Explain the inputs that produced each task's artifact cache key"
     flag --task-cache-explain-json help="[experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)" conflicts=--task-cache-explain requires=--dry-run
     flag --task-cache-stats help="[experimental] Report artifact cache hits, restored bytes, and time saved" conflicts=--dry-run
+    flag --tag help="Run only the matching tasks that have this tag; repeat to accept any of several" var=#true conflicts=--all {
+        long_help #"""
+Run only the matching tasks that have this tag; repeat to accept any of several
+
+With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
+"""#
+        arg <TAG>
+    }
     flag --timeout help="Stop the run if it takes longer than this, e.g. 30s or 5m" {
         long_help #"""
 Stop the run if it takes longer than this, e.g. 30s or 5m
@@ -6123,9 +6140,11 @@ Set `task.timings = true` to show it by default.
     example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run several tasks, each with its own arguments"
     example "mise run -j 1 lint ::: test" help="Run tasks one at a time"
     example "mise run 'test:*'" help="Run every task that matches a pattern"
+    example "mise run --tag lint" help="Run every task tagged \"lint\""
     example "mise run //services/api:build" help="Run a task in a monorepo project"
     example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
     complete dir type=dir
+    complete path type=path
 }
 cmd search help="Search for available tools" effect=read {
     long_help #"""
@@ -6854,6 +6873,9 @@ Removed in mise 2027.7.0.
     flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
         conflicts "--json" "--extended" "--usage"
     }
+    flag --tag help="Only show tasks that have this tag; repeat to accept any of several" var=#true {
+        arg <TAG>
+    }
     flag --no-header help="Do not print the table header" {
         alias "--no-headers" hide=#true
     }
@@ -7063,6 +7085,9 @@ Removed in mise 2027.7.0.
         flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
             conflicts "--json" "--extended" "--usage"
         }
+        flag --tag help="Only show tasks that have this tag; repeat to accept any of several" var=#true {
+            arg <TAG>
+        }
         flag --no-header help="Do not print the table header" {
             alias "--no-headers" hide=#true
         }
@@ -7089,6 +7114,7 @@ Removed in mise 2027.7.0.
         example "mise tasks ls" help="List tasks"
         example "mise tasks ls --hidden" help="Include hidden tasks"
         example "mise tasks ls --all" help="List tasks from every monorepo project"
+        example "mise tasks ls --tag lint" help="List the tasks tagged \"lint\""
         example "mise tasks ls --name-only | fzf" help="Pick a task name interactively"
     }
     cmd run hide=#true disable_help_flag=#true restart_token=::: help="Run tasks; an alias for `mise run`" unknown_flags=value {
@@ -7168,6 +7194,7 @@ How task output is displayed
 - `replacing` - Stdout is replaced each time, stderr is printed as is
 - `timed` - Only show stdout lines if they are displayed for more than 1 second
 - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+- `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
 - `quiet` - Deprecated; use `--output interleave --quiet`
 - `silent` - Do not show any output, including the task's stdout and stderr, except errors
 """#
@@ -7180,6 +7207,14 @@ Connect the tasks directly to stdin, stdout, and stderr instead of reading their
 
 Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
 """#
+        }
+        flag --report-file help="Write a JSON report of every task the run scheduled to this file when the run ends" conflicts=--dry-run env=MISE_TASK_REPORT_FILE {
+            long_help #"""
+Write a JSON report of every task the run scheduled to this file when the run ends
+
+Written on success, failure, Ctrl-C and `--timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+"""#
+            arg <PATH>
         }
         flag --secrets help="[experimental] Give the named tasks these secrets (comma-separated); their dependencies and subtasks do not get them" var=#true conflicts=--affected {
             long_help #"""
@@ -7284,6 +7319,14 @@ Set `task.run_auto_install = false` to make this the default.
         flag --task-cache-explain help="[experimental] Explain the inputs that produced each task's artifact cache key"
         flag --task-cache-explain-json help="[experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)" conflicts=--task-cache-explain requires=--dry-run
         flag --task-cache-stats help="[experimental] Report artifact cache hits, restored bytes, and time saved" conflicts=--dry-run
+        flag --tag help="Run only the matching tasks that have this tag; repeat to accept any of several" var=#true conflicts=--all {
+            long_help #"""
+Run only the matching tasks that have this tag; repeat to accept any of several
+
+With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
+"""#
+            arg <TAG>
+        }
         flag --timeout help="Stop the run if it takes longer than this, e.g. 30s or 5m" {
             long_help #"""
 Stop the run if it takes longer than this, e.g. 30s or 5m
@@ -7316,9 +7359,11 @@ Set `task.timings = true` to show it by default.
         example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run several tasks, each with its own arguments"
         example "mise run -j 1 lint ::: test" help="Run tasks one at a time"
         example "mise run 'test:*'" help="Run every task that matches a pattern"
+        example "mise run --tag lint" help="Run every task tagged \"lint\""
         example "mise run //services/api:build" help="Run a task in a monorepo project"
         example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
         complete dir type=dir
+        complete path type=path
     }
     cmd rm help="Remove tasks" effect=destructive {
         alias remove

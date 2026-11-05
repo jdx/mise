@@ -73,6 +73,9 @@ impl TasksInfo {
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
         }
+        if !task.tags.is_empty() {
+            info::inline_section("Tags", task.tags.join(", "))?;
+        }
         info::inline_section("Description", &task.description)?;
         info::inline_section(
             "Source",
@@ -167,6 +170,7 @@ impl TasksInfo {
         let o = json!({
             "name": task.display_name,
             "aliases": task.aliases,
+            "tags": task.tags,
             "description": task.description,
             "source": task.config_source.to_string_lossy(),
             "config_sources": task
