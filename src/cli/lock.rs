@@ -1811,6 +1811,12 @@ impl Lock {
                 .iter()
                 .rfind(|bump| {
                     bump.tool_name == ba.short
+                        && (tv.request.version() == bump.old_version
+                            || self.tool.iter().rev().any(|arg| {
+                                arg.ba.short == ba.short
+                                    && arg.tvr.as_ref().map(|r| r.version())
+                                        == Some(tv.request.version())
+                            }))
                         && tv.request.source().path() == Some(bump.config_path.as_path())
                 })
                 .map_or_else(|| tv.request.version(), |bump| bump.new_request.version())
