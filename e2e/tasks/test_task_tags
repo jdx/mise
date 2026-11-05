@@ -90,3 +90,14 @@ file = "http://localhost:${HTTP_PORT}/remote.sh"
 EOF
 assert "mise tasks ls --tag remote --name-only" "remote"
 assert_contains "mise run --tag remote" "ran-remote"
+
+# a remote file that cannot be read leaves its task untagged without blocking the others,
+# and running that task still fails
+cat <<'EOF' >>mise.toml
+
+[tasks.dead]
+file = "http://127.0.0.1:1/dead.sh"
+EOF
+assert_contains "mise run --tag lint" "ran-clippy"
+assert_contains "mise run --tag lint 2>&1" "could not read the file of task"
+assert_fail "mise run dead"

@@ -479,7 +479,10 @@ async fn keep_tagged(
     if tags.is_empty() {
         return Ok(());
     }
-    let fetcher = crate::task::task_fetcher::TaskFetcher::for_inspection(no_cache);
+    // A file that cannot be read leaves its task untagged here, so it does not block the rest;
+    // a task that is selected anyway fails when the run fetches it.
+    let fetcher =
+        crate::task::task_fetcher::TaskFetcher::for_inspection(no_cache).skipping_failures();
     for task in tasks.iter_mut() {
         if !task.has_any_tag(tags)
             && crate::task::task_fetcher::TaskFetcher::is_unfetched_remote_task(task)

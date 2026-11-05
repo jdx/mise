@@ -1,6 +1,8 @@
 use crate::config::{Config, Settings, SettingsExt};
 use crate::task::Task;
-use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use crate::task::task_file_providers::{
+    TaskFileArtifact, TaskFileProviders, TaskFileProvidersBuilder,
+};
 use dashmap::DashMap;
 use eyre::Result;
 use std::{
@@ -74,6 +76,9 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
 /// Set once a command has warned that it left a gated `git::` task file unfetched.
 static WARNED_UNFETCHED_GIT_TASK: AtomicBool = AtomicBool::new(false);
 
+/// Set once a fetcher that skips failures has warned that it could not read a task file.
+static WARNED_UNREADABLE_TASK: AtomicBool = AtomicBool::new(false);
+
 /// Handles fetching remote task files and converting them to local paths
 ///
 /// # The experimental gate on remote task files
@@ -88,6 +93,8 @@ pub struct TaskFetcher {
     no_cache: bool,
     inspecting: bool,
     warn_unfetched: bool,
+    /// See [`TaskFetcher::skipping_failures`].
+    skip_failures: bool,
     /// With `no_cache`, share one download of each task file across the command; see
     /// [`RemoteTaskArtifactsGuard`].
     share_snapshots: bool,
@@ -101,6 +108,7 @@ impl TaskFetcher {
             inspecting: false,
             warn_unfetched: false,
             share_snapshots: true,
+            skip_failures: false,
         }
     }
 
@@ -112,6 +120,7 @@ impl TaskFetcher {
             inspecting: true,
             warn_unfetched: true,
             share_snapshots: true,
+            skip_failures: false,
         }
     }
 
@@ -120,6 +129,14 @@ impl TaskFetcher {
     /// otherwise keep its first download for as long as it runs.
     pub fn without_shared_snapshots(mut self) -> Self {
         self.share_snapshots = false;
+        self
+    }
+
+    /// Leaves a task whose remote file cannot be read with its TOML metadata, warning once,
+    /// instead of failing the whole fetch. For choosing among tasks (`--tag`, the MCP task
+    /// list), where one unreachable file must not hide the rest; running a task still fails.
+    pub fn skipping_failures(mut self) -> Self {
+        self.skip_failures = true;
         self
     }
 
@@ -163,18 +180,48 @@ impl TaskFetcher {
             .build();
 
         for t in tasks {
+            if let Err(err) = self
+                .fetch_task(config, &task_file_providers, no_cache, t)
+                .await
+            {
+                if !self.skip_failures {
+                    return Err(err);
+                }
+                // The task keeps its TOML metadata. A run that selects it fetches it again
+                // and fails there.
+                if !WARNED_UNREADABLE_TASK.swap(true, Ordering::Relaxed) {
+                    warn!(
+                        "could not read the file of task `{}`, so only its TOML metadata is known: {err:#}",
+                        t.name
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Fetch one task's remote file, if it has one, and merge its `#MISE` headers.
+    async fn fetch_task(
+        &self,
+        config: &Arc<Config>,
+        task_file_providers: &TaskFileProviders,
+        no_cache: bool,
+        t: &mut Task,
+    ) -> Result<()> {
+        {
             if let Some(file) = &t.file {
                 let source = file.to_string_lossy().to_string();
 
                 // Skip local files - they don't need provider resolution
                 if !Self::is_remote_source(&source) {
-                    continue;
+                    return Ok(());
                 }
                 // Safe mode loads untrusted project config without a trust prompt, and
                 // fetching a URL is not something such a config gets to do, as for remote
                 // includes. The task keeps its TOML metadata, and safe mode refuses to run it.
                 if !t.global && Settings::safe_mode() {
-                    continue;
+                    return Ok(());
                 }
                 if source.starts_with("git::") {
                     if self.inspecting && !Settings::get().experimental {
@@ -186,7 +233,7 @@ impl TaskFetcher {
                                 t.name
                             );
                         }
-                        continue;
+                        return Ok(());
                     }
                     Settings::get().ensure_experimental(&format!(
                         "loading task `{}` from a `git::` file",

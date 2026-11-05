@@ -551,6 +551,8 @@ impl ServerHandler for MiseServer {
                     .without_warning()
                     // with no-cache set, each read downloads the files again
                     .without_shared_snapshots()
+                    // one unreachable file must not hide every task from the client
+                    .skipping_failures()
                     .fetch_tasks(&config, &mut fetched)
                     .await
                     .map_err(|e| ErrorData {
