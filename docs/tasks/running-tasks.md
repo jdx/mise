@@ -320,6 +320,44 @@ A task that keeps running, such as a development server or a watcher, prints
 nothing in `summary` until it exits, or until the run is interrupted. Give it
 `output = "interleave"` to see what it prints as it runs.
 
+### Read the output of the last run
+
+With the [`task.logs`](/configuration/settings.html#task.logs) setting on,
+mise keeps the combined stdout and stderr of each task's last run, so output
+that `replacing`, `timed`, `silent` or `summary` hid can be read without
+running the task again. Task logs are off by default; turn them on in
+`mise.toml`:
+
+```toml
+[settings]
+task.logs = true
+```
+
+or for one shell with `export MISE_TASK_LOGS=1`, then:
+
+```sh
+mise run --output replacing test
+mise tasks log test          # print the output of the last run
+mise tasks log test --path   # print where the log is kept
+```
+
+Each run replaces the task's previous log, and a log keeps only its last 4 MiB.
+Logs live under mise's state directory (`~/.local/state/mise/task-logs`), one
+per task per project, and only you can read them. A global task gets one log
+per project it runs in, and one shared by its runs outside any project. Values
+that mise redacts in the terminal are redacted in the log too. A run whose
+command does not start (cancelled first, or a program that is missing or not
+executable) keeps the previous log.
+
+When a task fails under `replacing` or `timed`, or under `summary` when it
+printed more than the 64 KiB `summary` holds, mise prints the log's path after
+the error.
+
+mise logs only output it reads. A `raw` or `interactive` task gets the terminal
+itself, and so does an `interleave` task when nothing needs redacting and
+neither the artifact cache nor OpenTelemetry log export reads its output, so
+their runs leave no log (and remove the one an earlier run left).
+
 ## Interactive input
 
 Unless a task is `interactive` or `raw`, stdin is connected only with
