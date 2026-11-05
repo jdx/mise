@@ -9,7 +9,6 @@ use crate::errors::Error;
 use crate::file::display_path;
 use crate::lockfile::{Lockfile, lockfile_path_for_config};
 use crate::registry::REGISTRY;
-use crate::registry::tool_enabled;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::{backend, parallel};
 pub use builder::{ConfigScope, ToolsetBuilder};
@@ -959,8 +958,38 @@ impl Toolset {
         let enable_tools = settings.enable_tools();
         let disable_tools = settings.disable_tools();
         !ba.is_os_supported()
-            || !tool_enabled(enable_tools.as_ref(), &disable_tools, &ba.short.to_string())
+            || !tool_enabled_for_backend(enable_tools.as_ref(), &disable_tools, ba)
     }
+}
+
+/// Check tool filters against a backend request, allowing configured tool aliases
+/// to select or exclude requests keyed by their fully-qualified backend IDs.
+pub(crate) fn tool_enabled_for_backend(
+    enable_tools: Option<&BTreeSet<String>>,
+    disable_tools: &BTreeSet<String>,
+    ba: &BackendArg,
+) -> bool {
+    match enable_tools {
+        // The allowlist remains authoritative; disable_tools is intentionally
+        // ignored when enable_tools is configured.
+        Some(enable_tools) => {
+            enable_tools.contains(&ba.short) || tool_alias_matches(enable_tools, ba)
+        }
+        None => !disable_tools.contains(&ba.short) && !tool_alias_matches(disable_tools, ba),
+    }
+}
+
+fn tool_alias_matches(names: &BTreeSet<String>, ba: &BackendArg) -> bool {
+    let Some(config) = Config::maybe_get() else {
+        return false;
+    };
+    names.iter().any(|name| {
+        config
+            .all_aliases
+            .get(name)
+            .and_then(|alias| alias.backend.as_deref())
+            .is_some_and(|backend| BackendArg::from(backend).full() == ba.full())
+    })
 }
 
 impl Display for Toolset {
