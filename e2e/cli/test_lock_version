@@ -84,3 +84,16 @@ assert_contains "cat mise.toml" '"1"'
 assert_not_contains "cat mise.lock" '"2"'
 rm -f mise.toml mise.lock
 unset MISE_LOCKFILE
+
+# Test: a bare last argument cancels an earlier version argument's bump
+export MISE_LOCKFILE=1
+cat <<'EOF2' >mise.toml
+[tools]
+tiny = "2"
+EOF2
+mise install tiny@2.0.0
+touch mise.lock
+mise lock tiny@3.0.1 tiny --platform linux-x64
+assert_contains "cat mise.toml" '"2"'
+rm -f mise.toml mise.lock
+unset MISE_LOCKFILE

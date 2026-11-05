@@ -1394,9 +1394,11 @@ impl Lock {
         let mut versions = BTreeSet::new();
         // Only the last argument naming a tool decides its request.
         let mut last: Vec<&ToolArg> = Vec::new();
-        for arg in self.tool.iter().filter(|arg| arg.tvr.is_some()) {
+        for arg in &self.tool {
             last.retain(|prev| prev.ba.short != arg.ba.short);
-            last.push(arg);
+            if arg.tvr.is_some() {
+                last.push(arg);
+            }
         }
         for arg in last {
             let Some(tvr) = &arg.tvr else { continue };
@@ -1425,8 +1427,8 @@ impl Lock {
         // argument's bump must not survive a later one that needs none.
         let mut tool_versions: Vec<(String, String)> = Vec::new();
         for t in &self.tool {
+            tool_versions.retain(|(short, _)| short != &t.ba.short);
             if let Some(tvr) = &t.tvr {
-                tool_versions.retain(|(short, _)| short != &t.ba.short);
                 tool_versions.push((t.ba.short.clone(), tvr.version()));
             }
         }
