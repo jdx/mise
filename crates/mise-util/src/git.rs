@@ -545,6 +545,30 @@ impl Git {
         parse_nul_paths(&output.stdout)
     }
 
+    /// Returns paths that differ between two trees or commits, compared directly rather
+    /// than from their merge base, so moving back to an ancestor reports what it undoes.
+    ///
+    /// Same path rules as [`Git::changed_paths`].
+    pub fn diff_paths(&self, from: &str, to: &str) -> Result<BTreeSet<PathBuf>> {
+        validate_revisions(from, to)?;
+        let output = git_cmd!(
+            &self.dir,
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--relative",
+            from,
+            to,
+            "--",
+            "."
+        )
+        .stdout_capture()
+        .run()
+        .wrap_err_with(|| format!("git diff {from} {to} failed"))?;
+        parse_nul_paths(&output.stdout)
+    }
+
     /// Returns tracked paths that differ between `HEAD` and the working tree,
     /// staged and unstaged alike.
     ///

@@ -253,7 +253,8 @@ or the script its `file` names. Symlinks in the task directory and in its
 reads the changes of every Git checkout that holds its directory, its config
 file, its script, or the start of its `sources`, so a task in a submodule sees
 the submodule's changes and those of the parent that defines it. A submodule
-compares the commits its gitlink records at the base and head revisions.
+compares the commit the parent records for it at the merge base with the one at
+the head, and adds its working tree only when it is checked out at that head.
 A task without `sources` might read any file, so mise runs it whenever anything
 changed. When nothing changed, `--affected` runs nothing. Dependencies of a
 selected task still run, and the usual

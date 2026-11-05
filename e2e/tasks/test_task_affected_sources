@@ -268,3 +268,35 @@ assert_contains "mise run --affected --affected-committed --affected-base $base 
 # config that defines it, while the submodule is clean.
 echo '# comment' >>mise.toml
 assert_contains "mise run --affected --affected-uncommitted --affected-explain --dry-run sub" "changed task config: mise.toml"
+git checkout -q mise.toml
+
+# Moving the submodule back to an ancestor still reports the files it undoes.
+sub_new=$(git -C sub rev-parse HEAD)
+git -C sub checkout -q HEAD~1
+git add sub
+git commit -qm rollback-sub
+assert_contains "mise run --affected --affected-committed --affected-explain --dry-run sub" "changed source: lib/a.txt"
+
+# A submodule checked out at another commit than the parent records keeps its
+# committed changes, and its working tree is left out.
+git -C sub checkout -q "$sub_new"
+echo new >sub/lib/new.txt
+output=$(mise run --affected --affected-explain --dry-run sub)
+assert_contains "echo \"$output\"" "changed source: lib/a.txt"
+assert_not_contains "echo \"$output\"" "lib/new.txt"
+rm sub/lib/new.txt
+git submodule update -q
+
+# A submodule added within the range counts every file it brings in.
+cat <<'EOF' >>mise.toml
+
+[tasks.sub2]
+dir = "sub2"
+sources = ["lib/**"]
+run = 'echo sub2 >> "$AFFECTED_LOG"'
+EOF
+git add .
+git commit -qm add-sub2-task
+git -c protocol.file.allow=always submodule add -q "$upstream" sub2
+git commit -qm add-sub2
+assert_contains "mise run --affected --affected-committed --affected-explain --dry-run sub2" "changed source: lib/a.txt"

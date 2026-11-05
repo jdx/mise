@@ -97,22 +97,31 @@ impl<'a> AffectedRepos<'a> {
     /// Changes in a checkout other than the default one, such as a submodule.
     ///
     /// The default checkout's revisions, such as `$GITHUB_SHA`, may not exist there. A
-    /// submodule of the default checkout compares the commits its gitlink records at the
-    /// base and head; any other checkout tries the same revision names. When neither
+    /// submodule of the default checkout diffs the commits its gitlink records at the
+    /// merge base and head; any other checkout tries the same revision names. When neither
     /// works, only the working tree counts, and only if it counted in the default checkout.
     fn nested_changes(&self, root: &Path) -> WorkspaceChanges {
         let (default_root, default_changes) = &self.repos[0];
-        let mut candidates = Vec::new();
+        // A submodule of the default checkout: see `WorkspaceChanges::submodule_changes`
+        // for the rule. Its gitlinks are read at the parent's merge base and head.
         if let Ok(relative) = root.strip_prefix(default_root) {
             let git = Git::new(default_root);
-            if let (Ok(Some(base)), Ok(Some(head))) = (
-                git.object_at(&self.revisions.base, relative),
-                git.object_at(&self.revisions.head, relative),
-            ) {
-                candidates.push(default_changes.revisions_for(&base, &head));
+            if let Ok(Some(to)) = git.object_at(&self.revisions.head, relative) {
+                let from = match default_changes.merge_base() {
+                    Some(merge_base) => git.object_at(merge_base, relative).ok().flatten(),
+                    None => None,
+                };
+                match default_changes.submodule_changes(root, from.as_deref(), &to) {
+                    Ok(changes) => return changes,
+                    Err(err) => debug!(
+                        "--affected: cannot compare the gitlinks of {}: {err}",
+                        root.display()
+                    ),
+                }
             }
         }
-        candidates.push(default_changes.revisions_for(&self.revisions.base, &self.revisions.head));
+        let mut candidates =
+            vec![default_changes.revisions_for(&self.revisions.base, &self.revisions.head)];
         candidates.extend(default_changes.working_tree_revisions());
         for revisions in candidates {
             match revisions.changed_paths(root) {

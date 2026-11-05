@@ -77,6 +77,57 @@ impl WorkspaceChanges {
         }
     }
 
+    /// The merge base of the committed range, when the committed range was compared.
+    pub fn merge_base(&self) -> Option<&str> {
+        self.merge_base.as_deref()
+    }
+
+    /// Changes in the submodule at `root`, given the commits the parent's gitlink records
+    /// at its merge base (`from`, `None` when the submodule did not exist there) and at its
+    /// head (`to`).
+    ///
+    /// The rule: the submodule's committed changes are the direct diff between those two
+    /// gitlinks, never a merge-base range, so moving the submodule back to an ancestor
+    /// still reports the files it undoes. Its working-tree changes are added only when
+    /// the submodule's checkout is `to`; a checkout at another commit is not the state the
+    /// parent records, so its working tree is left out while the committed diff is kept.
+    pub fn submodule_changes(
+        &self,
+        root: &Path,
+        from: Option<&str>,
+        to: &str,
+    ) -> Result<WorkspaceChanges> {
+        // Git's empty tree, so a submodule added in the range reports all of its files.
+        const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        let git = Git::new(root);
+        let from = from.unwrap_or(EMPTY_TREE);
+        let mut committed = BTreeSet::new();
+        if self.sources.committed {
+            committed = git.diff_paths(from, to)?;
+        }
+        let on_head = self.sources.wants_working_tree() && git.same_commit(to, DEFAULT_HEAD)?;
+        let sources = AffectedSources {
+            committed: self.sources.committed,
+            uncommitted: self.sources.uncommitted && on_head,
+            untracked: self.sources.untracked && on_head,
+        };
+        let mut working_tree = BTreeSet::new();
+        if sources.uncommitted {
+            working_tree.extend(git.uncommitted_paths()?);
+        }
+        if sources.untracked {
+            working_tree.extend(git.untracked_paths()?);
+        }
+        Ok(WorkspaceChanges {
+            paths: committed.union(&working_tree).cloned().collect(),
+            committed,
+            working_tree,
+            merge_base: self.sources.committed.then(|| from.to_string()),
+            head: to.to_string(),
+            sources,
+        })
+    }
+
     /// Revisions for another checkout that compare only the working-tree part of these
     /// changes, or `None` when they include no working-tree change.
     pub fn working_tree_revisions(&self) -> Option<WorkspaceGitRevisions> {
