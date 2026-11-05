@@ -125,13 +125,17 @@ impl RunReport {
     /// The index of an entry for `task` that has not started, added if there is none.
     fn unstarted(state: &mut State, task: &Task) -> usize {
         let key = task_key(task);
-        if let Some(i) = state
+        match state
             .tasks
             .iter()
             .position(|e| e.key == key && e.started.is_none() && e.ended.is_none())
         {
-            return i;
+            Some(i) => i,
+            None => Self::add(state, key, task),
         }
+    }
+
+    fn add(state: &mut State, key: TaskKey, task: &Task) -> usize {
         state.tasks.push(Entry {
             key,
             name: task.name.clone(),
@@ -144,10 +148,11 @@ impl RunReport {
         state.tasks.len() - 1
     }
 
-    /// Lists a task the run will try to run. Its arguments are redacted when the report is
-    /// written.
+    /// Lists a task the run will try to run. Each graph the run schedules lists a task once,
+    /// so a task two parents run is listed twice, and one that only one of them reaches stays
+    /// `not_run` in the other. Its arguments are redacted when the report is written.
     pub fn schedule(&self, task: &Task) {
-        Self::unstarted(&mut self.state.lock().unwrap(), task);
+        Self::add(&mut self.state.lock().unwrap(), task_key(task), task);
     }
 
     /// Records that a task started, and returns the id [`RunReport::finish`] takes.
@@ -464,6 +469,25 @@ mod tests {
             .map(|t| t["status"].as_str().unwrap())
             .collect();
         assert_eq!(statuses, ["failed", "passed"]);
+    }
+
+    #[test]
+    fn a_task_scheduled_twice_and_run_once_keeps_a_not_run_entry() {
+        let report = RunReport::new();
+        let a = task("a");
+        report.schedule(&a);
+        report.schedule(&a);
+        let id = report.start(&a);
+        report.finish(id, TaskReportStatus::Passed, Some(0));
+
+        let json = report_json(&report, false);
+        let statuses: Vec<_> = json["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["status"].as_str().unwrap())
+            .collect();
+        assert_eq!(statuses, ["passed", "not_run"]);
     }
 
     #[test]
