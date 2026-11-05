@@ -56,7 +56,8 @@ pub enum AffectedTaskReason {
 ///
 /// Untracked files: Git lists neither a submodule whose only change is untracked files
 /// nor the files themselves, so when untracked files count, each initialized submodule
-/// checked out at the commit its parent records is listed as well.
+/// checked out at the commit its parent records in the head tree (not the staged one) is
+/// listed as well.
 pub struct AffectedRepos<'a> {
     revisions: &'a WorkspaceGitRevisions,
     /// Canonical checkout roots and their changes; the first is the default checkout.
@@ -154,24 +155,10 @@ fn add_submodule_changes(root: &Path, changes: &mut WorkspaceChanges, depth: usi
     }
     let git = Git::new(root);
     if depth == 0 && changes.counts_untracked() {
-        // `--recursive` lists nested submodules too, by their path from `root`.
-        match git.submodules_at_recorded_commit() {
-            Ok(submodules) => {
-                for submodule in submodules {
-                    match Git::new(root.join(&submodule)).untracked_paths() {
-                        Ok(paths) => changes.add_submodule_paths(&submodule, &paths),
-                        Err(err) => debug!(
-                            "--affected: cannot list untracked files in {}: {err}",
-                            submodule.display()
-                        ),
-                    }
-                }
-            }
-            Err(err) => debug!(
-                "--affected: cannot list the submodules of {}: {err}",
-                root.display()
-            ),
-        }
+        let head = changes.head().to_string();
+        let mut untracked = BTreeSet::new();
+        add_submodule_untracked(root, &head, Path::new(""), &mut untracked, 0);
+        changes.add_submodule_paths(Path::new(""), &untracked);
     }
     let submodules = changes
         .paths
@@ -197,6 +184,55 @@ fn add_submodule_changes(root: &Path, changes: &mut WorkspaceChanges, depth: usi
                 sub_root.display()
             ),
         }
+    }
+}
+
+/// Adds to `untracked` the untracked files of each initialized submodule of the checkout
+/// at `root` that is checked out at the commit `root` records for it in `head`, under
+/// `prefix` and the submodule's path, then does the same inside it with its own `HEAD`.
+/// This is the working-tree rule of [`WorkspaceChanges::submodule_changes`], applied to
+/// submodules whose recorded commit did not change, which Git does not list.
+fn add_submodule_untracked(
+    root: &Path,
+    head: &str,
+    prefix: &Path,
+    untracked: &mut BTreeSet<PathBuf>,
+    depth: usize,
+) {
+    if depth > 16 {
+        return;
+    }
+    let git = Git::new(root);
+    let submodules = match git.submodule_paths() {
+        Ok(submodules) => submodules,
+        Err(err) => {
+            debug!(
+                "--affected: cannot list the submodules of {}: {err}",
+                root.display()
+            );
+            return;
+        }
+    };
+    for submodule in submodules {
+        let sub_root = root.join(&submodule);
+        // Without its own `.git`, Git would answer for the parent instead.
+        if !sub_root.join(".git").exists() {
+            continue;
+        }
+        let recorded = git.object_at(head, &submodule).ok().flatten();
+        let checked_out = Git::new(&sub_root).resolve_commit("HEAD").ok().flatten();
+        if recorded.is_none() || recorded != checked_out {
+            continue;
+        }
+        let sub_prefix = prefix.join(&submodule);
+        match Git::new(&sub_root).untracked_paths() {
+            Ok(paths) => untracked.extend(paths.iter().map(|path| sub_prefix.join(path))),
+            Err(err) => debug!(
+                "--affected: cannot list untracked files in {}: {err}",
+                sub_root.display()
+            ),
+        }
+        add_submodule_untracked(&sub_root, "HEAD", &sub_prefix, untracked, depth + 1);
     }
 }
 

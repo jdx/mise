@@ -360,3 +360,12 @@ rm sub/lib/untracked.txt
 
 # Running inside a submodule compares the submodule's own history.
 assert_contains "cd sub && mise run --affected --affected-committed --affected-explain --dry-run sub" "changed source: lib/a.txt"
+
+# The submodule is compared with the commit the head tree records, not a staged one.
+git -C sub checkout -q HEAD~1
+git add sub
+git -C sub checkout -q "$sub_new"
+echo new >sub/lib/untracked.txt
+assert_contains "mise run --affected --affected-untracked --affected-explain --dry-run sub" "changed source: sub/lib/untracked.txt"
+rm sub/lib/untracked.txt
+git reset -q sub
