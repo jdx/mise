@@ -140,7 +140,7 @@ impl TaskFetcher {
         self
     }
 
-    /// Skips the one-time warning, for output a shell or another program reads, such as
+    /// Skips the one-time warnings (an unfetched `git::` file, an unreadable file), for output a shell or another program reads, such as
     /// completion and usage specs.
     pub fn without_warning(mut self) -> Self {
         self.warn_unfetched = false;
@@ -189,7 +189,7 @@ impl TaskFetcher {
                 }
                 // The task keeps its TOML metadata. A run that selects it fetches it again
                 // and fails there.
-                if !WARNED_UNREADABLE_TASK.swap(true, Ordering::Relaxed) {
+                if self.warn_unfetched && !WARNED_UNREADABLE_TASK.swap(true, Ordering::Relaxed) {
                     warn!(
                         "could not read the file of task `{}`, so only its TOML metadata is known: {err:#}",
                         t.name
