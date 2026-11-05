@@ -113,43 +113,48 @@ where
 type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
 
 /// The longest line mise reads from a command in one piece. Output with no newline is
-/// passed on in pieces of at most this size (plus the length of a registered secret that a
-/// cut would otherwise split), so a command cannot make mise hold an unbounded line.
+/// passed on in pieces of about this size, so a command cannot make mise hold an unbounded
+/// line.
 const MAX_LINE_BYTES: usize = 1024 * 1024;
 
-/// Like tokio's `Lines`, but a line longer than `max` bytes arrives in pieces. A cut lands
-/// on a character boundary and never inside a registered secret: the redactor sees one
-/// piece at a time, so a secret split across two pieces would print in both halves.
+/// The longest URL scheme and authority a cut keeps whole, so the URL credential redaction
+/// that task logs apply sees `scheme://user:pw@` in one piece.
+const URL_AUTHORITY_BYTES: usize = 2048;
+
+/// Like tokio's `Lines`, but a line longer than `max` bytes arrives in pieces. The redactor
+/// sees one piece at a time, so where a piece ends is chosen with its match set; see
+/// [`Self::cut`].
 struct CappedLines<R> {
     reader: R,
     max: usize,
-    secrets: Arc<Vec<Vec<u8>>>,
-    /// How far past a cut to read, to see a secret that crosses it.
-    lookahead: usize,
+    /// The command's redactor joined with the global one: what every piece is redacted with.
+    redactor: Redactor,
+    /// How far from `max` a cut may move: the longest secret or a URL authority.
+    reach: usize,
     /// Bytes read past the previous cut or newline: the start of the next piece.
     carry: Vec<u8>,
 }
 
 impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
-    fn new(reader: R, secrets: Arc<Vec<Vec<u8>>>) -> Self {
-        Self::with_max(reader, MAX_LINE_BYTES, secrets)
+    fn new(reader: R, redactor: Redactor) -> Self {
+        Self::with_max(reader, MAX_LINE_BYTES, redactor)
     }
 
-    fn with_max(reader: R, max: usize, secrets: Arc<Vec<Vec<u8>>>) -> Self {
-        // At least two bytes, so a line exactly `max` long sees its `\n` or `\r\n`.
-        let lookahead = secrets.iter().map(Vec::len).max().unwrap_or(0).max(2);
+    fn with_max(reader: R, max: usize, redactor: Redactor) -> Self {
+        let reach = redactor.longest_pattern().max(URL_AUTHORITY_BYTES);
         Self {
             reader,
             max,
-            secrets,
-            lookahead,
+            redactor,
+            reach,
             carry: Vec::new(),
         }
     }
 
     async fn next_line(&mut self) -> std::io::Result<Option<String>> {
         let mut buf = std::mem::take(&mut self.carry);
-        let want = self.max + self.lookahead;
+        // Enough past `max` to see every match a cut near it could touch, and a `\r\n`.
+        let want = self.max + 3 * self.reach + 2;
         if !buf.contains(&b'\n') && buf.len() < want {
             (&mut self.reader)
                 .take((want - buf.len()) as u64)
@@ -173,6 +178,15 @@ impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
         } else if buf.len() > self.max {
             let cut = self.cut(&buf);
             self.carry = buf.split_off(cut);
+            // A cut right before the line's end ends the line there.
+            if self.carry.first() == Some(&b'\n') {
+                self.carry.remove(0);
+                if buf.last() == Some(&b'\r') {
+                    buf.pop();
+                }
+            } else if self.carry.starts_with(b"\r\n") {
+                self.carry.drain(..2);
+            }
         }
         // Otherwise the output ended without a newline, and `buf` is its last line.
         String::from_utf8(buf)
@@ -183,43 +197,110 @@ impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
     /// Where to end a piece of `buf`, which is longer than `max` and holds no newline in
     /// its first `max` bytes.
     ///
-    /// The rule, which keeps every cut cheap: after settling on a character boundary, look
-    /// only at the window [cut − longest + 1, cut + longest − 1], so a cut costs at most the
-    /// secrets times that window, whatever the buffer holds. When a secret occurrence spans
-    /// the cut, move the cut forward once, to the end of the earliest spanning occurrence,
-    /// which the lookahead has already read. Never walk back across the buffer: with `aaaa`
-    /// registered, a long run of `a` would otherwise walk back to the start for every piece.
-    /// A run of overlapping occurrences can leave a fragment shorter than a secret on the far
-    /// side of the moved cut, and a fragment shorter than a secret is not the secret.
+    /// Invariant: a cut never exposes a byte that redacting the whole line would hide. The
+    /// matches are the redactor's own (`Redactor::match_spans`, the overlapping matches that
+    /// `redact` replaces), so the two cannot drift apart. A cut is safe when every match it
+    /// crosses is still covered, on each side, by matches that lie wholly on that side: then
+    /// redacting each piece hides exactly the bytes redacting the line hides. (The text can
+    /// differ in how many `[redacted]` markers it shows: with `aaaa` registered, a run of
+    /// `a` that the line would redact as one is cut at an `aaaa` boundary and redacted per
+    /// piece. Keeping such a run whole would let one line grow without bound.) A URL
+    /// authority that holds credentials is never cut, so its userinfo is redacted too.
+    ///
+    /// The cut is the safe character boundary closest below `max`, else the closest above it,
+    /// within `reach` of `max`. Matches are found once per cut, in a window of a few times
+    /// `reach` around `max`, so the total is linear in the output. If no position in reach is
+    /// safe, which takes a chain of distinct overlapping secrets longer than `reach` with no
+    /// point where one ends as another starts, the piece ends at `max`.
     fn cut(&self, buf: &[u8]) -> usize {
-        let mut cut = self.max;
-        if let Err(err) = std::str::from_utf8(&buf[..cut])
-            && err.error_len().is_none()
-        {
-            cut = err.valid_up_to();
-        }
-        match self.secret_across(buf, cut) {
-            Some((_, end)) => end,
-            None => cut,
-        }
-    }
-
-    /// The earliest registered secret in `buf` that starts before `cut` and ends after it.
-    fn secret_across(&self, buf: &[u8], cut: usize) -> Option<(usize, usize)> {
-        self.secrets
-            .iter()
-            .filter(|secret| secret.len() > 1)
-            .filter_map(|secret| {
-                // Every occurrence inside this window crosses `cut`.
-                let from = cut.saturating_sub(secret.len() - 1);
-                let to = (cut + secret.len() - 1).min(buf.len());
-                buf.get(from..to)?
-                    .windows(secret.len())
-                    .position(|window| window == secret.as_slice())
-                    .map(|at| (from + at, from + at + secret.len()))
+        let reach = self.reach;
+        let from = self.max.saturating_sub(3 * reach);
+        let to = (self.max + 3 * reach).min(buf.len());
+        let window = &buf[from..to];
+        let mut spans: Vec<(usize, usize)> = self
+            .redactor
+            .match_spans(window)
+            .into_iter()
+            .map(|(s, e)| (from + s, from + e))
+            .collect();
+        spans.sort_unstable();
+        let urls: Vec<(usize, usize)> = url_authorities(window)
+            .map(|(s, e)| (from + s, from + e))
+            .collect();
+        let longest = self.redactor.longest_pattern();
+        // The piece may run to the end of what was read, but not past the line's `\n`.
+        let end = buf.len() - usize::from(buf.last() == Some(&b'\n'));
+        let boundary = |c: usize| c > 0 && (c == end || (c < end && (buf[c] & 0xC0) != 0x80));
+        let below = (self.max.saturating_sub(reach - 1)..=self.max).rev();
+        let above = self.max + 1..=(self.max + reach).min(end);
+        below
+            .chain(above)
+            .find(|&c| boundary(c) && cut_is_safe(&spans, &urls, longest, c))
+            .unwrap_or_else(|| match std::str::from_utf8(&buf[..self.max]) {
+                Err(err) if err.error_len().is_none() => err.valid_up_to(),
+                _ => self.max,
             })
-            .min()
     }
+}
+
+/// Whether cutting at `c` exposes no byte of a match, given `spans` (sorted, none longer than
+/// `longest`) and URL authorities `urls`. See [`CappedLines::cut`].
+fn cut_is_safe(
+    spans: &[(usize, usize)],
+    urls: &[(usize, usize)],
+    longest: usize,
+    c: usize,
+) -> bool {
+    if urls.iter().any(|&(s, e)| s < c && c < e) {
+        return false;
+    }
+    // Only matches starting within `2 * longest` of `c` can cross it or cover one that does.
+    let lo = spans.partition_point(|&(s, _)| s + 2 * longest < c);
+    let hi = spans.partition_point(|&(s, _)| s < c + longest);
+    let near = &spans[lo..hi];
+    let left: Vec<(usize, usize)> = near.iter().copied().filter(|&(_, e)| e <= c).collect();
+    let right: Vec<(usize, usize)> = near.iter().copied().filter(|&(s, _)| s >= c).collect();
+    near.iter()
+        .filter(|&&(s, e)| s < c && c < e)
+        .all(|&(s, e)| covers(&left, s, c) && covers(&right, c, e))
+}
+
+/// Whether `spans`, sorted by start, cover every byte of `from..to`.
+fn covers(spans: &[(usize, usize)], from: usize, to: usize) -> bool {
+    let mut reached = from;
+    for &(s, e) in spans {
+        if s > reached {
+            break;
+        }
+        reached = reached.max(e);
+    }
+    reached >= to
+}
+
+/// The `scheme://authority` spans in `buf` whose authority holds credentials (an `@`), each
+/// at most [`URL_AUTHORITY_BYTES`] long.
+fn url_authorities(buf: &[u8]) -> impl Iterator<Item = (usize, usize)> + '_ {
+    buf.windows(3)
+        .enumerate()
+        .filter(|(_, w)| *w == b"://")
+        .filter_map(move |(at, _)| {
+            let scheme = buf[..at]
+                .iter()
+                .rev()
+                .take(32)
+                .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
+                .count();
+            let start = at - scheme;
+            let authority = &buf[at + 3..];
+            let len = authority
+                .iter()
+                .take(URL_AUTHORITY_BYTES)
+                .position(|b| matches!(b, b'/' | b'?' | b'#') || b.is_ascii_whitespace())
+                .unwrap_or(authority.len().min(URL_AUTHORITY_BYTES));
+            authority[..len]
+                .contains(&b'@')
+                .then_some((start, at + 3 + len))
+        })
 }
 
 fn chain_observers<'a, F: Fn(&str) + Send + 'a>(
@@ -1155,16 +1236,17 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    /// Every value a line of output may be redacted for, by this command's redactor or the
-    /// global one, so [`CappedLines`] never cuts a line inside one.
-    fn line_secrets(&self) -> Arc<Vec<Vec<u8>>> {
+    /// This command's redactor joined with the global one: every value a line of output may
+    /// be redacted for, so [`CappedLines`] cuts a line only where redaction allows.
+    fn line_redactor(&self) -> Redactor {
         let global = crate::redactions::GLOBAL_REDACTOR
             .lock()
             .unwrap()
             .patterns_arc();
-        let own = self.redactor.patterns_arc();
-        let secrets: indexmap::IndexSet<&String> = own.iter().chain(global.iter()).collect();
-        Arc::new(secrets.into_iter().map(|s| s.as_bytes().to_vec()).collect())
+        if global.is_empty() {
+            return self.redactor.clone();
+        }
+        self.redactor.with_additional(global.iter().cloned())
     }
 
     pub fn with_on_stdout<F: Fn(String) + Send + 'a>(mut self, on_stdout: F) -> Self {
@@ -1641,13 +1723,13 @@ impl<'a> CmdLineRunner<'a> {
         }
         trace!("Started process: {id} for {}", self.get_program());
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let secrets = self.line_secrets();
+        let line_redactor = self.line_redactor();
         if let Some(stdout) = cp.stdout.take() {
             let name = self.to_string();
             let tx = tx.clone();
-            let secrets = secrets.clone();
+            let line_redactor = line_redactor.clone();
             tokio::spawn(async move {
-                let mut lines = CappedLines::new(TokioBufReader::new(stdout), secrets);
+                let mut lines = CappedLines::new(TokioBufReader::new(stdout), line_redactor);
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {
@@ -1665,9 +1747,9 @@ impl<'a> CmdLineRunner<'a> {
         if let Some(stderr) = cp.stderr.take() {
             let name = self.to_string();
             let tx = tx.clone();
-            let secrets = secrets.clone();
+            let line_redactor = line_redactor.clone();
             tokio::spawn(async move {
-                let mut lines = CappedLines::new(TokioBufReader::new(stderr), secrets);
+                let mut lines = CappedLines::new(TokioBufReader::new(stderr), line_redactor);
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {
