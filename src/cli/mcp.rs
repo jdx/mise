@@ -549,6 +549,8 @@ impl ServerHandler for MiseServer {
                 let mut fetched = tasks.values().cloned().collect::<Vec<_>>();
                 crate::task::task_fetcher::TaskFetcher::for_inspection(false)
                     .without_warning()
+                    // with no-cache set, each read downloads the files again
+                    .without_shared_snapshots()
                     .fetch_tasks(&config, &mut fetched)
                     .await
                     .map_err(|e| ErrorData {

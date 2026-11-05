@@ -88,6 +88,9 @@ pub struct TaskFetcher {
     no_cache: bool,
     inspecting: bool,
     warn_unfetched: bool,
+    /// With `no_cache`, share one download of each task file across the command; see
+    /// [`RemoteTaskArtifactsGuard`].
+    share_snapshots: bool,
 }
 
 impl TaskFetcher {
@@ -97,6 +100,7 @@ impl TaskFetcher {
             no_cache,
             inspecting: false,
             warn_unfetched: false,
+            share_snapshots: true,
         }
     }
 
@@ -107,7 +111,16 @@ impl TaskFetcher {
             no_cache,
             inspecting: true,
             warn_unfetched: true,
+            share_snapshots: true,
         }
+    }
+
+    /// With `no_cache`, downloads each task file again instead of reusing the command's shared
+    /// snapshot, for a long-lived process such as `mise mcp`, whose one command scope would
+    /// otherwise keep its first download for as long as it runs.
+    pub fn without_shared_snapshots(mut self) -> Self {
+        self.share_snapshots = false;
+        self
     }
 
     /// Skips the one-time warning, for output a shell or another program reads, such as
@@ -185,7 +198,7 @@ impl TaskFetcher {
                 let provider = task_file_providers
                     .get_provider(&source)
                     .ok_or_else(|| eyre::eyre!("No provider found for file: {}", source))?;
-                let artifact = if no_cache {
+                let artifact = if no_cache && self.share_snapshots {
                     // Reuse one snapshot when dependency resolution materializes
                     // the same task again, while keeping separate task definitions
                     // that happen to use the same URL independent.
@@ -369,6 +382,49 @@ echo ok
             task.tools.get("python"),
             Some(&TaskToolValue::String("3.13".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn test_unshared_no_cache_fetch_downloads_again_within_a_scope() {
+        // Generate mode shares one download per URL within an invocation; this test counts
+        // the requests of plain downloads.
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = <crate::config::settings::SettingsPartial as confique::Layer>::empty();
+        partial.lockfile_mode = Some("merge".into());
+        crate::config::Settings::reset(Some(partial));
+        let _test_lock = REMOTE_TASK_ARTIFACT_TEST_LOCK.lock().await;
+        let _artifacts = RemoteTaskArtifactsGuard::new();
+        let mut server = mockito::Server::new_async().await;
+        let remote = server
+            .mock("GET", "/unshared-task")
+            .with_status(200)
+            .with_body("#!/usr/bin/env bash\n#MISE tags=[\"remote\"]\necho ok\n")
+            .expect(2)
+            .create_async()
+            .await;
+
+        let config = Config::get().await.unwrap();
+        let config_root = tempfile::tempdir().unwrap();
+        let task = Task {
+            name: "lint".into(),
+            display_name: "lint".into(),
+            config_source: config_root.path().join("mise.toml"),
+            config_root: Some(config_root.path().to_path_buf()),
+            file: Some(PathBuf::from(format!("{}/unshared-task", server.url()))),
+            ..Default::default()
+        };
+
+        // One long-lived scope, as in `mise mcp`: each read still downloads the file.
+        for _ in 0..2 {
+            let mut tasks = vec![task.clone()];
+            TaskFetcher::for_inspection(true)
+                .without_shared_snapshots()
+                .fetch_tasks(&config, &mut tasks)
+                .await
+                .unwrap();
+            assert_eq!(tasks[0].tags, ["remote"]);
+        }
+        remote.assert_async().await;
     }
 
     #[tokio::test]
