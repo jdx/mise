@@ -23,6 +23,17 @@ run = 'echo "report=\${MISE_TASK_REPORT_FILE:-unset}"'
 
 [tasks.slow]
 run = "sleep 10"
+
+[tasks.secret]
+env.RUN_REPORT_KEY = { required = true, redact = true }
+run = "echo secret"
+
+[tasks.child]
+depends = ["bad"]
+run = "echo child"
+
+[tasks.parent]
+run = [{ task = "child" }]
 EOF
 
 # Leave "fresh" up to date so the next run skips it.
@@ -57,3 +68,22 @@ assert_json "jq -c '[.tasks[] | {name, status, exit_code}]' env.json" '[
 mise run --report-file timeout.json --timeout 1s slow >/dev/null 2>&1 || true
 assert "jq -r .status timeout.json" "timed_out"
 assert "jq -r '.tasks[0].name + \" \" + .tasks[0].status' timeout.json" "slow cancelled"
+
+# Arguments get the redactions a task registers when it starts, after it was
+# scheduled, and URL credentials are hidden.
+RUN_REPORT_KEY=caller_key_7f3 mise run --report-file secret.json secret caller_key_7f3 https://user:pw@example.com/x
+assert_not_contains "cat secret.json" "caller_key_7f3"
+assert_not_contains "cat secret.json" "user:pw"
+assert "jq -r '.tasks[0].args[0]' secret.json" "[redacted]"
+
+# A task a run entry injects is listed even when the run never starts it.
+mise run --report-file nested.json parent >/dev/null 2>&1 || true
+assert "jq -r '.tasks[] | select(.name == \"child\") | .status' nested.json" "not_run"
+
+# A sandbox that lets MISE_* through still keeps the outer report path out.
+assert_contains "MISE_TASK_REPORT_FILE=sandbox.json mise run --deny-env --allow-env 'MISE_*' env" "report=unset"
+
+# A dry run runs nothing to report, so the env var conflicts with it like the flag.
+rm -f dry.json
+assert_fail "MISE_TASK_REPORT_FILE=dry.json mise run --dry-run ok"
+assert "test -e dry.json && echo exists || echo missing" "missing"

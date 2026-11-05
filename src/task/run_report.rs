@@ -4,8 +4,8 @@
 //! ended. A task the run never reached stays `not_run`, so a reader can tell "skipped
 //! because up to date" from "never started because something else failed".
 
-use std::path::Path;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime};
 
 use indexmap::IndexMap;
@@ -75,7 +75,7 @@ pub struct RunReport {
 #[derive(Serialize)]
 struct TaskJson<'a> {
     name: &'a str,
-    args: &'a [String],
+    args: Vec<String>,
     status: TaskReportStatus,
     exit_code: Option<i32>,
     duration_ms: Option<u128>,
@@ -91,6 +91,13 @@ struct RunJson<'a> {
     ended_at: String,
     duration_ms: u128,
     tasks: Vec<TaskJson<'a>>,
+}
+
+/// Redacts an argument as terminal output is, with every redaction the run registered by the
+/// time the report is written: a task's own `redact = true` env values are registered only
+/// when the task starts, after it was scheduled.
+fn redact_arg(arg: &str) -> String {
+    mise_util::redactions::redact_global(&mise_util::redactions::redact_url_userinfo_in_arg(arg))
 }
 
 fn timestamp(time: SystemTime) -> String {
@@ -113,10 +120,10 @@ impl RunReport {
         }
     }
 
-    fn entry<'a>(state: &'a mut State, task: &Task, args: &[String]) -> &'a mut Entry {
+    fn entry<'a>(state: &'a mut State, task: &Task) -> &'a mut Entry {
         state.tasks.entry(task_key(task)).or_insert_with(|| Entry {
             name: task.name.clone(),
-            args: args.to_vec(),
+            args: task.args.clone(),
             status: TaskReportStatus::NotRun,
             exit_code: None,
             started: None,
@@ -124,15 +131,16 @@ impl RunReport {
         })
     }
 
-    /// Lists a task the run will try to run. `args` are already redacted.
-    pub fn schedule(&self, task: &Task, args: &[String]) {
-        Self::entry(&mut self.state.lock().unwrap(), task, args);
+    /// Lists a task the run will try to run. Its arguments are redacted when the report is
+    /// written.
+    pub fn schedule(&self, task: &Task) {
+        Self::entry(&mut self.state.lock().unwrap(), task);
     }
 
-    /// Records that a task started. Also lists a task injected by a `run` entry.
-    pub fn start(&self, task: &Task, args: &[String]) {
+    /// Records that a task started.
+    pub fn start(&self, task: &Task) {
         let mut state = self.state.lock().unwrap();
-        let entry = Self::entry(&mut state, task, args);
+        let entry = Self::entry(&mut state, task);
         entry.started = Some((SystemTime::now(), Instant::now()));
         entry.ended = None;
     }
@@ -142,7 +150,7 @@ impl RunReport {
     pub fn finish(&self, task: &Task, status: TaskReportStatus, exit_code: Option<i32>) {
         let mut state = self.state.lock().unwrap();
         let timed_out = state.timed_out;
-        let entry = Self::entry(&mut state, task, &task.args);
+        let entry = Self::entry(&mut state, task);
         if status == TaskReportStatus::NotRun {
             entry.status = status;
             entry.exit_code = None;
@@ -195,7 +203,7 @@ impl RunReport {
             .sorted_by_key(|e| (e.started.is_none(), e.started.map(|(_, at)| at)))
             .map(|e| TaskJson {
                 name: &e.name,
-                args: &e.args,
+                args: e.args.iter().map(|arg| redact_arg(arg)).collect(),
                 status: e.status,
                 exit_code: e.exit_code,
                 duration_ms: match (e.started, e.ended) {
@@ -224,6 +232,51 @@ impl RunReport {
     }
 }
 
+/// Writes a run's report once, when the run returns or when its future is dropped.
+///
+/// A Ctrl-C before the tasks start (while tools install, say) makes mise drop the command's
+/// future instead of letting it return, so the write must also happen on drop. That run is
+/// reported as cancelled.
+pub struct RunReportWriter {
+    path: PathBuf,
+    report: Arc<RunReport>,
+    written: bool,
+}
+
+impl RunReportWriter {
+    pub fn new(path: PathBuf, report: Arc<RunReport>) -> Self {
+        Self {
+            path,
+            report,
+            written: false,
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Writes the report for a run that returned.
+    pub fn finish(mut self, run_failed: bool, interrupted: bool) -> Result<()> {
+        self.written = true;
+        self.report.write(&self.path, run_failed, interrupted)
+    }
+}
+
+impl Drop for RunReportWriter {
+    fn drop(&mut self) {
+        if self.written {
+            return;
+        }
+        if let Err(err) = self.report.write(&self.path, true, true) {
+            warn!(
+                "failed to write {}: {err:#}",
+                crate::file::display_path(&self.path)
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,15 +295,19 @@ mod tests {
     #[test]
     fn lists_tasks_in_schedule_order_with_their_status() {
         let report = RunReport::new();
-        let (a, b, c) = (task("a"), task("b"), task("c"));
-        report.schedule(&a, &[]);
-        report.schedule(&b, &["x".to_string()]);
-        report.schedule(&c, &[]);
-        report.start(&b, &["x".to_string()]);
+        let (a, c) = (task("a"), task("c"));
+        let b = Task {
+            args: vec!["x".to_string()],
+            ..task("b")
+        };
+        report.schedule(&a);
+        report.schedule(&b);
+        report.schedule(&c);
+        report.start(&b);
         report.finish(&b, TaskReportStatus::Failed, Some(3));
         // Two starts in the same tick would keep schedule order.
         std::thread::sleep(std::time::Duration::from_millis(2));
-        report.start(&a, &[]);
+        report.start(&a);
         report.finish(&a, TaskReportStatus::Passed, Some(0));
 
         let json = report_json(&report, true);
@@ -274,7 +331,7 @@ mod tests {
     fn a_task_still_running_at_a_timeout_is_cancelled() {
         let report = RunReport::new();
         let a = task("a");
-        report.start(&a, &[]);
+        report.start(&a);
         report.mark_timed_out();
 
         let json = report_json(&report, true);
@@ -287,7 +344,7 @@ mod tests {
     fn a_task_killed_by_the_timeout_is_cancelled() {
         let report = RunReport::new();
         let a = task("a");
-        report.start(&a, &[]);
+        report.start(&a);
         report.mark_timed_out();
         report.finish(&a, TaskReportStatus::Failed, None);
 
@@ -301,7 +358,7 @@ mod tests {
     fn a_task_abandoned_before_it_started_is_not_run() {
         let report = RunReport::new();
         let a = task("a");
-        report.start(&a, &[]);
+        report.start(&a);
         report.finish(&a, TaskReportStatus::NotRun, None);
 
         let json = report_json(&report, false);
@@ -313,15 +370,64 @@ mod tests {
     fn skipped_and_cached_tasks_pass_the_run() {
         let report = RunReport::new();
         let (a, b) = (task("a"), task("b"));
-        report.start(&a, &[]);
+        report.start(&a);
         report.finish(&a, TaskReportStatus::Skipped, None);
-        report.start(&b, &[]);
+        report.start(&b);
         report.finish(&b, TaskReportStatus::Cached, None);
 
         let json = report_json(&report, false);
         assert_eq!(json["status"], "passed");
         assert_eq!(json["tasks"][0]["status"], "skipped");
         assert_eq!(json["tasks"][1]["status"], "cached");
+    }
+
+    #[test]
+    fn arguments_get_the_redactions_registered_after_scheduling() {
+        let report = RunReport::new();
+        let a = Task {
+            args: vec![
+                "run-report-late-secret-4f1c".to_string(),
+                "https://user:pw@example.com/x".to_string(),
+            ],
+            ..task("a")
+        };
+        report.schedule(&a);
+        // A task's `redact = true` env values are registered when it starts.
+        {
+            let mut redactor = mise_util::redactions::GLOBAL_REDACTOR.lock().unwrap();
+            *redactor = redactor.with_additional(["run-report-late-secret-4f1c".to_string()]);
+        }
+
+        let json = report_json(&report, false);
+        let args = json["tasks"][0]["args"].to_string();
+        assert!(!args.contains("run-report-late-secret-4f1c"), "{args}");
+        assert!(!args.contains("pw@"), "{args}");
+    }
+
+    #[test]
+    fn a_dropped_writer_reports_a_cancelled_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.json");
+        let report = Arc::new(RunReport::new());
+        report.schedule(&task("a"));
+        drop(RunReportWriter::new(path.clone(), report));
+
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(json["status"], "cancelled");
+        assert_eq!(json["tasks"][0]["status"], "not_run");
+    }
+
+    #[test]
+    fn a_finished_writer_writes_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.json");
+        let writer = RunReportWriter::new(path.clone(), Arc::new(RunReport::new()));
+        writer.finish(false, false).unwrap();
+
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(json["status"], "passed");
     }
 
     #[test]

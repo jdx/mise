@@ -169,7 +169,9 @@ dashboards and agent tools can read what ran and how it ended instead of
 parsing the output. Setting `MISE_TASK_REPORT_FILE` does the same without
 changing the command line. The tasks the run starts do not inherit
 `MISE_TASK_REPORT_FILE`, so a `mise run` inside a task does not overwrite the
-report.
+report. A Ctrl-C before any task starts, while tools install for example,
+still writes a `cancelled` report. Neither the flag nor the variable can be
+combined with `--dry-run`.
 
 ```json
 {
@@ -224,7 +226,9 @@ of:
 | `not_run`   | The run ended before it started.                                                                              |
 
 The top-level `status` is `passed`, `failed`, `cancelled`, or `timed_out`.
-Arguments are redacted like the terminal output. A `version` change means a
+Arguments are redacted like the terminal output, including the values of
+`redact = true` environment variables and credentials in URLs. A `version`
+change means a
 field changed meaning; new fields can appear without one.
 
 ## Output

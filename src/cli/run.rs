@@ -14,7 +14,7 @@ use crate::env;
 use crate::file::display_path;
 use crate::otel;
 use crate::task::has_any_usage_spec;
-use crate::task::run_report::{RunReport, TaskReportStatus};
+use crate::task::run_report::{RunReport, RunReportWriter, TaskReportStatus};
 use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
@@ -706,18 +706,30 @@ impl Run {
         let Some(report_path) = report_path else {
             return self.run_tasks().await;
         };
+        // `mise run` rejects the flag or its env var with `--dry-run`, but a bare
+        // `mise --dry-run <task>` builds this command without that check, so it is
+        // repeated here: a dry run runs nothing to report.
+        if self.dry_run {
+            bail!(
+                "--report-file ({}) cannot be used with --dry-run",
+                crate::task::run_report::REPORT_FILE_ENV
+            );
+        }
         // Resolved now, against the directory the run was started from.
         let report_path = std::env::current_dir()?.join(report_path);
         let report = Arc::new(RunReport::new());
         self.run_report = Some(report.clone());
+        // Writes on drop too, for a Ctrl-C that drops this future before it returns.
+        let writer = RunReportWriter::new(report_path, report);
         let result = self.run_tasks().await;
-        let written = report.write(&report_path, result.is_err(), ctrlc::is_cancelled());
+        let path = writer.path().to_path_buf();
+        let written = writer.finish(result.is_err(), ctrlc::is_cancelled());
         match (result, written) {
             (Ok(()), Err(err)) => {
-                Err(err.wrap_err(format!("failed to write {}", display_path(&report_path))))
+                Err(err.wrap_err(format!("failed to write {}", display_path(&path))))
             }
             (result, Err(err)) => {
-                warn!("failed to write {}: {err:#}", display_path(&report_path));
+                warn!("failed to write {}: {err:#}", display_path(&path));
                 result
             }
             (result, Ok(())) => result,
@@ -1136,7 +1148,7 @@ impl Run {
         let tasks = self.prepare_tasks(&config, tasks).await?;
         if let Some(report) = &self.run_report {
             for task in tasks.all_in_creation_order() {
-                report.schedule(task, &redacted_args(&config, task));
+                report.schedule(task);
             }
         }
         let num_tasks = tasks.all().count();
@@ -1155,6 +1167,9 @@ impl Run {
         self.setup_executor()?;
         if let (Some(t), Some(executor)) = (&self.telemetry, &mut self.executor) {
             executor.output_forwarder = t.output_forwarder();
+        }
+        if let Some(executor) = &mut self.executor {
+            executor.run_report = self.run_report.clone();
         }
 
         // Validate every scheduled invocation before starting the scheduler so
@@ -1375,7 +1390,7 @@ impl Run {
                 .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
             if let Some(report) = &this.run_report {
-                report.start(&task, &redacted_args(&ctx.config, &task));
+                report.start(&task);
             }
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
@@ -1496,6 +1511,10 @@ impl Run {
                 }
             }
             if let Some(report) = &this.run_report {
+                // After a Ctrl-C, a task that fails was stopped by it: many programs exit
+                // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
+                // ends with "task sequence aborted".
+                let cancelled = cancelled || (ctrlc::is_cancelled() && !panicked);
                 let (status, exit_code) = report_status(&result, panicked, cancelled);
                 report.finish(&task, status, exit_code);
             }
@@ -1547,7 +1566,7 @@ impl Run {
         }
         self.add_failed_task(task.clone(), Error::get_exit_status(&err));
         if let Some(report) = &self.run_report {
-            report.start(&task, &redacted_args(config, &task));
+            report.start(&task);
             report.finish(
                 &task,
                 TaskReportStatus::Failed,
@@ -1885,11 +1904,6 @@ impl Run {
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.output_handler.as_ref().unwrap().quiet(task)
     }
-}
-
-/// A task's arguments as the run report lists them: redacted like terminal output.
-fn redacted_args(config: &Config, task: &Task) -> Vec<String> {
-    task.args.iter().map(|a| config.redact(a)).collect()
 }
 
 /// How a finished task job appears in the run report.
