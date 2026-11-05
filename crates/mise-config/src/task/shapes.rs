@@ -246,7 +246,7 @@ pub struct RustCacheTable {
     pub verify: Option<bool>,
 }
 
-/// output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.
+/// output style for this task (prefix, interleave, keep-order, replacing, summary, timed, quiet, silent). Independent of the quiet/silent verbosity fields.
 #[derive(JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskOutputDecl {
@@ -254,6 +254,7 @@ pub enum TaskOutputDecl {
     Interleave,
     KeepOrder,
     Replacing,
+    Summary,
     Timed,
     Quiet,
     Silent,

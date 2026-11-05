@@ -4418,6 +4418,7 @@ enum = [
   { value = "interleave", description = "print output as it arrives, without labels" },
   { value = "keep-order", description = "label lines, stream one task live and buffer the others, then print them in definition order as they finish" },
   { value = "replacing", description = "replace the previous stdout line with each new one, like `mise install` progress; stderr is printed as is" },
+  { value = "summary", description = "hold each task's output until it ends, then print one line if it passed and everything it printed if it failed" },
   { value = "timed", description = "print only stdout lines that stay on screen for more than a second" },
   { value = "quiet", description = "deprecated; use `interleave` with `task.quiet`" },
   { value = "silent", description = "print nothing from tasks or mise except errors" },

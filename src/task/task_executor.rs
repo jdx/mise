@@ -885,6 +885,9 @@ impl TaskExecutor {
                         if !self.quiet(Some(task)) {
                             self.eprint(task, &prefix, "sources up-to-date, skipping");
                         }
+                        if self.output(Some(task)) == TaskOutput::Summary {
+                            self.output_handler.summary_up_to_date(task);
+                        }
                         self.output_handler
                             .replay_cached_output(task, &prefix, &output);
                         return Ok(TaskRunOutcome {
@@ -1205,6 +1208,19 @@ impl TaskExecutor {
         }
 
         let execution_duration = timer.elapsed();
+        // A task that only has dependencies ran nothing, and gets no line; a
+        // dry run ran nothing either, and shows the commands it would run.
+        if self.output(Some(task)) == TaskOutput::Summary
+            && !self.dry_run
+            && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
+        {
+            // As for the `Finished in` line: `--no-timings` wins, then
+            // `--timings`, then the setting.
+            let timings =
+                !self.no_timings && (self.timings || Settings::get().task.timings != Some(false));
+            self.output_handler
+                .summary_duration(task, timings.then_some(execution_duration));
+        }
         if self.task_timings(Some(task))
             && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
         {
@@ -2288,6 +2304,32 @@ impl TaskExecutor {
                         } else {
                             self.eprint(task, prefix, &line);
                         }
+                    });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stderr(|_| {});
+                } else {
+                    cmd = cmd.stderr(Stdio::null());
+                }
+            }
+            TaskOutput::Summary => {
+                if !task.silent.suppresses_stdout() {
+                    let handler = self.output_handler.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stdout(move |line| {
+                        handler.summary_stdout(&task_clone, &prefix_str, &line);
+                    });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stdout(|_| {});
+                } else {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if !task.silent.suppresses_stderr() {
+                    let handler = self.output_handler.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stderr(move |line| {
+                        handler.summary_stderr(&task_clone, &prefix_str, &line);
                     });
                 } else if output_capture.is_some() {
                     cmd = cmd.with_on_stderr(|_| {});
