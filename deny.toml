@@ -81,11 +81,8 @@ ignore = [
   { id = "RUSTSEC-2026-0391", reason = "zstd-safe stale stream data on a reused context advisory; zstd-safe 7.3.0 only remains via zstd 0.13 in aube (decmpfs), rattler and ubi, which use the read decoder and bulk APIs that the advisory does not cover (mise's own zstd is 0.14 with zstd-safe 8.2), and the patched zstd-safe 8 is not semver-compatible with the 7.x that zstd 0.13 pins, so no safe upgrade available" },
   { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress Vec length advisory; zstd-safe 7.3.0 only remains via zstd 0.13 in aube (decmpfs), rattler and ubi, which use the read decoder and bulk APIs that the advisory does not cover (mise's own zstd is 0.14 with zstd-safe 8.2), and the patched zstd-safe 8 is not semver-compatible with the 7.x that zstd 0.13 pins, so no safe upgrade available" },
   { id = "RUSTSEC-2026-0403", reason = "zstd-safe legacy frame uninitialized memory advisory; zstd-safe 7.3.0 only remains via zstd 0.13 in aube (decmpfs), rattler and ubi, which use the read decoder and bulk APIs that the advisory does not cover (mise's own zstd is 0.14 with zstd-safe 8.2), and the patched zstd-safe 8 is not semver-compatible with the 7.x that zstd 0.13 pins, so no safe upgrade available" },
-  { id = "RUSTSEC-2026-0439", reason = "astral-tokio-tar unmaintained - transitive via rattler_package_streaming, which the conda backend uses to unpack conda packages, no safe upgrade available" },
-  { id = "RUSTSEC-2026-0437", reason = "pin-utils unmaintained - transitive via wasmtimer in rattler_repodata_gateway, no safe upgrade available" },
-  # Temporary: the two advisories above before rustsec/advisory-db#3497 assigns their IDs. This
-  # ignores every unnumbered advisory, so remove it once those IDs are published.
-  { id = "RUSTSEC-0000-0000", reason = "astral-tokio-tar and pin-utils unmaintained, until they are published as RUSTSEC-2026-0439 and RUSTSEC-2026-0437" },
+  { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar unmaintained - transitive via rattler_package_streaming, which the conda backend uses to unpack conda packages, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0441", reason = "pin-utils unmaintained - transitive via wasmtimer in rattler_repodata_gateway, no safe upgrade available" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
