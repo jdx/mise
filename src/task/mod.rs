@@ -53,6 +53,7 @@ pub mod task_executor;
 pub mod task_fetcher;
 pub(crate) mod task_file_providers;
 pub mod task_helpers;
+pub mod task_history;
 pub mod task_list;
 mod task_load_context;
 pub mod task_lock;

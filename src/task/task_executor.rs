@@ -80,6 +80,8 @@ pub struct TaskRunContext<'a> {
     /// Started by a run entry of a task that holds task locks: it runs under that task's
     /// `--jobs` permit and terminal and never takes either itself.
     pub covered: Cover,
+    /// Set once the task's env has been resolved and its secrets registered for redaction.
+    pub env_resolved: Option<Arc<AtomicBool>>,
 }
 
 #[derive(Clone, Copy)]
@@ -708,6 +710,7 @@ impl TaskExecutor {
             otel_span_cx,
             injected,
             covered,
+            env_resolved,
         } = ctx;
         // Every task reaches this point before it runs, whether it was named, a dependency, or
         // the rendered name of a `run` entry, so this is where a run that must not execute
@@ -765,6 +768,13 @@ impl TaskExecutor {
         } = self
             .prepare_task_context(config, task, otel_span_cx.as_ref())
             .await?;
+        // A granted secret registers its redaction only once fnox returns it, below, so a
+        // task with a grant that skips or stops before then keeps its args out of history.
+        if grant.is_empty()
+            && let Some(flag) = &env_resolved
+        {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         let task_file = self
             .parse_task_usage(config, task, &mut env, extra_vars.clone())
             .await?;
@@ -1070,6 +1080,11 @@ impl TaskExecutor {
                     err
                 })?
         };
+        if spawn_secrets.is_some()
+            && let Some(flag) = &env_resolved
+        {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         // Taken once the task has decided to run and has its secrets, just before its first
         // command, so a skipped or restored task never waits, and held until every run entry
         // ends.

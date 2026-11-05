@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.ok]
+run = 'echo ok'
+
+[tasks.bad]
+run = 'exit 3'
+
+[tasks.fresh]
+run = 'echo fresh > out.txt'
+sources = ["input.txt"]
+outputs = ["out.txt"]
+
+[tasks.cached]
+run = 'echo cached'
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true }
+
+[tasks.all]
+depends = ["ok"]
+
+[tasks.echo]
+run = 'true'
+
+[tasks.trapped]
+run = """
+trap 'exit 1' INT
+touch "$TRAPPED_READY"
+while :; do sleep 0.1; done
+"""
+
+[tasks.slow]
+run = 'sleep 30; echo'
+env = { SLOW_TOKEN = { value = "slow-secret-e2e", redact = true } }
+EOF
+printf 'one\n' >input.txt
+
+# Nothing has run yet.
+assert "mise tasks history --json" "[]"
+
+mise run ok first
+mise run ok
+assert_fail "mise run bad"
+
+# Each run is recorded, oldest first, with its result.
+assert "mise tasks history --json | jq -c '[.[] | [.task, .status]]'" '[["ok","ok"],["ok","ok"],["bad","failed"]]'
+assert_json_partial_object "mise tasks history bad --json | jq '.[0]'" "task,args,status,exit_code" \
+  '{"task":"bad","args":[],"status":"failed","exit_code":3}'
+assert "mise tasks history ok --json | jq -c '.[0].args'" '["first"]'
+assert "mise tasks history ok --json | jq -r '.[0] | (.duration_ms | type), (.started_at | test(\"^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$\"))'" "number
+true"
+assert_contains "mise tasks history" "failed (3)"
+
+# A task whose sources are fresh is recorded as skipped, and one that only names
+# dependencies is not recorded at all.
+mise run fresh
+mise run fresh
+assert "mise tasks history fresh --json | jq -r '.[-1].status'" "skipped"
+# A skipped run is stored without arguments: its env, and the secrets it
+# would register for redaction, was never resolved.
+mise run fresh skipped-arg
+assert "mise tasks history fresh --json | jq -c '.[-1] | [.status, .args]'" '["skipped",[]]'
+mise run all
+assert "mise tasks history --json | jq '[.[] | select(.task == \"all\")] | length'" "0"
+
+# A result restored from the artifact cache is recorded as cached.
+mise run cached
+rm -rf "$MISE_STATE_DIR/task-artifacts"
+mise run cached
+assert "mise tasks history cached --json | jq -c '[.[].status]'" '["ok","cached"]'
+
+# The summary has one entry per task; the median counts only successful runs.
+assert_json_partial_object "mise tasks history --summary --json | jq '.[] | select(.task == \"bad\")'" \
+  "task,runs,failures,median_ms,last_status,exit_code" \
+  '{"task":"bad","runs":1,"failures":1,"median_ms":null,"last_status":"failed"}'
+assert "mise tasks history --summary --json | jq -r '.[] | select(.task == \"ok\") | .runs, (.median_ms | type), (.last_ms | type)'" "3
+number
+number"
+assert_contains "mise tasks history --summary" "bad"
+
+# Only the last task.history_limit runs of each task are kept.
+MISE_TASK_HISTORY_LIMIT=2 mise run ok
+assert "mise tasks history ok --json | jq 'length'" "2"
+assert "mise tasks history bad --json | jq 'length'" "1"
+
+# Turning history off stops recording but keeps what was recorded.
+MISE_TASK_HISTORY=false mise run bad || true
+MISE_TASK_HISTORY_LIMIT=0 mise run bad || true
+assert "mise tasks history bad --json | jq 'length'" "1"
+
+# A dry run is not recorded.
+mise run --dry-run ok
+assert "mise tasks history ok --json | jq 'length'" "2"
+
+# URL credentials are not saved, and the table keeps argument boundaries.
+mise run echo https://user:hunter2@example.com/x 'a b'
+assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "hunter2"
+assert_contains "mise tasks history echo" "'a b'"
+
+# A task stopped by --timeout is recorded as cancelled, its arguments redacted
+# with the secrets its env registered.
+assert_fail "mise run --timeout 1s slow slow-secret-e2e"
+assert "mise tasks history slow --json | jq -c '[.[].status]'" '["cancelled"]'
+assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "slow-secret-e2e"
+assert "mise tasks history slow --json | jq -r '.[0].args[0]'" "[redacted]"
+
+# A task that traps Ctrl-C and exits non-zero was stopped by it: history calls
+# it cancelled, as the run report does.
+trapped_ready="$TMPDIR/task-history-trapped-ready"
+TRAPPED_READY="$trapped_ready" mise run trapped >/dev/null 2>&1 &
+mise_pid=$!
+wait_for_file "$trapped_ready" "trapped task" 30 "$mise_pid"
+kill -INT "$mise_pid"
+wait "$mise_pid" || true
+assert "mise tasks history trapped --json | jq -c '[.[].status]'" '["cancelled"]'
+
+# A task granted a secret that it skips before fnox returns the value has no
+# redaction for it, so its arguments are not stored. One that runs has its
+# arguments redacted with the value fnox returned.
+mkdir -p "$HOME/bin"
+printf '#!/usr/bin/env bash\nexec python3 "%s" "$@"\n' "$TEST_ROOT/helpers/scripts/fnox_stub.py" >"$HOME/bin/fnox"
+chmod +x "$HOME/bin/fnox"
+export PATH="$HOME/bin:$PATH"
+export FNOX_STUB_LOG="$PWD/fnox-calls.jsonl"
+cat >>mise.toml <<'EOF'
+
+[secrets.fnox]
+
+[tasks.guarded]
+secrets = ["STRIPE_KEY"]
+skip_if = "true"
+run = 'true'
+
+[tasks.granted]
+secrets = ["STRIPE_KEY"]
+run = 'true'
+EOF
+mise run guarded stripe-s3cr3t-0003 </dev/null
+assert "mise tasks history guarded --json | jq -c '.[-1] | [.status, .args]'" '["skipped",[]]'
+mise run granted stripe-s3cr3t-0003 </dev/null
+assert "mise tasks history granted --json | jq -r '.[-1].args[0]'" "[redacted]"
+assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "stripe-s3cr3t-0003"

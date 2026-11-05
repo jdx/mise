@@ -455,6 +455,50 @@ Under a monorepo root (`monorepo_root = true`), `--affected` selects
 [projects](/tasks/workspace-graph.html#affected-tasks) instead, and runs the
 matching tasks in every affected project.
 
+## See how long tasks take
+
+mise records each task run in this project: its arguments, start time,
+duration, and whether it succeeded, failed, was restored from the artifact
+cache, was skipped, or was cancelled.
+[`mise tasks history`](/cli/tasks/history.html) lists the runs, oldest first,
+and `--summary` shows one line per task:
+
+```sh
+$ mise tasks history --summary
+Task   Runs  Failed  Median  Last    Last status
+build  12    1       41.20s  38.91s  ok
+lint   8     0       6.05s   5.87s   ok
+test   10    2       62.04s  58.30s  failed
+```
+
+The median counts only the runs that executed and succeeded.
+The median is a task's typical cost, so a person or an agent can tell which
+checks are slow before choosing what to run. `--json` prints the same data for
+scripts:
+
+```sh
+mise tasks history --summary --json | jq -r '.[] | "\(.task) \(.median_ms)"'
+```
+
+A duration is the wall time from when the task was ready to start until it
+ended, including resolving its environment and waiting for a
+[`lock`](/tasks/task-configuration.html#lock). It does not include its
+dependencies, which are recorded as runs of their own. A task with nothing to
+run, such as one that only lists `depends`, is not recorded.
+
+Runs are kept per project (the monorepo root in a monorepo) under
+`$MISE_STATE_DIR/task-history/`, the last
+[`task.history_limit`](/configuration/settings.html#task.history_limit) runs of
+each task (20 by default). Set
+[`task.history`](/configuration/settings.html#task.history) to `false` to stop
+recording. Recording never fails a run, and `mise run --dry-run` records
+nothing.
+
+Arguments are stored redacted, like terminal output, with URL credentials
+removed. A run that ends before its task's environment is resolved, such as one
+skipped because its sources are fresh, is stored without arguments, since the
+secrets that environment would register are not known yet.
+
 ## Rerun tasks when files change
 
 [`mise watch`](/cli/watch.html) runs a task and runs it again when its sources

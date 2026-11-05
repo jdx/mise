@@ -941,6 +941,9 @@ Open a task in your editor
 \fBtasks graph\fR
 Show the monorepo project graph
 .TP
+\fBtasks history\fR
+Show recent task runs and how long they took
+.TP
 \fBtasks info\fR
 Show a task's definition
 .TP
@@ -10563,6 +10566,56 @@ Show which workspace file each project, dependency, and task came from
 .PP
 .RS 4
 mise tasks graph \-\-explain
+.RE
+.SH "MISE TASKS HISTORY"
+Show recent task runs and how long they took
+
+`mise run` records each task's start time, duration, arguments and result for this project: whether it succeeded, failed, was restored from the artifact cache, skipped, or cancelled. mise keeps the last `task.history_limit` runs of each task (default 20); set `task.history` to `false` to stop recording.
+
+`\-\-summary` shows one line per task with its median duration over the runs that executed and succeeded, which is the typical cost of running it.
+.PP
+\fBUsage:\fR mise tasks history [OPTIONS] [<TASK>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-s, \-\-summary\fR
+Show one line per task: runs, failures, median and last duration, last status
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TASK>\fR
+Only show runs of this task
+\fBExamples:\fR
+.PP
+List this project's recent task runs
+.PP
+.RS 4
+mise tasks history
+.RE
+.PP
+List the recent runs of the test task
+.PP
+.RS 4
+mise tasks history test
+.RE
+.PP
+Show each task's median and last duration
+.PP
+.RS 4
+mise tasks history \-\-summary
+.RE
+.PP
+Get typical durations for scripts and agents
+.PP
+.RS 4
+mise tasks history \-\-summary \-\-json
 .RE
 .SH "MISE TASKS INFO"
 Show a task's definition

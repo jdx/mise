@@ -925,6 +925,9 @@ export const commands: { [key: string]: Command } = {
       graph: {
         hide: false,
       },
+      history: {
+        hide: false,
+      },
       info: {
         hide: false,
       },

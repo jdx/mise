@@ -463,6 +463,10 @@ pub(crate) struct Run {
     #[usage(skip)]
     pub run_report: Option<Arc<RunReport>>,
 
+    /// Where this run records its tasks for `mise tasks history`; `None` when recording is off.
+    #[usage(skip)]
+    pub task_history: Option<Arc<crate::task::task_history::TaskHistory>>,
+
     /// Set by launchers that start tasks without a person asking for them.
     #[usage(skip)]
     pub secrets_denied: Option<crate::secrets::SecretsDenied>,
@@ -1341,6 +1345,10 @@ impl Run {
         // finalized even when the run is cancelled by --timeout:
         // TaskRunTelemetry finishes on drop.
         self.telemetry = telemetry;
+        if !self.dry_run {
+            self.task_history =
+                crate::task::task_history::TaskHistory::recorder(&config).map(Arc::new);
+        }
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
@@ -1355,6 +1363,8 @@ impl Run {
         // already succeeded.
         let telemetry = self.telemetry.clone();
         let run_report = self.run_report.clone();
+        let task_history = self.task_history.clone();
+        let history_config = config.clone();
         let result = if let Some(timeout) = timeout {
             let run = self.parallelize_tasks(config, execution_tasks, previewed_tools);
             tokio::pin!(run);
@@ -1370,8 +1380,21 @@ impl Run {
                     if let Some(report) = &run_report {
                         report.mark_timed_out();
                     }
+                    // History is marked cancelled first too, in memory; the arguments are
+                    // redacted with every secret registered so far.
+                    let cancelled = task_history.as_ref().map(|history| {
+                        history.take_cancelled(|arg| history_arg(&history_config, arg))
+                    });
                     RUN_TIMED_OUT.store(true, Ordering::SeqCst);
                     crate::cmd::CmdLineRunner::terminate_all().await;
+                    if let (Some(history), Some(runs)) = (task_history, cancelled) {
+                        let write = tokio::task::spawn_blocking(move || {
+                            history.record_cancelled(runs, Duration::from_secs(2))
+                        });
+                        if let Err(err) = write.await {
+                            debug!("task history: {err}");
+                        }
+                    }
                     Err(eyre!("mise run timed out after {:?}", timeout))
                 }
             }
@@ -1642,6 +1665,15 @@ impl Run {
                 .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
             let report_id = this.run_report.as_ref().map(|report| report.start(&task));
+            let env_resolved = this
+                .task_history
+                .as_ref()
+                .map(|_| Arc::new(std::sync::atomic::AtomicBool::new(false)));
+            let history_run = this
+                .task_history
+                .as_ref()
+                .zip(env_resolved.clone())
+                .and_then(|(history, flag)| start_task_run(history, &task, flag));
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1654,6 +1686,7 @@ impl Run {
                 otel_span_cx,
                 injected,
                 covered,
+                env_resolved,
             }))
             .catch_unwind()
             .await
@@ -1664,6 +1697,22 @@ impl Run {
                     true,
                 ),
             };
+            if let (Some(history), Some(id)) = (&this.task_history, history_run)
+                && result
+                    .as_ref()
+                    .is_err_and(Error::is_task_interrupted_before_start)
+            {
+                history.discard(id);
+            } else if let (Some(history), Some(id)) = (&this.task_history, history_run) {
+                // Provisional, for a `--timeout` that aborts this job before it records:
+                // the same rule as below, without what other jobs may still report.
+                let stopped = (ctrlc::is_cancelled() && !panicked)
+                    || result
+                        .as_ref()
+                        .is_err_and(|err| !panicked && Error::is_sigint(err));
+                let (status, exit_code) = history_status(&result, panicked, stopped);
+                history.ended(id, status, exit_code);
+            }
             let otel_end = std::time::SystemTime::now();
             // If the task executed or restored outputs and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
@@ -1761,12 +1810,16 @@ impl Run {
                     crate::cmd::CmdLineRunner::kill_all();
                 }
             }
+            // After a Ctrl-C, a task that fails was stopped by it: many programs exit
+            // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
+            // ends with "task sequence aborted". The run report and task history share
+            // this one answer, so they never disagree about a run.
+            let stopped = cancelled || (ctrlc::is_cancelled() && !panicked);
+            if let (Some(history), Some(id)) = (&this.task_history, history_run) {
+                finish_task_run(history, &ctx.config, &task, id, &result, panicked, stopped).await;
+            }
             if let (Some(report), Some(id)) = (&this.run_report, report_id) {
-                // After a Ctrl-C, a task that fails was stopped by it: many programs exit
-                // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
-                // ends with "task sequence aborted".
-                let cancelled = cancelled || (ctrlc::is_cancelled() && !panicked);
-                let (status, exit_code) = report_status(&result, panicked, cancelled);
+                let (status, exit_code) = report_status(&result, panicked, stopped);
                 report.finish(id, status, exit_code);
             }
             // Close the task's span with real timing and status.
@@ -2170,6 +2223,68 @@ impl Run {
 
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.output_handler.as_ref().unwrap().quiet(task)
+    }
+}
+
+/// Note a task's start for `mise tasks history`. A task with nothing to run, such as one that
+/// only names dependencies, is not recorded: its duration is only the wait for them.
+fn start_task_run(
+    history: &crate::task::task_history::TaskHistory,
+    task: &Task,
+    env_resolved: Arc<std::sync::atomic::AtomicBool>,
+) -> Option<crate::task::task_history::PendingRunId> {
+    if task.file.is_none() && task.run().is_empty() {
+        return None;
+    }
+    Some(history.start(&task.name, task.args.clone(), env_resolved))
+}
+
+/// Task arguments as history stores them: URL credentials removed, as terminal output does,
+/// then the registered secrets.
+fn history_args(config: &Config, task: &Task) -> Vec<String> {
+    task.args.iter().map(|a| history_arg(config, a)).collect()
+}
+
+fn history_arg(config: &Config, arg: &str) -> String {
+    config.redact(&mise_util::redactions::redact_url_userinfo_in_arg(arg))
+}
+
+/// Record how a started task ended.
+async fn finish_task_run(
+    history: &Arc<crate::task::task_history::TaskHistory>,
+    config: &Config,
+    task: &Task,
+    id: crate::task::task_history::PendingRunId,
+    result: &Result<crate::task::task_executor::TaskRunOutcome>,
+    panicked: bool,
+    cancelled: bool,
+) {
+    let (status, exit_code) = history_status(result, panicked, cancelled);
+    // Redacted again now that the task's own env has registered its secrets.
+    let args = history_args(config, task);
+    let history = history.clone();
+    // The write takes a file lock, so it stays off the async workers.
+    if let Err(err) =
+        tokio::task::spawn_blocking(move || history.finish(id, args, status, exit_code)).await
+    {
+        debug!("task history: {err}");
+    }
+}
+
+/// How a finished task job appears in task history.
+fn history_status(
+    result: &Result<crate::task::task_executor::TaskRunOutcome>,
+    panicked: bool,
+    cancelled: bool,
+) -> (crate::task::task_history::RunStatus, Option<i32>) {
+    use crate::task::task_history::RunStatus;
+    match result {
+        Ok(outcome) if outcome.restored => (RunStatus::Cached, None),
+        Ok(outcome) if outcome.did_work => (RunStatus::Ok, Some(0)),
+        Ok(_) => (RunStatus::Skipped, None),
+        Err(_) if panicked => (RunStatus::Failed, Some(1)),
+        Err(err) if cancelled => (RunStatus::Cancelled, Error::get_exit_status(err)),
+        Err(err) => (RunStatus::Failed, Error::get_exit_status(err)),
     }
 }
 

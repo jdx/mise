@@ -4337,6 +4337,25 @@ pass. Define arguments in the task's
 env = "MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS"
 type = "Bool"
 
+[task.history]
+default = true
+description = "Record each task run's duration and result for `mise tasks history`."
+docs = """
+mise keeps the last [`task.history_limit`](/configuration/settings.html#task.history_limit) runs of each
+task per project under `$MISE_STATE_DIR/task-history/`. Recording costs one
+small file write per task and never fails a run. Set it to `false` to stop
+recording; existing history is kept and `mise tasks history` still reads it.
+"""
+env = "MISE_TASK_HISTORY"
+type = "Bool"
+
+[task.history_limit]
+default = 20
+description = "How many recent runs of each task `mise tasks history` keeps."
+docs = "Older runs are dropped when a new one is recorded. `0` stops recording, like [`task.history`](/configuration/settings.html#task.history) = `false`."
+env = "MISE_TASK_HISTORY_LIMIT"
+type = "Integer"
+
 [task.lock_timeout]
 description = "How long a task waits for a lock another run holds before it fails."
 docs = """

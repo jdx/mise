@@ -3402,6 +3402,16 @@
               "description": "Build task usage specs only from the `usage` field, ignoring deprecated `arg()`, `option()` and `flag()` in run scripts.",
               "type": "boolean"
             },
+            "history": {
+              "default": true,
+              "description": "Record each task run's duration and result for `mise tasks history`.",
+              "type": "boolean"
+            },
+            "history_limit": {
+              "default": 20,
+              "description": "How many recent runs of each task `mise tasks history` keeps.",
+              "type": "integer"
+            },
             "lock_timeout": {
               "description": "How long a task waits for a lock another run holds before it fails.",
               "type": "string"

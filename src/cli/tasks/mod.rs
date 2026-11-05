@@ -7,6 +7,7 @@ mod add;
 mod deps;
 mod edit;
 mod graph;
+mod history;
 mod info;
 mod log;
 mod ls;
@@ -48,6 +49,7 @@ enum Commands {
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
     Graph(graph::TasksGraph),
+    History(history::TasksHistory),
     Info(info::TasksInfo),
     Log(log::TasksLog),
     Ls(ls::TasksLs),
@@ -69,6 +71,7 @@ impl Commands {
             Self::Deps(cmd) => cmd.run().await,
             Self::Edit(cmd) => cmd.run().await,
             Self::Graph(cmd) => cmd.run().await,
+            Self::History(cmd) => cmd.run().await,
             Self::Info(cmd) => cmd.run().await,
             Self::Log(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
