@@ -57,3 +57,14 @@ assert_fail_contains "mise tasks log plain" "no log for task plain"
 log_file="$(mise tasks log pass --path)"
 assert_contains "stat -c %a $log_file" "600"
 assert_contains "stat -c %a $MISE_STATE_DIR/task-logs" "700"
+
+# summary names the log only when it held just the end of a failed task's output
+cat <<EOF >>mise.toml
+
+[tasks.long_fail]
+run = 'seq 1 30000; exit 1'
+EOF
+assert_fail_contains "mise run --output summary long_fail" "full output: "
+assert_fail_contains "mise run --output summary fail" "fail err"
+assert_not_contains "mise run --output summary fail 2>&1 || true" "full output: "
+assert_contains "mise tasks log long_fail" "30000"

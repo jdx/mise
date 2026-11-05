@@ -621,6 +621,9 @@ pub enum TaskOutput {
     #[default]
     Prefix,
     Replacing,
+    /// One line for each task that passed, and everything a failed task
+    /// printed, once it ends.
+    Summary,
     Timed,
     Quiet,
     Silent,

@@ -5150,3 +5150,57 @@ fn same_persisted_data_ignores_download_headers() {
     };
     assert!(stored.same_persisted_data(&resolved));
 }
+
+#[test]
+fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
+    let registry = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    let tarball = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc, tarball: 'http://attacker.example/cli.tgz'}\n";
+    let linked = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: link:../cli\n        version: link:../cli\npackages: {}\n";
+    let git = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: git+https://attacker.example/cli.git\npackages: {}\n";
+    let snapshot = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      dep: https://attacker.example/dep.tgz\n";
+    let overrides = "lockfileVersion: '9.0'\noverrides:\n  dep: portal:../dep\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages: {}\n";
+    let no_packages = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n";
+    let empty_integrity = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {}\n";
+    let alias = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    aliasOf: other\n    resolution: {integrity: sha512-abc}\n";
+    let orphan_snapshot = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      dep: 2.0.0\n";
+    let with_dependency = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0(dep@2.0.0)\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n  dep@2.0.0:\n    resolution: {integrity: sha512-def}\nsnapshots:\n  cli@1.0.0(dep@2.0.0):\n    dependencies:\n      dep: 2.0.0\n  dep@2.0.0: {}\n";
+    let shorthand = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: owner/cli\n        version: owner/cli\npackages: {}\n";
+    let string_dep = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli: link:../cli\npackages: {}\n";
+    let peer_link = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n    peerDependencies:\n      evil: ../evil\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    let no_version = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    let unlisted = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  other@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    for (graph, kept) in [
+        (shorthand, false),
+        (string_dep, false),
+        (peer_link, false),
+        (no_version, false),
+        (unlisted, false),
+        (alias, false),
+        (orphan_snapshot, false),
+        (with_dependency, true),
+        (empty_integrity, false),
+        (registry, true),
+        (tarball, false),
+        (linked, false),
+        (git, false),
+        (snapshot, false),
+        (overrides, false),
+        (no_packages, false),
+    ] {
+        let mut lockfile = Lockfile::default();
+        lockfile
+            .tools
+            .insert("npm:cli".to_string(), vec![basic_tool("1.0.0", "npm:cli")]);
+        lockfile
+            .set_aube_lock(
+                "npm:cli",
+                "1.0.0",
+                "npm:cli",
+                &BTreeMap::new(),
+                AubeLock::from_yaml(graph).unwrap().into(),
+            )
+            .unwrap();
+        lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+        assert_eq!(lockfile.tools["npm:cli"][0].aube.is_some(), kept, "{graph}");
+    }
+}
