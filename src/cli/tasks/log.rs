@@ -16,8 +16,9 @@ use super::info::find_task;
 /// replaces the task's previous log, and a log keeps at most its last 4 MiB.
 ///
 /// mise only logs output it reads: a `raw` or `interactive` task, or an
-/// `interleave` task without redactions (whose output goes straight to the
-/// terminal), has no log.
+/// `interleave` task whose output goes straight to the terminal (when nothing
+/// needs redacting and neither the artifact cache nor OpenTelemetry reads it),
+/// has no log.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(
@@ -56,7 +57,7 @@ impl TasksLog {
         let contents = match std::fs::read(&path) {
             Ok(contents) => contents,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => bail!(
-                "no log for task {}: it has not run since mise started keeping logs, or its last run went straight to the terminal (raw, interactive, or interleave output without redactions)",
+                "no log for task {}: it has not run since mise started keeping logs, or its last run went straight to the terminal (raw, interactive, or interleave output that mise did not read)",
                 task.name
             ),
             Err(err) => bail!("failed to read {}: {err}", display_path(&path)),

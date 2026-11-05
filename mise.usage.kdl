@@ -7039,7 +7039,7 @@ Print the output of a task's last run
 
 mise keeps the combined stdout and stderr of each task's most recent run, after redaction, so output that `replacing`, `timed`, `silent` or a truncated terminal hid can be read without running the task again. Each run replaces the task's previous log, and a log keeps at most its last 4 MiB.
 
-mise only logs output it reads: a `raw` or `interactive` task, or an `interleave` task without redactions (whose output goes straight to the terminal), has no log.
+mise only logs output it reads: a `raw` or `interactive` task, or an `interleave` task whose output goes straight to the terminal (when nothing needs redacting and neither the artifact cache nor OpenTelemetry reads it), has no log.
 """#
         flag --path help="Print the path of the log file instead of its contents" {
             long_help #"""

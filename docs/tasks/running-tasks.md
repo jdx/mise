@@ -239,8 +239,9 @@ printed more than the 64 KiB `summary` holds, mise prints the log's path after
 the error.
 
 mise logs only output it reads. A `raw` or `interactive` task gets the terminal
-itself, and so does an `interleave` task when nothing needs redacting, so their
-runs leave no log (and remove the one an earlier run left).
+itself, and so does an `interleave` task when nothing needs redacting and
+neither the artifact cache nor OpenTelemetry log export reads its output, so
+their runs leave no log (and remove the one an earlier run left).
 
 ## Interactive input
 
