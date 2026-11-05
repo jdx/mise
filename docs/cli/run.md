@@ -47,6 +47,14 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--affected-untracked`** — Count untracked files that Git does not ignore
 
   Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
+- **`--at <REV>`** — Run the tasks at another git revision, in a temporary worktree
+
+  Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+  The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
+- **`--at-setup <CMD>`** — Run this shell command in the `--at` worktree before the tasks
+
+  It runs in the worktree's copy of the directory mise was started from (not a task's `dir`), outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from. `--timeout` does not limit it, only the tasks after it.
 - **`--all`** — Open the task picker with tasks from every project in the monorepo
 - **`-c --continue-on-error`** — Continue running tasks even if one fails
 - **`-C --cd <DIR>`** — Change to this directory before running the tasks
@@ -202,6 +210,12 @@ Run a task in a monorepo project
 
 ```
 mise run //services/api:build
+```
+
+Run "test" as it is on main, in a temporary git worktree
+
+```
+mise run --at main test
 ```
 
 Give "deploy" the DEPLOY_KEY secret (experimental); its dependencies do not get it

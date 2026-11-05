@@ -5951,6 +5951,24 @@ Count untracked files that Git does not ignore
 Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 """#
     }
+    flag --at help="Run the tasks at another git revision, in a temporary worktree" {
+        long_help #"""
+Run the tasks at another git revision, in a temporary worktree
+
+Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
+"""#
+        arg <REV>
+    }
+    flag --at-setup help="Run this shell command in the `--at` worktree before the tasks" requires=--at {
+        long_help #"""
+Run this shell command in the `--at` worktree before the tasks
+
+It runs in the worktree's copy of the directory mise was started from (not a task's `dir`), outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from. `--timeout` does not limit it, only the tasks after it.
+"""#
+        arg <CMD>
+    }
     flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before running the tasks" {
@@ -6142,6 +6160,7 @@ Set `task.timings = true` to show it by default.
     example "mise run 'test:*'" help="Run every task that matches a pattern"
     example "mise run --tag lint" help="Run every task tagged \"lint\""
     example "mise run //services/api:build" help="Run a task in a monorepo project"
+    example "mise run --at main test" help="Run \"test\" as it is on main, in a temporary git worktree"
     example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
     complete dir type=dir
     complete path type=path
@@ -7170,6 +7189,24 @@ Count untracked files that Git does not ignore
 Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 """#
         }
+        flag --at help="Run the tasks at another git revision, in a temporary worktree" {
+            long_help #"""
+Run the tasks at another git revision, in a temporary worktree
+
+Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
+"""#
+            arg <REV>
+        }
+        flag --at-setup help="Run this shell command in the `--at` worktree before the tasks" requires=--at {
+            long_help #"""
+Run this shell command in the `--at` worktree before the tasks
+
+It runs in the worktree's copy of the directory mise was started from (not a task's `dir`), outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from. `--timeout` does not limit it, only the tasks after it.
+"""#
+            arg <CMD>
+        }
         flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before running the tasks" {
@@ -7361,6 +7398,7 @@ Set `task.timings = true` to show it by default.
         example "mise run 'test:*'" help="Run every task that matches a pattern"
         example "mise run --tag lint" help="Run every task tagged \"lint\""
         example "mise run //services/api:build" help="Run a task in a monorepo project"
+        example "mise run --at main test" help="Run \"test\" as it is on main, in a temporary git worktree"
         example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
         complete dir type=dir
         complete path type=path
