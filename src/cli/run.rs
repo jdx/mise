@@ -125,11 +125,14 @@ pub(crate) struct Run {
     #[usage(hide = true, double_dash = "required")]
     pub args_last: Vec<String>,
 
-    /// Run matching tasks only in projects affected by Git changes
+    /// Run matching tasks only where Git changes affect them
     ///
     /// Counts committed changes between the base and head revisions, plus staged,
     /// unstaged, and untracked changes in the working tree when the head revision
-    /// is the checked-out commit. Requires a monorepo root (`monorepo_root = true`).
+    /// is the checked-out commit. Under a monorepo root (`monorepo_root = true`),
+    /// runs the tasks in the affected projects. Otherwise runs the tasks whose
+    /// `sources` or defining config file include a changed file, and the tasks
+    /// that declare no `sources`.
     #[usage(long)]
     pub affected: bool,
 
@@ -148,7 +151,7 @@ pub(crate) struct Run {
     #[usage(long, requires = "affected")]
     pub affected_committed: bool,
 
-    /// Explain why `--affected` selected each project and task
+    /// Explain why `--affected` selected each project or task
     #[usage(long, requires = "affected", conflicts = "affected_json")]
     pub affected_explain: bool,
 
@@ -590,9 +593,10 @@ async fn get_affected_task_list(
     json: bool,
     tags: TagSelection<'_>,
 ) -> Result<Vec<Task>> {
-    let workspace_root = config
-        .monorepo_root()
-        .ok_or_else(|| eyre!("--affected requires a monorepo root configuration"))?;
+    let Some(workspace_root) = config.monorepo_root() else {
+        return get_source_affected_task_list(config, args, only, revisions, explain, json, tags)
+            .await;
+    };
     let graph = config.workspace_project_graph()?;
     let changes = revisions.changed_paths(&workspace_root)?;
     let global_inputs = config.monorepo_global_task_inputs().await?;
@@ -666,6 +670,119 @@ async fn get_affected_task_list(
         display_affected_explanation(&revisions, &workspace_root, &graph, &affected, &tasks)?;
     }
     Ok(tasks)
+}
+
+/// `--affected` without a monorepo root: keeps the matching tasks whose `sources`, or whose
+/// defining config file, include a changed file, plus those that declare no `sources`.
+async fn get_source_affected_task_list(
+    config: &Arc<Config>,
+    args: &[String],
+    only: bool,
+    revisions: crate::task::workspace::git::WorkspaceGitRevisions,
+    explain: bool,
+    json: bool,
+    tags: TagSelection<'_>,
+) -> Result<Vec<Task>> {
+    use crate::task::task_affected::affected_task_reasons;
+
+    let mut repos = crate::task::task_affected::AffectedRepos::new(&revisions, config)?;
+    let mut tasks = get_task_lists(config, args, true, only, false).await?;
+    // As in a monorepo, finding no tagged task is not an error.
+    keep_tagged(config, &mut tasks, tags.tags, tags.no_cache).await?;
+    // As in a monorepo, only the pattern matches are filtered: `Run::run` resolves their
+    // dependencies afterwards, whether or not those are affected.
+    let mut selected = Vec::new();
+    let mut skipped = Vec::new();
+    for task in tasks {
+        if task.global {
+            skipped.push(task);
+            continue;
+        }
+        let reasons = affected_task_reasons(&task, config, &mut repos).await?;
+        if reasons.is_empty() {
+            skipped.push(task);
+        } else {
+            selected.push((task, reasons));
+        }
+    }
+    if json {
+        let mut tasks = selected
+            .iter()
+            .map(|(task, reasons)| AffectedSourceTaskOutput {
+                name: &task.display_name,
+                reasons,
+            })
+            .collect::<Vec<_>>();
+        tasks.sort_by(|left, right| left.name.cmp(right.name));
+        let output = AffectedSourceSelectionOutput {
+            base: &revisions.base,
+            head: &revisions.head,
+            tasks,
+        };
+        miseprintln!("{}", serde_json::to_string_pretty(&output)?);
+    } else if explain {
+        display_source_affected_explanation(&repos.compared(), &selected, &skipped)?;
+    }
+    Ok(selected.into_iter().map(|(task, _)| task).collect())
+}
+
+#[derive(Serialize)]
+struct AffectedSourceSelectionOutput<'a> {
+    base: &'a str,
+    head: &'a str,
+    tasks: Vec<AffectedSourceTaskOutput<'a>>,
+}
+
+#[derive(Serialize)]
+struct AffectedSourceTaskOutput<'a> {
+    name: &'a str,
+    reasons: &'a BTreeSet<crate::task::task_affected::AffectedTaskReason>,
+}
+
+fn display_source_affected_explanation(
+    compared: &str,
+    selected: &[(
+        Task,
+        BTreeSet<crate::task::task_affected::AffectedTaskReason>,
+    )],
+    skipped: &[Task],
+) -> Result<()> {
+    use crate::task::task_affected::AffectedTaskReason;
+
+    miseprintln!(
+        "Affected tasks ({}):{}",
+        display_affected_text(compared),
+        if selected.is_empty() { " none" } else { "" }
+    );
+    for (task, reasons) in selected {
+        miseprintln!("  {}", display_affected_text(&task.display_name));
+        for reason in reasons {
+            match reason {
+                AffectedTaskReason::ChangedSource { path } => {
+                    miseprintln!("    changed source: {}", display_affected_path(path));
+                }
+                AffectedTaskReason::TaskConfig { path } => {
+                    miseprintln!("    changed task config: {}", display_affected_path(path));
+                }
+                AffectedTaskReason::TaskFile { path } => {
+                    miseprintln!("    changed task file: {}", display_affected_path(path));
+                }
+                AffectedTaskReason::NoSources => {
+                    miseprintln!("    no sources declared");
+                }
+                AffectedTaskReason::ArgumentSources => {
+                    miseprintln!("    sources depend on task arguments");
+                }
+            }
+        }
+    }
+    if !skipped.is_empty() {
+        miseprintln!("Unaffected tasks:");
+        for task in skipped {
+            miseprintln!("  {}", display_affected_text(&task.display_name));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -979,7 +1096,8 @@ impl Run {
         if !self.affected {
             retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
         }
-        if self.affected_json {
+        // Nothing was affected, so there is nothing to install tools or dependencies for.
+        if self.affected_json || (self.affected && task_list.is_empty()) {
             return Ok(());
         }
         warn_secrets_flag_in_task_args(&task_list);

@@ -358,6 +358,65 @@ exact checks. Use `mise run --force build` to run it anyway.
 [Task caching](/tasks/caching.html) also covers the artifact cache, which can
 restore deleted outputs.
 
+## Run the tasks a change affects {#affected-tasks}
+
+`mise run --affected` runs only the matching tasks whose `sources` include a
+file changed in Git:
+
+```mise-toml [mise.toml]
+[tasks."test:unit"]
+sources = ["src/**"]
+run = "cargo test"
+
+[tasks."test:docs"]
+sources = ["docs/**"]
+run = "vale docs"
+```
+
+```sh
+# After a commit that touches src/lib.rs, runs test:unit but not test:docs
+mise run --affected 'test:*'
+
+# Show why each task was or was not selected, without running anything
+mise run --affected --affected-explain --dry-run 'test:*'
+```
+
+A task is also affected when a changed file is the config file that defines it
+or the script its `file` names. Symlinks in the task directory and in the
+leading directories of its `sources` are followed, as Git reports each file by
+its own path. A literal source that is a symlink matches its target too, but a
+glob that matches a link matches only the link's name; list the target, or the
+link literally, to catch edits to the target. A changed submodule counts as the
+files that changed in it, under its path, so `sources` match inside submodules
+like any other directory. mise can only look inside an initialized submodule:
+for one that is not checked out, Git reports just its path, so add that path
+itself (such as `sub`) to `sources` to catch the change. mise compares the
+commit the parent records for the submodule at the merge base with the one at
+the head, and adds the submodule's working tree only when it is checked out at
+that head; untracked files in such a submodule count even when its recorded
+commit did not change. Run from inside a submodule, `--affected` compares that
+submodule's own history. A separate checkout nested in the project, such as an
+ignored clone, counts its own changes.
+A task without `sources` might read any file, so mise runs it whenever anything
+changed. When nothing changed, `--affected` runs nothing. Dependencies of a
+selected task still run, and the usual
+[up-to-date check](#skip-tasks-that-are-up-to-date) still applies to every task;
+add `--force` to run them regardless.
+
+mise counts the same changes as in a monorepo: the commits between
+`--affected-base` (default `HEAD~1`) and `--affected-head` (default `HEAD`),
+plus uncommitted and untracked files when the head is checked out. The
+`--affected-committed`, `--affected-uncommitted`, and `--affected-untracked`
+flags narrow that, and `--affected-json` prints the selected tasks with their
+reasons (`changed-source`, `task-config`, `task-file`, `no-sources`, or `argument-sources`
+for sources that use <span v-pre>`{{ usage.* }}`</span>). See
+[Run affected tasks](/tasks/workspace-graph.html#affected-tasks) for how mise
+picks the revisions in CI.
+
+Under a monorepo root (`monorepo_root = true`), `--affected` selects
+[projects](/tasks/workspace-graph.html#affected-tasks) instead, and runs the
+matching tasks in every affected project.
+
 ## See how long tasks take
 
 mise records each task run in this project: its arguments, start time,
