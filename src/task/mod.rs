@@ -42,6 +42,7 @@ pub(crate) type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
 mod deps;
 pub mod run_report;
+pub mod task_affected;
 pub mod task_cache;
 mod task_cache_audit;
 mod task_cache_store;
