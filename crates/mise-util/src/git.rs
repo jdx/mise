@@ -491,6 +491,63 @@ impl Git {
             .into())
     }
 
+    /// Returns the object ID at `path` in `revision`, such as the commit a submodule's
+    /// gitlink records, or `None` when the revision has nothing there.
+    pub fn object_at(&self, revision: &str, path: &Path) -> Result<Option<String>> {
+        validate_revision("revision", revision)?;
+        let path = path
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        let spec = format!("{revision}:{path}");
+        let output = git_cmd!(&self.dir, "rev-parse", "--verify", "--quiet", &spec)
+            .stdout_capture()
+            .stderr_null()
+            .unchecked()
+            .run()
+            .wrap_err_with(|| format!("git rev-parse {spec} failed"))?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        let id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok((!id.is_empty()).then_some(id))
+    }
+
+    /// Returns the working tree of the repository that has `self.dir` as a submodule, or
+    /// `None` when it is not one.
+    pub fn superproject(&self) -> Result<Option<PathBuf>> {
+        let output = git_cmd_read!(&self.dir, "rev-parse", "--show-superproject-working-tree")?;
+        let output = output.trim_end_matches(['\r', '\n']);
+        Ok((!output.is_empty()).then(|| output.into()))
+    }
+
+    /// Returns the paths of the submodules directly under `self.dir`, initialized or not,
+    /// from `git submodule status`. Its state character compares with the staged gitlink,
+    /// so it is ignored here; callers compare commits themselves.
+    pub fn submodule_paths(&self) -> Result<Vec<PathBuf>> {
+        let output = git_cmd_read!(&self.dir, "submodule", "status")?;
+        Ok(output
+            .lines()
+            .filter_map(|line| {
+                // `<state><sha> <path>` and, when Git can describe the commit, ` (<describe>)`.
+                let (_, rest) = line.get(1..)?.split_once(' ')?;
+                let path = match rest.rsplit_once(" (") {
+                    Some((path, describe)) if describe.ends_with(')') => path,
+                    _ => rest,
+                };
+                Some(PathBuf::from(path))
+            })
+            .collect())
+    }
+
+    /// Returns the root of the working tree that contains `self.dir`.
+    pub fn toplevel(&self) -> Result<PathBuf> {
+        Ok(git_cmd_read!(&self.dir, "rev-parse", "--show-toplevel")?
+            .trim_end_matches(['\r', '\n'])
+            .into())
+    }
+
     /// Returns paths changed between the merge base of two revisions.
     ///
     /// Rename detection is disabled so moves report both the old and new path.
@@ -512,6 +569,30 @@ impl Git {
         .stdout_capture()
         .run()
         .wrap_err_with(|| format!("git diff for {range} failed"))?;
+        parse_nul_paths(&output.stdout)
+    }
+
+    /// Returns paths that differ between two trees or commits, compared directly rather
+    /// than from their merge base, so moving back to an ancestor reports what it undoes.
+    ///
+    /// Same path rules as [`Git::changed_paths`].
+    pub fn diff_paths(&self, from: &str, to: &str) -> Result<BTreeSet<PathBuf>> {
+        validate_revisions(from, to)?;
+        let output = git_cmd!(
+            &self.dir,
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--relative",
+            from,
+            to,
+            "--",
+            "."
+        )
+        .stdout_capture()
+        .run()
+        .wrap_err_with(|| format!("git diff {from} {to} failed"))?;
         parse_nul_paths(&output.stdout)
     }
 

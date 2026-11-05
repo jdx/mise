@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.ok]
+run = "echo ok-stdout; echo ok-stderr >&2"
+
+[tasks.bad]
+run = "echo bad-stdout; echo bad-stderr >&2; exit 3"
+
+[tasks.both]
+depends = ["ok", "bad"]
+
+[tasks.hang]
+run = "echo before-timeout; sleep 30"
+
+[tasks.hang2]
+run = "echo also-before-timeout; sleep 30"
+
+[tasks.hangs]
+depends = ["hang", "hang2"]
+
+[tasks.noisy]
+run = "seq 1 20000; exit 1"
+
+[tasks.fresh]
+run = "echo built > out.txt"
+sources = ["mise.toml"]
+outputs = ["out.txt"]
+EOF
+
+# A task that passed is one line; its output is not printed.
+assert_contains "mise run --output summary ok 2>&1" "[ok] passed in"
+assert_not_contains "mise run --output summary ok 2>&1" "ok-stdout"
+assert_not_contains "mise run --output summary ok 2>&1" "ok-stderr"
+
+# A task that failed prints everything it wrote, labelled, and the run's
+# closing error still shows; a passing sibling stays one line.
+assert_fail_contains "mise run --output summary both" "[bad] bad-stdout"
+assert_fail_contains "mise run --output summary both" "[bad] bad-stderr"
+assert_fail_contains "mise run --output summary both" "[bad] ERROR task failed"
+# The siblings run in parallel, so only with --continue-on-error is the
+# passing one sure to finish.
+assert_fail_contains "mise run --output summary --continue-on-error both" "[ok] passed in"
+assert_not_contains "mise run --output summary --continue-on-error both 2>&1 || true" "ok-stdout"
+# A task with only dependencies ran nothing and gets no line.
+assert_not_contains "mise run --output summary --continue-on-error both 2>&1 || true" "[both]"
+
+# A task skipped because it is up to date says so.
+mise run --output summary fresh
+assert_contains "mise run --output summary fresh 2>&1" "[fresh] sources up-to-date, skipping"
+
+# A dry run shows the commands it would run, not a pass.
+assert_contains "mise run --output summary --dry-run ok 2>&1" '[ok] $ echo ok-stdout'
+assert_not_contains "mise run --output summary --dry-run ok 2>&1" "passed"
+
+# With timings off, a pass says so without the time.
+assert_contains "mise run --output summary --no-timings ok 2>&1" "[ok] passed"
+assert_not_contains "mise run --output summary --no-timings ok 2>&1" "passed in"
+# --timings brings them back over the setting.
+assert_contains "MISE_TASK_TIMINGS=0 mise run --output summary --timings ok 2>&1" "[ok] passed in"
+
+# A run that times out still prints what its running tasks wrote.
+assert_fail_contains "mise run --output summary --timeout 2s hang" "[hang] before-timeout"
+assert_fail_contains "mise run --output summary --timeout 2s hangs" "[hang] before-timeout"
+assert_fail_contains "mise run --output summary --timeout 2s hangs" "[hang2] also-before-timeout"
+
+# A task's output is held up to its last 64 KiB.
+assert_fail_contains "mise run --output summary noisy" "[output truncated; showing last 64 KiB]"
+assert_fail_contains "mise run --output summary noisy" "[noisy] 20000"
+# The command the task ran stays, ahead of the notice.
+assert_fail_contains "mise run --output summary noisy" '[noisy] $ seq 1 20000'
+assert_not_contains "mise run --output summary noisy 2>&1 || true" "[noisy] 1
+"
+
+# MISE_TASK_OUTPUT selects it, and it is no one's default.
+assert_contains "MISE_TASK_OUTPUT=summary mise run ok 2>&1" "[ok] passed in"
+assert_contains "CLAUDECODE=1 mise run ok 2>&1" "ok-stdout"

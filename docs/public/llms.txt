@@ -439,7 +439,9 @@
 - [mise tasks deps](https://mise.jdx.dev/cli/tasks/deps.html): Show the dependency tree of tasks
 - [mise tasks edit](https://mise.jdx.dev/cli/tasks/edit.html): Open a task in your editor
 - [mise tasks graph](https://mise.jdx.dev/cli/tasks/graph.html): Show the monorepo project graph
+- [mise tasks history](https://mise.jdx.dev/cli/tasks/history.html): Show recent task runs and how long they took
 - [mise tasks info](https://mise.jdx.dev/cli/tasks/info.html): Show a task's definition
+- [mise tasks log](https://mise.jdx.dev/cli/tasks/log.html): Print the output of a task's last run
 - [mise tasks ls](https://mise.jdx.dev/cli/tasks/ls.html): List available tasks
 - [mise tasks rm](https://mise.jdx.dev/cli/tasks/rm.html): Remove tasks
 - [mise tasks set](https://mise.jdx.dev/cli/tasks/set.html): Change fields of an existing TOML task

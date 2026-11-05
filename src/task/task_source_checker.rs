@@ -285,7 +285,7 @@ pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
 /// `**/../x` has no well-defined expansion — the `..` would have to apply to
 /// whatever each match of `**` resolved to — so callers leave such a pattern
 /// exactly as written rather than inventing a meaning for it.
-fn parent_dir_pops_glob(pattern: &Path) -> bool {
+pub(crate) fn parent_dir_pops_glob(pattern: &Path) -> bool {
     let mut stack: Vec<bool> = Vec::new();
     for component in pattern.components() {
         match component {
@@ -724,6 +724,17 @@ async fn collect_source_metadatas(task: &Task, config: &Arc<Config>) -> Result<S
         {
             source_metadatas.push((config_path, meta));
         }
+    }
+    // The script a TOML task's `file` names defines it too. A file task's script is already
+    // its config source; a remote one has no local file and is skipped. It is not a config
+    // source, which would also make trust checks read it. A `file` that fails to render
+    // leaves the task to fail when it runs.
+    if let Ok(Some(script)) = task.file_path(config).await
+        && let Ok(meta) = script.metadata()
+        && meta.is_file()
+        && !source_metadatas.iter().any(|(p, _)| p == &script)
+    {
+        source_metadatas.push((script, meta));
     }
     Ok(SourceMetadatas {
         root,

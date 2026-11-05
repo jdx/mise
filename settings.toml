@@ -3745,8 +3745,10 @@ mise runs the equivalent of `mise skills sync` after every install, after
 `mise use` changes a version, and after `mise upgrade`, so the links under
 [`skills.dir`](#skills.dir) point at the versions active in the project. Only
 projects with a mise config get links, and nothing is written outside a project
-root, except that `mise use --global` links into `skills.dir` under your home
-directory. mise touches only links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
+root, except that global tools link into `skills.dir` under your home directory.
+A project's directory gets the tools its own config files declare and the tools
+`MISE_<TOOL>_VERSION` selects, but not the ones only the global config declares.
+When the project and home share one `skills.dir`, every active tool links there. mise touches only links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
 is on. See
 [Keep project links up to date](/dev-tools/packslip-resources.html#keep-project-links-up-to-date).
 """
@@ -4335,6 +4337,25 @@ pass. Define arguments in the task's
 env = "MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS"
 type = "Bool"
 
+[task.history]
+default = true
+description = "Record each task run's duration and result for `mise tasks history`."
+docs = """
+mise keeps the last [`task.history_limit`](/configuration/settings.html#task.history_limit) runs of each
+task per project under `$MISE_STATE_DIR/task-history/`. Recording costs one
+small file write per task and never fails a run. Set it to `false` to stop
+recording; existing history is kept and `mise tasks history` still reads it.
+"""
+env = "MISE_TASK_HISTORY"
+type = "Bool"
+
+[task.history_limit]
+default = 20
+description = "How many recent runs of each task `mise tasks history` keeps."
+docs = "Older runs are dropped when a new one is recorded. `0` stops recording, like [`task.history`](/configuration/settings.html#task.history) = `false`."
+env = "MISE_TASK_HISTORY_LIMIT"
+type = "Integer"
+
 [task.lock_timeout]
 description = "How long a task waits for a lock another run holds before it fails."
 docs = """
@@ -4346,6 +4367,20 @@ starts only once it holds the lock.
 env = "MISE_TASK_LOCK_TIMEOUT"
 optional = true
 type = "Duration"
+
+[task.logs]
+default = false
+description = "Keep the output of each task's last run, for `mise tasks log`."
+docs = """
+When on, mise saves the combined stdout and stderr of each task's most recent
+run, redacted, under its state directory, and `mise tasks log <task>` prints
+it. Each run replaces the task's previous log, which keeps its last 4 MiB.
+Output that goes straight to the terminal (`raw`, `interactive`, or
+`interleave` with nothing to redact) is not logged. See
+[Read the output of the last run](/tasks/running-tasks.html#read-the-output-of-the-last-run).
+"""
+env = "MISE_TASK_LOGS"
+type = "Bool"
 
 [task.monorepo_depth]
 default = 5
@@ -4416,6 +4451,7 @@ enum = [
   { value = "interleave", description = "print output as it arrives, without labels" },
   { value = "keep-order", description = "label lines, stream one task live and buffer the others, then print them in definition order as they finish" },
   { value = "replacing", description = "replace the previous stdout line with each new one, like `mise install` progress; stderr is printed as is" },
+  { value = "summary", description = "hold each task's output until it ends, then print one line if it passed and everything it printed if it failed" },
   { value = "timed", description = "print only stdout lines that stay on screen for more than a second" },
   { value = "quiet", description = "deprecated; use `interleave` with `task.quiet`" },
   { value = "silent", description = "print nothing from tasks or mise except errors" },

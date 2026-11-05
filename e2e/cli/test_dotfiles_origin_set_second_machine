@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# A second machine whose only checkpoint holds no files (it tracks a path that
+# does not exist yet) connects to a history another machine already published:
+# the origin's history is adopted. A machine with its own files is refused
+# before `[history.origin]` is written.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/second-origin.git"
+git init -q --bare -b main "$origin"
+echo shared-bindings >~/.bindings
+assert_succeed "mise dot track ~/.bindings --yes"
+assert_succeed "mise dot origin set file://$origin --sync sync --yes"
+
+machine() {
+  local home="$1"
+  shift
+  (
+    cd "$home" || exit
+    env HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \
+      MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \
+      MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home" mise "$@"
+  )
+}
+export -f machine
+new_machine() {
+  local home
+  home="$(dirname "$HOME")/$1"
+  mkdir -p "$home/.config/mise"
+  echo "$home"
+}
+
+# only an empty baseline checkpoint locally
+b="$(new_machine b)"
+assert_succeed "machine $b dot track $b/.later --yes"
+assert_succeed "machine $b dot origin set file://$origin --sync manual --yes"
+assert_succeed "machine $b dot pull"
+assert "cat $b/.bindings" "shared-bindings"
+
+# a machine with its own files keeps them: refused before anything is written
+c="$(new_machine c)"
+echo mine >"$c/.mine"
+assert_succeed "machine $c dot track $c/.mine --yes"
+assert_fail "machine $c dot origin set file://$origin --sync manual --yes"
+assert_fail "grep -q history.origin $c/.config/mise/config.local.toml"

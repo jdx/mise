@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+# With task.logs on, mise keeps each task's output from its last run, readable with
+# `mise tasks log`.
+
+cat <<EOF >mise.toml
+[env]
+LOG_TOKEN = { value = "log-secret-value-e2e", redact = true }
+
+[tasks.pass]
+run = 'echo "pass out \$RUN_ID"; echo "pass err" >&2'
+
+[tasks.fail]
+run = 'echo "fail out"; echo "fail err" >&2; exit 3'
+
+[tasks.secret]
+run = 'echo "token=\$LOG_TOKEN"; echo "url=https://bob:hunter2@example.com/x"'
+
+[tasks.plain]
+run = 'echo plain'
+EOF
+
+# logs are off by default: a run writes no log, and `mise tasks log` says how to turn them on
+mise run --output prefix pass
+mise run --output silent pass
+assert_fail "test -e $MISE_STATE_DIR/task-logs"
+assert_fail_contains "mise tasks log pass" "task logs are off"
+assert_fail_contains "mise tasks log pass" "MISE_TASK_LOGS=1"
+
+export MISE_TASK_LOGS=1
+
+# a passing task: stdout and stderr both land in the log, with the command line
+RUN_ID=first mise run --output prefix pass
+assert_contains "mise tasks log pass" "pass out first"
+assert_contains "mise tasks log pass" "pass err"
+assert_contains "mise tasks log pass" '$ echo'
+
+# the newest run replaces the older log
+RUN_ID=second mise run --output prefix pass
+assert_contains "mise tasks log pass" "pass out second"
+assert_not_contains "mise tasks log pass" "pass out first"
+
+# a failing task is logged too
+assert_fail "mise run --output prefix fail"
+assert_contains "mise tasks log fail" "fail out"
+assert_contains "mise tasks log fail" "fail err"
+
+# a failure under an output style that hides lines names the log
+assert_fail_contains "mise run --output replacing fail" "full output: "
+
+# redacted values stay redacted in the log; interleave pipes output when it redacts
+mise run --output interleave secret
+assert_contains "mise tasks log secret" "token=[redacted]"
+assert_not_contains "mise tasks log secret" "log-secret-value-e2e"
+# URL credentials are hidden too, as mise's logger hides them
+assert_contains "mise tasks log secret" "url=https://[redacted]@example.com/x"
+assert_not_contains "mise tasks log secret" "hunter2"
+
+# --path prints where the log is, under the state dir
+assert_contains "mise tasks log pass --path" "$MISE_STATE_DIR/task-logs/"
+assert "cat \"\$(mise tasks log pass --path)\" | grep -c 'pass out second'" "1"
+
+# a raw run hands the task the terminal, so it leaves no log and removes the older one
+mise run --output prefix plain
+assert_contains "mise tasks log plain" "plain"
+mise run --raw plain
+assert_fail_contains "mise tasks log plain" "no log for task plain"
+
+# logs are private to their owner
+log_file="$(mise tasks log pass --path)"
+assert_contains "stat -c %a $log_file" "600"
+assert_contains "stat -c %a $MISE_STATE_DIR/task-logs" "700"
+
+# summary names the log only when it held just the end of a failed task's output
+cat <<EOF >>mise.toml
+
+[tasks.long_fail]
+run = 'seq 1 30000; exit 1'
+EOF
+assert_fail_contains "mise run --output summary long_fail" "full output: "
+assert_fail_contains "mise run --output summary fail" "fail err"
+assert_not_contains "mise run --output summary fail 2>&1 || true" "full output: "
+assert_contains "mise tasks log long_fail" "30000"

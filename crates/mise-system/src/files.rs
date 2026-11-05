@@ -3155,6 +3155,17 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
             link.display_user()
         )));
     }
+    // links already behind a user's directory link look applied, but apply must not leave them
+    // there: it needs --force to replace the link with a directory of links
+    if let Some(dir) = needed_dirs(req)?
+        .into_iter()
+        .find(|dir| blocking_dir_link(req, dir))
+    {
+        return Ok(FileState::Differs(format!(
+            "{} is a link to a directory; apply replaces it with a directory of links",
+            dir.display_user()
+        )));
+    }
     let stale = stale_links(req)?;
     let stale_reason = || format!("{} stale link(s)", stale.len());
     let files = walk_source_files(req)?;
@@ -3400,6 +3411,13 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
     Ok(out.into_iter().collect())
 }
 
+/// Whether `dir`, a directory a `symlink-each` entry needs, is a link the entry must not write
+/// through. The target itself may link to the directory that holds the links, but not to
+/// nothing, which no link can be written under.
+fn blocking_dir_link(req: &FileRequest, dir: &Path) -> bool {
+    file::is_symlink_or_junction(dir) && (dir != req.target || !dir.exists())
+}
+
 fn symlink_each_state_path(req: &FileRequest) -> PathBuf {
     let source = lexical_normalize(&req.source);
     let target = lexical_normalize(&req.target);
@@ -3632,6 +3650,7 @@ fn reconcile_symlink_each_states(
                 .get(&link.target)
                 .is_none_or(|source| **source != link.source)
                 && link_points_to(&link.source, &link.target)
+                && !beneath_dir_link(&link.target, &state.target)
             {
                 stale_links.insert(link.target.clone(), link.clone());
             }
@@ -3777,6 +3796,39 @@ fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
         file::remove_file(path)?;
     }
     Ok(())
+}
+
+/// Drop the `symlink-each` records of `group` whose links are all gone. A group's removal goes by
+/// its own record rather than the planner that clears an entry's state, so the per-target
+/// records would stay behind. A record that still names a link in place is kept: that link was
+/// left on purpose, and the record is what lets a later apply or unapply find it.
+pub(crate) fn forget_group_symlink_each_states(group: &str) {
+    for path in state_files(&dirs::STATE.join("dotfiles")) {
+        let Ok(state) = read_symlink_each_state(&path) else {
+            continue;
+        };
+        if state.group.as_deref() != Some(group) || !state.links.iter().all(link_confirmed_gone) {
+            continue;
+        }
+        if let Err(err) = file::remove_file(&path) {
+            warn!(
+                "files: failed to remove dotfiles state {}: {err}",
+                path.display_user()
+            );
+        }
+    }
+}
+
+/// Whether `link`'s target is confirmed not to be that link: absent, not a link, or a link
+/// elsewhere. A path that cannot be inspected is not confirmed, so its record stays.
+fn link_confirmed_gone(link: &ManagedLink) -> bool {
+    match std::fs::symlink_metadata(&link.target) {
+        Err(err) => err.kind() == std::io::ErrorKind::NotFound,
+        Ok(_) if !file::is_symlink_or_junction(&link.target) => true,
+        Ok(_) => {
+            std::fs::read_link(&link.target).is_ok() && !link_points_to(&link.source, &link.target)
+        }
+    }
 }
 
 fn target_state_path(req: &FileRequest) -> PathBuf {
@@ -4430,7 +4482,9 @@ fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         };
         let expected = req.source.join(&source_rel);
         if link_points_at(entry.path(), &dest, &expected)
-            && (!expected.exists() || is_excluded(&source_rel, &req.exclude))
+            // a dangling link in the source is still a source entry the walk deploys
+            && (std::fs::symlink_metadata(&expected).is_err()
+                || is_excluded(&source_rel, &req.exclude))
         {
             out.push(entry.path().to_path_buf());
         }
@@ -4441,16 +4495,31 @@ fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
 /// Links recorded for this target that are no longer desired. Persistent
 /// ownership state keeps this proportional to the managed source tree instead
 /// of recursively walking a shared target such as the user's home directory.
+///
+/// A link beneath a directory link of the user's is not one: removing it would reach into
+/// wherever that link points.
 fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    match load_symlink_each_state(req) {
-        LoadedSymlinkEachState::Present(state) => Ok(tracked_stale_links(
-            &state,
-            &desired_symlink_each_state(req)?,
-        )),
-        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
-            legacy_stale_links(req)
+    let stale = match load_symlink_each_state(req) {
+        LoadedSymlinkEachState::Present(state) => {
+            tracked_stale_links(&state, &desired_symlink_each_state(req)?)
         }
-    }
+        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
+            legacy_stale_links(req)?
+        }
+    };
+    Ok(stale
+        .into_iter()
+        .filter(|path| !beneath_dir_link(path, &req.target))
+        .collect())
+}
+
+/// Whether a directory link lies between `root` and `path`, so that removing `path` would reach
+/// into wherever the link points. A link at `root` itself, or above it, is not counted.
+fn beneath_dir_link(path: &Path, root: &Path) -> bool {
+    path.ancestors()
+        .skip(1)
+        .take_while(|dir| *dir != root && dir.starts_with(root))
+        .any(file::is_symlink_or_junction)
 }
 
 fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
@@ -6394,16 +6463,22 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             }
         }
         FileMode::SymlinkEach => {
-            // a regular file where the target directory (or a nested one)
-            // should go blocks the whole entry
-            for dir in needed_dirs(req)? {
-                if dir.exists() && !dir.is_dir() {
-                    out.push(dir);
-                }
-            }
             // a file seen through a folded link is the source itself, and
             // apply unfolds the link before it links anything there
             let folded = folded_source_links(req)?;
+            // a regular file where the target directory (or a nested one)
+            // should go blocks the whole entry, and so does a directory link
+            // the user made beneath the target: links written through it
+            // would land in wherever it points, outside the entry. The target
+            // itself may be a link to the directory that holds the links, as
+            // may anything above it.
+            for dir in needed_dirs(req)? {
+                if dir.exists() && !dir.is_dir()
+                    || blocking_dir_link(req, &dir) && !folded.iter().any(|(link, _)| *link == dir)
+                {
+                    out.push(dir);
+                }
+            }
             for (_source, target) in walk_source_files(req)? {
                 if folded.iter().any(|(link, _)| target.starts_with(link)) {
                     continue;
@@ -6942,7 +7017,12 @@ fn remove_empty_dirs_upward<'a>(
     {
         let mut dir = Some(start);
         while let Some(d) = dir {
-            if !may_remove(d) || !d.is_dir() || d.read_dir()?.next().is_some() {
+            // a link to a directory is somebody's own, never an empty directory of ours
+            if !may_remove(d)
+                || file::is_symlink_or_junction(d)
+                || !d.is_dir()
+                || d.read_dir()?.next().is_some()
+            {
                 break;
             }
             debug!("files: removing empty directory {}", d.display_user());
@@ -7068,8 +7148,14 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need
-            for dir in needed_dirs(req)? {
-                if dir.exists() && !dir.is_dir() && remove_existing(&dir)? {
+            // outermost first: once a link is gone, the paths that went through
+            // it no longer reach whatever it pointed at
+            let mut dirs = needed_dirs(req)?;
+            dirs.sort_by_key(|dir| dir.components().count());
+            for dir in dirs {
+                if (dir.exists() && !dir.is_dir() || blocking_dir_link(req, &dir))
+                    && remove_existing(&dir)?
+                {
                     written.push(dir);
                 }
             }
@@ -8997,6 +9083,21 @@ source = "oldrc""#,
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn remove_empty_dirs_upward_leaves_a_directory_link() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let empty = dir.path().join("empty");
+        std::fs::create_dir(&empty)?;
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&empty, &link)?;
+        let removed = remove_empty_dirs_upward([link.as_path()], |_| true)?;
+        assert!(removed.is_empty());
+        assert!(link.is_symlink());
+        assert!(empty.is_dir());
+        Ok(())
+    }
+
     #[test]
     fn create_recorded_lists_a_target_the_failed_write_created() -> Result<()> {
         let dir = tempfile::tempdir()?;
@@ -9160,6 +9261,42 @@ source = "oldrc""#,
 
         assert!(reconciliation.stale_links.is_empty());
         assert!(reconciliation.targets.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reconciliation_leaves_links_beneath_a_users_directory_link() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_dir = dir.path().join("src");
+        let outside = dir.path().join("outside");
+        let target = dir.path().join("home");
+        file::create_dir_all(&source_dir)?;
+        file::create_dir_all(&outside)?;
+        file::create_dir_all(&target)?;
+        file::write(source_dir.join("a"), "managed")?;
+        std::os::unix::fs::symlink(source_dir.join("a"), outside.join("a"))?;
+        std::os::unix::fs::symlink(&outside, target.join("sub"))?;
+        let stored = SymlinkEachState {
+            version: SYMLINK_EACH_STATE_VERSION,
+            source: source_dir.clone(),
+            target: target.clone(),
+            links: vec![ManagedLink {
+                source: source_dir.join("a"),
+                target: target.join("sub/a"),
+            }],
+            group: None,
+        };
+        let active = SymlinkEachState {
+            source: dir.path().join("other-src"),
+            links: vec![],
+            ..stored.clone()
+        };
+        let selected_targets = [target].into_iter().collect();
+
+        let reconciliation = reconcile_symlink_each_states(&[active], &selected_targets, &[stored]);
+
+        assert!(reconciliation.stale_links.is_empty());
+        Ok(())
     }
 
     #[cfg(unix)]

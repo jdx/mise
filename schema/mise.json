@@ -3402,9 +3402,24 @@
               "description": "Build task usage specs only from the `usage` field, ignoring deprecated `arg()`, `option()` and `flag()` in run scripts.",
               "type": "boolean"
             },
+            "history": {
+              "default": true,
+              "description": "Record each task run's duration and result for `mise tasks history`.",
+              "type": "boolean"
+            },
+            "history_limit": {
+              "default": 20,
+              "description": "How many recent runs of each task `mise tasks history` keeps.",
+              "type": "integer"
+            },
             "lock_timeout": {
               "description": "How long a task waits for a lock another run holds before it fails.",
               "type": "string"
+            },
+            "logs": {
+              "default": false,
+              "description": "Keep the output of each task's last run, for `mise tasks log`.",
+              "type": "boolean"
             },
             "monorepo_depth": {
               "default": 5,
@@ -3432,6 +3447,7 @@
                 "interleave",
                 "keep-order",
                 "replacing",
+                "summary",
                 "timed",
                 "quiet",
                 "silent"
@@ -4047,6 +4063,22 @@
           "type": "string",
           "description": "description of task"
         },
+        "tags": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "what kind of task this is, such as `test` or `lint`; `mise run --tag` and `mise tasks ls --tag` select tasks by it"
+            },
+            {
+              "type": "array",
+              "description": "what kind of task this is, such as `test`, `lint` or `slow`; `mise run --tag` and `mise tasks ls --tag` select tasks by them",
+              "items": {
+                "type": "string",
+                "description": "a tag, such as `test`, `lint` or `slow`"
+              }
+            }
+          ]
+        },
         "dir": {
           "type": "string",
           "description": "directory to run script in, default is the project's base directory",
@@ -4220,12 +4252,13 @@
         },
         "output": {
           "type": "string",
-          "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
+          "description": "output style for this task (prefix, interleave, keep-order, replacing, summary, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
           "enum": [
             "prefix",
             "interleave",
             "keep-order",
             "replacing",
+            "summary",
             "timed",
             "quiet",
             "silent"

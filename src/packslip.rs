@@ -25,7 +25,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
-use crate::toolset::{ConfigScope, ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ConfigScope, ToolSource, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 /// Resources fetched from outside the artifact live here in the install.
@@ -1090,7 +1090,24 @@ pub(crate) fn skills_of(
 /// The skills of every tool active in the current directory.
 pub async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
     let ts = config.get_toolset().await?;
-    skills_of_toolset(config, ts)
+    skills_of_toolset(config, ts, |_| true)
+}
+
+/// The skills of the active tools, leaving out the tools only the global
+/// config asks for. Those belong in the home directory, so a project's skills
+/// directory does not list them a second time. A tool a project file also
+/// lists keeps whatever version is active, and so does one `MISE_*_VERSION`
+/// selects.
+pub async fn project_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
+    let local = ToolsetBuilder::new()
+        .with_scope(ConfigScope::LocalOnly)
+        .without_runtime_env()
+        .build_unresolved(config)?;
+    let ts = config.get_toolset().await?;
+    skills_of_toolset(config, ts, |tv| {
+        matches!(tv.request.source(), ToolSource::Environment(..))
+            || local.versions.keys().any(|ba| ba.short == tv.ba().short)
+    })
 }
 
 /// The skills of the tools the global and system config select, wherever
@@ -1102,12 +1119,19 @@ pub async fn global_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
         .without_runtime_env()
         .build(config)
         .await?;
-    skills_of_toolset(config, &ts)
+    skills_of_toolset(config, &ts, |_| true)
 }
 
-fn skills_of_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<DeclaredSkills> {
+fn skills_of_toolset(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    keep: impl Fn(&ToolVersion) -> bool,
+) -> Result<DeclaredSkills> {
     let mut skills = DeclaredSkills::default();
     for (backend, tv) in ts.list_current_installed_versions(config) {
+        if !keep(&tv) {
+            continue;
+        }
         let install_path = tv.install_path();
         let statement = match statement(&install_path) {
             Ok(Some(statement)) => statement,
@@ -1236,43 +1260,82 @@ pub fn skills_target(root: &Path) -> SkillsTarget {
 /// reported and the tools stay installed. Outside a project root only the
 /// global links are kept up to date.
 pub async fn auto_sync_skills(config: &Arc<Config>) {
-    if let Some(root) = &config.project_root {
-        auto_sync_skills_into(config, root, false).await;
-    }
     // Installing or upgrading a global tool moves its skills too. Where the
     // project and the home directory share one skills directory (a project
-    // rooted at home, or an absolute `skills.dir`), the project sync already
-    // wrote there with a superset, and a second pass would undo or prune it.
-    let shared = config
-        .project_root
-        .as_ref()
-        .is_some_and(|root| skills_target(root).dir == skills_target(&crate::dirs::HOME).dir);
+    // rooted at home, or an absolute `skills.dir`), one pass writes there with
+    // the tools of both, and a second would undo or prune it.
+    let shared = project_shares_home_dir(config);
+    if let Some(root) = &config.project_root {
+        let scope = if shared {
+            SkillsScope::Active
+        } else {
+            SkillsScope::Project
+        };
+        auto_sync_skills_into(config, root, scope).await;
+    }
     if !shared {
         auto_sync_global_skills(config).await;
     }
 }
 
+/// Which tools a sync links the skills of.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SkillsScope {
+    /// Every tool active in the directory, global ones included.
+    Active,
+    /// Only the tools a project config file selects.
+    Project,
+    /// Only the tools the global config selects.
+    Global,
+}
+
 /// [`auto_sync_skills`] for a global change such as `mise use -g`: the links
 /// go under the home directory, as `mise skills sync --global` writes them.
 pub async fn auto_sync_global_skills(config: &Arc<Config>) {
-    auto_sync_skills_into(config, &crate::dirs::HOME, true).await;
+    // A project whose directory is the home one has links for its own tools
+    // there too, which a global-only pass would replace or prune.
+    let scope = if project_shares_home_dir(config) {
+        SkillsScope::Active
+    } else {
+        SkillsScope::Global
+    };
+    auto_sync_skills_into(config, &crate::dirs::HOME, scope).await;
 }
 
-async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) {
+fn project_shares_home_dir(config: &Config) -> bool {
+    config.project_root.as_ref().is_some_and(|root| {
+        same_dir(
+            &skills_target(root).dir,
+            &skills_target(&crate::dirs::HOME).dir,
+        )
+    })
+}
+
+/// Whether two skills directories are the same one, through symlinks such as
+/// a home directory reached by its physical path.
+pub fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b
+        || match (a.canonicalize(), b.canonicalize()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        }
+}
+
+async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, scope: SkillsScope) {
     let settings = Settings::get();
     if !settings.skills.auto_sync {
-        if !global {
-            hint_skills(config).await;
+        if scope != SkillsScope::Global {
+            hint_skills(config, scope).await;
         }
         return;
     }
     let target = skills_target(root);
     let dir = target.dir.clone();
     let result = async {
-        let skills = if global {
-            global_skills(config).await?
-        } else {
-            active_skills(config).await?
+        let skills = match scope {
+            SkillsScope::Global => global_skills(config).await?,
+            SkillsScope::Project => project_skills(config).await?,
+            SkillsScope::Active => active_skills(config).await?,
         };
         // Reported, not warned: this runs after every install, and a skill
         // that is missing on purpose must not nag on each one. `mise skills
@@ -1319,11 +1382,15 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) 
 /// A tool may ship an agent skill that nothing links anywhere until
 /// `mise skills sync` runs, and with `skills.auto_sync` off nothing ever
 /// says so. Mention it once, and only when there is a skill to link.
-async fn hint_skills(config: &Arc<Config>) {
+async fn hint_skills(config: &Arc<Config>, scope: SkillsScope) {
     if !crate::hint::hint_would_display("skills") {
         return;
     }
-    let Ok(skills) = active_skills(config).await else {
+    let skills = match scope {
+        SkillsScope::Active => active_skills(config).await,
+        _ => project_skills(config).await,
+    };
+    let Ok(skills) = skills else {
         return;
     };
     if skills.found.is_empty() {

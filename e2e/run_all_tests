@@ -119,14 +119,27 @@ FINISHED=()
 FAILED_TESTS=()
 ORIGINAL_GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}"
 
-SHOW_PASSING_LOGS="${E2E_SHOW_PASSING_LOGS:-}"
-if [[ -z $SHOW_PASSING_LOGS ]]; then
-  if [[ -n ${GITHUB_ACTIONS:-} ]]; then
-    SHOW_PASSING_LOGS=0
-  else
-    SHOW_PASSING_LOGS=1
+# A passing test's output is one line, locally as on CI; a failing one prints
+# all of it. E2E_SHOW_PASSING_LOGS=1 prints every test's output.
+SHOW_PASSING_LOGS="${E2E_SHOW_PASSING_LOGS:-0}"
+
+# The line a passing test gets: its time and how many assertions passed, and
+# any warning about it, such as a slow test not marked as one.
+pass_line() {
+  local name="$1" log="$2" duration count
+  duration="$(grep -m1 -E "^$name: [0-9]+s$" "$log" | sed 's/.*: //' || true)"
+  # run_test counts the checks that passed through ok(), however they print.
+  count="$(grep -m1 -E "^$name: [0-9]+ assertions$" "$log" | sed 's/.*: //; s/ assertions//' || true)"
+  local details="${duration:-}"
+  if [[ ${count:-0} -gt 0 ]]; then
+    local noun=assertions
+    [[ $count == 1 ]] && noun=assertion
+    details="${details:+$details, }$count $noun"
   fi
-fi
+  echo "PASS: $name${details:+ ($details)}" >&2
+  # The console warning, and on GitHub Actions its annotation, worded apart.
+  grep -E 'not marked as slow|Slow test not marked' "$log" >&2 || true
+}
 
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
 # shellcheck disable=SC2329
@@ -226,7 +239,7 @@ while [[ $completed -lt $total ]]; do
     elif [[ $SHOW_PASSING_LOGS == 1 || -f $LOG_DIR/$printed.retried ]]; then
       cat "${LOG_FILES[$printed]}"
     else
-      echo "PASS: ${RUN_FILES[$printed]}" >&2
+      pass_line "${RUN_FILES[$printed]}" "${LOG_FILES[$printed]}"
     fi
     test_count=$((test_count + 1))
     printed=$((printed + 1))
@@ -256,7 +269,7 @@ if ((${#SUMMARY_ENTRY_TYPES[@]} > 0)); then
   done
 fi
 
-echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
+echo "E2E: ran $test_count tests ($((test_count - ${#FAILED_TESTS[@]})) passed, ${#FAILED_TESTS[@]} failed), skipped $skipped_count tests" >&2
 
 if ((${#FAILED_TESTS[@]} > 0)); then
   echo >&2

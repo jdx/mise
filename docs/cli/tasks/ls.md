@@ -26,6 +26,7 @@ See <https://mise.jdx.dev/tasks/task-discovery.html>
 - **`-a --all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
 - **`--name-only`** — Print only task names, one per line (for fzf and similar tools)
+- **`--tag <TAG>`** — Only show tasks that have this tag; repeat to accept any of several
 - **`--no-header`** — Do not print the table header
 - **`--sort <COLUMN>`** — Column to sort by (default: name)
 
@@ -53,6 +54,12 @@ List tasks from every monorepo project
 
 ```
 mise tasks ls --all
+```
+
+List the tasks tagged "lint"
+
+```
+mise tasks ls --tag lint
 ```
 
 Pick a task name interactively

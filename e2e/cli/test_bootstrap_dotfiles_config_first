@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# The dotfiles phase of `mise bootstrap` writes the entries that deploy mise's
+# own configuration first and reads it again, like `mise dot apply`, so an entry
+# the new file adds applies in the same run.
+
+config="$MISE_CONFIG_DIR/config.toml"
+conf_d="$MISE_CONFIG_DIR/conf.d/reviewed.toml"
+src="$HOME/dotfiles-checkout"
+mkdir -p "$src/home" "$MISE_CONFIG_DIR/conf.d"
+echo 'hello' >"$src/home/greeting"
+
+# the live config only deploys a conf.d file; the checkout's copy of that file
+# deploys another one
+printf '[dotfiles]\n"%s" = { source = "%s/reviewed.toml", mode = "copy" }\n' "$conf_d" "$src" >"$config"
+printf '[dotfiles]\n"~/.greeting" = { source = "%s/home/greeting", mode = "copy" }\n' "$src" >"$src/reviewed.toml"
+
+# a dry run plans the file the new config adds and writes nothing
+assert_contains "mise bootstrap --only dotfiles --dry-run" ".greeting"
+assert_fail "test -e ~/.greeting"
+assert_fail "test -e $conf_d"
+
+# one bootstrap deploys the conf.d file and the file it declares
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.greeting" "hello"
+assert_contains "cat $conf_d" ".greeting"
+
+# an update to the conf.d file applies in the run that copies it
+printf '[dotfiles]\n"~/.second" = { source = "%s/home/greeting", mode = "copy" }\n' "$src" >"$src/reviewed.toml"
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.second" "hello"
+
+# a secret and the template that reads it, both declared by the copied file
+echo 'token={{ secret(name="tok") }}' >"$src/home/secret.tmpl"
+printf '[bootstrap.secrets]\ntok = { env = "E2E_CONFIG_FIRST_TOKEN" }\n[dotfiles]\n"~/.secret" = { source = "%s/home/secret.tmpl", mode = "template" }\n' "$src" >"$src/reviewed.toml"
+export E2E_CONFIG_FIRST_TOKEN=abc
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.secret" "token=abc"

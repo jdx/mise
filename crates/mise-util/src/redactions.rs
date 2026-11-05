@@ -397,29 +397,41 @@ impl Redactor {
         if self.patterns.is_empty() {
             return input.to_string();
         }
-        let spans: Vec<(usize, usize)> = match &self.automaton {
+        replace_spans(input, self.match_spans(input.as_bytes()))
+    }
+
+    /// Every occurrence of every pattern in `haystack`, overlapping ones included, as
+    /// `(start, end)` byte offsets: exactly the matches [`Self::redact`] replaces. In valid
+    /// UTF-8 every offset is a character boundary, since every pattern is a string.
+    pub fn match_spans(&self, haystack: &[u8]) -> Vec<(usize, usize)> {
+        match &self.automaton {
             Some(ac) => ac
-                .find_overlapping_iter(input)
+                .find_overlapping_iter(haystack)
                 .map(|m| (m.start(), m.end()))
                 .collect(),
             // Fallback if the automaton failed to build
-            None => naive_spans(input, &self.patterns),
-        };
-        replace_spans(input, spans)
+            None => naive_spans(haystack, &self.patterns),
+        }
+    }
+
+    /// The length in bytes of the longest pattern, 0 when there is none.
+    pub fn longest_pattern(&self) -> usize {
+        self.patterns.iter().map(String::len).max().unwrap_or(0)
     }
 }
 
 /// Every occurrence of every pattern, including self-overlapping ones.
-fn naive_spans(input: &str, patterns: &IndexSet<String>) -> Vec<(usize, usize)> {
+fn naive_spans(input: &[u8], patterns: &IndexSet<String>) -> Vec<(usize, usize)> {
     let mut spans = vec![];
     for p in patterns {
-        let mut from = 0;
-        while let Some(i) = input[from..].find(p.as_str()) {
-            let start = from + i;
-            spans.push((start, start + p.len()));
-            // advance one char so the next search stays on a UTF-8 boundary
-            from = start + input[start..].chars().next().map_or(1, char::len_utf8);
-        }
+        let p = p.as_bytes();
+        spans.extend(
+            input
+                .windows(p.len())
+                .enumerate()
+                .filter(|(_, window)| *window == p)
+                .map(|(start, _)| (start, start + p.len())),
+        );
     }
     spans
 }
