@@ -73,13 +73,9 @@ else
 		done
 	done
 
-	# E2E_JOBS opts into running the matches concurrently, in argument order.
-	if [[ -n ${E2E_JOBS:-} && ${#TEST_FILES[@]} -gt 0 ]]; then
-		./e2e/run_all_tests "${TEST_FILES[@]}"
-	else
-		for FILE in ${TEST_FILES[@]+"${TEST_FILES[@]}"}; do
-			echo "[xtask:e2e] Running test: $FILE" >&2
-			./e2e/run_test "$FILE"
-		done
+	# The matches run through the same runner as --all, in argument order: one at
+	# a time unless E2E_JOBS opts into running them concurrently.
+	if ((${#TEST_FILES[@]} > 0)); then
+		E2E_JOBS="${E2E_JOBS:-1}" ./e2e/run_all_tests "${TEST_FILES[@]}"
 	fi
 fi
