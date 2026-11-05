@@ -113,65 +113,107 @@ where
 type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
 
 /// The longest line mise reads from a command in one piece. Output with no newline is
-/// passed on in pieces of this size, so a command cannot make mise hold an unbounded line.
+/// passed on in pieces of at most this size (plus the length of a registered secret that a
+/// cut would otherwise split), so a command cannot make mise hold an unbounded line.
 const MAX_LINE_BYTES: usize = 1024 * 1024;
 
-/// Like tokio's `Lines`, but a line longer than `max` bytes arrives in pieces, cut on
-/// character boundaries.
+/// Like tokio's `Lines`, but a line longer than `max` bytes arrives in pieces. A cut lands
+/// on a character boundary and never inside a registered secret: the redactor sees one
+/// piece at a time, so a secret split across two pieces would print in both halves.
 struct CappedLines<R> {
     reader: R,
     max: usize,
-    /// The start of a character that the previous piece cut through.
+    secrets: Arc<Vec<Vec<u8>>>,
+    /// How far past a cut to read, to see a secret that crosses it.
+    lookahead: usize,
+    /// Bytes read past the previous cut or newline: the start of the next piece.
     carry: Vec<u8>,
 }
 
 impl<R: tokio::io::AsyncBufRead + Unpin> CappedLines<R> {
-    fn new(reader: R) -> Self {
-        Self::with_max(reader, MAX_LINE_BYTES)
+    fn new(reader: R, secrets: Arc<Vec<Vec<u8>>>) -> Self {
+        Self::with_max(reader, MAX_LINE_BYTES, secrets)
     }
 
-    fn with_max(reader: R, max: usize) -> Self {
+    fn with_max(reader: R, max: usize, secrets: Arc<Vec<Vec<u8>>>) -> Self {
+        // At least two bytes, so a line exactly `max` long sees its `\n` or `\r\n`.
+        let lookahead = secrets.iter().map(Vec::len).max().unwrap_or(0).max(2);
         Self {
             reader,
             max,
+            secrets,
+            lookahead,
             carry: Vec::new(),
         }
     }
 
     async fn next_line(&mut self) -> std::io::Result<Option<String>> {
         let mut buf = std::mem::take(&mut self.carry);
-        // A carried partial character is at most 3 bytes, so the limit stays positive.
-        let limit = self.max.saturating_sub(buf.len()).max(4) as u64;
-        let read = (&mut self.reader)
-            .take(limit)
-            .read_until(b'\n', &mut buf)
-            .await?;
-        if read == 0 && buf.is_empty() {
+        let want = self.max + self.lookahead;
+        if !buf.contains(&b'\n') && buf.len() < want {
+            (&mut self.reader)
+                .take((want - buf.len()) as u64)
+                .read_until(b'\n', &mut buf)
+                .await?;
+        }
+        if buf.is_empty() {
             return Ok(None);
         }
-        if buf.last() == Some(&b'\n') {
+        let newline = buf
+            .iter()
+            .position(|b| *b == b'\n')
+            // A line exactly `max` long may end with `\r\n`, one byte past `max`.
+            .filter(|at| *at <= self.max || (*at == self.max + 1 && buf[self.max] == b'\r'));
+        if let Some(at) = newline {
+            self.carry = buf.split_off(at + 1);
             buf.pop();
             if buf.last() == Some(&b'\r') {
                 buf.pop();
             }
-        } else if read as u64 == limit {
-            // A line exactly `max` long ends here: take its newline, so it is not
-            // followed by an empty line.
-            if self.reader.fill_buf().await?.first() == Some(&b'\n') {
-                self.reader.consume(1);
-                if buf.last() == Some(&b'\r') {
-                    buf.pop();
-                }
-            } else if let Err(err) = std::str::from_utf8(&buf)
-                && err.error_len().is_none()
-            {
-                // The piece ends inside a character: finish it with the next piece.
-                self.carry = buf.split_off(err.valid_up_to());
-            }
+        } else if buf.len() > self.max {
+            let cut = self.cut(&buf);
+            self.carry = buf.split_off(cut);
         }
+        // Otherwise the output ended without a newline, and `buf` is its last line.
         String::from_utf8(buf)
             .map(Some)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+    }
+
+    /// Where to end a piece of `buf`, which is longer than `max` and holds no newline in
+    /// its first `max` bytes.
+    fn cut(&self, buf: &[u8]) -> usize {
+        let mut cut = self.max;
+        if let Err(err) = std::str::from_utf8(&buf[..cut])
+            && err.error_len().is_none()
+        {
+            cut = err.valid_up_to();
+        }
+        while let Some((start, end)) = self.secret_across(buf, cut) {
+            if start == 0 {
+                // A secret longer than a piece: keep it whole in this one.
+                return end;
+            }
+            cut = start;
+        }
+        cut
+    }
+
+    /// The earliest registered secret in `buf` that starts before `cut` and ends after it.
+    fn secret_across(&self, buf: &[u8], cut: usize) -> Option<(usize, usize)> {
+        self.secrets
+            .iter()
+            .filter(|secret| secret.len() > 1)
+            .filter_map(|secret| {
+                // Every occurrence inside this window crosses `cut`.
+                let from = cut.saturating_sub(secret.len() - 1);
+                let to = (cut + secret.len() - 1).min(buf.len());
+                buf.get(from..to)?
+                    .windows(secret.len())
+                    .position(|window| window == secret.as_slice())
+                    .map(|at| (from + at, from + at + secret.len()))
+            })
+            .min()
     }
 }
 
@@ -1108,6 +1150,18 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    /// Every value a line of output may be redacted for, by this command's redactor or the
+    /// global one, so [`CappedLines`] never cuts a line inside one.
+    fn line_secrets(&self) -> Arc<Vec<Vec<u8>>> {
+        let global = crate::redactions::GLOBAL_REDACTOR
+            .lock()
+            .unwrap()
+            .patterns_arc();
+        let own = self.redactor.patterns_arc();
+        let secrets: indexmap::IndexSet<&String> = own.iter().chain(global.iter()).collect();
+        Arc::new(secrets.into_iter().map(|s| s.as_bytes().to_vec()).collect())
+    }
+
     pub fn with_on_stdout<F: Fn(String) + Send + 'a>(mut self, on_stdout: F) -> Self {
         self.on_stdout = Some(Box::new(on_stdout));
         self
@@ -1582,11 +1636,13 @@ impl<'a> CmdLineRunner<'a> {
         }
         trace!("Started process: {id} for {}", self.get_program());
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let secrets = self.line_secrets();
         if let Some(stdout) = cp.stdout.take() {
             let name = self.to_string();
             let tx = tx.clone();
+            let secrets = secrets.clone();
             tokio::spawn(async move {
-                let mut lines = CappedLines::new(TokioBufReader::new(stdout));
+                let mut lines = CappedLines::new(TokioBufReader::new(stdout), secrets);
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {
@@ -1604,8 +1660,9 @@ impl<'a> CmdLineRunner<'a> {
         if let Some(stderr) = cp.stderr.take() {
             let name = self.to_string();
             let tx = tx.clone();
+            let secrets = secrets.clone();
             tokio::spawn(async move {
-                let mut lines = CappedLines::new(TokioBufReader::new(stderr));
+                let mut lines = CappedLines::new(TokioBufReader::new(stderr), secrets);
                 loop {
                     match lines.next_line().await {
                         Ok(Some(line)) => {

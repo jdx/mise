@@ -502,7 +502,7 @@ fn test_on_spawn_runs_for_a_synchronous_execute() {
 #[tokio::test]
 async fn test_capped_lines_split_a_long_line_on_character_boundaries() {
     let input = "ab\r\néééé\nlast".as_bytes();
-    let mut lines = super::CappedLines::with_max(input, 5);
+    let mut lines = super::CappedLines::with_max(input, 5, Default::default());
     let mut seen = Vec::new();
     while let Some(line) = lines.next_line().await.unwrap() {
         seen.push(line);
@@ -511,22 +511,73 @@ async fn test_capped_lines_split_a_long_line_on_character_boundaries() {
     assert_eq!(seen, ["ab", "éé", "éé", "last"]);
 
     // a line exactly the limit long is one line, not a line and an empty one
-    let mut lines = super::CappedLines::with_max("abcde\nf".as_bytes(), 5);
+    let mut lines = super::CappedLines::with_max("abcde\nf".as_bytes(), 5, Default::default());
     assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("abcde"));
     assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("f"));
     assert_eq!(lines.next_line().await.unwrap(), None);
+
+    // so is one that ends with CRLF, whose `\r` lies past the limit
+    let pieces = capped_pieces(b"abcde\r\nf\r\n", Some(5), &[]).await;
+    assert_eq!(pieces, ["abcde", "f"]);
 }
 
 #[tokio::test]
 async fn test_capped_lines_bound_output_without_newlines() {
     let input = vec![b'x'; super::MAX_LINE_BYTES * 3 + 7];
-    let mut lines = super::CappedLines::new(input.as_slice());
+    let mut lines = super::CappedLines::new(input.as_slice(), Default::default());
     let mut lengths = Vec::new();
     while let Some(line) = lines.next_line().await.unwrap() {
         lengths.push(line.len());
     }
     let max = super::MAX_LINE_BYTES;
     assert_eq!(lengths, [max, max, max, 7]);
+}
+
+async fn capped_pieces(input: &[u8], max: Option<usize>, secrets: &[&str]) -> Vec<String> {
+    let secrets = Arc::new(secrets.iter().map(|s| s.as_bytes().to_vec()).collect());
+    let mut lines = match max {
+        Some(max) => super::CappedLines::with_max(input, max, secrets),
+        None => super::CappedLines::new(input, secrets),
+    };
+    let mut pieces = Vec::new();
+    while let Some(piece) = lines.next_line().await.unwrap() {
+        pieces.push(piece);
+    }
+    pieces
+}
+
+#[tokio::test]
+async fn test_capped_lines_never_cut_a_secret_at_the_limit() {
+    let secret = "s3cr3t-ToKeN-value";
+    let max = super::MAX_LINE_BYTES;
+    // the secret starts 5 bytes before the cut, so a plain cut would split it
+    let input = format!("{}{secret}{}", "x".repeat(max - 5), "y".repeat(100));
+    let pieces = capped_pieces(input.as_bytes(), None, &[secret]).await;
+    assert_eq!(pieces.concat(), input, "no output lost or repeated");
+    assert!(pieces.iter().all(|piece| piece.len() <= max));
+    let redactor = crate::redactions::Redactor::new([secret.to_string()]);
+    let shown: Vec<String> = pieces.iter().map(|piece| redactor.redact(piece)).collect();
+    assert_eq!(shown.concat().matches("[redacted]").count(), 1);
+    for part in ["s3c", "ToKeN", "value", "t-T"] {
+        assert!(
+            shown.iter().all(|piece| !piece.contains(part)),
+            "{part} shown"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_capped_lines_keep_overlapping_secrets_and_characters_whole() {
+    // "é" is two bytes; "bcd" and "cdé" overlap, and the cut at 8 falls inside both
+    let input = "aaaaabcdéfff";
+    let pieces = capped_pieces(input.as_bytes(), Some(8), &["bcd", "cdé"]).await;
+    assert_eq!(pieces.concat(), input);
+    assert_eq!(pieces[0], "aaaaa");
+    assert!(pieces[1].starts_with("bcdé"));
+    // a secret longer than a piece stays whole, in one longer piece
+    let pieces = capped_pieces(b"abcdefgh-z", Some(3), &["abcdefgh"]).await;
+    assert_eq!(pieces[0], "abcdefgh");
+    assert_eq!(pieces.concat(), "abcdefgh-z");
 }
 
 #[tokio::test]
