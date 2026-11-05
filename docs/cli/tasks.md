@@ -65,6 +65,7 @@ mise tasks --hidden --sort source
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.html)
 - [`mise tasks graph [FLAGS]`](/cli/tasks/graph.html)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.html)
+- [`mise tasks log [--path] <TASK>`](/cli/tasks/log.html)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.html)
 - [`mise tasks rm [FLAGS] <TASKS>…`](/cli/tasks/rm.html)
 - [`mise tasks set [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/set.html)

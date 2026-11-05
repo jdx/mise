@@ -928,6 +928,9 @@ export const commands: { [key: string]: Command } = {
       info: {
         hide: false,
       },
+      log: {
+        hide: false,
+      },
       ls: {
         hide: false,
       },
