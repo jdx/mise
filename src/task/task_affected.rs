@@ -1,19 +1,21 @@
 //! Selects tasks for `mise run --affected` outside a monorepo, by matching the changed files
 //! against each task's `sources`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eyre::Result;
+use eyre::{Result, eyre};
 use serde::{Serialize, Serializer};
 
 use crate::config::Config;
 use crate::dirs;
+use crate::git::Git;
 use crate::task::Task;
 use crate::task::task_source_checker::{
     build_source_matcher, is_source, lexical_normalize, parent_dir_pops_glob, task_cwd,
 };
+use crate::task::workspace::git::{WorkspaceChanges, WorkspaceGitRevisions};
 
 /// Why `--affected` selected a task in a project without a monorepo root.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -40,6 +42,69 @@ pub enum AffectedTaskReason {
     ArgumentSources,
 }
 
+/// The changed files of each Git checkout that holds a task, read once per checkout.
+pub struct AffectedRepos<'a> {
+    revisions: &'a WorkspaceGitRevisions,
+    /// Canonical checkout roots and their changes; the first is the default checkout.
+    repos: Vec<(PathBuf, WorkspaceChanges)>,
+    /// Which entry of `repos` holds each task directory looked up so far.
+    dirs: BTreeMap<PathBuf, usize>,
+}
+
+impl<'a> AffectedRepos<'a> {
+    /// Reads the changes of the checkout `mise` runs in, or failing that, the one that
+    /// holds the project root (a config above the checkout, outside Git).
+    pub fn new(revisions: &'a WorkspaceGitRevisions, config: &Config) -> Result<Self> {
+        let root = dirs::CWD
+            .iter()
+            .chain(config.project_root.iter())
+            .find_map(|dir| checkout_root(dir))
+            .ok_or_else(|| eyre!("--affected needs a Git repository"))?;
+        let changes = revisions.changed_paths(&root)?;
+        Ok(Self {
+            revisions,
+            repos: vec![(root, changes)],
+            dirs: BTreeMap::new(),
+        })
+    }
+
+    /// Describes what was compared in the default checkout, for an explanation header.
+    pub fn compared(&self) -> String {
+        self.repos[0].1.compared(self.revisions)
+    }
+
+    fn for_dir(&mut self, dir: &Path) -> Result<(&Path, &BTreeSet<PathBuf>)> {
+        let index = match self.dirs.get(dir) {
+            Some(index) => *index,
+            None => {
+                let index = match checkout_root(dir) {
+                    Some(root) => match self.repos.iter().position(|(r, _)| *r == root) {
+                        Some(index) => index,
+                        None => {
+                            let changes = self.revisions.changed_paths(&root)?;
+                            self.repos.push((root, changes));
+                            self.repos.len() - 1
+                        }
+                    },
+                    None => 0,
+                };
+                self.dirs.insert(dir.to_path_buf(), index);
+                index
+            }
+        };
+        let (root, changes) = &self.repos[index];
+        Ok((root, &changes.paths))
+    }
+}
+
+/// The canonical root of the checkout holding `dir`, or its nearest existing ancestor.
+/// dunce, because Git does not accept the `\\?\` paths `canonicalize` gives on Windows.
+fn checkout_root(dir: &Path) -> Option<PathBuf> {
+    let dir = dir.ancestors().find(|dir| dir.is_dir())?;
+    let root = Git::new(dir).toplevel().ok()?;
+    Some(dunce::canonicalize(&root).unwrap_or(root))
+}
+
 /// Paths come from Git and need not be UTF-8, which serde refuses for `PathBuf`.
 fn serialize_lossy<S: Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(&path.to_string_lossy())
@@ -47,17 +112,25 @@ fn serialize_lossy<S: Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S
 
 /// Returns why the changed files affect `task`, or an empty set when they do not.
 ///
-/// `repo_root` is the root of the Git working tree with symlinks resolved, and `changes`
-/// are paths relative to it, as Git reports them. Freshness checks treat a task without
-/// `sources` as always stale, so such a task is affected by any change; with no change at
-/// all, nothing is.
+/// Changes are read from the Git checkout that contains the task's directory, as the
+/// up-to-date check looks at the task's own files: a task in a submodule or a nested
+/// checkout sees that checkout's changes, and one in the parent sees the parent's. A
+/// task outside any checkout uses the one `mise` runs in. Freshness checks treat a task
+/// without `sources` as always stale, so such a task is affected by any change; with no
+/// change at all, nothing is.
 pub async fn affected_task_reasons(
     task: &Task,
     config: &Arc<Config>,
-    repo_root: &Path,
-    changes: &BTreeSet<PathBuf>,
+    repos: &mut AffectedRepos<'_>,
 ) -> Result<BTreeSet<AffectedTaskReason>> {
     let mut reasons = BTreeSet::new();
+    let cwd = task_cwd(task, config).await?;
+    let cwd = lexical_normalize(&if cwd.is_absolute() {
+        cwd
+    } else {
+        dirs::CWD.clone().unwrap_or_default().join(cwd)
+    });
+    let (repo_root, changes) = repos.for_dir(&cwd)?;
     if changes.is_empty() {
         return Ok(reasons);
     }
@@ -73,12 +146,6 @@ pub async fn affected_task_reasons(
         reasons.insert(AffectedTaskReason::ArgumentSources);
         return Ok(reasons);
     }
-    let cwd = task_cwd(task, config).await?;
-    let cwd = lexical_normalize(&if cwd.is_absolute() {
-        cwd
-    } else {
-        dirs::CWD.clone().unwrap_or_default().join(cwd)
-    });
     // Git reports each file by its path in the repository, with no symlink in it. The
     // up-to-date check reaches the same files through whatever links the task's directory
     // and patterns go through, so resolve those links before matching.

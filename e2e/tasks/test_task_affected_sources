@@ -179,3 +179,56 @@ git checkout -q real/src/lib.rs
 echo '# changed' >>scripts/build.sh
 assert_contains "mise run --affected --affected-uncommitted --affected-explain --dry-run script" "changed task file: scripts/build.sh"
 assert_contains "mise run --affected --affected-uncommitted --affected-json args" '"type": "argument-sources"'
+git checkout -q scripts/build.sh
+
+# The `file` script is a source for the up-to-date check too, so a task that
+# --affected selects for a script change is not then skipped as fresh.
+cat <<'EOF' >>mise.toml
+
+[tasks.built]
+sources = ["inputs/**"]
+outputs = ["built.txt"]
+file = "scripts/built.sh"
+EOF
+mkdir -p inputs
+echo initial >inputs/a.txt
+cat <<'EOF' >scripts/built.sh
+#!/usr/bin/env bash
+echo built >>"$AFFECTED_LOG"
+touch built.txt
+EOF
+chmod +x scripts/built.sh
+echo built.txt >>.gitignore
+git add .
+git commit -qm add-built
+mise run built
+: >affected.log
+mise run built
+assert "cat affected.log" ""
+echo '# changed' >>scripts/built.sh
+mise run --affected --affected-uncommitted built
+assert "cat affected.log" "built"
+git checkout -q scripts/built.sh
+
+# Each task reads the changes of the checkout that holds it, so running from a
+# nested checkout still sees the parent project's changes.
+mkdir -p nested/lib
+echo nested/ >>.gitignore
+git add .
+git commit -qm ignore-nested
+cat <<'EOF' >nested/mise.toml
+[tasks.inner]
+sources = ["lib/**"]
+run = 'echo inner >> "$AFFECTED_LOG"'
+EOF
+echo initial >nested/lib/a.txt
+git -C nested init -q
+git -C nested config user.email test@example.com
+git -C nested config user.name Test
+git -C nested add .
+git -C nested commit -qm initial
+echo changed >>src/lib.rs
+echo changed >>nested/lib/a.txt
+output=$(cd nested && mise run --affected --affected-uncommitted --affected-explain --dry-run 'test:unit' ::: inner)
+assert_contains "echo \"$output\"" "changed source: src/lib.rs"
+assert_contains "echo \"$output\"" "changed source: lib/a.txt"

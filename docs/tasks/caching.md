@@ -54,8 +54,9 @@ A task with `sources` is up to date only when all of these hold:
 - No dependency that has its own `sources` ran or restored outputs in the same
   `mise run`.
 
-mise adds the config file that defines the task to its sources. Editing that
-file, even to change a different task, makes the task stale.
+mise adds the config file that defines the task to its sources, and the script
+its `file` names. Editing that config file, even to change a different task,
+makes the task stale.
 
 A failed run records nothing, so the task stays stale until it succeeds.
 

@@ -249,7 +249,9 @@ mise run --affected --affected-explain --dry-run 'test:*'
 
 A task is also affected when a changed file is the config file that defines it
 or the script its `file` names. Symlinks in the task directory and in its
-`sources` are followed, as Git reports each file by its own path.
+`sources` are followed, as Git reports each file by its own path. Each task
+reads the changes of the Git checkout that holds its directory, so a task in a
+submodule or nested checkout sees that checkout's changes.
 A task without `sources` might read any file, so mise runs it whenever anything
 changed. When nothing changed, `--affected` runs nothing. Dependencies of a
 selected task still run, and the usual

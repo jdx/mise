@@ -544,16 +544,7 @@ async fn get_source_affected_task_list(
 ) -> Result<Vec<Task>> {
     use crate::task::task_affected::affected_task_reasons;
 
-    // The checkout the command runs in, even when the config that defines the tasks sits
-    // above it, outside Git.
-    let repo_root = crate::dirs::CWD
-        .iter()
-        .chain(config.project_root.iter())
-        .find_map(|dir| crate::git::Git::new(dir).toplevel().ok())
-        .ok_or_else(|| eyre!("--affected needs a Git repository"))?;
-    // dunce, because Git does not accept the `\\?\` paths `canonicalize` gives on Windows.
-    let repo_root = dunce::canonicalize(&repo_root).unwrap_or(repo_root);
-    let changes = revisions.changed_paths(&repo_root)?;
+    let mut repos = crate::task::task_affected::AffectedRepos::new(&revisions, config)?;
     let tasks = get_task_lists(config, args, true, only, false).await?;
     // As in a monorepo, only the pattern matches are filtered: `Run::run` resolves their
     // dependencies afterwards, whether or not those are affected.
@@ -564,7 +555,7 @@ async fn get_source_affected_task_list(
             skipped.push(task);
             continue;
         }
-        let reasons = affected_task_reasons(&task, config, &repo_root, &changes.paths).await?;
+        let reasons = affected_task_reasons(&task, config, &mut repos).await?;
         if reasons.is_empty() {
             skipped.push(task);
         } else {
@@ -587,7 +578,7 @@ async fn get_source_affected_task_list(
         };
         miseprintln!("{}", serde_json::to_string_pretty(&output)?);
     } else if explain {
-        display_source_affected_explanation(&changes.compared(&revisions), &selected, &skipped)?;
+        display_source_affected_explanation(&repos.compared(), &selected, &skipped)?;
     }
     Ok(selected.into_iter().map(|(task, _)| task).collect())
 }

@@ -725,6 +725,17 @@ async fn collect_source_metadatas(task: &Task, config: &Arc<Config>) -> Result<S
             source_metadatas.push((config_path, meta));
         }
     }
+    // The script a TOML task's `file` names defines it too. A file task's script is already
+    // its config source; a remote one has no local file and is skipped. It is not a config
+    // source, which would also make trust checks read it. A `file` that fails to render
+    // leaves the task to fail when it runs.
+    if let Ok(Some(script)) = task.file_path(config).await
+        && let Ok(meta) = script.metadata()
+        && meta.is_file()
+        && !source_metadatas.iter().any(|(p, _)| p == &script)
+    {
+        source_metadatas.push((script, meta));
+    }
     Ok(SourceMetadatas {
         root,
         match_root: match_root_owned,
