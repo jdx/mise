@@ -183,8 +183,10 @@ pub(crate) struct Run {
 
     /// Run this shell command in the `--at` worktree before the tasks
     ///
-    /// It runs in the same directory as the tasks, outside mise's environment,
-    /// with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from.
+    /// It runs in the worktree's copy of the directory mise was started from
+    /// (not a task's `dir`), outside mise's environment, with
+    /// `MISE_RUN_AT_SOURCE` set to the repository the worktree came from.
+    /// `--timeout` does not limit it, only the tasks after it.
     #[usage(long, requires = "at", value_name = "CMD")]
     pub at_setup: Option<String>,
 

@@ -26,6 +26,8 @@ use crate::ui::ctrlc;
 const SOURCE_ENV: &str = "MISE_RUN_AT_SOURCE";
 /// Set for the `--at-setup` command and the tasks: the commit REV resolved to.
 const REV_ENV: &str = "MISE_RUN_AT_REV";
+/// 128 + SIGINT, what an interrupted run exits with.
+const INTERRUPTED: i32 = 130;
 
 /// Runs `child_args` (a `mise` command line without the program name) in a temporary
 /// worktree of `rev`, after `setup`, and removes the worktree whatever the outcome. With
@@ -67,16 +69,23 @@ pub(crate) async fn run(
         &sha[..sha.len().min(12)],
         display_path(&worktree.path)
     );
-    init_submodules(&toplevel, &worktree.path)?;
+    init_submodules(&toplevel, &worktree)?;
     let dir = worktree.path.join(&subdir);
-    if !dir.is_dir() {
+    // A symlink at REV could lead the tasks, and the trust check, out of the revision.
+    let inside = dir
+        .canonicalize()
+        .is_ok_and(|real| real.is_dir() && real.starts_with(&worktree.path));
+    if !inside {
         bail!(
-            "mise run --at: {} does not exist at {rev}",
+            "mise run --at: {} is not a directory inside the worktree at {rev}",
             display_path(toplevel.join(&subdir))
         );
     }
     check_trust(&worktree.path, &subdir, rev)?;
 
+    if ctrlc::is_cancelled() {
+        return Err(crate::request_exit(INTERRUPTED));
+    }
     if let Some(setup) = setup.filter(|_| dry_run) {
         info!("--at-setup (not run with --dry-run): {setup}");
     } else if let Some(setup) = setup {
@@ -85,6 +94,10 @@ pub(crate) async fn run(
             .wrap_err("mise run --at: failed to start the --at-setup command")?;
         if !status.success() {
             bail!("mise run --at: the --at-setup command failed ({status})");
+        }
+        // A setup command can catch Ctrl-C and exit 0; the tasks must not start after it.
+        if ctrlc::is_cancelled() {
+            return Err(crate::request_exit(INTERRUPTED));
         }
     }
     let mut child = tokio::process::Command::new(&*env::MISE_BIN);
@@ -148,11 +161,28 @@ async fn wait(
         .env_remove("MISE_CD")
         .env(SOURCE_ENV, toplevel)
         .env(REV_ENV, sha)
-        .stdin(Stdio::inherit())
-        // A second Ctrl-C ends this process at once; the child must not outlive the
-        // worktree it runs in.
-        .kill_on_drop(true);
-    cmd.spawn()?.wait().await
+        .stdin(Stdio::inherit());
+    let mut child = ChildGuard(cmd.spawn()?);
+    child.0.wait().await
+}
+
+/// A started process that is waited for, or killed, before the worktree it runs in goes.
+struct ChildGuard(tokio::process::Child);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        // The child is still running here only when this process is ending at once, on a second
+        // Ctrl-C. The child got that Ctrl-C too, and a `mise` stops its tasks on it; give it the
+        // time to, so the tasks are not left running in a deleted directory, then kill it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            match self.0.try_wait() {
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                Ok(Some(_)) | Err(_) => return,
+            }
+        }
+        let _ = self.0.start_kill();
+    }
 }
 
 fn setup_command(setup: &str) -> tokio::process::Command {
@@ -202,7 +232,12 @@ impl TempWorktree {
             .prefix(&format!("{}-", &sha[..sha.len().min(12)]))
             .tempdir_in(&base)
             .wrap_err_with(|| format!("failed to create a directory in {}", display_path(&base)))?
-            .keep();
+            .keep()
+            .canonicalize()?;
+        // Hooks are not run: a `core.hooksPath` inside the repository names the hooks at REV,
+        // which would run before the trust check, and the checkout's own hooks have no part in a
+        // throwaway worktree.
+        crate::file::create_dir_all(holder.join(HOOKS))?;
         // Named like the checkout, for tasks and tools that look at the project directory's name.
         let name = repo.file_name().unwrap_or(OsStr::new("worktree"));
         let worktree = Self {
@@ -210,21 +245,41 @@ impl TempWorktree {
             path: holder.join(name),
             holder,
         };
-        git_run(
-            repo,
-            [
-                OsStr::new("worktree"),
-                OsStr::new("add"),
-                OsStr::new("--detach"),
-                OsStr::new("--quiet"),
-                worktree.path.as_os_str(),
-                OsStr::new(sha),
-            ],
-        )
-        .wrap_err("mise run --at: git worktree add failed")?;
+        worktree
+            .git_run(
+                repo,
+                [
+                    OsStr::new("worktree"),
+                    OsStr::new("add"),
+                    OsStr::new("--detach"),
+                    OsStr::new("--quiet"),
+                    worktree.path.as_os_str(),
+                    OsStr::new(sha),
+                ],
+            )
+            .wrap_err("mise run --at: git worktree add failed")?;
         Ok(worktree)
     }
+
+    /// [`git_run`] with hooks turned off, which a clone or checkout would otherwise run.
+    fn git_run<I, S>(&self, dir: &Path, args: I) -> Result<()>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        // A private empty directory is an unambiguous hooks path on every platform, unlike the
+        // Unix null-device spellings on native Windows. `-c` reaches submodule clones too.
+        let mut hooks = std::ffi::OsString::from("core.hooksPath=");
+        hooks.push(self.holder.join(HOOKS));
+        let args = [OsStr::new("-c").to_os_string(), hooks]
+            .into_iter()
+            .chain(args.into_iter().map(|arg| arg.as_ref().to_os_string()));
+        git_run(dir, args)
+    }
 }
+
+/// The empty hooks directory, beside the worktree in its holder.
+const HOOKS: &str = ".no-hooks";
 
 impl Drop for TempWorktree {
     fn drop(&mut self) {
@@ -256,7 +311,8 @@ impl Drop for TempWorktree {
 /// `git worktree add` leaves submodules empty. Each one is cloned using the user's own clone of
 /// it (`.git/modules/<name>`) as a reference, so only objects it lacks are fetched; nested
 /// submodules are then initialized the usual way.
-fn init_submodules(repo: &Path, worktree: &Path) -> Result<()> {
+fn init_submodules(repo: &Path, tmp: &TempWorktree) -> Result<()> {
+    let worktree = tmp.path.as_path();
     if !worktree.join(".gitmodules").is_file() {
         return Ok(());
     }
@@ -297,10 +353,10 @@ fn init_submodules(repo: &Path, worktree: &Path) -> Result<()> {
         }
         args.push("--".into());
         args.push(path.into());
-        git_run(worktree, &args)
+        tmp.git_run(worktree, &args)
             .wrap_err_with(|| format!("mise run --at: failed to initialize submodule {path}"))?;
     }
-    git_run(
+    tmp.git_run(
         worktree,
         ["submodule", "update", "--init", "--recursive"].map(OsStr::new),
     )

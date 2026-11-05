@@ -54,7 +54,7 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
   The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
 - **`--at-setup <CMD>`** — Run this shell command in the `--at` worktree before the tasks
 
-  It runs in the same directory as the tasks, outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from.
+  It runs in the worktree's copy of the directory mise was started from (not a task's `dir`), outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from. `--timeout` does not limit it, only the tasks after it.
 - **`--all`** — Open the task picker with tasks from every project in the monorepo
 - **`-c --continue-on-error`** — Continue running tasks even if one fails
 - **`-C --cd <DIR>`** — Change to this directory before running the tasks

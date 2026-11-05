@@ -281,17 +281,19 @@ mise run --at HEAD~1 bench > before.txt
 mise checks REV out into a detached
 [`git worktree`](https://git-scm.com/docs/git-worktree) under its temporary
 directory, runs the tasks there with that revision's own config, tasks and
-tools, and removes the worktree afterwards, also when a task fails, the run
-times out (`--timeout`) or you press Ctrl-C. The run exits with the tasks'
+tools, and removes the worktree afterwards, also when a task fails, the tasks
+time out (`--timeout`) or you press Ctrl-C. The run exits with the tasks'
 status. Uncommitted changes in your checkout play no part: REV is a commit.
 
 - The tasks run in the same directory, relative to the repository root, as
   the one you ran mise from. The worktree directory has your checkout's name.
 - Submodules are initialized at REV, using your clones of them as a reference,
-  so only objects they lack are fetched.
+  so only objects they lack are fetched. Git hooks do not run, neither your
+  checkout's nor any that REV keeps in the repository.
 - Ignored files are not there: a fresh worktree has no `target/`,
   `node_modules/` or `.env`. Pass `--at-setup CMD` to prepare them. It runs in
-  the tasks' directory before they start, as a plain shell command outside
+  the worktree's copy of the directory you ran mise from (not a task's `dir`)
+  before the tasks start, as a plain shell command outside
   mise's environment, with `MISE_RUN_AT_SOURCE` set to your checkout and
   `MISE_RUN_AT_REV` to the commit. The tasks get both variables too:
 
@@ -300,12 +302,17 @@ status. Uncommitted changes in your checkout play no part: REV is a commit.
   ```
 
   With `--dry-run`, mise prints the setup command instead of running it.
+  `--timeout` limits only the tasks, not the setup command.
 
 - A `mise run --at` inside a `--at` run (where `MISE_RUN_AT_REV` is set) is
   refused.
 
 - Config is looked up from the worktree, so a `mise.toml` in a directory above
   your checkout (other than the global config) does not apply.
+
+- [Daemons](/daemons.html) that the tasks require keep running after the run,
+  as they do after any `mise run`, but their project is gone with the worktree.
+  `mise daemons prune` stops them and removes their state.
 
 The config at REV is the config of the same project, at another commit, so it
 shares the [trust](/cli/trust.html) of the repository's main checkout, as any

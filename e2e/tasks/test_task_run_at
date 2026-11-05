@@ -35,8 +35,16 @@ run = "cat sub/version.txt; cat \"$(git -C sub rev-parse --git-path objects/info
 
 [tasks.fail]
 run = "exit 7"
+
+[tasks.setup-check]
+run = "cat setup.txt"
 EOF
-git add mise.toml .gitmodules sub pkg/.keep
+# A hook kept in the repository, and a directory that is a symlink out of it.
+mkdir -p .githooks ../outside
+printf '#!/bin/sh\ntouch "%s/../hook-ran"\n' "$PWD" >.githooks/post-checkout
+chmod +x .githooks/post-checkout
+ln -s ../outside escape
+git add mise.toml .gitmodules sub pkg/.keep .githooks/post-checkout escape
 git commit -qm one
 
 echo sub-v2 >../sub/version.txt
@@ -46,8 +54,12 @@ cat <<'EOF' >mise.toml
 [tasks.hi]
 run = "echo version-two"
 EOF
-git add mise.toml sub
+git rm -q escape
+mkdir escape
+touch escape/.keep
+git add mise.toml sub escape/.keep
 git commit -qm two
+git config core.hooksPath .githooks
 
 # Normal mode: the first `mise run` trusts the checkout, and the worktree
 # shares that trust.
@@ -65,7 +77,13 @@ assert_contains "mise run --at HEAD~1 sub" "modules/sub"
 assert "mise -C pkg run --at=HEAD~1 hi" "version-one"
 
 # A setup command runs first, in the worktree; its failure stops the run.
-assert_contains "mise run --at HEAD~1 --at-setup 'echo setup-ran >setup.txt' where ::: hi" "version-one"
+assert "mise run --at HEAD~1 --at-setup 'echo setup-ran >setup.txt' setup-check" "setup-ran"
+
+# No hook runs: not one that REV keeps in the repository.
+assert_fail "test -e ../hook-ran"
+
+# A directory that is a symlink at REV does not lead the run out of the worktree.
+assert_fail "mise -C escape run --at HEAD~1 hi" "not a directory inside the worktree"
 assert_fail "mise run --at HEAD~1 --at-setup 'exit 1' hi" "--at-setup command failed"
 
 # A mise in the setup command runs in the worktree, not where MISE_CD points.

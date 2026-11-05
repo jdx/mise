@@ -856,26 +856,40 @@ fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String>
 /// The command line, without the program name, for the `mise` that `mise run --at` starts in
 /// its worktree: `args` (a full `argv`) without the options the parent has acted on. Those are
 /// `--at` and `--at-setup`, and `--cd`, which would send the child back to the user's checkout.
-/// Only options before the first task name are mise's; the rest belongs to the tasks.
+/// In each `:::` segment, only options before the task name are mise's; the rest belongs to
+/// the task.
 pub(crate) fn run_at_child_args(args: &[String]) -> Vec<String> {
-    const CONSUMED: [&str; 4] = ["--at", "--at-setup", "--cd", "-C"];
     let cmd = Cli::command();
     let args = preprocess_args_for_naked_run(cmd, args);
     let (flags_with_values, _) = get_all_run_flags(cmd);
+    let takes_value = |flag: &str| flags_with_values.iter().any(|f| f == flag);
     let mut result = Vec::with_capacity(args.len());
     // The command path is `run` (`r`), or `tasks run` (`t`/`task`, then `run`/`r`).
     let mut in_tasks = false;
     let mut seen_run = false;
+    // Inside a task's own arguments, which run until the next `:::`.
+    let mut in_task = false;
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
-        if arg == "--" || (seen_run && !arg.starts_with('-')) {
-            result.extend_from_slice(&args[i..]);
+        i += 1;
+        if arg == "--" {
+            result.extend_from_slice(&args[i - 1..]);
             break;
         }
-        i += 1;
-        if !arg.starts_with('-') {
-            if !in_tasks && matches!(arg.as_str(), "tasks" | "task" | "t") {
+        if seen_run && arg == ":::" {
+            in_task = false;
+            result.push(arg.clone());
+            continue;
+        }
+        if in_task {
+            result.push(arg.clone());
+            continue;
+        }
+        if !arg.starts_with('-') || arg == "-" {
+            if seen_run {
+                in_task = true;
+            } else if !in_tasks && matches!(arg.as_str(), "tasks" | "task" | "t") {
                 in_tasks = true;
             } else {
                 seen_run = true;
@@ -883,24 +897,54 @@ pub(crate) fn run_at_child_args(args: &[String]) -> Vec<String> {
             result.push(arg.clone());
             continue;
         }
-        let (name, attached) = match arg.split_once('=') {
-            Some((name, _)) => (name, true),
-            None if !arg.starts_with("--") && arg.len() > 2 => (arg.get(..2).unwrap_or(arg), true),
-            None => (arg.as_str(), false),
-        };
-        if CONSUMED.contains(&name) {
-            if !attached {
-                i += 1;
+        if arg.starts_with("--") {
+            let (name, attached) = match arg.split_once('=') {
+                Some((name, _)) => (name, true),
+                None => (arg.as_str(), false),
+            };
+            let consumed = matches!(name, "--at" | "--at-setup" | "--cd");
+            if !consumed {
+                result.push(arg.clone());
+            }
+            if !attached && i < args.len() {
+                if consumed {
+                    i += 1;
+                } else if takes_value(name) && !args[i].starts_with('-') {
+                    result.push(args[i].clone());
+                    i += 1;
+                }
             }
             continue;
         }
-        result.push(arg.clone());
-        if !attached
-            && flags_with_values.iter().any(|f| f == name)
-            && args.get(i).is_some_and(|next| !next.starts_with('-'))
-        {
-            result.push(args[i].clone());
-            i += 1;
+        // Short flags, alone or clustered (`-q`, `-j4`, `-qC dir`): the first that takes a
+        // value takes the rest of the cluster as it, or else the next argument.
+        let letters = &arg[1..];
+        let mut kept = String::from("-");
+        let mut value_flag = None;
+        for (idx, ch) in letters.char_indices() {
+            if takes_value(&format!("-{ch}")) {
+                value_flag = Some((ch, &letters[idx + ch.len_utf8()..]));
+                break;
+            }
+            kept.push(ch);
+        }
+        match value_flag {
+            None => result.push(arg.clone()),
+            Some(('C', rest)) => {
+                if kept.len() > 1 {
+                    result.push(kept);
+                }
+                if rest.is_empty() {
+                    i += 1;
+                }
+            }
+            Some((_, rest)) => {
+                result.push(arg.clone());
+                if rest.is_empty() && args.get(i).is_some_and(|next| !next.starts_with('-')) {
+                    result.push(args[i].clone());
+                    i += 1;
+                }
+            }
         }
     }
     result
@@ -2453,6 +2497,16 @@ mod tests {
         assert_eq!(
             run_at_child_args(&args("mise --cd=pkg run --at=HEAD~1 --cd dir -- t --at z")),
             args("run -- t --at z")
+        );
+        // Every `:::` segment has mise options before its task.
+        assert_eq!(
+            run_at_child_args(&args("mise run hi -C x ::: --at HEAD -j 2 --cd y hi -C z")),
+            args("run hi -C x ::: -j 2 hi -C z")
+        );
+        // A `-C` value is everything after the flag, `=` included; a cluster keeps its others.
+        assert_eq!(
+            run_at_child_args(&args("mise -C/home/u/repo=demo -qCpkg run -vC d -qj4 hi")),
+            args("-q run -v -qj4 hi")
         );
         // `tasks run` is the same command, under two words.
         assert_eq!(
