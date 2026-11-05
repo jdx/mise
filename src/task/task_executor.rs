@@ -1670,7 +1670,7 @@ impl TaskExecutor {
                 }
                 // Give a short time for the spawned task to finish cleanly
                 let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
-                return Err(eyre!("task sequence aborted due to failure"));
+                return Err(crate::errors::Error::TaskSequenceAborted.into());
             }
 
             // Try to receive the done signal with a short timeout
@@ -1691,7 +1691,7 @@ impl TaskExecutor {
 
         // Final check if we failed during the execution
         if self.is_stopping() && !self.continue_on_error && !allow_during_interruption {
-            return Err(eyre!("task sequence aborted due to failure"));
+            return Err(crate::errors::Error::TaskSequenceAborted.into());
         }
 
         let completion_state = sub_deps.lock().await.completion_state();

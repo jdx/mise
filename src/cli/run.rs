@@ -1396,9 +1396,7 @@ impl Run {
                 .as_ref()
                 .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
-            if let Some(report) = &this.run_report {
-                report.start(&task);
-            }
+            let report_id = this.run_report.as_ref().map(|report| report.start(&task));
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1475,12 +1473,13 @@ impl Run {
                     let was_stopping =
                         this.add_failed_task(task.clone(), status) || this.is_interrupted();
                     // A task that exited on its own, or panicked, failed even
-                    // if another failure came first; only one mise killed is
-                    // cancelled.
+                    // if another failure came first; only one mise killed, or a
+                    // parent whose nested tasks mise stopped, is cancelled.
                     cancelled |= was_stopping
                         && !this.continue_on_error
                         && !panicked
-                        && Error::is_killed_by_signal(err);
+                        && (Error::is_killed_by_signal(err)
+                            || Error::is_task_sequence_aborted(err));
                     was_stopping
                 };
                 // the executor already printed a secrets resolve failure itself
@@ -1517,13 +1516,13 @@ impl Run {
                     crate::cmd::CmdLineRunner::kill_all();
                 }
             }
-            if let Some(report) = &this.run_report {
+            if let (Some(report), Some(id)) = (&this.run_report, report_id) {
                 // After a Ctrl-C, a task that fails was stopped by it: many programs exit
                 // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
                 // ends with "task sequence aborted".
                 let cancelled = cancelled || (ctrlc::is_cancelled() && !panicked);
                 let (status, exit_code) = report_status(&result, panicked, cancelled);
-                report.finish(&task, status, exit_code);
+                report.finish(id, status, exit_code);
             }
             // Close the task's span with real timing and status.
             if let (Some(t), Some(span)) = (&this.telemetry, otel_span) {
@@ -1588,12 +1587,8 @@ impl Run {
         }
         self.add_failed_task(task.clone(), Error::get_exit_status(&err));
         if let Some(report) = &self.run_report {
-            report.start(&task);
-            report.finish(
-                &task,
-                TaskReportStatus::Failed,
-                Error::get_exit_status(&err),
-            );
+            let id = report.start(&task);
+            report.finish(id, TaskReportStatus::Failed, Error::get_exit_status(&err));
         }
         if !self.continue_on_error {
             #[cfg(unix)]

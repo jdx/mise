@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime};
 
-use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Serialize;
 
@@ -50,7 +49,10 @@ pub enum RunReportStatus {
     TimedOut,
 }
 
+/// One execution of a task. A task can run more than once in a run: two parents that each
+/// run the same nested task get an entry each.
 struct Entry {
+    key: TaskKey,
     name: String,
     args: Vec<String>,
     status: TaskReportStatus,
@@ -61,7 +63,7 @@ struct Entry {
 
 #[derive(Default)]
 struct State {
-    tasks: IndexMap<TaskKey, Entry>,
+    tasks: Vec<Entry>,
     timed_out: bool,
 }
 
@@ -120,37 +122,48 @@ impl RunReport {
         }
     }
 
-    fn entry<'a>(state: &'a mut State, task: &Task) -> &'a mut Entry {
-        state.tasks.entry(task_key(task)).or_insert_with(|| Entry {
+    /// The index of an entry for `task` that has not started, added if there is none.
+    fn unstarted(state: &mut State, task: &Task) -> usize {
+        let key = task_key(task);
+        if let Some(i) = state
+            .tasks
+            .iter()
+            .position(|e| e.key == key && e.started.is_none() && e.ended.is_none())
+        {
+            return i;
+        }
+        state.tasks.push(Entry {
+            key,
             name: task.name.clone(),
             args: task.args.clone(),
             status: TaskReportStatus::NotRun,
             exit_code: None,
             started: None,
             ended: None,
-        })
+        });
+        state.tasks.len() - 1
     }
 
     /// Lists a task the run will try to run. Its arguments are redacted when the report is
     /// written.
     pub fn schedule(&self, task: &Task) {
-        Self::entry(&mut self.state.lock().unwrap(), task);
+        Self::unstarted(&mut self.state.lock().unwrap(), task);
     }
 
-    /// Records that a task started.
-    pub fn start(&self, task: &Task) {
+    /// Records that a task started, and returns the id [`RunReport::finish`] takes.
+    pub fn start(&self, task: &Task) -> usize {
         let mut state = self.state.lock().unwrap();
-        let entry = Self::entry(&mut state, task);
-        entry.started = Some((SystemTime::now(), Instant::now()));
-        entry.ended = None;
+        let id = Self::unstarted(&mut state, task);
+        state.tasks[id].started = Some((SystemTime::now(), Instant::now()));
+        id
     }
 
     /// Records how a started task ended. `NotRun` takes back the start of a task that was
     /// abandoned before it ran anything.
-    pub fn finish(&self, task: &Task, status: TaskReportStatus, exit_code: Option<i32>) {
+    pub fn finish(&self, id: usize, status: TaskReportStatus, exit_code: Option<i32>) {
         let mut state = self.state.lock().unwrap();
         let timed_out = state.timed_out;
-        let entry = Self::entry(&mut state, task);
+        let entry = &mut state.tasks[id];
         if status == TaskReportStatus::NotRun {
             entry.status = status;
             entry.exit_code = None;
@@ -178,13 +191,13 @@ impl RunReport {
     pub fn to_json(&self, run_failed: bool, interrupted: bool) -> Result<String> {
         let mut state = self.state.lock().unwrap();
         let now = (SystemTime::now(), Instant::now());
-        for entry in state.tasks.values_mut() {
+        for entry in state.tasks.iter_mut() {
             if entry.started.is_some() && entry.ended.is_none() {
                 entry.ended = Some(now);
                 entry.status = TaskReportStatus::Cancelled;
             }
         }
-        let any = |status| state.tasks.values().any(|e| e.status == status);
+        let any = |status| state.tasks.iter().any(|e| e.status == status);
         let status = if state.timed_out {
             RunReportStatus::TimedOut
         } else if any(TaskReportStatus::Failed) {
@@ -199,7 +212,7 @@ impl RunReport {
         // In the order they started, then the tasks that never did, in schedule order.
         let tasks = state
             .tasks
-            .values()
+            .iter()
             .sorted_by_key(|e| (e.started.is_none(), e.started.map(|(_, at)| at)))
             .map(|e| TaskJson {
                 name: &e.name,
@@ -303,12 +316,12 @@ mod tests {
         report.schedule(&a);
         report.schedule(&b);
         report.schedule(&c);
-        report.start(&b);
-        report.finish(&b, TaskReportStatus::Failed, Some(3));
+        let id = report.start(&b);
+        report.finish(id, TaskReportStatus::Failed, Some(3));
         // Two starts in the same tick would keep schedule order.
         std::thread::sleep(std::time::Duration::from_millis(2));
-        report.start(&a);
-        report.finish(&a, TaskReportStatus::Passed, Some(0));
+        let id = report.start(&a);
+        report.finish(id, TaskReportStatus::Passed, Some(0));
 
         let json = report_json(&report, true);
         assert_eq!(json["status"], "failed");
@@ -344,9 +357,9 @@ mod tests {
     fn a_task_killed_by_the_timeout_is_cancelled() {
         let report = RunReport::new();
         let a = task("a");
-        report.start(&a);
+        let id = report.start(&a);
         report.mark_timed_out();
-        report.finish(&a, TaskReportStatus::Failed, None);
+        report.finish(id, TaskReportStatus::Failed, None);
 
         assert_eq!(
             report_json(&report, true)["tasks"][0]["status"],
@@ -358,8 +371,8 @@ mod tests {
     fn a_task_abandoned_before_it_started_is_not_run() {
         let report = RunReport::new();
         let a = task("a");
-        report.start(&a);
-        report.finish(&a, TaskReportStatus::NotRun, None);
+        let id = report.start(&a);
+        report.finish(id, TaskReportStatus::NotRun, None);
 
         let json = report_json(&report, false);
         assert_eq!(json["tasks"][0]["status"], "not_run");
@@ -370,10 +383,10 @@ mod tests {
     fn skipped_and_cached_tasks_pass_the_run() {
         let report = RunReport::new();
         let (a, b) = (task("a"), task("b"));
-        report.start(&a);
-        report.finish(&a, TaskReportStatus::Skipped, None);
-        report.start(&b);
-        report.finish(&b, TaskReportStatus::Cached, None);
+        let id = report.start(&a);
+        report.finish(id, TaskReportStatus::Skipped, None);
+        let id = report.start(&b);
+        report.finish(id, TaskReportStatus::Cached, None);
 
         let json = report_json(&report, false);
         assert_eq!(json["status"], "passed");
@@ -428,6 +441,29 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(json["status"], "passed");
+    }
+
+    #[test]
+    fn each_execution_of_a_task_gets_its_own_entry() {
+        let report = RunReport::new();
+        let a = task("a");
+        // Two parents schedule and run the same nested task at the same time.
+        report.schedule(&a);
+        report.schedule(&a);
+        let first = report.start(&a);
+        let second = report.start(&a);
+        report.finish(first, TaskReportStatus::Failed, Some(1));
+        report.finish(second, TaskReportStatus::Passed, Some(0));
+
+        let json = report_json(&report, true);
+        assert_eq!(json["status"], "failed");
+        let statuses: Vec<_> = json["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["status"].as_str().unwrap())
+            .collect();
+        assert_eq!(statuses, ["failed", "passed"]);
     }
 
     #[test]
