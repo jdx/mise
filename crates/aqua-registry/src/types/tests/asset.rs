@@ -356,3 +356,51 @@ fn test_raw_windows_exe_name_follows_exe_url_when_completion_is_off() {
         "sonar"
     );
 }
+
+#[test]
+fn test_raw_windows_exe_name_guards_and_inference() {
+    let exe_url = "https://example.com/{{.Version}}/tool.exe".to_string();
+
+    let non_raw = AquaPackage {
+        url: exe_url.clone(),
+        format: "zip".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        non_raw.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar"
+    );
+
+    let completing = AquaPackage {
+        url: exe_url.clone(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(true),
+        ..Default::default()
+    };
+    assert_eq!(
+        completing.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar"
+    );
+
+    let inferred = AquaPackage {
+        url: exe_url,
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        inferred.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+
+    let from_asset = AquaPackage {
+        asset: "tool-{{.OS}}.exe".to_string(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        from_asset.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+}

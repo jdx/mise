@@ -190,14 +190,19 @@ impl AquaPackage {
     /// `.exe` appended in that case, and unchanged otherwise.
     pub fn raw_windows_exe_name(&self, name: &str, v: &str, os: &str, arch: &str) -> String {
         if os != "windows"
-            || self.format != "raw"
+            || !matches!(self.format(v, os, arch), Ok("" | "raw"))
             || self.complete_windows_ext_enabled()
             || !self.os_file_ext_is_empty(name, v)
         {
             return name.to_string();
         }
-        match self.url(v, os, arch) {
-            Ok(url) if url.ends_with(".exe") => append_str_ext(name, ".exe"),
+        let download = if self.asset.is_empty() {
+            self.url(v, os, arch)
+        } else {
+            self.asset(v, os, arch)
+        };
+        match download {
+            Ok(download) if download.ends_with(".exe") => append_str_ext(name, ".exe"),
             _ => name.to_string(),
         }
     }
