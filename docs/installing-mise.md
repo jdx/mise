@@ -373,21 +373,6 @@ The PowerShell script is the recommended method on Windows. After installing, se
 directory on `Path` for cmd.exe as described in
 [Windows shells](/shell-setup.html#windows).
 
-### winget {#windows-winget}
-
-```powershell
-winget install jdx.mise
-```
-
-::: warning winget can lag behind releases
-New releases can take days or longer to appear in winget, because each
-submission waits on review. mise also turns self-update off for winget
-installs; upgrade with `winget upgrade jdx.mise`. To get releases promptly, use
-the [PowerShell script](#windows-script).
-:::
-
-[winget manifest](https://github.com/microsoft/winget-pkgs/tree/master/manifests/j/jdx/mise)
-
 ### PowerShell script {#windows-script}
 
 ```powershell
@@ -408,6 +393,21 @@ Re-running it upgrades mise. In MSYS2 or Git Bash, run it through
 | `MISE_INSTALL_MODIFY_PATH` | `0` leaves the user `Path` alone                             |
 | `MISE_INSTALL_SHIMS_PATH`  | `1` also adds the shims directory to the user `Path`         |
 | `MISE_INSTALL_FROM_GITHUB` | `1` downloads from GitHub Releases instead of `mise.jdx.dev` |
+
+### winget {#windows-winget}
+
+```powershell
+winget install jdx.mise
+```
+
+::: warning winget can lag behind releases
+New releases can take days or longer to appear in winget, because each
+submission waits on review. mise also turns self-update off for winget
+installs; upgrade with `winget upgrade jdx.mise`. To get releases promptly, use
+the [PowerShell script](#windows-script).
+:::
+
+[winget manifest](https://github.com/microsoft/winget-pkgs/tree/master/manifests/j/jdx/mise)
 
 ### Scoop {#windows-scoop}
 
