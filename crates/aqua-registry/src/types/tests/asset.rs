@@ -325,3 +325,34 @@ fn test_aqua_file_link_template() {
     let result = file.link(&pkg, "1.0.0", "linux", "amd64").unwrap();
     assert_eq!(result, Some("tool-alias".to_string()));
 }
+
+#[test]
+fn test_raw_windows_exe_name_follows_exe_url_when_completion_is_off() {
+    let pkg = AquaPackage {
+        url: "https://example.com/{{.Version}}/tool-{{.OS}}.exe".to_string(),
+        format: "raw".to_string(),
+        complete_windows_ext: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar.exe"
+    );
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar", "1.0.0", "linux", "amd64"),
+        "sonar"
+    );
+    assert_eq!(
+        pkg.raw_windows_exe_name("sonar.bat", "1.0.0", "windows", "amd64"),
+        "sonar.bat"
+    );
+
+    let bin = AquaPackage {
+        url: "https://example.com/{{.Version}}/tool.bin".to_string(),
+        ..pkg
+    };
+    assert_eq!(
+        bin.raw_windows_exe_name("sonar", "1.0.0", "windows", "amd64"),
+        "sonar"
+    );
+}
