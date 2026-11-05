@@ -5440,7 +5440,16 @@ impl Lockfile {
                     return false;
                 }
                 entry.uv = None;
-                entry.aube = None;
+                // The graph pins integrity hashes and the backend fetches from
+                // the user's registry, so it stays unless it names a place to
+                // download from, which only a trusted lockfile may do.
+                if !entry
+                    .aube
+                    .as_ref()
+                    .is_some_and(|graph| graph.load().is_ok_and(aube_graph_names_only_registry))
+                {
+                    entry.aube = None;
+                }
                 for info in entry.platforms.values_mut() {
                     info.url = None;
                     info.url_api = None;
@@ -5459,6 +5468,128 @@ impl Lockfile {
         self.tools.retain(|_, entries| !entries.is_empty());
         self.conda_packages.clear();
     }
+}
+
+/// Whether an aube dependency graph resolves every package from the registry
+/// by integrity hash alone. It is an allowlist of the exact shapes a registry
+/// graph has, so a source mise cannot name (a URL, git or `owner/repo`
+/// shorthand, a path or tarball file, `link:`, `file:`, `portal:`, an `npm:`
+/// alias) never matches:
+///
+/// - only the sections a registry graph needs are present;
+/// - every package key is `name@version` and its resolution is one non-empty
+///   `integrity`, with no `aliasOf`;
+/// - every importer and snapshot dependency names a package with that
+///   integrity entry, by a plain name and version.
+fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
+    const SECTIONS: [&str; 6] = [
+        "lockfileVersion",
+        "settings",
+        "importers",
+        "packages",
+        "snapshots",
+        "time",
+    ];
+    const DEPENDENCIES: [&str; 4] = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+    ];
+    let part_ok = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._~-".contains(c))
+    };
+    let name_ok = |name: &str| match name.strip_prefix('@') {
+        Some(scoped) => scoped
+            .split_once('/')
+            .is_some_and(|(scope, rest)| part_ok(scope) && part_ok(rest)),
+        None => part_ok(name),
+    };
+    // The release, then an optional peer suffix such as `(react@18.2.0)`.
+    let version_ok = |version: &str| {
+        let (release, peers) = version.split_once('(').unwrap_or((version, ""));
+        release.starts_with(|c: char| c.is_ascii_digit())
+            && release
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || ".+-".contains(c))
+            && peers
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._~-@/+() ".contains(c))
+    };
+    let specifier_ok = |specifier: &str| {
+        !specifier.is_empty()
+            && specifier
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || ".^~<>=|*+- ".contains(c))
+    };
+    // `name@version` with the peer suffix dropped: the key of a package entry.
+    let package_key = |name: &str, version: &str| {
+        (name_ok(name) && version_ok(version))
+            .then(|| format!("{name}@{}", version.split('(').next().unwrap_or(version)))
+    };
+    let graph = &lock.graph;
+    let table = |name: &str| graph.get(name).and_then(toml::Value::as_table);
+    let (Some(importers), Some(packages)) = (table("importers"), table("packages")) else {
+        return false;
+    };
+    let has_package = |name: &str, version: &str| {
+        package_key(name, version).is_some_and(|key| packages.contains_key(&key))
+    };
+    let split_key = |key: &str| -> Option<(String, String)> {
+        let release = key.split('(').next().unwrap_or(key);
+        let (name, version) = release.rsplit_once('@')?;
+        let peers = &key[release.len()..];
+        version_ok(&format!("{version}{peers}")).then(|| (name.to_string(), version.to_string()))
+    };
+    graph.keys().all(|key| SECTIONS.contains(&key.as_str()))
+        && packages.iter().all(|(key, package)| {
+            split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                && package.get("aliasOf").is_none()
+                && package
+                    .get("resolution")
+                    .and_then(toml::Value::as_table)
+                    .is_some_and(|resolution| {
+                        resolution.len() == 1
+                            && resolution
+                                .get("integrity")
+                                .and_then(toml::Value::as_str)
+                                .is_some_and(|integrity| !integrity.is_empty())
+                    })
+        })
+        && importers.values().all(|importer| {
+            DEPENDENCIES.iter().all(|section| {
+                importer
+                    .get(section)
+                    .is_none_or(|deps| match deps.as_table() {
+                        Some(deps) => deps.iter().all(|(name, dep)| {
+                            let field = |field: &str| dep.get(field).and_then(toml::Value::as_str);
+                            field("specifier").is_some_and(specifier_ok)
+                                && field("version")
+                                    .is_some_and(|version| has_package(name, version))
+                        }),
+                        None => false,
+                    })
+            })
+        })
+        && table("snapshots").is_none_or(|snapshots| {
+            snapshots.iter().all(|(key, snapshot)| {
+                split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                    && DEPENDENCIES.iter().all(|section| {
+                        snapshot
+                            .get(section)
+                            .is_none_or(|deps| match deps.as_table() {
+                                Some(deps) => deps.iter().all(|(name, version)| {
+                                    version
+                                        .as_str()
+                                        .is_some_and(|version| has_package(name, version))
+                                }),
+                                None => false,
+                            })
+                    })
+            })
+        })
 }
 
 fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {

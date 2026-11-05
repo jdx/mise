@@ -3442,6 +3442,7 @@
                 "interleave",
                 "keep-order",
                 "replacing",
+                "summary",
                 "timed",
                 "quiet",
                 "silent"
@@ -4230,12 +4231,13 @@
         },
         "output": {
           "type": "string",
-          "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
+          "description": "output style for this task (prefix, interleave, keep-order, replacing, summary, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
           "enum": [
             "prefix",
             "interleave",
             "keep-order",
             "replacing",
+            "summary",
             "timed",
             "quiet",
             "silent"

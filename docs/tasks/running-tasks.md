@@ -175,6 +175,7 @@ style with `--output`, `MISE_TASK_OUTPUT`, the
 | `interleave` | Output as it arrives, without labels.                                                                                                     |
 | `keep-order` | Labelled lines; one task streams live while the others are buffered and printed in order.                                                 |
 | `replacing`  | Each new stdout line replaces the previous one; stderr is printed as is.                                                                  |
+| `summary`    | Nothing while a task runs; then `[test] passed in 2.1s` if it passed, or everything it printed, labelled, if it failed.                   |
 | `timed`      | Labelled stdout lines that stay the task's latest line for at least a second; lines replaced sooner are dropped. Stderr is printed as is. |
 | `silent`     | Nothing from tasks or mise except errors.                                                                                                 |
 
@@ -185,6 +186,33 @@ mise's messages. To make every task quiet without changing other mise commands,
 set [`task.quiet`](/configuration/settings.html#task.quiet) under `[settings]`.
 A task can also set its own `quiet` or `silent` property. The `quiet` output
 style is deprecated; use `--output interleave --quiet` instead.
+
+### Only what failed {#summary-output}
+
+`summary` holds each task's output until it ends. A test suite that passes
+prints one line per task instead of every test's output, and a failing task
+prints all of it. It suits CI logs and coding agents, which read every line a
+command prints; for an agent, set `MISE_TASK_OUTPUT=summary` in its
+environment.
+
+```console
+$ mise run --output summary test
+[test:lint] $ cargo clippy -- -D warnings
+[test:lint] error: unused variable: `x`
+[test:lint]  --> src/main.rs:12:9
+[test:unit] passed in 4.2s
+[test:lint] ERROR task failed
+```
+
+A task that mise stopped because another one failed prints
+`[name] cancelled`, and a dry run prints the commands it would run. mise holds
+the last 64 KiB of each task's output, and prints what it holds for tasks still
+running when the run is interrupted or reaches its `--timeout`. `raw` and
+`interactive` tasks still get the terminal.
+
+A task that keeps running, such as a development server or a watcher, prints
+nothing in `summary` until it exits, or until the run is interrupted. Give it
+`output = "interleave"` to see what it prints as it runs.
 
 ## Interactive input
 

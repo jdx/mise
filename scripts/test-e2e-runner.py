@@ -144,7 +144,7 @@ exit "$status"
         result, counts, _ = self.run_runner(args=("test_skip_slow", "test_pass"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(counts, {"test_skip_slow": 1, "test_pass": 1})
-        self.assertIn("ran 2 tests, skipped 0 tests", result.stderr)
+        self.assertIn("ran 2 tests (2 passed, 0 failed), skipped 0 tests", result.stderr)
 
     def test_release_skip_applies_only_to_discovery(self):
         result, counts, _ = self.run_runner(release_skip=True)
@@ -168,8 +168,10 @@ exit "$status"
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.order, ["test_skip_slow", "test_pass"])
-        self.assertIn("[xtask:e2e] Running test: test_pass", result.stderr)
-        self.assertNotIn("E2E: ran", result.stderr)
+        # Without E2E_JOBS the matches still go through the runner, one at a
+        # time: each passing test is one line, and the run ends with a summary.
+        self.assertIn("PASS: test_skip_slow\nPASS: test_pass\n", result.stderr)
+        self.assertIn("E2E: ran 2 tests (2 passed, 0 failed)", result.stderr)
 
     def test_task_unmatched_pattern_fails_before_running(self):
         for jobs in ("2", None):

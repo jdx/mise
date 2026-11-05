@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::config::Settings;
 use crate::task::task_helpers::{task_gets_keep_order_slot, task_needs_permit};
@@ -9,9 +9,118 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::style;
 use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 type TaskPrMap = Arc<Mutex<IndexMap<Task, Arc<Box<dyn SingleReport>>>>>;
+type SummaryMap = Arc<Mutex<SummaryState>>;
+
+/// What `summary` output holds back: each running task's lines, and how long
+/// each task that ran took.
+#[derive(Default)]
+pub struct SummaryState {
+    buffers: IndexMap<Task, SummaryBuffer>,
+    /// Tasks that ran a command, with how long they took when timings are on.
+    durations: HashMap<Task, Option<Duration>>,
+    /// Tasks whose output came from the artifact cache rather than a run.
+    replayed: HashSet<Task>,
+    /// Tasks skipped because their sources are up to date, whose cached
+    /// output was replayed: they get mise's skip line, not `passed (cached)`.
+    up_to_date: HashSet<Task>,
+    /// Tasks whose summary is printed: what mise says about them later, such
+    /// as the run's closing `task failed`, prints at once.
+    finished: HashSet<Task>,
+}
+
+/// A run that ends before its results are shown, such as on `--timeout`,
+/// drops the state with output still held: print it then, since it may be all
+/// there is to go on.
+impl Drop for SummaryState {
+    fn drop(&mut self) {
+        for (task, buffer) in std::mem::take(&mut self.buffers) {
+            KeepOrderState::print_lines(&buffer.into_lines(&task));
+        }
+    }
+}
+
+/// How much of a task's output `summary` holds: the last lines, as mise keeps
+/// for a command whose output it hides behind a progress bar, so a long or
+/// verbose task cannot grow without bound.
+const SUMMARY_TAIL_BYTES: usize = 64 * 1024;
+/// The longest first line held apart from the tail: mise's `$ command` line.
+const SUMMARY_FIRST_LINE_BYTES: usize = 4 * 1024;
+
+/// One task's held output: its first line, mise's `$ command` unless quiet,
+/// and the newest lines up to [`SUMMARY_TAIL_BYTES`].
+#[derive(Default)]
+pub(crate) struct SummaryBuffer {
+    first: Option<KeepOrderLine>,
+    lines: VecDeque<KeepOrderLine>,
+    bytes: usize,
+    truncated: bool,
+}
+
+impl SummaryBuffer {
+    fn push(&mut self, line: KeepOrderLine) {
+        let (KeepOrderLine::Stdout(_, text) | KeepOrderLine::Stderr(_, text)) = &line;
+        // A short first line is kept outside the tail; a long one, such as a
+        // quiet task's first output, is part of it like any other.
+        if self.first.is_none() && self.lines.is_empty() && text.len() <= SUMMARY_FIRST_LINE_BYTES {
+            self.first = Some(line);
+            return;
+        }
+        self.bytes = self.bytes.saturating_add(text.len() + 1);
+        self.lines.push_back(line);
+        // Drop the oldest lines past the limit, and cut the front off one
+        // that is longer than what is left to drop, so a long line keeps its
+        // end rather than vanishing whole.
+        while self.bytes > SUMMARY_TAIL_BYTES {
+            let excess = self.bytes - SUMMARY_TAIL_BYTES;
+            let Some(KeepOrderLine::Stdout(_, oldest) | KeepOrderLine::Stderr(_, oldest)) =
+                self.lines.front_mut()
+            else {
+                break;
+            };
+            self.truncated = true;
+            if oldest.len() <= excess {
+                let len = oldest.len();
+                self.lines.pop_front();
+                self.bytes = self.bytes.saturating_sub(len + 1);
+            } else {
+                let mut cut = excess;
+                while !oldest.is_char_boundary(cut) {
+                    cut += 1;
+                }
+                oldest.drain(..cut);
+                self.bytes = self.bytes.saturating_sub(cut);
+            }
+        }
+    }
+
+    /// The lines to print, after a notice when older ones were dropped.
+    fn into_lines(self, task: &Task) -> Vec<KeepOrderLine> {
+        let mut lines: Vec<KeepOrderLine> = self.first.into_iter().collect();
+        if self.truncated {
+            lines.push(KeepOrderLine::Stderr(
+                task.estyled_prefix(),
+                "[output truncated; showing last 64 KiB]".to_string(),
+            ));
+        }
+        lines.extend(self.lines);
+        lines
+    }
+}
+
+/// How a task ended, for its `summary` output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SummaryOutcome {
+    /// It succeeded: one line, and its output is dropped.
+    Passed,
+    /// It failed: everything it printed, in order.
+    Failed,
+    /// mise stopped it because another task failed or the run was
+    /// interrupted: one line, since its output says nothing about the cause.
+    Cancelled,
+}
 type TimedOutputMap = Arc<Mutex<IndexMap<String, (SystemTime, Vec<String>)>>>;
 
 /// A single line of output, tagged by stream.
@@ -412,6 +521,7 @@ pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
     pub task_prs: TaskPrMap,
     pub timed_outputs: TimedOutputMap,
+    pub summary_state: SummaryMap,
 
     // Configuration from CLI args
     output: Option<TaskOutput>,
@@ -428,6 +538,7 @@ impl Clone for OutputHandler {
             keep_order_state: self.keep_order_state.clone(),
             task_prs: self.task_prs.clone(),
             timed_outputs: self.timed_outputs.clone(),
+            summary_state: self.summary_state.clone(),
             output: self.output,
             silent: self.silent,
             quiet: self.quiet,
@@ -473,7 +584,11 @@ impl OutputHandler {
 fn displays_colored_task_prefix(output: TaskOutput) -> bool {
     matches!(
         output,
-        TaskOutput::Prefix | TaskOutput::KeepOrder | TaskOutput::Replacing | TaskOutput::Timed
+        TaskOutput::Prefix
+            | TaskOutput::KeepOrder
+            | TaskOutput::Replacing
+            | TaskOutput::Summary
+            | TaskOutput::Timed
     )
 }
 
@@ -483,6 +598,7 @@ impl OutputHandler {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
             task_prs: Arc::new(Mutex::new(IndexMap::new())),
             timed_outputs: Arc::new(Mutex::new(IndexMap::new())),
+            summary_state: Arc::new(Mutex::new(SummaryState::default())),
             output: config.output,
             silent: config.silent,
             quiet: config.quiet,
@@ -574,9 +690,96 @@ impl OutputHandler {
                 let pr = self.get_or_init_task_pr(task);
                 pr.set_message(format!("{prefix} {line}"));
             }
+            TaskOutput::Summary => self.summary_stderr(task, prefix, line),
             _ => {
                 prefix_eprintln!(prefix, "{line}");
             }
+        }
+    }
+
+    /// Hold a line a task wrote to stdout until it finishes (`summary`).
+    pub(crate) fn summary_stdout(&self, task: &Task, prefix: &str, line: &str) {
+        let mut state = self.summary_state.lock().unwrap();
+        let buffer = state.buffers.entry(task.clone()).or_default();
+        buffer.push(KeepOrderLine::Stdout(prefix.to_string(), line.to_string()));
+        drop(state);
+    }
+
+    /// Hold a line a task, or mise about it, wrote to stderr (`summary`).
+    pub(crate) fn summary_stderr(&self, task: &Task, prefix: &str, line: &str) {
+        let mut state = self.summary_state.lock().unwrap();
+        if state.finished.contains(task) {
+            drop(state);
+            prefix_eprintln!(prefix, "{line}");
+            return;
+        }
+        let buffer = state.buffers.entry(task.clone()).or_default();
+        buffer.push(KeepOrderLine::Stderr(prefix.to_string(), line.to_string()));
+    }
+
+    /// Note that a task is up to date and its cached output is replayed.
+    pub(crate) fn summary_up_to_date(&self, task: &Task) {
+        let mut state = self.summary_state.lock().unwrap();
+        state.up_to_date.insert(task.clone());
+    }
+
+    /// Note how long a task took, for the line `summary` prints when it passes.
+    pub(crate) fn summary_duration(&self, task: &Task, duration: Option<Duration>) {
+        let mut state = self.summary_state.lock().unwrap();
+        state.durations.insert(task.clone(), duration);
+    }
+
+    /// Print what `summary` held for a finished task: one line when it passed
+    /// or was cancelled, and everything it printed when it failed.
+    pub fn finish_summary(&self, task: &Task, outcome: SummaryOutcome) {
+        let (lines, duration, replayed, up_to_date) = {
+            let mut state = self.summary_state.lock().unwrap();
+            state.finished.insert(task.clone());
+            let up_to_date = state.up_to_date.remove(task);
+            (
+                state
+                    .buffers
+                    .shift_remove(task)
+                    .map(|b| b.into_lines(task))
+                    .unwrap_or_default(),
+                state.durations.remove(task),
+                state.replayed.remove(task),
+                up_to_date,
+            )
+        };
+        let prefix = task.estyled_prefix();
+        match outcome {
+            SummaryOutcome::Failed => KeepOrderState::print_lines(&lines),
+            SummaryOutcome::Passed if !self.quiet(Some(task)) => match duration {
+                Some(Some(d)) => {
+                    let msg = format!("passed in {}", crate::ui::time::format_duration(d));
+                    prefix_eprintln!(prefix, "{}", style::egreen(msg));
+                }
+                Some(None) => prefix_eprintln!(prefix, "{}", style::egreen("passed")),
+                None if up_to_date => {
+                    prefix_eprintln!(prefix, "sources up-to-date, skipping");
+                }
+                None if replayed => {
+                    prefix_eprintln!(prefix, "{}", style::egreen("passed (cached)"));
+                }
+                // It ran nothing: what mise said about it, such as that its
+                // sources are up to date or, in a dry run, the commands it
+                // would run; nothing for a task that only has dependencies.
+                None => KeepOrderState::print_lines(&lines),
+            },
+            SummaryOutcome::Cancelled if !self.quiet(Some(task)) => {
+                prefix_eprintln!(prefix, "{}", style::edim("cancelled"));
+            }
+            SummaryOutcome::Passed | SummaryOutcome::Cancelled => {}
+        }
+    }
+
+    /// Print what `summary` still holds for tasks that never finished, such as
+    /// after an interrupt: their output may be all there is to go on.
+    pub(crate) fn flush_summaries(&self) {
+        let buffers = std::mem::take(&mut self.summary_state.lock().unwrap().buffers);
+        for (task, buffer) in buffers {
+            KeepOrderState::print_lines(&buffer.into_lines(&task));
         }
     }
 
@@ -588,6 +791,11 @@ impl OutputHandler {
         output: &[TaskCacheOutput],
     ) {
         let mode = self.output(Some(task));
+        if mode == TaskOutput::Summary {
+            // Its line says it passed from the cache, not what it printed.
+            let mut state = self.summary_state.lock().unwrap();
+            state.replayed.insert(task.clone());
+        }
         if mode == TaskOutput::Timed && !task.silent.suppresses_stdout() {
             let stdout = output
                 .iter()
@@ -643,6 +851,12 @@ impl OutputHandler {
                     }
                 }
                 (TaskOutput::Timed, TaskCacheOutput::Stdout(_)) => {}
+                (TaskOutput::Summary, TaskCacheOutput::Stdout(line)) => {
+                    self.summary_stdout(task, prefix, line);
+                }
+                (TaskOutput::Summary, TaskCacheOutput::Stderr(line)) => {
+                    self.summary_stderr(task, prefix, line);
+                }
                 (TaskOutput::Interleave | TaskOutput::Quiet, TaskCacheOutput::Stdout(line)) => {
                     if console::colors_enabled() {
                         println!("{line}\x1b[0m");
@@ -706,6 +920,43 @@ impl OutputHandler {
 mod tests {
     use super::*;
     use crate::task::RunEntry;
+
+    fn texts(buffer: SummaryBuffer) -> Vec<String> {
+        buffer
+            .into_lines(&Task::default())
+            .into_iter()
+            .map(|line| match line {
+                KeepOrderLine::Stdout(_, t) | KeepOrderLine::Stderr(_, t) => t,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn summary_keeps_the_end_of_a_long_line_within_the_limit() {
+        let mut buffer = SummaryBuffer::default();
+        // Multi-byte characters, so a cut must find a character boundary.
+        let long = "é".repeat(35 * 1024);
+        buffer.push(KeepOrderLine::Stdout(String::new(), long.clone()));
+        buffer.push(KeepOrderLine::Stdout(String::new(), "done".to_string()));
+        assert!(buffer.bytes <= SUMMARY_TAIL_BYTES);
+        let lines = texts(buffer);
+        assert_eq!(lines[0], "[output truncated; showing last 64 KiB]");
+        assert!(long.ends_with(&lines[1]) && !lines[1].is_empty());
+        assert_eq!(lines[2], "done");
+    }
+
+    #[test]
+    fn summary_holds_a_short_first_line_apart_from_the_tail() {
+        let mut buffer = SummaryBuffer::default();
+        buffer.push(KeepOrderLine::Stderr(String::new(), "$ make".to_string()));
+        for i in 0..20_000 {
+            buffer.push(KeepOrderLine::Stdout(String::new(), format!("line {i}")));
+        }
+        let lines = texts(buffer);
+        assert_eq!(lines[0], "$ make");
+        assert_eq!(lines[1], "[output truncated; showing last 64 KiB]");
+        assert_eq!(lines.last().unwrap(), "line 19999");
+    }
 
     #[test]
     fn colored_prefix_modes_require_a_rendered_style() {
