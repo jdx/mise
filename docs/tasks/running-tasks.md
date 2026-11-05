@@ -382,10 +382,15 @@ mise run --affected --affected-explain --dry-run 'test:*'
 ```
 
 A task is also affected when a changed file is the config file that defines it
-or the script its `file` names. Symlinks in the task directory and in its
-`sources` are followed, as Git reports each file by its own path. A changed
-submodule counts as the files that changed in it, under its path, so
-`sources` match inside submodules like any other directory. mise compares the
+or the script its `file` names. Symlinks in the task directory and in the
+leading directories of its `sources` are followed, as Git reports each file by
+its own path. A literal source that is a symlink matches its target too, but a
+glob that matches a link matches only the link's name; list the target, or the
+link literally, to catch edits to the target. A changed submodule counts as the
+files that changed in it, under its path, so `sources` match inside submodules
+like any other directory. mise can only look inside an initialized submodule:
+for one that is not checked out, Git reports just its path, so add that path
+itself (such as `sub`) to `sources` to catch the change. mise compares the
 commit the parent records for the submodule at the merge base with the one at
 the head, and adds the submodule's working tree only when it is checked out at
 that head; untracked files in such a submodule count even when its recorded
