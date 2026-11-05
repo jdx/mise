@@ -1392,7 +1392,13 @@ impl Lock {
 
     async fn argument_versions(&self, config: &Config) -> Result<BTreeSet<(String, String)>> {
         let mut versions = BTreeSet::new();
-        for arg in &self.tool {
+        // Only the last argument naming a tool decides its request.
+        let mut last: Vec<&ToolArg> = Vec::new();
+        for arg in self.tool.iter().filter(|arg| arg.tvr.is_some()) {
+            last.retain(|prev| prev.ba.short != arg.ba.short);
+            last.push(arg);
+        }
+        for arg in last {
             let Some(tvr) = &arg.tvr else { continue };
             let version = tvr.version();
             if let Some(backend) = crate::backend::get(&arg.ba) {
