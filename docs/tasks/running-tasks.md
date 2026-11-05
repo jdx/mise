@@ -383,12 +383,13 @@ mise run --affected --affected-explain --dry-run 'test:*'
 
 A task is also affected when a changed file is the config file that defines it
 or the script its `file` names. Symlinks in the task directory and in its
-`sources` are followed, as Git reports each file by its own path. Each task
-reads the changes of every Git checkout that holds its directory, its config
-file, its script, or the start of its `sources`, so a task in a submodule sees
-the submodule's changes and those of the parent that defines it. A submodule
-compares the commit the parent records for it at the merge base with the one at
-the head, and adds its working tree only when it is checked out at that head.
+`sources` are followed, as Git reports each file by its own path. A changed
+submodule counts as the files that changed in it, under its path, so
+`sources` match inside submodules like any other directory. mise compares the
+commit the parent records for the submodule at the merge base with the one at
+the head, and adds the submodule's working tree only when it is checked out at
+that head. A separate checkout nested in the project, such as an ignored clone,
+counts its own changes.
 A task without `sources` might read any file, so mise runs it whenever anything
 changed. When nothing changed, `--affected` runs nothing. Dependencies of a
 selected task still run, and the usual

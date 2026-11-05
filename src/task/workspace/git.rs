@@ -82,6 +82,19 @@ impl WorkspaceChanges {
         self.merge_base.as_deref()
     }
 
+    /// The head revision the committed range ends at.
+    pub fn head(&self) -> &str {
+        &self.head
+    }
+
+    /// Adds a submodule's changed files to `paths`, under the submodule's path. They are
+    /// not added to the committed or working-tree sets, so [`Self::file_versions`], which
+    /// reads this checkout's files, never sees them.
+    pub fn add_submodule_paths(&mut self, submodule: &Path, paths: &BTreeSet<PathBuf>) {
+        self.paths
+            .extend(paths.iter().map(|path| submodule.join(path)));
+    }
+
     /// Changes in the submodule at `root`, given the commits the parent's gitlink records
     /// at its merge base (`from`, `None` when the submodule did not exist there) and at its
     /// head (`to`).

@@ -514,6 +514,14 @@ impl Git {
         Ok((!id.is_empty()).then_some(id))
     }
 
+    /// Returns the working tree of the repository that has `self.dir` as a submodule, or
+    /// `None` when it is not one.
+    pub fn superproject(&self) -> Result<Option<PathBuf>> {
+        let output = git_cmd_read!(&self.dir, "rev-parse", "--show-superproject-working-tree")?;
+        let output = output.trim_end_matches(['\r', '\n']);
+        Ok((!output.is_empty()).then(|| output.into()))
+    }
+
     /// Returns the root of the working tree that contains `self.dir`.
     pub fn toplevel(&self) -> Result<PathBuf> {
         Ok(git_cmd_read!(&self.dir, "rev-parse", "--show-toplevel")?
