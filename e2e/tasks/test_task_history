@@ -28,7 +28,8 @@ depends = ["ok"]
 run = 'true'
 
 [tasks.slow]
-run = 'sleep 30'
+run = 'sleep 30; echo'
+env = { SLOW_TOKEN = { value = "slow-secret-e2e", redact = true } }
 EOF
 printf 'one\n' >input.txt
 
@@ -90,6 +91,9 @@ mise run echo https://user:hunter2@example.com/x 'a b'
 assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "hunter2"
 assert_contains "mise tasks history echo" "'a b'"
 
-# A task stopped by --timeout is recorded as cancelled.
-assert_fail "mise run --timeout 1s slow"
+# A task stopped by --timeout is recorded as cancelled, its arguments redacted
+# with the secrets its env registered.
+assert_fail "mise run --timeout 1s slow slow-secret-e2e"
 assert "mise tasks history slow --json | jq -c '[.[].status]'" '["cancelled"]'
+assert_not_contains "cat \"$MISE_STATE_DIR\"/task-history/*/*.json" "slow-secret-e2e"
+assert "mise tasks history slow --json | jq -r '.[0].args[0]'" "[redacted]"

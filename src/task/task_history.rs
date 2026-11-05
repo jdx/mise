@@ -13,12 +13,13 @@
 //! History holds task arguments, so its files are 0600 and its directories 0700.
 //!
 //! A run is noted when it starts and recorded when it ends. When `--timeout` stops a run, the
-//! runs still going are recorded as cancelled before their jobs are aborted.
+//! runs still going are marked cancelled in memory, the tasks are stopped, and the runs are
+//! then written with a bounded lock wait.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use eyre::{Result, WrapErr};
@@ -140,6 +141,8 @@ pub struct TaskHistory {
     /// before its job reports back is still recorded, as cancelled.
     pending: Mutex<HashMap<u64, PendingRun>>,
     next_id: AtomicU64,
+    /// Set by [`TaskHistory::take_cancelled`]: a run that starts afterwards is not recorded.
+    cancelled: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -148,6 +151,8 @@ struct PendingRun {
     args: Vec<String>,
     started: SystemTime,
     timer: Instant,
+    /// When the task returned, set by [`TaskHistory::ended`] before its result is reported.
+    ended: Option<Duration>,
 }
 
 /// A run [`TaskHistory::start`] is waiting to hear the end of.
@@ -182,10 +187,13 @@ impl TaskHistory {
             limit: usize::try_from(limit).unwrap_or(0),
             pending: Default::default(),
             next_id: AtomicU64::new(0),
+            cancelled: AtomicBool::new(false),
         }
     }
 
-    /// Note that a run of `task` started now; [`Self::finish`] records how it ended.
+    /// Note that a run of `task` started now; [`Self::finish`] records how it ended. `args`
+    /// are kept in memory as given: they are redacted when the run is recorded, once the
+    /// task's env has registered its secrets.
     pub fn start(&self, task: &str, args: Vec<String>) -> PendingRunId {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let run = PendingRun {
@@ -193,13 +201,26 @@ impl TaskHistory {
             args,
             started: SystemTime::now(),
             timer: Instant::now(),
+            ended: None,
         };
-        self.pending.lock().unwrap().insert(id, run);
+        let mut pending = self.pending.lock().unwrap();
+        // Checked under the lock `take_cancelled` takes, so a run is either taken or never noted.
+        if !self.cancelled.load(Ordering::SeqCst) {
+            pending.insert(id, run);
+        }
         PendingRunId(id)
     }
 
-    /// Record how a started run ended, with its arguments redacted again, unless
-    /// [`Self::cancel_pending`] already recorded it.
+    /// Note that a started run's task returned. Called as soon as it does, with no await
+    /// before it, so a run that ended before `--timeout` keeps its own result.
+    pub fn ended(&self, id: PendingRunId) {
+        if let Some(run) = self.pending.lock().unwrap().get_mut(&id.0) {
+            run.ended.get_or_insert(run.timer.elapsed());
+        }
+    }
+
+    /// Record how a started run ended, with its redacted arguments, unless
+    /// [`Self::take_cancelled`] already took it.
     pub fn finish(
         &self,
         id: PendingRunId,
@@ -214,11 +235,39 @@ impl TaskHistory {
         self.record(run.into_run(status, exit_code));
     }
 
-    /// Record every run still going as cancelled, for a run stopped before its jobs report.
-    pub fn cancel_pending(&self) {
-        let pending: Vec<_> = self.pending.lock().unwrap().drain().collect();
-        for (_, run) in pending {
-            self.record(run.into_run(RunStatus::Cancelled, None));
+    /// Mark every run still going as cancelled, for a run stopped before its jobs report.
+    /// Only memory is touched, so the caller can stop the tasks at once and write the runs
+    /// with [`Self::record_cancelled`] afterwards; a job that reports later is ignored.
+    /// A run whose task had already returned is left for its job to record.
+    pub fn take_cancelled(&self, redact: impl Fn(&str) -> String) -> Vec<TaskRun> {
+        let taken: Vec<_> = {
+            let mut pending = self.pending.lock().unwrap();
+            self.cancelled.store(true, Ordering::SeqCst);
+            let ids: Vec<u64> = pending
+                .iter()
+                .filter(|(_, run)| run.ended.is_none())
+                .map(|(id, _)| *id)
+                .collect();
+            ids.iter()
+                .filter_map(|id| pending.remove_entry(id))
+                .collect()
+        };
+        taken
+            .into_iter()
+            .map(|(_, mut run)| {
+                run.args = run.args.iter().map(|a| redact(a)).collect();
+                run.into_run(RunStatus::Cancelled, None)
+            })
+            .collect()
+    }
+
+    /// Write runs from [`Self::take_cancelled`], waiting at most `lock_wait` for each task's
+    /// lock: mise is exiting, and a run that cannot be written is only logged.
+    pub fn record_cancelled(&self, runs: Vec<TaskRun>, lock_wait: Duration) {
+        for run in runs {
+            if let Err(err) = self.try_record_with(run, Some(lock_wait)) {
+                debug!("task history: failed to record cancelled run: {err:#}");
+            }
         }
     }
 
@@ -234,10 +283,30 @@ impl TaskHistory {
     }
 
     fn try_record(&self, run: TaskRun) -> Result<()> {
+        self.try_record_with(run, None)
+    }
+
+    /// `lock_wait` bounds the wait for the task's lock; `None` waits as long as it takes.
+    fn try_record_with(&self, run: TaskRun, lock_wait: Option<Duration>) -> Result<()> {
         let name = short_hash(&run.task);
         let path = self.dir.join(format!("{name}.json"));
         create_private_dir(&self.dir)?;
-        let _lock = LockFile::at(&self.dir.join(format!("{name}.lock"))).lock()?;
+        let lock_path = self.dir.join(format!("{name}.lock"));
+        let _lock = match lock_wait {
+            None => LockFile::at(&lock_path).lock()?,
+            Some(wait) => {
+                let deadline = Instant::now() + wait;
+                loop {
+                    if let Some(lock) = LockFile::at(&lock_path).try_lock()? {
+                        break lock;
+                    }
+                    if Instant::now() >= deadline {
+                        eyre::bail!("{} is locked", file::display_path(&lock_path));
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+        };
         let mut runs = read_file(&path).unwrap_or_default();
         runs.push(run);
         // Runs are appended as they end, so one that started earlier can arrive later.
@@ -291,7 +360,7 @@ impl TaskHistory {
 
 impl PendingRun {
     fn into_run(self, status: RunStatus, exit_code: Option<i32>) -> TaskRun {
-        let duration = self.timer.elapsed();
+        let duration = self.ended.unwrap_or_else(|| self.timer.elapsed());
         TaskRun::new(
             &self.task,
             self.args,
@@ -453,13 +522,15 @@ mod tests {
     }
 
     #[test]
-    fn cancel_pending_records_unfinished_runs_once() {
+    fn cancelled_runs_are_recorded_once_and_redacted() {
         let tmp = tempfile::tempdir().unwrap();
         let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
         let done = history.start("build", vec!["a".into()]);
-        let stuck = history.start("build", vec![]);
+        let stuck = history.start("build", vec!["hunter2".into()]);
         history.finish(done, vec!["a".into()], RunStatus::Ok, Some(0));
-        history.cancel_pending();
+        let cancelled = history.take_cancelled(|a| a.replace("hunter2", "[redacted]"));
+        assert_eq!(cancelled[0].args, vec!["[redacted]"]);
+        history.record_cancelled(cancelled, Duration::from_secs(1));
         // a job that reports after the timeout recorded it is not recorded twice
         history.finish(stuck, vec![], RunStatus::Failed, Some(1));
         let statuses: Vec<_> = history
@@ -490,6 +561,53 @@ mod tests {
         assert_eq!(mode(&file), 0o600);
         assert_eq!(mode(&history.dir), 0o700);
         assert_eq!(mode(&tmp.path().join("task-history")), 0o700);
+    }
+
+    #[test]
+    fn a_timeout_keeps_runs_that_ended_and_drops_runs_that_start_after() {
+        let tmp = tempfile::tempdir().unwrap();
+        let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
+        let returned = history.start("build", vec![]);
+        let running = history.start("build", vec![]);
+        history.ended(returned);
+        let cancelled = history.take_cancelled(|a| a.to_string());
+        assert_eq!(cancelled.len(), 1);
+        history.record_cancelled(cancelled, Duration::from_secs(1));
+        // the job that had returned reports its own result; the killed one is ignored
+        history.finish(returned, vec![], RunStatus::Ok, Some(0));
+        history.finish(running, vec![], RunStatus::Failed, Some(143));
+        let late = history.start("build", vec![]);
+        history.ended(late);
+        history.finish(late, vec![], RunStatus::Failed, Some(1));
+        let mut statuses: Vec<_> = history
+            .runs(Some("build"))
+            .unwrap()
+            .iter()
+            .map(|r| r.status.as_str())
+            .collect();
+        statuses.sort_unstable();
+        assert_eq!(statuses, vec!["cancelled", "ok"]);
+    }
+
+    #[test]
+    fn a_held_lock_bounds_the_cancelled_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        let history = TaskHistory::at(tmp.path(), PathBuf::from("/project"), 10);
+        create_private_dir(&history.dir).unwrap();
+        let lock_path = history.dir.join(format!("{}.lock", short_hash("build")));
+        let _held = LockFile::at(&lock_path).lock().unwrap();
+        // another thread, so the held flock is a separate open file
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let started = Instant::now();
+                history.record_cancelled(
+                    vec![run("build", 1, 1, RunStatus::Cancelled)],
+                    Duration::from_millis(50),
+                );
+                assert!(started.elapsed() < Duration::from_secs(5));
+            });
+        });
+        assert!(history.runs(Some("build")).unwrap().is_empty());
     }
 
     #[test]

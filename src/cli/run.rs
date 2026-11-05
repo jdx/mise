@@ -1059,6 +1059,7 @@ impl Run {
         // already succeeded.
         let telemetry = self.telemetry.clone();
         let task_history = self.task_history.clone();
+        let history_config = config.clone();
         let result = if let Some(timeout) = timeout {
             let run = self.parallelize_tasks(config, execution_tasks, previewed_tools);
             tokio::pin!(run);
@@ -1069,13 +1070,22 @@ impl Run {
                     // and their children would outlive mise. It is dropped only
                     // afterwards: that aborts the jobs, whose commands would
                     // leave the running list before they could be stopped.
-                    // Recorded as cancelled first: once their commands are killed the jobs
-                    // would report a failure, if they report before the run is dropped.
-                    if let Some(history) = &task_history {
-                        history.cancel_pending();
-                    }
+                    // Marked cancelled first, in memory: once their commands are killed the
+                    // jobs would report a failure, if they report before the run is dropped.
+                    // The arguments are redacted with every secret registered so far.
+                    let cancelled = task_history.as_ref().map(|history| {
+                        history.take_cancelled(|arg| history_arg(&history_config, arg))
+                    });
                     RUN_TIMED_OUT.store(true, Ordering::SeqCst);
                     crate::cmd::CmdLineRunner::terminate_all().await;
+                    if let (Some(history), Some(runs)) = (task_history, cancelled) {
+                        let write = tokio::task::spawn_blocking(move || {
+                            history.record_cancelled(runs, Duration::from_secs(1))
+                        });
+                        if let Err(err) = write.await {
+                            debug!("task history: {err}");
+                        }
+                    }
                     Err(eyre!("mise run timed out after {:?}", timeout))
                 }
             }
@@ -1340,7 +1350,7 @@ impl Run {
             let history_run = this
                 .task_history
                 .as_ref()
-                .and_then(|history| start_task_run(history, &ctx.config, &task));
+                .and_then(|history| start_task_run(history, &task));
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1363,6 +1373,9 @@ impl Run {
                     true,
                 ),
             };
+            if let (Some(history), Some(id)) = (&this.task_history, history_run) {
+                history.ended(id);
+            }
             let otel_end = std::time::SystemTime::now();
             // If the task executed or restored outputs and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
@@ -1875,22 +1888,22 @@ impl Run {
 /// only names dependencies, is not recorded: its duration is only the wait for them.
 fn start_task_run(
     history: &crate::task::task_history::TaskHistory,
-    config: &Config,
     task: &Task,
 ) -> Option<crate::task::task_history::PendingRunId> {
     if task.file.is_none() && task.run().is_empty() {
         return None;
     }
-    Some(history.start(&task.name, history_args(config, task)))
+    Some(history.start(&task.name, task.args.clone()))
 }
 
 /// Task arguments as history stores them: URL credentials removed, as terminal output does,
 /// then the registered secrets.
 fn history_args(config: &Config, task: &Task) -> Vec<String> {
-    task.args
-        .iter()
-        .map(|a| config.redact(&mise_util::redactions::redact_url_userinfo_in_arg(a)))
-        .collect()
+    task.args.iter().map(|a| history_arg(config, a)).collect()
+}
+
+fn history_arg(config: &Config, arg: &str) -> String {
+    config.redact(&mise_util::redactions::redact_url_userinfo_in_arg(arg))
 }
 
 /// Record how a started task ended.
