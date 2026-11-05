@@ -82,6 +82,11 @@ impl WorkspaceChanges {
         self.merge_base.as_deref()
     }
 
+    /// Whether untracked files were compared.
+    pub fn counts_untracked(&self) -> bool {
+        self.sources.untracked
+    }
+
     /// The head revision the committed range ends at.
     pub fn head(&self) -> &str {
         &self.head

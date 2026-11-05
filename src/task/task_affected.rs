@@ -47,9 +47,16 @@ pub enum AffectedTaskReason {
 /// The model: a checkout's changed files are what Git reports in it, with each changed
 /// submodule's own changed files added under the submodule's path, recursively. Every
 /// glob and path is matched against that one list, so a pattern reaches into submodules
-/// like any other directory. A submodule therefore never counts as a checkout of its own:
-/// its files belong to the outermost superproject. Only an unrelated checkout nested in
-/// another one, such as an ignored clone, is read separately.
+/// like any other directory. The root is the checkout `mise` runs in, and only submodules
+/// beneath it are expanded, so a submodule there never counts as a checkout of its own:
+/// its files belong to its outermost superproject at or below that root. A checkout
+/// outside the root, such as a parent repository when running inside a submodule, or an
+/// unrelated checkout nested in another one, such as an ignored clone, is read
+/// separately.
+///
+/// Untracked files: Git lists neither a submodule whose only change is untracked files
+/// nor the files themselves, so when untracked files count, each initialized submodule
+/// checked out at the commit its parent records is listed as well.
 pub struct AffectedRepos<'a> {
     revisions: &'a WorkspaceGitRevisions,
     /// Canonical checkout roots and their changes; the first is the default checkout.
@@ -65,7 +72,7 @@ impl<'a> AffectedRepos<'a> {
         let root = dirs::CWD
             .iter()
             .chain(config.project_root.iter())
-            .find_map(|dir| checkout_root(dir))
+            .find_map(|dir| checkout_root(dir, None))
             .ok_or_else(|| eyre!("--affected needs a Git repository"))?;
         let mut changes = revisions.changed_paths(&root)?;
         add_submodule_changes(&root, &mut changes, 0);
@@ -87,7 +94,7 @@ impl<'a> AffectedRepos<'a> {
         if let Some(index) = self.dirs.get(dir) {
             return *index;
         }
-        let index = match checkout_root(dir) {
+        let index = match checkout_root(dir, Some(&self.repos[0].0)) {
             Some(root) => match self.repos.iter().position(|(r, _)| *r == root) {
                 Some(index) => index,
                 None => {
@@ -146,6 +153,26 @@ fn add_submodule_changes(root: &Path, changes: &mut WorkspaceChanges, depth: usi
         return;
     }
     let git = Git::new(root);
+    if depth == 0 && changes.counts_untracked() {
+        // `--recursive` lists nested submodules too, by their path from `root`.
+        match git.submodules_at_recorded_commit() {
+            Ok(submodules) => {
+                for submodule in submodules {
+                    match Git::new(root.join(&submodule)).untracked_paths() {
+                        Ok(paths) => changes.add_submodule_paths(&submodule, &paths),
+                        Err(err) => debug!(
+                            "--affected: cannot list untracked files in {}: {err}",
+                            submodule.display()
+                        ),
+                    }
+                }
+            }
+            Err(err) => debug!(
+                "--affected: cannot list the submodules of {}: {err}",
+                root.display()
+            ),
+        }
+    }
     let submodules = changes
         .paths
         .iter()
@@ -173,17 +200,29 @@ fn add_submodule_changes(root: &Path, changes: &mut WorkspaceChanges, depth: usi
     }
 }
 
-/// The canonical root of the outermost checkout holding `dir`, or its nearest existing
-/// ancestor: a submodule's superproject, all the way up, so its files are matched in the
-/// same list as the rest of the project.
+/// The canonical root of the checkout holding `dir`, or its nearest existing ancestor.
+///
+/// With `top`, the root of the checkout `mise` runs in, a submodule climbs to its
+/// superproject while that superproject is at or below `top`, so a submodule's files are
+/// matched in the same list as the rest of the project. It never climbs above `top`:
+/// running inside a submodule compares that submodule's own history.
 /// dunce, because Git does not accept the `\\?\` paths `canonicalize` gives on Windows.
-fn checkout_root(dir: &Path) -> Option<PathBuf> {
+fn checkout_root(dir: &Path, top: Option<&Path>) -> Option<PathBuf> {
     let dir = dir.ancestors().find(|dir| dir.is_dir())?;
-    let mut root = Git::new(dir).toplevel().ok()?;
-    while let Ok(Some(parent)) = Git::new(&root).superproject() {
-        root = parent;
+    let root = Git::new(dir).toplevel().ok()?;
+    let mut root = dunce::canonicalize(&root).unwrap_or(root);
+    if let Some(top) = top {
+        while root != top
+            && let Ok(Some(parent)) = Git::new(&root).superproject()
+        {
+            let parent = dunce::canonicalize(&parent).unwrap_or(parent);
+            if !parent.starts_with(top) {
+                break;
+            }
+            root = parent;
+        }
     }
-    Some(dunce::canonicalize(&root).unwrap_or(root))
+    Some(root)
 }
 
 /// Paths come from Git and need not be UTF-8, which serde refuses for `PathBuf`.
@@ -393,7 +432,10 @@ fn resolve_pattern(task_cwd: &Path, pattern: &str) -> Vec<String> {
     // A literal file that is a symlink is matched by both names: Git reports the link when
     // it is retargeted and the target when its contents change, and the up-to-date check
     // follows the link. A glob that matches a link is matched by the link's name only.
-    if rest.as_os_str().is_empty()
+    // Only an inclusion reaches the target: excluding the link must not exclude a file
+    // that another pattern includes under its own name.
+    if prefix.is_empty()
+        && rest.as_os_str().is_empty()
         && literal.is_symlink()
         && let Ok(target) = dunce::canonicalize(&literal)
         && !resolved.contains(&target)

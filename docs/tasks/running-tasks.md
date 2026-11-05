@@ -388,8 +388,10 @@ submodule counts as the files that changed in it, under its path, so
 `sources` match inside submodules like any other directory. mise compares the
 commit the parent records for the submodule at the merge base with the one at
 the head, and adds the submodule's working tree only when it is checked out at
-that head. A separate checkout nested in the project, such as an ignored clone,
-counts its own changes.
+that head; untracked files in such a submodule count even when its recorded
+commit did not change. Run from inside a submodule, `--affected` compares that
+submodule's own history. A separate checkout nested in the project, such as an
+ignored clone, counts its own changes.
 A task without `sources` might read any file, so mise runs it whenever anything
 changed. When nothing changed, `--affected` runs nothing. Dependencies of a
 selected task still run, and the usual

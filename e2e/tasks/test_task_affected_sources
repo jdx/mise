@@ -338,3 +338,25 @@ assert_contains "mise run --affected --affected-uncommitted --affected-explain -
 # A `file` that cannot render before its arguments are known does not abort the
 # selection; its other inputs still decide.
 assert_contains "mise run --affected --affected-uncommitted --affected-json linked-source ::: templated-file" '"name": "linked-source"'
+git checkout -q real-data/config.json
+
+# Excluding a symlink does not exclude its target, which another pattern includes.
+cat <<'EOF' >>mise.toml
+
+[tasks.excluded-link]
+sources = ["real-data/**", "!data/config.json"]
+run = 'echo excluded-link >> "$AFFECTED_LOG"'
+EOF
+git add mise.toml
+git commit -qm add-excluded-link
+echo changed >>real-data/config.json
+assert_contains "mise run --affected --affected-uncommitted --affected-explain --dry-run excluded-link" "changed source: real-data/config.json"
+git checkout -q real-data/config.json
+
+# An untracked file in a submodule whose recorded commit has not changed counts.
+echo new >sub/lib/untracked.txt
+assert_contains "mise run --affected --affected-untracked --affected-explain --dry-run sub" "changed source: sub/lib/untracked.txt"
+rm sub/lib/untracked.txt
+
+# Running inside a submodule compares the submodule's own history.
+assert_contains "cd sub && mise run --affected --affected-committed --affected-explain --dry-run sub" "changed source: lib/a.txt"

@@ -522,6 +522,37 @@ impl Git {
         Ok((!output.is_empty()).then(|| output.into()))
     }
 
+    /// Returns the initialized submodules, nested ones included, that are checked out at the
+    /// commit their parent records, by their path from `self.dir`. A submodule under one
+    /// that is not is left out too.
+    pub fn submodules_at_recorded_commit(&self) -> Result<Vec<PathBuf>> {
+        let output = git_cmd_read!(&self.dir, "submodule", "status", "--recursive")?;
+        let mut current = Vec::new();
+        let mut skipped: Vec<PathBuf> = Vec::new();
+        for line in output.lines() {
+            // `<state><sha> <path>` and, when Git can describe the commit, ` (<describe>)`.
+            let mut chars = line.chars();
+            let Some(state) = chars.next() else { continue };
+            let Some((_, rest)) = chars.as_str().split_once(' ') else {
+                continue;
+            };
+            let path = match rest.rsplit_once(" (") {
+                Some((path, describe)) if describe.ends_with(')') => path,
+                _ => rest,
+            };
+            let path = PathBuf::from(path);
+            if skipped.iter().any(|parent| path.starts_with(parent)) {
+                continue;
+            }
+            if state == ' ' {
+                current.push(path);
+            } else {
+                skipped.push(path);
+            }
+        }
+        Ok(current)
+    }
+
     /// Returns the root of the working tree that contains `self.dir`.
     pub fn toplevel(&self) -> Result<PathBuf> {
         Ok(git_cmd_read!(&self.dir, "rev-parse", "--show-toplevel")?
