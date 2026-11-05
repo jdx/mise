@@ -6100,6 +6100,14 @@ Set `task.run_auto_install = false` to make this the default.
     flag --task-cache-explain help="[experimental] Explain the inputs that produced each task's artifact cache key"
     flag --task-cache-explain-json help="[experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)" conflicts=--task-cache-explain requires=--dry-run
     flag --task-cache-stats help="[experimental] Report artifact cache hits, restored bytes, and time saved" conflicts=--dry-run
+    flag --tag help="Run only the matching tasks that have this tag; repeat to accept any of several" var=#true conflicts=--all {
+        long_help #"""
+Run only the matching tasks that have this tag; repeat to accept any of several
+
+With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
+"""#
+        arg <TAG>
+    }
     flag --timeout help="Stop the run if it takes longer than this, e.g. 30s or 5m" {
         long_help #"""
 Stop the run if it takes longer than this, e.g. 30s or 5m
@@ -6132,6 +6140,7 @@ Set `task.timings = true` to show it by default.
     example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run several tasks, each with its own arguments"
     example "mise run -j 1 lint ::: test" help="Run tasks one at a time"
     example "mise run 'test:*'" help="Run every task that matches a pattern"
+    example "mise run --tag lint" help="Run every task tagged \"lint\""
     example "mise run //services/api:build" help="Run a task in a monorepo project"
     example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
     complete dir type=dir
@@ -6864,6 +6873,9 @@ Removed in mise 2027.7.0.
     flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
         conflicts "--json" "--extended" "--usage"
     }
+    flag --tag help="Only show tasks that have this tag; repeat to accept any of several" var=#true {
+        arg <TAG>
+    }
     flag --no-header help="Do not print the table header" {
         alias "--no-headers" hide=#true
     }
@@ -7073,6 +7085,9 @@ Removed in mise 2027.7.0.
         flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
             conflicts "--json" "--extended" "--usage"
         }
+        flag --tag help="Only show tasks that have this tag; repeat to accept any of several" var=#true {
+            arg <TAG>
+        }
         flag --no-header help="Do not print the table header" {
             alias "--no-headers" hide=#true
         }
@@ -7099,6 +7114,7 @@ Removed in mise 2027.7.0.
         example "mise tasks ls" help="List tasks"
         example "mise tasks ls --hidden" help="Include hidden tasks"
         example "mise tasks ls --all" help="List tasks from every monorepo project"
+        example "mise tasks ls --tag lint" help="List the tasks tagged \"lint\""
         example "mise tasks ls --name-only | fzf" help="Pick a task name interactively"
     }
     cmd run hide=#true disable_help_flag=#true restart_token=::: help="Run tasks; an alias for `mise run`" unknown_flags=value {
@@ -7303,6 +7319,14 @@ Set `task.run_auto_install = false` to make this the default.
         flag --task-cache-explain help="[experimental] Explain the inputs that produced each task's artifact cache key"
         flag --task-cache-explain-json help="[experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)" conflicts=--task-cache-explain requires=--dry-run
         flag --task-cache-stats help="[experimental] Report artifact cache hits, restored bytes, and time saved" conflicts=--dry-run
+        flag --tag help="Run only the matching tasks that have this tag; repeat to accept any of several" var=#true conflicts=--all {
+            long_help #"""
+Run only the matching tasks that have this tag; repeat to accept any of several
+
+With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
+"""#
+            arg <TAG>
+        }
         flag --timeout help="Stop the run if it takes longer than this, e.g. 30s or 5m" {
             long_help #"""
 Stop the run if it takes longer than this, e.g. 30s or 5m
@@ -7335,6 +7359,7 @@ Set `task.timings = true` to show it by default.
         example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run several tasks, each with its own arguments"
         example "mise run -j 1 lint ::: test" help="Run tasks one at a time"
         example "mise run 'test:*'" help="Run every task that matches a pattern"
+        example "mise run --tag lint" help="Run every task tagged \"lint\""
         example "mise run //services/api:build" help="Run a task in a monorepo project"
         example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
         complete dir type=dir

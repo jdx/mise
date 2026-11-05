@@ -1289,6 +1289,7 @@ impl Cli {
                         affected_committed: false,
                         affected_uncommitted: false,
                         affected_untracked: false,
+                        tag: vec![],
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,

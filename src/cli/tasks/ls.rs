@@ -28,6 +28,7 @@ use serde_json::json;
     example("mise tasks ls", help = "List tasks"),
     example("mise tasks ls --hidden", help = "Include hidden tasks"),
     example("mise tasks ls --all", help = "List tasks from every monorepo project"),
+    example("mise tasks ls --tag lint", help = "List the tasks tagged \"lint\""),
     example(
         "mise tasks ls --name-only | fzf",
         help = "Pick a task name interactively"
@@ -77,6 +78,10 @@ pub(crate) struct TasksLs {
     )]
     pub name_only: bool,
 
+    /// Only show tasks that have this tag; repeat to accept any of several
+    #[usage(long, value_name = "TAG", verbatim_doc_comment)]
+    pub tag: Vec<String>,
+
     /// Do not print the table header
     #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
@@ -121,6 +126,7 @@ impl TasksLs {
         self.hidden |= later.hidden;
         self.name_only |= later.name_only;
         self.no_header |= later.no_header;
+        self.tag.extend(later.tag);
         self.sort = later.sort.or(self.sort);
         self.sort_order = later.sort_order.or(self.sort_order);
         self.usage |= later.usage;
@@ -144,6 +150,7 @@ impl TasksLs {
             || self.hidden
             || self.name_only
             || self.no_header
+            || !self.tag.is_empty()
             || self.sort.is_some()
             || self.sort_order.is_some()
             || self.usage
@@ -194,6 +201,10 @@ impl TasksLs {
             fetcher
         };
         fetcher.fetch_tasks(&config, &mut tasks).await?;
+        // After the fetch, so a remote task's `#MISE tags` header counts.
+        if !self.tag.is_empty() {
+            tasks.retain(|t| t.has_any_tag(&self.tag));
+        }
 
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)
@@ -353,6 +364,7 @@ impl TasksLs {
             array_items.push(json!({
                 "name": task.display_name,
                 "aliases": task.aliases,
+                "tags": task.tags,
                 "description": task.description,
                 "source": task.config_source.to_string_lossy(),
                 "config_sources": task

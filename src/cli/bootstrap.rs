@@ -3107,6 +3107,7 @@ impl Bootstrap {
             affected_committed: false,
             affected_uncommitted: false,
             affected_untracked: false,
+            tag: vec![],
             cd: None,
             continue_on_error: false,
             dry_run: self.dry_run,

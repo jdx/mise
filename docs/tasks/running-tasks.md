@@ -103,6 +103,41 @@ depends = ["lint:*"]
 In a monorepo, patterns can also select projects, such as `//...:test`; see
 [Monorepo tasks](/tasks/monorepo.html).
 
+## Select tasks by tag
+
+Give tasks [`tags`](/tasks/task-configuration.html#tags) that say what kind of
+task each one is:
+
+```mise-toml [mise.toml]
+[tasks.clippy]
+tags = "lint"
+run = "cargo clippy"
+
+[tasks.shellcheck]
+tags = "lint"
+run = "shellcheck scripts/*.sh"
+
+[tasks."test:e2e"]
+tags = ["test", "slow"]
+run = "./e2e/run"
+```
+
+`--tag` runs the tasks that have the tag, whatever their names:
+
+```sh
+mise run --tag lint                # clippy and shellcheck
+mise run --tag lint --tag test     # every task tagged lint or test
+mise run --tag slow 'test:*'      # test:e2e, the only test:* task tagged slow
+mise tasks ls --tag lint           # list them instead
+```
+
+With no task name, `--tag` picks from every task, as if the name were `**`.
+With a name or a pattern, it keeps the matching tasks that have the tag, and
+fails when none does. A task's dependencies run whatever their tags. Put
+`--tag` before the task name; after it, the flag goes to the task. In a
+monorepo, add a pattern to reach other projects, such as
+`mise run --tag lint '//...:**'`.
+
 ## Pass arguments
 
 Arguments after the task name go to the task:

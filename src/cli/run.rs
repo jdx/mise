@@ -95,6 +95,10 @@ use tokio::sync::Mutex;
         help = r###"Run every task that matches a pattern"###
     ),
     example(
+        r###"mise run --tag lint"###,
+        help = r###"Run every task tagged "lint""###
+    ),
+    example(
         r###"mise run //services/api:build"###,
         help = r###"Run a task in a monorepo project"###
     ),
@@ -385,6 +389,14 @@ pub(crate) struct Run {
     #[usage(long, conflicts = "dry_run")]
     pub task_cache_stats: bool,
 
+    /// Run only the matching tasks that have this tag; repeat to accept any of several
+    ///
+    /// With no task name, selects every task with the tag, as if the task were
+    /// `**`. The tags come from each task's `tags` property. Dependencies run
+    /// whatever their tags.
+    #[usage(long, value_name = "TAG", conflicts = "all")]
+    pub tag: Vec<String>,
+
     /// Stop the run if it takes longer than this, e.g. 30s or 5m
     ///
     /// Overrides the `task.timeout` setting.
@@ -472,6 +484,73 @@ fn affected_task_args(args: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// What `--tag` asks for: the tags, and whether reading a remote task file may use the cache.
+#[derive(Clone, Copy)]
+struct TagSelection<'a> {
+    tags: &'a [String],
+    no_cache: bool,
+}
+
+/// Keep the tasks `--tag` selects: those with at least one of `tags`. No tags keeps every task.
+///
+/// A remote task file can declare tags in its `#MISE` header, so a remote task that lacks the
+/// tags in its TOML is read first. That read is an inspection: as for `mise tasks ls`, safe mode
+/// and a `git::` file without experimental leave the task unread, and the fetch before the run
+/// still refuses to run such a task.
+async fn keep_tagged(
+    config: &Arc<Config>,
+    tasks: &mut Vec<Task>,
+    tags: &[String],
+    no_cache: bool,
+) -> Result<()> {
+    if tags.is_empty() {
+        return Ok(());
+    }
+    // A file that cannot be read leaves its task untagged here, so it does not block the rest;
+    // a task that is selected anyway fails when the run fetches it.
+    let fetcher =
+        crate::task::task_fetcher::TaskFetcher::for_inspection(no_cache).skipping_failures();
+    for task in tasks.iter_mut() {
+        if !task.has_any_tag(tags)
+            && crate::task::task_fetcher::TaskFetcher::is_unfetched_remote_task(task)
+        {
+            let mut read = vec![task.clone()];
+            fetcher.fetch_tasks(config, &mut read).await?;
+            if let Some(read) = read.pop() {
+                *task = read;
+            }
+        }
+    }
+    tasks.retain(|task| task.has_any_tag(tags));
+    Ok(())
+}
+
+/// [`keep_tagged`] for a plain run, where `--tag` selecting nothing is an error. `args` are the
+/// words the tasks were matched from; the first names a task.
+async fn retain_tagged(
+    config: &Arc<Config>,
+    tasks: &mut Vec<Task>,
+    tags: &[String],
+    args: &[String],
+    no_cache: bool,
+) -> Result<()> {
+    if tags.is_empty() {
+        return Ok(());
+    }
+    keep_tagged(config, tasks, tags, no_cache).await?;
+    if tasks.is_empty() {
+        let tags = style::ered(tags.join(" or "));
+        match args.first().map(String::as_str) {
+            None | Some("**") => bail!("no task has the tag {tags}"),
+            Some(pattern) => bail!(
+                "no task matching {} has the tag {tags}",
+                style::ered(pattern)
+            ),
+        }
+    }
+    Ok(())
+}
+
 async fn get_affected_task_list(
     config: &Arc<Config>,
     args: &[String],
@@ -479,6 +558,7 @@ async fn get_affected_task_list(
     revisions: crate::task::workspace::git::WorkspaceGitRevisions,
     explain: bool,
     json: bool,
+    tags: TagSelection<'_>,
 ) -> Result<Vec<Task>> {
     let workspace_root = config
         .monorepo_root()
@@ -548,6 +628,8 @@ async fn get_affected_task_list(
                 .map(crate::file::desymlink_path)
                 .is_some_and(|root| affected_roots.contains(&root))
     });
+    // Unlike a plain run, finding no task here is not an error: nothing affected may have one.
+    keep_tagged(config, &mut tasks, tags.tags, tags.no_cache).await?;
     if json {
         display_affected_json(&revisions, &workspace_root, &graph, &affected, &tasks)?;
     } else if explain {
@@ -753,7 +835,12 @@ impl Run {
             return Ok(());
         }
 
-        let task = self.task.clone().unwrap_or_else(|| "default".to_string());
+        // `--tag` with no task name picks from every task rather than the default one.
+        let default_task = if self.tag.is_empty() { "default" } else { "**" };
+        let task = self
+            .task
+            .clone()
+            .unwrap_or_else(|| default_task.to_string());
 
         Settings::ensure_not_safe("running tasks")?;
 
@@ -786,7 +873,9 @@ impl Run {
                 )
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false, false).await?;
+            let mut task_list = get_task_lists(&config, &args, false, false, false).await?;
+            // Help is for the task `--tag` would run.
+            retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -843,11 +932,18 @@ impl Run {
                 ),
                 self.affected_explain,
                 self.affected_json,
+                TagSelection {
+                    tags: &self.tag,
+                    no_cache: self.no_cache,
+                },
             )
             .await?
         } else {
             get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
         };
+        if !self.affected {
+            retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
+        }
         if self.affected_json {
             return Ok(());
         }
