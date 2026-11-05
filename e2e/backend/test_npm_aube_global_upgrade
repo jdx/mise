@@ -79,7 +79,7 @@ EOF
     mise -C "$HOME" lock --global "$config_tool"
   fi
   if [[ $scenario == bare-v2 || $scenario == bump-v2 ]]; then
-    sed -i.bak 's/lockfile_version = 3/lockfile_version = 2/' "$MISE_CONFIG_DIR/mise.lock"
+    sed -i.bak 's/lockfile_version = 4/lockfile_version = 2/' "$MISE_CONFIG_DIR/mise.lock"
   fi
   check_graph 1.0.0
   if [[ $scenario == bump-aliases ]]; then

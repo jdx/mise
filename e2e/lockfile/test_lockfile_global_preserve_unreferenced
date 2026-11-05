@@ -118,7 +118,7 @@ backend = "asdf:dummy"
 EOF
 
   mise lock --global --upgrade --platform "$MISE_PLATFORM"
-  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'lockfile_version = 3'
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'lockfile_version = 4'
   assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools.dummy]]'
 
   rm -f "$MISE_CONFIG_DIR/mise.lock" "$MISE_CONFIG_DIR/config.toml"

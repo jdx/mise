@@ -4334,44 +4334,73 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         if matches.is_empty() && query == "latest" {
             // Fall back to all versions if no match
-            matches = match before_date {
-                Some(before) => {
-                    let versions_with_info = self
-                        .list_remote_versions_with_info_with_selection_options(
-                            config,
-                            selection_opts,
-                            refresh,
-                        )
-                        .await?;
-                    VersionInfo::filter_by_date(versions_with_info, before)
-                        .into_iter()
-                        .map(|v| v.version)
-                        .collect()
-                }
-                None => {
-                    self.list_remote_versions_with_selection_options(
+            matches = self
+                .every_version_for_latest(config, selection_opts, before_date, refresh)
+                .await?;
+        }
+        Ok(find_match_in_list(&matches, query))
+    }
+
+    /// Whether `info`, or its entry in the cached listing, is a rolling channel.
+    async fn is_rolling_listed_version(
+        &self,
+        config: &Arc<Config>,
+        info: &VersionInfo,
+        selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<bool> {
+        if info.rolling {
+            return Ok(true);
+        }
+        Ok(self
+            .list_remote_versions_with_info_with_selection_options(config, selection_opts, false)
+            .await?
+            .iter()
+            .any(|v| v.rolling && v.version == info.version))
+    }
+
+    /// Every version `latest` may resolve to, in order, when its numeric
+    /// pattern does not describe the tool's releases: the full list after the
+    /// prerelease and release-age filters.
+    async fn every_version_for_latest(
+        &self,
+        config: &Arc<Config>,
+        selection_opts: &ToolVersionOptions,
+        before_date: Option<Timestamp>,
+        refresh: bool,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = match before_date {
+            Some(before) => {
+                let versions_with_info = self
+                    .list_remote_versions_with_info_with_selection_options(
                         config,
                         selection_opts,
                         refresh,
                     )
-                    .await?
-                }
-            };
-            matches = self.version_order(selection_opts)?.order(matches);
-            // `list_versions_matching_with_selection_options` already did this
-            // for the list above; this branch built its own.
-            if let Some(before) = before_date {
-                self.drop_matches_hidden_by_cutoff(
-                    config,
-                    &mut matches,
-                    before,
-                    selection_opts,
-                    query,
-                )
-                .await?;
+                    .await?;
+                VersionInfo::filter_by_date(versions_with_info, before)
+                    .into_iter()
+                    .map(|v| v.version)
+                    .collect()
             }
+            None => {
+                self.list_remote_versions_with_selection_options(config, selection_opts, refresh)
+                    .await?
+            }
+        };
+        let mut versions = self.version_order(selection_opts)?.order(versions);
+        // `list_versions_matching_with_selection_options` does this for the
+        // lists it builds; this one is built here.
+        if let Some(before) = before_date {
+            self.drop_matches_hidden_by_cutoff(
+                config,
+                &mut versions,
+                before,
+                selection_opts,
+                "latest",
+            )
+            .await?;
         }
-        Ok(find_match_in_list(&matches, query))
+        Ok(versions)
     }
 
     /// Drop the candidates a release-age cutoff hides but the listing left undated.
@@ -4685,6 +4714,56 @@ pub trait Backend: Debug + Send + Sync {
                     };
                     if allowed {
                         return Ok(Some(version));
+                    }
+                    // The `latest` pattern only matches versions that start
+                    // with a digit. When the tool's own latest release does
+                    // not, its releases are named some other way (Odin's
+                    // `dev-2026-11a`), and the numeric matches are whatever
+                    // old releases happened to be numbered: Odin's `0.12.0`
+                    // from 2020. Pick from every version the cutoff allows.
+                    //
+                    // A rolling channel (Rust's `stable` behind a mirror) says
+                    // nothing about how releases are named, and the full list
+                    // would also offer its sibling channels (`beta`, `nightly`).
+                    if !fuzzy_version_matches("latest", &version)
+                        && !self
+                            .is_rolling_listed_version(config, &latest, selection_opts)
+                            .await?
+                    {
+                        // A stable request still leaves out what the shared
+                        // matcher would treat as a pre-release, unless the
+                        // listing says it is not one, and moving channels.
+                        let flagged: HashMap<String, VersionInfo> = self
+                            .list_remote_versions_with_info_with_selection_options(
+                                config,
+                                selection_opts,
+                                fallback_refresh,
+                            )
+                            .await?
+                            .into_iter()
+                            .map(|v| (v.version.clone(), v))
+                            .collect();
+                        let versions: Vec<String> = self
+                            .every_version_for_latest(
+                                config,
+                                selection_opts,
+                                before_date,
+                                fallback_refresh,
+                            )
+                            .await?
+                            .into_iter()
+                            .filter(|v| {
+                                let info = flagged.get(v);
+                                if info.is_some_and(|i| i.rolling) {
+                                    return false;
+                                }
+                                let stable_by_flag =
+                                    info.is_some_and(|i| i.prerelease == Some(false));
+                                (stable_by_flag || !VERSION_REGEX.is_match(v))
+                                    && !self.is_backend_prerelease(v)
+                            })
+                            .collect();
+                        return Ok(find_match_in_list(&versions, resolved_query));
                     }
                 }
                 None => return Ok(Some(version)),
@@ -5188,9 +5267,13 @@ pub trait Backend: Debug + Send + Sync {
                     || (self.resolves_locked_url_from_checksum() && p.is_pinned_without_url())
             });
             if !has_lockfile_url {
+                let hint = if Settings::safe_mode() && !self.resolves_locked_url_from_checksum() {
+                    "safe mode ignores the URLs in a project lockfile, and this backend cannot resolve its download from a checksum alone; disable safe mode or locked mode"
+                } else {
+                    "Run `mise lock` to generate lockfile URLs, or disable locked mode"
+                };
                 bail!(
-                    "No lockfile URL found for {} on platform {} (--locked mode)\n\
-                    hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",
+                    "No lockfile URL found for {} on platform {} (--locked mode)\nhint: {hint}",
                     tv.style(),
                     platform_key
                 );
@@ -7207,6 +7290,82 @@ mod latest_version_tests {
                 .unwrap()
                 .as_deref(),
             Some("2.0.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_keeps_latest_on_non_numeric_releases() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let dated = |version: &str, created_at: &str| VersionInfo {
+            version: version.to_string(),
+            created_at: Some(created_at.to_string()),
+            ..Default::default()
+        };
+        // Odin numbered its releases until 2020 and names them `dev-*` since.
+        // Its own latest release is too new, and the only numeric one is years
+        // old; `latest` must stay on the newest `dev-*` the cutoff allows.
+        let backend = LatestBackend::new("test-cutoff-non-numeric-latest-rolling-edge")
+            .with_stable_info(dated("dev-2026-11a", "2026-11-03"))
+            .with_remote_versions(vec![
+                dated("0.12.0", "2020-01-18"),
+                dated("dev-2026-09", "2026-09-01"),
+                dated("dev-2026-10", "2026-10-01"),
+                // A pre-release by its name, but the listing says it is not.
+                VersionInfo {
+                    prerelease: Some(false),
+                    ..dated("dev-2026-10-rc", "2026-10-10")
+                },
+                // Unflagged, and a pre-release by its name.
+                dated("1.0.0-rc.1", "2026-10-15"),
+                // A moving channel whose current build the cutoff allows.
+                VersionInfo {
+                    rolling: true,
+                    ..dated("edge", "2026-10-20")
+                },
+                dated("dev-2026-11a", "2026-11-03"),
+            ]);
+        let before = parse_into_timestamp("2026-11-02").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, None, Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("dev-2026-10-rc")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_keeps_latest_off_sibling_channels_of_a_rolling_stable() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let dated = |version: &str, created_at: &str, rolling: bool| VersionInfo {
+            version: version.to_string(),
+            created_at: Some(created_at.to_string()),
+            rolling,
+            ..Default::default()
+        };
+        // Rust behind a mirror: `latest` is the `stable` channel, which the
+        // cutoff hides. `beta` must not take its place.
+        let backend = LatestBackend::new("test-cutoff-rolling-stable-channel")
+            .with_stable_info(dated("stable", "2026-11-03", true))
+            .with_remote_versions(vec![
+                dated("1.90.0", "2026-09-18", false),
+                dated("nightly", "2026-11-03", true),
+                dated("beta", "2026-10-30", true),
+                dated("stable", "2026-11-03", true),
+            ]);
+        let before = parse_into_timestamp("2026-11-02").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, None, Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.90.0")
         );
     }
 

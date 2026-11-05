@@ -918,7 +918,9 @@ Runs the command with your terminal and environment and saves a checkpoint befor
                 arg <LABEL>
             }
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true {
+                complete type=command_args
+            }
             example "mise dot capture -- brew upgrade" help="Record what an upgrade changes"
             example "mise dot capture --label \"theme switch\" -- ./switch-theme.sh" help="Label the operation in history"
         }
@@ -2202,7 +2204,9 @@ warning. Use `--continue-on-error` to visit the rest after a failure.
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Run only in repositories at these paths, as written in config or expanded" required=#false var=#true
-            arg "<-- COMMAND>…" help="Command and arguments to run in each repository" var=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run in each repository" var=#true {
+                complete type=command_args
+            }
             example "mise bootstrap repos exec -- git status --short" help="Show uncommitted changes in every repository"
             example "mise bootstrap repos exec ~/src/mise -- git log -1" help="Run a command in one repository"
             example "mise bootstrap repos exec --continue-on-error -- git fetch" help="Fetch every repository, even after one fails"
@@ -3079,7 +3083,9 @@ Runs the command with your terminal and environment and saves a checkpoint befor
             arg <LABEL>
         }
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
+        arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true {
+            complete type=command_args
+        }
         example "mise dot capture -- brew upgrade" help="Record what an upgrade changes"
         example "mise dot capture --label \"theme switch\" -- ./switch-theme.sh" help="Label the operation in history"
     }
@@ -3810,7 +3816,9 @@ SystemRoot and TEMP.
     flag --secrets-all help="[experimental] Give the command every secret the project can inject, except file secrets" conflicts=--secrets
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tools to add or override, such as `node@24 python@3.13`" required=#false var=#true
-    arg "[-- COMMAND]…" help="Executable and arguments to run directly, after `--`" required=#false var=#true conflicts=--command required_unless=--command
+    arg "[-- COMMAND]…" help="Executable and arguments to run directly, after `--`" required=#false var=#true conflicts=--command required_unless=--command {
+        complete type=command_args
+    }
     example "mise exec node@24 -- node ./app.js" help="Run app.js with node 24"
     example "mise x node@24 python@3.13 -c \"node -v && python -V\"" help="Run a shell command string"
     example "mise x -C ~/work/api -- npm test" help="Run in another project's directory"
@@ -5943,6 +5951,24 @@ Count untracked files that Git does not ignore
 Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 """#
     }
+    flag --at help="Run the tasks at another git revision, in a temporary worktree" {
+        long_help #"""
+Run the tasks at another git revision, in a temporary worktree
+
+Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
+"""#
+        arg <REV>
+    }
+    flag --at-setup help="Run this shell command in the `--at` worktree before the tasks" requires=--at {
+        long_help #"""
+Run this shell command in the `--at` worktree before the tasks
+
+It runs in the worktree's copy of the directory mise was started from (not a task's `dir`), outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from. `--timeout` does not limit it, only the tasks after it.
+"""#
+        arg <CMD>
+    }
     flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before running the tasks" {
@@ -5967,6 +5993,7 @@ How task output is displayed
 - `replacing` - Stdout is replaced each time, stderr is printed as is
 - `timed` - Only show stdout lines if they are displayed for more than 1 second
 - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+- `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
 - `quiet` - Deprecated; use `--output interleave --quiet`
 - `silent` - Do not show any output, including the task's stdout and stderr, except errors
 """#
@@ -5979,6 +6006,14 @@ Connect the tasks directly to stdin, stdout, and stderr instead of reading their
 
 Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
 """#
+    }
+    flag --report-file help="Write a JSON report of every task the run scheduled to this file when the run ends" conflicts=--dry-run env=MISE_TASK_REPORT_FILE {
+        long_help #"""
+Write a JSON report of every task the run scheduled to this file when the run ends
+
+Written on success, failure, Ctrl-C and `--timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+"""#
+        arg <PATH>
     }
     flag --secrets help="[experimental] Give the named tasks these secrets (comma-separated); their dependencies and subtasks do not get them" var=#true conflicts=--affected {
         long_help #"""
@@ -6083,6 +6118,14 @@ Set `task.run_auto_install = false` to make this the default.
     flag --task-cache-explain help="[experimental] Explain the inputs that produced each task's artifact cache key"
     flag --task-cache-explain-json help="[experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)" conflicts=--task-cache-explain requires=--dry-run
     flag --task-cache-stats help="[experimental] Report artifact cache hits, restored bytes, and time saved" conflicts=--dry-run
+    flag --tag help="Run only the matching tasks that have this tag; repeat to accept any of several" var=#true conflicts=--all {
+        long_help #"""
+Run only the matching tasks that have this tag; repeat to accept any of several
+
+With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
+"""#
+        arg <TAG>
+    }
     flag --timeout help="Stop the run if it takes longer than this, e.g. 30s or 5m" {
         long_help #"""
 Stop the run if it takes longer than this, e.g. 30s or 5m
@@ -6115,9 +6158,12 @@ Set `task.timings = true` to show it by default.
     example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run several tasks, each with its own arguments"
     example "mise run -j 1 lint ::: test" help="Run tasks one at a time"
     example "mise run 'test:*'" help="Run every task that matches a pattern"
+    example "mise run --tag lint" help="Run every task tagged \"lint\""
     example "mise run //services/api:build" help="Run a task in a monorepo project"
+    example "mise run --at main test" help="Run \"test\" as it is on main, in a temporary git worktree"
     example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
     complete dir type=dir
+    complete path type=path
 }
 cmd search help="Search for available tools" effect=read {
     long_help #"""
@@ -6605,7 +6651,9 @@ See https://mise.jdx.dev/bootstrap/github-relay.html
     flag --global-config-directory hide=#true
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[DESTINATION]" help="OpenSSH destination or SSH config alias (required)" required=#false
-    arg "[COMMAND]…" help="Command to execute after --; omit for an interactive shell" required=#false double_dash=automatic var=#true
+    arg "[COMMAND]…" help="Command to execute after --; omit for an interactive shell" required=#false double_dash=automatic var=#true {
+        complete type=command_args
+    }
     example "mise ssh devbox --github-relay-read-only --github-relay-repo you/setup -- git clone https://github.com/you/setup.git" help="Let devbox clone one private repository"
     example "mise ssh devbox --github-relay-read-only --github-relay-all-repos" help="Open a shell that can read every repository your credentials can read"
     example "mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a" help="Run a command over plain SSH with an identity file, port, and option"
@@ -6844,6 +6892,9 @@ Removed in mise 2027.7.0.
     flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
         conflicts "--json" "--extended" "--usage"
     }
+    flag --tag help="Only show tasks that have this tag; repeat to accept any of several" var=#true {
+        arg <TAG>
+    }
     flag --no-header help="Do not print the table header" {
         alias "--no-headers" hide=#true
     }
@@ -7053,6 +7104,9 @@ Removed in mise 2027.7.0.
         flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
             conflicts "--json" "--extended" "--usage"
         }
+        flag --tag help="Only show tasks that have this tag; repeat to accept any of several" var=#true {
+            arg <TAG>
+        }
         flag --no-header help="Do not print the table header" {
             alias "--no-headers" hide=#true
         }
@@ -7079,6 +7133,7 @@ Removed in mise 2027.7.0.
         example "mise tasks ls" help="List tasks"
         example "mise tasks ls --hidden" help="Include hidden tasks"
         example "mise tasks ls --all" help="List tasks from every monorepo project"
+        example "mise tasks ls --tag lint" help="List the tasks tagged \"lint\""
         example "mise tasks ls --name-only | fzf" help="Pick a task name interactively"
     }
     cmd run hide=#true disable_help_flag=#true restart_token=::: help="Run tasks; an alias for `mise run`" unknown_flags=value {
@@ -7134,6 +7189,24 @@ Count untracked files that Git does not ignore
 Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 """#
         }
+        flag --at help="Run the tasks at another git revision, in a temporary worktree" {
+            long_help #"""
+Run the tasks at another git revision, in a temporary worktree
+
+Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
+"""#
+            arg <REV>
+        }
+        flag --at-setup help="Run this shell command in the `--at` worktree before the tasks" requires=--at {
+            long_help #"""
+Run this shell command in the `--at` worktree before the tasks
+
+It runs in the worktree's copy of the directory mise was started from (not a task's `dir`), outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from. `--timeout` does not limit it, only the tasks after it.
+"""#
+            arg <CMD>
+        }
         flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before running the tasks" {
@@ -7158,6 +7231,7 @@ How task output is displayed
 - `replacing` - Stdout is replaced each time, stderr is printed as is
 - `timed` - Only show stdout lines if they are displayed for more than 1 second
 - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+- `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
 - `quiet` - Deprecated; use `--output interleave --quiet`
 - `silent` - Do not show any output, including the task's stdout and stderr, except errors
 """#
@@ -7170,6 +7244,14 @@ Connect the tasks directly to stdin, stdout, and stderr instead of reading their
 
 Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
 """#
+        }
+        flag --report-file help="Write a JSON report of every task the run scheduled to this file when the run ends" conflicts=--dry-run env=MISE_TASK_REPORT_FILE {
+            long_help #"""
+Write a JSON report of every task the run scheduled to this file when the run ends
+
+Written on success, failure, Ctrl-C and `--timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+"""#
+            arg <PATH>
         }
         flag --secrets help="[experimental] Give the named tasks these secrets (comma-separated); their dependencies and subtasks do not get them" var=#true conflicts=--affected {
             long_help #"""
@@ -7274,6 +7356,14 @@ Set `task.run_auto_install = false` to make this the default.
         flag --task-cache-explain help="[experimental] Explain the inputs that produced each task's artifact cache key"
         flag --task-cache-explain-json help="[experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)" conflicts=--task-cache-explain requires=--dry-run
         flag --task-cache-stats help="[experimental] Report artifact cache hits, restored bytes, and time saved" conflicts=--dry-run
+        flag --tag help="Run only the matching tasks that have this tag; repeat to accept any of several" var=#true conflicts=--all {
+            long_help #"""
+Run only the matching tasks that have this tag; repeat to accept any of several
+
+With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
+"""#
+            arg <TAG>
+        }
         flag --timeout help="Stop the run if it takes longer than this, e.g. 30s or 5m" {
             long_help #"""
 Stop the run if it takes longer than this, e.g. 30s or 5m
@@ -7306,9 +7396,12 @@ Set `task.timings = true` to show it by default.
         example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run several tasks, each with its own arguments"
         example "mise run -j 1 lint ::: test" help="Run tasks one at a time"
         example "mise run 'test:*'" help="Run every task that matches a pattern"
+        example "mise run --tag lint" help="Run every task tagged \"lint\""
         example "mise run //services/api:build" help="Run a task in a monorepo project"
+        example "mise run --at main test" help="Run \"test\" as it is on main, in a temporary git worktree"
         example "mise run --secrets DEPLOY_KEY deploy" help="Give \"deploy\" the DEPLOY_KEY secret (experimental); its dependencies do not get it"
         complete dir type=dir
+        complete path type=path
     }
     cmd rm help="Remove tasks" effect=destructive {
         alias remove

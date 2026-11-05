@@ -79,7 +79,7 @@ impl Which {
                     bail!(msg);
                 }
                 if let Some(msg) =
-                    crate::shims::unavailable_configured_tool_message(&config, &ts, &bin_name)
+                    crate::shims::unavailable_configured_tool_message(&config, &ts, &bin_name).await
                 {
                     bail!(msg);
                 }

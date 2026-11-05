@@ -30,7 +30,9 @@ mod undo;
 mod untrack;
 mod watch;
 
-pub(crate) use apply::{DotfilesApply, prune_orphans, write_and_reload_with};
+pub(crate) use apply::{
+    ConfigPass, DotfilesApply, apply_config_entries, prune_orphans, write_and_reload_with,
+};
 
 /// Load, validate, and filter whole-file and edit requests with the same
 /// target semantics for every command that acts on both kinds of entry.

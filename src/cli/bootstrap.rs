@@ -11,7 +11,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use usage_rs::spec::ValueEnum;
 
-use super::dotfiles::{Dotfiles, DotfilesApply, prune_orphans, write_and_reload_with};
+use super::dotfiles::{
+    ConfigPass, Dotfiles, DotfilesApply, apply_config_entries, prune_orphans, write_and_reload_with,
+};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -2402,7 +2404,98 @@ impl Bootstrap {
             // is written, so neither the apply nor the prune can change
             // which commands run
             let reload = system::history::config::reload_commands()?;
-            if (!files.is_empty() || !edits.is_empty())
+            // mise's own configuration is written first and read again, so a
+            // rule it adds applies in this run instead of the next one, as in
+            // `mise dot apply`. A dry run previews that write, then plans the
+            // rest against the sources it would write.
+            // the config a dry run simulates after the first pass; the second
+            // pass is simulated on top of it, in the order a real run writes
+            let mut dry_run_base = None;
+            let mut simulated_bodies = DryRunTexts::default();
+            let mut files = files;
+            let mut edits = edits;
+            let config_pass_files = system::files::with_dependencies(&files, |req| {
+                is_config_target(&config, &req.target)
+            });
+            let config_edits = edits
+                .iter()
+                .filter(|req| is_config_target(&config, &req.path))
+                .cloned()
+                .collect::<Vec<_>>();
+            // a dry run reads the live file to check an edit, which the copy
+            // about to replace it may have changed; the edits the new config
+            // keeps are previewed against the simulated one instead
+            let config_pass_edits = if self.dry_run {
+                vec![]
+            } else {
+                config_edits.clone()
+            };
+            if !config_pass_files.is_empty() || !config_edits.is_empty() {
+                let pass = ConfigPass {
+                    reload: &reload,
+                    dry_run: self.dry_run,
+                    files: system::files::ApplyOpts {
+                        dry_run: self.dry_run,
+                        verbose: false,
+                        force: self.force_dotfiles,
+                        force_hint: "use --force-dotfiles or run `mise dot apply --force`",
+                        yes: self.yes,
+                    },
+                    edits: system::edits::ApplyOpts {
+                        part: "dotfiles",
+                        dry_run: self.dry_run,
+                        verbose: false,
+                        yes: self.yes,
+                    },
+                    secrets: &secrets,
+                };
+                let Some(done) =
+                    apply_config_entries(&config, &config_pass_files, &config_pass_edits, &pass)?
+                else {
+                    return Ok(declined());
+                };
+                let apply_config = if self.dry_run {
+                    let simulated =
+                        simulate_dotfiles_dry_run(&config, &files, &edits, &mut simulated_bodies)?;
+                    let simulated = config.with_bootstrap_dry_run_config_files(simulated)?;
+                    dry_run_base = Some(simulated.clone());
+                    simulated
+                } else {
+                    Config::reset().await?
+                };
+                files = system::files::files_from_config(&apply_config)?;
+                edits = system::edits::edits_from_config(&apply_config)?;
+                // a file the first pass wrote is not written again: a config
+                // edit that pass made would otherwise be copied back over.
+                // A dry run wrote nothing, so a planned file that a remaining
+                // entry depends on stays in the plan
+                if self.dry_run {
+                    let pending = files
+                        .iter()
+                        .map(|req| format!("{req:?}"))
+                        .filter(|req| !done.contains(req))
+                        .collect::<HashSet<_>>();
+                    files = system::files::with_dependencies(&files, |req| {
+                        pending.contains(&format!("{req:?}"))
+                    });
+                } else {
+                    files.retain(|req| !done.contains(&format!("{req:?}")));
+                }
+                if !files.is_empty() || !edits.is_empty() {
+                    let apply_config = &apply_config;
+                    // the new config may declare secrets and templates that the
+                    // first one did not
+                    let secrets = system::secrets::resolve(apply_config, self.prompt_secrets)?;
+                    if !self.dry_run {
+                        system::files::preflight_templates(apply_config, &files, &secrets)?;
+                    }
+                    if !write_and_reload_with(&reload, self.dry_run, |written| {
+                        self.apply_dotfiles(apply_config, &files, &edits, &secrets, written)
+                    })? {
+                        return Ok(declined());
+                    }
+                }
+            } else if (!files.is_empty() || !edits.is_empty())
                 && !write_and_reload_with(&reload, self.dry_run, |written| {
                     self.apply_dotfiles(&config, &files, &edits, &secrets, written)
                 })?
@@ -2410,7 +2503,15 @@ impl Bootstrap {
                 return Ok(declined());
             }
             if self.dry_run {
-                let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+                // on top of the first pass's simulation, so what it would write
+                // counts even when the new config no longer lists it, and an
+                // edit it applied is not replayed over a later copy
+                let config_files = simulate_dotfiles_dry_run(
+                    dry_run_base.as_ref().unwrap_or(&config),
+                    &files,
+                    &edits,
+                    &mut simulated_bodies,
+                )?;
                 config = config.with_bootstrap_dry_run_config_files(config_files.clone())?;
                 hooks = system::hooks_from_config(&config);
                 dry_run_config_files = Some(config_files);
@@ -2998,6 +3099,8 @@ impl Bootstrap {
             args: vec![],
             args_last: vec![],
             all: false,
+            at: None,
+            at_setup: None,
             affected: false,
             affected_base: None,
             affected_head: None,
@@ -3006,6 +3109,7 @@ impl Bootstrap {
             affected_committed: false,
             affected_uncommitted: false,
             affected_untracked: false,
+            tag: vec![],
             cd: None,
             continue_on_error: false,
             dry_run: self.dry_run,
@@ -3034,6 +3138,8 @@ impl Bootstrap {
             task_cache_explain: false,
             task_cache_explain_json: false,
             task_cache_stats: false,
+            report_file: None,
+            run_report: None,
             timeout: None,
             lock_timeout: None,
             skip_deps: false,
@@ -3326,9 +3432,32 @@ fn config_files_after_dotfiles_dry_run(
     files: &[FileRequest],
     edits: &[system::edits::EditRequest],
 ) -> Result<config::ConfigMap> {
+    simulate_dotfiles_dry_run(config, files, edits, &mut DryRunTexts::default())
+}
+
+/// What a dry-run simulation knows about each config target: the text it
+/// would write, and the targets whose text is not known because a template
+/// would have to be rendered.
+#[derive(Default)]
+struct DryRunTexts {
+    bodies: indexmap::IndexMap<PathBuf, String>,
+    unavailable: HashSet<PathBuf>,
+}
+
+/// Like `config_files_after_dotfiles_dry_run`, with the simulated text of each
+/// config target kept in `bodies`, so a later pass edits what an earlier one
+/// would have written rather than the file on disk.
+fn simulate_dotfiles_dry_run(
+    config: &Config,
+    files: &[FileRequest],
+    edits: &[system::edits::EditRequest],
+    texts: &mut DryRunTexts,
+) -> Result<config::ConfigMap> {
     let mut config_files = config.config_files.clone();
-    let mut bodies = indexmap::IndexMap::new();
-    let mut unavailable_bodies = HashSet::new();
+    let DryRunTexts {
+        bodies,
+        unavailable: unavailable_bodies,
+    } = texts;
     for file in files {
         if !is_simulated_config_target(config, &file.target) {
             continue;
@@ -3336,6 +3465,7 @@ fn config_files_after_dotfiles_dry_run(
         if file.mode == FileMode::Absent {
             // removed by the apply; a later edit starts from an empty file
             config_files.shift_remove(&file.target);
+            unavailable_bodies.remove(&file.target);
             bodies.insert(file.target.clone(), String::new());
             continue;
         }
@@ -3360,6 +3490,7 @@ fn config_files_after_dotfiles_dry_run(
         match contents {
             Ok(body) => match parse_mise_config_body(&file.target, &body) {
                 Ok(cf) => {
+                    unavailable_bodies.remove(&file.target);
                     bodies.insert(file.target.clone(), body);
                     config_files.insert(file.target.clone(), cf);
                 }

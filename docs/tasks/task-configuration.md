@@ -38,7 +38,7 @@ experimental = true
 | Group                                                     | Properties                                                                                                                                                                                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [Command](#command)                                       | [`run`](#run), [`run_windows`](/tasks/task-configuration.html#run-windows), [`file`](#file), [`shell`](#shell), [`dir`](#dir), [`usage`](#usage), [`raw_args`](/tasks/task-configuration.html#raw-args), [`extends`](#extends) |
-| [Description and visibility](#description-and-visibility) | [`description`](#description), [`alias`](#alias), [`hide`](#hide), [`confirm`](#confirm)                                                                                                                                       |
+| [Description and visibility](#description-and-visibility) | [`description`](#description), [`alias`](#alias), [`tags`](#tags), [`hide`](#hide), [`confirm`](#confirm)                                                                                                                      |
 | [Ordering](#ordering)                                     | [`depends`](#depends), [`depends_post`](/tasks/task-configuration.html#depends-post), [`wait_for`](/tasks/task-configuration.html#wait-for), [`daemons`](/tasks/task-configuration.html#daemons)                               |
 | [Environment and tools](#environment-and-tools)           | [`env`](#env), [`vars`](#task-vars), [`secrets`](/tasks/task-configuration.html#secrets), [`tools`](#tools)                                                                                                                    |
 | [Skipping work](#skipping-work)                           | [`skip_if`](/tasks/task-configuration.html#skip-if), [`sources`](#sources), [`outputs`](#outputs), [`watch`](#watch), [`cache`](/tasks/task-configuration.html#cache)                                                          |
@@ -282,6 +282,31 @@ run = "cargo build"
 A task's name takes precedence over an alias, so if a task named `b` exists,
 `mise run b` runs it, even when the alias comes from a parent directory's
 config.
+
+### `tags`
+
+- **Type**: `string | string[]`
+
+Words that say what kind of task this is, such as `build`, `test`, `lint`,
+`format`, or `slow`. `mise run --tag lint` runs every task tagged `lint`,
+`mise tasks ls --tag lint` lists them, and `mise tasks ls --json` includes each
+task's `tags`, so CI scripts and other tools can find a project's checks
+without guessing from task names.
+
+```mise-toml
+[tasks."lint:eslint"]
+tags = "lint"
+run = "eslint ."
+
+[tasks."test:e2e"]
+tags = ["test", "slow"]
+run = "./e2e/run"
+```
+
+mise gives no tag a meaning of its own. A file task sets them with
+`#MISE tags=["test"]`, and a [template](/tasks/templates.html) adds its tags
+to those of every task that extends it. See
+[Select tasks by tag](/tasks/running-tasks.html#select-tasks-by-tag).
 
 ### `hide`
 
@@ -957,7 +982,7 @@ further: it makes every task raw and runs one task at a time.
 
 ### `output`
 
-- **Type**: `"prefix" | "interleave" | "keep-order" | "replacing" | "timed" | "quiet" | "silent"`
+- **Type**: `"prefix" | "interleave" | "keep-order" | "replacing" | "summary" | "timed" | "quiet" | "silent"`
 - **Default**: the [`task.output`](/configuration/settings.html#task.output)
   setting
 

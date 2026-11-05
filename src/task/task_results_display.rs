@@ -53,6 +53,7 @@ impl TaskResultsDisplay {
             .lock()
             .unwrap()
             .flush_all();
+        self.output_handler.flush_summaries();
     }
 
     /// Display timing summary if enabled

@@ -1,6 +1,8 @@
 use crate::config::{Config, Settings, SettingsExt};
 use crate::task::Task;
-use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use crate::task::task_file_providers::{
+    TaskFileArtifact, TaskFileProviders, TaskFileProvidersBuilder,
+};
 use dashmap::DashMap;
 use eyre::Result;
 use std::{
@@ -74,6 +76,9 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
 /// Set once a command has warned that it left a gated `git::` task file unfetched.
 static WARNED_UNFETCHED_GIT_TASK: AtomicBool = AtomicBool::new(false);
 
+/// Set once a fetcher that skips failures has warned that it could not read a task file.
+static WARNED_UNREADABLE_TASK: AtomicBool = AtomicBool::new(false);
+
 /// Handles fetching remote task files and converting them to local paths
 ///
 /// # The experimental gate on remote task files
@@ -88,6 +93,11 @@ pub struct TaskFetcher {
     no_cache: bool,
     inspecting: bool,
     warn_unfetched: bool,
+    /// See [`TaskFetcher::skipping_failures`].
+    skip_failures: bool,
+    /// With `no_cache`, share one download of each task file across the command; see
+    /// [`RemoteTaskArtifactsGuard`].
+    share_snapshots: bool,
 }
 
 impl TaskFetcher {
@@ -97,6 +107,8 @@ impl TaskFetcher {
             no_cache,
             inspecting: false,
             warn_unfetched: false,
+            share_snapshots: true,
+            skip_failures: false,
         }
     }
 
@@ -107,10 +119,28 @@ impl TaskFetcher {
             no_cache,
             inspecting: true,
             warn_unfetched: true,
+            share_snapshots: true,
+            skip_failures: false,
         }
     }
 
-    /// Skips the one-time warning, for output a shell or another program reads, such as
+    /// With `no_cache`, downloads each task file again instead of reusing the command's shared
+    /// snapshot, for a long-lived process such as `mise mcp`, whose one command scope would
+    /// otherwise keep its first download for as long as it runs.
+    pub fn without_shared_snapshots(mut self) -> Self {
+        self.share_snapshots = false;
+        self
+    }
+
+    /// Leaves a task whose remote file cannot be read with its TOML metadata, warning once,
+    /// instead of failing the whole fetch. For choosing among tasks (`--tag`, the MCP task
+    /// list), where one unreachable file must not hide the rest; running a task still fails.
+    pub fn skipping_failures(mut self) -> Self {
+        self.skip_failures = true;
+        self
+    }
+
+    /// Skips the one-time warnings (an unfetched `git::` file, an unreadable file), for output a shell or another program reads, such as
     /// completion and usage specs.
     pub fn without_warning(mut self) -> Self {
         self.warn_unfetched = false;
@@ -150,18 +180,48 @@ impl TaskFetcher {
             .build();
 
         for t in tasks {
+            if let Err(err) = self
+                .fetch_task(config, &task_file_providers, no_cache, t)
+                .await
+            {
+                if !self.skip_failures {
+                    return Err(err);
+                }
+                // The task keeps its TOML metadata. A run that selects it fetches it again
+                // and fails there.
+                if self.warn_unfetched && !WARNED_UNREADABLE_TASK.swap(true, Ordering::Relaxed) {
+                    warn!(
+                        "could not read the file of task `{}`, so only its TOML metadata is known: {err:#}",
+                        t.name
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Fetch one task's remote file, if it has one, and merge its `#MISE` headers.
+    async fn fetch_task(
+        &self,
+        config: &Arc<Config>,
+        task_file_providers: &TaskFileProviders,
+        no_cache: bool,
+        t: &mut Task,
+    ) -> Result<()> {
+        {
             if let Some(file) = &t.file {
                 let source = file.to_string_lossy().to_string();
 
                 // Skip local files - they don't need provider resolution
                 if !Self::is_remote_source(&source) {
-                    continue;
+                    return Ok(());
                 }
                 // Safe mode loads untrusted project config without a trust prompt, and
                 // fetching a URL is not something such a config gets to do, as for remote
                 // includes. The task keeps its TOML metadata, and safe mode refuses to run it.
                 if !t.global && Settings::safe_mode() {
-                    continue;
+                    return Ok(());
                 }
                 if source.starts_with("git::") {
                     if self.inspecting && !Settings::get().experimental {
@@ -173,7 +233,7 @@ impl TaskFetcher {
                                 t.name
                             );
                         }
-                        continue;
+                        return Ok(());
                     }
                     Settings::get().ensure_experimental(&format!(
                         "loading task `{}` from a `git::` file",
@@ -185,7 +245,7 @@ impl TaskFetcher {
                 let provider = task_file_providers
                     .get_provider(&source)
                     .ok_or_else(|| eyre::eyre!("No provider found for file: {}", source))?;
-                let artifact = if no_cache {
+                let artifact = if no_cache && self.share_snapshots {
                     // Reuse one snapshot when dependency resolution materializes
                     // the same task again, while keeping separate task definitions
                     // that happen to use the same URL independent.
@@ -315,6 +375,7 @@ mod tests {
 #MISE description="remote description"
 #MISE hide=true
 #MISE quiet=true
+#MISE tags=["lint"]
 #MISE tools={node="24", python="3.12"}
 echo ok
 "#,
@@ -334,6 +395,7 @@ echo ok
             config_root: Some(config_root.path().to_path_buf()),
             file: Some(PathBuf::from(&source)),
             args: vec!["--fix".into()],
+            tags: vec!["slow".into()],
             tools: [("python".into(), TaskToolValue::String("3.13".into()))]
                 .into_iter()
                 .collect(),
@@ -353,6 +415,8 @@ echo ok
         assert_eq!(task.description, "toml description");
         assert!(task.hide);
         assert!(task.quiet);
+        // the header's tags, then the TOML's
+        assert_eq!(task.tags, ["lint", "slow"]);
         assert_eq!(task.args, ["--fix"]);
         assert_eq!(task.config_root.as_deref(), Some(config_root.path()));
         assert_eq!(task.remote_file_source.as_deref(), Some(source.as_str()));
@@ -365,6 +429,49 @@ echo ok
             task.tools.get("python"),
             Some(&TaskToolValue::String("3.13".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn test_unshared_no_cache_fetch_downloads_again_within_a_scope() {
+        // Generate mode shares one download per URL within an invocation; this test counts
+        // the requests of plain downloads.
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = <crate::config::settings::SettingsPartial as confique::Layer>::empty();
+        partial.lockfile_mode = Some("merge".into());
+        crate::config::Settings::reset(Some(partial));
+        let _test_lock = REMOTE_TASK_ARTIFACT_TEST_LOCK.lock().await;
+        let _artifacts = RemoteTaskArtifactsGuard::new();
+        let mut server = mockito::Server::new_async().await;
+        let remote = server
+            .mock("GET", "/unshared-task")
+            .with_status(200)
+            .with_body("#!/usr/bin/env bash\n#MISE tags=[\"remote\"]\necho ok\n")
+            .expect(2)
+            .create_async()
+            .await;
+
+        let config = Config::get().await.unwrap();
+        let config_root = tempfile::tempdir().unwrap();
+        let task = Task {
+            name: "lint".into(),
+            display_name: "lint".into(),
+            config_source: config_root.path().join("mise.toml"),
+            config_root: Some(config_root.path().to_path_buf()),
+            file: Some(PathBuf::from(format!("{}/unshared-task", server.url()))),
+            ..Default::default()
+        };
+
+        // One long-lived scope, as in `mise mcp`: each read still downloads the file.
+        for _ in 0..2 {
+            let mut tasks = vec![task.clone()];
+            TaskFetcher::for_inspection(true)
+                .without_shared_snapshots()
+                .fetch_tasks(&config, &mut tasks)
+                .await
+                .unwrap();
+            assert_eq!(tasks[0].tags, ["remote"]);
+        }
+        remote.assert_async().await;
     }
 
     #[tokio::test]

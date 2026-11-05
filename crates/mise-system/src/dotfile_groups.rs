@@ -1260,6 +1260,9 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
         stored.paths.retain(|path| !handled.contains(&path.target));
         save_record(&stored);
     }
+    if !opts.dry_run {
+        files::forget_group_symlink_each_states(&record.group);
+    }
     Ok(removed)
 }
 

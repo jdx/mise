@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+
+# `mise run --at REV` runs tasks in a temporary git worktree of REV, with that
+# revision's config, and removes the worktree afterwards.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+export MISE_TMP_DIR="$PWD/tmp"
+git config --global user.email e2e@example.com
+git config --global user.name e2e
+# The submodule below is cloned from a local path.
+git config --global protocol.file.allow always
+
+mkdir sub
+git -C sub init -q
+echo sub-v1 >sub/version.txt
+git -C sub add version.txt
+git -C sub commit -qm v1
+
+mkdir repo
+cd repo || exit 1
+git init -q
+git submodule add -q ../sub sub
+mkdir -p pkg
+touch pkg/.keep
+cat <<'EOF' >mise.toml
+[tasks.hi]
+run = "echo version-one"
+
+[tasks.where]
+run = "basename $PWD; echo source=$MISE_RUN_AT_SOURCE"
+
+[tasks.sub]
+run = "cat sub/version.txt; cat \"$(git -C sub rev-parse --git-path objects/info/alternates)\""
+
+[tasks.fail]
+run = "exit 7"
+
+[tasks.setup-check]
+run = "cat setup.txt"
+EOF
+# A hook kept in the repository, and a directory that is a symlink out of it.
+mkdir -p .githooks ../outside
+printf '#!/bin/sh\ntouch "%s/../hook-ran"\n' "$PWD" >.githooks/post-checkout
+chmod +x .githooks/post-checkout
+ln -s ../outside escape
+git add mise.toml .gitmodules sub pkg/.keep .githooks/post-checkout escape
+git commit -qm one
+
+echo sub-v2 >../sub/version.txt
+git -C ../sub commit -qam v2
+git -C sub pull -q
+cat <<'EOF' >mise.toml
+[tasks.hi]
+run = "echo version-two"
+EOF
+git rm -q escape
+mkdir escape
+touch escape/.keep
+git add mise.toml sub escape/.keep
+git commit -qm two
+git config core.hooksPath .githooks
+
+# Normal mode: the first `mise run` trusts the checkout, and the worktree
+# shares that trust.
+assert "mise run hi" "version-two"
+assert "mise run --at HEAD~1 hi" "version-one"
+assert "mise run --at HEAD hi" "version-two"
+assert_contains "mise run --at HEAD~1 where" "repo"
+assert_contains "mise run --at HEAD~1 where" "source=$PWD"
+
+# Submodules are initialized from the local clone, at REV's commit.
+assert_contains "mise run --at HEAD~1 sub" "sub-v1"
+assert_contains "mise run --at HEAD~1 sub" "modules/sub"
+
+# Flags after the task belong to it; `-C` and `--at` before it are mise's.
+assert "mise -C pkg run --at=HEAD~1 hi" "version-one"
+
+# A setup command runs first, in the worktree; its failure stops the run.
+assert "mise run --at HEAD~1 --at-setup 'echo setup-ran >setup.txt' setup-check" "setup-ran"
+
+# No hook runs: not one that REV keeps in the repository.
+assert_fail "test -e ../hook-ran"
+
+# A directory that is a symlink at REV does not lead the run out of the worktree.
+assert_fail "mise -C escape run --at HEAD~1 hi" "not a directory inside the worktree"
+assert_fail "mise run --at HEAD~1 --at-setup 'exit 1' hi" "--at-setup command failed"
+
+# A mise in the setup command runs in the worktree, not where MISE_CD points.
+assert "MISE_CD=$PWD mise run --at HEAD~1 --at-setup 'mise run hi >\"\$MISE_RUN_AT_SOURCE/../setup-out\"' hi" "version-one"
+assert "cat ../setup-out" "version-one"
+
+# --dry-run prints the setup command instead of running it.
+assert_contains "mise run --dry-run --at HEAD~1 --at-setup 'touch \"\$MISE_RUN_AT_SOURCE/../dry-ran\"' hi 2>&1" "not run with --dry-run"
+assert_fail "test -e ../dry-ran"
+
+# `mise tasks run` is `mise run`, and a mise inside a --at run cannot start another.
+assert "mise tasks run --at HEAD~1 hi" "version-one"
+assert "mise t r --at HEAD~1 hi" "version-one"
+assert_fail "MISE_RUN_AT_REV=x mise run --at HEAD~1 hi" "cannot run inside another"
+
+# The task's exit code comes back.
+assert_fail "mise run --at HEAD~1 fail"
+
+assert 'mise run --at HEAD~1 fail || echo exit=$?' "exit=7"
+assert_fail "mise run --at no-such-rev hi" "is not a commit"
+
+# The user's checkout is untouched and every temporary worktree is gone.
+assert_empty "git status --porcelain"
+assert "git log -1 --format=%s" "two"
+assert "cat mise.toml" '[tasks.hi]
+run = "echo version-two"'
+assert "git worktree list --porcelain | grep -c '^worktree '" "1"
+assert_empty "ls -A $MISE_TMP_DIR/run-at"
+
+# A config at REV is refused, before anything runs, when the main checkout is
+# not trusted. `--yes` (MISE_YES=1 here) does not trust it either.
+mise trust --ignore
+assert_fail "mise run --at HEAD~1 --at-setup 'touch \$MISE_RUN_AT_SOURCE/../setup-ran' hi" "is not trusted"
+assert_fail "test -e ../setup-ran"
+assert_fail "mise run --at HEAD~1 hi" "shares the trust of the repository's main checkout"
+assert_fail "MISE_YES=1 mise run --yes --at HEAD~1 hi" "is not trusted"
+assert "git worktree list --porcelain | grep -c '^worktree '" "1"
+assert_empty "ls -A $MISE_TMP_DIR/run-at"
+mise trust
+assert "mise run --at HEAD~1 hi" "version-one"
+
+# Paranoid mode binds trust to a path and its contents, so config in the
+# worktree, a new path on every run, is never trusted.
+assert_fail "MISE_PARANOID=1 mise run --at HEAD~1 hi" "Paranoid mode"
+# The `config` category alone does it.
+assert_fail "MISE_PARANOID=config mise run --at HEAD~1 hi" "Paranoid mode"
+assert "git worktree list --porcelain | grep -c '^worktree '" "1"
+assert_empty "ls -A $MISE_TMP_DIR/run-at"

@@ -47,6 +47,14 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--affected-untracked`** — Count untracked files that Git does not ignore
 
   Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
+- **`--at <REV>`** — Run the tasks at another git revision, in a temporary worktree
+
+  Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+  The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
+- **`--at-setup <CMD>`** — Run this shell command in the `--at` worktree before the tasks
+
+  It runs in the worktree's copy of the directory mise was started from (not a task's `dir`), outside mise's environment, with `MISE_RUN_AT_SOURCE` set to the repository the worktree came from. `--timeout` does not limit it, only the tasks after it.
 - **`--all`** — Open the task picker with tasks from every project in the monorepo
 - **`-c --continue-on-error`** — Continue running tasks even if one fails
 - **`-C --cd <DIR>`** — Change to this directory before running the tasks
@@ -64,6 +72,7 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
   - `replacing` - Stdout is replaced each time, stderr is printed as is
   - `timed` - Only show stdout lines if they are displayed for more than 1 second
   - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+  - `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
   - `quiet` - Deprecated; use `--output interleave --quiet`
   - `silent` - Do not show any output, including the task's stdout and stderr, except errors
 
@@ -74,6 +83,11 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`-r --raw`** — Connect the tasks directly to stdin, stdout, and stderr instead of reading their output by line
 
   Redactions are not applied, and tasks run one at a time. Set the `raw` setting to make this the default.
+- **`--report-file <PATH>`** — Write a JSON report of every task the run scheduled to this file when the run ends
+
+  Written on success, failure, Ctrl-C and `--timeout`. Each task gets a status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or `not_run`), its exit code, duration and timestamps. Tasks the run starts do not inherit `MISE_TASK_REPORT_FILE`.
+
+  **Environment Variable:** `MISE_TASK_REPORT_FILE`
 - **`--secrets <SECRET>`** — [experimental] Give the named tasks these secrets (comma-separated); their dependencies and subtasks do not get them
 
   Put this flag before the task name. Not allowed in safe mode.
@@ -132,6 +146,9 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--task-cache-explain`** — [experimental] Explain the inputs that produced each task's artifact cache key
 - **`--task-cache-explain-json`** — [experimental] Print cache-key input details as JSON Lines without running tasks (requires `--dry-run`)
 - **`--task-cache-stats`** — [experimental] Report artifact cache hits, restored bytes, and time saved
+- **`--tag <TAG>`** — Run only the matching tasks that have this tag; repeat to accept any of several
+
+  With no task name, selects every task with the tag, as if the task were `**`. The tags come from each task's `tags` property. Dependencies run whatever their tags.
 - **`--timeout <TIMEOUT>`** — Stop the run if it takes longer than this, e.g. 30s or 5m
 
   Overrides the `task.timeout` setting.
@@ -183,10 +200,22 @@ Run every task that matches a pattern
 mise run 'test:*'
 ```
 
+Run every task tagged "lint"
+
+```
+mise run --tag lint
+```
+
 Run a task in a monorepo project
 
 ```
 mise run //services/api:build
+```
+
+Run "test" as it is on main, in a temporary git worktree
+
+```
+mise run --at main test
 ```
 
 Give "deploy" the DEPLOY_KEY secret (experimental); its dependencies do not get it

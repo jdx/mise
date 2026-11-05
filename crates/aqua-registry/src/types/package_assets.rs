@@ -184,6 +184,36 @@ impl AquaPackage {
         }
     }
 
+    /// A raw download whose Windows asset is an `.exe` is installed as an `.exe`
+    /// even when `complete_windows_ext` is off (the URL already carries the
+    /// extension, so the recipe has nothing to complete). Returns `name` with
+    /// `.exe` appended in that case, and unchanged otherwise.
+    pub fn raw_windows_exe_name(&self, name: &str, v: &str, os: &str, arch: &str) -> String {
+        if os != "windows"
+            || !matches!(self.format(v, os, arch), Ok("" | "raw"))
+            || self.complete_windows_ext_enabled()
+            || !self.os_file_ext_is_empty(name, v)
+        {
+            return name.to_string();
+        }
+        let download = if self.package_type() == AquaPackageType::Http || self.asset.is_empty() {
+            self.url(v, os, arch)
+        } else {
+            self.asset(v, os, arch)
+        };
+        match download {
+            Ok(download)
+                if download
+                    .split(['?', '#'])
+                    .next()
+                    .is_some_and(|path| path.ends_with(".exe")) =>
+            {
+                append_str_ext(name, ".exe")
+            }
+            _ => name.to_string(),
+        }
+    }
+
     /// Apply Windows executable completion to link destinations, preserving an
     /// explicit source extension when the destination omits one.
     pub fn complete_windows_ext_to_file_dst(

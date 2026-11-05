@@ -81,14 +81,16 @@ pub fn invalidate_caches() {
     }
 }
 
-pub const CURRENT_LOCKFILE_VERSION: u32 = 3;
+pub const CURRENT_LOCKFILE_VERSION: u32 = 4;
 const FORGE_IDS_LOCKFILE_VERSION: u32 = 3;
+const PACKAGE_PROVENANCE_LOCKFILE_VERSION: u32 = 4;
 // Keep the dates format bumps entered mise here. An older format gets a
 // warning six calendar months after the first newer format was introduced.
 const LOCKFILE_VERSION_DATES: &[(u32, jiff::civil::Date)] = &[
     (1, jiff::civil::date(2026, 8, 23)),
     (2, jiff::civil::date(2026, 9, 13)),
     (3, jiff::civil::date(2026, 9, 27)),
+    (4, jiff::civil::date(2026, 11, 3)),
 ];
 
 fn outdated_lockfile_version(version: u32, today: jiff::civil::Date) -> bool {
@@ -382,6 +384,20 @@ pub struct LockfileTool {
     pub aube: Option<GraphRef<AubeLock>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub uv: Option<GraphRef<UvLock>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provenance: Option<PackageProvenance>,
+}
+
+/// The source repository an `npm:` tool's package was built from, as the
+/// Sigstore provenance npm published for it showed when it was installed with
+/// `npm.provenance` on. A later install must show the same repository, so a
+/// release published from somewhere else is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackageProvenance {
+    /// The repository qualified by its forge: `github.com/owner/repo` or
+    /// `gitlab.com/group/project`. The forge fixes the OIDC issuer.
+    pub repository: String,
 }
 
 /// A native dependency sidecar directory a lockfile entry refers to.
@@ -1523,6 +1539,20 @@ impl Lockfile {
         moved
     }
 
+    /// Drop `specifier` from the entries of `short` locked with `options`.
+    pub fn unbind_request(
+        &mut self,
+        short: &str,
+        specifier: &str,
+        options: &BTreeMap<String, String>,
+    ) {
+        if let Some(tools) = self.tools_for_mut(short) {
+            for tool in tools.iter_mut().filter(|tool| &tool.options == options) {
+                tool.specifiers.remove(specifier);
+            }
+        }
+    }
+
     pub fn bind_request(
         &mut self,
         short: &str,
@@ -1677,6 +1707,18 @@ impl Lockfile {
             );
         }
 
+        if lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION
+            && lockfile
+                .tools
+                .values()
+                .flatten()
+                .any(|tool| tool.provenance.is_some())
+        {
+            bail!(
+                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; run `mise lock --upgrade`"
+            );
+        }
+
         if lockfile_version < 2
             && lockfile
                 .tools
@@ -1781,6 +1823,26 @@ impl Lockfile {
             );
         }
 
+        if self.lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION
+            && self
+                .tools
+                .values()
+                .flatten()
+                .any(|tool| tool.provenance.is_some())
+        {
+            // npm provenance is verified by default, so most lockfiles that hit
+            // this never asked for a pin; only the paranoid category warns.
+            let message = format!(
+                "npm package provenance requires lockfile revision {PACKAGE_PROVENANCE_LOCKFILE_VERSION}; omitting it from revision {}. Run `mise lock --upgrade`, then `mise install --force` to verify and record it",
+                self.lockfile_version
+            );
+            if Settings::get().paranoid.provenance() {
+                warn!("{message}");
+            } else {
+                debug!("{message}");
+            }
+        }
+
         if self.lockfile_version > 0 {
             lockfile.insert(
                 "lockfile_version".to_string(),
@@ -1865,6 +1927,9 @@ impl Lockfile {
                             platform.repository_id = None;
                             platform.repository_owner_id = None;
                         }
+                    }
+                    if self.lockfile_version < PACKAGE_PROVENANCE_LOCKFILE_VERSION {
+                        version.provenance = None;
                     }
                     let mut value = version.into_toml_value(self.lockfile_version > 0);
                     if let Some(uv) = uv {
@@ -2302,6 +2367,7 @@ impl Lockfile {
                 platforms,
                 aube: None,
                 uv: None,
+                provenance: None,
             });
         }
 
@@ -3303,6 +3369,12 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
                     && existing.backend == tool.backend
                 {
                     existing.aube = tool.aube;
+                }
+                if existing.provenance.is_none()
+                    && existing.backend.is_some()
+                    && existing.backend == tool.backend
+                {
+                    existing.provenance = tool.provenance;
                 }
             } else if keys.insert(key) {
                 root_tools.push(tool);
@@ -4952,6 +5024,9 @@ where
         if entry.uv.is_none() {
             entry.uv = tool.uv.clone();
         }
+        if entry.provenance.is_none() {
+            entry.provenance = tool.provenance.clone();
+        }
 
         // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
@@ -4976,6 +5051,19 @@ where
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
+            // The repository an npm package was built from does not depend on
+            // its install options, so a pin follows the same release into an
+            // entry written for changed options.
+            if let Some(provenance) = &existing_tool.provenance {
+                for ((version, _), entry) in by_key.iter_mut() {
+                    if *version == existing_tool.version
+                        && entry.backend == existing_tool.backend
+                        && entry.provenance.is_none()
+                    {
+                        entry.provenance = Some(provenance.clone());
+                    }
+                }
+            }
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
                 entry.specifiers.extend(existing_tool.specifiers.clone());
@@ -4984,6 +5072,9 @@ where
                 }
                 if entry.uv.is_none() {
                     entry.uv = existing_tool.uv.clone();
+                }
+                if entry.provenance.is_none() {
+                    entry.provenance = existing_tool.provenance.clone();
                 }
             }
             if !existing_tool.options.is_empty() {
@@ -5034,6 +5125,7 @@ where
                             platforms: BTreeMap::new(),
                             aube: existing_tool.aube.clone(),
                             uv: existing_tool.uv.clone(),
+                            provenance: existing_tool.provenance.clone(),
                         })
                         .platforms
                         .insert(platform_key.clone(), info.clone());
@@ -5049,7 +5141,11 @@ where
                     platforms: BTreeMap::new(),
                     aube: existing_tool.aube.clone(),
                     uv: existing_tool.uv.clone(),
+                    provenance: existing_tool.provenance.clone(),
                 });
+                if target.provenance.is_none() {
+                    target.provenance = existing_tool.provenance.clone();
+                }
                 target
                     .specifiers
                     .extend(existing_tool.specifiers.iter().cloned());
@@ -5358,7 +5454,16 @@ impl Lockfile {
                     return false;
                 }
                 entry.uv = None;
-                entry.aube = None;
+                // The graph pins integrity hashes and the backend fetches from
+                // the user's registry, so it stays unless it names a place to
+                // download from, which only a trusted lockfile may do.
+                if !entry
+                    .aube
+                    .as_ref()
+                    .is_some_and(|graph| graph.load().is_ok_and(aube_graph_names_only_registry))
+                {
+                    entry.aube = None;
+                }
                 for info in entry.platforms.values_mut() {
                     info.url = None;
                     info.url_api = None;
@@ -5377,6 +5482,128 @@ impl Lockfile {
         self.tools.retain(|_, entries| !entries.is_empty());
         self.conda_packages.clear();
     }
+}
+
+/// Whether an aube dependency graph resolves every package from the registry
+/// by integrity hash alone. It is an allowlist of the exact shapes a registry
+/// graph has, so a source mise cannot name (a URL, git or `owner/repo`
+/// shorthand, a path or tarball file, `link:`, `file:`, `portal:`, an `npm:`
+/// alias) never matches:
+///
+/// - only the sections a registry graph needs are present;
+/// - every package key is `name@version` and its resolution is one non-empty
+///   `integrity`, with no `aliasOf`;
+/// - every importer and snapshot dependency names a package with that
+///   integrity entry, by a plain name and version.
+fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
+    const SECTIONS: [&str; 6] = [
+        "lockfileVersion",
+        "settings",
+        "importers",
+        "packages",
+        "snapshots",
+        "time",
+    ];
+    const DEPENDENCIES: [&str; 4] = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+    ];
+    let part_ok = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._~-".contains(c))
+    };
+    let name_ok = |name: &str| match name.strip_prefix('@') {
+        Some(scoped) => scoped
+            .split_once('/')
+            .is_some_and(|(scope, rest)| part_ok(scope) && part_ok(rest)),
+        None => part_ok(name),
+    };
+    // The release, then an optional peer suffix such as `(react@18.2.0)`.
+    let version_ok = |version: &str| {
+        let (release, peers) = version.split_once('(').unwrap_or((version, ""));
+        release.starts_with(|c: char| c.is_ascii_digit())
+            && release
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || ".+-".contains(c))
+            && peers
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._~-@/+() ".contains(c))
+    };
+    let specifier_ok = |specifier: &str| {
+        !specifier.is_empty()
+            && specifier
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || ".^~<>=|*+- ".contains(c))
+    };
+    // `name@version` with the peer suffix dropped: the key of a package entry.
+    let package_key = |name: &str, version: &str| {
+        (name_ok(name) && version_ok(version))
+            .then(|| format!("{name}@{}", version.split('(').next().unwrap_or(version)))
+    };
+    let graph = &lock.graph;
+    let table = |name: &str| graph.get(name).and_then(toml::Value::as_table);
+    let (Some(importers), Some(packages)) = (table("importers"), table("packages")) else {
+        return false;
+    };
+    let has_package = |name: &str, version: &str| {
+        package_key(name, version).is_some_and(|key| packages.contains_key(&key))
+    };
+    let split_key = |key: &str| -> Option<(String, String)> {
+        let release = key.split('(').next().unwrap_or(key);
+        let (name, version) = release.rsplit_once('@')?;
+        let peers = &key[release.len()..];
+        version_ok(&format!("{version}{peers}")).then(|| (name.to_string(), version.to_string()))
+    };
+    graph.keys().all(|key| SECTIONS.contains(&key.as_str()))
+        && packages.iter().all(|(key, package)| {
+            split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                && package.get("aliasOf").is_none()
+                && package
+                    .get("resolution")
+                    .and_then(toml::Value::as_table)
+                    .is_some_and(|resolution| {
+                        resolution.len() == 1
+                            && resolution
+                                .get("integrity")
+                                .and_then(toml::Value::as_str)
+                                .is_some_and(|integrity| !integrity.is_empty())
+                    })
+        })
+        && importers.values().all(|importer| {
+            DEPENDENCIES.iter().all(|section| {
+                importer
+                    .get(section)
+                    .is_none_or(|deps| match deps.as_table() {
+                        Some(deps) => deps.iter().all(|(name, dep)| {
+                            let field = |field: &str| dep.get(field).and_then(toml::Value::as_str);
+                            field("specifier").is_some_and(specifier_ok)
+                                && field("version")
+                                    .is_some_and(|version| has_package(name, version))
+                        }),
+                        None => false,
+                    })
+            })
+        })
+        && table("snapshots").is_none_or(|snapshots| {
+            snapshots.iter().all(|(key, snapshot)| {
+                split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                    && DEPENDENCIES.iter().all(|section| {
+                        snapshot
+                            .get(section)
+                            .is_none_or(|deps| match deps.as_table() {
+                                Some(deps) => deps.iter().all(|(name, version)| {
+                                    version
+                                        .as_str()
+                                        .is_some_and(|version| has_package(name, version))
+                                }),
+                                None => false,
+                            })
+                    })
+            })
+        })
 }
 
 fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
@@ -6274,6 +6501,36 @@ pub(crate) fn ensure_locked_url_matches_version(
 /// This is used for backend discovery where we just need any entry's backend.
 /// The backend `short`'s lock entries record for `version`; see
 /// [`locked_backend`].
+/// The repository `mise.lock` pins the package to, whatever install options
+/// the entry was written with: the repository belongs to the package, so
+/// changing an option must not drop the pin before the install is verified.
+pub(crate) fn get_locked_npm_provenance(
+    config: &Config,
+    request: &ToolRequest,
+    short: &str,
+    version: &str,
+    backend: &str,
+) -> Option<PackageProvenance> {
+    if !Settings::get().lockfile_enabled() {
+        return None;
+    }
+    // Only the lockfile that owns the request: a tool an override config
+    // declares must not inherit a pin from the project's lockfile.
+    let lockfile = match request.lockfile_source()? {
+        ToolSource::MiseToml(path) => read_lockfile_for(config, path),
+        source if source.path().is_some() => {
+            Arc::new(read_lockfile_for_tool_source(config, source).ok()?)
+        }
+        _ => read_all_lockfiles(config),
+    };
+    lockfile
+        .tools_for(short)
+        .into_iter()
+        .flatten()
+        .filter(|tool| tool.version == version && tool.backend.as_deref() == Some(backend))
+        .find_map(|tool| tool.provenance.clone())
+}
+
 pub(crate) fn get_locked_backend_for_version(
     config: &Config,
     short: &str,
@@ -6414,6 +6671,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 platforms: Default::default(),
                 aube: None,
                 uv: None,
+                provenance: None,
             },
             toml::Value::Table(mut t) => {
                 let mut platforms = BTreeMap::new();
@@ -6452,6 +6710,10 @@ impl TryFrom<toml::Value> for LockfileTool {
                     .unwrap_or_default();
                 let aube = t.remove("aube").map(GraphRef::parse).transpose()?;
                 let uv = t.remove("uv").map(GraphRef::parse).transpose()?;
+                let provenance = t
+                    .remove("provenance")
+                    .map(|value| value.try_into())
+                    .transpose()?;
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
                 LockfileTool {
@@ -6470,6 +6732,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                     platforms,
                     aube,
                     uv,
+                    provenance,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -6514,6 +6777,12 @@ impl LockfileTool {
                 toml::Value::try_from(aube).expect("aube graph serialization"),
             );
         }
+        if let Some(provenance) = self.provenance {
+            table.insert(
+                "provenance".to_string(),
+                toml::Value::try_from(provenance).expect("package provenance serialization"),
+            );
+        }
         table.into()
     }
 }
@@ -6542,6 +6811,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
         platforms,
         aube: tv.aube_lock.clone(),
         uv: tv.uv_lock.clone(),
+        provenance: tv.npm_provenance.clone(),
     })
 }
 

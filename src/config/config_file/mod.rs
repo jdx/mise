@@ -1360,7 +1360,12 @@ pub fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
 
 /// creates the filename portion of trust/ignore files, e.g.:
 fn hashed_path_filename(path: &Path) -> String {
-    let canonicalized_path = path.canonicalize().unwrap();
+    // canonicalize needs access to every ancestor, which a sandbox can deny (e.g. Codex
+    // "workspace write" on Windows), so fall back to the absolute path instead of panicking.
+    let canonicalized_path = path
+        .canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf());
     let hash = hash_to_str(&canonicalized_path);
     let trunc_str = |s: &OsStr| {
         let mut s = s.to_string_lossy().to_string();
@@ -2226,5 +2231,30 @@ mod env_file_trust_tests {
         let path = tmp.path().join(".env");
         std::fs::write(&path, "A=1\n").unwrap();
         assert!(env_file_trust_check(&path).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod hashed_path_filename_tests {
+    use super::*;
+
+    #[test]
+    fn survives_uncanonicalizable_path() {
+        // canonicalize fails for a missing path, as it does when a sandbox denies access
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("nope").join("mise.toml");
+        assert!(missing.canonicalize().is_err());
+        let name = hashed_path_filename(&missing);
+        assert!(name.starts_with("nope-mise.toml-"), "{name}");
+        assert_eq!(name, hashed_path_filename(&missing));
+
+        // a relative path must hash like its absolute form, not as written
+        let relative = Path::new("mise-nonexistent-dir").join("mise.toml");
+        assert!(relative.canonicalize().is_err());
+        let absolute = std::path::absolute(&relative).unwrap();
+        assert_eq!(
+            hashed_path_filename(&relative),
+            hashed_path_filename(&absolute)
+        );
     }
 }

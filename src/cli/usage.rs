@@ -22,6 +22,29 @@ fn prepare_task_runner(command: &mut usage::SpecCommand) {
     command.restart_token = Some(":::".to_string());
 }
 
+/// Complete a forwarded command line the way a shell does: the command word from the commands on
+/// `PATH`, and every word after it from files.
+///
+/// A completer is named after the argument it completes, and `exec`'s `-c --command <COMMAND>`
+/// flag shares that name with the `-- COMMAND` positional, so the flag's `type=command` would
+/// otherwise answer for every word of the command line and, being a closed set, offer nothing for
+/// `mise x -- ls src/<Tab>`. Declared on the argument, the completer cannot be shadowed.
+fn complete_forwarded_commands(cmd: &mut usage::SpecCommand) {
+    for arg in &mut cmd.args {
+        if arg.name == "COMMAND"
+            && arg.var
+            && arg.double_dash != usage::SpecDoubleDashChoices::Optional
+        {
+            let mut complete = usage::SpecComplete::new("command");
+            complete.type_ = Some("command_args".to_string());
+            arg.complete = Some(complete);
+        }
+    }
+    for sub in cmd.subcommands.values_mut() {
+        complete_forwarded_commands(sub);
+    }
+}
+
 /// mise's own usage spec, with everything clap cannot express applied.
 ///
 /// Shared with `mise mcp`, which answers "what does this command do" from the
@@ -64,6 +87,7 @@ pub(super) fn spec() -> usage::Spec {
         // Declare what each command does to the world. clap cannot express this,
         // so it is applied to the derived spec; see command_effects.
         crate::cli::command_effects::apply(&mut spec);
+        complete_forwarded_commands(&mut spec.cmd);
 
         spec.restamp();
 

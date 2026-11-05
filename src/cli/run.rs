@@ -3,6 +3,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set when `--timeout` stops the run: the tasks it kills were cut short, not
+/// stopped because another failed, so `summary` shows what they printed.
+static RUN_TIMED_OUT: AtomicBool = AtomicBool::new(false);
 use std::time::Duration;
 
 use super::args::ToolArg;
@@ -14,11 +19,12 @@ use crate::env;
 use crate::file::display_path;
 use crate::otel;
 use crate::task::has_any_usage_spec;
+use crate::task::run_report::{RunReport, RunReportWriter, TaskReportStatus};
 use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
-use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_output_handler::{OutputHandler, SummaryOutcome};
 use crate::task::task_scheduler::RunLoopHooks;
 use crate::task::{Deps, Task, TaskCacheMode, usage_command_for_args};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
@@ -89,8 +95,16 @@ use tokio::sync::Mutex;
         help = r###"Run every task that matches a pattern"###
     ),
     example(
+        r###"mise run --tag lint"###,
+        help = r###"Run every task tagged "lint""###
+    ),
+    example(
         r###"mise run //services/api:build"###,
         help = r###"Run a task in a monorepo project"###
+    ),
+    example(
+        r###"mise run --at main test"###,
+        help = r###"Run "test" as it is on main, in a temporary git worktree"###
     ),
     example(
         r###"mise run --secrets DEPLOY_KEY deploy"###,
@@ -164,6 +178,28 @@ pub(crate) struct Run {
     #[usage(long, requires = "affected")]
     pub affected_untracked: bool,
 
+    /// Run the tasks at another git revision, in a temporary worktree
+    ///
+    /// Checks REV out into a detached `git worktree` under mise's temporary
+    /// directory, with its submodules, and runs the tasks there with that
+    /// revision's own config and tasks. The worktree is removed afterwards,
+    /// also when a task fails or is interrupted. Ignored files such as build
+    /// caches are not there; use `--at-setup` to prepare them.
+    ///
+    /// The config at REV is trusted only if the repository's main checkout
+    /// is; it is never trusted on its own, by a prompt, or by `--yes`.
+    #[usage(long, value_name = "REV")]
+    pub at: Option<String>,
+
+    /// Run this shell command in the `--at` worktree before the tasks
+    ///
+    /// It runs in the worktree's copy of the directory mise was started from
+    /// (not a task's `dir`), outside mise's environment, with
+    /// `MISE_RUN_AT_SOURCE` set to the repository the worktree came from.
+    /// `--timeout` does not limit it, only the tasks after it.
+    #[usage(long, requires = "at", value_name = "CMD")]
+    pub at_setup: Option<String>,
+
     /// Open the task picker with tasks from every project in the monorepo
     #[usage(long, conflicts = ["task", "affected"])]
     pub all: bool,
@@ -197,6 +233,7 @@ pub(crate) struct Run {
     /// - `replacing` - Stdout is replaced each time, stderr is printed as is
     /// - `timed` - Only show stdout lines if they are displayed for more than 1 second
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+    /// - `summary` - Print one line for each task that passed, and all of a failed task's output once it ends
     /// - `quiet` - Deprecated; use `--output interleave --quiet`
     /// - `silent` - Do not show any output, including the task's stdout and stderr, except errors
     #[usage(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
@@ -213,6 +250,22 @@ pub(crate) struct Run {
     /// setting to make this the default.
     #[usage(long, short)]
     pub raw: bool,
+
+    /// Write a JSON report of every task the run scheduled to this file when
+    /// the run ends
+    ///
+    /// Written on success, failure, Ctrl-C and `--timeout`. Each task gets a
+    /// status (`passed`, `failed`, `cancelled`, `skipped`, `cached` or
+    /// `not_run`), its exit code, duration and timestamps. Tasks the run starts
+    /// do not inherit `MISE_TASK_REPORT_FILE`.
+    #[usage(
+        long,
+        value_name = "PATH",
+        env = "MISE_TASK_REPORT_FILE",
+        conflicts = "dry_run",
+        value_hint = ValueHint::FilePath
+    )]
+    pub report_file: Option<PathBuf>,
 
     /// [experimental] Give the named tasks these secrets (comma-separated); their
     /// dependencies and subtasks do not get them
@@ -362,6 +415,14 @@ pub(crate) struct Run {
     #[usage(long, conflicts = "dry_run")]
     pub task_cache_stats: bool,
 
+    /// Run only the matching tasks that have this tag; repeat to accept any of several
+    ///
+    /// With no task name, selects every task with the tag, as if the task were
+    /// `**`. The tags come from each task's `tags` property. Dependencies run
+    /// whatever their tags.
+    #[usage(long, value_name = "TAG", conflicts = "all")]
+    pub tag: Vec<String>,
+
     /// Stop the run if it takes longer than this, e.g. 30s or 5m
     ///
     /// Overrides the `task.timeout` setting.
@@ -394,6 +455,10 @@ pub(crate) struct Run {
 
     #[usage(skip)]
     pub telemetry: Option<otel::TaskRunTelemetry>,
+
+    /// What `--report-file` writes, shared with the task jobs.
+    #[usage(skip)]
+    pub run_report: Option<Arc<RunReport>>,
 
     /// Set by launchers that start tasks without a person asking for them.
     #[usage(skip)]
@@ -445,6 +510,73 @@ fn affected_task_args(args: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// What `--tag` asks for: the tags, and whether reading a remote task file may use the cache.
+#[derive(Clone, Copy)]
+struct TagSelection<'a> {
+    tags: &'a [String],
+    no_cache: bool,
+}
+
+/// Keep the tasks `--tag` selects: those with at least one of `tags`. No tags keeps every task.
+///
+/// A remote task file can declare tags in its `#MISE` header, so a remote task that lacks the
+/// tags in its TOML is read first. That read is an inspection: as for `mise tasks ls`, safe mode
+/// and a `git::` file without experimental leave the task unread, and the fetch before the run
+/// still refuses to run such a task.
+async fn keep_tagged(
+    config: &Arc<Config>,
+    tasks: &mut Vec<Task>,
+    tags: &[String],
+    no_cache: bool,
+) -> Result<()> {
+    if tags.is_empty() {
+        return Ok(());
+    }
+    // A file that cannot be read leaves its task untagged here, so it does not block the rest;
+    // a task that is selected anyway fails when the run fetches it.
+    let fetcher =
+        crate::task::task_fetcher::TaskFetcher::for_inspection(no_cache).skipping_failures();
+    for task in tasks.iter_mut() {
+        if !task.has_any_tag(tags)
+            && crate::task::task_fetcher::TaskFetcher::is_unfetched_remote_task(task)
+        {
+            let mut read = vec![task.clone()];
+            fetcher.fetch_tasks(config, &mut read).await?;
+            if let Some(read) = read.pop() {
+                *task = read;
+            }
+        }
+    }
+    tasks.retain(|task| task.has_any_tag(tags));
+    Ok(())
+}
+
+/// [`keep_tagged`] for a plain run, where `--tag` selecting nothing is an error. `args` are the
+/// words the tasks were matched from; the first names a task.
+async fn retain_tagged(
+    config: &Arc<Config>,
+    tasks: &mut Vec<Task>,
+    tags: &[String],
+    args: &[String],
+    no_cache: bool,
+) -> Result<()> {
+    if tags.is_empty() {
+        return Ok(());
+    }
+    keep_tagged(config, tasks, tags, no_cache).await?;
+    if tasks.is_empty() {
+        let tags = style::ered(tags.join(" or "));
+        match args.first().map(String::as_str) {
+            None | Some("**") => bail!("no task has the tag {tags}"),
+            Some(pattern) => bail!(
+                "no task matching {} has the tag {tags}",
+                style::ered(pattern)
+            ),
+        }
+    }
+    Ok(())
+}
+
 async fn get_affected_task_list(
     config: &Arc<Config>,
     args: &[String],
@@ -452,6 +584,7 @@ async fn get_affected_task_list(
     revisions: crate::task::workspace::git::WorkspaceGitRevisions,
     explain: bool,
     json: bool,
+    tags: TagSelection<'_>,
 ) -> Result<Vec<Task>> {
     let workspace_root = config
         .monorepo_root()
@@ -521,6 +654,8 @@ async fn get_affected_task_list(
                 .map(crate::file::desymlink_path)
                 .is_some_and(|root| affected_roots.contains(&root))
     });
+    // Unlike a plain run, finding no task here is not an error: nothing affected may have one.
+    keep_tagged(config, &mut tasks, tags.tags, tags.no_cache).await?;
     if json {
         display_affected_json(&revisions, &workspace_root, &graph, &affected, &tasks)?;
     } else if explain {
@@ -678,6 +813,44 @@ impl Run {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
+        let report_path = self
+            .report_file
+            .clone()
+            .filter(|path| !path.as_os_str().is_empty() && !self.only_prints_help());
+        let Some(report_path) = report_path else {
+            return self.run_tasks().await;
+        };
+        // `mise run` rejects the flag or its env var with `--dry-run`, but a bare
+        // `mise --dry-run <task>` builds this command without that check, so it is
+        // repeated here: a dry run runs nothing to report.
+        if self.dry_run {
+            bail!(
+                "--report-file ({}) cannot be used with --dry-run",
+                crate::task::run_report::REPORT_FILE_ENV
+            );
+        }
+        // Resolved now, against the directory the run was started from.
+        let report_path = std::env::current_dir()?.join(report_path);
+        let report = Arc::new(RunReport::new());
+        self.run_report = Some(report.clone());
+        // Writes on drop too, for a Ctrl-C that drops this future before it returns.
+        let writer = RunReportWriter::new(report_path, report);
+        let result = self.run_tasks().await;
+        let path = writer.path().to_path_buf();
+        let written = writer.finish(result.is_err(), ctrlc::is_cancelled());
+        match (result, written) {
+            (Ok(()), Err(err)) => {
+                Err(err.wrap_err(format!("failed to write {}", display_path(&path))))
+            }
+            (result, Err(err)) => {
+                warn!("failed to write {}: {err:#}", display_path(&path));
+                result
+            }
+            (result, Ok(())) => result,
+        }
+    }
+
+    async fn run_tasks(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
             miseprint!("{}", render_subcommand_help("run", false))?;
@@ -688,9 +861,19 @@ impl Run {
             return Ok(());
         }
 
-        let task = self.task.clone().unwrap_or_else(|| "default".to_string());
+        // `--tag` with no task name picks from every task rather than the default one.
+        let default_task = if self.tag.is_empty() { "default" } else { "**" };
+        let task = self
+            .task
+            .clone()
+            .unwrap_or_else(|| default_task.to_string());
 
         Settings::ensure_not_safe("running tasks")?;
+
+        if let Some(rev) = &self.at {
+            let args = crate::cli::run_at_child_args(&env::ARGS.read().unwrap());
+            return super::run_at::run(rev, self.at_setup.as_deref(), self.dry_run, args).await;
+        }
 
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
@@ -721,7 +904,9 @@ impl Run {
                 )
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false, false).await?;
+            let mut task_list = get_task_lists(&config, &args, false, false, false).await?;
+            // Help is for the task `--tag` would run.
+            retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -778,11 +963,18 @@ impl Run {
                 ),
                 self.affected_explain,
                 self.affected_json,
+                TagSelection {
+                    tags: &self.tag,
+                    no_cache: self.no_cache,
+                },
             )
             .await?
         } else {
             get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
         };
+        if !self.affected {
+            retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
+        }
         if self.affected_json {
             return Ok(());
         }
@@ -1044,6 +1236,7 @@ impl Run {
         // is idempotent and marks the root span as an error unless the run
         // already succeeded.
         let telemetry = self.telemetry.clone();
+        let run_report = self.run_report.clone();
         let result = if let Some(timeout) = timeout {
             let run = self.parallelize_tasks(config, execution_tasks, previewed_tools);
             tokio::pin!(run);
@@ -1054,6 +1247,12 @@ impl Run {
                     // and their children would outlive mise. It is dropped only
                     // afterwards: that aborts the jobs, whose commands would
                     // leave the running list before they could be stopped.
+                    // Marked first, so a task that ends on the termination is
+                    // reported as cancelled rather than failed.
+                    if let Some(report) = &run_report {
+                        report.mark_timed_out();
+                    }
+                    RUN_TIMED_OUT.store(true, Ordering::SeqCst);
                     crate::cmd::CmdLineRunner::terminate_all().await;
                     Err(eyre!("mise run timed out after {:?}", timeout))
                 }
@@ -1081,6 +1280,11 @@ impl Run {
 
         // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
         let tasks = self.prepare_tasks(&config, tasks).await?;
+        if let Some(report) = &self.run_report {
+            for task in tasks.all_in_creation_order() {
+                report.schedule(task);
+            }
+        }
         let num_tasks = tasks.all().count();
 
         // Step 2: Setup output handler and validate tasks
@@ -1097,6 +1301,9 @@ impl Run {
         self.setup_executor()?;
         if let (Some(t), Some(executor)) = (&self.telemetry, &mut self.executor) {
             executor.output_forwarder = t.output_forwarder();
+        }
+        if let Some(executor) = &mut self.executor {
+            executor.run_report = self.run_report.clone();
         }
 
         // Validate every scheduled invocation before starting the scheduler so
@@ -1316,6 +1523,7 @@ impl Run {
                 .as_ref()
                 .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
+            let report_id = this.run_report.as_ref().map(|report| report.start(&task));
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1392,12 +1600,13 @@ impl Run {
                     let was_stopping =
                         this.add_failed_task(task.clone(), status) || this.is_interrupted();
                     // A task that exited on its own, or panicked, failed even
-                    // if another failure came first; only one mise killed is
-                    // cancelled.
+                    // if another failure came first; only one mise killed, or a
+                    // parent whose nested tasks mise stopped, is cancelled.
                     cancelled |= was_stopping
                         && !this.continue_on_error
                         && !panicked
-                        && Error::is_killed_by_signal(err);
+                        && (Error::is_killed_by_signal(err)
+                            || Error::is_task_sequence_aborted(err));
                     was_stopping
                 };
                 // the executor already printed a secrets resolve failure itself
@@ -1434,6 +1643,14 @@ impl Run {
                     crate::cmd::CmdLineRunner::kill_all();
                 }
             }
+            if let (Some(report), Some(id)) = (&this.run_report, report_id) {
+                // After a Ctrl-C, a task that fails was stopped by it: many programs exit
+                // non-zero on SIGINT, and a parent whose `run` entry child was interrupted
+                // ends with "task sequence aborted".
+                let cancelled = cancelled || (ctrlc::is_cancelled() && !panicked);
+                let (status, exit_code) = report_status(&result, panicked, cancelled);
+                report.finish(id, status, exit_code);
+            }
             // Close the task's span with real timing and status.
             if let (Some(t), Some(span)) = (&this.telemetry, otel_span) {
                 t.end_task(span, &task, &otel_args, otel_end, &result, cancelled);
@@ -1443,6 +1660,21 @@ impl Run {
                 && oh.output(Some(&task)) == TaskOutput::KeepOrder
             {
                 oh.keep_order_state.lock().unwrap().on_task_finished(&task);
+            }
+            if let Some(oh) = &this.output_handler
+                && oh.output(Some(&task)) == TaskOutput::Summary
+            {
+                // An interrupted task's output may be all there is to go on;
+                // one stopped because a sibling failed says nothing more.
+                let outcome = match &result {
+                    Ok(_) => SummaryOutcome::Passed,
+                    Err(_) if interrupted || RUN_TIMED_OUT.load(Ordering::SeqCst) => {
+                        SummaryOutcome::Failed
+                    }
+                    Err(_) if cancelled => SummaryOutcome::Cancelled,
+                    Err(_) => SummaryOutcome::Failed,
+                };
+                oh.finish_summary(&task, outcome);
             }
             let mut deps = deps_for_remove.lock().await;
             if result
@@ -1481,6 +1713,10 @@ impl Run {
             self.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
         }
         self.add_failed_task(task.clone(), Error::get_exit_status(&err));
+        if let Some(report) = &self.run_report {
+            let id = report.start(&task);
+            report.finish(id, TaskReportStatus::Failed, Error::get_exit_status(&err));
+        }
         if !self.continue_on_error {
             #[cfg(unix)]
             crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
@@ -1488,6 +1724,11 @@ impl Run {
             crate::cmd::CmdLineRunner::kill_all();
         }
         self.retire_keep_order_slot(&task);
+        if let Some(oh) = &self.output_handler
+            && oh.output(Some(&task)) == TaskOutput::Summary
+        {
+            oh.finish_summary(&task, SummaryOutcome::Failed);
+        }
         // The task never started, but its failure is what stopped the run, so
         // it still gets a span; otherwise the trace's only error is the root.
         if let Some(t) = &self.telemetry {
@@ -1811,6 +2052,36 @@ impl Run {
 
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.output_handler.as_ref().unwrap().quiet(task)
+    }
+}
+
+/// How a finished task job appears in the run report.
+fn report_status(
+    result: &Result<crate::task::task_executor::TaskRunOutcome>,
+    panicked: bool,
+    cancelled: bool,
+) -> (TaskReportStatus, Option<i32>) {
+    match result {
+        Ok(outcome) if outcome.restored => (TaskReportStatus::Cached, None),
+        Ok(outcome) if !outcome.did_work => (TaskReportStatus::Skipped, None),
+        Ok(_) => (TaskReportStatus::Passed, Some(0)),
+        // Abandoned before it started: the run never reached it.
+        Err(err) if Error::is_task_interrupted_before_start(err) => {
+            (TaskReportStatus::NotRun, None)
+        }
+        Err(err) => {
+            let exit_code = if panicked {
+                Some(1)
+            } else {
+                Error::get_exit_status(err)
+            };
+            let status = if cancelled {
+                TaskReportStatus::Cancelled
+            } else {
+                TaskReportStatus::Failed
+            };
+            (status, exit_code)
+        }
     }
 }
 

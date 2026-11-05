@@ -41,6 +41,7 @@ pub(crate) fn reset() {
 pub(crate) type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
 mod deps;
+pub mod run_report;
 pub mod task_cache;
 mod task_cache_audit;
 mod task_cache_store;
@@ -332,6 +333,8 @@ pub struct Task {
     pub display_name: String,
     pub description: String,
     pub aliases: Vec<String>,
+    /// What kind of task this is, such as `test` or `lint`; `--tag` selects tasks by them.
+    pub tags: Vec<String>,
     pub config_source: PathBuf,
     /// Additional files that contributed to this task's definition.
     ///
@@ -1557,6 +1560,11 @@ impl Task {
         }
     }
 
+    /// Whether this task has at least one of `tags`, which is how `--tag` selects tasks.
+    pub fn has_any_tag(&self, tags: &[String]) -> bool {
+        tags.iter().any(|tag| self.tags.contains(tag))
+    }
+
     pub fn is_match(&self, pat: &str) -> bool {
         if self.name == pat || self.aliases.contains(&pat.to_string()) {
             return true;
@@ -2635,6 +2643,11 @@ impl Task {
                 self.aliases.push(alias);
             }
         }
+        for tag in other.tags {
+            if !self.tags.contains(&tag) {
+                self.tags.push(tag);
+            }
+        }
         // Preserve each env/var directive's origin so relative paths resolve
         // correctly against the config file they were declared in.
         let overlay_src = other.config_source.clone();
@@ -3530,6 +3543,7 @@ impl Task {
         *self = Task {
             description: decl.description,
             aliases: decl.aliases,
+            tags: decl.tags,
             confirm: decl.confirm,
             depends: decl.depends,
             daemons: decl.daemons,
@@ -3591,6 +3605,7 @@ impl Default for Task {
             display_name: "".to_string(),
             description: "".to_string(),
             aliases: vec![],
+            tags: vec![],
             config_source: PathBuf::new(),
             additional_config_sources: vec![],
             cf: None,
@@ -6632,6 +6647,7 @@ echo "hello world"
 #MISE extends="base-template"
 #MISE description="Test task with all fields"
 #MISE aliases=["alias1", "alias2"]
+#MISE tags=["test", "slow"]
 #MISE depends=["dep1", "dep2"]
 #MISE daemons=["postgres"]
 #MISE secrets=["DEPLOY_KEY"]
@@ -6683,6 +6699,7 @@ echo "test"
         assert_eq!(task.extends, Some("base-template".to_string()));
         assert_eq!(task.description, "Test task with all fields");
         assert_eq!(task.aliases, vec!["alias1", "alias2"]);
+        assert_eq!(task.tags, vec!["test", "slow"]);
         assert_eq!(task.depends.len(), 2);
         assert_eq!(
             task.daemons,
