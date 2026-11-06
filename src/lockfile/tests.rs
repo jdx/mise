@@ -5204,3 +5204,32 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
         assert_eq!(lockfile.tools["npm:cli"][0].aube.is_some(), kept, "{graph}");
     }
 }
+
+#[test]
+fn restore_missing_versions_brings_back_conda_package_records() {
+    let path = std::env::temp_dir().join("test_restore_conda_records.lock");
+    std::fs::write(
+        &path,
+        r#"
+[conda-packages."macos-arm64"]
+"ncurses-6.4-h7ea286d_0" = { url = "https://example.com/ncurses.conda", checksum = "sha256:abc123" }
+
+[[tools.jq]]
+version = "1.7.1"
+backend = "conda:jq"
+"platforms.macos-arm64" = { url = "https://example.com/jq.conda", checksum = "sha256:def456", conda_deps = ["ncurses-6.4-h7ea286d_0"] }
+"#,
+    )
+    .unwrap();
+    let previous = Lockfile::read(&path).unwrap();
+
+    let mut current = Lockfile::default();
+    current.restore_missing_versions(&previous, "jq");
+
+    assert!(current.has_platforms("jq", "1.7.1"));
+    assert!(
+        current
+            .get_conda_package("macos-arm64", "ncurses-6.4-h7ea286d_0")
+            .is_some()
+    );
+}

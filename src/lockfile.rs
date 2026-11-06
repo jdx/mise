@@ -1508,12 +1508,22 @@ impl Lockfile {
             .map(|have| have.iter().map(|entry| entry.version.clone()).collect())
             .unwrap_or_default();
         for entry in entries {
-            if !present.contains(&entry.version) {
-                self.tools
-                    .entry(key.clone())
-                    .or_default()
-                    .push(entry.clone());
+            if present.contains(&entry.version) {
+                continue;
             }
+            // Generation dropped the shared package records this entry's
+            // conda_deps name along with it, so bring them back too.
+            for (platform, info) in &entry.platforms {
+                for dep in info.conda_deps.iter().flatten() {
+                    if let Some(package) = previous.get_conda_package(platform, dep) {
+                        self.set_conda_package(platform, dep, package.clone());
+                    }
+                }
+            }
+            self.tools
+                .entry(key.clone())
+                .or_default()
+                .push(entry.clone());
         }
     }
 
