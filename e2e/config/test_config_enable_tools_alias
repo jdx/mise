@@ -50,3 +50,17 @@ EOT
 export MISE_DISABLE_TOOLS=myjq
 assert_not_contains "mise ls" "jq"
 assert_contains "mise ls" "tiny"
+
+# The python venv directive follows the same alias-aware filter.
+mkdir -p .venv
+cat >mise.toml <<'EOT'
+[tool_alias]
+mypython = "python"
+
+[env]
+_.python.venv = { path = ".venv" }
+EOT
+unset MISE_DISABLE_TOOLS
+assert_contains "mise env" "VIRTUAL_ENV"
+export MISE_DISABLE_TOOLS=mypython
+assert_not_contains "mise env" "VIRTUAL_ENV"

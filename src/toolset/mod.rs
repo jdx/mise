@@ -969,18 +969,33 @@ pub(crate) fn tool_enabled_for_backend(
     disable_tools: &BTreeSet<String>,
     ba: &BackendArg,
 ) -> bool {
+    tool_enabled_for_backend_in(
+        Config::maybe_get().as_deref(),
+        enable_tools,
+        disable_tools,
+        ba,
+    )
+}
+
+/// Like [`tool_enabled_for_backend`], for callers that hold the config being loaded, which is
+/// not yet the published one.
+pub(crate) fn tool_enabled_for_backend_in(
+    config: Option<&Config>,
+    enable_tools: Option<&BTreeSet<String>>,
+    disable_tools: &BTreeSet<String>,
+    ba: &BackendArg,
+) -> bool {
+    let tool_alias_matches = |names: &BTreeSet<String>| tool_alias_matches(config, names, ba);
     match enable_tools {
         // The allowlist remains authoritative; disable_tools is intentionally
         // ignored when enable_tools is configured.
-        Some(enable_tools) => {
-            enable_tools.contains(&ba.short) || tool_alias_matches(enable_tools, ba)
-        }
-        None => !disable_tools.contains(&ba.short) && !tool_alias_matches(disable_tools, ba),
+        Some(enable_tools) => enable_tools.contains(&ba.short) || tool_alias_matches(enable_tools),
+        None => !disable_tools.contains(&ba.short) && !tool_alias_matches(disable_tools),
     }
 }
 
-fn tool_alias_matches(names: &BTreeSet<String>, ba: &BackendArg) -> bool {
-    let Some(config) = Config::maybe_get() else {
+fn tool_alias_matches(config: Option<&Config>, names: &BTreeSet<String>, ba: &BackendArg) -> bool {
+    let Some(config) = config else {
         return false;
     };
     // Only names that are configured aliases need resolving, and the request's own

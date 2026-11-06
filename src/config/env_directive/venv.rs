@@ -46,10 +46,12 @@ pub(crate) struct PythonVenvOptions {
 /// allowlist form is covered as well: `enable_tools = ["node"]` leaves python out, and the venv
 /// stops with it.
 fn python_venv_enabled(
+    config: Option<&Config>,
     enable_tools: Option<&BTreeSet<String>>,
     disable_tools: &BTreeSet<String>,
 ) -> bool {
-    crate::toolset::tool_enabled_for_backend(
+    crate::toolset::tool_enabled_for_backend_in(
+        config,
         enable_tools,
         disable_tools,
         &BackendArg::from("python"),
@@ -294,7 +296,11 @@ impl EnvResults {
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
         let settings = Settings::get();
-        if !python_venv_enabled(settings.enable_tools().as_ref(), &settings.disable_tools()) {
+        if !python_venv_enabled(
+            Some(ctx.config.as_ref()),
+            settings.enable_tools().as_ref(),
+            &settings.disable_tools(),
+        ) {
             // Before the creation branch as well as the activation one: with python turned off the
             // venv would fail to build anyway, and "declined to run" is a different thing from
             // "tried and could not".
@@ -442,19 +448,23 @@ mod venv_enabled_tests {
 
     #[test]
     fn disable_tools_turns_the_venv_off() {
-        assert!(!python_venv_enabled(None, &set(&["python"])));
+        assert!(!python_venv_enabled(None, None, &set(&["python"])));
         // an unrelated tool being disabled changes nothing
-        assert!(python_venv_enabled(None, &set(&["node"])));
-        assert!(python_venv_enabled(None, &set(&[])));
+        assert!(python_venv_enabled(None, None, &set(&["node"])));
+        assert!(python_venv_enabled(None, None, &set(&[])));
     }
 
     #[test]
     fn enable_tools_is_an_allowlist_and_covers_the_venv_too() {
         // the non-obvious half: an allowlist that omits python disables the venv, even though
         // nothing named python appears in `disable_tools`
-        assert!(!python_venv_enabled(Some(&set(&["node"])), &set(&[])));
-        assert!(python_venv_enabled(Some(&set(&["python"])), &set(&[])));
+        assert!(!python_venv_enabled(None, Some(&set(&["node"])), &set(&[])));
+        assert!(python_venv_enabled(
+            None,
+            Some(&set(&["python"])),
+            &set(&[])
+        ));
         // an empty allowlist is "no tools at all", not "no opinion"
-        assert!(!python_venv_enabled(Some(&set(&[])), &set(&[])));
+        assert!(!python_venv_enabled(None, Some(&set(&[])), &set(&[])));
     }
 }
