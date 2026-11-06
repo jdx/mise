@@ -143,3 +143,21 @@ assert "mise trust proj5/mise.toml"
 assert "mise ls -C proj5"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+
+# a task tool can name a [tool_alias] of its project, which the directory prune
+# runs from does not have. https://github.com/jdx/mise/issues/15420
+cd .. || exit 1
+mkdir -p proj6
+cat >proj6/mise.toml <<'TOML'
+[tool_alias]
+aliased = "tiny"
+
+[tasks.t]
+run = "true"
+tools = { aliased = "3.1.0" }
+TOML
+assert "mise trust proj6/mise.toml"
+assert "mise ls -C proj6"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+assert_not_contains "mise prune --dry-run 2>&1" "Failed to resolve"

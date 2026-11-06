@@ -8421,6 +8421,9 @@ pub(crate) fn task_tool_requests(
     };
     let mut requests = vec![];
     let mut templated = vec![];
+    // A task tool can name a `[tool_alias]` of the project, which the config of the directory
+    // prune runs from does not have, so the name is replaced by the backend it stands for.
+    let tool_aliases = cf.aliases().unwrap_or_default();
     for (mut task, source) in tasks {
         if task.config_root.is_none() {
             task.config_root = Some(dir.clone());
@@ -8467,7 +8470,11 @@ pub(crate) fn task_tool_requests(
                     templated.push(tool.clone());
                     continue;
                 }
-                match value.to_tool_arg(tool) {
+                let backend = tool_aliases
+                    .get(tool)
+                    .and_then(|alias| alias.backend.as_deref())
+                    .unwrap_or(tool);
+                match value.to_tool_arg(backend) {
                     Ok(arg) => requests.extend(arg.tvr),
                     Err(err) => warn!(
                         "error loading tool {tool} of task {} in {}: {err:#}",
