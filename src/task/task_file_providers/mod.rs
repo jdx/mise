@@ -245,7 +245,7 @@ mod tests {
     fn test_get_providers() {
         let task_file_providers = TaskFileProvidersBuilder::new().build();
         let providers = task_file_providers.get_providers();
-        assert_eq!(providers.len(), 4);
+        assert_eq!(providers.len(), 5);
     }
 
     #[test]
