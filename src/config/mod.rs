@@ -8426,11 +8426,7 @@ pub(crate) fn task_tool_requests(
     // the project's own config last, and only the backend an alias stands for matters here.
     let mut tool_aliases: HashMap<String, String> = HashMap::new();
     for other in layers.values().flatten().copied().chain([cf]) {
-        for (name, alias) in other.aliases().unwrap_or_default() {
-            if let Some(backend) = alias.backend {
-                tool_aliases.insert(name, backend);
-            }
-        }
+        tool_aliases.extend(other.backend_aliases());
     }
     for (mut task, source) in tasks {
         if task.config_root.is_none() {
