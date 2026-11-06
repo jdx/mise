@@ -1138,7 +1138,9 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
         // A tool version that no longer parses is skipped like a config that no
         // longer parses, so one broken project does not stop the whole prune.
         let mut requests = match requests {
-            Ok(requests) => requests,
+            Ok(requests) => {
+                crate::config::route_project_tool_aliases(config, &tracked, &cf, requests)
+            }
             Err(err) => {
                 warn!(
                     "error loading tracked config file {}: {err:#}",
