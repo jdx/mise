@@ -8537,11 +8537,12 @@ fn aliased_task_tool_request(
     // It is looked up in the registry itself: `BackendArg::full` would first consult the aliases
     // of the directory prune runs from.
     let (name, inline) = split_bracketed_opts(full).map_or((full, None), |(n, o)| (n, Some(o)));
+    let name = backend::unalias_backend(name);
     let target = if name.contains(':') {
         None
     } else {
         crate::registry::REGISTRY
-            .get(name)
+            .get(name.as_ref())
             .and_then(|rt| rt.backends_for_version(None).first().cloned())
     };
     let mut backend = BackendArg::new(
