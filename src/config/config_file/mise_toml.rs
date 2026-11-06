@@ -1982,6 +1982,18 @@ impl ConfigFile for MiseToml {
             .any(|tvp| tvp.0.iter().any(tool_has_template))
     }
 
+    fn backend_aliases(&self) -> IndexMap<String, String> {
+        // [tool_alias] wins over the deprecated [alias], as in `aliases`.
+        let mut combined = self.alias.clone();
+        for (name, alias) in &self.tool_alias {
+            combined.insert(name.clone(), alias.clone());
+        }
+        combined
+            .into_iter()
+            .filter_map(|(name, alias)| Some((name, alias.backend?)))
+            .collect()
+    }
+
     fn aliases(&self) -> eyre::Result<AliasMap> {
         // Emit deprecation warning if [alias] is used
         if !self.alias.is_empty() {
