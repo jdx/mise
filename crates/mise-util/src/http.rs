@@ -2516,11 +2516,16 @@ impl Client {
         // than the direct request, or an http mirror fronting an https origin (#7164)
         // becomes unusable.
         ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
+        // Set when netrc alone supplied the Authorization header for this host.
+        let mut netrc_fallback_used = false;
         if options.use_netrc
             && !(options.netrc_replacement_only && url.host() == original_url.host())
         {
+            let before = final_headers.get(AUTHORIZATION).cloned();
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
+            netrc_fallback_used = url.host() == original_url.host()
+                && final_headers.get(AUTHORIZATION) != before.as_ref();
         }
 
         let request_timeout = self.request_timeout();
@@ -2691,6 +2696,26 @@ impl Client {
                 rate_limited,
                 &body,
             ));
+        }
+        // A stale netrc login earns a 401 even from hosts that serve the resource
+        // anonymously (a public GitLab release asset). netrc is only a fallback, so
+        // retry once without it rather than fail.
+        if netrc_fallback_used && resp.status() == StatusCode::UNAUTHORIZED {
+            let mut headers = headers.clone();
+            forward_rules.attach_to(&mut headers);
+            debug!(
+                "{} {} retrying without netrc credentials after 401",
+                verb_label,
+                log_url(&url)
+            );
+            return Box::pin(self.send_once_inner(
+                method,
+                original_url,
+                &headers,
+                verb_label,
+                options.recursive_retry(),
+            ))
+            .await;
         }
         options.check_response(resp)
     }

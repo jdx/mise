@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# A netrc login that the server rejects with 401 must not block a download the
+# server serves anonymously (e.g. a public GitLab release asset).
+
+cat >"$HOME/serve.py" <<'PY'
+import http.server, sys
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.headers.get("Authorization"):
+            self.send_response(401)
+            self.end_headers()
+            return
+        body = b"ok"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+s = http.server.HTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[1], "w").write(str(s.server_port))
+s.serve_forever()
+PY
+
+python3 "$HOME/serve.py" "$HOME/port" &
+server_pid=$!
+trap 'kill $server_pid 2>/dev/null' EXIT
+for _ in $(seq 50); do
+  [ -s "$HOME/port" ] && break
+  sleep 0.1
+done
+port=$(cat "$HOME/port")
+
+cat >"$HOME/.netrc" <<NETRC
+machine 127.0.0.1
+  login stale
+  password stale
+NETRC
+chmod 600 "$HOME/.netrc"
+
+cat >mise.toml <<TOML
+[tools]
+"http:netrc-retry" = { version = "1.0.0", url = "http://127.0.0.1:$port/netrc-retry" }
+TOML
+
+assert_contains "mise install --verbose 2>&1" "retrying without netrc credentials after 401"
+assert_contains "mise ls --installed" "http:netrc-retry"
