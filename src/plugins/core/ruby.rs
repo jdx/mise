@@ -199,13 +199,17 @@ impl RubyPlugin {
         }
         debug!("Updating ruby-install in {}", ruby_install_path.display());
 
-        plugins::core::run_fetch_task_with_timeout(move || {
-            cmd!(self.ruby_install_bin(), "--update")
-                .stdout_to_stderr()
-                .run()?;
-            file::touch_dir(&ruby_install_path)?;
-            Ok(())
-        })
+        // The runner kills `ruby-install` and its children at the deadline.
+        CmdLineRunner::new(self.ruby_install_bin())
+            .arg("--update")
+            .stdout(std::process::Stdio::null())
+            .with_timeout(Settings::get().fetch_remote_versions_timeout())
+            .execute()
+            .wrap_err(
+                "change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`",
+            )?;
+        file::touch_dir(&ruby_install_path)?;
+        Ok(())
     }
 
     fn ruby_install_recently_updated(&self) -> Result<bool> {

@@ -1,3 +1,4 @@
+use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::display_path;
@@ -9,7 +10,6 @@ use crate::plugins::{
     remove_git_plugin_source, validate_local_plugin_source,
 };
 use crate::result::Result;
-use crate::timeout::run_with_timeout;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -25,6 +25,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::{collections::HashMap, sync::Arc};
 use xx::regex;
+
+/// The most `bin/list-all` may print before mise gives up on it.
+const LIST_ALL_OUTPUT_LIMIT: usize = 64 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct AsdfPlugin {
@@ -101,23 +104,31 @@ impl AsdfPlugin {
         }
         Ok(())
     }
-    pub(crate) fn fetch_remote_versions(
+    pub(crate) async fn fetch_remote_versions(
         &self,
         script_man: &ScriptManager,
     ) -> eyre::Result<Vec<String>> {
         Settings::ensure_not_safe("executing asdf plugin scripts")?;
-        let cmd = script_man.cmd(&Script::ListAll);
-        let result = run_with_timeout(
-            move || {
-                let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
-                Ok(result)
-            },
-            Settings::get().fetch_remote_versions_timeout(),
-        )
-        .wrap_err_with(|| {
-            let script = script_man.get_script_path(&Script::ListAll);
-            eyre!("Failed to run {}", display_path(script))
-        })?;
+        let script = script_man.get_script_path(&Script::ListAll);
+        let timeout = Settings::get().fetch_remote_versions_timeout();
+        // The runner kills the script's whole process group at the deadline, so a
+        // hung `curl` in `bin/list-all` cannot outlive it and hold locks.
+        let result = CmdLineRunner::new(&script)
+            .env_clear()
+            .envs(&script_man.env)
+            .with_timeout(timeout)
+            .output_isolated(LIST_ALL_OUTPUT_LIMIT)
+            .await
+            .map_err(|err| {
+                if err.to_string().starts_with("timed out after") {
+                    err.wrap_err(
+                        "change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`",
+                    )
+                } else {
+                    err
+                }
+            })
+            .wrap_err_with(|| eyre!("Failed to run {}", display_path(&script)))?;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
 
