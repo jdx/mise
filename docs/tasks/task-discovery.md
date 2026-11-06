@@ -455,7 +455,7 @@ local task directory, the same way as an [OCI include](#remote-oci-includes):
 executable file tasks and `.toml` task files are discovered, and non-TOML files
 that start with a shebang are made executable. Use a versioned URL, since mise
 reuses a cached download for the same URL. With
-[`task.remote_no_cache`](/configuration/settings#task_remote_no_cache) set, mise
+[`task.remote_no_cache`](/configuration/settings.html#task.remote_no_cache) set, mise
 downloads the archive again on every run.
 
 ## Exclude paths from discovery
