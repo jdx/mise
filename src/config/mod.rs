@@ -32,7 +32,8 @@ use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::{
-    OCI_INCLUDE_PREFIX, TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
+    OCI_INCLUDE_PREFIX, TaskFileArtifact, TaskFileProvidersBuilder, ZIP_INCLUDE_PREFIX,
+    validate_remote_git_path,
 };
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
@@ -7172,7 +7173,9 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
 
 /// Includes that are fetched from a remote source instead of read from disk.
 fn is_remote_task_include(include: &str) -> bool {
-    include.starts_with("git::") || include.starts_with(OCI_INCLUDE_PREFIX)
+    include.starts_with("git::")
+        || include.starts_with(OCI_INCLUDE_PREFIX)
+        || include.starts_with(ZIP_INCLUDE_PREFIX)
 }
 
 async fn resolve_oci_url_to_path(oci_url: &str) -> Result<TaskFileArtifact> {
@@ -7971,6 +7974,8 @@ async fn load_task_sources_from_configs(
             Some("a `git::` source")
         } else if include.starts_with(OCI_INCLUDE_PREFIX) {
             Some("an `oci::` source")
+        } else if include.starts_with(ZIP_INCLUDE_PREFIX) {
+            Some("a `zip::` source")
         } else {
             None
         };
@@ -7984,7 +7989,8 @@ async fn load_task_sources_from_configs(
         }
         let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
-        } else if include.starts_with(OCI_INCLUDE_PREFIX) {
+        } else if include.starts_with(OCI_INCLUDE_PREFIX) || include.starts_with(ZIP_INCLUDE_PREFIX)
+        {
             vec![resolve_oci_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)

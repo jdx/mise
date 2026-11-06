@@ -10,6 +10,7 @@ mod local_task;
 mod remote_task_git;
 mod remote_task_http;
 mod remote_task_oci;
+mod remote_task_zip;
 use crate::Result;
 use async_trait::async_trait;
 use local_task::LocalTask;
@@ -18,6 +19,8 @@ pub(crate) use remote_task_git::validate_remote_git_path;
 use remote_task_http::RemoteTaskHttpBuilder;
 pub(crate) use remote_task_oci::OCI_INCLUDE_PREFIX;
 use remote_task_oci::RemoteTaskOciBuilder;
+use remote_task_zip::RemoteTaskZipBuilder;
+pub(crate) use remote_task_zip::ZIP_INCLUDE_PREFIX;
 
 #[async_trait]
 pub(crate) trait TaskFileProvider: Debug + Send + Sync {
@@ -153,6 +156,11 @@ impl TaskFileProviders {
             ),
             Box::new(
                 RemoteTaskOciBuilder::new()
+                    .with_cache(self.use_cache)
+                    .build(),
+            ),
+            Box::new(
+                RemoteTaskZipBuilder::new()
                     .with_cache(self.use_cache)
                     .build(),
             ),

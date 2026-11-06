@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# `task_config.includes` and `include` can pull a zip archive over http(s).
+
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
+mkdir -p www/catalog
+cat >www/catalog/build <<'SCRIPT'
+#!/usr/bin/env bash
+#MISE description="build from the zip"
+echo "zip build v1"
+SCRIPT
+cat >www/catalog/extra.toml <<'TOML'
+[greet]
+run = "echo hello from the zip"
+TOML
+cat >www/catalog/mise.toml <<'TOML'
+[env]
+FROM_ZIP = "yes"
+TOML
+(cd www/catalog && python3 -c "
+import zipfile
+with zipfile.ZipFile('../catalog.zip', 'w') as z:
+    for n in ('build', 'extra.toml', 'mise.toml'):
+        z.write(n)
+")
+
+PORT="$(find_available_port)"
+(cd www && exec python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1) &
+SERVER_PID=$!
+trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+for _ in $(seq 1 50); do
+  curl -fsS "http://127.0.0.1:$PORT/catalog.zip" -o /dev/null 2>&1 && break
+  sleep 0.2
+done
+URL="zip::http://127.0.0.1:$PORT/catalog.zip"
+
+cat >mise.toml <<TOML
+[task_config]
+includes = ["$URL"]
+TOML
+assert "mise run build" "zip build v1"
+assert "mise run greet" "hello from the zip"
+assert_contains "mise tasks ls" "build from the zip"
+
+# a zip config include merges the mise.toml at the archive root
+cat >mise.toml <<TOML
+include = ["$URL"]
+TOML
+assert_contains "mise env -s bash" "export FROM_ZIP=yes"
+
+# a zip is not pinned to content, so paranoid mode refuses it
+MISE_PARANOID=1 assert_fail "mise env" "must be pinned"
+
+# a non-http source is rejected
+cat >mise.toml <<TOML
+[task_config]
+includes = ["zip::./catalog.zip"]
+TOML
+assert_fail "mise tasks ls" "must be an http(s) URL"
