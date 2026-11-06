@@ -750,12 +750,13 @@ fn merge_exclusions(base: &[String], local: &[String], remote: &[String]) -> Res
         let (ours, theirs) = (&local[base.len()..], &remote[base.len()..]);
         if !ours.iter().chain(theirs).any(|glob| glob.starts_with('!')) {
             let mut merged = local.to_vec();
+            let ours: std::collections::HashSet<_> = ours.iter().collect();
             merged.extend(theirs.iter().filter(|glob| !ours.contains(glob)).cloned());
             return Ok(merged);
         }
     }
     bail!(
-        "enrollment conflict in exclusions; both machines changed `mise dot exclude` in ways that cannot be combined (a removal or a `!glob`); run `mise dot exclude` to restore the intended list, `mise dot save`, then sync again"
+        "enrollment conflict in exclusions; both machines changed `mise dot exclude` in ways that cannot be combined (a removal or a `!glob`). Make this machine's exclusions match the other machine's list, `mise dot save`, sync, then re-apply your own changes"
     )
 }
 
@@ -1321,6 +1322,10 @@ mod tests {
         // a negation depends on its position, so it never commutes
         local.exclude = list(&["a", "!y"]);
         assert!(Manifest::merge(&base, &local, &remote).is_err());
+        // and neither does one added on the remote side
+        let mut negated = base.clone();
+        negated.exclude = list(&["a", "!y"]);
+        assert!(Manifest::merge(&base, &remote, &negated).is_err());
         // a removal on one side and an addition on the other is a conflict
         local.exclude = vec![];
         let error = Manifest::merge(&base, &local, &remote).unwrap_err();
