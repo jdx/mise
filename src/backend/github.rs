@@ -2429,8 +2429,9 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        asset_matcher::asset_pattern_hint(&templated_pattern),
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;
@@ -2530,8 +2531,9 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets.links, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        asset_matcher::asset_pattern_hint(&templated_pattern),
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;
@@ -2628,8 +2630,9 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        asset_matcher::asset_pattern_hint(&templated_pattern),
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;
