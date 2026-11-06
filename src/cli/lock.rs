@@ -1168,6 +1168,40 @@ impl Lock {
         Ok(())
     }
 
+    /// After an install, drop the tools whose config sets `tool_config.locked`
+    /// and whose resolved version the lockfile does not record yet. Installing
+    /// another tool must not author that entry; only an explicit `mise lock`
+    /// does. The flag is true when a tool was dropped, so its recorded entries
+    /// are kept rather than pruned as unselected.
+    fn without_unrecorded_locked_pins(
+        &self,
+        run: &LockRun<'_>,
+        lockfile: &Lockfile,
+        tools: &[LockTool],
+    ) -> (Vec<LockTool>, bool) {
+        if run.setup.installed.is_none() {
+            return (tools.to_vec(), false);
+        }
+        let mut withheld = false;
+        let kept = tools
+            .iter()
+            .filter(|(ba, tv)| {
+                let unrecorded = tv.request.tool_config_locked(run.setup.config, true)
+                    && !lockfile.has_version(&ba.short, &tv.version);
+                if unrecorded {
+                    debug!(
+                        "not locking {}@{}: tool_config.locked requires `mise lock`",
+                        ba.short, tv.version
+                    );
+                    withheld = true;
+                }
+                !unrecorded
+            })
+            .cloned()
+            .collect();
+        (kept, withheld)
+    }
+
     /// Resolve a target's tools into its lockfile, then bind and write it.
     async fn generate_target(
         &self,
@@ -1186,6 +1220,9 @@ impl Lock {
         let _lock = Self::lock_unless_held(run, lockfile_path)?;
         let original_content = read_optional_file(lockfile_path)?;
         let mut lockfile = self.read_lockfile(run, lockfile_path)?;
+        let (tools, withheld_unrecorded) =
+            self.without_unrecorded_locked_pins(run, &lockfile, tools);
+        let tools = &tools;
         if !self.upgrade {
             self.report_lockfile_format(lockfile_path, &lockfile, false)?;
         }
@@ -1231,7 +1268,7 @@ impl Lock {
                 &lockfile,
                 tools,
                 target_platforms,
-                !self.tool.is_empty() || !run.setup.auto_prune,
+                !self.tool.is_empty() || !run.setup.auto_prune || withheld_unrecorded,
                 self.platform_selection(&run.settings)?,
                 crate::jobs::resolve(run.settings.jobs, self.jobs),
                 run.setup.installed.unwrap_or_default(),

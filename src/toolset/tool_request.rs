@@ -322,7 +322,7 @@ impl ToolRequest {
         }
     }
 
-    pub(crate) fn tool_config_locked(&self, config: &Config, use_locked_version: bool) -> bool {
+    pub fn tool_config_locked(&self, config: &Config, use_locked_version: bool) -> bool {
         // A lockfile bypass must not inherit an additional owner's policy.
         // Invocation-wide locked policy still uses the original source separately.
         let source = if use_locked_version {

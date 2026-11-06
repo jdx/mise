@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Installing or running one tool must not write another tool's unrecorded pin
+# into the lockfile when its config sets `tool_config.locked`. Only an
+# explicit `mise lock` records a new version.
+export MISE_LOCKFILE=1
+export MISE_LOCKFILE_MODE=generate
+
+for name in a b; do
+  printf '#!/bin/sh\necho %s\n' "$name" >"$PWD/fixture-$name"
+  chmod +x "$PWD/fixture-$name"
+done
+sum_a="$(sha256sum fixture-a | cut -d' ' -f1)"
+sum_b="$(sha256sum fixture-b | cut -d' ' -f1)"
+
+write_config() {
+  cat <<EOT >mise.toml
+[tool_config]
+locked = true
+
+[tools]
+"http:fixture-a" = { version = "1.0.0", url = "file://$PWD/fixture-a", checksum = "sha256:$sum_a" }
+"http:fixture-b" = { version = "$1", url = "file://$PWD/fixture-b", checksum = "sha256:$sum_b" }
+EOT
+}
+
+write_config 1.0.0
+assert "mise lock"
+cp mise.lock lock.before
+
+write_config 2.0.0
+assert_fail_contains "mise exec -- fixture-b 2>&1" "is not in the lockfile"
+assert "diff lock.before mise.lock"
+assert_fail_contains "mise exec -- fixture-b 2>&1" "is not in the lockfile"
+
+assert "mise install http:fixture-a"
+assert "diff lock.before mise.lock"
+
+# An explicit `mise lock` is what records the new pin.
+assert "mise lock"
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert "mise exec -- fixture-b"

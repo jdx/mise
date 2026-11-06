@@ -1493,6 +1493,13 @@ impl Lockfile {
         })
     }
 
+    /// Whether the lockfile has any entry for `short` at `version`, even one
+    /// without artifact data.
+    pub fn has_version(&self, short: &str, version: &str) -> bool {
+        self.tools_for(short)
+            .is_some_and(|entries| entries.iter().any(|entry| entry.version == version))
+    }
+
     /// Whether `short`'s entry at `version` records artifact data for any platform.
     pub fn has_platforms(&self, short: &str, version: &str) -> bool {
         self.tools_for(short).is_some_and(|entries| {
