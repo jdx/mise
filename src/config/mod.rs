@@ -8424,9 +8424,20 @@ pub(crate) fn task_tool_requests(
     // A task tool can name a `[tool_alias]` of its project, which the config of the directory
     // prune runs from does not have. The aliases come from the same layers as the templates,
     // the project's own config last, and only the backend an alias stands for matters here.
-    let mut tool_aliases: HashMap<String, String> = HashMap::new();
-    for other in layers.values().flatten().copied().chain([cf]) {
-        tool_aliases.extend(other.backend_aliases());
+    // Configs that share a root have a precedence only a full load knows, so every backend one
+    // of them gives an alias counts, and a nearer layer replaces the candidates of a farther one.
+    let mut tool_aliases: HashMap<String, Vec<String>> = HashMap::new();
+    for layer in layers.values() {
+        let mut named: HashMap<String, Vec<String>> = HashMap::new();
+        for other in layer {
+            for (name, backend) in other.backend_aliases() {
+                let candidates = named.entry(name).or_default();
+                if !candidates.contains(&backend) {
+                    candidates.push(backend);
+                }
+            }
+        }
+        tool_aliases.extend(named);
     }
     for (mut task, source) in tasks {
         if task.config_root.is_none() {
@@ -8478,12 +8489,15 @@ pub(crate) fn task_tool_requests(
                     // The request keeps the name the task uses, which names its install
                     // directory, and takes the backend and options of the alias.
                     match tool_aliases.get(tool) {
-                        Some(full) => aliased_task_tool_request(tool, full, &arg).map(Some),
-                        None => Ok(arg.tvr),
+                        Some(candidates) => candidates
+                            .iter()
+                            .map(|full| aliased_task_tool_request(tool, full, &arg))
+                            .collect::<Result<Vec<_>>>(),
+                        None => Ok(arg.tvr.into_iter().collect()),
                     }
                 });
                 match request {
-                    Ok(tvr) => requests.extend(tvr),
+                    Ok(tvrs) => requests.extend(tvrs),
                     Err(err) => warn!(
                         "error loading tool {tool} of task {} in {}: {err:#}",
                         task.name,
@@ -8503,8 +8517,10 @@ fn aliased_task_tool_request(
     full: &str,
     arg: &crate::args::ToolArg,
 ) -> Result<crate::toolset::ToolRequest> {
-    let mut backend = BackendArg::new(tool.to_string(), Some(full.to_string()));
-    let mut options = backend.explicit_opts().cloned().unwrap_or_default();
+    // A bare registry name (`llama.cpp`) stands for the backend the registry gives it.
+    let target = BackendArg::new(full.to_string(), None);
+    let mut backend = BackendArg::new(tool.to_string(), Some(target.full_without_opts()));
+    let mut options = target.explicit_opts().cloned().unwrap_or_default();
     if let Some(task_options) = arg.ba.explicit_opts() {
         options.apply_overrides(task_options);
     }
