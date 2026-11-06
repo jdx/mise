@@ -1493,6 +1493,40 @@ impl Lockfile {
         })
     }
 
+    /// Put back the entries `previous` holds for `short` at versions this
+    /// lockfile no longer has. For a tool whose new pin was withheld, this
+    /// keeps what the lockfile recorded, which generation dropped because the
+    /// tool was still selected.
+    pub fn restore_missing_versions(&mut self, previous: &Lockfile, short: &str) {
+        let Some(entries) = previous.tools_for(short) else {
+            return;
+        };
+        let key = crate::toolset::install_state::state_short(short).into_owned();
+        let present: BTreeSet<String> = self
+            .tools
+            .get(&key)
+            .map(|have| have.iter().map(|entry| entry.version.clone()).collect())
+            .unwrap_or_default();
+        for entry in entries {
+            if present.contains(&entry.version) {
+                continue;
+            }
+            // Generation dropped the shared package records this entry's
+            // conda_deps name along with it, so bring them back too.
+            for (platform, info) in &entry.platforms {
+                for dep in info.conda_deps.iter().flatten() {
+                    if let Some(package) = previous.get_conda_package(platform, dep) {
+                        self.set_conda_package(platform, dep, package.clone());
+                    }
+                }
+            }
+            self.tools
+                .entry(key.clone())
+                .or_default()
+                .push(entry.clone());
+        }
+    }
+
     /// Whether `short`'s entry at `version` records artifact data for any platform.
     pub fn has_platforms(&self, short: &str, version: &str) -> bool {
         self.tools_for(short).is_some_and(|entries| {
