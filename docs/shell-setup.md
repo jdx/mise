@@ -234,6 +234,11 @@ mise completion powershell --install
 Bash loads the script through the bash-completion package, which must be
 installed and enabled in your shell.
 
+fish 4.9.3 ships a built-in loader that runs `mise completion fish | source`,
+so there you can skip `mise completion fish --install`. Earlier fish versions
+may not have it, and other shells or distributions may provide their own loader.
+If completions already work for you, you do not need to install them yourself.
+
 To choose the location yourself, print the script with
 `mise completion <shell>` and save it. For zsh, for example:
 
