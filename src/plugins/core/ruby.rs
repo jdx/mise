@@ -205,9 +205,16 @@ impl RubyPlugin {
             .stdout(std::process::Stdio::null())
             .with_timeout(Settings::get().fetch_remote_versions_timeout())
             .execute()
-            .wrap_err(
-                "change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`",
-            )?;
+            .map_err(|err| {
+                // Only a timeout points at the setting; other failures stand alone.
+                if err.to_string().starts_with("timed out after") {
+                    err.wrap_err(
+                        "change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`",
+                    )
+                } else {
+                    err
+                }
+            })?;
         file::touch_dir(&ruby_install_path)?;
         Ok(())
     }
