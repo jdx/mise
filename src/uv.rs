@@ -24,6 +24,16 @@ pub(crate) async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'stat
             if !uv_auto.should_source() {
                 return Ok(None);
             }
+            // A VIRTUAL_ENV the caller set is their choice; replacing it makes uv run in the
+            // wrong environment (and `create` would build a .venv they never asked for).
+            // PRISTINE_ENV excludes what mise itself exported, so this only sees the caller's.
+            if env::PRISTINE_ENV
+                .get("VIRTUAL_ENV")
+                .is_some_and(|v| !v.is_empty())
+            {
+                debug!("python.uv_venv_auto skipped: VIRTUAL_ENV is already set by the caller");
+                return Ok(None);
+            }
             let Some(uv_root) = uv_root() else {
                 return Ok(None);
             };

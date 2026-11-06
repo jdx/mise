@@ -49,6 +49,9 @@ assert "mise x -- which python" "$PWD/.venv/bin/python"
 # source mode should NOT set UV_PYTHON
 assert_not_contains "mise env -s bash" "UV_PYTHON"
 
+# A VIRTUAL_ENV set by the caller wins over uv_venv_auto
+assert "VIRTUAL_ENV=/caller/venv mise x -- sh -c 'echo \$VIRTUAL_ENV'" "/caller/venv"
+
 # Test "create|source" mode - creates venv if missing, sources it
 rm -rf .venv
 
