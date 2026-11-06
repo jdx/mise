@@ -988,7 +988,9 @@ fn tool_alias_matches(names: &BTreeSet<String>, ba: &BackendArg) -> bool {
             .all_aliases
             .get(name)
             .and_then(|alias| alias.backend.as_deref())
-            .is_some_and(|backend| BackendArg::from(backend).full() == ba.full())
+            .is_some_and(|backend| {
+                BackendArg::from(backend).full_without_opts() == ba.full_without_opts()
+            })
     })
 }
 

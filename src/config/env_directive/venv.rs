@@ -7,7 +7,6 @@ use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::lock_file::LockFile;
-use crate::registry::tool_enabled;
 use crate::toolset::Toolset;
 use crate::{backend, plugins};
 use indexmap::IndexMap;
@@ -50,7 +49,11 @@ fn python_venv_enabled(
     enable_tools: Option<&BTreeSet<String>>,
     disable_tools: &BTreeSet<String>,
 ) -> bool {
-    tool_enabled(enable_tools, disable_tools, &"python".to_string())
+    crate::toolset::tool_enabled_for_backend(
+        enable_tools,
+        disable_tools,
+        &BackendArg::from("python"),
+    )
 }
 
 pub(crate) fn load_venv(

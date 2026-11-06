@@ -35,3 +35,18 @@ assert_contains "mise ls" "tiny"
 export MISE_ENABLE_TOOLS=myjq
 assert_contains "mise ls" "aqua:jqlang/jq"
 assert_not_contains "mise ls" "tiny"
+
+# Aliases that carry options still match the tool they point at.
+unset MISE_ENABLE_TOOLS MISE_DISABLE_TOOLS
+cat >mise.toml <<'EOT'
+[tool_alias]
+myjq = "aqua:jqlang/jq[bin=jq]"
+otherjq = "aqua:jqlang/jq[bin=jq]"
+
+[tools]
+otherjq = "1.0.0"
+tiny = "1.0.0"
+EOT
+export MISE_DISABLE_TOOLS=myjq
+assert_not_contains "mise ls" "jq"
+assert_contains "mise ls" "tiny"
