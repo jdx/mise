@@ -10,8 +10,8 @@ use crate::backend::backend_type::BackendType;
 use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::env_diff::EnvMap;
-use crate::registry::{REGISTRY, tool_enabled};
-use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use crate::registry::REGISTRY;
+use crate::toolset::{ToolRequest, ToolSource, Toolset, tool_enabled_for_backend};
 use heck::{ToKebabCase, ToShoutySnakeCase};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -133,9 +133,9 @@ pub struct ToolRequestSetBuilder {
     /// default to latest version if no version is specified (for `mise x`)
     default_to_latest: bool,
     /// tools which will be disabled
-    disable_tools: BTreeSet<BackendArg>,
+    disable_tools: BTreeSet<String>,
     /// tools which will be enabled
-    enable_tools: Option<BTreeSet<BackendArg>>,
+    enable_tools: Option<BTreeSet<String>>,
     config_files: Option<ConfigMap>,
     skip_runtime_args: bool,
 }
@@ -144,10 +144,17 @@ impl ToolRequestSetBuilder {
     pub fn new() -> Self {
         let settings = Settings::get();
         Self {
-            disable_tools: settings.disable_tools().iter().map(|s| s.into()).collect(),
-            enable_tools: settings
-                .enable_tools()
-                .map(|tools| tools.iter().map(|s| s.into()).collect()),
+            disable_tools: settings
+                .disable_tools()
+                .iter()
+                .map(|name| BackendArg::from(name).short)
+                .collect(),
+            enable_tools: settings.enable_tools().map(|tools| {
+                tools
+                    .iter()
+                    .map(|name| BackendArg::from(name).short)
+                    .collect()
+            }),
             ..Default::default()
         }
     }
@@ -207,12 +214,12 @@ impl ToolRequestSetBuilder {
         backend_type == BackendType::Unknown
             || (cfg!(windows) && backend_type == BackendType::Asdf)
             || !ba.is_os_supported()
-            || !tool_enabled(self.enable_tools.as_ref(), &self.disable_tools, ba)
+            || !tool_enabled_for_backend(self.enable_tools.as_ref(), &self.disable_tools, ba)
     }
 
     fn should_report_unknown_tool(&self, ba: &BackendArg, requests: &[ToolRequest]) -> bool {
         ba.backend_type() == BackendType::Unknown
-            && tool_enabled(self.enable_tools.as_ref(), &self.disable_tools, ba)
+            && tool_enabled_for_backend(self.enable_tools.as_ref(), &self.disable_tools, ba)
             && requests.iter().any(ToolRequest::is_os_supported)
     }
 
@@ -790,7 +797,7 @@ mod tests {
         crate::toolset::install_state::init().await.unwrap();
         let (ba, requests) = unknown_tool_request(None);
         let builder = ToolRequestSetBuilder {
-            disable_tools: BTreeSet::from([BackendArg::from("unknown-os-filtered-tool")]),
+            disable_tools: BTreeSet::from(["unknown-os-filtered-tool".to_string()]),
             ..Default::default()
         };
 
