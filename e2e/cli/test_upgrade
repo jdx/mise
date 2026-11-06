@@ -310,3 +310,14 @@ mise install patch-release@29.1
 mise upgrade --bump
 assert_contains "mise ls --current patch-release" "29.1.1"
 assert_contains "cat mise.toml" 'patch-release = "29"'
+
+# A newer version another entry of the same tool already uses is not reported
+# as out of range (https://github.com/jdx/mise/issues/15353)
+cat <<'TOML' >mise.toml
+[tools]
+dummy = ["2", "1"]
+TOML
+mise uninstall --all dummy
+mise install
+assert_not_contains "mise upgrade 2>&1" "do not match the configured version ranges"
+assert_contains "mise upgrade 2>&1" "All tools are up to date"

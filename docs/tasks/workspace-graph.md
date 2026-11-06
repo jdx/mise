@@ -249,6 +249,10 @@ mise selects:
 Then mise runs the matching tasks in those projects. Their dependencies run as
 usual, so a selected task can still run a prerequisite in an unchanged project.
 
+Outside a monorepo root, `--affected` has no projects to select, so it selects
+tasks by their `sources` instead. See
+[Run the tasks a change affects](/tasks/running-tasks.html#affected-tasks).
+
 `--affected-explain` prints each selected project with the reasons it was
 selected (`changed path`, `workspace-global path`, `lockfile change`, or
 `depends on affected project`), then each matched task and its project:

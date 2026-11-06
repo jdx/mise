@@ -335,6 +335,9 @@ pub(crate) fn sync_locked(
                 && tracked.manifest.enrollment.is_empty())
         {
             capture_now(store, tracked);
+            // a baseline of paths that do not exist yet holds no file: the
+            // origin's history replaces it rather than read as unrelated
+            super::origin::discard_contentless_history(repo)?;
         }
         let mut shared = share::current(repo, tracked)?;
         let unsaved = unsaved_paths(repo, tracked, &shared)?;

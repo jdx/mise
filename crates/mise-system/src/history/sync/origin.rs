@@ -191,6 +191,14 @@ async fn set_inner(
             display_path(&config_dir)
         );
     }
+    // A history that holds no tracked file (a baseline of a path that does not
+    // exist yet) has nothing to keep: the origin's history replaces it. Any
+    // other unrelated history is refused here, before the connection is
+    // written, so a refused connect leaves nothing behind.
+    if upstream.is_some() {
+        discard_contentless_history(repo)?;
+        super::graph::Heads::read(repo)?;
+    }
     let mut status = run::read_status(state_dir)?;
     *accepted = true;
 
@@ -231,6 +239,41 @@ async fn set_inner(
     let outcome = run::sync(&store, &tracked, &SyncRequest::new(!opts.mode.publishes()))?;
     report(&outcome);
     Ok(())
+}
+
+/// Drops a local history that shares no ancestry with the origin's and has
+/// never held a tracked file, so the machine adopts the origin's history as a
+/// machine with no checkpoints does. Only the repository's own metadata
+/// (`.mise-history/`) is ever in such a history.
+pub(super) fn discard_contentless_history(
+    repo: &crate::history::shadow::HistoryRepo,
+) -> Result<()> {
+    use crate::history::shadow::HistoryRepo;
+    let (Some(local), Some(remote)) = (
+        repo.ref_oid(HistoryRepo::HISTORY_REF)?,
+        repo.ref_oid(UPSTREAM_REF)?,
+    ) else {
+        return Ok(());
+    };
+    if !repo.merge_bases(&local, &remote)?.is_empty() {
+        return Ok(());
+    }
+    for commit in repo.rev_list(&local, usize::MAX)? {
+        let held = repo
+            .ls_tree(&commit)?
+            .iter()
+            .any(|entry| !entry.path.starts_with(".mise-history/"));
+        if held {
+            return Ok(());
+        }
+    }
+    // a save made since the check may hold files: leave the history alone
+    // then, and the unrelated-histories refusal that follows reports it
+    if repo.ref_oid(HistoryRepo::HISTORY_REF)?.as_deref() != Some(local.as_str()) {
+        return Ok(());
+    }
+    info!("history: the local checkpoints hold no files; adopting the setup repository's history");
+    repo.delete_history_head(&local)
 }
 
 /// The setup branch: the one asked for, else the branch this machine already

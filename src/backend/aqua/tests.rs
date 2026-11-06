@@ -2111,3 +2111,43 @@ fn url_unsafe_versions_are_refused() {
         assert!(ensure_url_safe_version(bad).is_err(), "{bad:?}");
     }
 }
+
+fn raw_exe_pkg() -> AquaPackage {
+    let mut pkg = AquaPackage::default();
+    pkg.url = "https://example.com/{{.Version}}/tool-{{.OS}}.exe".to_string();
+    pkg.format = "raw".to_string();
+    pkg.complete_windows_ext = Some(false);
+    pkg.repo_name = "sonar".to_string();
+    pkg
+}
+
+#[test]
+fn test_srcs_keep_exe_for_raw_windows_download_without_files() {
+    let pkg = raw_exe_pkg();
+    let links =
+        AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "windows", "amd64")
+            .unwrap();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].src, PathBuf::from("install").join("sonar.exe"));
+    assert_eq!(links[0].dst, PathBuf::from("install").join("sonar.exe"));
+}
+
+#[test]
+fn test_srcs_keep_exe_for_raw_windows_download_with_files() {
+    let mut pkg = raw_exe_pkg();
+    pkg.files = vec![AquaFile {
+        name: "sonar".to_string(),
+        ..Default::default()
+    }];
+    let links =
+        AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "windows", "amd64")
+            .unwrap();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].src, PathBuf::from("install").join("sonar.exe"));
+    assert_eq!(links[0].dst, PathBuf::from("install").join("sonar.exe"));
+
+    let links =
+        AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+            .unwrap();
+    assert_eq!(links[0].src, PathBuf::from("install").join("sonar"));
+}

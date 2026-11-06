@@ -540,6 +540,11 @@ impl PythonPlugin {
                         let platform = python_precompiled_platform();
                         bail!("no precompiled python found for {tv} on {platform}");
                     }
+                    if ctx.locked {
+                        bail!(
+                            "no precompiled python found for {tv} and locked mode requires the locked precompiled artifact"
+                        );
+                    }
                     let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
                     if available.is_empty() {
                         debug!("no precompiled python found for {}", tv.version);
@@ -989,6 +994,11 @@ impl PythonPlugin {
 impl Backend for PythonPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        // Only the precompiled path checks the download against the locked checksum.
+        cfg!(windows) || Settings::get().python_compile(CompilePurpose::Install) != Some(true)
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {

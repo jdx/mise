@@ -57,7 +57,7 @@ test("the forbidden patterns catch what they name, and pass what they do not", (
   for (const t of bad) assert.ok(violations(t).length, `not caught: ${t}`);
   const good = [
     "fresh machine · mise installed",
-    "✔ [shop/postgres] started on port 5432",
+    "✔ pitchfork: [shop/postgres] started on port 5432",
     "[build] sources up-to-date, skipping",
     "jq@1.8.2 downloading  1.7/2.3 MB",
     "mise ERROR Invalid choice for arg env: prod, expected one of staging, production",

@@ -28,6 +28,7 @@ With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags.
 - **`-a --all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
 - **`--name-only`** — Print only task names, one per line (for fzf and similar tools)
+- **`--tag <TAG>`** — Only show tasks that have this tag; repeat to accept any of several
 - **`--no-header`** — Do not print the table header
 - **`--sort <COLUMN>`** — Column to sort by (default: name)
 
@@ -63,7 +64,9 @@ mise tasks --hidden --sort source
 - [`mise tasks deps [FLAGS] [TASKS]…`](/cli/tasks/deps.html)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.html)
 - [`mise tasks graph [FLAGS]`](/cli/tasks/graph.html)
+- [`mise tasks history [-s --summary] [-J --json] [TASK]`](/cli/tasks/history.html)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.html)
+- [`mise tasks log [--path] <TASK>`](/cli/tasks/log.html)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.html)
 - [`mise tasks rm [FLAGS] <TASKS>…`](/cli/tasks/rm.html)
 - [`mise tasks set [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/set.html)

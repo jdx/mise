@@ -232,7 +232,7 @@ platforms, or the default platforms for a new lockfile. `--lock` fails when no
 project config is found above the stub.
 
 ```toml [mise.lock]
-lockfile_version = 3
+lockfile_version = 4
 tool-stubs = ["bin/node"]
 
 [[tools.node]]

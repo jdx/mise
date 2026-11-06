@@ -7,7 +7,9 @@ mod add;
 mod deps;
 mod edit;
 mod graph;
+mod history;
 mod info;
+mod log;
 mod ls;
 mod rm;
 mod set;
@@ -47,7 +49,9 @@ enum Commands {
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
     Graph(graph::TasksGraph),
+    History(history::TasksHistory),
     Info(info::TasksInfo),
+    Log(log::TasksLog),
     Ls(ls::TasksLs),
     /// Run tasks; an alias for `mise run`
     ///
@@ -67,7 +71,9 @@ impl Commands {
             Self::Deps(cmd) => cmd.run().await,
             Self::Edit(cmd) => cmd.run().await,
             Self::Graph(cmd) => cmd.run().await,
+            Self::History(cmd) => cmd.run().await,
             Self::Info(cmd) => cmd.run().await,
+            Self::Log(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,
             Self::Rm(cmd) => cmd.run().await,

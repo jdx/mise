@@ -1308,6 +1308,24 @@ impl HistoryRepo {
         if let Some(bytes) = self.transient_blob(oid) {
             return Ok(bytes.starts_with(prefix));
         }
+        if let Some(id) = Self::object_id(oid) {
+            // gix reads a full object id without starting Git; a blob
+            // shorter than the prefix cannot match, so it is never read
+            let repo = self.gix()?;
+            let header = repo
+                .find_header(id)
+                .wrap_err_with(|| format!("reading {id}"))?;
+            if header.kind() != gix::object::Kind::Blob {
+                bail!("reading {id}: a {} is not a blob", header.kind());
+            }
+            if header.size() < prefix.len() as u64 {
+                return Ok(false);
+            }
+            let object = repo
+                .find_object(id)
+                .wrap_err_with(|| format!("reading {id}"))?;
+            return Ok(object.data.starts_with(prefix));
+        }
         self.git.blob_starts_with(oid, prefix)
     }
 
@@ -2362,6 +2380,27 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The header check reads full object ids in-process and agrees with
+    /// the Git-backed check on matches, mismatches, short blobs and trees.
+    #[test]
+    fn blob_starts_with_matches_git() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = super::HistoryRepo::open_or_init_in(temp.path())
+            .unwrap()
+            .unwrap();
+        let magic: &[u8] = b"mise-encrypted-file-v1\n";
+        let encrypted = repo.hash_blob(b"mise-encrypted-file-v1\nbody").unwrap();
+        let plain = repo.hash_blob(b"mise-encrypted-file-v2\nbody").unwrap();
+        let short = repo.hash_blob(b"mise").unwrap();
+        for (oid, expected) in [(&encrypted, true), (&plain, false), (&short, false)] {
+            assert_eq!(repo.blob_starts_with(oid, magic).unwrap(), expected);
+            assert_eq!(repo.git.blob_starts_with(oid, magic).unwrap(), expected);
+        }
+        let tree = repo.empty_object("tree").unwrap();
+        assert!(repo.blob_starts_with(&tree, magic).is_err());
+        assert!(repo.blob_starts_with(&"0".repeat(40), magic).is_err());
     }
 
     #[test]

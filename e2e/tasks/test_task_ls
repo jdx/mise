@@ -61,6 +61,7 @@ assert_json "mise tasks ls --json" "$(
  {
    "name": "confdtask",
    "aliases": [],
+   "tags": [],
    "description": "",
    "source": "$(pwd)/.config/mise/conf.d/confdtask-config.toml",
    "config_sources": ["$(pwd)/.config/mise/conf.d/confdtask-config.toml"],
@@ -92,6 +93,7 @@ assert_json "mise tasks ls --json" "$(
  {
    "name": "filetask2",
    "aliases": [],
+   "tags": [],
    "description": "",
    "source": "$(pwd)/mytasks/filetask2",
    "config_sources": ["$(pwd)/mytasks/filetask2"],
@@ -121,6 +123,7 @@ assert_json "mise tasks ls --json" "$(
  {
    "name": "filetask3",
    "aliases": [],
+   "tags": [],
    "description": "",
    "source": "$(pwd)/mytasks/filetask3.sh",
    "config_sources": ["$(pwd)/mytasks/filetask3.sh"],
@@ -150,6 +153,7 @@ assert_json "mise tasks ls --json" "$(
  {
    "name": "lint",
    "aliases": [],
+   "tags": [],
    "description": "",
    "source": "$(pwd)/mise.toml",
    "config_sources": ["$(pwd)/mise.toml"],
@@ -181,6 +185,7 @@ assert_json "mise tasks ls --json" "$(
  {
    "name": "test",
    "aliases": [],
+   "tags": [],
    "description": "",
    "source": "$(pwd)/tasks.toml",
    "config_sources": ["$(pwd)/tasks.toml"],
@@ -212,6 +217,7 @@ assert_json "mise tasks ls --json" "$(
  {
    "name": "test-with-args",
    "aliases": [],
+   "tags": [],
    "description": "",
    "source": "$(pwd)/tasks.toml",
    "config_sources": ["$(pwd)/tasks.toml"],

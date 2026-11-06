@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+# Each passing check calls ok(); count them, for the runner's pass line.
+_count_ok() {
+  if [[ -n ${E2E_ASSERTION_LOG:-} ]]; then
+    echo >>"$E2E_ASSERTION_LOG"
+  fi
+  return 0
+}
+
 if [[ -n ${GITHUB_ACTION:-} ]]; then
   # Output GitHub action annotations
   annotate() {
@@ -17,11 +25,17 @@ if [[ -n ${GITHUB_ACTION:-} ]]; then
   end_group() { echo ::endgroup:: >&2; }
 
   # Yet use ANSI green color for the "ok" message
-  ok() { echo $'\e[92m'"$*"$'\e[0m' >&2; }
+  ok() {
+    echo $'\e[92m'"$*"$'\e[0m' >&2
+    _count_ok
+  }
 
 elif [[ -t 2 ]]; then
   # Use ANSI coloring in terminal
-  ok() { echo $'\e[92m'"$*"$'\e[0m' >&2; }
+  ok() {
+    echo $'\e[92m'"$*"$'\e[0m' >&2
+    _count_ok
+  }
   err() { echo $'\e[91m'"${title:+$title: }$*"$'\e[0m' >&2; }
   warn() { echo $'\e[93m'"${title:+$title: }$*"$'\e[0m' >&2; }
   notice() { echo $'\e[94m'"$*"$'\e[0m' >&2; }
@@ -31,7 +45,10 @@ elif [[ -t 2 ]]; then
 
 else
   # No styling
-  ok() { echo "SUCCESS: $*" >&2; }
+  ok() {
+    echo "SUCCESS: $*" >&2
+    _count_ok
+  }
   err() { echo "ERROR: ${title:+$title: }$*" >&2; }
   warn() { echo "WARNING: ${title:+$title: }$*" >&2; }
   notice() { echo "NOTICE: $*" >&2; }

@@ -906,3 +906,87 @@ assert_contains "cat ~/.secret-dotfile" "phase=apply-time"
 for command in add apply diff edit status unapply; do
   assert_contains "mise dotfiles $command --help" "--prompt-secrets"
 done
+
+# A directory link the user made inside a symlink-each target is theirs: apply
+# does not write through it without --force, and unapply never removes it.
+mkdir -p userlink-src/sub userlink-old userlink-home
+echo "a" >userlink-src/sub/a.txt
+ln -s "$PWD/userlink-old" userlink-home/sub
+cat <<EOF >userlink.toml
+[dotfiles]
+"$PWD/userlink-home" = { source = "userlink-src", mode = "symlink-each" }
+EOF
+assert_fail "MISE_CONFIG_FILE=$PWD/userlink.toml mise dotfiles apply --yes"
+assert_fail "test -e '$PWD/userlink-old/a.txt'"
+assert "readlink '$PWD/userlink-home/sub'" "$PWD/userlink-old"
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink.toml mise dotfiles apply --yes --force"
+assert_fail "test -L '$PWD/userlink-home/sub'"
+assert "readlink '$PWD/userlink-home/sub/a.txt'" "$PWD/userlink-src/sub/a.txt"
+assert_fail "test -e '$PWD/userlink-old/a.txt'"
+
+# --force replaces a directory link from the outermost one, so a link behind it
+# (here one inside the directory it points to) is never touched.
+mkdir -p userlink2-src/sub/deep userlink2-old userlink2-outside userlink2-home
+echo "a" >userlink2-src/sub/deep/a.txt
+ln -s "$PWD/userlink2-outside" userlink2-old/deep
+ln -s "$PWD/userlink2-old" userlink2-home/sub
+cat <<EOF >userlink2.toml
+[dotfiles]
+"$PWD/userlink2-home" = { source = "userlink2-src", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink2.toml mise dotfiles apply --yes --force"
+assert "readlink '$PWD/userlink2-old/deep'" "$PWD/userlink2-outside"
+assert "readlink '$PWD/userlink2-home/sub/deep/a.txt'" "$PWD/userlink2-src/sub/deep/a.txt"
+
+# The target itself may be a link to the directory that holds the links.
+mkdir -p userlink3-src userlink3-real
+echo "a" >userlink3-src/a.txt
+ln -s "$PWD/userlink3-real" userlink3-home
+cat <<EOF >userlink3.toml
+[dotfiles]
+"$PWD/userlink3-home" = { source = "userlink3-src", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink3.toml mise dotfiles apply --yes"
+assert "readlink '$PWD/userlink3-home'" "$PWD/userlink3-real"
+assert "readlink '$PWD/userlink3-real/a.txt'" "$PWD/userlink3-src/a.txt"
+
+# A target that links to nothing blocks the entry until --force replaces it.
+mkdir -p userlink4-src
+echo "a" >userlink4-src/a.txt
+ln -s "$PWD/userlink4-missing" userlink4-home
+cat <<EOF >userlink4.toml
+[dotfiles]
+"$PWD/userlink4-home" = { source = "userlink4-src", mode = "symlink-each" }
+EOF
+assert_fail "MISE_CONFIG_FILE=$PWD/userlink4.toml mise dotfiles apply --yes"
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink4.toml mise dotfiles apply --yes --force"
+assert "readlink '$PWD/userlink4-home/a.txt'" "$PWD/userlink4-src/a.txt"
+
+# A dangling link in a symlink-each source is deployed as a link, and the first
+# apply, which has no state to go by, does not prune it as stale again.
+mkdir -p dangling-src dangling-home
+echo "kept" >dangling-src/kept.txt
+ln -s "$PWD/dangling-missing" dangling-src/dangling
+cat <<EOF >dangling.toml
+[dotfiles]
+"$PWD/dangling-home" = { source = "dangling-src", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$PWD/dangling.toml mise dotfiles apply --yes"
+assert "readlink $PWD/dangling-home/dangling" "$PWD/dangling-src/dangling"
+assert_not_contains "MISE_CONFIG_FILE=$PWD/dangling.toml mise dotfiles status" "missing"
+
+# Links that already sit behind a user's directory link do not make the entry
+# look applied: it still needs --force to replace that link.
+mkdir -p userlink5-src/sub userlink5-old userlink5-home
+echo "a" >userlink5-src/sub/a.txt
+ln -s "$PWD/userlink5-src/sub/a.txt" userlink5-old/a.txt
+ln -s "$PWD/userlink5-old" userlink5-home/sub
+cat <<EOF >userlink5.toml
+[dotfiles]
+"$PWD/userlink5-home" = { source = "userlink5-src", mode = "symlink-each" }
+EOF
+assert_contains "MISE_CONFIG_FILE=$PWD/userlink5.toml mise dotfiles status" "link to a directory"
+assert_fail "MISE_CONFIG_FILE=$PWD/userlink5.toml mise dotfiles apply --yes"
+assert "readlink '$PWD/userlink5-home/sub'" "$PWD/userlink5-old"
+assert_succeed "MISE_CONFIG_FILE=$PWD/userlink5.toml mise dotfiles apply --yes --force"
+assert_fail "test -L '$PWD/userlink5-home/sub'"

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat <<EOF >mise.toml
+[tasks.ok]
+run = "echo ok"
+
+[tasks.fresh]
+sources = ["mise.toml"]
+outputs = ["out.txt"]
+run = "touch out.txt"
+
+[tasks.bad]
+depends = ["ok", "fresh"]
+run = "exit 3"
+
+[tasks.after]
+depends = ["bad"]
+run = "echo after"
+
+[tasks.env]
+run = 'echo "report=\${MISE_TASK_REPORT_FILE:-unset}"'
+
+[tasks.slow]
+run = "sleep 10"
+
+[tasks.secret]
+env.RUN_REPORT_KEY = { required = true, redact = true }
+run = "echo secret"
+
+[tasks.child]
+depends = ["bad"]
+run = "echo child"
+
+[tasks.parent]
+run = [{ task = "child" }]
+EOF
+
+# Leave "fresh" up to date so the next run skips it.
+mise run fresh
+
+# A failing run still writes the report, and mise keeps the task's exit status.
+code=0
+mise run --report-file report.json after || code=$?
+assert "echo $code" "3"
+assert "jq -r .status report.json" "failed"
+assert "jq -r .version report.json" "1"
+assert_json "jq -c '[.tasks[] | {name, status, exit_code}] | sort_by(.name)' report.json" '[
+  {"name": "after", "status": "not_run", "exit_code": null},
+  {"name": "bad", "status": "failed", "exit_code": 3},
+  {"name": "fresh", "status": "skipped", "exit_code": null},
+  {"name": "ok", "status": "passed", "exit_code": 0}
+]'
+assert "jq -r '.tasks[] | select(.name == \"bad\") | .duration_ms | type' report.json" "number"
+assert "jq -r '.tasks[] | select(.name == \"bad\") | .started_at | type' report.json" "string"
+assert "jq -r '.tasks[] | select(.name == \"after\") | .duration_ms' report.json" "null"
+assert "jq -r '.duration_ms | type' report.json" "number"
+
+# The env var requests a report too, and the task does not inherit it, so a
+# nested `mise run` cannot overwrite this run's report.
+assert_contains "MISE_TASK_REPORT_FILE=env.json mise run env" "report=unset"
+assert "jq -r .status env.json" "passed"
+assert_json "jq -c '[.tasks[] | {name, status, exit_code}]' env.json" '[
+  {"name": "env", "status": "passed", "exit_code": 0}
+]'
+
+# A run stopped by --timeout is timed out, and the task it stopped is cancelled.
+mise run --report-file timeout.json --timeout 1s slow >/dev/null 2>&1 || true
+assert "jq -r .status timeout.json" "timed_out"
+assert "jq -r '.tasks[0].name + \" \" + .tasks[0].status' timeout.json" "slow cancelled"
+
+# Arguments get the redactions a task registers when it starts, after it was
+# scheduled, and URL credentials are hidden.
+RUN_REPORT_KEY=caller_key_7f3 mise run --report-file secret.json secret caller_key_7f3 https://user:pw@example.com/x
+assert_not_contains "cat secret.json" "caller_key_7f3"
+assert_not_contains "cat secret.json" "user:pw"
+assert "jq -r '.tasks[0].args[0]' secret.json" "[redacted]"
+
+# A task a run entry injects is listed even when the run never starts it.
+mise run --report-file nested.json parent >/dev/null 2>&1 || true
+assert "jq -r '.tasks[] | select(.name == \"child\") | .status' nested.json" "not_run"
+
+# A sandbox that lets MISE_* through still keeps the outer report path out.
+assert_contains "MISE_TASK_REPORT_FILE=sandbox.json mise run --deny-env --allow-env 'MISE_*' env" "report=unset"
+
+# A dry run runs nothing to report, so the env var conflicts with it like the flag.
+rm -f dry.json
+assert_fail "MISE_TASK_REPORT_FILE=dry.json mise run --dry-run ok"
+assert "test -e dry.json && echo exists || echo missing" "missing"

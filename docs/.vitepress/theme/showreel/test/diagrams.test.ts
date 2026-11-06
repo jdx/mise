@@ -550,7 +550,7 @@ test("drawn link: the take's wrapped linked rows, and only the active version li
   assert.ok(links.length >= 2, `${links.length} links`);
   const v = f.versions.tools.hk_new;
   for (const l of links) {
-    assert.match(projectPath(l.from), /^\.claude\/skills\/[\w-]+$/);
+    assert.match(projectPath(l.from), /^\.agents\/skills\/[\w-]+$/);
     const p = installPath(l.to, v);
     assert.equal(p.text, `…/installs/hk/${v}/…`);
     assert.deepEqual(
@@ -562,7 +562,7 @@ test("drawn link: the take's wrapped linked rows, and only the active version li
     assert.equal(installPath(l.to, "0.0.0-not-there").lit, null);
   }
   // A row wrapped at 80 columns reads as one.
-  const head = "linked /x/.claude/skills/s -> /y/";
+  const head = "linked /x/.agents/skills/s -> /y/";
   const wrapped = linkedRows([
     head + "z".repeat(80 - head.length),
     "/installs/t/9/skills/s",

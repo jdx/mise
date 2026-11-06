@@ -131,6 +131,7 @@ fn complete_spec(
             // Project data answers here; a value carrying a control character would be read
             // as protocol rather than as a candidate.
             .filter(|(value, _)| is_completable(value))
+            .filter(|(value, description)| !shadowed_by_command(spec, request, value, description))
             .map(|(value, description)| {
                 let description = strip_control_chars(&description);
                 if description.is_empty() {
@@ -157,6 +158,66 @@ fn complete_spec(
 /// for task names or `run=` completer output, which come from project files that need not be
 /// trusted. A value that could be read as protocol, or that would start a line of its own, is
 /// left out rather than escaped: no name a shell can complete needs a control character.
+/// Whether a candidate is a task named like a command `mise <name>` runs instead.
+///
+/// With a default subcommand, the first word completes both the commands and the mounted task
+/// names. A task called `upgrade` is then offered beside the built-in `upgrade`, and a shell
+/// that lists one entry per name shows the task's description over the command's. `mise
+/// upgrade` runs the command, so the task is only reachable as `mise run upgrade`. A candidate
+/// that carries a command's name or alias without that command's description is the task.
+fn shadowed_by_command(
+    spec: &usage::Spec,
+    request: &usage_rs::complete::CompletionRequest,
+    value: &str,
+    description: &str,
+) -> bool {
+    if spec.default_subcommand.is_none() {
+        return false;
+    }
+    // Only the first word that is not a flag, or a flag's separate value, picks a command.
+    let Some(before) = request.split.words.get(1..request.split.cword) else {
+        return false;
+    };
+    let takes_value = |word: &str| {
+        let flag = |f: &&usage::SpecFlag| match word.strip_prefix("--") {
+            Some(long) => f.long.iter().any(|l| l == long),
+            None => word.chars().nth(1).is_some_and(|c| f.short.contains(&c)),
+        };
+        // `--jobs=2` and `-j2` carry their value; a short cluster such as `-xj` is not parsed.
+        !word.contains('=')
+            && (word.starts_with("--") || word.chars().count() == 2)
+            && spec
+                .cmd
+                .flags
+                .iter()
+                .find(flag)
+                .is_some_and(|f| f.arg.is_some())
+    };
+    // After `--`, even right behind a flag, the next word is a task, not a command.
+    if before.iter().any(|word| word == "--") {
+        return false;
+    }
+    let mut words = before.iter();
+    while let Some(word) = words.next() {
+        if !word.starts_with('-') {
+            return false;
+        }
+        if takes_value(word) {
+            words.next();
+        }
+    }
+    spec.cmd.subcommands.values().any(|cmd| {
+        let named = cmd.name == value
+            || cmd
+                .aliases
+                .iter()
+                .chain(&cmd.hidden_aliases)
+                .any(|alias| alias == value);
+        let help = cmd.help.as_deref().unwrap_or_default().lines().next();
+        named && help.unwrap_or_default() != description
+    })
+}
+
 fn is_completable(value: &str) -> bool {
     !value.chars().any(char::is_control)
 }
@@ -521,6 +582,49 @@ mod shell_name_tests {
             answer.contains("tools.node.version\tversion of the tool to install\n"),
             "{answer}"
         );
+    }
+
+    #[test]
+    fn a_forwarded_command_completes_files_after_its_first_word() {
+        let ask = |line: &str| {
+            let argv: Vec<OsString> = ["__complete_word__", "--shell", "bash", "--line", line]
+                .into_iter()
+                .map(OsString::from)
+                .collect();
+            completion_request(&argv).unwrap()
+        };
+        // Every word after the command is a file, as in a bare shell. The command word is
+        // covered by `a_forwarded_command_word_completes_commands`. One request per test: each
+        // builds the whole completion spec, and nextest kills a unit test after a second, which
+        // a debug build on a slow runner reaches with three.
+        assert_eq!(ask("mise x node@22 -- ls -l src/"), "\u{1}files\n");
+    }
+
+    /// The command word is the one thing after `--` that is not a file. `PATH` holds a single
+    /// directory, so listing the commands stays cheap on a host with a large one.
+    #[cfg(unix)]
+    #[test]
+    fn a_forwarded_command_word_completes_commands() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("forwardedtool");
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut environment = mise_util::testing::EnvVarGuard::new();
+        environment.set("PATH", dir.path());
+
+        let argv: Vec<OsString> = [
+            "__complete_word__",
+            "--shell",
+            "bash",
+            "--line",
+            "mise x -- forwarded",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        assert_eq!(completion_request(&argv).unwrap(), "forwardedtool\n");
     }
 
     #[test]
