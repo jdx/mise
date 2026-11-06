@@ -2429,8 +2429,15 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        // `matching_regex` narrows the primary asset only, so
+                        // do not suggest it for an additional asset pattern.
+                        if asset_pattern.is_none() {
+                            asset_matcher::asset_pattern_hint(&templated_pattern)
+                        } else {
+                            ""
+                        },
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;
@@ -2530,8 +2537,15 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets.links, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        // `matching_regex` narrows the primary asset only, so
+                        // do not suggest it for an additional asset pattern.
+                        if asset_pattern.is_none() {
+                            asset_matcher::asset_pattern_hint(&templated_pattern)
+                        } else {
+                            ""
+                        },
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;
@@ -2628,8 +2642,15 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        // `matching_regex` narrows the primary asset only, so
+                        // do not suggest it for an additional asset pattern.
+                        if asset_pattern.is_none() {
+                            asset_matcher::asset_pattern_hint(&templated_pattern)
+                        } else {
+                            ""
+                        },
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;

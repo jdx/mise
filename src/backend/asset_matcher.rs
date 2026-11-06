@@ -726,6 +726,23 @@ pub(crate) fn is_metadata_asset(asset: &str) -> bool {
     .any(|suffix| asset.ends_with(suffix))
 }
 
+/// Extra text for the "no asset matched" error when `asset_pattern` looks like
+/// a regular expression. `asset_pattern` is a glob, so a regex silently matches
+/// nothing; point at `matching_regex`, which keeps platform autodetection. An
+/// explicit `asset_pattern` overrides `matching_regex`, so say to replace it.
+pub(crate) fn asset_pattern_hint(pattern: &str) -> &'static str {
+    let looks_like_regex = pattern.starts_with('^')
+        || pattern.ends_with('$')
+        || pattern.contains('\\')
+        || pattern.contains("(?")
+        || pattern.contains('|');
+    if looks_like_regex {
+        " (asset_pattern is a glob, not a regular expression; to filter with a regex while keeping platform autodetection, remove asset_pattern and use matching_regex instead)"
+    } else {
+        ""
+    }
+}
+
 /// Assets that cannot become a runnable tool through mise's normal extraction
 /// path. Keep them out of automatic selection while still allowing an explicit
 /// `asset_pattern` or URL to select one for custom installation logic.
@@ -747,11 +764,16 @@ fn is_non_executable_asset(asset: &str) -> bool {
                 | "rpm"
         )
     });
+    // Language-ecosystem packages: installing them needs pip or RubyGems, not
+    // extraction, and their names carry platform tags (manylinux, mingw32)
+    // that outscore a real native archive. Match the file extension only, so
+    // a native archive such as `gem.linux-x64.tar.gz` stays selectable.
+    let is_language_package = asset.ends_with(".whl") || asset.ends_with(".gem");
     let filename = asset.rsplit('/').next().unwrap_or(&asset);
     let is_generic_source_archive = extraction_suffix_len(filename)
         .map(|suffix_len| &filename[..filename.len() - suffix_len])
         .is_some_and(|stem| matches!(stem, "source" | "source-code" | "src"));
-    is_package_or_installer || is_generic_source_archive
+    is_package_or_installer || is_language_package || is_generic_source_archive
 }
 
 fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
@@ -3364,5 +3386,54 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
 
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "rust-analyzer-x86_64-apple-darwin.gz");
+    }
+
+    #[test]
+    fn test_python_wheels_and_gems_are_not_auto_selected() {
+        // Wheels carry `manylinux`/`win_amd64` tags that score as a libc/OS
+        // match, which used to outrank the native archive.
+        let assets: Vec<String> = [
+            "rshellcheck-1.0.0-py3-none-manylinux_2_17_x86_64.whl",
+            "rshellcheck-1.0.0-py3-none-win_amd64.whl",
+            "rshellcheck-1.0.0-x86_64-unknown-linux-musl.tar.gz",
+            "rshellcheck-1.0.0-x86_64-pc-windows-msvc.zip",
+        ]
+        .map(String::from)
+        .into();
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "rshellcheck-1.0.0-x86_64-unknown-linux-musl.tar.gz");
+
+        let picked = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "rshellcheck-1.0.0-x86_64-pc-windows-msvc.zip");
+
+        // Only the file extension marks a package; `gem` as a name part does not.
+        let native = vec!["gem.linux-x64.tar.gz".to_string()];
+        assert_eq!(
+            AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+                .pick_best_asset(&native),
+            Some("gem.linux-x64.tar.gz".to_string())
+        );
+
+        let only_gem = vec!["tool-1.0.0-x86_64-linux.gem".to_string()];
+        assert_eq!(
+            AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+                .pick_best_asset(&only_gem),
+            None
+        );
+    }
+
+    #[test]
+    fn test_asset_pattern_hint_flags_regex_lookalikes() {
+        assert!(asset_pattern_hint(r"^tool-[0-9].*\.(tar\.gz|zip)$").contains("matching_regex"));
+        assert!(asset_pattern_hint(r"tool-(?:a|b)").contains("matching_regex"));
+        assert_eq!(asset_pattern_hint("tool-*-linux-{x64,x86_64}.tar.gz"), "");
+        assert_eq!(asset_pattern_hint("tool-[0-9]*.zip"), "");
+        // `.*` is a valid glob suffix, not a regex signal.
+        assert_eq!(asset_pattern_hint("tool-linux-x64.*"), "");
     }
 }
