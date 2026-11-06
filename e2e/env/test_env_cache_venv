@@ -59,6 +59,17 @@ cd ../proj
 assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
 cd ..
 
+# A caller VIRTUAL_ENV disables uv_venv_auto, so it must not share a cache entry with
+# the sourced venv, whichever order the two are computed in.
+rm -rf "${MISE_STATE_DIR:?}/env-cache"
+cd proj
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+VIRTUAL_ENV=/caller/venv assert_not_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+rm -rf "${MISE_STATE_DIR:?}/env-cache"
+VIRTUAL_ENV=/caller/venv assert_not_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+cd ..
+
 # A custom uv environment path must participate in the cache key too. Changing
 # UV_PROJECT_ENVIRONMENT must select the new venv rather than reuse the previous
 # cached environment, and the custom venv must not leak into a sibling.
