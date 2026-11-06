@@ -728,7 +728,8 @@ pub(crate) fn is_metadata_asset(asset: &str) -> bool {
 
 /// Extra text for the "no asset matched" error when `asset_pattern` looks like
 /// a regular expression. `asset_pattern` is a glob, so a regex silently matches
-/// nothing; point at `matching_regex`, which keeps platform autodetection.
+/// nothing; point at `matching_regex`, which keeps platform autodetection. An
+/// explicit `asset_pattern` overrides `matching_regex`, so say to replace it.
 pub(crate) fn asset_pattern_hint(pattern: &str) -> &'static str {
     let looks_like_regex = pattern.starts_with('^')
         || pattern.ends_with('$')
@@ -736,7 +737,7 @@ pub(crate) fn asset_pattern_hint(pattern: &str) -> &'static str {
         || pattern.contains("(?")
         || pattern.contains('|');
     if looks_like_regex {
-        " (asset_pattern is a glob, not a regular expression; to filter with a regex while keeping platform autodetection, use matching_regex)"
+        " (asset_pattern is a glob, not a regular expression; to filter with a regex while keeping platform autodetection, remove asset_pattern and use matching_regex instead)"
     } else {
         ""
     }
