@@ -202,6 +202,7 @@ impl RubyPlugin {
         // The runner kills `ruby-install` and its children at the deadline.
         CmdLineRunner::new(self.ruby_install_bin())
             .arg("--update")
+            .never_raw()
             .with_on_stdout(|line| eprintln!("{line}"))
             .with_timeout(Settings::get().fetch_remote_versions_timeout())
             .execute()
@@ -798,7 +799,7 @@ impl Backend for RubyPlugin {
         timeout::run_with_timeout_async(
             async || {
                 if let Err(err) = self.update_build_tool(None).await {
-                    warn!("{err}");
+                    warn!("{err:#}");
                 }
 
                 // Fetch Ruby release dates from GitHub in parallel with version list
