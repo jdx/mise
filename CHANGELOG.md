@@ -1,5 +1,30 @@
 # Changelog
 
+## [2026.11.3](https://github.com/jdx/mise/releases/tag/v2026.11.3) - 2026-11-06
+
+### 🚀 Features
+
+- **(task)** select tasks by their sources with --affected outside a monorepo by @jdx in [#15407](https://github.com/jdx/mise/pull/15407)
+- **(task)** keep each task's last output behind the task.logs setting and print it with mise tasks log by @jdx in [#15409](https://github.com/jdx/mise/pull/15409)
+- **(task)** record task run durations and add mise tasks history by @jdx in [#15408](https://github.com/jdx/mise/pull/15408)
+
+### 🐛 Bug Fixes
+
+- **(backend)** kill a hung asdf list-all at fetch_remote_versions_timeout by @jdx in [#15424](https://github.com/jdx/mise/pull/15424)
+- **(github)** skip Python wheels and gems when autodetecting assets by @jdx in [#15423](https://github.com/jdx/mise/pull/15423)
+- **(lock)** keep tool_config.locked pins out of the lockfile after an install by @jdx in [#15428](https://github.com/jdx/mise/pull/15428)
+- **(npm)** reinstall aube trees whose dependency links were restored as file symlinks on Windows by @jdx in [#15425](https://github.com/jdx/mise/pull/15425)
+- **(prune)** resolve a project's tool_alias for its task tools by @jdx in [#15427](https://github.com/jdx/mise/pull/15427)
+- **(upgrade)** stop --bump doubling prefix: on two-part prefix requests by @jdx in [#15426](https://github.com/jdx/mise/pull/15426)
+
+### 📚 Documentation
+
+- list PowerShell before winget on Windows install section by @jdx in [#15415](https://github.com/jdx/mise/pull/15415)
+
+### Chore
+
+- **(ci)** ignore the astral-tokio-tar and pin-utils advisories by their published IDs by @jdx in [#15416](https://github.com/jdx/mise/pull/15416)
+
 ## [2026.11.2](https://github.com/jdx/mise/releases/tag/v2026.11.2) - 2026-11-05
 
 ### 🚀 Features
