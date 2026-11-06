@@ -33,3 +33,14 @@ assert_not_contains "mise upgrade --bump --dry-run" "prefix:prefix:"
 mise upgrade --bump
 assert_contains "cat mise.toml" 'prefixbump = "prefix:1.26"'
 assert_not_contains "cat mise.toml" "prefix:prefix:"
+
+# a vendor prefix still sees newer majors
+cat <<'PLUGINLIST' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "vend-17.0.1 vend-21.0.2"
+PLUGINLIST
+cat <<'CONFIG' >mise.toml
+[tools]
+prefixbump = "prefix:vend-17"
+CONFIG
+assert_contains "mise upgrade --bump --dry-run" "Would bump prefixbump@prefix:vend-21"

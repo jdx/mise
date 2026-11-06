@@ -129,7 +129,13 @@ impl OutdatedInfo {
         // the backend's stable-latest shortcut (see `resolved_release_url`).
         let latest_query;
         let latest_result = if use_backend_latest {
-            let prefix = prefixed_latest_query(&prefix, &prefix_version);
+            // A `prefix:` request names the versions it follows, so the bump looks past
+            // them (to the next major, say) instead of narrowing the query to them.
+            let prefix = if matches!(tv.request, ToolRequest::Prefix { .. }) {
+                None
+            } else {
+                prefixed_latest_query(&prefix, &prefix_version)
+            };
             latest_query = prefix.clone().unwrap_or_else(|| "latest".to_string());
             // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
             t.latest_version(config, prefix, opts.before_date).await
