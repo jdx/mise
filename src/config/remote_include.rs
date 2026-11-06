@@ -65,6 +65,16 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         return load_local(parent, reference);
     }
     let pin = classify(reference)?;
+    if pin == Pin::Mutable
+        && reference.starts_with(ZIP_INCLUDE_PREFIX)
+        && Settings::try_get().is_ok_and(|s| s.paranoid.config())
+    {
+        bail!(
+            "paranoid mode binds trust to content, and a zip:: include cannot be pinned, so it \
+             is not allowed: {reference}. Use a git:: include pinned to a commit sha or an oci:: \
+             include pinned to a digest instead"
+        );
+    }
     if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid.config()) {
         bail!(
             "paranoid mode binds trust to content, so a config include must be pinned to a \

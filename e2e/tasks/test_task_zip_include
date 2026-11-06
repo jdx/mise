@@ -51,7 +51,7 @@ TOML
 assert_contains "mise env -s bash" "export FROM_ZIP=yes"
 
 # a zip is not pinned to content, so paranoid mode refuses it
-MISE_PARANOID=1 assert_fail "mise env" "must be pinned"
+MISE_PARANOID=1 assert_fail "mise env" "cannot be pinned"
 
 # a non-http source is rejected
 cat >mise.toml <<TOML
