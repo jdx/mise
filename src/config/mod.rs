@@ -8426,11 +8426,27 @@ pub(crate) fn task_tool_requests(
     // the project's own config last, and only the backend an alias stands for matters here.
     // Configs that share a root have a precedence only a full load knows, so every backend one
     // of them gives an alias counts, and a nearer layer replaces the candidates of a farther one.
+    // In safe mode a project cannot alias a tool that global config declares, as in
+    // `load_aliases`.
+    let global_tools: BTreeSet<String> = if Settings::safe_mode() {
+        config
+            .config_files
+            .values()
+            .filter(|other| is_global_config(other.get_path()))
+            .flat_map(|other| other.tool_backends())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
     let mut tool_aliases: HashMap<String, Vec<String>> = HashMap::new();
     for layer in layers.values() {
         let mut named: HashMap<String, Vec<String>> = HashMap::new();
         for other in layer {
+            let project = !global_tools.is_empty() && !is_global_config(other.get_path());
             for (name, backend) in other.backend_aliases() {
+                if project && global_tools.contains(&name) {
+                    continue;
+                }
                 let candidates = named.entry(name).or_default();
                 if !candidates.contains(&backend) {
                     candidates.push(backend);
