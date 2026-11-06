@@ -16,11 +16,14 @@ assert "mise trust proj/mise.toml"
 # only one of the two aliased tools is installed
 assert "mise install -C proj aliased"
 assert "test -d '$MISE_DATA_DIR/installs/aliased/1.1.0'"
+# an unreferenced version of the aliased tool is the control: prune must list it
+assert "mise install aliased@1.0.0"
 assert "mise ls -C proj"
 
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "Failed to resolve"
 assert_not_contains "mise prune --dry-run 2>&1" "aliased@1.1.0"
+assert_contains "mise prune --dry-run 2>&1" "aliased@1.0.0"
 
 # every version of an aliased tool keeps its own options, not those of the first entry
 cd .. || exit 1
