@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# A shim is the mise binary under another name. Its hidden `__complete_word__` request is for the
+# tool behind the shim, so mise must not answer it with mise's own commands.
+
+# mise itself still answers for mise.
+assert_contains "mise __complete_word__ --shell fish --line 'mise ins'" "install-into"
+
+# Invoked under another name, the request is not mise's to answer.
+mkdir -p bin
+ln -sf "$(command -v mise)" bin/notmise
+assert_not_contains "bin/notmise __complete_word__ --shell fish --line 'notmise ins' 2>&1 || true" "install-into"

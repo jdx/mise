@@ -1151,15 +1151,20 @@ impl Cli {
         // Record ARGS first: an error from this path (a closed stdout, an unreadable
         // spec) still reaches `handle_err`, whose logger setup reads them.
         crate::env::ARGS.write().unwrap().clone_from(args);
-        let completion_argv: Vec<std::ffi::OsString> =
-            args.iter().skip(1).map(std::ffi::OsString::from).collect();
-        if let Some(answer) = completion::usage_spec_request(&completion_argv) {
-            miseprint!("{}", answer?)?;
-            return Ok(());
-        }
-        if let Some(answer) = completion::completion_request(&completion_argv) {
-            miseprint!("{answer}")?;
-            return Ok(());
+        // Only when invoked as mise itself: a shim (`aube`, `pitchfork`, ...) is this same
+        // binary, and its `__complete_word__` request is for the tool behind the shim, which
+        // `handle_shim` forwards to. Answering here would offer mise's own commands instead.
+        if crate::env::is_mise_binary(*crate::env::MISE_BIN_NAME) {
+            let completion_argv: Vec<std::ffi::OsString> =
+                args.iter().skip(1).map(std::ffi::OsString::from).collect();
+            if let Some(answer) = completion::usage_spec_request(&completion_argv) {
+                miseprint!("{}", answer?)?;
+                return Ok(());
+            }
+            if let Some(answer) = completion::completion_request(&completion_argv) {
+                miseprint!("{answer}")?;
+                return Ok(());
+            }
         }
         if is_packages_where_query(args) {
             Settings::select_package_query_sources();
