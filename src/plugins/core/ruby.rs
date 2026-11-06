@@ -202,7 +202,7 @@ impl RubyPlugin {
         // The runner kills `ruby-install` and its children at the deadline.
         CmdLineRunner::new(self.ruby_install_bin())
             .arg("--update")
-            .stdout(std::process::Stdio::null())
+            .with_on_stdout(|line| eprintln!("{line}"))
             .with_timeout(Settings::get().fetch_remote_versions_timeout())
             .execute()
             .map_err(|err| {
