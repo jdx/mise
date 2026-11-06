@@ -352,7 +352,7 @@ impl Manifest {
         let merged = Self {
             format: 1,
             enrollment,
-            exclude: choose(&base.exclude, &local.exclude, &remote.exclude, "exclusions")?,
+            exclude: merge_exclusions(&base.exclude, &local.exclude, &remote.exclude)?,
             recipients: choose(
                 &base.recipients,
                 &local.recipients,
@@ -731,6 +731,32 @@ fn plain(path: &str) -> String {
     } else {
         format!("{root}/{relative}")
     }
+}
+
+/// Merge the manifest's ordered `exclude` list. Globs apply in order and the
+/// last match wins, so the list is a program, not a set. When both sides only
+/// appended to the base, their additions commute unless one of them is a
+/// `!glob`, whose meaning depends on what comes before it; the result is the
+/// base, then local's additions, then remote's. Any other divergence (a
+/// removal or reorder on both sides) stays a conflict.
+fn merge_exclusions(base: &[String], local: &[String], remote: &[String]) -> Result<Vec<String>> {
+    if local == remote || remote == base {
+        return Ok(local.to_vec());
+    }
+    if local == base {
+        return Ok(remote.to_vec());
+    }
+    if local.starts_with(base) && remote.starts_with(base) {
+        let (ours, theirs) = (&local[base.len()..], &remote[base.len()..]);
+        if !ours.iter().chain(theirs).any(|glob| glob.starts_with('!')) {
+            let mut merged = local.to_vec();
+            merged.extend(theirs.iter().filter(|glob| !ours.contains(glob)).cloned());
+            return Ok(merged);
+        }
+    }
+    bail!(
+        "enrollment conflict in exclusions; both machines changed `mise dot exclude` in ways that cannot be combined (a removal or a `!glob`); run `mise dot exclude` to restore the intended list, `mise dot save`, then sync again"
+    )
 }
 
 #[cfg(test)]
@@ -1278,6 +1304,27 @@ mod tests {
                 .to_string()
                 .contains("home/.removed")
         );
+    }
+
+    #[test]
+    fn independent_exclusion_additions_are_merged() {
+        let list = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let base = Manifest {
+            exclude: list(&["a"]),
+            ..Manifest::default()
+        };
+        let (mut local, mut remote) = (base.clone(), base.clone());
+        local.exclude = list(&["a", "y", "z"]);
+        remote.exclude = list(&["a", "x", "z"]);
+        let merged = Manifest::merge(&base, &local, &remote).unwrap();
+        assert_eq!(merged.exclude, list(&["a", "y", "z", "x"]));
+        // a negation depends on its position, so it never commutes
+        local.exclude = list(&["a", "!y"]);
+        assert!(Manifest::merge(&base, &local, &remote).is_err());
+        // a removal on one side and an addition on the other is a conflict
+        local.exclude = vec![];
+        let error = Manifest::merge(&base, &local, &remote).unwrap_err();
+        assert!(error.to_string().contains("exclusions"), "{error}");
     }
 
     #[test]
