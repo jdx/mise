@@ -1855,6 +1855,7 @@ fn command_output_path(program: &Path, args: &[&str]) -> Result<Output> {
     Ok(Command::new(program)
         .args(args)
         .env("LC_ALL", "C")
+        .env_remove("LANGUAGE")
         .output()?)
 }
 
@@ -1878,6 +1879,7 @@ fn run_with_stdin(program: &Path, args: &[&str], input: &[u8]) -> Result<()> {
     let mut child = Command::new(program)
         .args(args)
         .env("LC_ALL", "C")
+        .env_remove("LANGUAGE")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2365,6 +2367,36 @@ mod tests {
         let tokens =
             shell_words::split("allow to 10.43.0.0/16 443/tcp comment 'mise:k3s-pods'").unwrap();
         assert!(ufw_rule_matches(&tokens, &rule));
+
+        rule.source = Some("10.42.0.0/16".parse().unwrap());
+        let tokens = shell_words::split(
+            "allow from 10.42.0.0/16 to 10.43.0.0/16 443/tcp comment 'mise:k3s-pods'",
+        )
+        .unwrap();
+        assert!(ufw_rule_matches(&tokens, &rule));
+
+        rule.protocol = None;
+        rule.port = None;
+        let tokens =
+            shell_words::split("allow from 10.42.0.0/16 to 10.43.0.0/16 comment 'mise:k3s-pods'")
+                .unwrap();
+        assert!(ufw_rule_matches(&tokens, &rule));
+
+        let tokens = shell_words::split(
+            "allow from 10.42.0.0/16 to 10.43.0.0/16 443/tcp comment 'mise:k3s-pods'",
+        )
+        .unwrap();
+        assert!(!ufw_rule_matches(&tokens, &rule));
+    }
+
+    #[test]
+    fn commands_run_with_a_c_locale() {
+        let output = command_output_path(
+            Path::new("/bin/sh"),
+            &["-c", "printf '%s|%s' \"$LC_ALL\" \"${LANGUAGE-unset}\""],
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "C|unset");
     }
 
     #[test]
