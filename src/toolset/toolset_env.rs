@@ -491,14 +491,7 @@ impl Toolset {
         // dir and a sibling sharing the same config files don't collide on one
         // cache entry, which would leak the venv across directories.
         let mut uv_venv_inputs: Vec<(PathBuf, u64)> = Vec::new();
-        let caller_venv = uv::caller_virtual_env();
         if Settings::get().python.uv_venv_auto.should_source()
-            && let Some(venv) = caller_venv
-        {
-            // uv_venv_auto is skipped under a caller VIRTUAL_ENV, so its presence and value
-            // change the result and must not share a cache entry with the sourced venv.
-            uv_venv_inputs.push((PathBuf::from(format!("VIRTUAL_ENV={venv}")), 0));
-        } else if Settings::get().python.uv_venv_auto.should_source()
             && let Some(uv_root) = uv::uv_root()
         {
             let lock = uv_root.join("uv.lock");

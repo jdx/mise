@@ -24,13 +24,6 @@ pub(crate) async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'stat
             if !uv_auto.should_source() {
                 return Ok(None);
             }
-            // A VIRTUAL_ENV the caller set is their choice; replacing it makes uv run in the
-            // wrong environment (and `create` would build a .venv they never asked for).
-            // PRISTINE_ENV excludes what mise itself exported, so this only sees the caller's.
-            if caller_virtual_env().is_some() {
-                debug!("python.uv_venv_auto skipped: VIRTUAL_ENV is already set by the caller");
-                return Ok(None);
-            }
             let Some(uv_root) = uv_root() else {
                 return Ok(None);
             };
@@ -83,14 +76,6 @@ pub(crate) async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'stat
             Ok(Some(load_venv(&venv_path, extra_env)))
         })
         .await
-}
-
-/// The nonempty `VIRTUAL_ENV` the caller started mise with, which disables `uv_venv_auto`.
-pub(crate) fn caller_virtual_env() -> Option<&'static str> {
-    env::PRISTINE_ENV
-        .get("VIRTUAL_ENV")
-        .map(String::as_str)
-        .filter(|v| !v.is_empty())
 }
 
 pub(crate) fn uv_root() -> Option<PathBuf> {

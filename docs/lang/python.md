@@ -151,12 +151,11 @@ nothing, so run `uv lock` or `uv sync` first. With `"source"` and no
 virtualenv yet, mise warns and asks you to run `uv sync` or `uv venv`, or to
 enable [`[deps.uv]`](/dev-tools/deps.html).
 
-If the caller supplies a nonempty `VIRTUAL_ENV`, for example
-by `VIRTUAL_ENV=/path/to/env uv run --active ...`, `python.uv_venv_auto` does not
-source or create a virtualenv. A `VIRTUAL_ENV` that mise itself exported,
-for example through `mise activate`, does not disable this setting. A configured
-[`_.python.venv`](#python-venv) can still create or activate a virtualenv and
-replace `VIRTUAL_ENV`.
+The setting replaces a `VIRTUAL_ENV` that was already set, including one a caller
+passed on purpose, as in `VIRTUAL_ENV=/path/to/env uv run --active ...` through a
+[shim](/dev-tools/shims.html). With `"create|source"`, mise also creates the
+project `.venv` when it is missing. To keep a caller's `VIRTUAL_ENV`, turn the
+setting off for that command with `MISE_PYTHON_UV_VENV_AUTO=false`.
 
 The environment is `.venv` next to `uv.lock`, or the path in uv's
 `UV_PROJECT_ENVIRONMENT` variable. A relative path is resolved from the
