@@ -15,11 +15,10 @@ mise plugins link -f sleepy "$PWD/sleepy"
 
 # Independent watchdog: if the timeout regresses, fail after 60s instead of
 # waiting out the script's 600s sleep.
-watchdog=""
-if command -v timeout >/dev/null 2>&1; then
-  watchdog="timeout 60"
+output="$(MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=2s timeout 60 mise ls-remote sleepy 2>&1)" && fail "ls-remote should have timed out"
+if [[ $output != *"timed out after"* ]]; then
+  fail "expected a timeout error, got: $output"
 fi
-MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=2s assert_fail_contains "$watchdog mise ls-remote sleepy" "timed out after"
 
 # A killed child is reparented and a zombie still answers `kill -0` until
 # something reaps it, so look at its state instead.
