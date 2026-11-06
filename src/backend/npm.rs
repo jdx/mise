@@ -613,6 +613,25 @@ fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
     health
 }
 
+/// Whether `dir` is an installed package: it has a manifest, and it is not a
+/// Windows file symlink. An empty dir left where a link was lost does not count.
+/// A tar restore with native symlinks can turn a directory link into a file
+/// symlink that points at the right directory: Win32 opens through it, so the
+/// manifest looks present, but node does not follow it as a directory.
+fn dependency_is_present(dir: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        if dir
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink_file())
+        {
+            return false;
+        }
+    }
+    dir.join("package.json").try_exists().unwrap_or(false)
+}
+
 /// Whether every runtime dependency of the package in a virtual-store entry
 /// (`<entry>/node_modules/<name>`) is linked beside it or bundled inside it.
 /// The package is the one real directory there; its dependencies are links.
@@ -657,19 +676,9 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
             if optional.is_some_and(|o| o.contains_key(dep)) {
                 continue;
             }
-            // An empty dir left where a link was lost does not count.
-            let present = modules
-                .join(dep)
-                .join("package.json")
-                .try_exists()
-                .unwrap_or(false)
-                || package
-                    .join("node_modules")
-                    .join(dep)
-                    .join("package.json")
-                    .try_exists()
-                    .unwrap_or(false);
-            if !present {
+            if !dependency_is_present(&modules.join(dep))
+                && !dependency_is_present(&package.join("node_modules").join(dep))
+            {
                 return false;
             }
         }
@@ -5053,6 +5062,30 @@ pkg@1.2.0 '1.2.0'
 
         // A tar round trip drops the junction.
         std::fs::remove_dir(pkg.join("dep")).unwrap();
+        assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Broken);
+    }
+
+    /// A tar restore with native symlinks recreates a directory link as a file
+    /// symlink. Win32 opens through it, but node cannot resolve the package.
+    #[cfg(windows)]
+    #[test]
+    fn dependency_file_symlink_makes_aube_tree_broken() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("node_modules/.mise");
+        let pkg = store.join("pkg@1.0.0/node_modules");
+        let dep = store.join("dep@1.0.0/node_modules/dep");
+        std::fs::create_dir_all(pkg.join("pkg")).unwrap();
+        std::fs::create_dir_all(&dep).unwrap();
+        std::fs::write(dep.join("package.json"), "{}").unwrap();
+        std::fs::write(
+            pkg.join("pkg/package.json"),
+            r#"{"dependencies":{"dep":"1"}}"#,
+        )
+        .unwrap();
+        // Creating a symlink needs a privilege some runners lack.
+        if std::os::windows::fs::symlink_file(&dep, pkg.join("dep")).is_err() {
+            return;
+        }
         assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Broken);
     }
 
