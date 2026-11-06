@@ -8534,9 +8534,24 @@ fn aliased_task_tool_request(
     arg: &crate::args::ToolArg,
 ) -> Result<crate::toolset::ToolRequest> {
     // A bare registry name (`llama.cpp`) stands for the backend the registry gives it.
-    let target = BackendArg::new(full.to_string(), None);
-    let mut backend = BackendArg::new(tool.to_string(), Some(target.full_without_opts()));
-    let mut options = target.explicit_opts().cloned().unwrap_or_default();
+    // It is looked up in the registry itself: `BackendArg::full` would first consult the aliases
+    // of the directory prune runs from.
+    let (name, inline) = split_bracketed_opts(full).map_or((full, None), |(n, o)| (n, Some(o)));
+    let target = if name.contains(':') {
+        None
+    } else {
+        crate::registry::REGISTRY
+            .get(name)
+            .and_then(|rt| rt.backends_for_version(None).first().cloned())
+    };
+    let mut backend = BackendArg::new(
+        tool.to_string(),
+        Some(target.map_or_else(|| name.to_string(), |t| t.to_string())),
+    );
+    let mut options = backend.explicit_opts().cloned().unwrap_or_default();
+    if let Some(inline) = inline {
+        options.apply_overrides(&crate::toolset::parse_tool_options(inline));
+    }
     if let Some(task_options) = arg.ba.explicit_opts() {
         options.apply_overrides(task_options);
     }

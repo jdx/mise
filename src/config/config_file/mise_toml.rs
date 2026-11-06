@@ -1984,10 +1984,13 @@ impl ConfigFile for MiseToml {
 
     fn backend_aliases(&self) -> IndexMap<String, String> {
         // [tool_alias] wins over the deprecated [alias], as in `aliases`.
-        self.alias
-            .iter()
-            .chain(&self.tool_alias)
-            .filter_map(|(name, alias)| Some((name.clone(), alias.backend.clone()?)))
+        let mut combined = self.alias.clone();
+        for (name, alias) in &self.tool_alias {
+            combined.insert(name.clone(), alias.clone());
+        }
+        combined
+            .into_iter()
+            .filter_map(|(name, alias)| Some((name, alias.backend?)))
             .collect()
     }
 
