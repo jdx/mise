@@ -350,17 +350,19 @@ fn render_template(
     })
 }
 
-/// Shell completion invokes `usage complete-word` through the `usage` shim. It
-/// should use the installed CLI or fail locally, never resolve a floating tool
-/// version, auto-install, or update over the network while the user is pressing
-/// tab. `shim_name` has the Windows executable suffix stripped.
+/// Shell completion invokes `usage complete-word` through the `usage` shim, and a usage-rs
+/// tool's generated script invokes `<tool> __complete_word__` through that tool's shim. Either
+/// should use the installed CLI or fail locally, never resolve a floating tool version,
+/// auto-install, or update over the network while the user is pressing tab. `shim_name` has
+/// the Windows executable suffix stripped.
 pub(crate) fn is_offline_completion(shim_name: &str, args: &[String]) -> bool {
     let is_usage = if cfg!(windows) {
         shim_name.eq_ignore_ascii_case("usage")
     } else {
         shim_name == "usage"
     };
-    is_usage && args.get(1).is_some_and(|arg| arg == "complete-word")
+    (is_usage && args.get(1).is_some_and(|arg| arg == "complete-word"))
+        || args.get(1).is_some_and(|arg| arg == "__complete_word__")
 }
 
 async fn which_shim(
@@ -502,5 +504,39 @@ async fn which_shim(
     match err_no_version_set(config, ts, shim_name, tvs).await {
         Ok(_) => unreachable!("err_no_version_set always returns an error"),
         Err(err) => Err(err),
+    }
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::is_offline_completion;
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|w| w.to_string()).collect()
+    }
+
+    #[test]
+    fn usage_complete_word_is_offline() {
+        assert!(is_offline_completion(
+            "usage",
+            &args(&["usage", "complete-word"])
+        ));
+    }
+
+    #[test]
+    fn a_forwarded_usage_rs_request_is_offline_for_any_shim() {
+        assert!(is_offline_completion(
+            "aube",
+            &args(&["aube", "__complete_word__"])
+        ));
+    }
+
+    #[test]
+    fn ordinary_shim_invocations_are_not_offline() {
+        assert!(!is_offline_completion("aube", &args(&["aube", "install"])));
+        assert!(!is_offline_completion(
+            "node",
+            &args(&["node", "complete-word"])
+        ));
     }
 }
