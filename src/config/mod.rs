@@ -8578,9 +8578,13 @@ fn aliased_tool_request(
     let target = if name.contains(':') {
         None
     } else {
-        crate::registry::REGISTRY
-            .get(name.as_ref())
-            .and_then(|rt| rt.backends_for_version(None).first().cloned())
+        crate::registry::REGISTRY.get(name.as_ref()).and_then(|rt| {
+            // The backend the registry serves this version with, as for any other request.
+            let for_version = (!version.is_empty())
+                .then(|| rt.backends_for_version(Some(version)))
+                .and_then(|backends| backends.first().cloned());
+            for_version.or_else(|| rt.backends_for_version(None).first().cloned())
+        })
     };
     let mut backend = BackendArg::new(
         tool.to_string(),
@@ -8630,7 +8634,7 @@ pub(crate) fn route_project_tool_aliases(
                         aliased_tool_request(
                             &ba.short,
                             full,
-                            ba.explicit_opts(),
+                            tvr.ba().explicit_opts(),
                             &tvr.version(),
                             tvr.source().clone(),
                         )
