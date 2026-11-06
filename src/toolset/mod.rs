@@ -983,15 +983,17 @@ fn tool_alias_matches(names: &BTreeSet<String>, ba: &BackendArg) -> bool {
     let Some(config) = Config::maybe_get() else {
         return false;
     };
-    names.iter().any(|name| {
-        config
-            .all_aliases
-            .get(name)
-            .and_then(|alias| alias.backend.as_deref())
-            .is_some_and(|backend| {
-                BackendArg::from(backend).full_without_opts() == ba.full_without_opts()
-            })
-    })
+    // Only names that are configured aliases need resolving, and the request's own
+    // backend is resolved once rather than per name.
+    let mut targets = names
+        .iter()
+        .filter_map(|name| config.all_aliases.get(name)?.backend.as_deref())
+        .peekable();
+    if targets.peek().is_none() {
+        return false;
+    }
+    let full = ba.full_without_opts();
+    targets.any(|backend| BackendArg::from(backend).full_without_opts() == full)
 }
 
 impl Display for Toolset {
