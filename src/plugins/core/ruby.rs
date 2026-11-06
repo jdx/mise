@@ -199,13 +199,25 @@ impl RubyPlugin {
         }
         debug!("Updating ruby-install in {}", ruby_install_path.display());
 
-        plugins::core::run_fetch_task_with_timeout(move || {
-            cmd!(self.ruby_install_bin(), "--update")
-                .stdout_to_stderr()
-                .run()?;
-            file::touch_dir(&ruby_install_path)?;
-            Ok(())
-        })
+        // The runner kills `ruby-install` and its children at the deadline.
+        CmdLineRunner::new(self.ruby_install_bin())
+            .arg("--update")
+            .never_raw()
+            .with_on_stdout(|line| eprintln!("{line}"))
+            .with_timeout(Settings::get().fetch_remote_versions_timeout())
+            .execute()
+            .map_err(|err| {
+                // Only a timeout points at the setting; other failures stand alone.
+                if err.to_string().starts_with("timed out after") {
+                    err.wrap_err(
+                        "change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`",
+                    )
+                } else {
+                    err
+                }
+            })?;
+        file::touch_dir(&ruby_install_path)?;
+        Ok(())
     }
 
     fn ruby_install_recently_updated(&self) -> Result<bool> {
@@ -787,7 +799,7 @@ impl Backend for RubyPlugin {
         timeout::run_with_timeout_async(
             async || {
                 if let Err(err) = self.update_build_tool(None).await {
-                    warn!("{err}");
+                    warn!("{err:#}");
                 }
 
                 // Fetch Ruby release dates from GitHub in parallel with version list

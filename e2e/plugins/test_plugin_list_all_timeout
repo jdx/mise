@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# fetch_remote_versions_timeout must stop a hung bin/list-all, and kill its
+# children, instead of waiting for the script to exit on its own.
+mkdir -p "$PWD/sleepy/bin"
+cat >"$PWD/sleepy/bin/list-all" <<SCRIPT
+#!/usr/bin/env bash
+sleep 600 &
+echo \$! >"$PWD/sleepy/child.pid"
+wait
+echo 1.0.0
+SCRIPT
+chmod +x "$PWD/sleepy/bin/list-all"
+mise plugins link -f sleepy "$PWD/sleepy"
+
+# Independent watchdog: if the timeout regresses, fail after 60s instead of
+# waiting out the script's 600s sleep.
+output="$(MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=2s timeout 60 mise ls-remote sleepy 2>&1)" && fail "ls-remote should have timed out"
+if [[ $output != *"timed out after"* ]]; then
+  fail "expected a timeout error, got: $output"
+fi
+
+# A killed child is reparented and a zombie still answers `kill -0` until
+# something reaps it, so look at its state instead.
+process_running() {
+  local stat
+  stat="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+  [[ $stat != Z* ]]
+}
+
+child=$(cat "$PWD/sleepy/child.pid")
+sleep 1
+if process_running "$child"; then
+  fail "list-all child process $child survived the timeout"
+fi
