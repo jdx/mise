@@ -114,7 +114,14 @@ impl OutdatedInfo {
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+        //
+        // A `prefix:` request is split on the version the user wrote, not on its
+        // `prefix:`-marked display form, which would be split again at the first dot.
+        let request_text = match &tv.request {
+            ToolRequest::Prefix { prefix, .. } => prefix.clone(),
+            request => request.version(),
+        };
+        let (prefix, prefix_version) = split_version_prefix(&request_text);
         let use_backend_latest =
             bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
 
@@ -184,13 +191,13 @@ impl OutdatedInfo {
                 .await;
         }
         if bump {
-            let old = oi.tool_version.request.version();
-            let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
+            let old = request_text.as_str();
+            let old = old.strip_prefix(&prefix).unwrap_or(old);
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
             let bumped_version =
                 bumped_request_version(old, new, || oi.tool_version.request_pinned_this_version());
             if let Some(bumped_version) = bumped_version
-                && bumped_version != oi.tool_version.request.version()
+                && bumped_version != request_text
             {
                 oi.bump = match oi.tool_request.clone() {
                     ToolRequest::Version {
