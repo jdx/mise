@@ -8421,9 +8421,17 @@ pub(crate) fn task_tool_requests(
     };
     let mut requests = vec![];
     let mut templated = vec![];
-    // A task tool can name a `[tool_alias]` of the project, which the config of the directory
-    // prune runs from does not have, so the name is replaced by the backend it stands for.
-    let tool_aliases = cf.aliases().unwrap_or_default();
+    // A task tool can name a `[tool_alias]` of its project, which the config of the directory
+    // prune runs from does not have. The aliases come from the same layers as the templates,
+    // the project's own config last, and only the backend an alias stands for matters here.
+    let mut tool_aliases: HashMap<String, String> = HashMap::new();
+    for other in layers.values().flatten().copied().chain([cf]) {
+        for (name, alias) in other.aliases().unwrap_or_default() {
+            if let Some(backend) = alias.backend {
+                tool_aliases.insert(name, backend);
+            }
+        }
+    }
     for (mut task, source) in tasks {
         if task.config_root.is_none() {
             task.config_root = Some(dir.clone());
@@ -8470,12 +8478,16 @@ pub(crate) fn task_tool_requests(
                     templated.push(tool.clone());
                     continue;
                 }
-                let backend = tool_aliases
-                    .get(tool)
-                    .and_then(|alias| alias.backend.as_deref())
-                    .unwrap_or(tool);
-                match value.to_tool_arg(backend) {
-                    Ok(arg) => requests.extend(arg.tvr),
+                let request = value.to_tool_arg(tool).and_then(|arg| {
+                    // The request keeps the name the task uses, which names its install
+                    // directory, and takes the backend and options of the alias.
+                    match tool_aliases.get(tool) {
+                        Some(full) => aliased_task_tool_request(tool, full, &arg).map(Some),
+                        None => Ok(arg.tvr),
+                    }
+                });
+                match request {
+                    Ok(tvr) => requests.extend(tvr),
                     Err(err) => warn!(
                         "error loading tool {tool} of task {} in {}: {err:#}",
                         task.name,
@@ -8486,6 +8498,28 @@ pub(crate) fn task_tool_requests(
         }
     }
     (requests, templated)
+}
+
+/// The request for the task tool `tool` as `arg` parsed it, routed to the `full` backend that a
+/// `[tool_alias]` gives it. The options written on the task win over those of the alias.
+fn aliased_task_tool_request(
+    tool: &str,
+    full: &str,
+    arg: &crate::args::ToolArg,
+) -> Result<crate::toolset::ToolRequest> {
+    let mut backend = BackendArg::new(tool.to_string(), Some(full.to_string()));
+    let mut options = backend.explicit_opts().cloned().unwrap_or_default();
+    if let Some(task_options) = arg.ba.explicit_opts() {
+        options.apply_overrides(task_options);
+    }
+    if !options.is_empty() {
+        backend.set_opts(Some(options));
+    }
+    let version = arg
+        .tvr
+        .as_ref()
+        .map_or_else(String::new, |tvr| tvr.version());
+    crate::toolset::ToolRequest::new(Arc::new(backend), &version, ToolSource::Argument)
 }
 
 /// Workspace project graphs by monorepo root, discovered once per prune run and shared by the

@@ -144,20 +144,38 @@ assert "mise ls -C proj5"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
 
-# a task tool can name a [tool_alias] of its project, which the directory prune
-# runs from does not have. https://github.com/jdx/mise/issues/15420
+# a task tool can name a [tool_alias] of its project, or of a parent project, which the
+# directory prune runs from does not have. The install keeps the alias name as its directory,
+# and no other project here uses these versions. https://github.com/jdx/mise/issues/15420
 cd .. || exit 1
-mkdir -p proj6
+mkdir -p proj6 proj7/child
 cat >proj6/mise.toml <<'TOML'
 [tool_alias]
 aliased = "tiny"
 
 [tasks.t]
 run = "true"
-tools = { aliased = "3.1.0" }
+tools = { aliased = "1.1.0" }
 TOML
-assert "mise trust proj6/mise.toml"
+cat >proj7/mise.toml <<'TOML'
+[tool_alias]
+parented = "tiny"
+TOML
+cat >proj7/child/mise.toml <<'TOML'
+[tasks.t]
+run = "true"
+tools = { parented = "2.0.1" }
+TOML
+for f in proj6/mise.toml proj7/mise.toml proj7/child/mise.toml; do
+  assert "mise trust $f"
+done
+assert "mise install -C proj6 --include-task-tools"
+assert "mise install -C proj7/child --include-task-tools"
+assert "test -d '$MISE_DATA_DIR/installs/aliased/1.1.0'"
+assert "test -d '$MISE_DATA_DIR/installs/parented/2.0.1'"
 assert "mise ls -C proj6"
+assert "mise ls -C proj7/child"
 cd other || exit 1
-assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+assert_not_contains "mise prune --dry-run 2>&1" "aliased@1.1.0"
+assert_not_contains "mise prune --dry-run 2>&1" "parented@2.0.1"
 assert_not_contains "mise prune --dry-run 2>&1" "Failed to resolve"
