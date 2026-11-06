@@ -13,14 +13,24 @@ SCRIPT
 chmod +x "$PWD/sleepy/bin/list-all"
 mise plugins link -f sleepy "$PWD/sleepy"
 
-start=$SECONDS
-MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=2s assert_fail_contains "mise ls-remote sleepy" "timed out after"
-if ((SECONDS - start > 60)); then
-  fail "ls-remote waited for list-all instead of timing out"
+# Independent watchdog: if the timeout regresses, fail after 60s instead of
+# waiting out the script's 600s sleep.
+watchdog=""
+if command -v timeout >/dev/null 2>&1; then
+  watchdog="timeout 60"
 fi
+MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=2s assert_fail_contains "$watchdog mise ls-remote sleepy" "timed out after"
+
+# A killed child is reparented and a zombie still answers `kill -0` until
+# something reaps it, so look at its state instead.
+process_running() {
+  local stat
+  stat="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+  [[ $stat != Z* ]]
+}
 
 child=$(cat "$PWD/sleepy/child.pid")
 sleep 1
-if kill -0 "$child" 2>/dev/null; then
+if process_running "$child"; then
   fail "list-all child process $child survived the timeout"
 fi
