@@ -59,7 +59,7 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     #[serde(default, deserialize_with = "deserialize_root_env")]
     #[schemars(schema_with = "env")]
     pub env: EnvList,
-    /// config files merged into this one, ranking just below it: a local path (relative to this file), git::<url>//<path>.toml?ref=<ref> or oci::<registry>/<repo>[:tag|@sha256:<digest>] (the artifact holds a mise.toml). Paranoid mode requires a commit sha or digest for remote includes and rejects local ones; otherwise a branch or tag is refreshed after fetch_remote_versions_cache
+    /// config files merged into this one, ranking just below it: a local path (relative to this file), git::<url>//<path>.toml?ref=<ref> oci::<registry>/<repo>[:tag|@sha256:<digest>] (the artifact holds a mise.toml) or zip::<http(s) url> (a zip archive with a mise.toml at its root). Paranoid mode requires a commit sha or digest for remote includes (so it rejects zip::) and rejects local ones; otherwise a branch or tag is refreshed after fetch_remote_versions_cache
     #[serde(default, deserialize_with = "deserialize_arr")]
     #[schemars(schema_with = "include")]
     pub include: Vec<String>,

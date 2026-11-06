@@ -143,7 +143,8 @@ Each entry can be:
 - a path relative to the config root, an absolute path, or a path that starts
   with `~`
 - a glob pattern such as `tasks/*.toml`
-- a [`git::` URL](#remote-git-includes) or an [`oci::` reference](#remote-oci-includes)
+- a [`git::` URL](#remote-git-includes), an [`oci::` reference](#remote-oci-includes)
+  or a [`zip::` URL](#remote-zip-includes)
 
 mise renders entries as Tera templates, so they can use
 <code v-pre>{{ config_root }}</code>, <code v-pre>{{ env.HOME }}</code>, and
@@ -438,6 +439,24 @@ mise does not notice when a tag moves to a new digest. To refresh, reference a
 new tag or digest, delete that directory, or set
 [`task.remote_no_cache`](/configuration/settings.html#task.remote_no_cache) to
 pull on every run.
+
+## Remote zip includes
+
+Include a task catalog published as a zip archive by prefixing an http(s) URL
+with `zip::`:
+
+```toml
+[task_config]
+includes = ["zip::https://example.com/shared-tasks-1.0.0.zip"]
+```
+
+mise downloads the archive, unpacks it into a directory and loads it like a
+local task directory, the same way as an [OCI include](#remote-oci-includes):
+executable file tasks and `.toml` task files are discovered, and non-TOML files
+that start with a shebang are made executable. Use a versioned URL, since mise
+reuses a cached download for the same URL. With
+[`task.remote_no_cache`](/configuration/settings.html#task.remote_no_cache) set, mise
+downloads the archive again on every run.
 
 ## Exclude paths from discovery
 

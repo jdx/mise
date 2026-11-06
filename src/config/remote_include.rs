@@ -24,7 +24,9 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{Settings, SettingsExt, is_global_config};
 use crate::file;
 use crate::remote_source::RemoteSource;
-use crate::task::task_file_providers::{OCI_INCLUDE_PREFIX, TaskFileProvidersBuilder};
+use crate::task::task_file_providers::{
+    OCI_INCLUDE_PREFIX, TaskFileProvidersBuilder, ZIP_INCLUDE_PREFIX,
+};
 use crate::{dirs, hash};
 
 const FRAGMENT_FILE: &str = "mise.toml";
@@ -63,6 +65,16 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         return load_local(parent, reference);
     }
     let pin = classify(reference)?;
+    if pin == Pin::Mutable
+        && reference.starts_with(ZIP_INCLUDE_PREFIX)
+        && Settings::try_get().is_ok_and(|s| s.paranoid.config())
+    {
+        bail!(
+            "paranoid mode binds trust to content, and a zip:: include cannot be pinned, so it \
+             is not allowed: {reference}. Use a git:: include pinned to a commit sha or an oci:: \
+             include pinned to a digest instead"
+        );
+    }
     if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid.config()) {
         bail!(
             "paranoid mode binds trust to content, so a config include must be pinned to a \
@@ -154,7 +166,9 @@ fn resolve_local(parent: &Path, path: PathBuf) -> Result<PathBuf> {
 }
 
 fn is_local(reference: &str) -> bool {
-    !reference.starts_with("git::") && !reference.starts_with(OCI_INCLUDE_PREFIX)
+    !reference.starts_with("git::")
+        && !reference.starts_with(OCI_INCLUDE_PREFIX)
+        && !reference.starts_with(ZIP_INCLUDE_PREFIX)
 }
 
 /// `None` is offline mode, where a cached fragment is always used.
@@ -181,11 +195,12 @@ async fn fetch(reference: &str) -> Result<String> {
         bail!("unsupported config include: {reference}");
     };
     let artifact = provider.get_local_artifact(reference).await?;
-    let path = if reference.starts_with(OCI_INCLUDE_PREFIX) {
-        artifact.path.join(FRAGMENT_FILE)
-    } else {
-        artifact.path.clone()
-    };
+    let path =
+        if reference.starts_with(OCI_INCLUDE_PREFIX) || reference.starts_with(ZIP_INCLUDE_PREFIX) {
+            artifact.path.join(FRAGMENT_FILE)
+        } else {
+            artifact.path.clone()
+        };
     read_fragment(&path)
 }
 
@@ -218,6 +233,10 @@ fn classify(reference: &str) -> Result<Pin> {
             Pin::Mutable
         });
     }
+    if reference.starts_with(ZIP_INCLUDE_PREFIX) {
+        // a URL names no content, so a zip can only be pinned by what serves it
+        return Ok(Pin::Mutable);
+    }
     if let Some(git) = RemoteSource::parse_git(reference) {
         if !git.path.ends_with(".toml") {
             bail!("a git:: config include must point at a .toml file: {reference}");
@@ -225,7 +244,7 @@ fn classify(reference: &str) -> Result<Pin> {
         let is_sha = git.git_ref.as_deref().is_some_and(|r| is_hex(r, &[40, 64]));
         return Ok(if is_sha { Pin::Immutable } else { Pin::Mutable });
     }
-    bail!("a config include must be a git:: URL or an oci:: reference: {reference}")
+    bail!("a config include must be a git:: URL, an oci:: reference or a zip:: URL: {reference}")
 }
 
 fn is_hex(s: &str, lens: &[usize]) -> bool {
