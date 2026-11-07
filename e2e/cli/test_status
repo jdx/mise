@@ -19,6 +19,13 @@ assert "mise hook-env 2>&1 >/dev/null" "mise +./node_modules/.bin" && _mise_hook
 assert "mise set BAR=1 QUX=1 BAZ=1 KEEP=1"
 export MISE_STATUS_MESSAGE_SHOW_ENV_IGNORE="BA*,QUX"
 assert "mise hook-env 2>&1 >/dev/null" "mise +KEEP" && _mise_hook
+assert "mise set BAR=2 QUX=2 KEEP=2"
+assert "mise hook-env 2>&1 >/dev/null" "mise ~KEEP" && _mise_hook
+assert "mise set --rm KEEP"
+assert "mise hook-env 2>&1 >/dev/null" "mise -KEEP" && _mise_hook
+export MISE_STATUS_MESSAGE_SHOW_ENV_IGNORE="BA[, KEEP"
+assert "mise set KEEP=1 BAR=1"
+assert_contains "mise hook-env 2>&1 >/dev/null" "invalid pattern" && _mise_hook
 unset MISE_STATUS_MESSAGE_SHOW_ENV_IGNORE
 
 mise settings status.show_tools=1
