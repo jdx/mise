@@ -1392,12 +1392,23 @@ fn retain_omitted(
         .keys()
         .flat_map(|path| path.ancestors().skip(1))
         .collect();
+    let mut captured_paths = std::collections::HashSet::new();
+    for entry in repo.ls_tree(tree)? {
+        let mut current = entry.path.as_str();
+        while let Some((parent_dir, _)) = current.rsplit_once('/') {
+            if !captured_paths.insert(parent_dir.to_string()) {
+                break;
+            }
+            current = parent_dir;
+        }
+        captured_paths.insert(entry.path);
+    }
     for file in repo.ls_tree(parent)? {
         let located = roots.locate(&file.path);
         let Some(path) = located.path() else { continue };
         if !omitted.iter().any(|omitted| path.starts_with(omitted))
             || !tracked.would_retain(path)?
-            || repo.object_at(tree, &file.path)?.is_some()
+            || captured_paths.contains(&file.path)
         {
             continue;
         }

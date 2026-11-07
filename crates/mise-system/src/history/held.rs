@@ -167,6 +167,8 @@ pub(crate) struct Streams {
     pub(crate) carry: Vec<usize>,
 }
 
+/// Determine which tracked entries are held at their saved version and which
+/// must be carried into the next checkpoint.
 pub(crate) fn streams(
     repo: &HistoryRepo,
     held: &Held,
@@ -174,6 +176,9 @@ pub(crate) fn streams(
     walk: &super::tracked::Walk,
 ) -> Result<Streams> {
     let mut streams = Streams::default();
+    // loaded when the first stream needs a comparison, then shared; `Some(None)`
+    // is a manifest that could not be read, which holds nothing and is not retried
+    let mut encrypted: Option<Option<BTreeSet<String>>> = None;
     for (index, entry) in walk.entries.iter().enumerate() {
         let stream = entry.tree_path(&entry.path)?;
         if held.always_holds(&stream) {
@@ -184,10 +189,19 @@ pub(crate) fn streams(
             .map(|head| repo.object_at(head, &stream))
             .transpose()?
             .flatten();
-        if held.holds(&stream, saved.as_ref())
-            || held.kept(&stream)
-            || live_matches_saved(repo, parent, walk, index, &stream)?
-        {
+        let unchanged = if held.holds(&stream, saved.as_ref()) || held.kept(&stream) {
+            true
+        } else {
+            match encrypted
+                .get_or_insert_with(|| super::sync::files::encrypted_prefixes(repo, parent).ok())
+            {
+                Some(paths) => {
+                    live_matches_saved(repo, parent, walk, index, &stream, saved, paths)?
+                }
+                None => false,
+            }
+        };
+        if unchanged {
             streams.held.insert(stream);
         } else {
             streams.carry.push(index);
@@ -210,6 +224,8 @@ fn live_matches_saved(
     walk: &super::tracked::Walk,
     index: usize,
     stream: &str,
+    saved: Option<Object>,
+    encrypted: &BTreeSet<String>,
 ) -> Result<bool> {
     let Some(head) = parent else {
         return Ok(false);
@@ -223,17 +239,17 @@ fn live_matches_saved(
         .filter(|path| super::tracked::owning_entry_index(&walk.entries, path) == Some(index))
         .collect();
     // only this stream's own files: a directory's subtree, or the one file
-    let paths: Vec<String> = match repo.object_at(head, stream)? {
+    let paths: Vec<(String, String, String)> = match saved {
         None => vec![],
         Some((mode, oid)) if mode == "040000" => repo
             .ls_tree(&oid)?
             .into_iter()
-            .map(|file| format!("{stream}/{}", file.path))
+            .map(|file| (format!("{stream}/{}", file.path), file.mode, file.oid))
             .collect(),
-        Some(_) => vec![stream.to_string()],
+        Some((mode, oid)) => vec![(stream.to_string(), mode, oid)],
     };
     let mut compared = BTreeSet::new();
-    for path in paths {
+    for (path, mode, oid) in paths {
         let Some(local) = roots.locate(&path).path().map(Path::to_path_buf) else {
             return Ok(false);
         };
@@ -248,8 +264,23 @@ fn live_matches_saved(
         let Ok(object) = super::sync::apply::live_object(repo, &local) else {
             return Ok(false);
         };
-        // a version this machine cannot decrypt is not one it holds
-        if repo.restored_object_at(head, &path).ok().flatten() != object {
+        let expected = if matches!(mode.as_str(), "040000" | "160000") {
+            Some((mode, oid))
+        } else if super::sync::files::is_encrypted(encrypted, &path) {
+            // a version this machine cannot decrypt is not one it holds
+            match super::sync::files::decrypt(
+                repo,
+                &path,
+                &(mode, oid),
+                console::user_attended_stderr(),
+            ) {
+                Ok(decrypted) => Some(decrypted),
+                Err(_) => return Ok(false),
+            }
+        } else {
+            Some((mode, oid))
+        };
+        if expected != object {
             return Ok(false);
         }
     }
@@ -290,6 +321,20 @@ mod tests {
 
     fn obj(oid: &str) -> Object {
         ("100644".into(), oid.into())
+    }
+
+    /// `live_matches_saved` against the version `commit` holds of the stream.
+    #[cfg(unix)]
+    fn check(
+        repo: &HistoryRepo,
+        commit: &str,
+        walk: &super::super::tracked::Walk,
+        index: usize,
+        stream: &str,
+        encrypted: &BTreeSet<String>,
+    ) -> Result<bool> {
+        let saved = repo.object_at(commit, stream)?;
+        live_matches_saved(repo, Some(commit), walk, index, stream, saved, encrypted)
     }
 
     fn streams(names: &[&str]) -> BTreeSet<String> {
@@ -401,7 +446,7 @@ mod tests {
             walk
         };
         let matches = |saved: &str, loose: bool| {
-            live_matches_saved(&repo, Some(saved), &walk(loose), 0, &stream)
+            check(&repo, saved, &walk(loose), 0, &stream, &BTreeSet::new())
         };
         // the nested entry's files are its own to compare; the loose one is
         // new, though a stream covering its directory was saved before
@@ -420,12 +465,13 @@ mod tests {
             }
             walk
         };
-        assert!(live_matches_saved(
+        assert!(check(
             &repo,
-            Some(&narrow),
+            &narrow,
             &replaced(),
             0,
-            &stream
+            &stream,
+            &BTreeSet::new()
         )?);
 
         // a saved file the entry owns that changed or went missing is not held
@@ -453,13 +499,7 @@ mod tests {
         for name in ["a.md", "[ab].md"] {
             walk.files.insert(skills.join(name), (0, policy));
         }
-        assert!(live_matches_saved(
-            &repo,
-            Some(&globbed),
-            &walk,
-            0,
-            &stream
-        )?);
+        assert!(check(&repo, &globbed, &walk, 0, &stream, &BTreeSet::new())?);
 
         // a merge that dropped the loose file deleted it too
         let blob = |content: &[u8]| repo.hash_blob(content);
@@ -502,6 +542,277 @@ mod tests {
             &[overlay(&nested, &child.join("SKILL.md"), b"child")?],
         )?;
         assert!(!matches(&deleted, true)?);
+        Ok(())
+    }
+
+    /// An encrypted file saved as ciphertext is held when the live file is
+    /// the plaintext it decrypts to, and only when its path is known to be
+    /// encrypted.
+    #[cfg(unix)]
+    #[test]
+    fn an_encrypted_file_is_held_when_live_matches_its_plaintext() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::checkpoint::test_checkpoint;
+        use crate::history::shadow::Overlay;
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+        use age::secrecy::ExposeSecret;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let key = age::x25519::Identity::generate();
+        let mut environment = mise_util::testing::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(key.to_public())];
+
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-encrypted-")
+            .tempdir_in(&roots.home)?;
+        let file = normalize(scratch.path()).join("secret.txt");
+        std::fs::write(&file, "private contents")?;
+
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entry = TrackedEntry::new(file.clone(), "track", policy);
+        let stream = entry.tree_path(&file)?;
+        let ciphertext = crate::history::sync::files::encode(
+            &stream,
+            "100644",
+            b"private contents",
+            "scheme",
+            &recipients,
+        )?;
+        let overlay = Overlay {
+            path: stream.clone(),
+            object: Some(("100644".into(), repo.hash_blob(&ciphertext)?)),
+        };
+        let tree = repo.compose(&repo.empty_object("tree")?, &[overlay])?;
+        let saved = repo.write_checkpoint(Some(&tree), &test_checkpoint("saved", Some(&tree)))?;
+
+        let mut walk = Walk {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        walk.files.insert(file.clone(), (0, policy));
+        let encrypted = BTreeSet::from([stream.clone()]);
+        let matches =
+            |encrypted: &BTreeSet<String>| check(&repo, &saved, &walk, 0, &stream, encrypted);
+        // the live plaintext is what the saved ciphertext decrypts to
+        assert!(matches(&encrypted)?);
+        // without knowing the path is encrypted, the ciphertext is compared as is
+        assert!(!matches(&BTreeSet::new())?);
+        // a live edit is not the saved version
+        std::fs::write(&file, "edited")?;
+        assert!(!matches(&encrypted)?);
+        Ok(())
+    }
+
+    /// `streams` learns which paths are encrypted from the parent's
+    /// manifest: a live file matching its saved plaintext is held only then.
+    #[cfg(unix)]
+    #[test]
+    fn streams_reads_the_encrypted_enrollments_of_the_parent_manifest() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::manifest::{Enrollment, Manifest};
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+        use age::secrecy::ExposeSecret;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let key = age::x25519::Identity::generate();
+        let mut environment = mise_util::testing::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(key.to_public())];
+
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-enrolled-")
+            .tempdir_in(&roots.home)?;
+        let file = normalize(scratch.path()).join("secret.txt");
+        std::fs::write(&file, "private contents")?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entry = TrackedEntry::new(file.clone(), "track", policy);
+        let stream = entry.tree_path(&file)?;
+        let ciphertext = crate::history::sync::files::encode(
+            &stream,
+            "100644",
+            b"private contents",
+            "scheme",
+            &recipients,
+        )?;
+        let tree = repo.write_tree(&[(
+            "100644".into(),
+            repo.hash_blob(&ciphertext)?,
+            stream.clone(),
+        )])?;
+        let enrolled = Manifest {
+            enrollment: vec![Enrollment {
+                path: stream.clone(),
+                autosave: true,
+                encrypt: true,
+                allow_plaintext: None,
+                variants: vec![],
+                exclude: None,
+                include: None,
+            }],
+            ..Default::default()
+        }
+        .write(&repo, &tree)?;
+        let unenrolled = repo.commit_tree(&tree, vec![], "no manifest")?;
+
+        let mut walk = Walk {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        walk.files.insert(file, (0, policy));
+        let held = Held {
+            record: Some(Record::default()),
+            upstream: true,
+        };
+        let result = super::streams(&repo, &held, Some(&enrolled), &walk)?;
+        assert_eq!(result.held, BTreeSet::from([stream]));
+        assert!(result.carry.is_empty());
+        // the same ciphertext without the enrollment is not the live plaintext
+        let result = super::streams(&repo, &held, Some(&unenrolled), &walk)?;
+        assert!(result.held.is_empty());
+        assert_eq!(result.carry, vec![0]);
+        Ok(())
+    }
+
+    /// A saved file this machine cannot decrypt is not held, even when its
+    /// live file is gone: both sides must not read as "nothing".
+    #[cfg(unix)]
+    #[test]
+    fn an_undecryptable_saved_file_with_no_live_file_is_not_held() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::checkpoint::test_checkpoint;
+        use crate::history::shadow::Overlay;
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+        use age::secrecy::ExposeSecret;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let key = age::x25519::Identity::generate();
+        let mut environment = mise_util::testing::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        // encrypted for someone else, so this machine's key cannot open it
+        let other = age::x25519::Identity::generate();
+        let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(other.to_public())];
+
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-undecryptable-")
+            .tempdir_in(&roots.home)?;
+        // listed as live in the walk, never created on disk
+        let file = normalize(scratch.path()).join("secret.txt");
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entry = TrackedEntry::new(file.clone(), "track", policy);
+        let stream = entry.tree_path(&file)?;
+        let ciphertext = crate::history::sync::files::encode(
+            &stream,
+            "100644",
+            b"private contents",
+            "scheme",
+            &recipients,
+        )?;
+        let overlay = Overlay {
+            path: stream.clone(),
+            object: Some(("100644".into(), repo.hash_blob(&ciphertext)?)),
+        };
+        let tree = repo.compose(&repo.empty_object("tree")?, &[overlay])?;
+        let saved = repo.write_checkpoint(Some(&tree), &test_checkpoint("saved", Some(&tree)))?;
+        let mut walk = Walk {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        walk.files.insert(file, (0, policy));
+        let encrypted = BTreeSet::from([stream.clone()]);
+        assert!(!check(&repo, &saved, &walk, 0, &stream, &encrypted)?);
+        Ok(())
+    }
+
+    /// A parent whose enrollment manifest cannot be read holds nothing: the
+    /// stream is carried and the save goes on, as before the encrypted
+    /// paths were loaded once per save.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_manifest_carries_the_stream_instead_of_failing() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::checkpoint::test_checkpoint;
+        use crate::history::shadow::Overlay;
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-manifest-")
+            .tempdir_in(&roots.home)?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        // two streams, so the unreadable manifest is met more than once
+        let files = ["one.txt", "two.txt"].map(|name| normalize(scratch.path()).join(name));
+        let entries = files
+            .clone()
+            .map(|file| TrackedEntry::new(file, "track", policy));
+        let streams = entries
+            .iter()
+            .zip(&files)
+            .map(|(entry, file)| entry.tree_path(file))
+            .collect::<Result<Vec<_>>>()?;
+        let mut walk = Walk {
+            entries: entries.to_vec(),
+            ..Default::default()
+        };
+        for (index, file) in files.iter().enumerate() {
+            std::fs::write(file, "plain")?;
+            walk.files.insert(file.clone(), (index, policy));
+        }
+        let held = Held {
+            record: Some(Record::default()),
+            upstream: true,
+        };
+        let save = |manifest: Option<&[u8]>| -> Result<String> {
+            let mut overlays = streams
+                .iter()
+                .map(|stream| {
+                    Ok(Overlay {
+                        path: stream.clone(),
+                        object: Some(("100644".into(), repo.hash_blob(b"plain")?)),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if let Some(bytes) = manifest {
+                overlays.push(Overlay {
+                    path: crate::history::manifest::PATH.into(),
+                    object: Some(("100644".into(), repo.hash_blob(bytes)?)),
+                });
+            }
+            let tree = repo.compose(&repo.empty_object("tree")?, &overlays)?;
+            repo.write_checkpoint(Some(&tree), &test_checkpoint("saved", Some(&tree)))
+        };
+
+        // no manifest: nothing is encrypted and the unchanged file is held
+        let plain = save(None)?;
+        let result = super::streams(&repo, &held, Some(&plain), &walk)?;
+        assert_eq!(result.held, streams.iter().cloned().collect());
+        assert!(result.carry.is_empty());
+
+        // a manifest that cannot be parsed is carried, not an error
+        let broken = save(Some(b"not a manifest"))?;
+        let result = super::streams(&repo, &held, Some(&broken), &walk)?;
+        assert!(result.held.is_empty());
+        assert_eq!(result.carry, vec![0, 1]);
         Ok(())
     }
 
