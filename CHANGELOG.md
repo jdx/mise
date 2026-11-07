@@ -1,5 +1,40 @@
 # Changelog
 
+## [2026.11.4](https://github.com/jdx/mise/releases/tag/v2026.11.4) - 2026-11-07
+
+### 🚀 Features
+
+- **(task)** support zip:: includes for config and tasks by @jdx in [#15439](https://github.com/jdx/mise/pull/15439)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** match ufw rules with a source CIDR and ignore the locale by @jdx in [#15450](https://github.com/jdx/mise/pull/15450)
+- **(completion)** forward a shim's completion request to its tool by @jdx in [#15429](https://github.com/jdx/mise/pull/15429)
+- **(config)** honor tool aliases in enable and disable filters by @jdx in [#15437](https://github.com/jdx/mise/pull/15437)
+- **(copr)** build releases for fedora 45 by @jdx in [#15441](https://github.com/jdx/mise/pull/15441)
+- **(dot)** merge independent exclude additions instead of failing sync by @jdx in [#15449](https://github.com/jdx/mise/pull/15449)
+- **(prune)** resolve a project's tool_alias for its [tools] entries by @jdx in [#15438](https://github.com/jdx/mise/pull/15438)
+
+### 📚 Documentation
+
+- **(contributing)** state that external pull requests are not accepted by @jdx in [738c879](https://github.com/jdx/mise/commit/738c8793bdec62ad69303112ca35a83bdbc97a45)
+- note that fish 4.9.3 loads mise completions itself by @jdx in [#15442](https://github.com/jdx/mise/pull/15442)
+
+### 📦️ Dependency Updates
+
+- update jdx crates to v7.3.0 by @renovate[bot] in [#15434](https://github.com/jdx/mise/pull/15434)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`babarot/regomark`](https://github.com/babarot/regomark)
+- [`ewhauser/shuck`](https://github.com/ewhauser/shuck)
+- [`microsoft/apm`](https://github.com/microsoft/apm)
+- [`nushell/nufmt`](https://github.com/nushell/nufmt)
+- [`sigoden/argc`](https://github.com/sigoden/argc)
+- [`tiny-earth-moon/outskirts`](https://github.com/tiny-earth-moon/outskirts)
+
 ## [2026.11.3](https://github.com/jdx/mise/releases/tag/v2026.11.3) - 2026-11-06
 
 ### 🚀 Features

@@ -19636,6 +19636,19 @@ packages:
           - darwin
   - type: github_release
     repo_owner: babarot
+    repo_name: regomark
+    description: Check Markdown documents with rego policies
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: regomark_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: regomark_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+  - type: github_release
+    repo_owner: babarot
     repo_name: stein
     aliases:
       - name: b4b4r07/stein
@@ -39482,6 +39495,105 @@ packages:
             src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         github_artifact_attestations:
           signer_workflow: evilmartians/lefthook/.github/workflows/release.yml
+  - type: github_release
+    repo_owner: ewhauser
+    repo_name: shuck
+    description: A lightning fast shell linter/formatter/LSP server with zsh support
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.25"
+        no_asset: true
+      - version_constraint: Version == "v0.0.0-test-files"
+        no_asset: true
+      - version_constraint: Version == "v0.0.13"
+        asset: shuck-cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: shuck
+            src: "{{.AssetWithoutExt}}/shuck"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: shuck
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.0.10")
+        asset: shuck-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: shuck
+            src: "{{.AssetWithoutExt}}/shuck"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: shuck
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.0.12")
+        no_asset: true
+      - version_constraint: "true"
+        asset: shuck-cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: shuck
+            src: "{{.AssetWithoutExt}}/shuck"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+            files:
+              - name: shuck
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
   - type: github_release
     repo_owner: exercism
     repo_name: cli
@@ -68681,6 +68793,58 @@ packages:
             format: zip
   - type: github_release
     repo_owner: microsoft
+    repo_name: apm
+    description: Agent Package Manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.2")
+        asset: apm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: apm
+            src: "{{.AssetWithoutExt}}/apm"
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.8")
+        asset: apm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: apm
+            src: "{{.AssetWithoutExt}}/apm"
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: apm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: apm
+            src: "{{.AssetWithoutExt}}/apm"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: microsoft
     repo_name: component-detection
     description: Scans your project to determine what components you use
     version_constraint: "false"
@@ -74211,6 +74375,40 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: nushell
+    repo_name: nufmt
+    description: An AST-based formatter for Nushell scripts, built on Nushell's own parser
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: nufmt-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: nufmt
+            src: "{{.AssetWithoutExt}}/nufmt"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+            files:
+              - name: nufmt
   - type: github_release
     repo_owner: nushell
     repo_name: nushell
@@ -88865,6 +89063,53 @@ packages:
           linux: unknown-linux-musl
           windows: pc-windows-msvc
   - type: github_release
+    repo_owner: sigoden
+    repo_name: argc
+    description: A Bash CLI framework, also a Bash command runner
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.7.0")
+        asset: argc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.8.1")
+        asset: argc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: argc-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: sigstore
     repo_name: cosign
     description: Code signing and transparency for containers and binaries
@@ -100254,6 +100499,26 @@ packages:
           amd64: x64
         supported_envs:
           - linux/amd64
+  - type: github_release
+    repo_owner: tiny-earth-moon
+    repo_name: outskirts
+    description: Find unused code at the outskirts of your Swift project. A community-maintained fork of Periphery 3.x
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 3.20.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: outskirts-{{.Version}}-macos-arm64.tar.gz
+        format: tar.gz
+        files:
+          - name: outskirts
+            src: outskirts-{{.Version}}-macos-arm64/outskirts
+        checksum:
+          type: github_release
+          asset: outskirts-{{.Version}}-macos-arm64.tar.gz.sha256
+          algorithm: sha256
+        supported_envs:
+          - darwin/arm64
   - type: github_release
     repo_owner: tinygo-org
     repo_name: tinygo
