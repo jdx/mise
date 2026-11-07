@@ -122,7 +122,10 @@ pub(crate) struct DotfilesAdd {
 
 impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
-    pub(crate) async fn run(self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
+        for target in &mut self.targets {
+            *target = system::files::target_arg_from_cwd(target)?;
+        }
         let mode = self.validate()?;
         OperationScope::wrap("bootstrap dotfiles add", self.dry_run, self.run_inner(mode)).await
     }

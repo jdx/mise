@@ -127,7 +127,8 @@ less often because they change constantly. It includes the command to start a
 stopped watcher.
 
 `mise dot status` gives more detail: whether the watcher is running, declared
-but stopped, or not declared, and whether its saves are failing; the latest
+but stopped, or not declared (shown as manual: edits are saved when you run
+`mise dot save`), and whether its saves are failing; the latest
 save and full scan; the last failure; and each busy file's save interval, last
 save, and pending edits. It also lists tracked files that changed since the
 latest checkpoint, which `mise dot save` would record:

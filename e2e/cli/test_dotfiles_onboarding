@@ -4,7 +4,10 @@ require_cmd git
 export MISE_HISTORY_NOTIFY=false
 echo first >~/.shared-config
 echo never-capture >~/.netrc
-assert_contains 'mise bootstrap dotfiles track ~/.shared-config 2>&1' 'automatic capture is inactive'
+# saving by hand is a choice, so it is mentioned, not warned about
+mise bootstrap dotfiles track ~/.shared-config >track.log 2>&1
+assert_contains 'cat track.log' 'to save them automatically, add a'
+assert_not_contains 'cat track.log' 'WARN'
 echo second >~/.shared-config
 assert_succeed 'mise bootstrap dotfiles save'
 repository="$MISE_STATE_DIR/history/repo.git"

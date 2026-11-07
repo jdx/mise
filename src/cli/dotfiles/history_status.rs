@@ -454,6 +454,14 @@ fn print_capture(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> {
             report.watcher.as_str(),
             super::capture_health::advice(report.watcher)
         );
+    } else if report.watcher == Watcher::NotDeclared {
+        // saving by hand is a supported workflow, not a fault: no mark and
+        // no next step
+        miseprintln!("Automatic capture");
+        miseprintln!(
+            "  manual: {}.",
+            super::capture_health::advice(report.watcher)
+        );
     } else {
         miseprintln!("Automatic capture {WARN}");
         miseprintln!(
@@ -461,14 +469,7 @@ fn print_capture(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> {
             report.watcher.as_str(),
             super::capture_health::advice(report.watcher)
         );
-        if report.watcher == Watcher::NotDeclared {
-            next.push(
-                "declare `history-watch` under [bootstrap.services] and run `mise bootstrap`"
-                    .to_string(),
-            );
-        } else {
-            next.push("mise bootstrap services apply".to_string());
-        }
+        next.push("mise bootstrap services apply".to_string());
     }
     if let Some(health) = &report.health {
         use crate::system::history::health::age_secs;

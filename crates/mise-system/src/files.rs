@@ -2367,6 +2367,43 @@ pub fn resolve_target_arg(target: &str) -> PathBuf {
     lexical_normalize(&file::replace_path(target))
 }
 
+/// Spell a target path given on the command line the way a declaration
+/// would: a relative path starts from the current directory, as in a shell,
+/// and one under the home directory is written `~/…`. Absolute and
+/// `~/`-rooted arguments are returned unchanged.
+///
+/// Only for arguments that name one path. A glob or exclude rule such as
+/// `sessions/**` is relative on purpose and must not go through this.
+///
+/// `..` follows the real parent of a symlinked directory, as a shell does,
+/// so `link/../file` names the file beside the link's destination; a final
+/// symlink is kept, not resolved.
+pub fn target_arg_from_cwd(target: &str) -> Result<String> {
+    if target.is_empty() || resolve_target_arg(target).is_absolute() {
+        return Ok(target.to_string());
+    }
+    let absolute = resolve_source_arg(Path::new(target))?;
+    // the current directory is the resolved one, so a symlinked home is
+    // matched by its destination too
+    let home: &Path = &dirs::HOME;
+    let resolved_home = dunce::canonicalize(home).ok();
+    let under_home = absolute.strip_prefix(home).or_else(|err| {
+        resolved_home
+            .as_deref()
+            .map_or(Err(err), |resolved| absolute.strip_prefix(resolved))
+    });
+    Ok(match under_home {
+        Ok(rest) if !rest.as_os_str().is_empty() => {
+            let rest = rest
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .join("/");
+            format!("~/{rest}")
+        }
+        _ => absolute.to_string_lossy().into_owned(),
+    })
+}
+
 /// Resolve a source path given on the command line: `~/` expands and a
 /// relative path starts from the current directory, as in a shell.
 pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
@@ -7712,6 +7749,19 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_arg_from_cwd_starts_a_relative_path_at_the_current_directory() {
+        assert_eq!(target_arg_from_cwd("~/.zshrc").unwrap(), "~/.zshrc");
+        // an absolute path on every platform (`/etc/hosts` is not one on Windows)
+        let absolute = dirs::CWD.as_ref().unwrap().join("hosts");
+        let absolute = absolute.to_string_lossy();
+        assert_eq!(target_arg_from_cwd(&absolute).unwrap(), absolute);
+        let resolved = target_arg_from_cwd("./config.toml").unwrap();
+        let expected = dirs::CWD.as_ref().unwrap().join("config.toml");
+        assert_eq!(resolve_target_arg(&resolved), expected);
+        assert!(!resolved.starts_with('.'));
+    }
 
     /// A group's entries are whole-file entries or edits, so they read the `FileTomlTable` and
     /// `EditTomlTable` keys; `group` is set by the group itself.
