@@ -49,7 +49,7 @@
 - [Git provider tokens](https://mise.jdx.dev/dev-tools/github-tokens.html): mise reads public GitHub release metadata through mise-versions, so most installs need no token. Set one when mise calls a forge's API itself: for private repositories, GitHub Enterprise, self-managed…
 - [System installs](https://mise.jdx.dev/dev-tools/system-installs.html): Use a system install when several user accounts, or a container image built as root, should share one copy of a tool.
 - [OCI images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build packages the tools a project's mise.toml declares into a container image with one OCI layer per tool, so changing one tool's version rebuilds only that tool's layer.
-- [Identity install layout (experimental)](https://mise.jdx.dev/dev-tools/install-layout.html): By default, mise installs a tool into installs/<tool>/<version>, the legacy layout. That path cannot say which backend produced the files, which platform build they are, or which install options were…
+- [Identity install layout](https://mise.jdx.dev/dev-tools/install-layout.html): mise installs each tool into its own directory, installs/<label>-<hash>/, named by what was installed: the backend, version, platform, and the options that change what gets installed.
 - [Migrating from asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html): mise reads .tool-versions files and can run asdf plugins, so you can move one project at a time while teammates keep using asdf.
 
 ## Languages
@@ -377,7 +377,7 @@
 - [mise implode](https://mise.jdx.dev/cli/implode.html): Remove the mise CLI and all related data
 - [mise install](https://mise.jdx.dev/cli/install.html): Install the tools in your config, or specific tool versions
 - [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version into a directory outside mise
-- [mise installs](https://mise.jdx.dev/cli/installs.html): [experimental] Inspect and choose identity-layout installations
+- [mise installs](https://mise.jdx.dev/cli/installs.html): Inspect and choose installations of the identity install layout
 - [mise installs ls](https://mise.jdx.dev/cli/installs/ls.html): List the installations of the identity install layout
 - [mise installs migrate](https://mise.jdx.dev/cli/installs/migrate.html): Reinstall legacy installations into the identity install layout
 - [mise installs select](https://mise.jdx.dev/cli/installs/select.html): Choose which installation mise uses when no lockfile pins one
