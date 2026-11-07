@@ -100,7 +100,7 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
             "the history watcher is declared but not running: run `mise bootstrap services apply`"
         }
         Watcher::NotDeclared => {
-            "edits are saved when you run `mise dot save` (or `mise dot watch --once`); to save them automatically, add a `[bootstrap.services.mise-history]` table with `builtin = \"history-watch\"` to your global config and run `mise bootstrap`"
+            "edits are saved when you run `mise dot save` (or `mise dot watch --once`; a file tracked with `--no-autosave` needs `mise dot save <path>`); to save them automatically, add a `[bootstrap.services.mise-history]` table with `builtin = \"history-watch\"` to your global config and run `mise bootstrap`"
         }
     }
 }
