@@ -8,4 +8,6 @@ cat <<EOF >mise.toml
 EOF
 
 assert "mise install --force aqua@2.0.0"
-assert "mise where aqua@2.0.0" "$MISE_DATA_DIR/installs/aqua/2.0.0"
+# the installation the aqua/2.0.0 version link names (the directory itself on the
+# legacy layout, the installs/<label>-<hash> directory on the identity one)
+assert "mise where aqua@2.0.0" "$(realpath "$MISE_DATA_DIR/installs/aqua/2.0.0")"

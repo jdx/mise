@@ -99,7 +99,8 @@ chmod +x mono/packages/a/bin/jq
 assert_succeed "cd mono/packages/a && MISE_EXPERIMENTAL=1 mise generate tool-stub bin/jq --lock"
 assert_contains "cat mono/mise.lock" 'tool-stubs = ["packages/a/bin/jq"]'
 assert_fail "test -f mono/packages/a/mise.lock"
-# An installed version would satisfy locked mode without the lockfile.
-rm -rf "$MISE_DATA_DIR/installs/aqua-jqlang-jq"
-assert_fail "test -d $MISE_DATA_DIR/installs/aqua-jqlang-jq"
+# An installed version would satisfy locked mode without the lockfile. Uninstall
+# rather than delete installs/aqua-jqlang-jq: an installation can live outside it.
+mise uninstall --all aqua:jqlang/jq
+assert_empty "mise ls --installed --json aqua:jqlang/jq | jq -r '.[]'"
 assert_contains "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_LOCKED=1 mise tool-stub ../mono/packages/a/bin/jq --version" "jq-1.7"

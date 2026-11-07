@@ -51,7 +51,7 @@ fi
 # the concrete version directory rather than a floating selector.
 assert "printf '%s' '$installed_tools' | jq -r '.[0].backend'" "asdf:dummy"
 installed_version=$(printf '%s' "$installed_tools" | jq -r '.[0].version')
-assert "printf '%s' '$installed_tools' | jq -r '.[0].install_path'" "$MISE_DATA_DIR/installs/dummy/$installed_version"
+assert "printf '%s' '$installed_tools' | jq -r '.[0].install_path'" "$(mise where "dummy@$installed_version")"
 
 # A version prefix resolves to a concrete version but is reported verbatim
 output3=$(MISE_INSTALLS_DIR="$MISE_DATA_DIR/installs-prefix" mise install dummy@1 2>&1)
@@ -124,4 +124,4 @@ installed_tools5=$(printf '%s\n' "$output5" | sed -n 's/^.*INSTALLED_TOOLS=//p' 
 assert "printf '%s' '$installed_tools5' | jq -r 'length'" "1"
 assert "printf '%s' '$installed_tools5' | jq -r '.[0].version'" "1.0.0"
 assert "printf '%s' '$installed_tools5' | jq -r '.[0].backend'" "asdf:dummy"
-assert "printf '%s' '$installed_tools5' | jq -r '.[0].install_path'" "$MISE_DATA_DIR/installs-partial/dummy/1.0.0"
+assert "printf '%s' '$installed_tools5' | jq -r '.[0].install_path'" "$(MISE_INSTALLS_DIR="$MISE_DATA_DIR/installs-partial" mise where dummy@1.0.0)"

@@ -1969,7 +1969,7 @@ optional = true
 type = "String"
 
 [install_layout]
-default_docs = "`identity` on Windows with `experimental = true`, otherwise `legacy`"
+default_docs = "`identity` with `experimental = true`, otherwise `legacy`"
 description = "[experimental] Name installations by what they are (`identity`) instead of `installs/<tool>/<version>` (`legacy`)."
 docs = """
 With `identity`, each installation goes into an `installs/<label>-<hash>/`
@@ -1979,14 +1979,14 @@ it. Shorthands such as `age` and `aqua:FiloSottile/age` then share one install,
 and variants of one version that differ in an install-affecting option can
 coexist. Existing installs stay where they are and keep working.
 
-It requires `experimental = true`. On Windows, `experimental = true` turns it
-on by itself; set `install_layout = "legacy"` to keep the legacy layout there.
-On other platforms, set both:
+It requires `experimental = true`, which turns it on by itself; set
+`install_layout = "legacy"` to keep the legacy layout with other experimental
+features on:
 
 ```toml
 [settings]
 experimental = true
-install_layout = "identity"
+# install_layout = "legacy"  # to opt out
 ```
 
 See [Identity install layout](/dev-tools/install-layout.html) for what changes
