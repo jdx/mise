@@ -304,13 +304,26 @@ struct Fetched {
 }
 
 /// How long a download may take and how much it may write.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct DownloadLimits {
     /// For every attempt and backoff delay together.
     time: Duration,
     /// More fails the download. `None` for files that are streamed to disk
     /// and never read into memory whole.
     bytes: Option<u64>,
+    /// Whether netrc may still be sent, shared by every attempt and restart of
+    /// the download so a login the server rejected is not sent again.
+    netrc: RetryStateHandle,
+}
+
+impl DownloadLimits {
+    fn new(bytes: Option<u64>, headers: &HeaderMap) -> Self {
+        Self {
+            time: crate::network::http_download_timeout(&Settings::get()),
+            bytes,
+            netrc: new_retry_state(headers, false),
+        }
+    }
 }
 
 /// What every attempt is told, and what an attempt learned beyond the bytes it
@@ -325,6 +338,8 @@ struct AttemptOutcome {
     not_modified: std::sync::atomic::AtomicBool,
     /// The validator that came with a complete response, for keeping it.
     validator: Mutex<Option<DownloadValidator>>,
+    /// Whether netrc may still be sent; see [`DownloadLimits::netrc`].
+    netrc: Option<RetryStateHandle>,
 }
 
 #[derive(Debug)]
@@ -1590,10 +1605,7 @@ impl Client {
                             headers,
                             pin,
                             pr,
-                            DownloadLimits {
-                                time: crate::network::http_download_timeout(&Settings::get()),
-                                bytes: max_bytes,
-                            },
+                            DownloadLimits::new(max_bytes, headers),
                         )
                         .await?;
                     Ok::<_, eyre::Report>((directory, metadata))
@@ -1626,10 +1638,7 @@ impl Client {
             headers,
             pin,
             pr,
-            DownloadLimits {
-                time: crate::network::http_download_timeout(&Settings::get()),
-                bytes: max_bytes,
-            },
+            DownloadLimits::new(max_bytes, headers),
         )
         .await
     }
@@ -1765,10 +1774,7 @@ impl Client {
                 headers,
                 cache,
                 pr,
-                DownloadLimits {
-                    time: crate::network::http_download_timeout(&Settings::get()),
-                    bytes: max_bytes,
-                },
+                DownloadLimits::new(max_bytes, headers),
             )
             .await?;
         let blob = match fetched.stored {
@@ -1872,6 +1878,7 @@ impl Client {
         };
         let outcome = Arc::new(AttemptOutcome {
             max_bytes: limits.bytes,
+            netrc: Some(limits.netrc.clone()),
             cond: cached.as_ref().map(|c| c.validator.clone()),
             ..Default::default()
         });
@@ -2054,6 +2061,7 @@ impl Client {
                     url.clone(),
                     &request_headers,
                     "GET",
+                    outcome.netrc.as_ref().expect("download sets netrc state"),
                 )
                 .await?;
             let response_filename = download_filename_hint(resp.url());
@@ -2378,13 +2386,16 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
+        netrc_state: &RetryStateHandle,
     ) -> Result<Response> {
+        let use_netrc = netrc_state.lock().unwrap().use_netrc;
         self.send_once_with_https_fallback_with_retry_headers(
             method,
             url,
             headers,
             verb_label,
-            SendOnceOptions::new(None, true).allow_range_not_satisfiable(),
+            SendOnceOptions::new(Some(netrc_state.clone()), use_netrc)
+                .allow_range_not_satisfiable(),
         )
         .await
     }
@@ -2516,11 +2527,16 @@ impl Client {
         // than the direct request, or an http mirror fronting an https origin (#7164)
         // becomes unusable.
         ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
+        // Set when netrc alone supplied the Authorization header for this host.
+        let mut netrc_fallback_used = false;
         if options.use_netrc
             && !(options.netrc_replacement_only && url.host() == original_url.host())
         {
+            let before = final_headers.get(AUTHORIZATION).cloned();
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
+            netrc_fallback_used = url.host() == original_url.host()
+                && final_headers.get(AUTHORIZATION) != before.as_ref();
         }
 
         let request_timeout = self.request_timeout();
@@ -2618,6 +2634,40 @@ impl Client {
                     crate::github::oauth::log_refresh_error(&err);
                 }
             }
+        }
+        // A stale netrc login earns a 401 even from hosts that serve the resource
+        // anonymously (a public GitLab release asset). netrc is only a fallback, so
+        // retry once without it rather than fail. Callers that read the status
+        // themselves (`allow_error_status`) keep the 401, and a response from
+        // another origin after a redirect never saw the netrc header.
+        if netrc_fallback_used
+            && options.error_for_status
+            && resp.status() == StatusCode::UNAUTHORIZED
+            && resp.url().origin() == url.origin()
+        {
+            let mut headers = headers.clone();
+            forward_rules.attach_to(&mut headers);
+            debug!(
+                "{} {} retrying without netrc credentials after 401",
+                verb_label,
+                log_url(&url)
+            );
+            // Later attempts of an outer retry loop must not resend the rejected login.
+            if let Some(retry_state) = &options.retry_state {
+                *retry_state.lock().unwrap() = RetryState {
+                    headers: headers.clone(),
+                    use_netrc: false,
+                    netrc_replacement_only: false,
+                };
+            }
+            return Box::pin(self.send_once_inner(
+                method,
+                original_url,
+                &headers,
+                verb_label,
+                options.recursive_retry(),
+            ))
+            .await;
         }
         if options.error_for_status && is_github_unauthorized(&url, &resp) {
             // A static invalid/expired token (env var, gh CLI, ...) produces a 401
