@@ -766,7 +766,7 @@ fn merge_exclusions(
         }
     }
     bail!(
-        "enrollment conflict in {field}; both machines changed `mise dot exclude` in ways that cannot be combined (a removal or a `!glob`). Reconcile the exclusions in the repository metadata (`.mise-history/manifest.json`) so no exclusion is dropped, and keep every local exclusion in place until sync succeeds, so no excluded file is saved"
+        "enrollment conflict in {field}; both machines changed it in ways that cannot be combined (a removal or a `!glob`). Reconcile it in the repository metadata (`.mise-history/manifest.json`) so no glob is dropped, and keep every local exclusion in place until sync succeeds, so no excluded file is saved"
     )
 }
 
