@@ -64,3 +64,30 @@ assert "mise dot files --json --untracked hypr | jq -r '.[].path'" '~/.config/hy
 assert "mise dot files --json -r nvim | jq -r '.[].path' | sort | xargs" '~/.config/nvim/debug.log ~/.config/nvim/init.lua ~/.config/nvim/lua/opts.lua'
 assert "mise dot files --json -r --untracked . | jq -r '.[].path' | sort | xargs" '~/.config/cache/index ~/.config/hypr/monitors.lua ~/.config/mise/config.toml ~/.config/nvim/debug.log'
 assert_fail 'mise dot files --tracked --untracked' 'cannot be combined'
+
+# A tracked symlink named directly is listed as the link, as history saves
+# it, and a dangling one is still listed.
+ln -s hypr/bindings.lua ~/.config/bindings-link.lua
+ln -s does-not-exist ~/.config/dangling.lua
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles."~/.config/bindings-link.lua"]
+mode = "track"
+TOML
+assert "mise dot files --json ~/.config/bindings-link.lua | jq -r '.[0] | .kind + \" \" + .status'" 'symlink tracked'
+assert "mise dot files --json ~/.config/dangling.lua | jq -r '.[0] | .kind + \" \" + .status'" 'symlink untracked'
+
+# A local-only file is listed from local-only history, named directly or not.
+echo 'private' >~/.config/private.env
+assert_succeed 'mise dot track --local ~/.config/private.env --yes'
+assert "mise dot files --json ~/.config/private.env | jq -r '.[0].status'" 'tracked'
+assert "mise dot files --json ~/.config | jq -r '.[] | select(.path == \"~/.config/private.env\") | .mode'" 'track-local'
+
+# An unreadable subdirectory is reported and skipped; the rest is listed.
+# Root reads it anyway, so this only holds for other users.
+if [ "$(id -u)" != 0 ]; then
+  mkdir ~/.config/locked
+  chmod 000 ~/.config/locked
+  assert_contains 'mise dot files -r ~/.config 2>&1' 'locked'
+  assert_contains 'mise dot files -r ~/.config 2>/dev/null' 'hypr/bindings.lua'
+  chmod 700 ~/.config/locked
+fi

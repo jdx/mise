@@ -5,7 +5,7 @@ use eyre::{Result, bail};
 use serde::Serialize;
 
 use crate::file::display_path;
-use crate::system::history::tracked::{TrackedSet, Walk};
+use crate::system::history::tracked::{ExclusionReasons, TrackedSet, Walk};
 use crate::ui::table::MiseTable;
 
 /// List a directory's files and whether each one is tracked
@@ -101,8 +101,14 @@ impl DotfilesFiles {
             bail!("--tracked and --untracked cannot be combined");
         }
         let target = self.target()?;
-        let meta = std::fs::metadata(&target)
+        // a symlink is listed as itself, as history tracks it, and a
+        // dangling one is still something to list
+        let meta = std::fs::symlink_metadata(&target)
             .map_err(|err| eyre::eyre!("{}: {err}", display_path(&target)))?;
+        // a path kept in local-only history is listed from that history
+        if super::route_local(std::slice::from_ref(&target)).await? {
+            return Ok(());
+        }
         let tracked = TrackedSet::effective().await?;
         // only the entries that overlap the listed path need walking
         let selected: Vec<usize> = tracked
@@ -116,6 +122,7 @@ impl DotfilesFiles {
         walk.report_warnings();
         let lister = Lister {
             set: &tracked,
+            reasons: tracked.exclusion_reasons()?,
             omitted: walk
                 .omitted
                 .iter()
@@ -128,7 +135,7 @@ impl DotfilesFiles {
         if meta.is_dir() {
             lister.list_dir(&target, &target, self.recursive, &mut rows)?;
         } else {
-            rows.push(lister.row(&target, display_path(&target), false)?);
+            rows.push(lister.row(&target, display_path(&target), false));
         }
         rows.retain(|row| self.shows(row));
 
@@ -153,7 +160,8 @@ impl DotfilesFiles {
     }
 
     /// The listed path: `~` expanded, read from the current directory when
-    /// relative, and resolved so it compares with the tracked entries.
+    /// relative, and resolved the way tracked entries are, which keeps a
+    /// symlink at the end as the link rather than its destination.
     fn target(&self) -> Result<PathBuf> {
         let raw = match &self.path {
             Some(path) => crate::system::files::resolve_target_arg(&path.to_string_lossy()),
@@ -164,8 +172,7 @@ impl DotfilesFiles {
         } else {
             raw
         };
-        Ok(dunce::canonicalize(&absolute)
-            .unwrap_or_else(|_| crate::system::history::tracked::normalize_target(&absolute)))
+        Ok(crate::system::history::tracked::normalize_target(&absolute))
     }
 
     fn shows(&self, row: &Row) -> bool {
@@ -181,6 +188,7 @@ impl DotfilesFiles {
 
 struct Lister<'a> {
     set: &'a TrackedSet,
+    reasons: ExclusionReasons<'a>,
     walk: &'a Walk,
     /// The walk's omissions by displayed path.
     omitted: BTreeMap<String, String>,
@@ -194,9 +202,17 @@ impl Lister<'_> {
         recursive: bool,
         rows: &mut Vec<Row>,
     ) -> Result<()> {
-        let mut children = std::fs::read_dir(dir)?
-            .filter_map(|entry| entry.ok())
-            .collect::<Vec<_>>();
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            // the directory asked for has to be readable; one below it
+            // that is not is reported, and the rest is still listed
+            Err(err) if dir != root => {
+                warn!("{}: {err}", display_path(dir));
+                return Ok(());
+            }
+            Err(err) => return Err(eyre::eyre!("{}: {err}", display_path(dir))),
+        };
+        let mut children = entries.filter_map(|entry| entry.ok()).collect::<Vec<_>>();
         children.sort_by_key(|entry| entry.file_name());
         for child in children {
             let path = child.path();
@@ -214,12 +230,12 @@ impl Lister<'_> {
             if is_dir {
                 name.push('/');
             }
-            rows.push(self.row(&path, name, is_dir)?);
+            rows.push(self.row(&path, name, is_dir));
         }
         Ok(())
     }
 
-    fn row(&self, path: &Path, name: String, is_dir: bool) -> Result<Row> {
+    fn row(&self, path: &Path, name: String, is_dir: bool) -> Row {
         let mut row = Row {
             path: display_path(path),
             name,
@@ -237,11 +253,18 @@ impl Lister<'_> {
             reason: None,
             tracked_files: None,
         };
+        // local-only history is not in this set: say whose the path is
+        if let Some(local) = self.set.local.iter().find(|local| path.starts_with(local)) {
+            row.status = Status::Tracked;
+            row.entry = Some(display_path(local));
+            row.mode = Some("track-local".into());
+            return row;
+        }
         if is_dir {
             let count = self.tracked_below(path);
             row.tracked_files = Some(count);
             match self.set.entry_for(path) {
-                Some(owner) => match self.set.exclusion_reason(path)? {
+                Some(owner) => match self.reasons.of(path) {
                     Some(reason) => {
                         row.status = Status::Excluded;
                         row.reason = Some(reason.to_string());
@@ -256,7 +279,7 @@ impl Lister<'_> {
                 None if count > 0 => row.status = Status::Partial,
                 None => {}
             }
-            return Ok(row);
+            return row;
         }
         if let Some((owner, policy)) = self.walk.files.get(path) {
             row.status = Status::Tracked;
@@ -265,15 +288,15 @@ impl Lister<'_> {
                 row.mode = Some(entry.mode.clone());
             }
             row.autosave = Some(policy.autosave);
-            return Ok(row);
+            return row;
         }
         if let Some(reason) = self.omitted.get(&row.path) {
             row.status = Status::Omitted;
             row.reason = Some(reason.clone());
-            return Ok(row);
+            return row;
         }
         if self.set.entry_for(path).is_some() {
-            match self.set.exclusion_reason(path)? {
+            match self.reasons.of(path) {
                 Some(reason) => {
                     row.status = Status::Excluded;
                     row.reason = Some(reason.to_string());
@@ -284,7 +307,7 @@ impl Lister<'_> {
                 }
             }
         }
-        Ok(row)
+        row
     }
 
     /// How many captured files lie below `dir`. Descendants sort right after
@@ -300,24 +323,19 @@ impl Lister<'_> {
 }
 
 fn details(row: &Row) -> String {
-    let save = |autosave: Option<bool>| {
-        if autosave == Some(false) {
-            "manual save"
-        } else {
-            "autosave"
-        }
-    };
     match row.status {
         Status::Tracked => {
             let entry = row.entry.clone().unwrap_or_default();
-            let mode = row.mode.clone().unwrap_or_else(|| "track".into());
+            let mut how = row.mode.clone().unwrap_or_else(|| "track".into());
+            // local-only history's policy is that history's to report
+            match row.autosave {
+                Some(true) => how.push_str(", autosave"),
+                Some(false) => how.push_str(", manual save"),
+                None => {}
+            }
             match row.tracked_files {
-                Some(count) => format!(
-                    "{} · {entry} ({mode}, {})",
-                    files(count),
-                    save(row.autosave)
-                ),
-                None => format!("{entry} ({mode}, {})", save(row.autosave)),
+                Some(count) => format!("{} · {entry} ({how})", files(count)),
+                None => format!("{entry} ({how})"),
             }
         }
         Status::Partial => format!("{} tracked below", files(row.tracked_files.unwrap_or(0))),

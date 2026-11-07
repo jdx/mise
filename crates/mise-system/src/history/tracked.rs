@@ -796,34 +796,22 @@ impl TrackedSet {
         unselected.then_some(DropReason::NotIncluded)
     }
 
-    /// Why a capture of this set leaves out `path`, which an entry
-    /// covers, or `None` when it is selected or no entry covers it.
+    /// What says why a capture of this set leaves out a path an entry
+    /// covers ([`ExclusionReasons::of`]).
     ///
     /// The selection lists are asked through [`Self::drop_reason`], the
     /// predicate every other reader uses, so a listing cannot call a path
     /// excluded that a capture would save. The filesystem rules
     /// [`Self::would_retain`] adds are asked first.
-    pub fn exclusion_reason(&self, path: &Path) -> Result<Option<&'static str>> {
-        let Some(owner) = self.entry_for(path) else {
-            return Ok(None);
-        };
-        if hard_exclusions().iter().any(|dir| path.starts_with(dir)) {
-            return Ok(Some("mise internal directory"));
-        }
-        if path
-            .components()
-            .any(|component| component.as_os_str() == ".git")
-        {
-            return Ok(Some("inside a .git directory"));
-        }
-        let reason = Self::drop_reason(
-            &self.exclude_set()?,
-            owner,
-            path,
-            Asked::Exactly,
-            kind_of(path),
-        );
-        Ok(reason.map(DropReason::as_str))
+    ///
+    /// The rules are compiled once here, so a listing can ask about every
+    /// row without building the matcher again for each one.
+    pub fn exclusion_reasons(&self) -> Result<ExclusionReasons<'_>> {
+        Ok(ExclusionReasons {
+            set: self,
+            exclude: self.exclude_set()?,
+            hard: hard_exclusions(),
+        })
     }
 
     pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
@@ -2245,6 +2233,33 @@ pub(crate) enum Kind {
 /// there has no kind — which is the case [`TrackedSet::dropped`] hands
 /// to the reader, because that is the one case where a file's answer
 /// and a directory's answer differ and neither is available.
+/// Answers [`TrackedSet::exclusion_reasons`]'s question for one path at a
+/// time, with the rules compiled once.
+pub struct ExclusionReasons<'a> {
+    set: &'a TrackedSet,
+    exclude: ExcludeSet,
+    hard: Vec<PathBuf>,
+}
+
+impl ExclusionReasons<'_> {
+    /// Why a capture leaves out `path`, which an entry covers, or `None`
+    /// when it is selected or no entry covers it.
+    pub fn of(&self, path: &Path) -> Option<&'static str> {
+        let owner = self.set.entry_for(path)?;
+        if self.hard.iter().any(|dir| path.starts_with(dir)) {
+            return Some("mise internal directory");
+        }
+        if path
+            .components()
+            .any(|component| component.as_os_str() == ".git")
+        {
+            return Some("inside a .git directory");
+        }
+        TrackedSet::drop_reason(&self.exclude, owner, path, Asked::Exactly, kind_of(path))
+            .map(DropReason::as_str)
+    }
+}
+
 /// The rule [`TrackedSet::drop_reason`] found leaving a path out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DropReason {
