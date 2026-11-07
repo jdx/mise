@@ -285,9 +285,14 @@ impl Lister<'_> {
             let count = self.tracked_below(path);
             row.tracked_files = Some(count);
             row.local_below = self.set.local.iter().any(|local| local.starts_with(path));
-            // a covered directory the capture could not read
+            // a covered directory the capture could not read, unless an
+            // entry of its own below it is still saved
             if let Some(reason) = self.omitted.get(&row.path) {
-                row.status = Status::Omitted;
+                row.status = if count > 0 {
+                    Status::Partial
+                } else {
+                    Status::Omitted
+                };
                 row.reason = Some(reason.clone());
                 return row;
             }

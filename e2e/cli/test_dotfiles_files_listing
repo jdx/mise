@@ -107,7 +107,7 @@ fi
 
 # A partly tracked directory belongs to --tracked, never to --untracked, and
 # an excluded directory with an entry of its own below is partial.
-assert "mise dot files --json --untracked ~/.config | jq -r '.[] | select(.path == \"~/.config/foot\") | .status'" ''
+assert "mise dot files --json --untracked ~/.config | jq '[.[] | select(.path == \"~/.config/foot\")] | length'" '0'
 assert "mise dot files --json --tracked ~/.config | jq -r '.[] | select(.path == \"~/.config/foot\") | .status'" 'partial'
 mkdir -p ~/.config/hypr/scripts
 echo 'run' >~/.config/hypr/scripts/run.sh
