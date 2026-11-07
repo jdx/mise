@@ -3905,6 +3905,19 @@ stop applying are listed the same way.
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
 type = "Bool"
 
+[status.show_env_ignore]
+default = []
+description = "Environment variable names (or glob patterns) that `status.show_env` leaves out."
+docs = """
+Use this to silence variables that mise sets in every shell, such as `GOROOT`.
+Patterns use shell globs, so `GO*` matches `GOBIN` and `GOROOT`. Config files
+that start or stop applying are still listed.
+"""
+env = "MISE_STATUS_MESSAGE_SHOW_ENV_IGNORE"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [status.show_tools]
 description = "When you change directories in an activated shell, list the tool versions that become active or inactive."
 docs = "Versions are shown as `+node@24.14.0` or `-node@22.21.1`."

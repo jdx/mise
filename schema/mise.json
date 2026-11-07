@@ -3222,6 +3222,14 @@
               "description": "When you change directories in an activated shell, list the environment variables that mise adds, changes or removes.",
               "type": "boolean"
             },
+            "show_env_ignore": {
+              "default": [],
+              "description": "Environment variable names (or glob patterns) that `status.show_env` leaves out.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "show_tools": {
               "description": "When you change directories in an activated shell, list the tool versions that become active or inactive.",
               "type": "boolean"
