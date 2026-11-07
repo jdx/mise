@@ -805,6 +805,14 @@ pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
         .is_some_and(is_disabled_backend_name)
 }
 
+/// Whether mise can install with `backend_type` here: `disable_backends` does
+/// not list it, and it is not asdf on Windows, where mise never runs asdf
+/// plugins.
+pub fn is_usable_backend_type(backend_type: &BackendType) -> bool {
+    !is_disabled_backend_type(backend_type)
+        && !(cfg!(windows) && *backend_type == BackendType::Asdf)
+}
+
 pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
     if is_disabled_backend_type(backend_type) {
         bail!("backend {backend_type} is disabled by disable_backends");

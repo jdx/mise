@@ -5850,7 +5850,7 @@ pub(crate) fn get_locked_version(
             else {
                 return Ok(None);
             };
-            if backend::is_disabled_backend_type(&backend.get_type()) {
+            if !backend::is_usable_backend_type(&backend.get_type()) {
                 return Ok(None);
             }
             // The registry's options are for the backend it chose. Another
@@ -5913,6 +5913,30 @@ pub(crate) fn get_locked_version(
                     _ => bail!(AmbiguousRequestBinding(format!(
                         "lockfile contains multiple optionless resolutions for {short}@{specifier}"
                     ))),
+                }
+
+                // A binding whose backend mise cannot use here (a disabled
+                // backend, or asdf on Windows) has no options to compare, but
+                // it still records which version this request resolved to.
+                // Keep that pin; the shorthand picks its backend as usual.
+                if !request.ba().has_explicit_backend() {
+                    let (unusable, _) =
+                        matching_request_bindings(lockfile, short, specifier, |tool| {
+                            Ok(tool.backend.as_deref().is_some_and(|full| {
+                                !backend::is_usable_backend_type(&BackendType::guess(full))
+                            }))
+                        });
+                    if let Ok(found) = unusable.iter().map(|t| &t.version).all_equal_value()
+                        && let Some(tool) = unusable.first()
+                    {
+                        trace!(
+                            "[{short}@{specifier}] found {found} in lockfile under a backend unusable here, keeping the version pin"
+                        );
+                        return Ok(Some(lockfile_tool_with_request_options(
+                            tool,
+                            request_options,
+                        )));
+                    }
                 }
 
                 // Mixed-format monorepo migration can temporarily place legacy
@@ -6582,7 +6606,7 @@ pub(crate) fn get_locked_backend_for_version(
     let usable = |tool: &&LockfileTool| {
         tool.backend.as_ref().is_some_and(|full| {
             backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
-                .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
+                .is_some_and(|backend| backend::is_usable_backend_type(&backend.get_type()))
         })
     };
     // The lockfile with the highest precedence that locks the tool decides
