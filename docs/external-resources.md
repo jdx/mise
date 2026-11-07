@@ -35,6 +35,8 @@ These tools come from mise's author and work alongside it:
 - [fnox](https://fnox.jdx.dev/): store and load secrets; mise can use it as a
   [secrets source](/environments/secrets/fnox.html).
 - [hk](https://hk.jdx.dev/): run Git hooks and project lint checks.
+- [jouet](https://jouet.jdx.dev/): record what coding-agent sessions cost and
+  give agents commands in place of the scripts they write by hand.
 - [Mr Boxington](https://mr-boxington.jdx.dev/): share one Cargo build cache
   across checkouts and CI.
 - [pitchfork](https://pitchfork.jdx.dev/): supervise long-running development

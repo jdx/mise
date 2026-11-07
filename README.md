@@ -285,6 +285,13 @@ dotfile tracking and templating, services, and remote SSH targets.
 For security reports and other inquiries, see
 [Contact](https://mise.jdx.dev/contact.html).
 
+## Related project
+
+[jouet](https://jouet.jdx.dev) gives coding agents such as Claude Code and
+Codex wind-up tools: it tells them which checks are slow, and turns what went
+wrong in past sessions into rules for the next one. Install it with
+`mise use -g jouet`, which needs mise 2026.10.25 or later.
+
 ## Special thanks
 
 <p>
