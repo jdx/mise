@@ -2624,6 +2624,40 @@ impl Client {
                 }
             }
         }
+        // A stale netrc login earns a 401 even from hosts that serve the resource
+        // anonymously (a public GitLab release asset). netrc is only a fallback, so
+        // retry once without it rather than fail. Callers that read the status
+        // themselves (`allow_error_status`) keep the 401, and a response from
+        // another origin after a redirect never saw the netrc header.
+        if netrc_fallback_used
+            && options.error_for_status
+            && resp.status() == StatusCode::UNAUTHORIZED
+            && resp.url().origin() == url.origin()
+        {
+            let mut headers = headers.clone();
+            forward_rules.attach_to(&mut headers);
+            debug!(
+                "{} {} retrying without netrc credentials after 401",
+                verb_label,
+                log_url(&url)
+            );
+            // Later attempts of an outer retry loop must not resend the rejected login.
+            if let Some(retry_state) = &options.retry_state {
+                *retry_state.lock().unwrap() = RetryState {
+                    headers: headers.clone(),
+                    use_netrc: false,
+                    netrc_replacement_only: false,
+                };
+            }
+            return Box::pin(self.send_once_inner(
+                method,
+                original_url,
+                &headers,
+                verb_label,
+                options.recursive_retry(),
+            ))
+            .await;
+        }
         if options.error_for_status && is_github_unauthorized(&url, &resp) {
             // A static invalid/expired token (env var, gh CLI, ...) produces a 401
             // that the OAuth-refresh path above cannot recover. Surface a clear
@@ -2696,26 +2730,6 @@ impl Client {
                 rate_limited,
                 &body,
             ));
-        }
-        // A stale netrc login earns a 401 even from hosts that serve the resource
-        // anonymously (a public GitLab release asset). netrc is only a fallback, so
-        // retry once without it rather than fail.
-        if netrc_fallback_used && resp.status() == StatusCode::UNAUTHORIZED {
-            let mut headers = headers.clone();
-            forward_rules.attach_to(&mut headers);
-            debug!(
-                "{} {} retrying without netrc credentials after 401",
-                verb_label,
-                log_url(&url)
-            );
-            return Box::pin(self.send_once_inner(
-                method,
-                original_url,
-                &headers,
-                verb_label,
-                options.recursive_retry(),
-            ))
-            .await;
         }
         options.check_response(resp)
     }
