@@ -15,9 +15,10 @@ use crate::ui::table::MiseTable;
 /// `omitted` (covered, but a capture skips it, such as a credential-like
 /// file), or `untracked`. A subdirectory shows how many tracked files it
 /// holds, and is `partial` when it is not tracked itself, or is excluded, but
-/// holds tracked files. `--tracked` and `--untracked` split the rows: a
-/// `partial` directory is listed by `--tracked`. Relative paths are read from
-/// the current directory.
+/// holds tracked files. A path kept in local-only history is one `local` row,
+/// listed in full by `mise dot --local files PATH`. `--tracked` and
+/// `--untracked` split the rows: `partial` and `local` rows are listed by
+/// `--tracked`. Relative paths are read from the current directory.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(
@@ -60,6 +61,7 @@ pub(crate) struct DotfilesFiles {
 enum Status {
     Tracked,
     Partial,
+    Local,
     Excluded,
     Omitted,
     Untracked,
@@ -70,6 +72,7 @@ impl Status {
         match self {
             Self::Tracked => "tracked",
             Self::Partial => "partial",
+            Self::Local => "local",
             Self::Excluded => "excluded",
             Self::Omitted => "omitted",
             Self::Untracked => "untracked",
@@ -95,6 +98,9 @@ struct Row {
     /// For a directory, how many files below it are tracked.
     #[serde(skip_serializing_if = "Option::is_none")]
     tracked_files: Option<usize>,
+    /// For a directory, whether local-only history keeps a path below it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    local_below: bool,
 }
 
 impl DotfilesFiles {
@@ -179,11 +185,17 @@ impl DotfilesFiles {
 
     fn shows(&self, row: &Row) -> bool {
         if self.tracked {
-            matches!(row.status, Status::Tracked | Status::Partial)
+            matches!(
+                row.status,
+                Status::Tracked | Status::Partial | Status::Local
+            )
         } else if self.untracked {
             // the two filters split the rows: a directory holding tracked
             // files is `--tracked`'s, so this one finds what holds none
-            !matches!(row.status, Status::Tracked | Status::Partial)
+            !matches!(
+                row.status,
+                Status::Tracked | Status::Partial | Status::Local
+            )
         } else {
             true
         }
@@ -225,7 +237,9 @@ impl Lister<'_> {
             let is_dir = child.file_type().is_ok_and(|kind| kind.is_dir());
             let relative = path.strip_prefix(root).unwrap_or(&path);
             let mut name = relative.to_string_lossy().into_owned();
-            if is_dir && recursive {
+            // a local-only path is one row: its files are that history's
+            // to judge, which this listing cannot ask
+            if is_dir && recursive && !self.is_local(&path) {
                 // `.git` is never captured, and walking it is all cost
                 if child.file_name() != ".git" {
                     self.list_dir(root, &path, recursive, rows)?;
@@ -257,10 +271,12 @@ impl Lister<'_> {
             autosave: None,
             reason: None,
             tracked_files: None,
+            local_below: false,
         };
-        // local-only history is not in this set: say whose the path is
+        // local-only history is not in this set, and its own rules decide
+        // what in it is saved: say whose the path is, not what it holds
         if let Some(local) = self.set.local.iter().find(|local| path.starts_with(local)) {
-            row.status = Status::Tracked;
+            row.status = Status::Local;
             row.entry = Some(display_path(local));
             row.mode = Some("track-local".into());
             return row;
@@ -268,6 +284,7 @@ impl Lister<'_> {
         if is_dir {
             let count = self.tracked_below(path);
             row.tracked_files = Some(count);
+            row.local_below = self.set.local.iter().any(|local| local.starts_with(path));
             // a covered directory the capture could not read
             if let Some(reason) = self.omitted.get(&row.path) {
                 row.status = Status::Omitted;
@@ -293,7 +310,7 @@ impl Lister<'_> {
                         row.autosave = Some(owner.policy.autosave);
                     }
                 },
-                None if count > 0 => row.status = Status::Partial,
+                None if count > 0 || row.local_below => row.status = Status::Partial,
                 None => {}
             }
             return row;
@@ -327,6 +344,10 @@ impl Lister<'_> {
         row
     }
 
+    fn is_local(&self, path: &Path) -> bool {
+        self.set.local.iter().any(|local| path.starts_with(local))
+    }
+
     /// How many captured files lie below `dir`. Descendants sort right after
     /// their directory, so they are one contiguous range of the map.
     fn tracked_below(&self, dir: &Path) -> usize {
@@ -355,7 +376,18 @@ fn details(row: &Row) -> String {
                 None => format!("{entry} ({how})"),
             }
         }
-        Status::Partial => format!("{} tracked below", files(row.tracked_files.unwrap_or(0))),
+        Status::Partial => {
+            let count = row.tracked_files.unwrap_or(0);
+            match (count, row.local_below) {
+                (0, true) => "local-only history below".to_string(),
+                (count, true) => format!("{} tracked below, and local-only history", files(count)),
+                (count, false) => format!("{} tracked below", files(count)),
+            }
+        }
+        Status::Local => format!(
+            "{} (track-local); `mise dot --local files` lists it",
+            row.entry.clone().unwrap_or_default()
+        ),
         Status::Excluded | Status::Omitted => row.reason.clone().unwrap_or_default(),
         Status::Untracked => String::new(),
     }

@@ -80,7 +80,20 @@ assert "mise dot files --json ~/.config/dangling.lua | jq -r '.[0] | .kind + \" 
 echo 'private' >~/.config/private.env
 assert_succeed 'mise dot track --local ~/.config/private.env --yes'
 assert "mise dot files --json ~/.config/private.env | jq -r '.[0].status'" 'tracked'
-assert "mise dot files --json ~/.config | jq -r '.[] | select(.path == \"~/.config/private.env\") | .mode'" 'track-local'
+assert "mise dot files --json ~/.config | jq -r '.[] | select(.path == \"~/.config/private.env\") | .status + \" \" + .mode'" 'local track-local'
+
+# A local-only directory is one row even with -r: what in it is saved is
+# that history's to say, so its files are neither tracked nor untracked here.
+mkdir -p ~/.config/app
+echo 'state' >~/.config/app/state.json
+assert_succeed 'mise dot track --local ~/.config/app --yes'
+assert "mise dot files --json -r ~/.config | jq -r '.[] | select(.path | startswith(\"~/.config/app\")) | .path + \" \" + .status'" '~/.config/app local'
+assert "mise dot files --json -r --untracked ~/.config | jq -r '.[].path' | grep -c '^~/.config/app' || true" '0'
+
+# A credential-like file under a tracked directory is omitted, with the reason.
+echo 'token' >~/.config/hypr/credentials.json
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/credentials.json\") | .status'" 'omitted'
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/credentials.json\") | .reason'" 'credential store; encrypt the file before tracking it'
 
 # An unreadable subdirectory is reported and skipped; the rest is listed.
 # Root reads it anyway, so this only holds for other users.
