@@ -1376,7 +1376,7 @@ See https://mise.jdx.dev/dotfiles/history.html
             flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
             flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+            arg <PATH>… help="Paths to track (a relative path starts from the current directory)" var=#true
             example "mise dot track ~/.zshrc ~/.config/hypr" help="Track a file and a directory"
             example "mise dot track --dry-run ~/.codex" help="Show what tracking a directory would save"
             example "mise dot track ~/.zshrc --os macos" help="Keep a separate version for macOS machines"
@@ -3541,7 +3541,7 @@ See https://mise.jdx.dev/dotfiles/history.html
         flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
         flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+        arg <PATH>… help="Paths to track (a relative path starts from the current directory)" var=#true
         example "mise dot track ~/.zshrc ~/.config/hypr" help="Track a file and a directory"
         example "mise dot track --dry-run ~/.codex" help="Show what tracking a directory would save"
         example "mise dot track ~/.zshrc --os macos" help="Keep a separate version for macOS machines"

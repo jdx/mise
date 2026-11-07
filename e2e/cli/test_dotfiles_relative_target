@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# A relative target starts from the current directory, as in a shell, and
+# is declared under its home-relative name.
+export MISE_HISTORY_NOTIFY=false
+project="$PWD"
+mkdir -p ~/.config/app/sessions
+echo one >~/.config/app/config.toml
+echo log >~/.config/app/sessions/today.log
+
+cd ~/.config/app
+assert_succeed 'mise dot track config.toml'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"~/.config/app/config.toml"'
+assert "mise dot paths --json | jq -r '.entries[].path'" '~/.config/app/config.toml'
+assert_succeed 'mise dot untrack ./config.toml'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'app/config.toml'
+
+# `..` after a symlinked directory follows the link's real parent, as in a
+# shell, not the parent the link sits in
+mkdir -p ~/else/sub
+echo else >~/else/file
+echo wrong >~/.config/app/file
+ln -s ~/else/sub ~/.config/app/link
+assert_succeed 'mise dot track link/../file'
+assert "mise dot paths --json | jq -r '.entries[].path'" '~/else/file'
+assert_succeed 'mise dot untrack ~/else/file'
+
+# a directory and `..` resolve the same way
+cd sessions
+assert_succeed 'mise dot track ..'
+assert "mise dot paths --json | jq -r '.entries[].path'" '~/.config/app'
+# an exclude rule stays a glob: it is not taken as a path from here
+assert_succeed "mise dot exclude 'sessions/**'"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"sessions/**"'
+assert_succeed 'mise dot untrack ../'
+
+# add takes a relative target too
+cd ~/.config/app
+assert_succeed "mise dot add --path $project/mise.toml --yes --source $project/dots/app.toml config.toml"
+assert "readlink ~/.config/app/config.toml" "$project/dots/app.toml"
+assert_contains "cat $project/mise.toml" '"~/.config/app/config.toml"'
+# and so does edit, which opens the source (from the project, whose config
+# declares it)
+cd "$project"
+assert 'VISUAL=echo EDITOR=echo mise dot edit ../.config/app/config.toml' "$project/dots/app.toml"
+
+# outside the home directory the target is declared absolute
+outside="$(dirname "$HOME")/outside"
+mkdir -p "$outside"
+echo out >"$outside/file"
+cd "$outside"
+assert_succeed "mise dot add --path $project/mise.toml --yes --source $project/dots/out file"
+assert_contains "cat $project/mise.toml" "\"$outside/file\""

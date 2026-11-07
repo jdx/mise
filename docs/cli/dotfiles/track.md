@@ -18,7 +18,7 @@ Adds a `[dotfiles]` entry with `mode = "track"` to your global config: the file 
 See <https://mise.jdx.dev/dotfiles/history.html>
 
 ## Arguments
-- **`<PATH>…`** — Paths to track (absolute or starting with ~/)
+- **`<PATH>…`** — Paths to track (a relative path starts from the current directory)
 
 ## Flags
 - **`--os <OS>`** — Declare a variant for this platform (macos, linux, linux/arm64, …)

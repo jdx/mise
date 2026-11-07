@@ -53,7 +53,9 @@ mkdir -p ~/.config/hypr
 echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
 assert "$count" "1"
-assert_contains "mise bootstrap dotfiles status" "not declared"
+assert_contains "mise bootstrap dotfiles status" "manual: edits are saved when you run"
+assert_not_contains "mise bootstrap dotfiles status" "Automatic capture ⚠"
+assert_not_contains "mise bootstrap dotfiles status" "mise bootstrap services apply"
 
 # a declared but not running watcher is reported with the next command
 cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
