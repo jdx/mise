@@ -338,6 +338,7 @@
 - [mise dotfiles diff](https://mise.jdx.dev/cli/dotfiles/diff.html): Show what mise dot apply would change
 - [mise dotfiles edit](https://mise.jdx.dev/cli/dotfiles/edit.html): Open a dotfile's source in your editor
 - [mise dotfiles exclude](https://mise.jdx.dev/cli/dotfiles/exclude.html): Never save paths matching a glob
+- [mise dotfiles files](https://mise.jdx.dev/cli/dotfiles/files.html): List a directory's files and whether each one is tracked
 - [mise dotfiles history](https://mise.jdx.dev/cli/dotfiles/history.html): Browse saved versions of your tracked files
 - [mise dotfiles history describe](https://mise.jdx.dev/cli/dotfiles/history/describe.html): Set the description of a checkpoint
 - [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or your files against one
