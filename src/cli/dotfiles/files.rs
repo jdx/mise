@@ -14,8 +14,10 @@ use crate::ui::table::MiseTable;
 /// the entry that covers it), `excluded` (with the rule that leaves it out),
 /// `omitted` (covered, but a capture skips it, such as a credential-like
 /// file), or `untracked`. A subdirectory shows how many tracked files it
-/// holds, and is `partial` when it is not tracked itself but holds tracked
-/// files. Relative paths are read from the current directory.
+/// holds, and is `partial` when it is not tracked itself, or is excluded, but
+/// holds tracked files. `--tracked` and `--untracked` split the rows: a
+/// `partial` directory is listed by `--tracked`. Relative paths are read from
+/// the current directory.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(
@@ -44,7 +46,7 @@ pub(crate) struct DotfilesFiles {
     #[usage(long)]
     tracked: bool,
 
-    /// Only show what is not tracked
+    /// Only show what holds nothing tracked
     #[usage(long)]
     untracked: bool,
 
@@ -179,7 +181,9 @@ impl DotfilesFiles {
         if self.tracked {
             matches!(row.status, Status::Tracked | Status::Partial)
         } else if self.untracked {
-            row.status != Status::Tracked
+            // the two filters split the rows: a directory holding tracked
+            // files is `--tracked`'s, so this one finds what holds none
+            !matches!(row.status, Status::Tracked | Status::Partial)
         } else {
             true
         }
@@ -202,8 +206,10 @@ impl Lister<'_> {
         recursive: bool,
         rows: &mut Vec<Row>,
     ) -> Result<()> {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(entries) => entries,
+        let read =
+            std::fs::read_dir(dir).and_then(|entries| entries.collect::<std::io::Result<Vec<_>>>());
+        let mut children = match read {
+            Ok(children) => children,
             // the directory asked for has to be readable; one below it
             // that is not is reported, and the rest is still listed
             Err(err) if dir != root => {
@@ -212,7 +218,6 @@ impl Lister<'_> {
             }
             Err(err) => return Err(eyre::eyre!("{}: {err}", display_path(dir))),
         };
-        let mut children = entries.filter_map(|entry| entry.ok()).collect::<Vec<_>>();
         children.sort_by_key(|entry| entry.file_name());
         for child in children {
             let path = child.path();
@@ -263,10 +268,22 @@ impl Lister<'_> {
         if is_dir {
             let count = self.tracked_below(path);
             row.tracked_files = Some(count);
+            // a covered directory the capture could not read
+            if let Some(reason) = self.omitted.get(&row.path) {
+                row.status = Status::Omitted;
+                row.reason = Some(reason.clone());
+                return row;
+            }
             match self.set.entry_for(path) {
                 Some(owner) => match self.reasons.of(path) {
+                    // an entry of its own below an excluded directory still
+                    // saves something in it
                     Some(reason) => {
-                        row.status = Status::Excluded;
+                        row.status = if count > 0 {
+                            Status::Partial
+                        } else {
+                            Status::Excluded
+                        };
                         row.reason = Some(reason.to_string());
                     }
                     None => {

@@ -4598,7 +4598,7 @@ mise dot exclude '~/.codex/sessions/**'
 .SH "MISE DOTFILES FILES"
 List a directory's files and whether each one is tracked
 
-Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential\-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself but holds tracked files. Relative paths are read from the current directory.
+Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential\-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself, or is excluded, but holds tracked files. `\-\-tracked` and `\-\-untracked` split the rows: a `partial` directory is listed by `\-\-tracked`. Relative paths are read from the current directory.
 .PP
 \fBUsage:\fR mise dotfiles files [OPTIONS] [<PATH>]
 .PP
@@ -4612,7 +4612,7 @@ List files in subdirectories too, instead of one row per subdirectory
 Only show what is tracked
 .TP
 \fB\-\-untracked\fR
-Only show what is not tracked
+Only show what holds nothing tracked
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format

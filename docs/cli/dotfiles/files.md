@@ -11,7 +11,7 @@ description: "List a directory's files and whether each one is tracked"
 
 List a directory's files and whether each one is tracked
 
-Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself but holds tracked files. Relative paths are read from the current directory.
+Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself, or is excluded, but holds tracked files. `--tracked` and `--untracked` split the rows: a `partial` directory is listed by `--tracked`. Relative paths are read from the current directory.
 
 ## Arguments
 - **`[PATH]`** — The directory or file to list; defaults to the current directory
@@ -19,7 +19,7 @@ Shows each file and subdirectory with its tracking state: `tracked` (with the en
 ## Flags
 - **`-r --recursive`** — List files in subdirectories too, instead of one row per subdirectory
 - **`--tracked`** — Only show what is tracked
-- **`--untracked`** — Only show what is not tracked
+- **`--untracked`** — Only show what holds nothing tracked
 - **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
 
@@ -47,6 +47,6 @@ mise dot files -r --untracked ~/.config/nvim
 
 ## Related documentation
 
-- [Dotfiles](/dotfiles.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

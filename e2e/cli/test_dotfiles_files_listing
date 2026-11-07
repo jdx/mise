@@ -91,3 +91,16 @@ if [ "$(id -u)" != 0 ]; then
   assert_contains 'mise dot files -r ~/.config 2>/dev/null' 'hypr/bindings.lua'
   chmod 700 ~/.config/locked
 fi
+
+# A partly tracked directory belongs to --tracked, never to --untracked, and
+# an excluded directory with an entry of its own below is partial.
+assert "mise dot files --json --untracked ~/.config | jq -r '.[] | select(.path == \"~/.config/foot\") | .status'" ''
+assert "mise dot files --json --tracked ~/.config | jq -r '.[] | select(.path == \"~/.config/foot\") | .status'" 'partial'
+mkdir -p ~/.config/hypr/scripts
+echo 'run' >~/.config/hypr/scripts/run.sh
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles."~/.config/hypr/scripts/run.sh"]
+mode = "track"
+TOML
+mise dot exclude '~/.config/hypr/scripts'
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/scripts\") | .status'" 'partial'
