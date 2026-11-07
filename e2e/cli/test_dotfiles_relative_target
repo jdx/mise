@@ -14,6 +14,16 @@ assert "mise dot paths --json | jq -r '.entries[].path'" '~/.config/app/config.t
 assert_succeed 'mise dot untrack ./config.toml'
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'app/config.toml'
 
+# `..` after a symlinked directory follows the link's real parent, as in a
+# shell, not the parent the link sits in
+mkdir -p ~/else/sub
+echo else >~/else/file
+echo wrong >~/.config/app/file
+ln -s ~/else/sub ~/.config/app/link
+assert_succeed 'mise dot track link/../file'
+assert "mise dot paths --json | jq -r '.entries[].path'" '~/else/file'
+assert_succeed 'mise dot untrack ~/else/file'
+
 # a directory and `..` resolve the same way
 cd sessions
 assert_succeed 'mise dot track ..'

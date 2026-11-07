@@ -2374,18 +2374,17 @@ pub fn resolve_target_arg(target: &str) -> PathBuf {
 ///
 /// Only for arguments that name one path. A glob or exclude rule such as
 /// `sessions/**` is relative on purpose and must not go through this.
-pub fn target_arg_from_cwd(target: &str) -> String {
+///
+/// `..` follows the real parent of a symlinked directory, as a shell does,
+/// so `link/../file` names the file beside the link's destination; a final
+/// symlink is kept, not resolved.
+pub fn target_arg_from_cwd(target: &str) -> Result<String> {
     if target.is_empty() || resolve_target_arg(target).is_absolute() {
-        return target.to_string();
+        return Ok(target.to_string());
     }
-    // without a current directory the argument stays relative, and the
-    // caller rejects it as before
-    let Some(cwd) = dirs::CWD.as_ref() else {
-        return target.to_string();
-    };
-    let absolute = lexical_normalize(&cwd.join(target));
+    let absolute = resolve_source_arg(Path::new(target))?;
     let home: &Path = &dirs::HOME;
-    match absolute.strip_prefix(home) {
+    Ok(match absolute.strip_prefix(home) {
         Ok(rest) if !rest.as_os_str().is_empty() => {
             let rest = rest
                 .components()
@@ -2394,7 +2393,7 @@ pub fn target_arg_from_cwd(target: &str) -> String {
             format!("~/{rest}")
         }
         _ => absolute.to_string_lossy().into_owned(),
-    }
+    })
 }
 
 /// Resolve a source path given on the command line: `~/` expands and a
@@ -7745,12 +7744,12 @@ mod tests {
 
     #[test]
     fn target_arg_from_cwd_starts_a_relative_path_at_the_current_directory() {
-        assert_eq!(target_arg_from_cwd("~/.zshrc"), "~/.zshrc");
-        assert_eq!(target_arg_from_cwd("/etc/hosts"), "/etc/hosts");
-        let resolved = target_arg_from_cwd("./sub/../config.toml");
+        assert_eq!(target_arg_from_cwd("~/.zshrc").unwrap(), "~/.zshrc");
+        assert_eq!(target_arg_from_cwd("/etc/hosts").unwrap(), "/etc/hosts");
+        let resolved = target_arg_from_cwd("./config.toml").unwrap();
         let expected = dirs::CWD.as_ref().unwrap().join("config.toml");
         assert_eq!(resolve_target_arg(&resolved), expected);
-        assert!(!resolved.contains(".."));
+        assert!(!resolved.starts_with('.'));
     }
 
     /// A group's entries are whole-file entries or edits, so they read the `FileTomlTable` and

@@ -35,7 +35,7 @@ pub(crate) struct DotfilesUntrack {
 impl DotfilesUntrack {
     pub(crate) async fn run(mut self) -> Result<()> {
         for target in &mut self.targets {
-            *target = crate::system::files::target_arg_from_cwd(target);
+            *target = crate::system::files::target_arg_from_cwd(target)?;
         }
         let _declarations = super::track::declaration_lock()?;
         let config = Config::get().await?;

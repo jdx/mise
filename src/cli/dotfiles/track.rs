@@ -114,7 +114,7 @@ impl DotfilesTrack {
     /// Write the requested declarations and capture their initial history baseline.
     pub(crate) async fn run(mut self) -> Result<()> {
         for target in &mut self.targets {
-            *target = crate::system::files::target_arg_from_cwd(target);
+            *target = crate::system::files::target_arg_from_cwd(target)?;
         }
         // a dry run reads and walks but writes nothing, so it must not
         // hold up (or be held up by) a declaration command

@@ -68,7 +68,7 @@ pub(crate) struct DotfilesEdit {
 impl DotfilesEdit {
     /// Open the managed source and optionally converge its target afterward.
     pub(crate) async fn run(mut self) -> Result<()> {
-        self.target = system::files::target_arg_from_cwd(&self.target);
+        self.target = system::files::target_arg_from_cwd(&self.target)?;
         // The editor itself changes the managed source, so the whole command
         // is one generation, not just the optional apply.
         OperationScope::wrap("bootstrap dotfiles edit", false, self.run_inner()).await
