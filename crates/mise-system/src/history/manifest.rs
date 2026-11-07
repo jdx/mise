@@ -313,13 +313,13 @@ impl Manifest {
                         &theirs.variants,
                         &format!("{path}: variants"),
                     )?,
-                    exclude: choose(
+                    exclude: merge_entry_globs(
                         &before.exclude,
                         &ours.exclude,
                         &theirs.exclude,
                         &format!("{path}: exclude"),
                     )?,
-                    include: choose(
+                    include: merge_entry_globs(
                         &before.include,
                         &ours.include,
                         &theirs.include,
@@ -352,7 +352,12 @@ impl Manifest {
         let merged = Self {
             format: 1,
             enrollment,
-            exclude: merge_exclusions(&base.exclude, &local.exclude, &remote.exclude)?,
+            exclude: merge_exclusions(
+                &base.exclude,
+                &local.exclude,
+                &remote.exclude,
+                "exclusions",
+            )?,
             recipients: choose(
                 &base.recipients,
                 &local.recipients,
@@ -739,7 +744,12 @@ fn plain(path: &str) -> String {
 /// `!glob`, whose meaning depends on what comes before it; the result is the
 /// base, then local's additions, then remote's. Any other divergence (a
 /// removal or reorder on both sides) stays a conflict.
-fn merge_exclusions(base: &[String], local: &[String], remote: &[String]) -> Result<Vec<String>> {
+fn merge_exclusions(
+    base: &[String],
+    local: &[String],
+    remote: &[String],
+    field: &str,
+) -> Result<Vec<String>> {
     if local == remote || remote == base {
         return Ok(local.to_vec());
     }
@@ -756,8 +766,30 @@ fn merge_exclusions(base: &[String], local: &[String], remote: &[String]) -> Res
         }
     }
     bail!(
-        "enrollment conflict in exclusions; both machines changed `mise dot exclude` in ways that cannot be combined (a removal or a `!glob`). Reconcile the exclusions in the repository metadata (`.mise-history/manifest.json`) so no exclusion is dropped, and keep every local exclusion in place until sync succeeds, so no excluded file is saved"
+        "enrollment conflict in {field}; both machines changed `mise dot exclude` in ways that cannot be combined (a removal or a `!glob`). Reconcile the exclusions in the repository metadata (`.mise-history/manifest.json`) so no exclusion is dropped, and keep every local exclusion in place until sync succeeds, so no excluded file is saved"
     )
+}
+
+/// Merge an enrollment entry's `exclude` or `include` list the way the
+/// manifest's own `exclude` is merged. An absent list states nothing, which
+/// is not an empty one, so unless all three sides state a list the lists are
+/// compared whole.
+fn merge_entry_globs(
+    base: &Option<Vec<String>>,
+    local: &Option<Vec<String>>,
+    remote: &Option<Vec<String>>,
+    field: &str,
+) -> Result<Option<Vec<String>>> {
+    if let (Some(base), Some(local), Some(remote)) = (base, local, remote) {
+        return merge_exclusions(base, local, remote, field).map(Some);
+    }
+    if local == remote || remote == base {
+        Ok(local.clone())
+    } else if local == base {
+        Ok(remote.clone())
+    } else {
+        bail!("enrollment conflict in {field}; reconcile repository metadata before syncing")
+    }
 }
 
 #[cfg(test)]
@@ -1330,6 +1362,31 @@ mod tests {
         local.exclude = vec![];
         let error = Manifest::merge(&base, &local, &remote).unwrap_err();
         assert!(error.to_string().contains("exclusions"), "{error}");
+    }
+
+    #[test]
+    fn independent_entry_exclusion_additions_are_merged() {
+        let list = |items: &[&str]| Some(items.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let with = |exclude, include| {
+            let mut entry = enrollment("home/.config/app");
+            entry.exclude = exclude;
+            entry.include = include;
+            Manifest {
+                enrollment: vec![entry],
+                ..Manifest::default()
+            }
+        };
+        let base = with(list(&["a"]), list(&["k"]));
+        let local = with(list(&["a", "y"]), list(&["k", "l"]));
+        let remote = with(list(&["a", "x"]), list(&["k", "m"]));
+        let merged = Manifest::merge(&base, &local, &remote).unwrap();
+        assert_eq!(merged.enrollment[0].exclude, list(&["a", "y", "x"]));
+        assert_eq!(merged.enrollment[0].include, list(&["k", "l", "m"]));
+        // a list one side never stated is compared whole
+        let base = with(None, None);
+        let local = with(list(&["y"]), None);
+        let remote = with(list(&["x"]), None);
+        assert!(Manifest::merge(&base, &local, &remote).is_err());
     }
 
     #[test]
