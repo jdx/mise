@@ -386,10 +386,15 @@ fn details(row: &Row) -> String {
         }
         Status::Partial => {
             let count = row.tracked_files.unwrap_or(0);
-            match (count, row.local_below) {
+            let below = match (count, row.local_below) {
                 (0, true) => "local-only history below".to_string(),
                 (count, true) => format!("{} tracked below, and local-only history", files(count)),
                 (count, false) => format!("{} tracked below", files(count)),
+            };
+            // an excluded or omitted directory still says why
+            match &row.reason {
+                Some(reason) => format!("{reason}; {below}"),
+                None => below,
             }
         }
         Status::Local => format!(
