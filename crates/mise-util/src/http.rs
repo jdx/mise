@@ -1879,7 +1879,10 @@ impl Client {
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
         // send_with_https_fallback) is used inside to avoid retry-on-retry.
+        // Shared by every attempt, so a netrc login a server rejected is not resent.
+        let netrc_state = new_retry_state(headers, false);
         let download = retry_async("GET", &url, || {
+            let netrc_state = netrc_state.clone();
             let attempt = attempt.clone();
             let progress = progress.clone();
             let request_url = url.clone();
@@ -1897,6 +1900,7 @@ impl Client {
                     pr,
                     &progress,
                     &outcome,
+                    &netrc_state,
                 ))
                 .await
             }
@@ -1995,6 +1999,7 @@ impl Client {
         pr: Option<&dyn SingleReport>,
         progress: &DownloadProgress,
         outcome: &AttemptOutcome,
+        netrc_state: &RetryStateHandle,
     ) -> Result<DownloadFileMetadata> {
         let max_bytes = outcome.max_bytes;
         let too_large = |max: u64| {
@@ -2054,6 +2059,7 @@ impl Client {
                     url.clone(),
                     &request_headers,
                     "GET",
+                    netrc_state,
                 )
                 .await?;
             let response_filename = download_filename_hint(resp.url());
@@ -2378,13 +2384,16 @@ impl Client {
         url: Url,
         headers: &HeaderMap,
         verb_label: &str,
+        netrc_state: &RetryStateHandle,
     ) -> Result<Response> {
+        let use_netrc = netrc_state.lock().unwrap().use_netrc;
         self.send_once_with_https_fallback_with_retry_headers(
             method,
             url,
             headers,
             verb_label,
-            SendOnceOptions::new(None, true).allow_range_not_satisfiable(),
+            SendOnceOptions::new(Some(netrc_state.clone()), use_netrc)
+                .allow_range_not_satisfiable(),
         )
         .await
     }

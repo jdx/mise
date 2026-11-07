@@ -6,10 +6,20 @@
 cat >"$HOME/serve.py" <<'PY'
 import http.server, sys
 
+anonymous = 0
+
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        global anonymous
         if self.headers.get("Authorization"):
+            open(sys.argv[2], "a").write("auth\n")
             self.send_response(401)
+            self.end_headers()
+            return
+        anonymous += 1
+        if anonymous == 1:
+            # a transient failure after the anonymous retry
+            self.send_response(503)
             self.end_headers()
             return
         body = b"ok"
@@ -26,7 +36,7 @@ open(sys.argv[1], "w").write(str(s.server_port))
 s.serve_forever()
 PY
 
-python3 "$HOME/serve.py" "$HOME/port" &
+python3 "$HOME/serve.py" "$HOME/port" "$HOME/auth-requests" &
 server_pid=$!
 trap 'kill $server_pid 2>/dev/null' EXIT
 for _ in $(seq 50); do
@@ -49,3 +59,6 @@ TOML
 
 assert_contains "mise install --verbose 2>&1" "retrying without netrc credentials after 401"
 assert_contains "mise ls --installed" "http:netrc-retry"
+
+# The rejected login is sent once; later attempts after the 503 do not resend it.
+assert "wc -l <$HOME/auth-requests | tr -d ' '" "1"
