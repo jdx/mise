@@ -13,6 +13,7 @@ mod conflicts;
 mod diff;
 mod edit;
 mod exclude;
+mod files;
 pub(crate) mod history;
 mod history_status;
 mod notify;
@@ -119,6 +120,7 @@ enum Commands {
     Diff(diff::DotfilesDiff),
     Edit(edit::DotfilesEdit),
     Exclude(exclude::DotfilesExclude),
+    Files(files::DotfilesFiles),
     History(history::DotfilesHistory),
     Include(exclude::DotfilesInclude),
     Notify(notify::DotfilesNotify),
@@ -182,6 +184,7 @@ impl Dotfiles {
     fn check_local(&self) -> Result<()> {
         let name = match &self.command {
             Commands::Capture(_)
+            | Commands::Files(_)
             | Commands::History(_)
             | Commands::Paths(_)
             | Commands::Recover(_)
@@ -214,6 +217,7 @@ impl Dotfiles {
             Commands::Diff(cmd) => Box::pin(cmd.run()),
             Commands::Edit(cmd) => Box::pin(cmd.run()),
             Commands::Exclude(cmd) => Box::pin(cmd.run()),
+            Commands::Files(cmd) => Box::pin(cmd.run()),
             Commands::History(cmd) => Box::pin(cmd.run()),
             Commands::Include(cmd) => Box::pin(cmd.run()),
             Commands::Notify(cmd) => Box::pin(cmd.run()),

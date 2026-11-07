@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# `mise dot files` lists a directory's files with whether each is tracked,
+# and why a covered file is left out.
+require_cmd git
+mkdir -p ~/.config/hypr ~/.config/foot ~/.config/nvim/lua ~/.config/cache
+echo 'bind' >~/.config/hypr/bindings.lua
+echo 'look' >~/.config/hypr/looknfeel.lua
+echo 'mon' >~/.config/hypr/monitors.lua
+echo 'input' >~/.config/hypr/input.lua
+echo 'font' >~/.config/foot/foot.ini
+echo 'init' >~/.config/nvim/init.lua
+echo 'opts' >~/.config/nvim/lua/opts.lua
+echo 'log' >~/.config/nvim/debug.log
+echo 'idx' >~/.config/cache/index
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/hypr" = { mode = "track", exclude = ["monitors.lua"] }
+"~/.config/foot/foot.ini" = { mode = "track", autosave = false }
+"~/.config/nvim" = { mode = "track" }
+
+[history]
+exclude = ["*.log"]
+TOML
+
+# One row per child: files and subdirectories, with their state.
+files_json() {
+  mise dot files --json "$@"
+}
+row() {
+  local dir=$1 name=$2 field=$3
+  files_json "$dir" | jq -r --arg p "$name" ".[] | select(.path == \$p) | .$field"
+}
+export -f files_json row
+assert "row ~/.config/hypr '~/.config/hypr/bindings.lua' status" 'tracked'
+assert "row ~/.config/hypr '~/.config/hypr/bindings.lua' entry" '~/.config/hypr'
+assert "row ~/.config/hypr '~/.config/hypr/monitors.lua' status" 'excluded'
+assert "row ~/.config/hypr '~/.config/hypr/monitors.lua' reason" "excluded by the entry's exclude list"
+assert "row ~/.config/foot '~/.config/foot/foot.ini' status" 'tracked'
+assert "row ~/.config/foot '~/.config/foot/foot.ini' autosave" 'false'
+assert "row ~/.config/nvim '~/.config/nvim/debug.log' status" 'excluded'
+assert "row ~/.config/nvim '~/.config/nvim/debug.log' reason" 'excluded by [history] exclude'
+
+# A parent directory: tracked subtrees, a partly tracked one, untracked ones.
+assert "row ~/.config '~/.config/hypr' status" 'tracked'
+assert "row ~/.config '~/.config/hypr' tracked_files" '3'
+assert "row ~/.config '~/.config/foot' status" 'partial'
+assert "row ~/.config '~/.config/foot' tracked_files" '1'
+assert "row ~/.config '~/.config/cache' status" 'untracked'
+
+# The table, run from inside the directory with no argument.
+cd ~/.config/hypr || exit 1
+assert_contains 'mise dot files' 'bindings.lua'
+assert_contains 'mise dot files' "excluded by the entry's exclude list"
+
+# Relative paths are read from the current directory.
+cd ~/.config || exit 1
+assert "mise dot files --json foot | jq -r '.[0].status'" 'tracked'
+assert "mise dot files --json foot/foot.ini | jq -r '.[0].status'" 'tracked'
+
+# Filters, and recursion listing files in subdirectories.
+assert "mise dot files --json --tracked hypr | jq -r '.[].path' | sort | xargs" '~/.config/hypr/bindings.lua ~/.config/hypr/input.lua ~/.config/hypr/looknfeel.lua'
+assert "mise dot files --json --untracked hypr | jq -r '.[].path'" '~/.config/hypr/monitors.lua'
+assert "mise dot files --json -r nvim | jq -r '.[].path' | sort | xargs" '~/.config/nvim/debug.log ~/.config/nvim/init.lua ~/.config/nvim/lua/opts.lua'
+assert "mise dot files --json -r --untracked . | jq -r '.[].path' | sort | xargs" '~/.config/cache/index ~/.config/hypr/monitors.lua ~/.config/mise/config.toml ~/.config/nvim/debug.log'
+assert_fail 'mise dot files --tracked --untracked' 'cannot be combined'
