@@ -1851,12 +1851,15 @@ fn command_output(program: &str, args: &[&str]) -> Result<Output> {
     command_output_path(&path, args)
 }
 
+/// A command that prints English: `LANGUAGE` outranks `LC_ALL` for gettext.
+fn c_locale_command(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    command.env("LC_ALL", "C").env_remove("LANGUAGE");
+    command
+}
+
 fn command_output_path(program: &Path, args: &[&str]) -> Result<Output> {
-    Ok(Command::new(program)
-        .args(args)
-        .env("LC_ALL", "C")
-        .env_remove("LANGUAGE")
-        .output()?)
+    Ok(c_locale_command(program).args(args).output()?)
 }
 
 fn run(program: &Path, args: &[&str]) -> Result<()> {
@@ -1876,10 +1879,8 @@ fn run_owned(program: &Path, args: &[String]) -> Result<()> {
 fn run_with_stdin(program: &Path, args: &[&str], input: &[u8]) -> Result<()> {
     use std::io::Write;
     use std::process::Stdio;
-    let mut child = Command::new(program)
+    let mut child = c_locale_command(program)
         .args(args)
-        .env("LC_ALL", "C")
-        .env_remove("LANGUAGE")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2391,12 +2392,17 @@ mod tests {
 
     #[test]
     fn commands_run_with_a_c_locale() {
-        let output = command_output_path(
-            Path::new("/bin/sh"),
-            &["-c", "printf '%s|%s' \"$LC_ALL\" \"${LANGUAGE-unset}\""],
-        )
-        .unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout), "C|unset");
+        let command = c_locale_command(Path::new("ufw"));
+        let envs = command
+            .get_envs()
+            .map(|(key, value)| (key.to_owned(), value.map(ToOwned::to_owned)))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            envs[std::ffi::OsStr::new("LC_ALL")].as_deref(),
+            Some("C".as_ref())
+        );
+        // `None` means the variable is removed from the child's environment.
+        assert_eq!(envs[std::ffi::OsStr::new("LANGUAGE")], None);
     }
 
     #[test]
