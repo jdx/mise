@@ -7753,7 +7753,10 @@ mod tests {
     #[test]
     fn target_arg_from_cwd_starts_a_relative_path_at_the_current_directory() {
         assert_eq!(target_arg_from_cwd("~/.zshrc").unwrap(), "~/.zshrc");
-        assert_eq!(target_arg_from_cwd("/etc/hosts").unwrap(), "/etc/hosts");
+        // an absolute path on every platform (`/etc/hosts` is not one on Windows)
+        let absolute = dirs::CWD.as_ref().unwrap().join("hosts");
+        let absolute = absolute.to_string_lossy();
+        assert_eq!(target_arg_from_cwd(&absolute).unwrap(), absolute);
         let resolved = target_arg_from_cwd("./config.toml").unwrap();
         let expected = dirs::CWD.as_ref().unwrap().join("config.toml");
         assert_eq!(resolve_target_arg(&resolved), expected);
