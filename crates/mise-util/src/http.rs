@@ -304,13 +304,26 @@ struct Fetched {
 }
 
 /// How long a download may take and how much it may write.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct DownloadLimits {
     /// For every attempt and backoff delay together.
     time: Duration,
     /// More fails the download. `None` for files that are streamed to disk
     /// and never read into memory whole.
     bytes: Option<u64>,
+    /// Whether netrc may still be sent, shared by every attempt and restart of
+    /// the download so a login the server rejected is not sent again.
+    netrc: RetryStateHandle,
+}
+
+impl DownloadLimits {
+    fn new(bytes: Option<u64>, headers: &HeaderMap) -> Self {
+        Self {
+            time: crate::network::http_download_timeout(&Settings::get()),
+            bytes,
+            netrc: new_retry_state(headers, false),
+        }
+    }
 }
 
 /// What every attempt is told, and what an attempt learned beyond the bytes it
@@ -325,6 +338,8 @@ struct AttemptOutcome {
     not_modified: std::sync::atomic::AtomicBool,
     /// The validator that came with a complete response, for keeping it.
     validator: Mutex<Option<DownloadValidator>>,
+    /// Whether netrc may still be sent; see [`DownloadLimits::netrc`].
+    netrc: Option<RetryStateHandle>,
 }
 
 #[derive(Debug)]
@@ -1590,10 +1605,7 @@ impl Client {
                             headers,
                             pin,
                             pr,
-                            DownloadLimits {
-                                time: crate::network::http_download_timeout(&Settings::get()),
-                                bytes: max_bytes,
-                            },
+                            DownloadLimits::new(max_bytes, headers),
                         )
                         .await?;
                     Ok::<_, eyre::Report>((directory, metadata))
@@ -1626,10 +1638,7 @@ impl Client {
             headers,
             pin,
             pr,
-            DownloadLimits {
-                time: crate::network::http_download_timeout(&Settings::get()),
-                bytes: max_bytes,
-            },
+            DownloadLimits::new(max_bytes, headers),
         )
         .await
     }
@@ -1765,10 +1774,7 @@ impl Client {
                 headers,
                 cache,
                 pr,
-                DownloadLimits {
-                    time: crate::network::http_download_timeout(&Settings::get()),
-                    bytes: max_bytes,
-                },
+                DownloadLimits::new(max_bytes, headers),
             )
             .await?;
         let blob = match fetched.stored {
@@ -1872,6 +1878,7 @@ impl Client {
         };
         let outcome = Arc::new(AttemptOutcome {
             max_bytes: limits.bytes,
+            netrc: Some(limits.netrc.clone()),
             cond: cached.as_ref().map(|c| c.validator.clone()),
             ..Default::default()
         });
@@ -1879,10 +1886,7 @@ impl Client {
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
         // send_with_https_fallback) is used inside to avoid retry-on-retry.
-        // Shared by every attempt, so a netrc login a server rejected is not resent.
-        let netrc_state = new_retry_state(headers, false);
         let download = retry_async("GET", &url, || {
-            let netrc_state = netrc_state.clone();
             let attempt = attempt.clone();
             let progress = progress.clone();
             let request_url = url.clone();
@@ -1900,7 +1904,6 @@ impl Client {
                     pr,
                     &progress,
                     &outcome,
-                    &netrc_state,
                 ))
                 .await
             }
@@ -1999,7 +2002,6 @@ impl Client {
         pr: Option<&dyn SingleReport>,
         progress: &DownloadProgress,
         outcome: &AttemptOutcome,
-        netrc_state: &RetryStateHandle,
     ) -> Result<DownloadFileMetadata> {
         let max_bytes = outcome.max_bytes;
         let too_large = |max: u64| {
@@ -2059,7 +2061,7 @@ impl Client {
                     url.clone(),
                     &request_headers,
                     "GET",
-                    netrc_state,
+                    outcome.netrc.as_ref().expect("download sets netrc state"),
                 )
                 .await?;
             let response_filename = download_filename_hint(resp.url());
