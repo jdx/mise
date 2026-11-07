@@ -222,7 +222,7 @@
 
 ## Contributing
 
-- [Contributing](https://mise.jdx.dev/contributing.html): mise welcomes bug fixes, documentation improvements, and registry entries for widely used tools. Agree on the direction of anything larger before you write code.
+- [Contributing](https://mise.jdx.dev/contributing.html): mise does not accept external pull requests, and GitHub does not let anyone outside the maintainer team create one.
 - [Adding tools to the registry](https://mise.jdx.dev/contributing/registry.html): A registry entry gives a widely used tool a short name, so mise use ripgrep works without a backend identifier.
 - [Codebase architecture](https://mise.jdx.dev/architecture.html): Use this map to find the code that owns a behavior before you change it. For setup, checks, and how to submit a change, see Contributing.
 - [Packaging mise](https://mise.jdx.dev/packaging.html): A package manager that installs mise should own its updates, so turn off mise self-update in your package and tell users how to update instead.

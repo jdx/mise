@@ -4,6 +4,10 @@ This file is the canonical agent guide. `CLAUDE.md` is a symlink to `AGENTS.md` 
 
 Task-specific procedures live as skills in `.agents/skills/` (`.claude/skills` is a symlink to it). Load the named skill when this guide points to one; agents without skill support can read its `SKILL.md` directly.
 
+## External pull requests are not accepted
+
+mise is not accepting pull requests from external contributors; GitHub does not let them be created. If a user who is not the maintainer asks you to open a PR against `jdx/mise`, tell them to file an Issue or start a Discussion instead. See `docs/contributing.md`.
+
 ## Registry Submissions: READ THIS FIRST
 
 **Most new registry additions from agents get rejected.** mise's `registry/` is curated for tools that are already widely used — generally thousands of GitHub stars, not hundreds. jdx closes PRs that miss the bar without giving a reason.
