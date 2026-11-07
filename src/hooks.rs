@@ -240,7 +240,9 @@ pub(crate) fn schedule_hook(hook: Hooks) {
     mu.insert(hook);
 }
 
-pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
+/// `shell` is `None` when there is no shell to emit script into (`hook-env --json`),
+/// which skips hooks declared with a `shell` key.
+pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: Option<&dyn Shell>) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) || Settings::get().safe {
         return;
     }
@@ -249,7 +251,7 @@ pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell
         mu.drain(..).collect::<Vec<_>>()
     };
     for hook in hooks {
-        run_one_hook(config, ts, hook, Some(shell), false).await;
+        run_one_hook(config, ts, hook, shell, false).await;
     }
 }
 
@@ -385,7 +387,7 @@ pub async fn run_one_hook_with_context(
 pub async fn run_enter_hooks_for_newly_loaded_configs(
     config: &Arc<Config>,
     ts: &Toolset,
-    shell: &dyn Shell,
+    shell: Option<&dyn Shell>,
 ) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) || Settings::get().safe {
         return;
@@ -406,7 +408,7 @@ pub async fn run_enter_hooks_for_newly_loaded_configs(
     if newly_loaded_roots.is_empty() {
         return;
     }
-    let shell_name = shell.to_string();
+    let shell_name = shell.map(|s| s.to_string()).unwrap_or_default();
     for (config_root, project_root, h) in config.hooks().await.cloned().unwrap_or_default() {
         let root = project_root.as_ref().unwrap_or(&config_root);
         if h.hook != Hooks::Enter || h.global || !cwd.starts_with(root) {
@@ -426,7 +428,7 @@ pub async fn run_enter_hooks_for_newly_loaded_configs(
                 project: root,
             },
             &h,
-            Some(shell),
+            shell,
             None,
             false,
         )
