@@ -2367,6 +2367,36 @@ pub fn resolve_target_arg(target: &str) -> PathBuf {
     lexical_normalize(&file::replace_path(target))
 }
 
+/// Spell a target path given on the command line the way a declaration
+/// would: a relative path starts from the current directory, as in a shell,
+/// and one under the home directory is written `~/…`. Absolute and
+/// `~/`-rooted arguments are returned unchanged.
+///
+/// Only for arguments that name one path. A glob or exclude rule such as
+/// `sessions/**` is relative on purpose and must not go through this.
+pub fn target_arg_from_cwd(target: &str) -> String {
+    if target.is_empty() || resolve_target_arg(target).is_absolute() {
+        return target.to_string();
+    }
+    // without a current directory the argument stays relative, and the
+    // caller rejects it as before
+    let Some(cwd) = dirs::CWD.as_ref() else {
+        return target.to_string();
+    };
+    let absolute = lexical_normalize(&cwd.join(target));
+    let home: &Path = &dirs::HOME;
+    match absolute.strip_prefix(home) {
+        Ok(rest) if !rest.as_os_str().is_empty() => {
+            let rest = rest
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .join("/");
+            format!("~/{rest}")
+        }
+        _ => absolute.to_string_lossy().into_owned(),
+    }
+}
+
 /// Resolve a source path given on the command line: `~/` expands and a
 /// relative path starts from the current directory, as in a shell.
 pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
@@ -7712,6 +7742,16 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_arg_from_cwd_starts_a_relative_path_at_the_current_directory() {
+        assert_eq!(target_arg_from_cwd("~/.zshrc"), "~/.zshrc");
+        assert_eq!(target_arg_from_cwd("/etc/hosts"), "/etc/hosts");
+        let resolved = target_arg_from_cwd("./sub/../config.toml");
+        let expected = dirs::CWD.as_ref().unwrap().join("config.toml");
+        assert_eq!(resolve_target_arg(&resolved), expected);
+        assert!(!resolved.contains(".."));
+    }
 
     /// A group's entries are whole-file entries or edits, so they read the `FileTomlTable` and
     /// `EditTomlTable` keys; `group` is set by the group itself.

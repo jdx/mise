@@ -20,6 +20,8 @@ pub(crate) enum Watcher {
     ServiceNotWatching,
     /// `[bootstrap.services]` declares the built-in watcher, but none runs.
     DeclaredNotRunning,
+    /// No watcher is declared: edits are saved by hand with `mise dot save`.
+    /// This is a choice, not a fault.
     NotDeclared,
 }
 
@@ -98,7 +100,7 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
             "the history watcher is declared but not running: run `mise bootstrap services apply`"
         }
         Watcher::NotDeclared => {
-            "automatic capture is inactive: declare `[bootstrap.services.mise-history] builtin = \"history-watch\"` and run `mise bootstrap` (track your mise config so other machines get it too); until then edits are saved by `mise dot save` or `mise dot watch --once`"
+            "edits are saved when you run `mise dot save` (or `mise dot watch --once`); to save them automatically, declare `[bootstrap.services.mise-history] builtin = \"history-watch\"` and run `mise bootstrap`"
         }
     }
 }
@@ -111,7 +113,9 @@ pub(crate) fn failing_capture() -> Option<String> {
         .map(str::to_string)
 }
 
-/// Warns when enrollment succeeded but nothing saves edits automatically.
+/// Warns when the watcher should be saving edits but is not. Saving by hand
+/// with `mise dot save` is a supported way to work, so a watcher that was
+/// never declared is only mentioned, not warned about.
 pub(crate) async fn report() {
     match watcher().await {
         Ok(Watcher::Running) => match failing_capture() {
@@ -130,6 +134,7 @@ pub(crate) async fn report() {
                 info!("history: watcher running; autosave-enabled files are saved automatically")
             }
         },
+        Ok(Watcher::NotDeclared) => info!("history: {}", advice(Watcher::NotDeclared)),
         Ok(state) => warn!("history: {}", advice(state)),
         Err(err) => {
             warn!("history: could not determine whether edits are saved automatically: {err:#}")
