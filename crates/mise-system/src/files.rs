@@ -2383,8 +2383,16 @@ pub fn target_arg_from_cwd(target: &str) -> Result<String> {
         return Ok(target.to_string());
     }
     let absolute = resolve_source_arg(Path::new(target))?;
+    // the current directory is the resolved one, so a symlinked home is
+    // matched by its destination too
     let home: &Path = &dirs::HOME;
-    Ok(match absolute.strip_prefix(home) {
+    let resolved_home = dunce::canonicalize(home).ok();
+    let under_home = absolute.strip_prefix(home).or_else(|err| {
+        resolved_home
+            .as_deref()
+            .map_or(Err(err), |resolved| absolute.strip_prefix(resolved))
+    });
+    Ok(match under_home {
         Ok(rest) if !rest.as_os_str().is_empty() => {
             let rest = rest
                 .components()

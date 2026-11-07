@@ -100,7 +100,7 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
             "the history watcher is declared but not running: run `mise bootstrap services apply`"
         }
         Watcher::NotDeclared => {
-            "edits are saved when you run `mise dot save` (or `mise dot watch --once`); to save them automatically, declare `[bootstrap.services.mise-history] builtin = \"history-watch\"` and run `mise bootstrap`"
+            "edits are saved when you run `mise dot save` (or `mise dot watch --once`); to save them automatically, add a `[bootstrap.services.mise-history]` table with `builtin = \"history-watch\"` to your global config and run `mise bootstrap`"
         }
     }
 }
@@ -117,6 +117,11 @@ pub(crate) fn failing_capture() -> Option<String> {
 /// with `mise dot save` is a supported way to work, so a watcher that was
 /// never declared is only mentioned, not warned about.
 pub(crate) async fn report() {
+    // with history disabled nothing is saved either way, and the caller
+    // has already said so
+    if !crate::config::Settings::get().history.enabled {
+        return;
+    }
     match watcher().await {
         Ok(Watcher::Running) => match failing_capture() {
             Some(error)

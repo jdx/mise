@@ -6,7 +6,7 @@ echo first >~/.shared-config
 echo never-capture >~/.netrc
 # saving by hand is a choice, so it is mentioned, not warned about
 mise bootstrap dotfiles track ~/.shared-config >track.log 2>&1
-assert_contains 'cat track.log' 'to save them automatically, declare'
+assert_contains 'cat track.log' 'to save them automatically, add a'
 assert_not_contains 'cat track.log' 'WARN'
 echo second >~/.shared-config
 assert_succeed 'mise bootstrap dotfiles save'
