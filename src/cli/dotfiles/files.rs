@@ -285,10 +285,13 @@ impl Lister<'_> {
             let count = self.tracked_below(path);
             row.tracked_files = Some(count);
             row.local_below = self.set.local.iter().any(|local| local.starts_with(path));
+            // whether anything below is saved, by this history or the
+            // local-only one: such a directory is partial whatever covers it
+            let holds_tracked = count > 0 || row.local_below;
             // a covered directory the capture could not read, unless an
             // entry of its own below it is still saved
             if let Some(reason) = self.omitted.get(&row.path) {
-                row.status = if count > 0 {
+                row.status = if holds_tracked {
                     Status::Partial
                 } else {
                     Status::Omitted
@@ -301,7 +304,7 @@ impl Lister<'_> {
                     // an entry of its own below an excluded directory still
                     // saves something in it
                     Some(reason) => {
-                        row.status = if count > 0 {
+                        row.status = if holds_tracked {
                             Status::Partial
                         } else {
                             Status::Excluded
@@ -315,7 +318,7 @@ impl Lister<'_> {
                         row.autosave = Some(owner.policy.autosave);
                     }
                 },
-                None if count > 0 || row.local_below => row.status = Status::Partial,
+                None if holds_tracked => row.status = Status::Partial,
                 None => {}
             }
             return row;

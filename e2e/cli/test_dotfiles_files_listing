@@ -117,3 +117,10 @@ mode = "track"
 TOML
 mise dot exclude '~/.config/hypr/scripts'
 assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/scripts\") | .status'" 'partial'
+
+# An excluded directory holding a local-only path is partial too.
+mkdir -p ~/.config/hypr/private
+echo 'secret' >~/.config/hypr/private/keys.lua
+mise dot exclude '~/.config/hypr/private'
+assert_succeed 'mise dot track --local ~/.config/hypr/private/keys.lua --yes'
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/private\") | .status'" 'partial'
