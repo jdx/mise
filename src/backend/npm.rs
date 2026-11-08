@@ -310,14 +310,24 @@ async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
 /// the digest is fetched once per URL per process. An install never uses it: it
 /// downloads again.
 async fn tarball_digest(url: &str) -> eyre::Result<String> {
-    static SEEN: LazyLock<Mutex<std::collections::HashMap<String, String>>> =
+    // A long-lived process (a watcher, an MCP server) must still see a new push,
+    // so an entry lasts as long as a cached version list does.
+    static SEEN: LazyLock<Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>> =
         LazyLock::new(Default::default);
-    if let Some(digest) = SEEN.lock().unwrap().get(url) {
+    let ttl = Settings::get().fetch_remote_versions_cache();
+    if let Some(ttl) = ttl
+        && let Some((fetched, digest)) = SEEN.lock().unwrap().get(url)
+        && fetched.elapsed() < ttl
+    {
         return Ok(digest.clone());
     }
     let dir = tempfile::tempdir()?;
     let digest = fetch_tarball(url, &dir.path().join("package.tgz")).await?;
-    SEEN.lock().unwrap().insert(url.to_string(), digest.clone());
+    if ttl.is_some() {
+        SEEN.lock()
+            .unwrap()
+            .insert(url.to_string(), (std::time::Instant::now(), digest.clone()));
+    }
     Ok(digest)
 }
 
