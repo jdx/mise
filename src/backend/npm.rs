@@ -314,20 +314,18 @@ async fn tarball_digest(url: &str) -> eyre::Result<String> {
     // so an entry lasts as long as a cached version list does.
     static SEEN: LazyLock<Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>> =
         LazyLock::new(Default::default);
+    // `None` is prefer-offline: a cached list never expires there.
     let ttl = Settings::get().fetch_remote_versions_cache();
-    if let Some(ttl) = ttl
-        && let Some((fetched, digest)) = SEEN.lock().unwrap().get(url)
-        && fetched.elapsed() < ttl
+    if let Some((fetched, digest)) = SEEN.lock().unwrap().get(url)
+        && ttl.is_none_or(|ttl| fetched.elapsed() < ttl)
     {
         return Ok(digest.clone());
     }
     let dir = tempfile::tempdir()?;
     let digest = fetch_tarball(url, &dir.path().join("package.tgz")).await?;
-    if ttl.is_some() {
-        SEEN.lock()
-            .unwrap()
-            .insert(url.to_string(), (std::time::Instant::now(), digest.clone()));
-    }
+    SEEN.lock()
+        .unwrap()
+        .insert(url.to_string(), (std::time::Instant::now(), digest.clone()));
     Ok(digest)
 }
 
