@@ -19,6 +19,7 @@ chmod +x project/show-file
 reported_cwd() {
   local out
   out="$("$@")" || return 1
+  case "$out" in /*) ;; *) return 1 ;; esac
   (cd "$out" && pwd -P)
 }
 export -f reported_cwd
