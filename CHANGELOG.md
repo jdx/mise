@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026.11.5](https://github.com/jdx/mise/releases/tag/v2026.11.5) - 2026-11-08
+
+### 🚀 Features
+
+- **(dot)** add `mise dot files` to show what is tracked in a directory by @jdx in [#15456](https://github.com/jdx/mise/pull/15456)
+- **(status)** add status.show_env_ignore to hide variables from show_env by @jdx in [#15454](https://github.com/jdx/mise/pull/15454)
+
+### 🐛 Bug Fixes
+
+- **(dot)** accept relative targets and stop warning about manual saving by @jdx in [#15455](https://github.com/jdx/mise/pull/15455)
+- **(http)** retry without netrc credentials after a 401 by @jdx in [#15451](https://github.com/jdx/mise/pull/15451)
+
 ## [2026.11.4](https://github.com/jdx/mise/releases/tag/v2026.11.4) - 2026-11-07
 
 ### 🚀 Features
