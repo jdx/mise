@@ -153,7 +153,7 @@ fn task_tool_value_has_template(value: &toml::Value) -> bool {
 impl TaskToolValueExt for TaskToolValue {
     fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
         match self {
-            Self::String(version) => format!("{tool}@{version}").parse(),
+            Self::String(version) => ToolArg::from_parts(tool, version),
             Self::Map(map) => {
                 let mut task_options = ToolVersionOptions::default();
                 for (key, value) in &map.opts {

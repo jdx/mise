@@ -122,6 +122,20 @@ impl ToolArg {
         Ok(tools)
     }
 
+    /// A tool and its version from separate parts, as a task declares one. An
+    /// npm tarball URL is the whole tool name, `@` included, so its version
+    /// cannot be joined on and split off again.
+    pub fn from_parts(tool: &str, version: &str) -> eyre::Result<Self> {
+        let tarball = tool
+            .strip_prefix("npm:")
+            .is_some_and(|rest| rest.starts_with("https://") || rest.starts_with("http://"));
+        if tarball {
+            Ok(tool.parse::<Self>()?.with_version(version))
+        } else {
+            format!("{tool}@{version}").parse()
+        }
+    }
+
     pub fn with_version(self, version: &str) -> Self {
         let request = ToolRequest::new(self.ba.clone(), version, ToolSource::Argument).unwrap();
         Self {
@@ -180,18 +194,9 @@ pub fn split_tool_version(s: &str) -> (&str, Option<&str>) {
     // An npm tarball URL is the whole tool name: its path may hold '@' (a
     // scope, or a `@ref` like pkg.pr.new's `…/pkg@343`), and it has no versions
     // to choose from.
-    // Only `latest` or a tarball digest (what mise prints after the URL) after
-    // the last '@' is a version.
     if s.strip_prefix("npm:")
         .is_some_and(|rest| rest.starts_with("https://") || rest.starts_with("http://"))
     {
-        if let Some((name, version)) = s.rsplit_once('@')
-            && (version == "latest"
-                || (version.len() == 16
-                    && version.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))))
-        {
-            return (name, Some(version));
-        }
         return (s, None);
     }
 
@@ -314,6 +319,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_tool_arg_from_parts_keeps_tarball_url_whole() {
+        let _config = Config::get().await.unwrap();
+        let url = "npm:https://pkg.pr.new/kjanat/actionlint/@kjanat/actionlint@343";
+        let arg = ToolArg::from_parts(url, "latest").unwrap();
+        assert_eq!(arg.ba.tool_name, url.strip_prefix("npm:").unwrap());
+        assert_eq!(arg.version.as_deref(), Some("latest"));
+        let arg = ToolArg::from_parts("erlang", "27.2").unwrap();
+        assert_eq!(arg.ba.tool_name, "erlang");
+        assert_eq!(arg.version.as_deref(), Some("27.2"));
+    }
+
+    #[tokio::test]
     async fn test_tool_arg_parse_input() {
         let _config = Config::get().await.unwrap();
         let t = |input: &str, f: &str, v: Option<&str>| {
@@ -335,13 +352,9 @@ mod tests {
         let tarball = "npm:https://pkg.pr.new/kjanat/actionlint/@kjanat/actionlint@343";
         t(tarball, tarball, None);
         t("npm:https://h/p/tool.tgz", "npm:https://h/p/tool.tgz", None);
-        // `latest` and a digest after the URL are versions (task tools append one)
-        t(&format!("{tarball}@latest"), tarball, Some("latest"));
-        t(
-            &format!("{tarball}@4d784f93a2be0429"),
-            tarball,
-            Some("4d784f93a2be0429"),
-        );
+        // a trailing ref is part of the URL, never a version
+        let latest = format!("{tarball}@latest");
+        t(&latest, &latest, None);
         // URL userinfo is part of the name, not a version separator
         let ssh = "pypi:git+ssh://git@github.com/psf/black.git";
         t(ssh, ssh, None);

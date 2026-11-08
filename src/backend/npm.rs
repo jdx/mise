@@ -231,7 +231,7 @@ fn validate_git_alias(name: &str) -> Result<()> {
 
 /// Whether the tool name is a tarball URL (`https://pkg.pr.new/…`) rather than
 /// a registry package. `http://` is recognised only to be refused.
-fn is_tarball_spec(name: &str) -> bool {
+pub(crate) fn is_tarball_spec(name: &str) -> bool {
     name.starts_with("https://") || name.starts_with("http://")
 }
 
@@ -1111,6 +1111,10 @@ impl Backend for NPMBackend {
     /// directly. Its cache is keyed by what `npm` reads there, so one
     /// registry's list is not reused for another.
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        // A tarball URL is not a package name, and no registry lists it.
+        if is_tarball_spec(&self.tool_name()) {
+            return Ok(None);
+        }
         if Settings::get().npm.shell_out {
             let env = self.dependency_env(config).await?;
             // `npm view` resolves its registry from the whole environment, since
@@ -1326,7 +1330,11 @@ impl Backend for NPMBackend {
                 package_manager
             );
         }
+        // A tarball URL has no dependency graph (see `resolve_aube_lock`); its
+        // version, the digest, is all the lockfile holds.
+        let graph_wanted = !is_tarball_spec(&self.tool_name());
         if package_manager == NpmPackageManager::Aube
+            && graph_wanted
             && tv.resolved_from_lockfile()
             && tv.aube_lock.is_none()
             && ctx.locked
@@ -1338,6 +1346,7 @@ impl Backend for NPMBackend {
             );
         }
         if package_manager == NpmPackageManager::Aube
+            && graph_wanted
             && tv.aube_lock.is_none()
             && (source_lockfile_version.is_some_and(|v| v >= 2)
                 || Self::aube_lock_creation_enabled(&tv))
@@ -1365,7 +1374,10 @@ impl Backend for NPMBackend {
         if tv.aube_lock.is_some() && !Self::uses_embedded_aube() {
             return Ok(false);
         }
-        if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
+        if Self::uses_embedded_aube()
+            && tv.aube_lock.is_none()
+            && !is_tarball_spec(&self.tool_name())
+        {
             let source_lockfile_version = self.aube_lockfile_version(config, tv)?;
             if source_lockfile_version.is_some_and(|version| version >= 2)
                 || Self::aube_lock_creation_enabled(tv)
@@ -2760,8 +2772,7 @@ impl NPMBackend {
             // packages such as the per-platform binary. An install resolves
             // the downloaded archive instead, which does read them.
             eyre::bail!(
-                "npm:{} is a tarball URL, which cannot be locked yet; \
-                 turn off the lockfile for it or install from a registry or Git source",
+                "npm:{} is a tarball URL, which has no dependency graph in the lockfile",
                 self.display_tool_name()
             );
         }

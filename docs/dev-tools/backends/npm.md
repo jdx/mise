@@ -79,9 +79,9 @@ has since changed, until `mise up`), and installs that file, so a push between
 the check and the install cannot change what is installed. The package keeps
 the name in its own `package.json`.
 
-`http://` URLs and the `checksum` option are not supported. `mise lock` refuses
-a tarball URL, because aube would resolve it without the tarball's
-`optionalDependencies`. With embedded aube or `aube_cli`, a tarball's own
+`http://` URLs and the `checksum` option are not supported. `mise.lock` records
+the version but no dependency graph for a tarball URL, because aube would
+resolve it without the tarball's `optionalDependencies`. With embedded aube or `aube_cli`, a tarball's own
 dependencies on other URLs, such as per-platform `optionalDependencies`, need
 [`allow_exotic_deps`](#allow-exotic-deps). Name the ones you need, as above,
 rather than `true`, which exempts the whole graph; npm, pnpm and Bun do not
