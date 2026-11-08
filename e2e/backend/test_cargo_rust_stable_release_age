@@ -3,6 +3,8 @@
 # With an explicit minimum_release_age, core:rust installs `stable` as a dated version. The
 # install dependency check of a cargo: tool resolves rust@stable offline and must find that
 # dated install instead of looking for a `stable` directory.
+# A host cargo-binstall would otherwise be picked before the stub cargo.
+export MISE_CARGO_BINSTALL=0
 export CARGO_HOME="$HOME/test-cargo-home"
 mkdir -p "$CARGO_HOME/bin"
 cat >"$CARGO_HOME/bin/cargo" <<'SCRIPT'
