@@ -229,6 +229,104 @@ fn validate_git_alias(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether the tool name is a tarball URL (`https://pkg.pr.new/…`) rather than
+/// a registry package. `http://` is recognised only to be refused.
+fn is_tarball_spec(name: &str) -> bool {
+    name.starts_with("https://") || name.starts_with("http://")
+}
+
+/// Whether a source has no version list and `latest` follows whatever it
+/// serves now: a git source without a pinned `#ref`, or a tarball URL.
+fn tracks_source_head(name: &str) -> bool {
+    git_tracks_head(name) || is_tarball_spec(name)
+}
+
+/// An alias to install a tarball under: the last path segment of the URL,
+/// without a `@ref` suffix or archive extension (`…/actionlint@343` is
+/// `actionlint`).
+fn tarball_alias(name: &str) -> String {
+    let url = name.split(['?', '#']).next().unwrap_or(name);
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    // The host is not part of the path.
+    let path = rest.split_once('/').map_or("", |(_, path)| path);
+    let segment = path.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    let segment = segment.split('@').next().unwrap_or(segment);
+    let segment = [".tar.gz", ".tgz"]
+        .iter()
+        .find_map(|ext| segment.strip_suffix(ext))
+        .unwrap_or(segment);
+    segment.to_string()
+}
+
+/// Reject a tarball URL that is not `https://` or has no usable alias.
+fn validate_tarball_spec(name: &str) -> Result<()> {
+    if !name.starts_with("https://") {
+        eyre::bail!(
+            "npm tarball sources must use https://: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    let alias = tarball_alias(name);
+    let valid = !alias.is_empty()
+        && alias != "."
+        && alias != ".."
+        && alias
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if !valid {
+        eyre::bail!(
+            "cannot determine a package name from tarball source: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    Ok(())
+}
+
+/// The version of a tarball source: a prefix of the SHA-256 of what the URL
+/// serves now. The URL itself is mutable (`…@343` follows the newest push), so
+/// the content is its only stable identity.
+async fn tarball_digest(url: &str) -> eyre::Result<String> {
+    use sha2::{Digest, Sha256};
+    validate_tarball_spec(url)?;
+    let display = redact_credentials(url);
+    timeout::run_with_timeout_async(
+        async || {
+            debug!("GET {display}");
+            let bytes = crate::http::HTTP.get_bytes(url).await?;
+            let digest = hex::encode(Sha256::digest(bytes.as_ref()));
+            Ok(digest[..16].to_string())
+        },
+        Settings::get().fetch_remote_versions_timeout(),
+    )
+    .await
+}
+
+/// The install specifier for a tarball source, after checking that the URL
+/// still serves the content `version` names.
+async fn tarball_package_install_spec(
+    name: &str,
+    version: &str,
+    has_checksum: bool,
+) -> Result<String> {
+    validate_tarball_spec(name)?;
+    if has_checksum {
+        eyre::bail!(
+            "the checksum option is not supported for tarball sources: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    if version != "latest" {
+        let current = tarball_digest(name).await?;
+        if current != version {
+            eyre::bail!(
+                "npm:{} now serves {current}, not {version}; run `mise up` to update it",
+                redact_credentials(name)
+            );
+        }
+    }
+    Ok(name.to_string())
+}
+
 /// Reject a registry package version that is not a version, range or dist-tag.
 ///
 /// The version reaches the package manager as `<name>@<version>` or as the
@@ -1084,6 +1182,19 @@ impl Backend for NPMBackend {
                 }
             });
         }
+        if is_tarball_spec(&name) {
+            // A tarball has no version list; its one version is its content.
+            return Ok(match tarball_digest(&name).await {
+                Ok(version) => vec![VersionInfo {
+                    version,
+                    ..Default::default()
+                }],
+                Err(err) => {
+                    debug!("could not fetch {}: {err:#}", redact_credentials(&name));
+                    vec![]
+                }
+            });
+        }
         if Settings::get().npm.shell_out {
             return self.list_remote_versions_npm_view(config).await;
         }
@@ -1098,7 +1209,7 @@ impl Backend for NPMBackend {
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
-        version == "latest" && git_tracks_head(&self.tool_name())
+        version == "latest" && tracks_source_head(&self.tool_name())
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
@@ -1114,7 +1225,11 @@ impl Backend for NPMBackend {
         if !self.is_rolling_channel(version) {
             return Ok(None);
         }
-        git_head(&git_remote(&self.tool_name())).await.map(Some)
+        let name = self.tool_name();
+        if is_tarball_spec(&name) {
+            return tarball_digest(&name).await.map(Some);
+        }
+        git_head(&git_remote(&name)).await.map(Some)
     }
 
     fn requires_concrete_channel_version(&self, version: &str) -> bool {
@@ -1123,6 +1238,9 @@ impl Backend for NPMBackend {
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let name = self.tool_name();
+        if is_tarball_spec(&name) {
+            return tarball_digest(&name).await.map(Some);
+        }
         if is_git_spec(&name) {
             if !git_tracks_head(&name) {
                 return Ok(Some("latest".to_string()));
@@ -1658,6 +1776,14 @@ impl NPMBackend {
         if is_git_spec(&tool_name) {
             return git_package_install_spec(&tool_name, &tv.version, options.checksum().is_some());
         }
+        if is_tarball_spec(&tool_name) {
+            return tarball_package_install_spec(
+                &tool_name,
+                &tv.version,
+                options.checksum().is_some(),
+            )
+            .await;
+        }
         validate_registry_version(&tool_name, &tv.version)?;
         let Some(checksum) = options.checksum() else {
             return Ok(format!("{tool_name}@{}", tv.version));
@@ -1745,6 +1871,8 @@ impl NPMBackend {
         let name = self.tool_name();
         if is_git_spec(&name) {
             git_alias(&name)
+        } else if is_tarball_spec(&name) {
+            tarball_alias(&name)
         } else {
             name
         }
@@ -1755,6 +1883,9 @@ impl NPMBackend {
         let name = self.tool_name();
         if is_git_spec(&name) {
             Ok(git_requirement(&name, &tv.version))
+        } else if is_tarball_spec(&name) {
+            validate_tarball_spec(&name)?;
+            Ok(name)
         } else {
             validate_registry_version(&name, &tv.version)?;
             Ok(tv.version.clone())
@@ -2570,6 +2701,7 @@ impl NPMBackend {
         // A dist-tag such as `next` is not a version yet: aube records the release
         // it picked, so there is nothing to compare until the tag is resolved.
         let resolves_locked_version = is_git_spec(&self.tool_name())
+            || is_tarball_spec(&self.tool_name())
             || versions::SemVer::new(&tv.version).is_none()
             || resolved.is_some_and(|v| v.split('(').next() == Some(tv.version.as_str()));
         if requirement != Some(self.package_requirement(tv)?.as_str()) || !resolves_locked_version {
@@ -3442,6 +3574,22 @@ mod tests {
             );
         }
         assert!(diagnostic.contains("git+https://git.example.test/org/repo.git?"));
+    }
+
+    #[test]
+    fn tarball_specs_are_detected_and_aliased() {
+        let url = "https://pkg.pr.new/kjanat/actionlint/@kjanat/actionlint@343";
+        assert!(is_tarball_spec(url));
+        assert!(!is_tarball_spec("prettier"));
+        assert!(!is_tarball_spec("github:o/r"));
+        assert!(tracks_source_head(url));
+        assert_eq!(tarball_alias(url), "actionlint");
+        assert_eq!(tarball_alias("https://h/p/tool-1.2.3.tgz"), "tool-1.2.3");
+        assert_eq!(tarball_alias("https://h/p/tool.tar.gz?x=1#y"), "tool");
+        assert!(validate_tarball_spec(url).is_ok());
+        assert!(validate_tarball_spec("http://h/p/tool.tgz").is_err());
+        assert!(validate_tarball_spec("https://h/").is_err());
+        assert!(validate_tarball_spec("https://h/a b").is_err());
     }
 
     #[test]

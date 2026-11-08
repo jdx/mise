@@ -58,6 +58,26 @@ mise use 'npm:git+https://github.com/owner/repo'
 mise use 'npm:github:owner/repo@v1.2.0'
 ```
 
+### Install from a tarball URL
+
+An `https://` tarball URL is also a source, such as a preview build from
+[pkg.pr.new](https://pkg.pr.new). A tarball has no version list, so `latest` is
+what the URL serves now. mise records a prefix of the tarball's SHA-256 as the
+version and the lockfile pins it; `mise up` fetches the URL again and updates
+when it serves something else. Installing a pinned version fails if the URL has
+since changed.
+
+```toml
+[tools."npm:https://pkg.pr.new/owner/repo/@scope/pkg@343"]
+version = "latest"
+allow_exotic_deps = true
+```
+
+`http://` URLs and the `checksum` option are not supported. The package is
+installed under the last path segment of the URL (`pkg` above). A tarball's own
+dependencies on other URLs, such as per-platform `optionalDependencies`, still
+need [`allow_exotic_deps`](#allow-exotic-deps).
+
 ## Private registries {#registry-configuration}
 
 mise reads package metadata from the registry over HTTP, and embedded aube
