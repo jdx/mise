@@ -15,9 +15,17 @@ printf '%s\n' "$MISE_ORIGINAL_CWD"
 SH
 chmod +x project/show-file
 
+# Resolve the reported directory without interpolating it into shell code
+reported_cwd() {
+  local out
+  out="$("$@")" || return 1
+  (cd "$out" && pwd -P)
+}
+export -f reported_cwd
+
 caller="$(cd caller && pwd -P)"
-assert "cd caller && mise -C ../project run show | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
-assert "cd caller && mise run -C ../project show | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
-assert "cd caller && MISE_CD=../project mise run show | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
-assert "cd caller && mise -C ../project run ./show-file | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
-assert "cd project && mise run show | xargs -I{} sh -c 'cd {} && pwd -P'" "$(cd project && pwd -P)"
+assert "cd caller && reported_cwd mise -C ../project run show" "$caller"
+assert "cd caller && reported_cwd mise run -C ../project show" "$caller"
+assert "cd caller && MISE_CD=../project reported_cwd mise run show" "$caller"
+assert "cd caller && reported_cwd mise -C ../project run ./show-file" "$caller"
+assert "cd project && reported_cwd mise run show" "$(cd project && pwd -P)"
