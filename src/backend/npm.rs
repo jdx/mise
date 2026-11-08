@@ -305,10 +305,20 @@ async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
     Ok(digest[..16].to_string())
 }
 
-/// The version of a tarball source as it is served now.
+/// The version of a tarball source as it is served now. One run asks several
+/// times (the latest version, then whether the installed one is outdated), so
+/// the digest is fetched once per URL per process. An install never uses it: it
+/// downloads again.
 async fn tarball_digest(url: &str) -> eyre::Result<String> {
+    static SEEN: LazyLock<Mutex<std::collections::HashMap<String, String>>> =
+        LazyLock::new(Default::default);
+    if let Some(digest) = SEEN.lock().unwrap().get(url) {
+        return Ok(digest.clone());
+    }
     let dir = tempfile::tempdir()?;
-    fetch_tarball(url, &dir.path().join("package.tgz")).await
+    let digest = fetch_tarball(url, &dir.path().join("package.tgz")).await?;
+    SEEN.lock().unwrap().insert(url.to_string(), digest.clone());
+    Ok(digest)
 }
 
 /// Download a tarball source for install and check that it is the content
@@ -328,6 +338,13 @@ async fn tarball_package_install_spec(
         );
     }
     if let Some(dir) = archive.parent() {
+        // Start clean: a finished resumable partial left here is reused without
+        // asking the server, which would verify old bytes instead of the URL.
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
         crate::file::create_dir_all(dir)?;
     }
     let current = fetch_tarball(name, archive).await?;
@@ -1227,6 +1244,19 @@ impl Backend for NPMBackend {
 
     fn is_rolling_channel(&self, version: &str) -> bool {
         version == "latest" && tracks_source_head(&self.tool_name())
+    }
+
+    /// A tarball's versions are digests, which the generic check would order
+    /// as versions and so miss an installed digest that sorts above the new
+    /// one. They are only ever equal or different.
+    async fn is_rolling_version_outdated(&self, _config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        let name = self.tool_name();
+        if !is_tarball_spec(&name) || tv.request.version() != "latest" {
+            return false;
+        }
+        tarball_digest(&name)
+            .await
+            .is_ok_and(|digest| digest != tv.version)
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {

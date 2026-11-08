@@ -130,7 +130,16 @@ impl ToolArg {
             .strip_prefix("npm:")
             .is_some_and(|rest| rest.starts_with("https://") || rest.starts_with("http://"));
         if tarball {
-            Ok(tool.parse::<Self>()?.with_version(version))
+            // `with_version` unwraps, and a task can declare any string here.
+            let arg: Self = tool.parse()?;
+            let request = ToolRequest::new(arg.ba.clone(), version, ToolSource::Argument)?;
+            Ok(Self {
+                ba: request.ba().clone(),
+                tvr: Some(request),
+                version: Some(version.into()),
+                version_type: version.parse()?,
+                ..arg
+            })
         } else {
             format!("{tool}@{version}").parse()
         }
@@ -325,6 +334,12 @@ mod tests {
         let arg = ToolArg::from_parts(url, "latest").unwrap();
         assert_eq!(arg.ba.tool_name, url.strip_prefix("npm:").unwrap());
         assert_eq!(arg.version.as_deref(), Some("latest"));
+        // an invalid version is an error, not a panic
+        assert!(ToolArg::from_parts(url, "bad:123").is_err());
+        // and the same URL parsed as an argument is one whole tool name
+        let parsed = ToolArg::from_str(url).unwrap();
+        assert_eq!(parsed.ba.tool_name, url.strip_prefix("npm:").unwrap());
+        assert_eq!(parsed.version, None);
         let arg = ToolArg::from_parts("erlang", "27.2").unwrap();
         assert_eq!(arg.ba.tool_name, "erlang");
         assert_eq!(arg.version.as_deref(), Some("27.2"));
