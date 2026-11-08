@@ -3924,6 +3924,13 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Whether the concrete versions of the `request` version have no order, such
+    /// as content digests: a candidate is newer exactly when it differs from the
+    /// installed one, however the two would sort as version strings.
+    fn versions_are_unordered(&self, _request: &str) -> bool {
+        false
+    }
+
     /// Whether a rolling channel must be resolved to a concrete version before it
     /// can be used. Backends that opt in fail in offline mode when neither a lock
     /// entry nor a concrete installed channel build is available.

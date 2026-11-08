@@ -1246,17 +1246,11 @@ impl Backend for NPMBackend {
         version == "latest" && tracks_source_head(&self.tool_name())
     }
 
-    /// A tarball's versions are digests, which the generic check would order
-    /// as versions and so miss an installed digest that sorts above the new
-    /// one. They are only ever equal or different.
-    async fn is_rolling_version_outdated(&self, _config: &Arc<Config>, tv: &ToolVersion) -> bool {
-        let name = self.tool_name();
-        if !is_tarball_spec(&name) || tv.request.version() != "latest" {
-            return false;
-        }
-        tarball_digest(&name)
-            .await
-            .is_ok_and(|digest| digest != tv.version)
+    /// A tarball's versions are digests, which an ordering would use to miss an
+    /// installed digest that sorts above the new one. They are only ever equal
+    /// or different.
+    fn versions_are_unordered(&self, _request: &str) -> bool {
+        is_tarball_spec(&self.tool_name())
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
