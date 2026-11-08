@@ -102,6 +102,7 @@ const guides: Record<string, [string, string]> = {
   "dotfiles exclude": ["Dotfiles history", "/dotfiles/history.html"],
   "dotfiles include": ["Dotfiles history", "/dotfiles/history.html"],
   "dotfiles paths": ["Dotfiles history", "/dotfiles/history.html"],
+  "dotfiles files": ["Dotfiles history", "/dotfiles/history.html"],
   "dotfiles capture": ["Dotfiles history", "/dotfiles/history.html"],
   "dotfiles recover": ["Dotfiles history", "/dotfiles/history.html"],
   secrets: ["fnox secrets", "/environments/secrets/fnox.html"],

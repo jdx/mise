@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# `mise dot files` lists a directory's files with whether each is tracked,
+# and why a covered file is left out.
+require_cmd git
+mkdir -p ~/.config/hypr ~/.config/foot ~/.config/nvim/lua ~/.config/cache
+echo 'bind' >~/.config/hypr/bindings.lua
+echo 'look' >~/.config/hypr/looknfeel.lua
+echo 'mon' >~/.config/hypr/monitors.lua
+echo 'input' >~/.config/hypr/input.lua
+echo 'font' >~/.config/foot/foot.ini
+echo 'init' >~/.config/nvim/init.lua
+echo 'opts' >~/.config/nvim/lua/opts.lua
+echo 'log' >~/.config/nvim/debug.log
+echo 'idx' >~/.config/cache/index
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/hypr" = { mode = "track", exclude = ["monitors.lua"] }
+"~/.config/foot/foot.ini" = { mode = "track", autosave = false }
+"~/.config/nvim" = { mode = "track" }
+
+[history]
+exclude = ["*.log"]
+TOML
+
+# One row per child: files and subdirectories, with their state.
+files_json() {
+  mise dot files --json "$@"
+}
+row() {
+  local dir=$1 name=$2 field=$3
+  files_json "$dir" | jq -r --arg p "$name" ".[] | select(.path == \$p) | .$field"
+}
+export -f files_json row
+assert "row ~/.config/hypr '~/.config/hypr/bindings.lua' status" 'tracked'
+assert "row ~/.config/hypr '~/.config/hypr/bindings.lua' entry" '~/.config/hypr'
+assert "row ~/.config/hypr '~/.config/hypr/monitors.lua' status" 'excluded'
+assert "row ~/.config/hypr '~/.config/hypr/monitors.lua' reason" "excluded by the entry's exclude list"
+assert "row ~/.config/foot '~/.config/foot/foot.ini' status" 'tracked'
+assert "row ~/.config/foot '~/.config/foot/foot.ini' autosave" 'false'
+assert "row ~/.config/nvim '~/.config/nvim/debug.log' status" 'excluded'
+assert "row ~/.config/nvim '~/.config/nvim/debug.log' reason" 'excluded by [history] exclude'
+
+# A parent directory: tracked subtrees, a partly tracked one, untracked ones.
+assert "row ~/.config '~/.config/hypr' status" 'tracked'
+assert "row ~/.config '~/.config/hypr' tracked_files" '3'
+assert "row ~/.config '~/.config/foot' status" 'partial'
+assert "row ~/.config '~/.config/foot' tracked_files" '1'
+assert "row ~/.config '~/.config/cache' status" 'untracked'
+
+# The table, run from inside the directory with no argument.
+cd ~/.config/hypr || exit 1
+assert_contains 'mise dot files' 'bindings.lua'
+assert_contains 'mise dot files' "excluded by the entry's exclude list"
+
+# Relative paths are read from the current directory.
+cd ~/.config || exit 1
+assert "mise dot files --json foot | jq -r '.[0].status'" 'tracked'
+assert "mise dot files --json foot/foot.ini | jq -r '.[0].status'" 'tracked'
+
+# Filters, and recursion listing files in subdirectories.
+assert "mise dot files --json --tracked hypr | jq -r '.[].path' | sort | xargs" '~/.config/hypr/bindings.lua ~/.config/hypr/input.lua ~/.config/hypr/looknfeel.lua'
+assert "mise dot files --json --untracked hypr | jq -r '.[].path'" '~/.config/hypr/monitors.lua'
+assert "mise dot files --json -r nvim | jq -r '.[].path' | sort | xargs" '~/.config/nvim/debug.log ~/.config/nvim/init.lua ~/.config/nvim/lua/opts.lua'
+assert "mise dot files --json -r --untracked . | jq -r '.[].path' | sort | xargs" '~/.config/cache/index ~/.config/hypr/monitors.lua ~/.config/mise/config.toml ~/.config/nvim/debug.log'
+assert_fail 'mise dot files --tracked --untracked' 'cannot be combined'
+
+# A tracked symlink named directly is listed as the link, as history saves
+# it, and a dangling one is still listed.
+ln -s hypr/bindings.lua ~/.config/bindings-link.lua
+ln -s does-not-exist ~/.config/dangling.lua
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles."~/.config/bindings-link.lua"]
+mode = "track"
+TOML
+assert "mise dot files --json ~/.config/bindings-link.lua | jq -r '.[0] | .kind + \" \" + .status'" 'symlink tracked'
+assert "mise dot files --json ~/.config/dangling.lua | jq -r '.[0] | .kind + \" \" + .status'" 'symlink untracked'
+
+# A local-only file is listed from local-only history, named directly or not.
+echo 'private' >~/.config/private.env
+assert_succeed 'mise dot track --local ~/.config/private.env --yes'
+assert "mise dot files --json ~/.config/private.env | jq -r '.[0].status'" 'tracked'
+assert "mise dot files --json ~/.config | jq -r '.[] | select(.path == \"~/.config/private.env\") | .status + \" \" + .mode'" 'local track-local'
+
+# A local-only directory is one row even with -r: what in it is saved is
+# that history's to say, so its files are neither tracked nor untracked here.
+mkdir -p ~/.config/app
+echo 'state' >~/.config/app/state.json
+assert_succeed 'mise dot track --local ~/.config/app --yes'
+assert "mise dot files --json -r ~/.config | jq -r '.[] | select(.path | startswith(\"~/.config/app\")) | .path + \" \" + .status'" '~/.config/app local'
+assert "mise dot files --json -r --untracked ~/.config | jq -r '.[].path' | grep -c '^~/.config/app' || true" '0'
+
+# A credential-like file under a tracked directory is omitted, with the reason.
+echo 'token' >~/.config/hypr/credentials.json
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/credentials.json\") | .status'" 'omitted'
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/credentials.json\") | .reason'" 'credential store; encrypt the file before tracking it'
+
+# An unreadable subdirectory is reported and skipped; the rest is listed.
+# Root reads it anyway, so this only holds for other users.
+if [ "$(id -u)" != 0 ]; then
+  mkdir ~/.config/locked
+  chmod 000 ~/.config/locked
+  assert_contains 'mise dot files -r ~/.config 2>&1' 'locked'
+  assert_contains 'mise dot files -r ~/.config 2>/dev/null' 'hypr/bindings.lua'
+  chmod 700 ~/.config/locked
+fi
+
+# A partly tracked directory belongs to --tracked, never to --untracked, and
+# an excluded directory with an entry of its own below is partial.
+assert "mise dot files --json --untracked ~/.config | jq '[.[] | select(.path == \"~/.config/foot\")] | length'" '0'
+assert "mise dot files --json --tracked ~/.config | jq -r '.[] | select(.path == \"~/.config/foot\") | .status'" 'partial'
+mkdir -p ~/.config/hypr/scripts
+echo 'run' >~/.config/hypr/scripts/run.sh
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles."~/.config/hypr/scripts/run.sh"]
+mode = "track"
+TOML
+mise dot exclude '~/.config/hypr/scripts'
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/scripts\") | .status'" 'partial'
+
+# An excluded directory holding a local-only path is partial too.
+mkdir -p ~/.config/hypr/private
+echo 'secret' >~/.config/hypr/private/keys.lua
+mise dot exclude '~/.config/hypr/private'
+assert_succeed 'mise dot track --local ~/.config/hypr/private/keys.lua --yes'
+assert "mise dot files --json ~/.config/hypr | jq -r '.[] | select(.path == \"~/.config/hypr/private\") | .status'" 'partial'
+assert_contains 'mise dot files ~/.config/hypr' 'excluded by [history] exclude; local-only history below'

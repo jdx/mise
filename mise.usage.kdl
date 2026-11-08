@@ -990,6 +990,22 @@ Use exclusions for logs, caches, databases, and session state. For files you wan
             arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
             example "mise dot exclude '~/.codex/sessions/**'" help="Never save Codex session logs"
         }
+        cmd files help="List a directory's files and whether each one is tracked" effect=read {
+            long_help #"""
+List a directory's files and whether each one is tracked
+
+Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself, or is excluded, but holds tracked files. A path kept in local-only history is one `local` row, listed in full by `mise dot --local files PATH`. `--tracked` and `--untracked` split the rows: `partial` and `local` rows are listed by `--tracked`. Relative paths are read from the current directory.
+"""#
+            flag "-r --recursive" help="List files in subdirectories too, instead of one row per subdirectory"
+            flag --tracked help="Only show what is tracked"
+            flag --untracked help="Only show what holds nothing tracked"
+            flag "-J --json" help="Output in JSON format"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PATH]" help="The directory or file to list; defaults to the current directory" required=#false
+            example "mise dot files" help="Show what is tracked in the current directory"
+            example "mise dot files ~/.config/hypr" help="Show what is tracked in ~/.config/hypr"
+            example "mise dot files -r --untracked ~/.config/nvim" help="List every file under ~/.config/nvim that history does not save"
+        }
         cmd history help="Browse saved versions of your tracked files" effect=read {
             long_help #"""
 Browse saved versions of your tracked files
@@ -3154,6 +3170,22 @@ Use exclusions for logs, caches, databases, and session state. For files you wan
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
         example "mise dot exclude '~/.codex/sessions/**'" help="Never save Codex session logs"
+    }
+    cmd files help="List a directory's files and whether each one is tracked" effect=read {
+        long_help #"""
+List a directory's files and whether each one is tracked
+
+Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself, or is excluded, but holds tracked files. A path kept in local-only history is one `local` row, listed in full by `mise dot --local files PATH`. `--tracked` and `--untracked` split the rows: `partial` and `local` rows are listed by `--tracked`. Relative paths are read from the current directory.
+"""#
+        flag "-r --recursive" help="List files in subdirectories too, instead of one row per subdirectory"
+        flag --tracked help="Only show what is tracked"
+        flag --untracked help="Only show what holds nothing tracked"
+        flag "-J --json" help="Output in JSON format"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[PATH]" help="The directory or file to list; defaults to the current directory" required=#false
+        example "mise dot files" help="Show what is tracked in the current directory"
+        example "mise dot files ~/.config/hypr" help="Show what is tracked in ~/.config/hypr"
+        example "mise dot files -r --untracked ~/.config/nvim" help="List every file under ~/.config/nvim that history does not save"
     }
     cmd history help="Browse saved versions of your tracked files" effect=read {
         long_help #"""

@@ -600,6 +600,15 @@ The entry's list and the global `[history] exclude` list both apply, and a
 global `!glob` cannot bring back a file the entry excludes. `mise dot paths`
 and `mise dot track --dry-run` show the lists in effect.
 
+To check a directory file by file, run
+[`mise dot files`](/cli/dotfiles/files.html). It marks each file as tracked,
+excluded (naming the rule), omitted, or untracked:
+
+```sh
+mise dot files ~/.codex
+mise dot files -r --untracked ~/.config/nvim
+```
+
 ### Exclude files across tracked entries {#exclude-files-across-tracked-entries}
 
 [`mise dot exclude`](/cli/dotfiles/exclude.html) adds a glob to
