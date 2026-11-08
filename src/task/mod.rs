@@ -2128,9 +2128,19 @@ impl Task {
             }
         } else {
             let scripts_only = self.run_script_strings();
-            TaskScriptParser::new(dir)
+            let parsed = TaskScriptParser::new(dir)
                 .parse_run_scripts_for_spec_only(config, self, &scripts_only)
-                .await?
+                .await;
+            match parsed {
+                Ok(spec) => spec,
+                // Like a file task's broken `#USAGE`: one bad spec must not break the
+                // completion and docs of every other task.
+                Err(err) if !strict => {
+                    warn!("{err}");
+                    usage::Spec::default()
+                }
+                Err(err) => return Err(err),
+            }
         };
         self.populate_spec_metadata(&mut spec);
         self.populate_usage_about(&mut spec);
@@ -2194,9 +2204,23 @@ impl Task {
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self
+        let parsed = self
             .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
-            .await?;
+            .await;
+        let (spec, scripts) = match parsed {
+            Ok(parsed) => parsed,
+            // A task that bypasses the usage parser never uses its spec, so a broken one
+            // (a missing `include`, a parse error) must not keep the task from running.
+            Err(err) if self.should_bypass_usage_parser() => {
+                warn!("{err}");
+                let mut without_usage = self.clone();
+                without_usage.usage = String::new();
+                without_usage
+                    .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
+                    .await?
+            }
+            Err(err) => return Err(err),
+        };
         // Skip the usage parser entirely when the task opts into raw arg
         // passthrough, or when the user explicitly asked for `--help`/`-h`
         // to reach the underlying command via `mise run task -- --help`.

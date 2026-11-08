@@ -3309,13 +3309,13 @@ impl TaskExecutor {
             // so they must not influence spec discovery or parsing.
             crate::task::clear_usage_env(env);
         }
-        let (spec, _) = task
-            .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
-            .await?;
         if bypass_usage_parser {
             trace!("Usage parser bypassed");
             return Ok(());
         }
+        let (spec, _) = task
+            .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
+            .await?;
         let args = get_args();
         self.parse_usage_spec_and_init_env_from_spec(task, env, &args, &spec)
     }
