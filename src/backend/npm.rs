@@ -288,25 +288,21 @@ fn validate_tarball_spec(name: &str) -> Result<()> {
 async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
     validate_tarball_spec(url)?;
     let display = redact_credentials(url);
-    timeout::run_with_timeout_async(
-        async || {
-            debug!("GET {display}");
+    debug!("GET {display}");
+    // The HTTP client bounds the transfer with `http_download_timeout`; a
+    // version-lookup timeout would cut off a large tarball.
+    crate::http::HTTP
+        .download_file(url, dest, None)
+        .await
+        .map_err(|err| {
             // The error text can quote the URL, which may carry a token.
-            crate::http::HTTP
-                .download_file(url, dest, None)
-                .await
-                .map_err(|err| {
-                    eyre::eyre!(
-                        "failed to fetch {display}: {}",
-                        redact_credentials(&format!("{err:#}"))
-                    )
-                })?;
-            let digest = crate::hash::file_hash_sha256(dest, None)?;
-            Ok(digest[..16].to_string())
-        },
-        Settings::get().fetch_remote_versions_timeout(),
-    )
-    .await
+            eyre::eyre!(
+                "failed to fetch {display}: {}",
+                redact_credentials(&format!("{err:#}"))
+            )
+        })?;
+    let digest = crate::hash::file_hash_sha256(dest, None)?;
+    Ok(digest[..16].to_string())
 }
 
 /// The version of a tarball source as it is served now.
@@ -2943,7 +2939,20 @@ impl NPMBackend {
 
     fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
         let tool_name = if is_tarball_spec(&self.tool_name()) {
-            String::new()
+            // A tarball is installed under the name in its own package.json,
+            // which the install records as the one root dependency.
+            let manifest = std::fs::read_to_string(tv.install_path().join("package.json"))
+                .ok()
+                .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok());
+            let Some(name) = manifest
+                .as_ref()
+                .and_then(|manifest| manifest.get("dependencies"))
+                .and_then(serde_json::Value::as_object)
+                .and_then(|dependencies| dependencies.keys().next())
+            else {
+                return;
+            };
+            name.clone()
         } else {
             self.package_key()
         };
@@ -2977,35 +2986,6 @@ impl NPMBackend {
             install_path.join("lib").join("node_modules"),
             install_path.join("node_modules"),
         ] {
-            if package_name.is_empty() {
-                // A tarball is installed under its own package.json name, not
-                // the alias derived from its URL: check every top-level package.
-                for entry in std::fs::read_dir(&node_modules)
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                {
-                    let dir = entry.path();
-                    let candidates = if entry.file_name().to_string_lossy().starts_with('@') {
-                        std::fs::read_dir(&dir)
-                            .into_iter()
-                            .flatten()
-                            .flatten()
-                            .map(|e| e.path())
-                            .collect()
-                    } else {
-                        vec![dir]
-                    };
-                    for dir in candidates {
-                        let package_json_path = dir.join("package.json");
-                        let hooks = Self::lifecycle_scripts_from_package_json(&package_json_path);
-                        if !hooks.is_empty() {
-                            return Some((package_json_path, hooks));
-                        }
-                    }
-                }
-                continue;
-            }
             let package_json_path = node_modules.join(package_name).join("package.json");
             let hooks = Self::lifecycle_scripts_from_package_json(&package_json_path);
             if !hooks.is_empty() {

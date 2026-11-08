@@ -63,8 +63,8 @@ mise use 'npm:github:owner/repo@v1.2.0'
 An `https://` tarball URL is also a source, such as a preview build from
 [pkg.pr.new](https://pkg.pr.new). A tarball has no version list, so `latest` is
 what the URL serves now: mise uses a prefix of the tarball's SHA-256 as the
-version, and `mise up` fetches the URL again and updates when it serves
-something else.
+version. `mise outdated` and `mise up` fetch the URL again and compare the
+digest for equality, so they update when it differs from the installed one.
 
 ```toml
 [tools."npm:https://pkg.pr.new/owner/repo/@scope/pkg@343"]
@@ -74,8 +74,8 @@ allow_exotic_deps = ["@scope/pkg-linux-x64"]
 
 The whole URL is the tool name, including any `@` in its path, so
 `mise use 'npm:https://…/pkg@343'` does not read `343` as a version. Installing
-downloads the tarball once, checks it against the version (it fails if the URL
-has since changed, until `mise up`), and installs that file, so a push between
+downloads the tarball once, compares its digest prefix with the version (it
+fails if they differ, until `mise up`), and installs that file, so a push between
 the check and the install cannot change what is installed. The package keeps
 the name in its own `package.json`.
 
