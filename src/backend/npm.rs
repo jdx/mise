@@ -282,18 +282,26 @@ fn validate_tarball_spec(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// The version of a tarball source: a prefix of the SHA-256 of what the URL
-/// serves now. The URL itself is mutable (`…@343` follows the newest push), so
-/// the content is its only stable identity.
-async fn tarball_digest(url: &str) -> eyre::Result<String> {
-    use sha2::{Digest, Sha256};
+/// Download a tarball source to `dest` and return its version: a prefix of the
+/// SHA-256 of what the URL serves now. The URL is mutable (`…@343` follows the
+/// newest push), so the content is its only stable identity.
+async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
     validate_tarball_spec(url)?;
     let display = redact_credentials(url);
     timeout::run_with_timeout_async(
         async || {
             debug!("GET {display}");
-            let bytes = crate::http::HTTP.get_bytes(url).await?;
-            let digest = hex::encode(Sha256::digest(bytes.as_ref()));
+            // The error text can quote the URL, which may carry a token.
+            crate::http::HTTP
+                .download_file(url, dest, None)
+                .await
+                .map_err(|err| {
+                    eyre::eyre!(
+                        "failed to fetch {display}: {}",
+                        redact_credentials(&format!("{err:#}"))
+                    )
+                })?;
+            let digest = crate::hash::file_hash_sha256(dest, None)?;
             Ok(digest[..16].to_string())
         },
         Settings::get().fetch_remote_versions_timeout(),
@@ -301,12 +309,20 @@ async fn tarball_digest(url: &str) -> eyre::Result<String> {
     .await
 }
 
-/// The install specifier for a tarball source, after checking that the URL
-/// still serves the content `version` names.
+/// The version of a tarball source as it is served now.
+async fn tarball_digest(url: &str) -> eyre::Result<String> {
+    let dir = tempfile::tempdir()?;
+    fetch_tarball(url, &dir.path().join("package.tgz")).await
+}
+
+/// Download a tarball source for install and check that it is the content
+/// `version` names. The returned archive is what gets installed, so a push
+/// after the check cannot change it.
 async fn tarball_package_install_spec(
     name: &str,
     version: &str,
     has_checksum: bool,
+    archive: &Path,
 ) -> Result<String> {
     validate_tarball_spec(name)?;
     if has_checksum {
@@ -315,16 +331,17 @@ async fn tarball_package_install_spec(
             redact_credentials(name)
         );
     }
-    if version != "latest" {
-        let current = tarball_digest(name).await?;
-        if current != version {
-            eyre::bail!(
-                "npm:{} now serves {current}, not {version}; run `mise up` to update it",
-                redact_credentials(name)
-            );
-        }
+    if let Some(dir) = archive.parent() {
+        crate::file::create_dir_all(dir)?;
     }
-    Ok(name.to_string())
+    let current = fetch_tarball(name, archive).await?;
+    if version != "latest" && current != version {
+        eyre::bail!(
+            "npm:{} now serves {current}, not {version}; run `mise up` to update it",
+            redact_credentials(name)
+        );
+    }
+    Ok(archive.to_string_lossy().into_owned())
 }
 
 /// Reject a registry package version that is not a version, range or dist-tag.
@@ -1781,6 +1798,7 @@ impl NPMBackend {
                 &tool_name,
                 &tv.version,
                 options.checksum().is_some(),
+                &tv.download_path().join("package.tgz"),
             )
             .await;
         }
@@ -2391,7 +2409,13 @@ impl NPMBackend {
             &allow_builds,
             tv.resolved_from_lockfile(),
         )?;
-        self.write_aube_root_dependency(&install_path, tv)?;
+        if is_tarball_spec(&self.tool_name()) && tv.aube_lock.is_none() {
+            // The archive in `package` is installed instead of the mutable URL,
+            // and aube names it after its own package.json.
+            self.write_aube_empty_dependencies(&install_path)?;
+        } else {
+            self.write_aube_root_dependency(&install_path, tv)?;
+        }
 
         if let Some(lock) = &tv.aube_lock {
             crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
@@ -2662,6 +2686,18 @@ impl NPMBackend {
         Ok(())
     }
 
+    fn write_aube_empty_dependencies(&self, install_path: &Path) -> Result<()> {
+        let path = install_path.join("package.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+        manifest["dependencies"] = serde_json::json!({});
+        crate::file::write(
+            path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+        Ok(())
+    }
+
     fn write_aube_root_dependency(&self, install_path: &Path, tv: &ToolVersion) -> Result<()> {
         let path = install_path.join("package.json");
         let mut manifest: serde_json::Value =
@@ -2718,6 +2754,17 @@ impl NPMBackend {
         &self,
         tv: &ToolVersion,
     ) -> Result<crate::lockfile::GraphRef<crate::lockfile::AubeLock>> {
+        if is_tarball_spec(&self.tool_name()) {
+            // aube resolves a URL root without reading the tarball's
+            // `optionalDependencies`, so a graph for it would silently lack
+            // packages such as the per-platform binary. An install resolves
+            // the downloaded archive instead, which does read them.
+            eyre::bail!(
+                "npm:{} is a tarball URL, which cannot be locked yet; \
+                 turn off the lockfile for it or install from a registry or Git source",
+                self.display_tool_name()
+            );
+        }
         crate::backend::aube_host::init();
         let temp = tempfile::tempdir()?;
         let request_options = tv.request.options();
@@ -2884,7 +2931,11 @@ impl NPMBackend {
     }
 
     fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
-        let tool_name = self.package_key();
+        let tool_name = if is_tarball_spec(&self.tool_name()) {
+            String::new()
+        } else {
+            self.package_key()
+        };
         let Some((package_json_path, hooks)) =
             Self::installed_package_lifecycle_scripts(&tv.install_path(), &tool_name)
         else {
@@ -2915,6 +2966,35 @@ impl NPMBackend {
             install_path.join("lib").join("node_modules"),
             install_path.join("node_modules"),
         ] {
+            if package_name.is_empty() {
+                // A tarball is installed under its own package.json name, not
+                // the alias derived from its URL: check every top-level package.
+                for entry in std::fs::read_dir(&node_modules)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
+                    let dir = entry.path();
+                    let candidates = if entry.file_name().to_string_lossy().starts_with('@') {
+                        std::fs::read_dir(&dir)
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .map(|e| e.path())
+                            .collect()
+                    } else {
+                        vec![dir]
+                    };
+                    for dir in candidates {
+                        let package_json_path = dir.join("package.json");
+                        let hooks = Self::lifecycle_scripts_from_package_json(&package_json_path);
+                        if !hooks.is_empty() {
+                            return Some((package_json_path, hooks));
+                        }
+                    }
+                }
+                continue;
+            }
             let package_json_path = node_modules.join(package_name).join("package.json");
             let hooks = Self::lifecycle_scripts_from_package_json(&package_json_path);
             if !hooks.is_empty() {
@@ -3877,6 +3957,31 @@ mod tests {
     }
     use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
+
+    #[tokio::test]
+    async fn tarball_install_refuses_a_checksum() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = tarball_package_install_spec(
+            "https://h/p/tool.tgz",
+            "latest",
+            true,
+            &tmp.path().join("package.tgz"),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("checksum option is not supported"), "{err}");
+        let err = tarball_package_install_spec(
+            "http://h/p/tool.tgz",
+            "latest",
+            false,
+            &tmp.path().join("package.tgz"),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("must use https://"), "{err}");
+    }
 
     #[test]
     fn aube_lock_must_install_the_checksum_verified_archive() {

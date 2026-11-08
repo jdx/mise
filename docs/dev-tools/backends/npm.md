@@ -62,10 +62,9 @@ mise use 'npm:github:owner/repo@v1.2.0'
 
 An `https://` tarball URL is also a source, such as a preview build from
 [pkg.pr.new](https://pkg.pr.new). A tarball has no version list, so `latest` is
-what the URL serves now. mise records a prefix of the tarball's SHA-256 as the
-version and the lockfile pins it; `mise up` fetches the URL again and updates
-when it serves something else. Installing a pinned version fails if the URL has
-since changed.
+what the URL serves now: mise uses a prefix of the tarball's SHA-256 as the
+version, and `mise up` fetches the URL again and updates when it serves
+something else.
 
 ```toml
 [tools."npm:https://pkg.pr.new/owner/repo/@scope/pkg@343"]
@@ -73,10 +72,19 @@ version = "latest"
 allow_exotic_deps = true
 ```
 
-`http://` URLs and the `checksum` option are not supported. The package is
-installed under the last path segment of the URL (`pkg` above). A tarball's own
-dependencies on other URLs, such as per-platform `optionalDependencies`, still
-need [`allow_exotic_deps`](#allow-exotic-deps).
+The whole URL is the tool name, including any `@` in its path, so
+`mise use 'npm:https://…/pkg@343'` does not read `343` as a version. Installing
+downloads the tarball once, checks it against the version (it fails if the URL
+has since changed, until `mise up`), and installs that file, so a push between
+the check and the install cannot change what is installed. The package keeps
+the name in its own `package.json`.
+
+`http://` URLs and the `checksum` option are not supported. `mise lock` refuses
+a tarball URL, because aube would resolve it without the tarball's
+`optionalDependencies`. With embedded aube or `aube_cli`, a tarball's own
+dependencies on other URLs, such as per-platform `optionalDependencies`, need
+[`allow_exotic_deps`](#allow-exotic-deps); npm, pnpm and Bun do not enforce that
+check.
 
 ## Private registries {#registry-configuration}
 

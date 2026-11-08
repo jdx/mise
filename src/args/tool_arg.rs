@@ -177,6 +177,15 @@ pub fn split_tool_version(s: &str) -> (&str, Option<&str>) {
         }
     }
 
+    // An npm tarball URL is the whole tool name: its path may hold '@' (a
+    // scope, or a `@ref` like pkg.pr.new's `…/pkg@343`), and it has no versions
+    // to choose from.
+    if s.strip_prefix("npm:")
+        .is_some_and(|rest| rest.starts_with("https://") || rest.starts_with("http://"))
+    {
+        return (s, None);
+    }
+
     let Some((left, right)) = s.split_once('@') else {
         return (s, None);
     };
@@ -313,6 +322,10 @@ mod tests {
         t("npm:", "npm:", None);
         t("npm:prettier", "npm:prettier", None);
         t("npm:prettier@1.0.0", "npm:prettier", Some("1.0.0"));
+        // an npm tarball URL keeps every '@' in its path
+        let tarball = "npm:https://pkg.pr.new/kjanat/actionlint/@kjanat/actionlint@343";
+        t(tarball, tarball, None);
+        t("npm:https://h/p/tool.tgz", "npm:https://h/p/tool.tgz", None);
         // URL userinfo is part of the name, not a version separator
         let ssh = "pypi:git+ssh://git@github.com/psf/black.git";
         t(ssh, ssh, None);
