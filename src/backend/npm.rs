@@ -2968,26 +2968,14 @@ impl NPMBackend {
     }
 
     fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
-        let tool_name = if is_tarball_spec(&self.tool_name()) {
-            // A tarball is installed under the name in its own package.json,
-            // which the install records as the one root dependency.
-            let manifest = std::fs::read_to_string(tv.install_path().join("package.json"))
-                .ok()
-                .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok());
-            let Some(name) = manifest
-                .as_ref()
-                .and_then(|manifest| manifest.get("dependencies"))
-                .and_then(serde_json::Value::as_object)
-                .and_then(|dependencies| dependencies.keys().next())
-            else {
-                return;
-            };
-            name.clone()
+        let names = if is_tarball_spec(&self.tool_name()) {
+            Self::tarball_package_names(&tv.install_path())
         } else {
-            self.package_key()
+            vec![self.package_key()]
         };
-        let Some((package_json_path, hooks)) =
-            Self::installed_package_lifecycle_scripts(&tv.install_path(), &tool_name)
+        let Some((package_json_path, hooks)) = names
+            .iter()
+            .find_map(|name| Self::installed_package_lifecycle_scripts(&tv.install_path(), name))
         else {
             return;
         };
@@ -3000,6 +2988,49 @@ impl NPMBackend {
             NPM_IGNORE_SCRIPTS_ARG,
             Self::npm_lifecycle_script_remediation()
         );
+    }
+
+    /// The name a tarball was installed under: the one that is in its own
+    /// package.json, not the URL. Embedded aube records it as the root
+    /// dependency in the prefix's package.json. npm writes no such file, but a
+    /// global install puts only the root package at the top of
+    /// `lib/node_modules` (its dependencies nest inside it), so that is the
+    /// fallback. The hoisted `node_modules` of an aube install is never
+    /// scanned, since it holds dependencies.
+    fn tarball_package_names(install_path: &Path) -> Vec<String> {
+        let recorded = std::fs::read_to_string(install_path.join("package.json"))
+            .ok()
+            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .and_then(|manifest| {
+                manifest
+                    .get("dependencies")
+                    .and_then(serde_json::Value::as_object)
+                    .map(|dependencies| dependencies.keys().cloned().collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
+        if !recorded.is_empty() {
+            return recorded;
+        }
+        let top = install_path.join("lib").join("node_modules");
+        let mut names = vec![];
+        for entry in std::fs::read_dir(&top).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            if name.starts_with('@') {
+                for child in std::fs::read_dir(entry.path())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
+                    names.push(format!("{name}/{}", child.file_name().to_string_lossy()));
+                }
+            } else {
+                names.push(name);
+            }
+        }
+        names
     }
 
     fn npm_lifecycle_script_remediation() -> String {
@@ -3978,6 +4009,47 @@ mod tests {
     }
     use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn tarball_package_is_found_without_a_recorded_dependency() {
+        let write = |dir: &Path, body: &str| {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("package.json"), body).unwrap();
+        };
+        // npm: no package.json in the prefix; the root package is at the top
+        // of lib/node_modules and its dependency nests inside it
+        let npm = tempfile::tempdir().unwrap();
+        let root = npm.path().join("lib/node_modules/@acme/hooky");
+        write(
+            &root,
+            r#"{"name":"@acme/hooky","scripts":{"postinstall":"x"}}"#,
+        );
+        write(
+            &root.join("node_modules/dep"),
+            r#"{"name":"dep","scripts":{"postinstall":"y"}}"#,
+        );
+        let names = NPMBackend::tarball_package_names(npm.path());
+        assert_eq!(names, vec!["@acme/hooky".to_string()]);
+        let (path, hooks) =
+            NPMBackend::installed_package_lifecycle_scripts(npm.path(), &names[0]).unwrap();
+        assert_eq!(path, root.join("package.json"));
+        assert_eq!(hooks, vec!["postinstall"]);
+
+        // aube: the root dependency is recorded, and hoisted dependencies
+        // under node_modules are not candidates
+        let aube = tempfile::tempdir().unwrap();
+        write(
+            aube.path(),
+            r#"{"dependencies":{"@acme/hooky":"file:/x/package.tgz"}}"#,
+        );
+        write(
+            &aube.path().join("node_modules/dep"),
+            r#"{"name":"dep","scripts":{"postinstall":"y"}}"#,
+        );
+        let names = NPMBackend::tarball_package_names(aube.path());
+        assert_eq!(names, vec!["@acme/hooky".to_string()]);
+        assert!(NPMBackend::installed_package_lifecycle_scripts(aube.path(), &names[0]).is_none());
+    }
 
     #[tokio::test]
     async fn tarball_install_refuses_a_checksum() {
