@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# With an explicit minimum_release_age, core:rust installs `stable` as a dated version. The
+# install dependency check of a cargo: tool resolves rust@stable offline and must find that
+# dated install instead of looking for a `stable` directory.
+mkdir -p "$MISE_DATA_DIR/installs/rust/1.99.1/bin"
+cat >"$MISE_DATA_DIR/installs/rust/1.99.1/bin/cargo" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "fake rust cargo"
+exit 1
+SCRIPT
+chmod +x "$MISE_DATA_DIR/installs/rust/1.99.1/bin/cargo"
+
+cat >mise.toml <<'TOML'
+[settings]
+minimum_release_age = "7d"
+
+[tools]
+"core:rust" = "stable"
+"cargo:mise-fake-crate" = "1.0.0"
+TOML
+
+output="$(mise install cargo:mise-fake-crate 2>&1 || true)"
+assert_not_contains "echo '$output'" "requires configured install dependency"
+assert_contains "echo '$output'" "could not find"
