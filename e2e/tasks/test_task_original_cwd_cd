@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# MISE_ORIGINAL_CWD is the directory mise was started in, not the --cd target
+mkdir -p caller project
+cat >project/mise.toml <<'TOML'
+[tasks.show]
+quiet = true
+run = 'printf "%s\n" "$MISE_ORIGINAL_CWD"'
+TOML
+mise trust project/mise.toml
+cat >project/show-file <<'SH'
+#!/usr/bin/env bash
+#MISE quiet=true
+printf '%s\n' "$MISE_ORIGINAL_CWD"
+SH
+chmod +x project/show-file
+
+caller="$(cd caller && pwd -P)"
+assert "cd caller && mise -C ../project run show | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
+assert "cd caller && mise run -C ../project show | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
+assert "cd caller && MISE_CD=../project mise run show | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
+assert "cd caller && mise -C ../project run ./show-file | xargs -I{} sh -c 'cd {} && pwd -P'" "$caller"
+assert "cd project && mise run show | xargs -I{} sh -c 'cd {} && pwd -P'" "$(cd project && pwd -P)"

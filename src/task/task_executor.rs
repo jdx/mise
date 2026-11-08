@@ -3134,12 +3134,13 @@ impl TaskExecutor {
                 );
             }
         }
-        if let Some(cwd) = &*crate::dirs::CWD {
+        // The directory mise started in, before `--cd`/`MISE_CD` moved it.
+        if let Some(cwd) = crate::env::original_cwd() {
             Self::insert_env_excluded_from_nested_mise_diff(
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
                 "MISE_ORIGINAL_CWD",
-                task_env_path(cwd),
+                task_env_path(&cwd),
             );
         }
 
