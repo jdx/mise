@@ -69,7 +69,7 @@ something else.
 ```toml
 [tools."npm:https://pkg.pr.new/owner/repo/@scope/pkg@343"]
 version = "latest"
-allow_exotic_deps = true
+allow_exotic_deps = ["@scope/pkg-linux-x64"]
 ```
 
 The whole URL is the tool name, including any `@` in its path, so
@@ -83,8 +83,9 @@ the name in its own `package.json`.
 a tarball URL, because aube would resolve it without the tarball's
 `optionalDependencies`. With embedded aube or `aube_cli`, a tarball's own
 dependencies on other URLs, such as per-platform `optionalDependencies`, need
-[`allow_exotic_deps`](#allow-exotic-deps); npm, pnpm and Bun do not enforce that
-check.
+[`allow_exotic_deps`](#allow-exotic-deps). Name the ones you need, as above,
+rather than `true`, which exempts the whole graph; npm, pnpm and Bun do not
+enforce that check.
 
 ## Private registries {#registry-configuration}
 
