@@ -50,11 +50,18 @@ The hook appends one line:
 eval "$(mise hook-env -s bash)"
 ```
 
-Use `-s zsh` if Claude Code runs commands in zsh. Because the line runs before
-every command, it follows the agent as it changes directory: entering a
-subproject adds that project's tools, and leaving removes them. When nothing
-changed since the last command, `hook-env` prints nothing and costs a few
-milliseconds.
+Use `-s zsh` if Claude Code runs commands in zsh. The line runs before every
+command, so it follows the directory the agent is in when a command starts:
+after the agent runs `cd subproject`, its next command gets that project's
+tools, and leaving removes them. It does not refresh in the middle of one
+command, so in `cd subproject && node --version` the `node` is still the
+parent project's. When nothing changed since the last command, `hook-env`
+prints nothing and costs a few milliseconds.
+
+The line must be able to find `mise`. The installer can leave `~/.local/bin` off
+the `PATH` of a shell that does not run `mise activate`, which includes the
+agent's. If `command -v mise` fails there, write the absolute path into the
+hook instead, for example `eval "$(~/.local/bin/mise hook-env -s bash)"`.
 
 If you prefer a fixed environment for the whole session, write the output of
 [`mise env`](/cli/env.html) once instead. It is evaluated at session start, in
@@ -75,7 +82,11 @@ so. A config that mise does not [trust](/cli/trust.html) is not loaded.
 
 Codex runs commands through your login shell by default, so the tools in your
 login profile apply. Add [shims to your login profile](/dev-tools/shims.html#how-to-add-mise-shims-to-path)
-for the same effect as above, and run `mise install` in the project. Check
+and run `mise install` in the project. Shims are weaker than the Claude Code
+setup: they put a project's `[env]` variables only on the tool they launch and
+its children, so `echo "$FOO"` in the shell still sees nothing, and a tool the
+current directory's config does not select fails with `No version is set for
+shim`. Check
 Codex's own documentation for how it selects the shell, because mise cannot
 change that. This setup has not been tested here the way the Claude Code hook
 has.
