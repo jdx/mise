@@ -739,6 +739,7 @@ impl DirPruner {
 
     fn build(match_root: &Path, task_cwd: &Path, entries: &[String], outputs: bool) -> Self {
         let mut excluded: Vec<Override> = vec![];
+        let normalized_root = lexical_normalize(match_root);
         for entry in entries {
             let normalized = normalize_pattern(match_root, task_cwd, entry);
             let Ok(alternatives) = expand_glob_braces(&normalized) else {
@@ -770,7 +771,7 @@ impl DirPruner {
                 } else {
                     format!("/{subtree}")
                 };
-                let mut builder = OverrideBuilder::new(match_root);
+                let mut builder = OverrideBuilder::new(&normalized_root);
                 if builder.add(&anchored).is_ok()
                     && let Ok(matcher) = builder.build()
                 {
@@ -779,7 +780,7 @@ impl DirPruner {
             }
         }
         Self {
-            root: lexical_normalize(match_root),
+            root: normalized_root,
             excluded: Arc::new(excluded),
         }
     }
@@ -801,12 +802,14 @@ impl DirPruner {
         let Ok(relative) = dir.strip_prefix(&self.root) else {
             return false;
         };
+        // Hand the matcher the rooted path: it strips its own root, and a
+        // relative root would otherwise be stripped from the path twice.
         let excluded = |path: &Path| {
             !path.as_os_str().is_empty()
                 && self
                     .excluded
                     .iter()
-                    .any(|matcher| matcher.matched(path, true).is_whitelist())
+                    .any(|matcher| matcher.matched(self.root.join(path), true).is_whitelist())
         };
         if ancestors {
             relative.ancestors().any(excluded)
@@ -2143,6 +2146,17 @@ mod tests {
         assert!(pruner.excludes_from(&root.join("dist/cache/nested"), true));
         assert!(!pruner.excludes_from(&root.join("dist/cache/nested"), false));
         assert!(!pruner.excludes_from(&root.join("dist/other"), true));
+    }
+
+    #[test]
+    fn pruner_with_a_relative_root_matches_paths_named_like_the_root() {
+        let root = Path::new("proj");
+        let outputs = ["proj/cache/nested".to_string(), "!cache/**".to_string()];
+        let pruner = DirPruner::for_outputs(root, &outputs);
+        // `proj/proj/cache` is `cache/nested`'s sibling directory below the root,
+        // not an excluded `cache`.
+        assert!(!pruner.excludes_from(&root.join("proj/cache/nested"), true));
+        assert!(pruner.excludes_from(&root.join("cache/nested"), true));
     }
 
     #[test]
