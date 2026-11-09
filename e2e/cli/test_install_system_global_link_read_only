@@ -34,6 +34,15 @@ trap 'chmod -R u+w "$MISE_SYSTEM_DATA_DIR" 2>/dev/null || true' EXIT
 assert_succeed "mise install dummy@1.0.0"
 assert "readlink $SYSTEM_INSTALLS/tiny/global" "./2.1.0"
 
+# With sudo unavailable, a system config change that selects another installed
+# version cannot be applied by a user install; it must not fail the install.
+cat >"$MISE_SYSTEM_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+tiny = "1.0.0"
+TOML
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=false mise install dummy@2.1.0"
+assert "readlink $SYSTEM_INSTALLS/tiny/global" "./2.1.0"
+
 # Without any system config, the administrator's link still stays.
 rm "$MISE_SYSTEM_CONFIG_DIR/config.toml"
 assert_succeed "mise install dummy@2.1.0"
