@@ -1774,7 +1774,7 @@
           "type": "boolean"
         },
         "color_theme": {
-          "default": "default",
+          "default": "base16",
           "description": "Color theme for interactive prompts, such as the task picker in `mise run`.",
           "type": "string",
           "enum": [
