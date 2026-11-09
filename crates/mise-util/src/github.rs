@@ -644,7 +644,9 @@ pub async fn list_release_versions(
 }
 
 /// [`list_release_versions`] limited to the releases carrying an asset named
-/// `asset`, which mise-versions filters for itself.
+/// `asset`, which mise-versions filters for itself. The API fallback normally
+/// reads up to ten pages: unrelated stable releases must not stop discovery,
+/// nor may a recent match hide older candidates for release-age filtering.
 pub async fn list_release_versions_with_asset(
     repo: &str,
     asset: &str,
@@ -652,7 +654,7 @@ pub async fn list_release_versions_with_asset(
     // Cached like the unfiltered list, so a copy saved earlier can stand in
     // while mise-versions is temporarily unavailable.
     let key = format!(
-        "{}-versions-with-asset-{}",
+        "{}-versions-with-asset-paged-{}",
         repo.to_kebab_case(),
         crate::hash::hash_to_str(&(repo, asset, RELEASE_LIST_CACHE_VERSION, mirror_source(repo)))
     );
@@ -678,10 +680,31 @@ pub async fn list_release_versions_with_asset(
         {
             return Ok(list.releases.into_iter().map(Into::into).collect());
         }
-        Ok(list_releases_including_prereleases(repo)
-            .await?
+
+        // Use the same page budget as the release mirror, rather than the
+        // generic listing's bounded search for any stable release. Keep this
+        // separate from that listing and its cache, which may contain only
+        // the first page of a busy monorepo.
+        let (mut url, mut releases, mut headers) = fetch_first_release_page(API_URL, repo).await?;
+        let mut pages_fetched = 1;
+        while let Some(next) = next_page(&headers) {
+            if !*env::MISE_LIST_ALL_VERSIONS
+                && pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES
+            {
+                break;
+            }
+            url = crate::http::resolve_pagination_url(&url, &next)?;
+            let request_headers = get_headers(&url, API_URL)?;
+            let (more, h) = crate::http::HTTP_FETCH
+                .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &request_headers)
+                .await?;
+            releases.extend(more);
+            headers = h;
+            pages_fetched += 1;
+        }
+        Ok(releases
             .into_iter()
-            .filter(|r| r.assets.iter().any(|a| a.name == asset))
+            .filter(|r| !r.draft && r.assets.iter().any(|a| a.name == asset))
             .map(Into::into)
             .collect())
     })

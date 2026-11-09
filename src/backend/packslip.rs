@@ -1546,11 +1546,12 @@ impl PackslipBackend {
         refresh: bool,
     ) -> Result<Vec<VersionInfo>> {
         // A listing from the versions host lags GitHub, so it is not reused
-        // once the host is turned off.
+        // once the host is turned off. Do not reuse the old contexts either:
+        // their API fallback could stop at an unrelated stable release.
         let context = if self.versions_host_tool().is_some() {
-            "packslip-vendor-listing"
+            "packslip-vendor-listing-paged"
         } else {
-            "packslip-vendor-listing-direct"
+            "packslip-vendor-listing-direct-paged"
         };
         let cache = self.get_remote_version_cache_with_context(Some(context));
         let mut cache = cache.lock().await;
@@ -1750,7 +1751,7 @@ impl PackslipBackend {
         let repo = Self::repo(project)
             .ok_or_else(|| eyre!("packslip:{project} publishes no signed release list"))?;
         let find = |releases: &[github::GithubRelease]| {
-            releases.iter().find_map(|r| {
+            releases.iter().filter(|r| !r.draft).find_map(|r| {
                 let asset = r.assets.iter().find(|a| a.name == asset_name)?;
                 (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
                     .then(|| asset.clone())
@@ -1767,7 +1768,33 @@ impl PackslipBackend {
             }
         }
         if found.is_none() {
-            found = find(&github::list_releases_including_prereleases(&repo).await?);
+            // An exact version need not appear in a busy repository's recent
+            // release listing. Ask for the common tag forms directly; the
+            // signed manifest still has to name this project and version.
+            for tag in [tv.version.clone(), format!("v{}", tv.version)] {
+                match github::get_release_with_versions_host(&repo, &tag, true).await {
+                    Ok(release) => found = find(std::slice::from_ref(&release)),
+                    Err(err) if crate::http::error_code(&err) == Some(404) => continue,
+                    Err(err) => return Err(err),
+                }
+                if found.is_some() {
+                    break;
+                }
+            }
+        }
+        if found.is_none() {
+            // Nonstandard tag prefixes come from the asset-filtered catalog,
+            // not the generic listing that may stop at an unrelated release.
+            let versions = self.vendor_listing(project, &repo, false).await?;
+            if let Some(tag) = versions
+                .iter()
+                .find(|v| v.version == tv.version)
+                .and_then(|v| v.release_url.as_deref())
+                .and_then(release_url_tag)
+            {
+                let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
+                found = find(std::slice::from_ref(&release));
+            }
         }
         let Some(asset) = found else {
             bail!(
@@ -3218,6 +3245,113 @@ mod tests {
         settings.url_replacements = Some(replacements);
         settings.http_retries = Some(0);
         Settings::reset(Some(settings));
+    }
+
+    #[tokio::test]
+    async fn a_pinned_release_need_not_be_in_the_recent_listing() {
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.url_replacements = Some(indexmap::IndexMap::from([(
+            "https://api.github.com".to_string(),
+            server.url(),
+        )]));
+        settings.use_versions_host = Some(false);
+        settings.http_retries = Some(0);
+        Settings::reset(Some(settings));
+
+        let suffix = server.socket_address().port();
+        for (repo, tag) in [
+            (format!("o/pinned-bare-version-{suffix}"), "4.215.0".into()),
+            (format!("o/pinned-v-prefix-{suffix}"), "v4.215.0".into()),
+            (
+                format!("o/pinned-prefixed-{suffix}"),
+                format!("pinned-prefixed-{suffix}@4.215.0"),
+            ),
+        ] {
+            let url = format!(
+                "{}/{repo}/releases/download/{tag}/packslip.sigstore.json",
+                server.url()
+            );
+            server
+                .mock(
+                    "HEAD",
+                    format!("/{repo}/releases/download/{tag}/packslip.sigstore.json").as_str(),
+                )
+                .with_header("content-type", "application/octet-stream")
+                .create_async()
+                .await;
+            let release = serde_json::json!({
+                "tag_name": tag,
+                "draft": false,
+                "prerelease": false,
+                "created_at": "2026-11-03T00:00:00Z",
+                "assets": [{
+                    "name": "packslip.sigstore.json",
+                    "browser_download_url": url,
+                    "url": format!("https://api.github.com/repos/{repo}/releases/assets/1")
+                }]
+            });
+            let exact = server
+                .mock(
+                    "GET",
+                    format!("/repos/{repo}/releases/tags/{}", urlencoding::encode(&tag)).as_str(),
+                )
+                .with_header("content-type", "application/json")
+                .with_body(release.to_string())
+                .create_async()
+                .await;
+            for absent in ["4.215.0", "v4.215.0"] {
+                if absent != tag {
+                    server
+                        .mock(
+                            "GET",
+                            format!("/repos/{repo}/releases/tags/{absent}").as_str(),
+                        )
+                        .with_status(404)
+                        .create_async()
+                        .await;
+                }
+            }
+            // Standard tags need no listing; nonstandard prefixes still work
+            // through the asset-filtered catalog.
+            server
+                .mock(
+                    "GET",
+                    format!("/repos/{repo}/releases?per_page=100").as_str(),
+                )
+                .with_header("content-type", "application/json")
+                .with_body(if tag.starts_with("pinned-") {
+                    serde_json::json!([release]).to_string()
+                } else {
+                    "[]".into()
+                })
+                .create_async()
+                .await;
+            let project = format!("github.com/{repo}");
+            let ba = Arc::new(BackendArg::new_raw(
+                format!("packslip:{project}"),
+                Some(format!("packslip:{project}")),
+                project.clone(),
+                None,
+                BackendResolution::new(true),
+            ));
+            let tv = ToolVersion::new(
+                ToolRequest::new(ba.clone(), "4.215.0", ToolSource::Argument).unwrap(),
+                "4.215.0".into(),
+            );
+            let backend = PackslipBackend::from_arg((*ba).clone());
+            let located = backend
+                .locate_vendor_bundle(&project, &tv, Vendor::NoList)
+                .await
+                .unwrap();
+            assert_eq!(located.url, url);
+            assert!(located.list_missing);
+            exact.assert_async().await;
+        }
     }
 
     #[tokio::test]

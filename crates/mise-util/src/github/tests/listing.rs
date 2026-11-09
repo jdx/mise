@@ -1,6 +1,97 @@
 use super::*;
 
 #[tokio::test]
+async fn test_asset_versions_include_older_monorepo_releases() {
+    use confique::Layer;
+
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _settings = SettingsGuard {
+        _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+    };
+    let mut server = mockito::Server::new_async().await;
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.url_replacements = Some(indexmap::IndexMap::from([(
+        API_URL.to_string(),
+        server.url(),
+    )]));
+    settings.http_retries = Some(0);
+    crate::testing::reset_settings(Some(settings));
+
+    let repo = format!("owner/packslip-monorepo-{}", server.socket_address().port());
+    let asset = "packslip.sigstore.json";
+    let release = |tag: &str| GithubRelease {
+        assets: vec![make_asset(asset)],
+        ..make_release(tag)
+    };
+    // The first matching stable release can be too young for the caller's
+    // release-age policy. Older candidates must survive discovery too, even
+    // beyond the generic listing's three-page prerelease fallback.
+    let mut pages = vec![
+        vec![release("4.215.1"), make_release("server@1.0.0")],
+        vec![make_release("helm@1.0.0")],
+        vec![GithubRelease {
+            draft: true,
+            ..release("4.216.0")
+        }],
+        vec![release("4.215.0")],
+    ];
+    pages.extend((5..=10).map(|page| vec![make_release(&format!("server@1.0.{page}"))]));
+    let mut mocks = Vec::new();
+    for (index, releases) in pages.iter().enumerate() {
+        let path = if index == 0 {
+            format!("/repos/{repo}/releases?per_page=100")
+        } else {
+            format!("/packslip-page-{}", index + 1)
+        };
+        let mock = server
+            .mock("GET", path.as_str())
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(releases).unwrap())
+            .expect(1)
+            .with_header(
+                "link",
+                format!(
+                    "<{}/packslip-page-{}>; rel=\"next\"",
+                    server.url(),
+                    index + 2
+                )
+                .as_str(),
+            );
+        mocks.push(mock.create_async().await);
+    }
+    // GitHub rejects results beyond the first 1000, even when it supplies a
+    // next-page link. Discovery must keep its bounded request budget.
+    let beyond_limit = server
+        .mock("GET", "/packslip-page-11")
+        .with_status(422)
+        .expect(0)
+        .create_async()
+        .await;
+
+    let versions = list_release_versions_with_asset(&repo, asset)
+        .await
+        .unwrap();
+    assert_eq!(
+        versions
+            .iter()
+            .map(|r| r.tag_name.as_str())
+            .collect::<Vec<_>>(),
+        ["4.215.1", "4.215.0"]
+    );
+    for mock in mocks {
+        mock.assert_async().await;
+    }
+    beyond_limit.assert_async().await;
+}
+
+#[tokio::test]
 async fn test_empty_release_assets_are_not_cached() {
     let mut server = mockito::Server::new_async().await;
     let repo = "owner/empty-assets-cache-test";
