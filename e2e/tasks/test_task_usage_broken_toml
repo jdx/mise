@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# One TOML task whose usage cannot be loaded must not break the other tasks.
+
+cat <<'TOML' >mise.toml
+[tasks.good]
+usage = 'flag "--good"'
+run = 'echo good'
+
+[tasks.missing-include]
+usage = 'include file="{{ config_root }}/missing.kdl"'
+raw_args = true
+run = 'echo bad "$@"'
+
+[tasks.unparsable]
+usage = 'arg "<x" {'
+run = 'echo unparsable'
+TOML
+
+assert_contains "mise tasks --usage" 'cmd good'
+assert_contains "mise tasks --usage" '--good'
+assert_contains "mise tasks --usage" 'cmd missing-include'
+assert_contains "mise tasks --usage" 'cmd unparsable'
+assert "mise generate task-docs >/dev/null && echo ok" "ok"
+assert_contains "mise __complete_word__ --shell bash --line 'mise run go'" "good"
+
+# raw_args tasks do not need their spec to run
+assert "mise run missing-include x" "bad x"
+
+# validation stays strict
+assert_fail "mise tasks validate"
+
+# a bypassed task's templated entries run too
+cat <<'TOML' >mise.toml
+[tasks.child]
+run = 'echo child'
+
+[tasks.templated]
+usage = 'include file="{{ config_root }}/missing.kdl"'
+raw_args = true
+run = [{ task = "{{ env.CHILD }}" }]
+TOML
+assert "CHILD=child mise run templated" "child"
+assert_contains "CHILD=child mise run templated 2>&1" "invalid usage spec"

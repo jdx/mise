@@ -1394,7 +1394,13 @@ impl TaskExecutor {
 
         let needs_tera = task.run().iter().any(RunEntry::has_tera_template);
         let mut tera_state = if needs_tera {
-            let usage_values = crate::task::parse_usage_values_from_task(config, task).await?;
+            let usage_values = if task.should_bypass_usage_parser() {
+                // A bypassed task never uses its usage values, so a broken spec must not
+                // stop its templated entries from running.
+                crate::task::parse_usage_values_from_bypassed_task(config, task).await?
+            } else {
+                crate::task::parse_usage_values_from_task(config, task).await?
+            };
             let config_root = task.config_root.clone().unwrap_or_default();
             let tera = crate::tera::get_tera(Some(&config_root));
             let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
@@ -3309,13 +3315,20 @@ impl TaskExecutor {
             // so they must not influence spec discovery or parsing.
             crate::task::clear_usage_env(env);
         }
-        let (spec, _) = task
+        let parsed = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
-            .await?;
+            .await;
         if bypass_usage_parser {
+            // The spec is not used, so a broken one must not stop the task. Parsing still
+            // runs first so task-variable redactions get registered; rendering the scripts
+            // reports the broken spec.
+            if let Err(err) = &parsed {
+                trace!("Usage parser bypassed, spec failed to load: {err}");
+            }
             trace!("Usage parser bypassed");
             return Ok(());
         }
+        let (spec, _) = parsed?;
         let args = get_args();
         self.parse_usage_spec_and_init_env_from_spec(task, env, &args, &spec)
     }

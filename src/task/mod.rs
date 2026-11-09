@@ -2128,9 +2128,19 @@ impl Task {
             }
         } else {
             let scripts_only = self.run_script_strings();
-            TaskScriptParser::new(dir)
+            let parsed = TaskScriptParser::new(dir)
                 .parse_run_scripts_for_spec_only(config, self, &scripts_only)
-                .await?
+                .await;
+            match parsed {
+                Ok(spec) => spec,
+                // Like a file task's broken `#USAGE`: one bad spec must not break the
+                // completion and docs of every other task.
+                Err(err) if !strict => {
+                    warn!("{err}");
+                    usage::Spec::default()
+                }
+                Err(err) => return Err(err),
+            }
         };
         self.populate_spec_metadata(&mut spec);
         self.populate_usage_about(&mut spec);
@@ -2194,9 +2204,27 @@ impl Task {
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self
+        let parsed = self
             .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
-            .await?;
+            .await;
+        let (spec, scripts) = match parsed {
+            Ok(parsed) => parsed,
+            // A task that bypasses the usage parser never uses its spec, so a broken one
+            // (a missing `include`, a parse error) must not keep the task from running.
+            Err(err) if self.should_bypass_usage_parser() => {
+                let mut without_usage = self.clone();
+                without_usage.usage = String::new();
+                let fallback = without_usage
+                    .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
+                    .await
+                    .map_err(|retry_err| {
+                        eyre!("{retry_err}\n\nthe task's usage spec also failed to load:\n{err}")
+                    })?;
+                warn!("{err}");
+                fallback
+            }
+            Err(err) => return Err(err),
+        };
         // Skip the usage parser entirely when the task opts into raw arg
         // passthrough, or when the user explicitly asked for `--help`/`-h`
         // to reach the underlying command via `mise run task -- --help`.
@@ -4180,11 +4208,36 @@ pub async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
 ) -> Result<IndexMap<String, tera::Value>> {
+    parse_usage_values(config, task, false).await
+}
+
+/// Like [`parse_usage_values_from_task`] for a task that bypasses the usage parser: a spec
+/// that fails to load yields no values, while toolset and environment errors still propagate.
+pub(crate) async fn parse_usage_values_from_bypassed_task(
+    config: &Arc<Config>,
+    task: &Task,
+) -> Result<IndexMap<String, tera::Value>> {
+    parse_usage_values(config, task, true).await
+}
+
+async fn parse_usage_values(
+    config: &Arc<Config>,
+    task: &Task,
+    tolerate_spec_error: bool,
+) -> Result<IndexMap<String, tera::Value>> {
     let ts = config.get_toolset().await?;
     let env = ts.full_env(config).await?;
-    let (spec, _) = task
+    let (spec, _) = match task
         .parse_usage_spec_with_vars(config, None, &env, None)
-        .await?;
+        .await
+    {
+        Ok(parsed) => parsed,
+        Err(err) if tolerate_spec_error => {
+            trace!("Usage parser bypassed, spec failed to load: {err}");
+            return Ok(IndexMap::new());
+        }
+        Err(err) => return Err(err),
+    };
     if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() && spec.cmd.subcommands.is_empty() {
         return Ok(IndexMap::new());
     }
