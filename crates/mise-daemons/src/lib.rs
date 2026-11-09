@@ -3084,6 +3084,12 @@ mod tests {
                 .contains("both resolve to port 3000")
         );
         assert!(
+            err(
+                "[daemons.s]\nrun = 'x'\nports.app = { auto = true, base = 3000 }\nports.db = 3000"
+            )
+            .contains("both resolve to port 3000")
+        );
+        assert!(
             err("[daemons.s]\nrun = 'x'\nports.app = 1\nports.app_port = 2")
                 .contains("same variable")
         );
