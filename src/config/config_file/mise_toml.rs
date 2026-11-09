@@ -1716,7 +1716,27 @@ impl ConfigFile for MiseToml {
         // replace `{{ env.TOKEN }}` with the token, so a value that a template renders to is
         // written as that template.
         let templates = self.templates_for_rewrite(ba);
+        // The registry's defaults for a tool are not the file's to record: they apply on their
+        // own, and writing them would pin today's registry choices (such as packslip's
+        // `workflow`) into the user's config. An option the file already spells out stays.
+        let written_keys: std::collections::HashSet<String> = self
+            .tools
+            .lock()
+            .unwrap()
+            .get(ba)
+            .into_iter()
+            .flat_map(|tools| tools.0.iter())
+            .filter_map(|tool| tool.options.as_ref())
+            .flat_map(|opts| opts.opts.keys().cloned())
+            .collect();
         for tr in &mut versions {
+            *tr = tr.without_registry_options();
+            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
+                let defaults = rt.backend_options(&tr.ba().full(), tr.ba().registry_version());
+                let opts = tr.options_mut();
+                opts.opts
+                    .retain(|k, v| written_keys.contains(k) || defaults.opts.get(k) != Some(v));
+            }
             restore_option_templates(tr, &templates);
         }
         let mut tools = self.tools.lock().unwrap();
