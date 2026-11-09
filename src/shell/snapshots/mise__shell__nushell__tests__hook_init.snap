@@ -38,7 +38,29 @@ def --env add-hook [field: cell-path new_hook: any] {
   $env.config = ($old_config | upsert $field ($old_hooks ++ [$new_hook]))
 }
 
-export def --env --wrapped main [command?: string, --help, ...rest: string] {
+# `main` is a Nushell command, so the external completer that `mise completion nu`
+# installs never sees `mise <Tab>`. Ask mise for the candidates instead.
+def "nu-complete mise" [context: string] {
+  let out = (^"/some/dir/mise" __complete_word__ --shell nu --line $context | complete)
+  if $out.exit_code != 0 { return null }
+  let marker = "\u{1}"
+  let lines = ($out.stdout | lines | where {|l| $l != "" })
+  let wants_paths = ($lines | any {|l| $l | str starts-with $marker })
+  let candidates = (
+    $lines
+    | where {|l| not ($l | str starts-with $marker) }
+    | each {|l|
+      let parts = ($l | split row (char tab))
+      {
+        value: ($parts | get 0)
+        description: (if ($parts | length) > 1 { $parts | get 1 } else { "" })
+      }
+    }
+  )
+  if ($candidates | is-empty) and $wants_paths { null } else { $candidates }
+}
+
+export def --env --wrapped main [command?: string@"nu-complete mise", --help, ...rest: string@"nu-complete mise"] {
   let commands = ["deactivate", "shell", "sh"]
 
   if ($command == null) {
