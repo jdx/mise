@@ -35,6 +35,7 @@ pub struct VfoxBackend {
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
     system_deps: OnceLock<Vec<crate::system::deps::SystemDep>>,
+    legacy_filenames: tokio::sync::OnceCell<Vec<String>>,
 }
 
 fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
@@ -389,10 +390,17 @@ impl Backend for VfoxBackend {
     }
 
     async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
-        let (vfox, _log_rx) = self.plugin.vfox()?;
-
-        let metadata = vfox.metadata(&self.pathname).await?;
-        Ok(metadata.legacy_filenames)
+        // This is called for every config file parsed (to detect idiomatic
+        // version files) and evaluating the plugin's Lua is expensive, so
+        // only do it once per backend.
+        self.legacy_filenames
+            .get_or_try_init(|| async {
+                let (vfox, _log_rx) = self.plugin.vfox()?;
+                let metadata = vfox.metadata(&self.pathname).await?;
+                Ok::<_, eyre::Report>(metadata.legacy_filenames)
+            })
+            .await
+            .cloned()
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
@@ -516,6 +524,7 @@ impl VfoxBackend {
             tool_name,
             metadata_deps: OnceLock::new(),
             system_deps: OnceLock::new(),
+            legacy_filenames: Default::default(),
         }
     }
 
