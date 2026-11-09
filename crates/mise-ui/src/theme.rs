@@ -83,9 +83,9 @@ fn colorfgbg_is_light(value: &str) -> bool {
 
 /// demand's base16 theme with its `Ansi256(0..=15)` colors swapped for the
 /// terminal's named colors (`ESC[3Xm`, and `ESC[9Xm` for the bright half), and
-/// unselected options and help keys left in the terminal's default text color
-/// and help text in bright black (demand uses fixed greys). demand's
-/// unselected color, ANSI white, shows as pale grey on light themes.
+/// unselected options and help text left in the terminal's default text color
+/// (demand uses ANSI white for unselected options, which shows as pale grey on
+/// light themes, and fixed dark greys for help).
 fn base16() -> Theme {
     let mut theme = Theme::base16();
     for spec in [
@@ -109,12 +109,11 @@ fn base16() -> Theme {
     theme.unselected_prefix_fg = ColorSpec::new();
     theme.unselected_option = ColorSpec::new();
     // demand's help colors are fixed dark greys (60..98), nearly invisible on a
-    // dark background. Keys use the text color; the rest bright black.
-    let mut bright_black = ColorSpec::new();
-    bright_black.set_fg(Some(Color::Black)).set_intense(true);
+    // dark background, and bright black is the background itself in some
+    // palettes (Solarized dark), so help text uses the terminal's text color.
     theme.help_key = ColorSpec::new();
-    theme.help_desc = bright_black.clone();
-    theme.help_sep = bright_black;
+    theme.help_desc = ColorSpec::new();
+    theme.help_sep = ColorSpec::new();
     theme
 }
 
@@ -265,12 +264,11 @@ mod tests {
     }
 
     #[test]
-    fn base16_help_text_follows_the_palette() {
+    fn base16_help_text_uses_the_terminal_text_color() {
         let theme = base16();
-        assert_eq!(theme.help_key.fg(), None);
-        for spec in [&theme.help_desc, &theme.help_sep] {
-            assert_eq!(spec.fg(), Some(&Color::Black));
-            assert!(spec.intense());
+        for spec in [&theme.help_key, &theme.help_desc, &theme.help_sep] {
+            assert_eq!(spec.fg(), None);
+            assert_eq!(spec.bg(), None);
         }
     }
 
