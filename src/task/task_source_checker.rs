@@ -818,9 +818,10 @@ impl DirPruner {
 }
 
 /// Whether `pattern` selects anything when walked without pruning. Callers use
-/// it to tell "everything it matched was pruned" from "it matched nothing".
+/// it to tell "everything it matched was pruned" from "it matched nothing". A
+/// walk error is not a match: an unreadable directory says nothing about files.
 pub(crate) fn glob_has_entries(pattern: &Path) -> bool {
-    glob_walk(pattern, false).is_ok_and(|mut walker| walker.next().is_some())
+    glob_walk(pattern, false).is_ok_and(|mut walker| walker.any(|entry| entry.is_ok()))
 }
 
 /// Build an ordered matcher for task output patterns.
