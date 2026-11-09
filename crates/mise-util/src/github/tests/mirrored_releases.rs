@@ -435,3 +435,11 @@ fn test_not_found_survives_the_mirror_then_github_failure() {
     .into();
     assert!(!crate::versions_host::is_not_found(&other));
 }
+
+#[test]
+fn test_a_version_in_a_timeout_message_is_not_a_not_found() {
+    let timeout = eyre::eyre!(
+        "error sending request for url (https://api.github.com/repos/o/r/releases/tags/1.404.0): timed out"
+    );
+    assert!(!crate::versions_host::is_not_found(&timeout));
+}

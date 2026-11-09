@@ -845,25 +845,34 @@ impl GithubRetryFailed {
     }
 }
 
-/// Whether `err` is a 404, including one api.github.com answered after
+/// Whether `err` is a real 404, including one api.github.com answered after
 /// mise-versions failed: [`GithubRetryFailed`] words itself without the
-/// status, so [`crate::http::error_code`] on the outer error cannot see it.
+/// status, so the outer error cannot show it. Unlike
+/// [`crate::http::error_code`] this never reads "404" out of a URL or a
+/// version in a timeout message.
 pub fn is_not_found(err: &eyre::Report) -> bool {
-    crate::http::error_code(err) == Some(404)
-        || err.chain().any(|cause| {
-            cause
+    fn names_404(cause: &(dyn std::error::Error + 'static)) -> bool {
+        cause
+            .downcast_ref::<reqwest::Error>()
+            .and_then(reqwest::Error::status)
+            .is_some_and(|status| status == reqwest::StatusCode::NOT_FOUND)
+            || cause.to_string().contains("404 Not Found")
+    }
+    err.chain().any(|cause| {
+        names_404(cause)
+            || cause
                 .downcast_ref::<GithubRetryFailed>()
                 .is_some_and(|failed| {
                     let mut source = std::error::Error::source(failed);
                     while let Some(inner) = source {
-                        if inner.to_string().contains("404") {
+                        if names_404(inner) {
                             return true;
                         }
                         source = inner.source();
                     }
                     false
                 })
-        })
+    })
 }
 
 fn versions_host_error_message(status: u16, body: &str) -> String {

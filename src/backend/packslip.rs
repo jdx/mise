@@ -1785,13 +1785,20 @@ impl PackslipBackend {
         if found.is_none() {
             // Nonstandard tag prefixes come from the asset-filtered catalog,
             // not the generic listing that may stop at an unrelated release.
-            let versions = self.vendor_listing(project, &repo, false).await?;
-            if let Some(tag) = versions
-                .iter()
-                .find(|v| v.version == tv.version)
-                .and_then(|v| v.release_url.as_deref())
-                .and_then(release_url_tag)
-            {
+            // A cached listing from before the release was published lacks
+            // it, so a miss refreshes the listing once.
+            let tag_of = |versions: &[VersionInfo]| {
+                versions
+                    .iter()
+                    .find(|v| v.version == tv.version)
+                    .and_then(|v| v.release_url.as_deref())
+                    .and_then(release_url_tag)
+            };
+            let mut tag = tag_of(&self.vendor_listing(project, &repo, false).await?);
+            if tag.is_none() && !Settings::get().offline() {
+                tag = tag_of(&self.vendor_listing(project, &repo, true).await?);
+            }
+            if let Some(tag) = tag {
                 let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
                 found = find(std::slice::from_ref(&release));
             }
