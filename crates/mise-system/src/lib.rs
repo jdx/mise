@@ -838,6 +838,13 @@ fn package_requests_from_config_files(
                                 #[cfg(unix)]
                                 {
                                     cask_adopt.remove(&name);
+                                    // the alias holds the same directory, unless an
+                                    // explicit entry for the alias set its own
+                                    if let Some(alias) = official_cask_alias(&name)
+                                        && cask_appdirs.get(&alias) == cask_appdirs.get(&name)
+                                    {
+                                        cask_appdirs.remove(&alias);
+                                    }
                                     cask_appdirs.remove(&name);
                                     app_specs.remove(&name);
                                     app_adopt.remove(&name);
