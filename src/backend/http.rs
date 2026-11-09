@@ -40,6 +40,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // Constants
 const HTTP_TARBALLS_DIR: &str = "http-tarballs";
 const METADATA_FILE: &str = "metadata.json";
+/// Longest cache key used verbatim as a directory name; longer keys are hashed.
+const MAX_CACHE_KEY_LEN: usize = 240;
 
 /// Metadata stored alongside cached extractions
 #[derive(Debug, Serialize, Deserialize)]
@@ -579,7 +581,12 @@ impl HttpBackend {
             ));
         }
 
-        let key = parts.join("_");
+        let mut key = parts.join("_");
+        // The key names a cache directory. With rename_exe and bin_path it reaches
+        // 279 bytes, over the 255-byte NAME_MAX, so long keys are replaced by their hash.
+        if key.len() > MAX_CACHE_KEY_LEN {
+            key = hash::hash_blake3_to_str(&key);
+        }
         debug!("Cache key: {}", key);
         Ok(key)
     }
@@ -2406,5 +2413,37 @@ mod tests {
                 .unwrap()
         };
         assert_ne!(rendered("1.0.0/bin"), rendered("2.0.0/bin"));
+    }
+
+    #[test]
+    fn cache_key_stays_under_name_max_with_every_part() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let tmp = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
+        std::fs::write(tmp.path(), b"raw-binary").unwrap();
+        let opts = crate::toolset::parse_tool_options(
+            r#"rename_exe="plz",windows_script_interpreter="node",strip_components=1"#,
+        );
+        let opts = HttpOptions::new(&opts);
+        let file_info = FileInfo::new(tmp.path(), None, &opts);
+        let key = backend
+            .cache_key(tmp.path(), &opts, &file_info, 0, Some("bin"))
+            .unwrap();
+        assert!(
+            key.len() <= MAX_CACHE_KEY_LEN,
+            "{key} is {} bytes",
+            key.len()
+        );
+        let other = backend
+            .cache_key(tmp.path(), &opts, &file_info, 0, Some("other"))
+            .unwrap();
+        assert_ne!(key, other);
     }
 }
