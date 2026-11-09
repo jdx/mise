@@ -91,13 +91,12 @@ in the login profile, with the limits described above.
 
 Agents often work in a git worktree, such as `.claude/worktrees/<name>`. The
 `hook-env` line needs nothing per worktree, because it reads the config of
-whichever directory the command runs in. Two things to check:
+whichever directory the command runs in. Shims are the likelier trap here: a
+worktree is often where `No version is set for shim` appears, since the shim
+resolves tools from the worktree's own config.
 
-- A new worktree is a new path. If mise reports the config as untrusted, run
-  `mise trust` there, or trust the parent directory once with
-  [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).
-- Installed tools live in mise's data directory, not in the worktree, so a new
-  worktree does not reinstall them.
+Installed tools live in mise's data directory, not in the worktree, so a new
+worktree does not reinstall them.
 
 ## Related
 
