@@ -957,6 +957,13 @@ fn build(
     } else {
         // A `run` or `task` daemon declares extra ports by name, like a container.
         container_ports = take_named_ports(name, &mut table, &root, claim)?;
+        // pitchfork's own `port` table is forwarded untouched; the expected
+        // ports below would replace it, dropping its other listeners and options.
+        if !container_ports.is_empty() && claim.is_none() && table.contains_key("port") {
+            bail!(
+                "[daemons.{name}].ports cannot be combined with pitchfork's structured port; use an integer or {{ auto = true, base = <port> }} for port"
+            );
+        }
     }
     // Every published port is reserved, so a taken one fails the start by name.
     let expect: Vec<u16> = claim
@@ -3056,6 +3063,10 @@ mod tests {
 
         let err = |body: &str| load_body(body).unwrap_err().to_string();
         assert!(err("[daemons.s]\nrun = 'x'\nports.app = { auto = true }").contains("needs base"));
+        assert!(
+            err("[daemons.s]\nrun = 'x'\nport = { expect = [3000] }\nports.admin = 9000")
+                .contains("structured port")
+        );
         assert!(
             err("[daemons.s]\nrun = 'x'\nports.app = 1\nports.app_port = 2")
                 .contains("same variable")

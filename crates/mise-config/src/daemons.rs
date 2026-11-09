@@ -249,6 +249,8 @@ pub struct DaemonTaskDecl {
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_init")]
     pub init: Option<DaemonInit>,
+    /// More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.
+    pub ports: Option<std::collections::BTreeMap<String, DaemonCommandNamedPort>>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy")]
     pub proxy: Option<DaemonProxy>,
