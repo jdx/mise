@@ -860,7 +860,7 @@ pub fn is_not_found(err: &eyre::Report) -> bool {
                 // mise-versions' own missing-tag errors (`after_mirror_404`
                 // and `ensure_private_repo_lookup` in github.rs) word it so.
                 let message = cause.to_string();
-                message.contains("404 Not Found")
+                message.contains("client error (404")
                     || message.contains("(404 from mise-versions.jdx.dev")
             }
     }

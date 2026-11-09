@@ -453,3 +453,12 @@ fn test_the_mirrors_missing_tag_errors_are_not_found() {
         assert!(crate::versions_host::is_not_found(&eyre::eyre!(message)));
     }
 }
+
+#[test]
+fn test_a_server_error_whose_body_says_404_is_not_a_not_found() {
+    let mirror = eyre::eyre!("mise-versions timed out");
+    let github = eyre::eyre!("HTTP status server error (500): upstream said 404 Not Found");
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(!crate::versions_host::is_not_found(&failed));
+}

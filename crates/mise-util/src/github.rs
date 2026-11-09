@@ -697,6 +697,23 @@ pub async fn list_release_versions_with_asset(
     repo: &str,
     asset: &str,
 ) -> Result<Vec<ReleaseVersion>> {
+    release_versions_with_asset(repo, asset, false).await
+}
+
+/// [`list_release_versions_with_asset`] fetched afresh, replacing the cached
+/// copy, for a caller whose release is missing from the listing it has.
+pub async fn refresh_release_versions_with_asset(
+    repo: &str,
+    asset: &str,
+) -> Result<Vec<ReleaseVersion>> {
+    release_versions_with_asset(repo, asset, true).await
+}
+
+async fn release_versions_with_asset(
+    repo: &str,
+    asset: &str,
+    refresh: bool,
+) -> Result<Vec<ReleaseVersion>> {
     // Cached like the unfiltered list, so a copy saved earlier can stand in
     // while mise-versions is temporarily unavailable.
     let key = format!(
@@ -713,32 +730,47 @@ pub async fn list_release_versions_with_asset(
                 .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
                 .build()
         });
+    if refresh {
+        let mut caches = RELEASE_VERSIONS_CACHE.write().await;
+        let cache = caches.get_mut(&key).unwrap();
+        return match cache
+            .refresh_async(|| Box::pin(fetch_release_versions_with_asset(repo, asset)))
+            .await
+        {
+            Ok(versions) => Ok(versions),
+            Err(err) => stale_on_temporary_failure(cache, err),
+        };
+    }
     let caches = RELEASE_VERSIONS_CACHE.read().await;
     let cache = caches.get(&key).unwrap();
     cached_or_stale(cache, async || {
-        if mirrors_github_metadata(API_URL, repo)
-            && let Some(list) = whole_list(
-                repo,
-                crate::versions_host::GithubList::ReleasesWithAsset(asset),
-            )
-            .await
-            .filter(all_releases_dated)
-        {
-            return Ok(list.releases.into_iter().map(Into::into).collect());
-        }
-
-        // Same page budget as the release mirror, rather than the generic
-        // listing's bounded search for any stable release. Kept separate from
-        // that listing and its cache, which may hold only the first page of a
-        // busy monorepo.
-        let releases = list_releases_page_budget(repo).await?;
-        Ok(releases
-            .into_iter()
-            .filter(|r| !r.draft && r.assets.iter().any(|a| a.name == asset))
-            .map(Into::into)
-            .collect())
+        fetch_release_versions_with_asset(repo, asset).await
     })
     .await
+}
+
+async fn fetch_release_versions_with_asset(repo: &str, asset: &str) -> Result<Vec<ReleaseVersion>> {
+    if mirrors_github_metadata(API_URL, repo)
+        && let Some(list) = whole_list(
+            repo,
+            crate::versions_host::GithubList::ReleasesWithAsset(asset),
+        )
+        .await
+        .filter(all_releases_dated)
+    {
+        return Ok(list.releases.into_iter().map(Into::into).collect());
+    }
+
+    // Same page budget as the release mirror, rather than the generic
+    // listing's bounded search for any stable release. Kept separate from
+    // that listing and its cache, which may hold only the first page of a
+    // busy monorepo.
+    let releases = list_releases_page_budget(repo).await?;
+    Ok(releases
+        .into_iter()
+        .filter(|r| !r.draft && r.assets.iter().any(|a| a.name == asset))
+        .map(Into::into)
+        .collect())
 }
 
 /// The newest stable release in mise-versions' whole list of `repo`'s

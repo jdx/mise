@@ -1560,7 +1560,7 @@ impl PackslipBackend {
                 &self.ba, &cache,
             ));
         }
-        let fetch = || self.fetch_vendor_listing(project, repo);
+        let fetch = || self.fetch_vendor_listing(project, repo, refresh);
         if refresh {
             cache.refresh_async(fetch).await
         } else {
@@ -1568,27 +1568,35 @@ impl PackslipBackend {
         }
     }
 
-    async fn fetch_vendor_listing(&self, project: &str, repo: &str) -> Result<Vec<VersionInfo>> {
+    async fn fetch_vendor_listing(
+        &self,
+        project: &str,
+        repo: &str,
+        refresh: bool,
+    ) -> Result<Vec<VersionInfo>> {
         if let Some(versions) = self.mirrored_versions().await? {
             return Ok(versions);
         }
         let asset_name = bundle_name(project);
         // GitHub's prerelease flag is not consulted: the version says.
-        let mut versions: Vec<VersionInfo> =
-            github::list_release_versions_with_asset(repo, &asset_name)
-                .await?
-                .into_iter()
-                .filter_map(|r| {
-                    version_info(
-                        tag_version(&r.tag_name, project),
-                        r.released_at,
-                        Some(format!(
-                            "https://github.com/{repo}/releases/tag/{}",
-                            r.tag_name
-                        )),
-                    )
-                })
-                .collect();
+        let releases = if refresh {
+            github::refresh_release_versions_with_asset(repo, &asset_name).await?
+        } else {
+            github::list_release_versions_with_asset(repo, &asset_name).await?
+        };
+        let mut versions: Vec<VersionInfo> = releases
+            .into_iter()
+            .filter_map(|r| {
+                version_info(
+                    tag_version(&r.tag_name, project),
+                    r.released_at,
+                    Some(format!(
+                        "https://github.com/{repo}/releases/tag/{}",
+                        r.tag_name
+                    )),
+                )
+            })
+            .collect();
         versions.reverse();
         Ok(versions)
     }
@@ -1758,6 +1766,7 @@ impl PackslipBackend {
             })
         };
         let mut found = None;
+        let mut probe_error = None;
         if let Some(tag) = self.mirrored_tag(project, &tv.version).await? {
             let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
             found = find(std::slice::from_ref(&release));
@@ -1774,8 +1783,14 @@ impl PackslipBackend {
             for tag in [tv.version.clone(), format!("v{}", tv.version)] {
                 match github::get_release_with_versions_host(&repo, &tag, true).await {
                     Ok(release) => found = find(std::slice::from_ref(&release)),
+                    // A missing tag is the common case; any other failure
+                    // still lets the catalog try, and is reported if it
+                    // cannot find the release either.
                     Err(err) if crate::versions_host::is_not_found(&err) => continue,
-                    Err(err) => return Err(err),
+                    Err(err) => {
+                        probe_error.get_or_insert(err);
+                        continue;
+                    }
                 }
                 if found.is_some() {
                     break;
@@ -1794,14 +1809,32 @@ impl PackslipBackend {
                     .and_then(|v| v.release_url.as_deref())
                     .and_then(release_url_tag)
             };
-            let mut tag = tag_of(&self.vendor_listing(project, &repo, false).await?);
-            if tag.is_none() && !Settings::get().offline() {
-                tag = tag_of(&self.vendor_listing(project, &repo, true).await?);
+            let looked_up: Result<Option<github::GithubRelease>> = async {
+                let mut tag = tag_of(&self.vendor_listing(project, &repo, false).await?);
+                if tag.is_none() && !Settings::get().offline() {
+                    tag = tag_of(&self.vendor_listing(project, &repo, true).await?);
+                }
+                match tag {
+                    Some(tag) => Ok(Some(
+                        github::get_release_with_versions_host(&repo, &tag, true).await?,
+                    )),
+                    None => Ok(None),
+                }
             }
-            if let Some(tag) = tag {
-                let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
-                found = find(std::slice::from_ref(&release));
+            .await;
+            match looked_up {
+                Ok(release) => {
+                    found = release.and_then(|release| find(std::slice::from_ref(&release)));
+                }
+                // The probe's failure explains a miss better than the
+                // catalog's.
+                Err(err) => return Err(probe_error.take().unwrap_or(err)),
             }
+        }
+        if found.is_none()
+            && let Some(err) = probe_error
+        {
+            return Err(err);
         }
         let Some(asset) = found else {
             bail!(
