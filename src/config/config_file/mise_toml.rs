@@ -56,6 +56,60 @@ use super::{tool_key_requires_trust, version_requires_trust};
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
 
+/// Non-string scalars (`uvx = true`) the document already holds for a tool, by option name.
+///
+/// Backend options are stored as strings, so writing them back unchanged would turn
+/// `uvx = true` into `uvx = "true"`.
+fn written_scalar_options(item: Option<&Item>) -> HashMap<String, Value> {
+    fn collect(out: &mut HashMap<String, Value>, key: &str, value: &Value) {
+        if matches!(
+            value,
+            Value::Boolean(_) | Value::Integer(_) | Value::Float(_)
+        ) {
+            out.entry(key.to_string()).or_insert_with(|| {
+                let mut v = value.clone();
+                v.decor_mut().clear();
+                v
+            });
+        }
+    }
+    fn collect_inline(out: &mut HashMap<String, Value>, table: &InlineTable) {
+        for (k, v) in table {
+            collect(out, k, v);
+        }
+    }
+    let mut out = HashMap::new();
+    match item {
+        Some(Item::Table(t)) => {
+            for (k, v) in t {
+                if let Some(v) = v.as_value() {
+                    collect(&mut out, k, v);
+                }
+            }
+        }
+        Some(Item::Value(Value::InlineTable(t))) => collect_inline(&mut out, t),
+        Some(Item::Value(Value::Array(a))) => {
+            for t in a.iter().filter_map(Value::as_inline_table) {
+                collect_inline(&mut out, t);
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// The value to write for an option: the scalar the document already had when it spells the same
+/// value, otherwise the stored value.
+fn option_value_to_edit(key: &str, value: &toml::Value, written: &HashMap<String, Value>) -> Value {
+    if let toml::Value::String(s) = value
+        && let Some(original) = written.get(key)
+        && original.to_string().trim() == s
+    {
+        return original.clone();
+    }
+    toml_value_to_edit(value.clone())
+}
+
 /// Convert a `toml::Value` to a `toml_edit::Value` for serialization.
 fn toml_value_to_edit(v: toml::Value) -> Value {
     match v {
@@ -1783,6 +1837,7 @@ impl ConfigFile for MiseToml {
         // keep the array as it was written so its layout — multi-line shape, trailing comma and any
         // comments between the elements — can be reused when only the versions change. Read before
         // the removal below, which drops the entry when it is stored under a long name.
+        let written_scalars = written_scalar_options(tools.get(&effective));
         let existing_arr = tools
             .get(&existing)
             .and_then(|i| i.as_value())
@@ -1824,7 +1879,7 @@ impl ConfigFile for MiseToml {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
                 for (k, v) in &options.opts {
-                    table.insert(k, toml_value_to_edit(v.clone()));
+                    table.insert(k, option_value_to_edit(k, v, &written_scalars));
                 }
                 insert_core_options(&mut table, options);
                 Item::Value(Value::InlineTable(table))
@@ -1849,7 +1904,7 @@ impl ConfigFile for MiseToml {
                     table.insert("version", v.to_string().into());
                     let options = tr.options();
                     for (k, v) in &options.opts {
-                        table.insert(k, toml_value_to_edit(v.clone()));
+                        table.insert(k, option_value_to_edit(k, v, &written_scalars));
                     }
                     insert_core_options(&mut table, options);
                     table.into()
@@ -6158,6 +6213,48 @@ run = "cargo build"
         let dump = cf.dump().unwrap();
         assert!(dump.contains(r#"dummy = "1.0.1""#));
         assert!(!dump.contains("os"), "empty os should not be written back");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_keeps_scalar_option_types() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".replace-scalar-opts.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "1.0.0", flag = true, count = 3, name = "true" }}
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = "dummy".into();
+        let mut options = ToolVersionOptions::default();
+        for (k, v) in [("flag", "true"), ("count", "3"), ("name", "true")] {
+            options
+                .insert_option(k.to_string(), toml::Value::String(v.to_string()))
+                .unwrap();
+        }
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_with_options(
+                    Arc::new("dummy".into()),
+                    "1.0.1",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("flag = true"), "{dump}");
+        assert!(dump.contains("count = 3"), "{dump}");
+        assert!(dump.contains(r#"name = "true""#), "{dump}");
         file::remove_file(&p).unwrap();
     }
 
