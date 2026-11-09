@@ -22,12 +22,15 @@ chmod u+x ~/bin/cargo ~/bin/fake-wrapper
 export PATH="$HOME/bin:$PATH"
 export MISE_CARGO_BINSTALL=0
 
+# The wrapper is global, like the one mbx setup writes: cargo runs from the install path, outside
+# any project, so a project-level wrapper would not apply there and the test would prove nothing.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOS'
+[wrappers.cargo]
+command = "fake-wrapper"
+EOS
 cat >mise.toml <<'EOS'
 [tools]
 "cargo:wrapper-test" = "1.0.0"
-
-[wrappers.cargo]
-command = "fake-wrapper"
 EOS
 mise reshim
 assert_succeed "mise install cargo:wrapper-test@1.0.0"
