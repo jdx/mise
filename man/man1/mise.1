@@ -8918,6 +8918,11 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
 \fB\-\-all\fR
 Open the task picker with tasks from every project in the monorepo
 .TP
+\fB\-\-multi\fR
+Open the task picker as a checklist and run every task you check
+
+Space checks a task, `/` filters, and Enter runs the checked tasks as if they were named with `:::`. Needs an interactive terminal. Combine with `\-\-all` to list the tasks from every project in the monorepo.
+.TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
