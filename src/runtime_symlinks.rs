@@ -288,10 +288,9 @@ fn list_symlinks_for_dir(
                     .filter(|(b, _)| b.ba() == backend.ba())
                     .map(|(_, tv)| tv)
                     .collect_vec();
-                let requested = global
-                    .list_versions_by_plugin()
-                    .iter()
-                    .any(|(b, tvl)| b.ba() == backend.ba() && !tvl.requests.is_empty());
+                let requested = global.list_versions_by_plugin().iter().any(|(b, tvl)| {
+                    b.ba() == backend.ba() && tvl.os_supported_requests().next().is_some()
+                });
                 selected
                     .iter()
                     .find_map(|tv| {
@@ -350,14 +349,16 @@ fn pin_in_dir(
     // A legacy graph install keeps a suffix `tv_pathname` omits, but the
     // retained path names it, so try that basename first. An identity-layout
     // path is a hash, never a name in this dir.
-    let retained = crate::install_layout::resolver::dir_name_of(&install_path)
-        .is_none()
-        .then(|| {
-            install_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-        })
-        .flatten();
+    // A `path:` request names an arbitrary directory, whose basename says
+    // nothing about this dir's installs.
+    let retained = (crate::install_layout::resolver::dir_name_of(&install_path).is_none()
+        && !matches!(tv.request, ToolRequest::Path { .. }))
+    .then(|| {
+        install_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+    })
+    .flatten();
     retained
         .into_iter()
         .chain([tv.tv_pathname()])

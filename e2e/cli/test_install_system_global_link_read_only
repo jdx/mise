@@ -33,3 +33,8 @@ trap 'chmod -R u+w "$MISE_SYSTEM_DATA_DIR" 2>/dev/null || true' EXIT
 
 assert_succeed "mise install dummy@1.0.0"
 assert "readlink $SYSTEM_INSTALLS/tiny/global" "./2.1.0"
+
+# Without any system config, the administrator's link still stays.
+rm "$MISE_SYSTEM_CONFIG_DIR/config.toml"
+assert_succeed "mise install dummy@2.1.0"
+assert "readlink $SYSTEM_INSTALLS/tiny/global" "./2.1.0"
