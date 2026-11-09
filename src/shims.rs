@@ -2156,7 +2156,12 @@ fn preferred_installed_version(tvs: &[ToolVersion]) -> Option<&ToolVersion> {
         .ok()
         .and_then(|b| b.latest_installed_version(None).ok().flatten());
     latest
-        .and_then(|v| same_tool.iter().find(|tv| tv.version == v).copied())
+        .and_then(|v| {
+            same_tool
+                .iter()
+                .find(|tv| tv.version == v || tv.tv_pathname() == v)
+                .copied()
+        })
         .or_else(|| same_tool.last().copied())
 }
 
