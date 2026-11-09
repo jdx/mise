@@ -7558,11 +7558,24 @@ fn cascaded_task_config_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Result<Option<CascadedTaskConfig>> {
+    // This runs once per directory and checks every config file's root, so with many
+    // configs (e.g. `mise prune`/`upgrade` scanning every tracked project) it is
+    // quadratic in `realpath` calls unless the resolutions are cached.
+    let dir_resolved = file::desymlink_path_cached(dir);
     let mut roots = config_files
         .values()
-        .filter(|cf| !is_global_config(cf.get_path()))
-        .map(|cf| cf.config_root())
-        .filter(|root| !file::same_file(root, dir) && file::path_starts_with_resolved(dir, root))
+        .map(|cf| (cf, cf.config_root()))
+        .filter(|(_, root)| {
+            if root == dir {
+                return false;
+            }
+            let root_resolved = file::desymlink_path_cached(root);
+            root_resolved != dir_resolved
+                && (dir.starts_with(root) || dir_resolved.starts_with(&root_resolved))
+        })
+        // Last, because it is the costliest check and few roots get this far.
+        .filter(|(cf, _)| !is_global_config(cf.get_path()))
+        .map(|(_, root)| root)
         .unique()
         .collect::<Vec<_>>();
     roots.sort_by_key(|root| root.components().count());
