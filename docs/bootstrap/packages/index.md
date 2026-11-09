@@ -59,7 +59,8 @@ installs missing packages but does not upgrade installed ones. Run
 
 ## Supported package managers
 
-The `manager:` prefix in each key is required. Each manager's page covers its
+A `manager:` prefix names the manager for a key; a key without one picks a
+manager for you, see [Unprefixed packages](#unprefixed-packages). Each manager's page covers its
 prerequisites, package names, and the commands mise runs.
 
 | Manager                                                     | Runs on                                           | Version pins                                        | `state = "absent"` | Import, prune                             |
@@ -98,6 +99,39 @@ options:
 "brew-cask:slack" = { env = "work" }
 ```
 
+### Unprefixed packages
+
+A key without a `manager:` prefix installs through exactly one manager, so one
+config can serve machines that use different package managers:
+
+```toml
+[bootstrap.packages]
+git = "latest"
+fish = "latest"
+openssl = { names = { apt = "libssl-dev", dnf = "openssl-devel" } }
+```
+
+mise picks the first manager that is available on the machine and not excluded by
+[`system_packages.managers`](/configuration/settings.html#system_packages.managers).
+Without configuration the order is the distribution's own manager (`apt`, `dnf`,
+`pacman`, `zypper`, `apk`), then `brew`, `winget`, `scoop`, and `choco`. So
+`git` uses apt on Ubuntu even though the built-in Homebrew manager also runs
+there, dnf on Fedora, brew on macOS, and winget on Windows. Set
+[`system_packages.prefer`](/configuration/settings.html#system_packages.prefer)
+to change the order; the list names the only managers an unprefixed key may use.
+
+- The choice depends only on which managers are available, never on what their
+  repositories contain. A package that cannot be installed is an error, and mise
+  does not retry with the next manager.
+- The package name is the key, unless `names` gives another for the selected
+  manager, as in `openssl` above.
+- A key with a prefix, such as `"apt:git"`, keeps its manager and ignores
+  `system_packages.prefer`.
+- If no candidate is available, mise warns and skips the entry.
+- Version pins use the selected manager's format, so pin an unprefixed entry only
+  when every candidate accepts the same version string.
+- `MISE_DEBUG=1` logs the selected manager and why.
+
 ### Entry options
 
 | Key                         | Managers                    | Meaning                                                                                                                                                                                                                            |
@@ -105,6 +139,7 @@ options:
 | `version`                   | All                         | `"latest"` (the default) or a [version pin](#version-pins) in the manager's own format.                                                                                                                                            |
 | `os`                        | All                         | Install only on these operating systems; see [By operating system](#by-operating-system).                                                                                                                                          |
 | `env`                       | All                         | Install only when one of these [config environments](/configuration/environments.html) is active; see [By config environment](#by-config-environment).                                                                             |
+| `names`                     | Unprefixed keys             | Package name per manager, such as `{ apt = "libssl-dev" }`; see [Unprefixed packages](#unprefixed-packages).                                                                                                                       |
 | `state`                     | pacman, scoop, snap, zypper | `"present"` (the default) or `"absent"`; see [Remove packages](#remove-a-package-declaratively).                                                                                                                                   |
 | `adopt`                     | brew-cask, macos-app        | Take over an identical app that is already installed instead of replacing it; see [brew-cask](/bootstrap/packages/brew-cask.html#adopt-an-existing-app) and [macos-app](/bootstrap/packages/macos-app.html#adopt-an-existing-app). |
 | `appdir`                    | brew-cask                   | Application directory for this cask; see [Application directory](/bootstrap/packages/brew-cask.html#overriding-the-application-directory).                                                                                         |

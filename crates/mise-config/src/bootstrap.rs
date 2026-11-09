@@ -48,11 +48,11 @@ pub struct BootstrapTomlConfig {
     #[serde(default)]
     #[schemars(schema_with = "plugin_urls")]
     pub plugins: IndexMap<String, String>,
-    /// system packages to install with `mise bootstrap packages apply`, keyed by "manager:package" (e.g. "apt:libssl-dev", "brew:postgresql@17", "dnf:openssl-devel", "pacman:base-devel")
+    /// system packages to install with `mise bootstrap packages apply`, keyed by "manager:package", or by a bare package name that mise installs with one manager chosen from system_packages.prefer (e.g. "apt:libssl-dev", "brew:postgresql@17", "dnf:openssl-devel", "pacman:base-devel")
     // String-keyed so configs using managers from newer mise versions (dnf, pacman, winget, ...)
     // parse fine on older ones.
     #[serde(default)]
-    #[schemars(extend("propertyNames" = {"pattern": "^[A-Za-z0-9_-]+:.+$"}))]
+    #[schemars(extend("propertyNames" = {"pattern": "^([A-Za-z0-9_-]+:.+|[^:\\s]+)$"}))]
     pub packages: IndexMap<String, PackageTomlConfig>,
     /// git repositories to clone or update with `mise bootstrap repos apply`, keyed by target path
     #[serde(default)]

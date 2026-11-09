@@ -282,6 +282,59 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
     }
 }
 
+/// Managers an unprefixed key tries when `system_packages.prefer` is unset: the
+/// distribution's own manager before Homebrew, which also runs on Linux, and
+/// before the Windows ones.
+const DEFAULT_MANAGER_PREFERENCE: &[&str] = &[
+    "apt", "dnf", "pacman", "zypper", "apk", "brew", "winget", "scoop", "choco",
+];
+
+/// Names of the managers that can run on this machine and that
+/// `system_packages.managers` allows.
+fn available_manager_names() -> Vec<String> {
+    packages::all_managers()
+        .into_iter()
+        .filter(|manager| manager.is_available() && package_manager_is_enabled(manager.name()))
+        .map(|manager| manager.name().to_string())
+        .collect()
+}
+
+/// Pick the one manager for a `[bootstrap.packages]` key without a prefix.
+///
+/// The choice depends only on which managers are available, never on the
+/// package repositories, so the same config plans the same way on every
+/// machine with the same managers. A failed install is an error; it does not
+/// move on to the next manager.
+fn resolve_unprefixed(
+    key: &str,
+    package: &PackageTomlConfig,
+    available: &[String],
+) -> eyre::Result<(String, String)> {
+    let settings = mise_settings::Settings::get();
+    let configured = settings.system_packages.prefer.as_deref();
+    let candidates: Vec<&str> = match configured {
+        Some(list) => list.iter().map(String::as_str).collect(),
+        None => DEFAULT_MANAGER_PREFERENCE.to_vec(),
+    };
+    let Some(manager) = candidates
+        .iter()
+        .find(|name| available.iter().any(|a| a == **name))
+    else {
+        bail!(
+            "no package manager is available for '{key}': tried {}. Prefix the key with a manager such as \"apt:{key}\"",
+            candidates.join(", ")
+        );
+    };
+    let reason = if configured.is_some() {
+        "system_packages.prefer"
+    } else {
+        "default order"
+    };
+    let name = package.name_for(manager).unwrap_or(key);
+    debug!("[bootstrap.packages]: '{key}' uses {manager}:{name} ({reason})");
+    Ok(((*manager).to_string(), name.to_string()))
+}
+
 /// Split a `mise bootstrap packages use` spec `manager:package[@version]` into its parts.
 ///
 /// `@version` mirrors `mise use tool@version`; `@latest` (or no `@`) means no
@@ -688,6 +741,7 @@ fn package_requests_from_config_files(
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
+    let available_managers = std::cell::LazyCell::new(available_manager_names);
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
@@ -697,7 +751,12 @@ fn package_requests_from_config_files(
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this environment");
             continue;
         }
-        match parse_spec(&spec) {
+        let parsed = if spec.contains(':') {
+            parse_spec(&spec)
+        } else {
+            resolve_unprefixed(&spec, &package, &available_managers)
+        };
+        match parsed {
             Ok((mgr, name)) => {
                 let version = package.version();
                 let version = (version != "latest").then(|| version.to_string());
@@ -3753,6 +3812,7 @@ mod tests {
             artifact: None,
             channel: None,
             classic: None,
+            names: Default::default(),
         });
 
         assert!(package.is_env_supported(&["work".to_string()]));
