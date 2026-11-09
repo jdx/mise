@@ -546,6 +546,9 @@ configured, otherwise rustup or the system installation. For mise-managed Rust,
 the [Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this
 up with the `mr_boxington` tool option and the `mr-boxington` tool.
 
+mise installs tools without command wrappers on `PATH`. A `cargo` wrapper does not
+take over the `cargo install` that a `cargo:` tool runs.
+
 Other wrappers still apply. If `pnpm` and `node` are both wrapped, a script that
 `pnpm` runs gets the `node` wrapper, with its `args` and `env`, while `pnpm`'s own
 lookups of `pnpm` reach the real tool. mise records the running wrappers in the

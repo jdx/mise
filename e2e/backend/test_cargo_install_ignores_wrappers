@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# A [wrappers] entry reroutes the commands a project runs, not the ones mise runs to install its
+# tools. With cargo wrapped (as mbx setup does), `mise install cargo:...` must reach the real
+# cargo, not the wrapper. (jdx/mr-boxington#919)
+
+cat >~/bin/cargo <<'EOS'
+#!/usr/bin/env bash
+while (($#)); do
+  if [[ $1 == "--root" ]]; then
+    mkdir -p "$2/bin"
+    exit 0
+  fi
+  shift
+done
+EOS
+cat >~/bin/fake-wrapper <<'EOS'
+#!/usr/bin/env bash
+echo "wrapper must not run during install" >&2
+exit 1
+EOS
+chmod u+x ~/bin/cargo ~/bin/fake-wrapper
+export PATH="$HOME/bin:$PATH"
+export MISE_CARGO_BINSTALL=0
+
+cat >mise.toml <<'EOS'
+[tools]
+"cargo:wrapper-test" = "1.0.0"
+
+[wrappers.cargo]
+command = "fake-wrapper"
+EOS
+mise reshim
+assert_succeed "mise install cargo:wrapper-test@1.0.0"
+assert_succeed "test -d '$(mise where cargo:wrapper-test@1.0.0)/bin'"
