@@ -473,3 +473,14 @@ fn test_a_server_error_body_quoting_a_client_error_is_not_a_not_found() {
         crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
     assert!(!crate::versions_host::is_not_found(&failed));
 }
+
+#[test]
+fn test_a_mirror_server_error_quoting_a_client_error_is_not_a_not_found() {
+    let mirror = eyre::eyre!(
+        "HTTP status server error (500): HTTP status client error (404 Not Found) for url (x)"
+    );
+    let github = eyre::eyre!("HTTP status server error (502)");
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(!crate::versions_host::is_not_found(&failed));
+}

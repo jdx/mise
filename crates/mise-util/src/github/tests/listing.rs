@@ -795,3 +795,81 @@ async fn test_list_releases_paginates_after_shrinking_the_page() {
         ["v2.0.0-alpha.1", "v1.0.0"]
     );
 }
+
+#[tokio::test]
+async fn test_refreshing_asset_versions_replaces_the_cached_listing() {
+    use confique::Layer;
+
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _settings = SettingsGuard {
+        _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+    };
+    let mut server = mockito::Server::new_async().await;
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.url_replacements = Some(indexmap::IndexMap::from([(
+        API_URL.to_string(),
+        server.url(),
+    )]));
+    settings.http_retries = Some(0);
+    crate::testing::reset_settings(Some(settings));
+
+    let repo = format!("owner/packslip-refresh-{}", server.socket_address().port());
+    let asset = "packslip.sigstore.json";
+    let release = |tag: &str| GithubRelease {
+        assets: vec![make_asset(asset)],
+        ..make_release(tag)
+    };
+    let path = format!("/repos/{repo}/releases?per_page=100");
+    let before = server
+        .mock("GET", path.as_str())
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&vec![release("pkg@1.0.0")]).unwrap())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let tags = |versions: &[ReleaseVersion]| {
+        versions
+            .iter()
+            .map(|r| r.tag_name.clone())
+            .collect::<Vec<_>>()
+    };
+    let first = list_release_versions_with_asset(&repo, asset)
+        .await
+        .unwrap();
+    assert_eq!(tags(&first), ["pkg@1.0.0"]);
+    before.assert_async().await;
+
+    // The release published since is absent from the cached listing, which a
+    // plain read keeps serving.
+    let after = server
+        .mock("GET", path.as_str())
+        .with_header("content-type", "application/json")
+        .with_body(
+            serde_json::to_string(&vec![release("pkg@2.0.0"), release("pkg@1.0.0")]).unwrap(),
+        )
+        .expect(1)
+        .create_async()
+        .await;
+    let cached = list_release_versions_with_asset(&repo, asset)
+        .await
+        .unwrap();
+    assert_eq!(tags(&cached), ["pkg@1.0.0"]);
+
+    let refreshed = refresh_release_versions_with_asset(&repo, asset)
+        .await
+        .unwrap();
+    assert_eq!(tags(&refreshed), ["pkg@2.0.0", "pkg@1.0.0"]);
+    after.assert_async().await;
+    let reread = list_release_versions_with_asset(&repo, asset)
+        .await
+        .unwrap();
+    assert_eq!(tags(&reread), ["pkg@2.0.0", "pkg@1.0.0"]);
+}
