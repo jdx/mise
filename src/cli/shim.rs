@@ -501,8 +501,11 @@ async fn which_shim(
     if tvs.is_empty() && shim_name != bin_name {
         tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
     }
-    if let Some(bin) =
-        crate::shims::installed_fallback_bin(config, &mut ts, &tvs, shim_name, bin_name).await?
+    // A configured tool with a missing version that may provide this command keeps its own error:
+    // another installed tool shipping the same executable must not stand in for a pinned one.
+    if !missing_version_may_provide(config, &ts, shim_name, bin_name).await
+        && let Some(bin) =
+            crate::shims::installed_fallback_bin(config, &mut ts, &tvs, shim_name, bin_name).await?
     {
         return Ok((ShimCommand::Tool(bin), ts));
     }
