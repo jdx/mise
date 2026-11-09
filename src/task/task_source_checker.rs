@@ -797,13 +797,23 @@ impl DirPruner {
                 .any(|matcher| matcher.matched(relative, true).is_whitelist())
     }
 
-    /// An iterator over `dir` that does not enter excluded directories.
+    /// An iterator over `dir` that yields every directory but does not enter
+    /// the excluded ones, `dir` itself included. A directory the matcher still
+    /// selects (`outputs = ["dist", "!dist/cache/**"]` selects `dist/cache`)
+    /// must stay in the results so deleting it is noticed.
     pub(crate) fn walk_dir(&self, dir: &Path) -> impl Iterator<Item = Result<DirEntry, WalkError>> {
         let pruner = self.clone();
-        WalkDir::new(dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(move |entry| !(entry.depth() > 0 && pruner.excludes(entry.path())))
+        let mut walker = WalkDir::new(dir).follow_links(true).into_iter();
+        std::iter::from_fn(move || {
+            let entry = walker.next()?;
+            if let Ok(entry) = &entry
+                && entry.file_type().is_dir()
+                && pruner.excludes(entry.path())
+            {
+                walker.skip_current_dir();
+            }
+            Some(entry)
+        })
     }
 }
 
@@ -2016,6 +2026,40 @@ mod tests {
 
         let outputs = ["!dist/.vite".to_string(), "dist/.vite/keep".to_string()];
         assert!(!DirPruner::for_outputs(root, &outputs).excludes(&root.join("dist/.vite")));
+    }
+
+    #[test]
+    fn pruner_walk_keeps_excluded_directories_without_entering_them() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("dist/cache/inner"))?;
+        fs::write(root.join("dist/a.txt"), "")?;
+        fs::write(root.join("dist/cache/inner/b.txt"), "")?;
+        let outputs = ["dist".to_string(), "!dist/cache/**".to_string()];
+        let pruner = DirPruner::for_outputs(root, &outputs);
+
+        let walked = pruner
+            .walk_dir(&root.join("dist"))
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .sorted()
+            .collect_vec();
+        assert_eq!(
+            walked,
+            [
+                root.join("dist"),
+                root.join("dist/a.txt"),
+                root.join("dist/cache"),
+            ]
+        );
+
+        // Starting inside an excluded directory does not descend either.
+        let inside = pruner
+            .walk_dir(&root.join("dist/cache"))
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(inside.len(), 1);
+        Ok(())
     }
 
     #[test]
