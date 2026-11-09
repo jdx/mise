@@ -1720,6 +1720,26 @@ Values below one second count as one second. To stop automatic fetching, set
 env = "MISE_HISTORY_FETCH_INTERVAL"
 type = "Duration"
 
+[history.lock_wait]
+default = "30s"
+description = "How long a command waits for another history operation before failing."
+docs = """
+Operations that record history take a lock on the history store, so only one
+runs at a time. A command that finds the lock held waits this long for it, then
+fails with `another history operation is running`. `0` fails at once. Values
+above `1h` count as `1h`.
+
+A script that needs its own checkpoint can set it for one run:
+
+```sh
+MISE_HISTORY_LOCK_WAIT=5m mise dot save --message "before upgrade"
+```
+
+`mise dot watch` and `mise dot recover` never wait, whatever this is set to.
+"""
+env = "MISE_HISTORY_LOCK_WAIT"
+type = "Duration"
+
 [history.notify]
 default = true
 description = "Show a desktop notification when a sync conflict pauses sharing."

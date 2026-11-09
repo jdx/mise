@@ -207,7 +207,7 @@ impl OperationScope {
     }
 
     pub async fn begin_kind(kind: OperationKind, command: &str, dry_run: bool) -> Result<Self> {
-        Self::begin_with_wait(kind, command, dry_run, OPERATION_LOCK_WAIT, false).await
+        Self::begin_with_wait(kind, command, dry_run, operation_lock_wait(), false).await
     }
 
     /// The watcher retries contention later rather than delaying its event loop.
@@ -230,7 +230,7 @@ impl OperationScope {
             OperationKind::Apply,
             "bootstrap --adopt --replace-history",
             false,
-            OPERATION_LOCK_WAIT,
+            operation_lock_wait(),
             true,
         )
         .await
@@ -353,7 +353,8 @@ impl OperationScope {
                 return;
             }
         }
-        let started = tokio::task::spawn_blocking(|| open_lazy(OPERATION_LOCK_WAIT)).await;
+        let wait = operation_lock_wait();
+        let started = tokio::task::spawn_blocking(move || open_lazy(wait)).await;
         match started {
             Ok(Ok(true)) => {}
             // an earlier write already ran without a journal; no second try
@@ -915,7 +916,7 @@ fn would_record(state_dir: &Path, tracked: &TrackedSet, kind: OperationKind) -> 
 /// own (an explicit save) holds this for its duration too, so it never
 /// interleaves with a bootstrap, rollback, or undo.
 pub fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::LockFile> {
-    take_operation_lock_with_wait(store, tracked, OPERATION_LOCK_WAIT)
+    take_operation_lock_with_wait(store, tracked, operation_lock_wait())
 }
 
 /// Network synchronization may skip a capture while a write operation owns
@@ -1014,8 +1015,24 @@ fn acquire_operation_lock(store: &Store, wait: std::time::Duration) -> Result<fs
     Ok(lock)
 }
 
-/// How long an operation waits for a running one, and how often it looks.
-const OPERATION_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long an operation waits for a running one (`history.lock_wait`), and
+/// how often it looks. An unreadable value falls back to the default rather
+/// than failing a command that only wanted to save.
+fn operation_lock_wait() -> std::time::Duration {
+    const DEFAULT: std::time::Duration = std::time::Duration::from_secs(30);
+    match parse_lock_wait(&Settings::get().history.lock_wait) {
+        Ok(wait) => wait,
+        Err(err) => {
+            warn!("history.lock_wait: {err}; using {DEFAULT:?}");
+            DEFAULT
+        }
+    }
+}
+
+fn parse_lock_wait(value: &str) -> Result<std::time::Duration> {
+    const MAX: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+    Ok(mise_util::duration::parse_duration(value)?.min(MAX))
+}
 const OPERATION_LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Closes the pending records of operations that died. Only the holder of
@@ -1453,5 +1470,15 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn lock_wait_accepts_durations_and_caps_at_one_hour() -> Result<()> {
+        assert_eq!(parse_lock_wait("5m")?.as_secs(), 300);
+        assert_eq!(parse_lock_wait("45")?.as_secs(), 45);
+        assert!(parse_lock_wait("0")?.is_zero());
+        assert_eq!(parse_lock_wait("2h")?.as_secs(), 3600);
+        assert!(parse_lock_wait("soon").is_err());
+        Ok(())
     }
 }

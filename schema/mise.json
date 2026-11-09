@@ -2307,6 +2307,11 @@
               "description": "How often the history watcher fetches from the setup repository.",
               "type": "string"
             },
+            "lock_wait": {
+              "default": "30s",
+              "description": "How long a command waits for another history operation before failing.",
+              "type": "string"
+            },
             "notify": {
               "default": true,
               "description": "Show a desktop notification when a sync conflict pauses sharing.",
