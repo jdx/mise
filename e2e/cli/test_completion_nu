@@ -18,6 +18,7 @@ assert_contains "mise activate nu" 'string@"nu-complete mise"'
 if command -v nu >/dev/null 2>&1; then
   mise activate nu | awk '/^def "nu-complete mise"/,/^}$/' | sed 's/^def /export def /' >"$HOME/mise-complete.nu"
   run_nu() { nu -n -c "use $HOME/mise-complete.nu *; $1"; }
+  export -f run_nu
   assert "run_nu \"nu-complete mise 'mise inst' | get value | str join ' '\"" "install install-into installs"
   assert_contains "run_nu \"nu-complete mise 'mise install' | get description | first\"" "Install"
 fi
