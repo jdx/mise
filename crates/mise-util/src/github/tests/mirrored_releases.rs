@@ -443,3 +443,13 @@ fn test_a_version_in_a_timeout_message_is_not_a_not_found() {
     );
     assert!(!crate::versions_host::is_not_found(&timeout));
 }
+
+#[test]
+fn test_the_mirrors_missing_tag_errors_are_not_found() {
+    for message in [
+        "release 1.2.3 not found (404 from mise-versions.jdx.dev)",
+        "release 1.2.3 not found (404 from mise-versions.jdx.dev, which mise asks before api.github.com). If the repository is private, set GITHUB_TOKEN",
+    ] {
+        assert!(crate::versions_host::is_not_found(&eyre::eyre!(message)));
+    }
+}

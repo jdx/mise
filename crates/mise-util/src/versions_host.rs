@@ -856,7 +856,13 @@ pub fn is_not_found(err: &eyre::Report) -> bool {
             .downcast_ref::<reqwest::Error>()
             .and_then(reqwest::Error::status)
             .is_some_and(|status| status == reqwest::StatusCode::NOT_FOUND)
-            || cause.to_string().contains("404 Not Found")
+            || {
+                // mise-versions' own missing-tag errors (`after_mirror_404`
+                // and `ensure_private_repo_lookup` in github.rs) word it so.
+                let message = cause.to_string();
+                message.contains("404 Not Found")
+                    || message.contains("(404 from mise-versions.jdx.dev")
+            }
     }
     err.chain().any(|cause| {
         names_404(cause)
