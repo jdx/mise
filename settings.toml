@@ -566,7 +566,9 @@ default = false
 description = "Suppress warnings when a newer mise version is available."
 docs = """
 Hides the update notice in `mise version`, `mise --version` and `mise doctor`.
-It is also hidden when mise detects a coding agent, which cannot act on it.
+It is also hidden from the output of `mise version` and `mise doctor` when mise
+detects a coding agent, which cannot act on it. `mise doctor` still lists the
+new version among its warnings.
 Other warnings are unaffected. It does not turn off `mise self-update` or
 automatic updates with [`self_update.auto`](#self_update.auto).
 """
