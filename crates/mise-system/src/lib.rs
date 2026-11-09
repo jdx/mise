@@ -799,8 +799,13 @@ fn package_requests_from_config_files(
         std::collections::HashSet::new();
     // Entries with a prefix go first, so an unprefixed key that resolves to the
     // same package as one of them yields to it.
-    let (explicit, unprefixed): (Vec<_>, Vec<_>) =
+    // Among unprefixed keys, those that install a package go before those that
+    // remove it, so when two disagree the one that installs it wins.
+    let (explicit, mut unprefixed): (Vec<_>, Vec<_>) =
         merged.into_iter().partition(|(spec, _)| spec.contains(':'));
+    unprefixed.sort_by_key(|(_, package)| {
+        package.desired() == mise_system_packages::PackageDesiredState::Absent
+    });
     for (spec, package) in explicit.into_iter().chain(unprefixed) {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
@@ -827,7 +832,6 @@ fn package_requests_from_config_files(
                         continue;
                     }
                 };
-                let mut replace_existing = false;
                 let is_bare = !spec.contains(':');
                 if is_bare {
                     let key = (mgr.clone(), name.clone());
@@ -838,52 +842,21 @@ fn package_requests_from_config_files(
                         let same = existing.version == version
                             && existing.desired == package.desired()
                             && snap_options.get(&name) == incoming_snap.as_ref();
-                        let mut skip = true;
                         if same {
                             debug!("[bootstrap.packages]: '{spec}' repeats {mgr}:{name}");
                         } else if bare_origin.contains(&key) {
-                            // Two unprefixed keys disagree about one package. Never drop
-                            // the package, which would also drop it from prune's keep-list:
-                            // keep the declaration that wants it installed.
-                            let replaces = existing.desired
-                                == mise_system_packages::PackageDesiredState::Absent
-                                && package.desired()
-                                    == mise_system_packages::PackageDesiredState::Present;
+                            // Two unprefixed keys disagree about one package. The one that
+                            // installs it was processed first, and the package is never
+                            // dropped, which would also drop it from prune's keep-list.
                             warn!(
                                 "[bootstrap.packages]: '{spec}' and another unprefixed entry both resolve to '{mgr}:{name}' with a different state or version; keeping the one that installs it"
                             );
-                            if replaces {
-                                // The replaced declaration owns no options any more. Options
-                                // are keyed by package name alone, so clear only the ones
-                                // this manager owns.
-                                if mgr == "snap" {
-                                    snap_options.remove(&name);
-                                }
-                                #[cfg(unix)]
-                                {
-                                    if mgr == "brew-cask" {
-                                        cask_adopt.remove(&name);
-                                        // the alias holds the same directory, unless an
-                                        // explicit entry for the alias set its own
-                                        if let Some(alias) = official_cask_alias(&name)
-                                            && cask_appdirs.get(&alias) == cask_appdirs.get(&name)
-                                        {
-                                            cask_appdirs.remove(&alias);
-                                        }
-                                        cask_appdirs.remove(&name);
-                                    }
-                                }
-                                replace_existing = true;
-                                skip = false;
-                            }
                         } else {
                             warn!(
                                 "[bootstrap.packages]: '{spec}' resolves to '{mgr}:{name}', which another entry already declares; using that entry"
                             );
                         }
-                        if skip {
-                            continue;
-                        }
+                        continue;
                     }
                     bare_origin.insert(key);
                 }
@@ -965,11 +938,6 @@ fn package_requests_from_config_files(
                     #[cfg(unix)]
                     match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
                         Ok(spec) => {
-                            // Cleared only now that the replacing declaration is valid, so
-                            // an invalid one cannot erase the spec it would replace
-                            if replace_existing {
-                                app_adopt.remove(&name);
-                            }
                             app_specs.insert(name.clone(), spec);
                             if adopt_requested.unwrap_or(false) {
                                 app_adopt.insert(name.clone());
@@ -983,9 +951,6 @@ fn package_requests_from_config_files(
                 }
                 if let Some(options) = incoming_snap {
                     snap_options.insert(name.clone(), options);
-                }
-                if replace_existing && let Some(requests) = by_mgr.get_mut(&mgr) {
-                    requests.retain(|r| r.name != name);
                 }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
