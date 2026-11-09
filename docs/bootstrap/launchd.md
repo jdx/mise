@@ -14,8 +14,8 @@ it into your login session.
 To run one program in the background on macOS, Linux, and Windows from a
 single declaration, use a [user service](/bootstrap/services.html#user-services)
 instead. Use a LaunchAgent when you need launchd features such as calendar
-schedules, launch events, queue directories, or a process type. A name cannot be declared in
-both places, because both write the same plist.
+schedules, launch events, queue directories, a process type, or resource limits.
+A name cannot be declared in both places, because both write the same plist.
 
 ## Example
 
@@ -131,6 +131,31 @@ process_type = "Background"
 nice = 10
 ```
 
+## Raise resource limits
+
+launchd starts agents with a soft limit of 256 open files, which a server that
+holds many connections exceeds. `soft_resource_limits` sets the limits the
+program starts with, and `hard_resource_limits` sets the ceilings it cannot
+raise them above. Each is a table of `core`, `cpu`, `data`, `file_size`,
+`memory_lock`, `number_of_files`, `number_of_processes`, `resident_set_size`,
+and `stack`, written to the plist as launchd's `SoftResourceLimits` and
+`HardResourceLimits`. Set only the limits you need; the rest stay as launchd
+leaves them. Sizes are in bytes, `cpu` is in seconds, and a soft limit must not
+exceed the hard limit for the same key.
+
+```toml
+[bootstrap.macos.launchd.agents.proxy]
+program = "~/.local/bin/proxy"
+run_at_load = true
+keep_alive = true
+soft_resource_limits = { number_of_files = 10240 }
+hard_resource_limits = { number_of_files = 65536 }
+```
+
+Without this, the agent would need a shell wrapper such as
+`/bin/sh -c "ulimit -n 10240; exec ~/.local/bin/proxy"` to raise the limit
+itself.
+
 ## Use templates {#templates}
 
 String values are [Tera templates](/templates.html), rendered with the
@@ -218,6 +243,8 @@ Unloading stops the agent's running process.
 | `throttle_interval`       | `ThrottleInterval`                       | Minimum seconds between launches                                           |
 | `process_type`            | `ProcessType`                            | `Background`, `Standard`, `Adaptive`, or `Interactive`                     |
 | `nice`                    | `Nice`                                   | -20 to 20                                                                  |
+| `soft_resource_limits`    | `SoftResourceLimits`                     | Table of `number_of_files`, `stack`, `core`, ...; see above                |
+| `hard_resource_limits`    | `HardResourceLimits`                     | Same keys; each soft limit must not exceed its hard limit                  |
 | `environment`             | `EnvironmentVariables`                   | Table of variables                                                         |
 | `working_directory`       | `WorkingDirectory`                       | `~` expanded                                                               |
 | `stdout_path`             | `StandardOutPath`                        | `~` expanded                                                               |
