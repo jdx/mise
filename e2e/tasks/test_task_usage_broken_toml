@@ -41,3 +41,4 @@ raw_args = true
 run = [{ task = "{{ env.CHILD }}" }]
 TOML
 assert "CHILD=child mise run templated" "child"
+assert_contains "CHILD=child mise run templated 2>&1" "invalid usage spec"

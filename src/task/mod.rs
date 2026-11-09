@@ -4208,11 +4208,36 @@ pub async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
 ) -> Result<IndexMap<String, tera::Value>> {
+    parse_usage_values(config, task, false).await
+}
+
+/// Like [`parse_usage_values_from_task`] for a task that bypasses the usage parser: a spec
+/// that fails to load yields no values, while toolset and environment errors still propagate.
+pub(crate) async fn parse_usage_values_from_bypassed_task(
+    config: &Arc<Config>,
+    task: &Task,
+) -> Result<IndexMap<String, tera::Value>> {
+    parse_usage_values(config, task, true).await
+}
+
+async fn parse_usage_values(
+    config: &Arc<Config>,
+    task: &Task,
+    tolerate_spec_error: bool,
+) -> Result<IndexMap<String, tera::Value>> {
     let ts = config.get_toolset().await?;
     let env = ts.full_env(config).await?;
-    let (spec, _) = task
+    let (spec, _) = match task
         .parse_usage_spec_with_vars(config, None, &env, None)
-        .await?;
+        .await
+    {
+        Ok(parsed) => parsed,
+        Err(err) if tolerate_spec_error => {
+            trace!("Usage parser bypassed, spec failed to load: {err}");
+            return Ok(IndexMap::new());
+        }
+        Err(err) => return Err(err),
+    };
     if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() && spec.cmd.subcommands.is_empty() {
         return Ok(IndexMap::new());
     }
