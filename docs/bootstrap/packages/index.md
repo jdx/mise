@@ -126,7 +126,13 @@ to change the order; the list names the only managers an unprefixed key may use.
 - The package name is the key, unless `names` gives another for the selected
   manager, as in `openssl` above.
 - A key with a prefix, such as `"apt:git"`, keeps its manager and ignores
-  `system_packages.prefer`.
+  `system_packages.prefer`. If an unprefixed key resolves to a package that a
+  prefixed key already declares, such as `git` and `"apt:git"` on Ubuntu, mise
+  warns and uses the prefixed entry.
+- A [package manager plugin](/bootstrap/packages/plugins.html) named in
+  `system_packages.prefer` counts as a candidate even when it cannot run yet.
+  `status` and `apply` report it as unavailable; mise does not choose the next
+  manager.
 - If no candidate is available, mise warns and skips the entry.
 - Version pins use the selected manager's format, so pin an unprefixed entry only
   when every candidate accepts the same version string.

@@ -289,12 +289,26 @@ const DEFAULT_MANAGER_PREFERENCE: &[&str] = &[
     "apt", "dnf", "pacman", "zypper", "apk", "brew", "winget", "scoop", "choco",
 ];
 
-/// Names of the managers that can run on this machine and that
-/// `system_packages.managers` allows.
+/// Names of the managers an unprefixed key may choose: built-in managers that
+/// can run on this machine, and package manager plugins.
+///
+/// A plugin's binaries can come from mise's global toolset, which only the
+/// async availability check resolves, and selection here is synchronous. A
+/// plugin is therefore a candidate as declared, and `status` and `apply`
+/// report it as unavailable when it cannot run, as for a prefixed entry.
+/// Nothing moves on to the next manager. `system_packages.managers` still
+/// excludes managers.
 fn available_manager_names() -> Vec<String> {
+    let builtin: std::collections::HashSet<String> = packages::builtin_managers()
+        .iter()
+        .map(|manager| manager.name().to_string())
+        .collect();
     packages::all_managers()
         .into_iter()
-        .filter(|manager| manager.is_available() && package_manager_is_enabled(manager.name()))
+        .filter(|manager| {
+            package_manager_is_enabled(manager.name())
+                && (manager.is_available() || !builtin.contains(manager.name()))
+        })
         .map(|manager| manager.name().to_string())
         .collect()
 }
@@ -511,6 +525,18 @@ pub async fn config_files_declaring_package(
 }
 
 #[cfg(unix)]
+/// The package `spec` declares for `manager`, if it declares one. An unprefixed
+/// key declares its package for the manager it would select, with `names`
+/// applied.
+fn declared_spec(spec: &str, package: &PackageTomlConfig, manager: &str) -> Option<String> {
+    let (mgr, pkg) = if spec.contains(':') {
+        parse_spec(spec).ok()?
+    } else {
+        resolve_unprefixed(spec, package, &available_manager_names()).ok()?
+    };
+    (mgr == manager).then_some(pkg)
+}
+
 fn config_files_declaring_package_in<'a>(
     config_files: impl Iterator<Item = (&'a PathBuf, &'a Arc<dyn crate::host::ConfigFileView>)>,
     manager: &str,
@@ -524,9 +550,8 @@ fn config_files_declaring_package_in<'a>(
             sys.packages.iter().any(|(spec, package)| {
                 // skipped declarations never reach prune's keep-list
                 package.is_os_supported()
-                    && parse_spec(spec).is_ok_and(|(mgr, pkg)| {
-                        mgr == manager && (pkg == name || (manager == "brew" && pkg == core_name))
-                    })
+                    && declared_spec(spec, package, manager)
+                        .is_some_and(|pkg| pkg == name || (manager == "brew" && pkg == core_name))
             })
         });
         if declares && !paths.contains(path) {
@@ -742,7 +767,11 @@ fn package_requests_from_config_files(
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
     let available_managers = std::cell::LazyCell::new(available_manager_names);
-    for (spec, package) in merged {
+    // Entries with a prefix go first, so an unprefixed key that resolves to the
+    // same package as one of them yields to it.
+    let (explicit, unprefixed): (Vec<_>, Vec<_>) =
+        merged.into_iter().partition(|(spec, _)| spec.contains(':'));
+    for (spec, package) in explicit.into_iter().chain(unprefixed) {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
             continue;
@@ -758,6 +787,16 @@ fn package_requests_from_config_files(
         };
         match parsed {
             Ok((mgr, name)) => {
+                if !spec.contains(':')
+                    && by_mgr
+                        .get(&mgr)
+                        .is_some_and(|requests| requests.iter().any(|r| r.name == name))
+                {
+                    warn!(
+                        "[bootstrap.packages]: '{spec}' resolves to '{mgr}:{name}', which another entry already declares; using that entry"
+                    );
+                    continue;
+                }
                 let version = package.version();
                 let version = (version != "latest").then(|| version.to_string());
                 if let Err(err) = validate_package_name(&mgr, &name) {
@@ -4466,5 +4505,45 @@ value = []"#;
             value: tv("3"),
         });
         assert_eq!(macos_defaults_entry_count(&macos), 6);
+    }
+
+    #[test]
+    fn unprefixed_key_picks_the_first_available_manager_and_applies_names() {
+        let plain = PackageTomlConfig::Version("latest".to_string());
+        let available = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+
+        // the distribution's manager beats Homebrew, which also runs on Linux
+        let both = available(&["brew", "apt"]);
+        assert_eq!(
+            resolve_unprefixed("git", &plain, &both).unwrap(),
+            ("apt".to_string(), "git".to_string())
+        );
+        let fedora = available(&["brew", "dnf"]);
+        assert_eq!(resolve_unprefixed("git", &plain, &fedora).unwrap().0, "dnf");
+        let mac = available(&["brew"]);
+        assert_eq!(resolve_unprefixed("git", &plain, &mac).unwrap().0, "brew");
+
+        // names renames the package for the selected manager only
+        let mapped: PackageTomlConfig =
+            toml::from_str(r#"v = { names = { apt = "libssl-dev", dnf = "openssl-devel" } }"#)
+                .map(|t: std::collections::BTreeMap<String, PackageTomlConfig>| {
+                    t.into_values().next().unwrap()
+                })
+                .unwrap();
+        assert_eq!(
+            resolve_unprefixed("openssl", &mapped, &both).unwrap().1,
+            "libssl-dev"
+        );
+        assert_eq!(
+            resolve_unprefixed("openssl", &mapped, &fedora).unwrap().1,
+            "openssl-devel"
+        );
+        assert_eq!(
+            resolve_unprefixed("openssl", &mapped, &mac).unwrap().1,
+            "openssl"
+        );
+
+        // nothing available is an error, not a guess
+        assert!(resolve_unprefixed("git", &plain, &[]).is_err());
     }
 }

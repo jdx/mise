@@ -3284,18 +3284,18 @@
                 "type": "string"
               }
             },
+            "ostree": {
+              "default": "error",
+              "description": "What mise does with `dnf:` packages on an image-based Fedora host such as Silverblue or Bazzite.",
+              "type": "string",
+              "enum": ["error", "layer"]
+            },
             "prefer": {
               "description": "Package managers, in order, that an unprefixed `[bootstrap.packages]` key may use.",
               "type": "array",
               "items": {
                 "type": "string"
               }
-            },
-            "ostree": {
-              "default": "error",
-              "description": "What mise does with `dnf:` packages on an image-based Fedora host such as Silverblue or Bazzite.",
-              "type": "string",
-              "enum": ["error", "layer"]
             },
             "sudo": {
               "default": true,
