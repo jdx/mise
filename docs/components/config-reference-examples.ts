@@ -1298,6 +1298,10 @@ login_shell = "zsh"
 version = "16"
 os = "linux"
 `,
+  "bootstrap.packages.<key>.names.<key>": toml`
+[bootstrap.packages.openssl]
+names = { apt = "libssl-dev" }
+`,
   "bootstrap.packages.<key>.names": toml`
 [bootstrap.packages.openssl]
 names = { apt = "libssl-dev", dnf = "openssl-devel" }
