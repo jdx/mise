@@ -216,6 +216,8 @@ pub struct DaemonCommandDecl {
     /// false runs the process and its setup without the project's tool environment.
     pub mise: Option<bool>,
     pub port: Option<DaemonCommandPort>,
+    /// More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.
+    pub ports: Option<std::collections::BTreeMap<String, DaemonCommandNamedPort>>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy")]
     pub proxy: Option<DaemonProxy>,
@@ -427,6 +429,30 @@ pub struct DaemonNamedPortAuto {
     /// Port used by the primary checkout. Defaults to the preset's default for this port; independent of the daemon's own `port`.
     #[schemars(range(min = 1, max = 65535))]
     pub base: Option<u16>,
+    /// Distance between consecutive worktree slots. Defaults to 1.
+    #[schemars(range(min = 1, max = 65535))]
+    pub stride: Option<u16>,
+}
+
+/// Port for this named port of the daemon: a fixed port, or an allocation that gives each linked git worktree its own.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonCommandNamedPort {
+    Fixed(#[schemars(range(min = 1, max = 65535))] u16),
+    /// Offset a base port by the same worktree slot the daemon's `port = "auto"` uses.
+    PerWorktree(DaemonCommandNamedPortAuto),
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DaemonCommandNamedPortAuto {
+    /// Enable per-worktree allocation of this named port.
+    #[schemars(schema_with = "always_true")]
+    pub auto: bool,
+    /// Port used by the primary checkout.
+    #[schemars(range(min = 1, max = 65535))]
+    pub base: u16,
     /// Distance between consecutive worktree slots. Defaults to 1.
     #[schemars(range(min = 1, max = 65535))]
     pub stride: Option<u16>,
