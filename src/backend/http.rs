@@ -498,6 +498,18 @@ impl HttpBackend {
         Self::cache_path(cache_dir, cache_key).join(METADATA_FILE)
     }
 
+    /// Name for a staging directory next to a cache or install entry. The cache key
+    /// is hashed rather than embedded: it can already be over 220 bytes, and adding a
+    /// prefix, pid and timestamp to it overflows the 255-byte `NAME_MAX`.
+    fn tmp_dir_name(prefix: &str, cache_key: &str) -> Result<String> {
+        Ok(format!(
+            "{prefix}-{}-{}-{}",
+            hash::hash_blake3_to_str(cache_key),
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+        ))
+    }
+
     /// Check if a cache entry exists and is valid
     fn is_cached(cache_dir: &Path, cache_key: &str) -> bool {
         Self::cache_path(cache_dir, cache_key).exists()
@@ -693,12 +705,7 @@ impl HttpBackend {
         file::create_dir_all(cache.dir)?;
 
         // Create unique temp directory for atomic extraction
-        let tmp_path = cache.dir.join(format!(
-            "{}.tmp-{}-{}",
-            cache.plan.key,
-            std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
-        ));
+        let tmp_path = cache.dir.join(Self::tmp_dir_name(".tmp", &cache.plan.key)?);
 
         // Clean up any stale temp directory
         if tmp_path.exists() {
@@ -756,12 +763,7 @@ impl HttpBackend {
             .parent()
             .ok_or_else(|| eyre::eyre!("HTTP install path must have a parent"))?;
         file::create_dir_all(parent)?;
-        let tmp_path = parent.join(format!(
-            ".mise-tmp-{}-{}-{}",
-            cache_plan.key,
-            std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
-        ));
+        let tmp_path = parent.join(Self::tmp_dir_name(".mise-tmp", &cache_plan.key)?);
         file::remove_all(&tmp_path)?;
 
         let extract_path = if matches!(cache_plan.file_info.format, file::ExtractionFormat::Raw)
@@ -2301,6 +2303,22 @@ mod tests {
             backend.dest_filename(file_path, &file_info, &opts).unwrap(),
             "bin/mytool"
         );
+    }
+
+    #[test]
+    fn tmp_dir_name_stays_under_name_max_for_long_cache_keys() {
+        // http:yarn with a checksum: three 64-char hashes plus their labels (226 bytes).
+        let key = format!(
+            "{0}_name_{0}_windows_script_interpreter_{0}",
+            "a".repeat(64)
+        );
+        assert_eq!(key.len(), 226);
+        for prefix in [".mise-tmp", ".tmp"] {
+            let name = HttpBackend::tmp_dir_name(prefix, &key).unwrap();
+            // Linux pids reach 7 digits; the millisecond timestamp is 13 digits.
+            assert!(name.len() + 2 < 255, "{name} is {} bytes", name.len());
+            assert!(name.starts_with(prefix));
+        }
     }
 
     #[test]
