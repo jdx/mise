@@ -109,8 +109,8 @@ impl Shell for Nushell {
           # `main` is a Nushell command, so the external completer that `mise completion nu`
           # installs never sees `mise <Tab>`. Ask mise for the candidates instead.
           def "nu-complete mise" [context: string] {{
-            let out = (^"{exe}" __complete_word__ --shell nu --line $context | complete)
-            if $out.exit_code != 0 {{ return null }}
+            let out = (try {{ ^"{exe}" __complete_word__ --shell nu --line $context | complete }} catch {{ null }})
+            if $out == null or $out.exit_code != 0 {{ return null }}
             let marker = "\u{{1}}"
             let lines = ($out.stdout | lines | where {{|l| $l != "" }})
             let wants_paths = ($lines | any {{|l| $l | str starts-with $marker }})
