@@ -1291,6 +1291,50 @@ end"##,
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
+    async fn extracts_cask_zap_not_required_and_zap_directives() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        for (zap, expected) in [
+            (":not_required", serde_json::json!([])),
+            (
+                r#"trash: "~/.config/widget""#,
+                serde_json::json!({"trash": "~/.config/widget"}),
+            ),
+        ] {
+            let output = CmdLineRunner::new(&ruby)
+                .with_on_stderr(|line| eprintln!("{line}"))
+                .arg("--disable-gems")
+                .arg("-e")
+                .arg(CASK_METADATA_SHIM_RB)
+                .stdin_string(format!(
+                    r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget.zip"
+  zap {zap}
+end"##
+                ))
+                .env("MISE_BREW_TOKEN", "widget")
+                .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+                .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+                .env("MISE_BREW_TAP_COMMIT", "fixture")
+                .env("MISE_BREW_MACOS_VERSION", "26")
+                .env("MISE_BREW_OS", "macos")
+                .env("MISE_BREW_ARCH", "aarch64")
+                .read()
+                .await?;
+            let _: Cask = serde_json::from_str(&output)?;
+            let metadata: serde_json::Value = serde_json::from_str(&output)?;
+            assert_eq!(
+                metadata["artifacts"],
+                serde_json::json!([{"zap": expected}])
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
     async fn extracts_cask_homebrew_prefix_as_relocatable_metadata() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
             return Ok(());
