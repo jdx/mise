@@ -1732,7 +1732,7 @@ above `1h` count as `1h`.
 A script that needs its own checkpoint can set it for one run:
 
 ```sh
-MISE_HISTORY_LOCK_WAIT=5m mise dot save --message "before upgrade"
+MISE_HISTORY_LOCK_WAIT=5m mise dot save --description "before upgrade"
 ```
 
 `mise dot watch` and `mise dot recover` never wait, whatever this is set to.
