@@ -442,6 +442,26 @@ pub fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
     packages_from_config_files_with_brew_taps(&config.config_files(), &brew_taps, true)
 }
 
+/// Unprefixed `[bootstrap.packages]` keys that no manager can take on this
+/// machine, with why, for `status` to list as skipped. Keys the platform or
+/// config environment disables are not listed.
+pub fn unresolved_unprefixed_from_config(config: &Config) -> Vec<(String, String)> {
+    let available = available_manager_names();
+    package_configs_from_config_files(&config.config_files())
+        .into_iter()
+        .filter(|(spec, package)| {
+            !spec.contains(':')
+                && package.is_os_supported()
+                && package.is_env_supported(crate::host::mise_env_with_auto())
+        })
+        .filter_map(|(spec, package)| {
+            resolve_unprefixed(&spec, &package, &available)
+                .err()
+                .map(|err| (spec, err.to_string()))
+        })
+        .collect()
+}
+
 /// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
 /// applying host filters. Configs more local than the target are excluded.
 #[cfg(unix)]
@@ -852,10 +872,6 @@ fn package_requests_from_config_files(
                                         }
                                         cask_appdirs.remove(&name);
                                     }
-                                    if mgr == "macos-app" {
-                                        app_specs.remove(&name);
-                                        app_adopt.remove(&name);
-                                    }
                                 }
                                 replace_existing = true;
                                 skip = false;
@@ -949,6 +965,11 @@ fn package_requests_from_config_files(
                     #[cfg(unix)]
                     match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
                         Ok(spec) => {
+                            // Cleared only now that the replacing declaration is valid, so
+                            // an invalid one cannot erase the spec it would replace
+                            if replace_existing {
+                                app_adopt.remove(&name);
+                            }
                             app_specs.insert(name.clone(), spec);
                             if adopt_requested.unwrap_or(false) {
                                 app_adopt.insert(name.clone());

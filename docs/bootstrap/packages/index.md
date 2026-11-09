@@ -133,7 +133,9 @@ to change the order; the list names the only managers an unprefixed key may use.
   `system_packages.prefer` counts as a candidate even when it cannot run yet.
   `status` and `apply` report it as unavailable; mise does not choose the next
   manager.
-- If no candidate is available, mise warns and skips the entry.
+- If no candidate is available, mise warns and skips the entry. `status` lists
+  it as `skipped` with the managers it tried, under the manager name `-`, or
+  `unprefixed` in `--json`.
 - Version pins use the selected manager's format, so pin an unprefixed entry only
   when every candidate accepts the same version string.
 - `MISE_DEBUG=1` logs the selected manager and why.

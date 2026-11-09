@@ -13,6 +13,9 @@ EOF2
 export MISE_SYSTEM_PACKAGES_PREFER=winget,scoop
 assert_contains "mise bootstrap packages status 2>&1" "no package manager is available for 'git': tried winget, scoop"
 assert_contains "mise bootstrap packages status 2>&1" "no package manager is available for 'openssl'"
+# status lists them as skipped, in the table and in JSON
+assert_contains "mise bootstrap packages status 2>/dev/null" "skipped (no package manager is available for 'git'"
+assert_contains "mise bootstrap packages status --json 2>/dev/null" '"unprefixed"'
 
 # prefixed keys ignore the preference list
 cat <<EOF2 >mise.toml
