@@ -7,9 +7,9 @@ use mise_settings::Settings;
 /// terminal color state.
 ///
 /// Available themes:
-/// - "base16" (the default) - Base16 theme: the terminal's own named colors, so
+/// - "base16" (or "default") - Base16 theme: the terminal's own named colors, so
 ///   it follows the terminal's palette on light and dark backgrounds
-/// - "auto" (or "default") - Auto-detect: base16 on light terminals (from
+/// - "auto" - Auto-detect: base16 on light terminals (from
 ///   `COLORFGBG`), otherwise charm
 /// - "charm" - The charm theme (fixed 256-color greys, suits dark terminals)
 /// - "catppuccin" - Catppuccin theme
@@ -38,7 +38,7 @@ fn select_theme(colors_enabled: bool, color_theme: &str, light_background: bool)
         return Theme::new();
     }
     match color_theme.to_lowercase().as_str() {
-        "auto" | "default" | "" => {
+        "auto" => {
             if light_background {
                 base16()
             } else {
@@ -46,7 +46,7 @@ fn select_theme(colors_enabled: bool, color_theme: &str, light_background: bool)
             }
         }
         "charm" => Theme::charm(),
-        "base16" => base16(),
+        "base16" | "default" | "" => base16(),
         "catppuccin" => Theme::catppuccin(),
         "dracula" => Theme::dracula(),
         other => {
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn base16_and_unknown_themes_are_base16_on_any_background() {
         for light in [false, true] {
-            for theme in ["base16", "bogus"] {
+            for theme in ["base16", "default", "", "bogus"] {
                 let t = select_theme(true, theme, light);
                 assert_eq!(t.title.fg(), Some(&Color::Cyan), "theme={theme}");
                 assert!(t.title.bold(), "theme={theme}");
@@ -225,13 +225,11 @@ mod tests {
 
     #[test]
     fn auto_picks_base16_on_light_and_charm_on_dark() {
-        for theme in ["auto", "default", ""] {
-            let light = select_theme(true, theme, true);
-            assert_eq!(light.title.fg(), Some(&Color::Cyan), "theme={theme}");
+        let light = select_theme(true, "auto", true);
+        assert_eq!(light.title.fg(), Some(&Color::Cyan));
 
-            let dark = select_theme(true, theme, false);
-            assert_eq!(dark.title.fg(), Theme::charm().title.fg(), "theme={theme}");
-        }
+        let dark = select_theme(true, "auto", false);
+        assert_eq!(dark.title.fg(), Theme::charm().title.fg());
     }
 
     #[test]
