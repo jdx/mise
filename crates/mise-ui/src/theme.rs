@@ -47,7 +47,8 @@ fn select_theme(colors_enabled: bool, color_theme: &str) -> Theme {
 
 /// demand's base16 theme with its `Ansi256(0..=15)` colors swapped for the
 /// terminal's named colors (`ESC[3Xm`, and `ESC[9Xm` for the bright half), and
-/// unselected options left in the terminal's default text color. demand's
+/// unselected options and help keys left in the terminal's default text color
+/// and help text in bright black (demand uses fixed greys). demand's
 /// unselected color, ANSI white, shows as pale grey on light themes.
 fn base16() -> Theme {
     let mut theme = Theme::base16();
@@ -71,6 +72,13 @@ fn base16() -> Theme {
     }
     theme.unselected_prefix_fg = ColorSpec::new();
     theme.unselected_option = ColorSpec::new();
+    // demand's help colors are fixed dark greys (60..98), nearly invisible on a
+    // dark background. Keys use the text color; the rest bright black.
+    let mut bright_black = ColorSpec::new();
+    bright_black.set_fg(Some(Color::Black)).set_intense(true);
+    theme.help_key = ColorSpec::new();
+    theme.help_desc = bright_black.clone();
+    theme.help_sep = bright_black;
     theme
 }
 
@@ -124,6 +132,9 @@ mod tests {
             &theme.breadcrumb_active,
             &theme.breadcrumb_clickable,
             &theme.breadcrumb_future,
+            &theme.help_key,
+            &theme.help_desc,
+            &theme.help_sep,
         ]
     }
 
@@ -190,6 +201,16 @@ mod tests {
         // bright black, as demand's Ansi256(8)
         assert_eq!(theme.description.fg(), Some(&Color::Black));
         assert!(theme.description.intense());
+    }
+
+    #[test]
+    fn base16_help_text_follows_the_palette() {
+        let theme = base16();
+        assert_eq!(theme.help_key.fg(), None);
+        for spec in [&theme.help_desc, &theme.help_sep] {
+            assert_eq!(spec.fg(), Some(&Color::Black));
+            assert!(spec.intense());
+        }
     }
 
     #[test]
