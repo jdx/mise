@@ -401,3 +401,86 @@ fn test_whole_release_list_used_only_when_every_release_is_dated() {
     ])));
     assert!(!all_releases_dated(&list(&[Some("")])));
 }
+
+#[tokio::test]
+async fn test_mirrored_releases_listing_all_pass_unrelated_stable_releases() {
+    // Asset discovery in a monorepo must see past an unrelated stable release
+    // on page 1 to the older matching one, still through the paged mirror.
+    let (releases, requested) = paginate_canned(
+        vec![
+            Some(mirrored_page(vec![make_release("server@1.0.0")], Some(2))),
+            Some(mirrored_page(vec![make_release("4.215.0")], None)),
+        ],
+        false,
+        true,
+    )
+    .await;
+    assert_eq!(releases.unwrap().unwrap(), ["server@1.0.0", "4.215.0"]);
+    assert_eq!(requested, [1, 2]);
+}
+
+#[test]
+fn test_not_found_survives_the_mirror_then_github_failure() {
+    let mirror = eyre::eyre!("mise-versions timed out");
+    let github =
+        eyre::eyre!("HTTP status client error (404 Not Found) for url (https://api.github.com/x)");
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(crate::versions_host::is_not_found(&failed));
+    let other: eyre::Report = crate::versions_host::GithubRetryFailed::new(
+        "release",
+        &mirror,
+        eyre::eyre!("HTTP status server error (500)"),
+    )
+    .into();
+    assert!(!crate::versions_host::is_not_found(&other));
+}
+
+#[test]
+fn test_a_version_in_a_timeout_message_is_not_a_not_found() {
+    let timeout = eyre::eyre!(
+        "error sending request for url (https://api.github.com/repos/o/r/releases/tags/1.404.0): timed out"
+    );
+    assert!(!crate::versions_host::is_not_found(&timeout));
+}
+
+#[test]
+fn test_the_mirrors_missing_tag_errors_are_not_found() {
+    for message in [
+        "release 1.2.3 not found (404 from mise-versions.jdx.dev)",
+        "release 1.2.3 not found (404 from mise-versions.jdx.dev, which mise asks before api.github.com). If the repository is private, set GITHUB_TOKEN",
+    ] {
+        assert!(crate::versions_host::is_not_found(&eyre::eyre!(message)));
+    }
+}
+
+#[test]
+fn test_a_server_error_whose_body_says_404_is_not_a_not_found() {
+    let mirror = eyre::eyre!("mise-versions timed out");
+    let github = eyre::eyre!("HTTP status server error (500): upstream said 404 Not Found");
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(!crate::versions_host::is_not_found(&failed));
+}
+
+#[test]
+fn test_a_server_error_body_quoting_a_client_error_is_not_a_not_found() {
+    let mirror = eyre::eyre!("mise-versions timed out");
+    let github = eyre::eyre!(
+        "HTTP status server error (502): HTTP status client error (404 Not Found) for url (x)"
+    );
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(!crate::versions_host::is_not_found(&failed));
+}
+
+#[test]
+fn test_a_mirror_server_error_quoting_a_client_error_is_not_a_not_found() {
+    let mirror = eyre::eyre!(
+        "HTTP status server error (500): HTTP status client error (404 Not Found) for url (x)"
+    );
+    let github = eyre::eyre!("HTTP status server error (502)");
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(!crate::versions_host::is_not_found(&failed));
+}
