@@ -805,7 +805,19 @@ mod tests {
                 "Stack",
             ]
         );
-        assert_eq!(hard.get("Core"), Some(&Value::Integer(0.into())));
+        for (key, value) in [
+            ("Core", 0),
+            ("CPU", 3600),
+            ("Data", 1),
+            ("FileSize", 2),
+            ("MemoryLock", 3),
+            ("NumberOfFiles", 65536),
+            ("NumberOfProcesses", 4),
+            ("ResidentSetSize", 5),
+            ("Stack", 8_388_608),
+        ] {
+            assert_eq!(hard.get(key), Some(&Value::Integer(value.into())), "{key}");
+        }
         assert!(plist_matches(&plist, &request));
 
         let without = request_with_limits(None, None).unwrap();
