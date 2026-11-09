@@ -93,9 +93,12 @@ has.
 
 ## Other agents
 
-Any agent that lets you run a command at the start of a session, or point its
-shell at an rc file, can use the same line. If it offers neither, the
-fallback is [shims on `PATH`](/ide-integration.html#adding-shims-to-path-default-shell)
+Any agent that sources a file before each command, or lets you point its shell
+at an rc file, can use the same line. A command that only runs once at session
+start is not enough on its own, because it changes just that process and its
+children, and later commands do not inherit it. That is why the Claude Code
+hook writes to a file instead of running `hook-env` itself. If the agent offers
+neither, the fallback is [shims on `PATH`](/ide-integration.html#adding-shims-to-path-default-shell)
 in the login profile, with the limits described above.
 
 ## Worktrees {#worktrees}
