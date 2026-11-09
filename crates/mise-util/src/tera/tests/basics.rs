@@ -93,3 +93,37 @@ fn test_tera1_get_env_uses_supplied_env_only() {
     );
     assert!(tera.render_str("{{ get_env(name='PATH') }}", &ctx).is_err());
 }
+
+#[test]
+fn test_undefined_env_field_does_not_list_env_names() {
+    let mut env = EnvMap::new();
+    env.insert("MISE_TEST_SECRET_TOKEN".into(), "x".into());
+    env.insert("MISE_TEST_OTHER".into(), "y".into());
+    let mut ctx = Context::new();
+    ctx.insert("env", &env);
+    ctx.insert("vars", &EnvMap::from([("a".to_string(), "1".to_string())]));
+
+    let mut tera = Tera::default();
+    let err = render_str_v2(&mut tera, "{{ env.NOPE }}", &ctx).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Field `NOPE` is not defined in `env`"),
+        "{msg}"
+    );
+    assert!(
+        msg.contains("get_env(name=\"NOPE\", default=\"\")"),
+        "{msg}"
+    );
+    assert!(!msg.contains("MISE_TEST_SECRET_TOKEN"), "{msg}");
+    assert!(!msg.contains("MISE_TEST_OTHER"), "{msg}");
+
+    // other objects keep tera's own list of fields
+    let err = render_str_v2(&mut tera, "{{ vars.nope }}", &ctx).unwrap_err();
+    assert!(err.to_string().contains("Available fields: a"), "{err}");
+
+    // a defined variable still renders
+    assert_eq!(
+        render_str_v2(&mut tera, "{{ env.MISE_TEST_OTHER }}", &ctx).unwrap(),
+        "y"
+    );
+}

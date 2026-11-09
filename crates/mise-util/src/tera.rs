@@ -63,7 +63,9 @@ pub enum TeraEngine {
 impl TeraEngine {
     fn render_str(&mut self, input: &str, context: &Context) -> TeraResult<String> {
         match self {
-            Self::V2(tera) => tera.render_str(input, context, false),
+            Self::V2(tera) => tera
+                .render_str(input, context, false)
+                .map_err(|err| hide_env_names(err, context)),
             Self::V1(tera) => {
                 let context = tera1_context(input, context)?;
                 // keep the cause (such as a function's own error) as the
@@ -99,7 +101,54 @@ pub fn render_str_with_env(
 }
 
 pub fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
-    tera.render_str(input, &safe_context(context), false)
+    let context = safe_context(context);
+    tera.render_str(input, &context, false)
+        .map_err(|err| hide_env_names(err, &context))
+}
+
+/// Replaces tera's "undefined field" error for `env` with a hint.
+///
+/// tera lists every field of the object it could not find a field in. For
+/// `env` that is the name of every environment variable of the process, which
+/// buries the message and puts names such as `*_TOKEN` into logs and bug
+/// reports. The user knows which variable they meant, and a missing one is not
+/// in the list anyway.
+///
+/// tera does not say which object the field was looked up on, so the list is
+/// compared with the keys of `env` in the context.
+fn hide_env_names(err: tera::Error, context: &Context) -> tera::Error {
+    const MARKER: &str = " Available fields: ";
+    let tera::ErrorKind::RenderingError(report) = err.kind() else {
+        return err;
+    };
+    let Some((head, listed)) = report.message().split_once(MARKER) else {
+        return err;
+    };
+    let Some(field) = head
+        .strip_prefix("Field `")
+        .and_then(|rest| rest.strip_suffix("` is not defined."))
+    else {
+        return err;
+    };
+    let Some(env) = context.get("env").and_then(|env| env.as_map()) else {
+        return err;
+    };
+    // tera lists the keys sorted and de-duplicated
+    let mut names: Vec<String> = env.keys().map(|name| name.to_string()).collect();
+    names.sort();
+    names.dedup();
+    if names.join(", ") != listed {
+        return err;
+    }
+    let span = report.span();
+    tera_err(format!(
+        "Field `{field}` is not defined in `env`. For an optional variable use \
+         `get_env(name=\"{field}\", default=\"\")` or `env.{field} | default(value=\"\")`.\n \
+         --> {}:{}:{}",
+        report.filename(),
+        span.start_line,
+        span.start_col + 1,
+    ))
 }
 
 /// Whether safe mode is on. Unlike `Settings::get()` this never loads

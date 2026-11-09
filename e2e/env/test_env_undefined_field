@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# an undefined {{ env.X }} must not print the names of every environment variable
+cat <<'EOF' >mise.toml
+[env]
+X = "{{ env.MISE_E2E_NOPE }}"
+EOF
+
+export MISE_E2E_SECRET_TOKEN=1
+err="$(mise env 2>&1 >/dev/null || true)"
+assert_contains_text "$err" "MISE_E2E_NOPE"
+assert_contains_text "$err" "is not defined in"
+assert_contains_text "$err" 'get_env(name="MISE_E2E_NOPE"'
+assert_not_contains_text "$err" "MISE_E2E_SECRET_TOKEN"
+assert_not_contains_text "$err" "Available fields"
