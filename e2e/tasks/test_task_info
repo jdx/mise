@@ -92,7 +92,8 @@ assert_json "mise tasks info lint --json" "$(
     "usage": "",
     "complete": {},
     "unknown_flags": null
-  }
+  },
+  "history": null
 }
 EOF
 )"
