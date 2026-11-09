@@ -9,7 +9,6 @@ use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
-use globwalk::{GlobWalker, GlobWalkerBuilder};
 use ignore::overrides::{Override, OverrideBuilder};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -464,12 +463,22 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
 /// Build a glob iterator that follows valid directory symlinks but detects
 /// ancestor loops instead of recursively expanding them forever.
 ///
-/// `globwalk` recursively searches its base directory, so non-globstar
+/// The walk searches its base directory recursively, so non-globstar
 /// patterns are capped at their component depth to preserve `glob`'s
 /// component-by-component expansion semantics. Literal prefixes that do not
 /// exist yet are moved into the pattern so they produce zero matches instead
 /// of a traversal error.
 pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWalker> {
+    glob_walk_pruned(pattern, case_insensitive, &DirPruner::none())
+}
+
+/// Like [`glob_walk`], but never enters a directory that `pruner` says every
+/// path below is excluded from.
+pub(crate) fn glob_walk_pruned(
+    pattern: &Path,
+    case_insensitive: bool,
+    pruner: &DirPruner,
+) -> Result<GlobWalker> {
     fn has_metacharacters(component: &str) -> bool {
         let mut escaped = false;
         for ch in component.chars() {
@@ -531,14 +540,124 @@ pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWa
         glob_pattern.insert(0, '\\');
     }
 
-    let mut builder = GlobWalkerBuilder::new(&base, glob_pattern)
+    // globwalk treats a lone `*` as a gitignore pattern that matches at any
+    // depth; anchor it so it only matches directly under the base.
+    let override_pattern = if glob_pattern == "*" {
+        "/*".to_string()
+    } else {
+        glob_pattern.clone()
+    };
+    let mut overrides = OverrideBuilder::new(&base);
+    overrides.case_insensitive(case_insensitive)?;
+    overrides.add(&override_pattern)?;
+
+    // Components before the first `**` match one directory level each, so a
+    // directory at that depth whose name fails its component can hold no
+    // match. A lone component is unanchored (it matches at any depth), and is
+    // capped by the depth limit instead.
+    let components = glob_pattern.split('/').collect_vec();
+    let prefix_len = components
+        .iter()
+        .position(|component| *component == "**")
+        .unwrap_or(components.len());
+    let prefix = if components.len() > 1 {
+        components[..prefix_len]
+            .iter()
+            .map(|component| {
+                globset::GlobBuilder::new(component)
+                    .case_insensitive(case_insensitive)
+                    .literal_separator(true)
+                    .build()
+                    .ok()
+                    .map(|glob| glob.compile_matcher())
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    let mut walker = WalkDir::new(&base)
         .follow_links(true)
-        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
-        .case_insensitive(case_insensitive);
+        .sort_by(|a, b| a.file_name().cmp(b.file_name()));
     if !recursive {
-        builder = builder.max_depth(pattern_depth);
+        walker = walker.max_depth(pattern_depth);
     }
-    Ok(builder.build()?)
+    Ok(GlobWalker {
+        overrides: overrides.build()?,
+        walker: walker.into_iter(),
+        prefix,
+        pruner: pruner.clone(),
+        pruned: false,
+    })
+}
+
+/// Walks a directory tree and yields the entries a glob selects, without
+/// entering directories that the pattern's leading components rule out.
+///
+/// `globwalk` enters every directory below its base unless the pattern ignores
+/// it, which a positive pattern never does. For `packages/*/src/**/*` that
+/// meant reading every `packages/*/node_modules` although only `src` can match.
+pub(crate) struct GlobWalker {
+    overrides: Override,
+    walker: walkdir::IntoIter,
+    /// One matcher per leading pattern component, ending before the first
+    /// `**`. `None` marks a component that failed to compile, which is never
+    /// used to rule a directory out.
+    prefix: Vec<Option<globset::GlobMatcher>>,
+    pruner: DirPruner,
+    pruned: bool,
+}
+
+impl GlobWalker {
+    /// Whether the walk skipped a directory because of its pruner.
+    pub(crate) fn pruned(&self) -> bool {
+        self.pruned
+    }
+
+    fn directory_may_match(&self, entry: &DirEntry) -> bool {
+        let Some(matcher) = entry
+            .depth()
+            .checked_sub(1)
+            .and_then(|index| self.prefix.get(index))
+        else {
+            return true;
+        };
+        matcher
+            .as_ref()
+            .is_none_or(|matcher| matcher.is_match(entry.file_name()))
+    }
+}
+
+impl Iterator for GlobWalker {
+    type Item = std::result::Result<DirEntry, WalkError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(entry) = self.walker.next() {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(err) => return Some(Err(err)),
+            };
+            let is_dir = entry.file_type().is_dir();
+            if is_dir && !self.directory_may_match(&entry) {
+                self.walker.skip_current_dir();
+                continue;
+            }
+            if is_dir && self.pruner.excludes(entry.path()) {
+                self.walker.skip_current_dir();
+                self.pruned = true;
+            }
+            let Ok(path) = entry.path().strip_prefix(self.overrides.path()) else {
+                continue;
+            };
+            if path.as_os_str().is_empty() {
+                continue;
+            }
+            if self.overrides.matched(path, is_dir).is_whitelist() {
+                return Some(Ok(entry));
+            }
+        }
+        None
+    }
 }
 
 /// Return a successful walk entry, pruning expected errors from following
@@ -583,6 +702,115 @@ fn is_filesystem_loop_error(error: &std::io::Error) -> bool {
     error.raw_os_error().is_some_and(|code| {
         code == ERROR_CANT_RESOLVE_FILENAME as i32 || code == ERROR_CIRCULAR_DEPENDENCY as i32
     })
+}
+
+/// Decides which directories a walk can skip because a `!` entry excludes
+/// everything below them.
+///
+/// A directory is skipped only when an entry that excludes its whole subtree
+/// matches it and no positive entry follows that entry, since the last
+/// matching entry wins and a later one could include a path again. In
+/// `sources` only an entry ending in `/**` excludes a subtree, because files
+/// are matched by their own path (`!**/node_modules` excludes the directory
+/// but not what is inside it). In `outputs` every entry covers its subtree,
+/// as [`build_output_matcher`] adds a `/**` twin to each. Anything the pruner
+/// cannot read with certainty is left out, so it only ever walks too much.
+#[derive(Clone, Default)]
+pub(crate) struct DirPruner {
+    root: PathBuf,
+    excluded: Arc<Vec<Override>>,
+}
+
+impl DirPruner {
+    pub(crate) fn none() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn for_sources(match_root: &Path, task_cwd: &Path, sources: &[String]) -> Self {
+        Self::build(match_root, task_cwd, sources, false)
+    }
+
+    pub(crate) fn for_outputs(root: &Path, outputs: &[String]) -> Self {
+        Self::build(root, root, outputs, true)
+    }
+
+    fn build(match_root: &Path, task_cwd: &Path, entries: &[String], outputs: bool) -> Self {
+        let mut excluded: Vec<Override> = vec![];
+        for entry in entries {
+            let normalized = normalize_pattern(match_root, task_cwd, entry);
+            let Ok(alternatives) = expand_glob_braces(&normalized) else {
+                excluded.clear();
+                continue;
+            };
+            for alternative in alternatives {
+                let Some(body) = alternative.strip_prefix('!') else {
+                    // A positive entry could include a path below any
+                    // directory an earlier entry excluded.
+                    excluded.clear();
+                    continue;
+                };
+                let subtree = match body.strip_suffix("/**") {
+                    Some(subtree) => subtree,
+                    None if outputs => body,
+                    None => continue,
+                };
+                if subtree.is_empty()
+                    || subtree == "**"
+                    || subtree.ends_with('/')
+                    || subtree.contains(['[', '\\'])
+                {
+                    continue;
+                }
+                // `subtree/**` is anchored, so the directory pattern is too.
+                let anchored = if subtree.contains('/') {
+                    subtree.to_string()
+                } else {
+                    format!("/{subtree}")
+                };
+                let mut builder = OverrideBuilder::new(match_root);
+                if builder.add(&anchored).is_ok()
+                    && let Ok(matcher) = builder.build()
+                {
+                    excluded.push(matcher);
+                }
+            }
+        }
+        Self {
+            root: match_root.to_path_buf(),
+            excluded: Arc::new(excluded),
+        }
+    }
+
+    /// Returns true when every path below the directory `dir` is excluded.
+    pub(crate) fn excludes(&self, dir: &Path) -> bool {
+        if self.excluded.is_empty() {
+            return false;
+        }
+        let dir = lexical_normalize(dir);
+        let Ok(relative) = dir.strip_prefix(&self.root) else {
+            return false;
+        };
+        !relative.as_os_str().is_empty()
+            && self
+                .excluded
+                .iter()
+                .any(|matcher| matcher.matched(relative, true).is_whitelist())
+    }
+
+    /// An iterator over `dir` that does not enter excluded directories.
+    pub(crate) fn walk_dir(&self, dir: &Path) -> impl Iterator<Item = Result<DirEntry, WalkError>> {
+        let pruner = self.clone();
+        WalkDir::new(dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(move |entry| !(entry.depth() > 0 && pruner.excludes(entry.path())))
+    }
+}
+
+/// Whether `pattern` selects anything when walked without pruning. Callers use
+/// it to tell "everything it matched was pruned" from "it matched nothing".
+pub(crate) fn glob_has_entries(pattern: &Path) -> bool {
+    glob_walk(pattern, false).is_ok_and(|mut walker| walker.next().is_some())
 }
 
 /// Build an ordered matcher for task output patterns.
@@ -707,7 +935,8 @@ async fn collect_source_metadatas(task: &Task, config: &Arc<Config>) -> Result<S
     let match_root = match_root_owned.as_path();
     let matcher = build_source_matcher(match_root, &root, &task.sources);
     let glob_patterns = source_glob_patterns(&task.sources);
-    let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
+    let pruner = DirPruner::for_sources(match_root, &root, &task.sources);
+    let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher, &pruner)?;
     let matched_sources = !source_metadatas.is_empty();
     // Always include every file that contributed to the task definition,
     // regardless of excludes — a stray `!mise.toml` must not silently
@@ -1144,6 +1373,7 @@ fn output_existing_hash(task: &Task, root: &Path) -> Option<String> {
 fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
     let raw_patterns = task.outputs.paths(task, root);
     let matcher = build_output_matcher(root, &raw_patterns)?;
+    let pruner = DirPruner::for_outputs(root, &raw_patterns);
     let patterns_or_paths = output_glob_patterns(&raw_patterns);
     if patterns_or_paths.is_empty() {
         return Ok(None);
@@ -1168,9 +1398,10 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
         dir: &Path,
         entries: &mut Vec<(PathBuf, String)>,
         matcher: &Override,
+        pruner: &DirPruner,
     ) -> Result<bool> {
         let mut found_any = false;
-        for entry in WalkDir::new(dir).follow_links(true).into_iter() {
+        for entry in pruner.walk_dir(dir) {
             let Some(entry) = prune_symlink_walk_error(entry)? else {
                 continue;
             };
@@ -1210,7 +1441,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
                 }
             }
             Ok(m) if m.is_dir() => {
-                if !push_dir_entries(&path, &mut entries, &matcher)?
+                if !push_dir_entries(&path, &mut entries, &matcher, &pruner)?
                     && is_output(&matcher, &path, true)
                 {
                     // Empty directory — sentinel so its deletion is detected.
@@ -1234,7 +1465,8 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
         let mut glob_matched = false;
         for expanded in expand_enumeration_patterns(pattern_str)? {
             let full = resolve_task_path(root, expanded);
-            for entry in glob_walk(&full, false)? {
+            let mut walker = glob_walk_pruned(&full, false, &pruner)?;
+            for entry in walker.by_ref() {
                 // Propagate glob resolution errors (OS errors during directory
                 // reads) rather than silently skipping them — a partial result
                 // could produce the same hash as a complete one.
@@ -1260,7 +1492,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
                         entries.push(hash_file(&path)?);
                     }
                     m if m.is_dir() => {
-                        let found = push_dir_entries(&path, &mut entries, &matcher)?;
+                        let found = push_dir_entries(&path, &mut entries, &matcher, &pruner)?;
                         if !found {
                             entries.push((path, "empty-dir".to_string()));
                         }
@@ -1269,6 +1501,10 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
                         entries.push((path, "other".to_string()));
                     }
                 }
+            }
+            if !glob_matched && walker.pruned() {
+                // Everything it matched may sit in a directory the walk skipped.
+                glob_matched = glob_has_entries(&full);
             }
         }
         // A glob that matches nothing means expected outputs are missing.
@@ -1287,6 +1523,7 @@ fn get_file_metadatas(
     root: &Path,
     patterns_or_paths: &[String],
     matcher: &Override,
+    pruner: &DirPruner,
 ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
     if patterns_or_paths.is_empty() {
         return Ok(vec![]);
@@ -1298,7 +1535,7 @@ fn get_file_metadatas(
     for pattern in patterns {
         for expanded in expand_enumeration_patterns(pattern)? {
             let pattern = resolve_task_path(root, expanded);
-            let files = glob_walk(&pattern, false)?;
+            let files = glob_walk_pruned(&pattern, false, pruner)?;
             for file in files.flatten().map(|entry| entry.into_path()) {
                 if let Ok(metadata) = file.metadata() {
                     metadatas.insert(file, metadata);
@@ -1478,31 +1715,39 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
         return Ok(None);
     }
     let matcher = build_output_matcher(root, patterns_or_paths)?;
+    let pruner = DirPruner::for_outputs(root, patterns_or_paths);
     let mut file_modified = Vec::new();
     let mut directory_modified = Vec::new();
     for pattern in output_glob_patterns(patterns_or_paths) {
         let is_glob = is_glob_pattern(&pattern);
+        let mut pruned_matches = false;
         let candidates = if is_glob {
             let mut candidates = Vec::new();
             for expanded in expand_enumeration_patterns(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
-                for entry in glob_walk(&expanded, false)? {
+                let mut walker = glob_walk_pruned(&expanded, false, &pruner)?;
+                let before = candidates.len();
+                for entry in walker.by_ref() {
                     if let Some(entry) = prune_symlink_walk_error(entry)? {
                         candidates.push(entry.into_path());
                     }
+                }
+                // Matches that sit in a skipped directory still count as found.
+                if candidates.len() == before && walker.pruned() && glob_has_entries(&expanded) {
+                    pruned_matches = true;
                 }
             }
             candidates
         } else {
             vec![resolve_task_path(root, &pattern)]
         };
-        let mut found_candidate = false;
+        let mut found_candidate = pruned_matches;
         for candidate in candidates {
             if fs::symlink_metadata(&candidate).is_err() {
                 continue;
             }
             found_candidate = true;
-            for entry in WalkDir::new(candidate).follow_links(true) {
+            for entry in pruner.walk_dir(&candidate) {
                 let Some(entry) = prune_symlink_walk_error(entry)? else {
                     continue;
                 };
@@ -1626,6 +1871,193 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()?;
 
         assert_eq!(paths, [tree.join("a.txt"), tree.join("b.txt")]);
+        Ok(())
+    }
+
+    fn walked(pattern: &Path) -> Result<Vec<PathBuf>> {
+        glob_walk(pattern, false)?
+            .map(|entry| Ok(entry?.into_path()))
+            .collect()
+    }
+
+    #[test]
+    fn glob_walk_does_not_enter_directories_the_prefix_rules_out() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir_all(tree.join("packages/p1/src/nested"))?;
+        fs::create_dir_all(tree.join("packages/p1/node_modules/dep"))?;
+        fs::create_dir_all(tree.join("packages/p2/src"))?;
+        fs::write(tree.join("packages/p1/src/a.ts"), "")?;
+        fs::write(tree.join("packages/p1/src/nested/b.ts"), "")?;
+        fs::write(tree.join("packages/p1/node_modules/dep/c.ts"), "")?;
+        fs::write(tree.join("packages/p2/src/d.ts"), "")?;
+
+        let paths = walked(&tree.join("packages/*/src/**/*"))?;
+        let files = paths.iter().filter(|p| p.is_file()).collect_vec();
+        assert_eq!(
+            files,
+            [
+                &tree.join("packages/p1/src/a.ts"),
+                &tree.join("packages/p1/src/nested/b.ts"),
+                &tree.join("packages/p2/src/d.ts"),
+            ]
+        );
+
+        // Unreadable directories outside `src` would error if they were entered.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let locked = tree.join("packages/p1/node_modules/dep");
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000))?;
+            let result =
+                glob_walk(&tree.join("packages/*/src/**/*"), false)?.collect::<Result<Vec<_>, _>>();
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o755))?;
+            if !nix::unistd::Uid::effective().is_root() {
+                assert!(result.is_ok(), "walked into node_modules: {result:?}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn glob_walk_still_enters_directories_after_a_globstar() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir_all(tree.join("src/deep/src"))?;
+        fs::create_dir_all(tree.join("other"))?;
+        fs::write(tree.join("src/deep/src/a.ts"), "")?;
+        fs::write(tree.join("other/b.ts"), "")?;
+
+        let paths = walked(&tree.join("**/src/**/*.ts"))?;
+        assert_eq!(paths, [tree.join("src/deep/src/a.ts")]);
+        Ok(())
+    }
+
+    #[test]
+    fn glob_walk_prefix_respects_case_insensitivity() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir_all(tree.join("pkg/SRC"))?;
+        fs::write(tree.join("pkg/SRC/a.ts"), "")?;
+
+        let pattern = tree.join("*/src/**/*.ts");
+        assert!(glob_walk(&pattern, false)?.next().is_none());
+        let paths = glob_walk(&pattern, true)?
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(paths, [tree.join("pkg/SRC/a.ts")]);
+        Ok(())
+    }
+
+    fn pruned_dirs(sources: &[&str], dirs: &[&str]) -> Vec<bool> {
+        let sources = sources.iter().map(|s| s.to_string()).collect_vec();
+        let root = Path::new("/project");
+        let pruner = DirPruner::for_sources(root, root, &sources);
+        dirs.iter()
+            .map(|dir| pruner.excludes(&root.join(dir)))
+            .collect()
+    }
+
+    #[test]
+    fn pruner_skips_directories_a_trailing_globstar_exclusion_covers() {
+        let sources = ["**/*.ts", "!**/node_modules/**"];
+        assert_eq!(
+            pruned_dirs(&sources, &["node_modules", "a/b/node_modules", "a", "src"]),
+            [true, true, false, false]
+        );
+        assert_eq!(
+            pruned_dirs(&["src/**", "!src/gen/**"], &["src/gen", "src", "gen"]),
+            [true, false, false]
+        );
+    }
+
+    #[test]
+    fn pruner_walks_directories_a_later_entry_can_include_again() {
+        let sources = ["src/**/*.ts", "!src/gen/**", "src/gen/keep.ts"];
+        assert_eq!(pruned_dirs(&sources, &["src/gen"]), [false]);
+        // A positive entry before the exclusion does not matter.
+        let sources = ["src/**/*.ts", "!src/gen/**"];
+        assert_eq!(pruned_dirs(&sources, &["src/gen"]), [true]);
+    }
+
+    #[test]
+    fn pruner_does_not_skip_what_an_entry_excludes_only_by_its_own_path() {
+        // `!src/gen`, `!src/*` and `!**/node_modules` exclude the paths they
+        // match, but files below a matching directory are still sources.
+        for entry in ["!src/gen", "!src/*", "!**/node_modules"] {
+            assert_eq!(
+                pruned_dirs(&["**/*.ts", entry], &["src/gen", "node_modules"]),
+                [false, false],
+                "{entry}"
+            );
+        }
+    }
+
+    #[test]
+    fn pruner_keeps_unreadable_patterns_and_outside_paths_walkable() {
+        assert_eq!(
+            pruned_dirs(&["**/*.ts", "!dist[12]/**"], &["dist1"]),
+            [false]
+        );
+        assert_eq!(pruned_dirs(&["**/*.ts", "!**"], &["a"]), [false]);
+        let root = Path::new("/project");
+        let pruner = DirPruner::for_sources(root, root, &["!/other/**".to_string()]);
+        assert!(!pruner.excludes(Path::new("/elsewhere/other")));
+    }
+
+    #[test]
+    fn pruner_for_outputs_covers_the_subtree_of_every_exclusion() {
+        let root = Path::new("/project");
+        let outputs = ["dist".to_string(), "!dist/.vite".to_string()];
+        let pruner = DirPruner::for_outputs(root, &outputs);
+        assert!(pruner.excludes(&root.join("dist/.vite")));
+        assert!(!pruner.excludes(&root.join("dist")));
+        assert!(!pruner.excludes(&root.join("dist/assets")));
+
+        let outputs = ["!dist/.vite".to_string(), "dist/.vite/keep".to_string()];
+        assert!(!DirPruner::for_outputs(root, &outputs).excludes(&root.join("dist/.vite")));
+    }
+
+    #[test]
+    fn get_file_metadatas_selects_the_same_files_without_entering_excluded_directories()
+    -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("src"))?;
+        fs::create_dir_all(root.join("node_modules/dep"))?;
+        fs::write(root.join("src/a.ts"), "")?;
+        fs::write(root.join("node_modules/dep/b.ts"), "")?;
+        let sources = ["**/*.ts".to_string(), "!**/node_modules/**".to_string()];
+        let matcher = build_source_matcher(root, root, &sources);
+        let patterns = source_glob_patterns(&sources);
+
+        let plain = get_file_metadatas(root, &patterns, &matcher, &DirPruner::none())?;
+        let pruner = DirPruner::for_sources(root, root, &sources);
+        let pruned = get_file_metadatas(root, &patterns, &matcher, &pruner)?;
+        let names = |files: &[(PathBuf, fs::Metadata)]| {
+            files.iter().map(|(path, _)| path.clone()).collect_vec()
+        };
+        assert_eq!(names(&plain), [root.join("src/a.ts")]);
+        assert_eq!(names(&pruned), names(&plain));
+
+        let mut walker = glob_walk_pruned(&root.join("**/*.ts"), false, &pruner)?;
+        let walked = walker
+            .by_ref()
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(walked, [root.join("src/a.ts")]);
+        assert!(walker.pruned());
+        Ok(())
+    }
+
+    #[test]
+    fn glob_has_entries_sees_matches_inside_skipped_directories() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("vendor/x"))?;
+        fs::write(root.join("vendor/x/a.js"), "")?;
+        assert!(glob_has_entries(&root.join("vendor/**/*.js")));
+        assert!(!glob_has_entries(&root.join("vendor/**/*.rs")));
         Ok(())
     }
 
@@ -2232,7 +2664,12 @@ mod tests {
             global.to_string_lossy().to_string(),
         ];
         let matcher = build_source_matcher(workspace, &task_cwd, &sources);
-        let metadatas = get_file_metadatas(&task_cwd, &source_glob_patterns(&sources), &matcher)?;
+        let metadatas = get_file_metadatas(
+            &task_cwd,
+            &source_glob_patterns(&sources),
+            &matcher,
+            &DirPruner::none(),
+        )?;
         let paths = metadatas
             .into_iter()
             .map(|(path, _)| path)
@@ -2363,7 +2800,7 @@ mod tests {
 
         let sources = vec!["input.txt".to_string()];
         let matcher = build_source_matcher(workspace, &task_cwd, &sources);
-        let metadatas = get_file_metadatas(&task_cwd, &sources, &matcher)?;
+        let metadatas = get_file_metadatas(&task_cwd, &sources, &matcher, &DirPruner::none())?;
 
         assert_eq!(
             metadatas.into_iter().map(|(path, _)| path).collect_vec(),
