@@ -112,6 +112,25 @@ fn cutoff_day(before: jiff::Timestamp) -> (jiff::civil::Date, bool) {
     (zoned.date(), zoned.time() == end_of_day)
 }
 
+/// Whether a channel build dated `date` is surely old enough for a cutoff on `day`.
+fn channel_build_within_cutoff(
+    date: jiff::civil::Date,
+    day: jiff::civil::Date,
+    includes_day: bool,
+) -> bool {
+    date < day || (includes_day && date == day)
+}
+
+/// The dated manifests to try, newest first, when the current build is too new.
+fn cutoff_search_dates(
+    day: jiff::civil::Date,
+    includes_day: bool,
+    lookback_days: i64,
+) -> impl Iterator<Item = jiff::civil::Date> {
+    let first = if includes_day { 0 } else { 1 };
+    (first..=lookback_days).filter_map(move |n| day.checked_sub(jiff::Span::new().days(n)).ok())
+}
+
 /// The date of the build a `nightly-YYYY-MM-DD` version names, which is in the name itself.
 fn dated_nightly_created_at(version: &str) -> Option<String> {
     let date = version.strip_prefix("nightly-")?.parse().ok()?;
@@ -892,14 +911,13 @@ impl Backend for RustPlugin {
             .and_then(|ts| ts.parse::<jiff::Timestamp>().ok())
             .map(|ts| ts.to_zoned(jiff::tz::TimeZone::UTC).date());
         // Already old enough: pin to that build so a lockfile or an upgrade cannot move it.
-        if let Some(date) = current.filter(|date| *date < day || (includes_day && *date == day)) {
+        if let Some(date) =
+            current.filter(|date| channel_build_within_cutoff(*date, day, includes_day))
+        {
             return Ok(Some(format!("{version}-{date}")));
         }
         let server = rustup_dist_server(&config_env);
-        let first_offset = if includes_day { 0 } else { 1 };
-        for date in (first_offset..=cutoff_lookback_days(version))
-            .filter_map(|n| day.checked_sub(jiff::Span::new().days(n)).ok())
-        {
+        for date in cutoff_search_dates(day, includes_day, cutoff_lookback_days(version)) {
             let url = dated_channel_manifest_url_for(server.as_deref(), version, date);
             if HTTP_FETCH
                 .head(&url)
@@ -2050,6 +2068,31 @@ mod tests {
         assert_eq!(cutoff_day(date_only), (day, true));
         let mid_day: jiff::Timestamp = "2026-11-09T12:00:00Z".parse().unwrap();
         assert_eq!(cutoff_day(mid_day), (day, false));
+    }
+
+    #[test]
+    fn a_same_day_build_is_within_only_a_date_only_cutoff() {
+        let day = jiff::civil::date(2026, 11, 9);
+        let before = jiff::civil::date(2026, 11, 8);
+        assert!(channel_build_within_cutoff(day, day, true));
+        assert!(!channel_build_within_cutoff(day, day, false));
+        assert!(channel_build_within_cutoff(before, day, false));
+        assert!(!channel_build_within_cutoff(
+            jiff::civil::date(2026, 11, 10),
+            day,
+            true
+        ));
+    }
+
+    #[test]
+    fn the_archive_search_starts_on_the_cutoff_day_only_for_a_date_only_cutoff() {
+        let day = jiff::civil::date(2026, 11, 9);
+        let same_day = cutoff_search_dates(day, true, 3).collect::<Vec<_>>();
+        assert_eq!(same_day.first(), Some(&day));
+        assert_eq!(same_day.len(), 4);
+        let mid_day = cutoff_search_dates(day, false, 3).collect::<Vec<_>>();
+        assert_eq!(mid_day.first(), Some(&jiff::civil::date(2026, 11, 8)));
+        assert_eq!(mid_day.len(), 3);
     }
 
     #[test]
