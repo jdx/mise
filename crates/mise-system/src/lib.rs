@@ -528,11 +528,16 @@ pub async fn config_files_declaring_package(
 /// key declares its package for the manager it would select, with `names`
 /// applied.
 #[cfg(unix)]
-fn declared_spec(spec: &str, package: &PackageTomlConfig, manager: &str) -> Option<String> {
+fn declared_spec(
+    spec: &str,
+    package: &PackageTomlConfig,
+    manager: &str,
+    available: &[String],
+) -> Option<String> {
     let (mgr, pkg) = if spec.contains(':') {
         parse_spec(spec).ok()?
     } else {
-        resolve_unprefixed(spec, package, &available_manager_names()).ok()?
+        resolve_unprefixed(spec, package, available).ok()?
     };
     (mgr == manager).then_some(pkg)
 }
@@ -545,13 +550,14 @@ fn config_files_declaring_package_in<'a>(
 ) -> Vec<PathBuf> {
     // brew resolves `homebrew/core/<name>` to the bare formula name
     let core_name = format!("homebrew/core/{name}");
+    let available = std::cell::LazyCell::new(available_manager_names);
     let mut paths: Vec<PathBuf> = vec![];
     for (path, cf) in config_files {
         let declares = cf.bootstrap_config().is_some_and(|sys| {
             sys.packages.iter().any(|(spec, package)| {
                 // skipped declarations never reach prune's keep-list
                 package.is_os_supported()
-                    && declared_spec(spec, package, manager)
+                    && declared_spec(spec, package, manager, &available)
                         .is_some_and(|pkg| pkg == name || (manager == "brew" && pkg == core_name))
             })
         });
@@ -768,6 +774,10 @@ fn package_requests_from_config_files(
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
     let available_managers = std::cell::LazyCell::new(available_manager_names);
+    // (manager, package) pairs an unprefixed key declared, and pairs two of them
+    // disagreed about
+    let mut bare_origin: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut conflicted: BTreeSet<(String, String)> = BTreeSet::new();
     // Entries with a prefix go first, so an unprefixed key that resolves to the
     // same package as one of them yields to it.
     let (explicit, unprefixed): (Vec<_>, Vec<_>) =
@@ -788,18 +798,41 @@ fn package_requests_from_config_files(
         };
         match parsed {
             Ok((mgr, name)) => {
-                if !spec.contains(':')
-                    && by_mgr
-                        .get(&mgr)
-                        .is_some_and(|requests| requests.iter().any(|r| r.name == name))
-                {
-                    warn!(
-                        "[bootstrap.packages]: '{spec}' resolves to '{mgr}:{name}', which another entry already declares; using that entry"
-                    );
-                    continue;
-                }
                 let version = package.version();
                 let version = (version != "latest").then(|| version.to_string());
+                let is_bare = !spec.contains(':');
+                if is_bare {
+                    let key = (mgr.clone(), name.clone());
+                    if conflicted.contains(&key) {
+                        continue;
+                    }
+                    let existing = by_mgr
+                        .get(&mgr)
+                        .and_then(|requests| requests.iter().find(|r| r.name == name));
+                    if let Some(existing) = existing {
+                        let same =
+                            existing.version == version && existing.desired == package.desired();
+                        if same {
+                            debug!("[bootstrap.packages]: '{spec}' repeats {mgr}:{name}");
+                        } else if bare_origin.contains(&key) {
+                            // two unprefixed keys disagree about one package: neither
+                            // wins by merge order
+                            warn!(
+                                "[bootstrap.packages]: '{spec}' and another unprefixed entry both resolve to '{mgr}:{name}' with different state or version; skipping both"
+                            );
+                            if let Some(requests) = by_mgr.get_mut(&mgr) {
+                                requests.retain(|r| r.name != name);
+                            }
+                            conflicted.insert(key);
+                        } else {
+                            warn!(
+                                "[bootstrap.packages]: '{spec}' resolves to '{mgr}:{name}', which another entry already declares; using that entry"
+                            );
+                        }
+                        continue;
+                    }
+                    bare_origin.insert(key);
+                }
                 if let Err(err) = validate_package_name(&mgr, &name) {
                     warn!("[bootstrap.packages]: {err}");
                     continue;
