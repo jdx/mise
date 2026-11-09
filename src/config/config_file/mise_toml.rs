@@ -1732,10 +1732,16 @@ impl ConfigFile for MiseToml {
         for tr in &mut versions {
             *tr = tr.without_registry_options();
             if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
+                // Options given on the command line or inline are explicit even when they match
+                // the registry default.
+                let explicit = tr.explicit_options();
                 let defaults = rt.backend_options(&tr.ba().full(), tr.ba().registry_version());
                 let opts = tr.options_mut();
-                opts.opts
-                    .retain(|k, v| written_keys.contains(k) || defaults.opts.get(k) != Some(v));
+                opts.opts.retain(|k, v| {
+                    written_keys.contains(k)
+                        || explicit.opts.contains_key(k)
+                        || defaults.opts.get(k) != Some(v)
+                });
             }
             restore_option_templates(tr, &templates);
         }
