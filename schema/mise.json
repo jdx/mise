@@ -1435,6 +1435,59 @@
       "minProperties": 1,
       "additionalProperties": false
     },
+    "launchd_resource_limits": {
+      "type": "object",
+      "description": "resource limits for launchd SoftResourceLimits and HardResourceLimits",
+      "properties": {
+        "core": {
+          "type": "integer",
+          "description": "write Core, the largest core file in bytes",
+          "minimum": 0
+        },
+        "cpu": {
+          "type": "integer",
+          "description": "write CPU, the CPU time in seconds",
+          "minimum": 0
+        },
+        "data": {
+          "type": "integer",
+          "description": "write Data, the data segment size in bytes",
+          "minimum": 0
+        },
+        "file_size": {
+          "type": "integer",
+          "description": "write FileSize, the largest file the program may create in bytes",
+          "minimum": 0
+        },
+        "memory_lock": {
+          "type": "integer",
+          "description": "write MemoryLock, the memory the program may lock in bytes",
+          "minimum": 0
+        },
+        "number_of_files": {
+          "type": "integer",
+          "description": "write NumberOfFiles, the open file descriptors; launchd starts agents with a soft limit of 256",
+          "minimum": 0
+        },
+        "number_of_processes": {
+          "type": "integer",
+          "description": "write NumberOfProcesses, the processes the user may run",
+          "minimum": 0
+        },
+        "resident_set_size": {
+          "type": "integer",
+          "description": "write ResidentSetSize, the resident memory in bytes",
+          "minimum": 0
+        },
+        "stack": {
+          "type": "integer",
+          "description": "write Stack, the stack size in bytes",
+          "minimum": 0
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
     "macos_defaults_value": {
       "description": "a property list value: boolean, integer, real, string, or an array or dictionary of these",
       "anyOf": [
@@ -9398,6 +9451,14 @@
                       "stderr_path": {
                         "type": "string",
                         "description": "write StandardErrorPath"
+                      },
+                      "soft_resource_limits": {
+                        "description": "write SoftResourceLimits, the resource limits the program starts with and may raise up to the hard limits",
+                        "$ref": "#/$defs/launchd_resource_limits"
+                      },
+                      "hard_resource_limits": {
+                        "description": "write HardResourceLimits, the ceilings the program cannot raise its soft limits above",
+                        "$ref": "#/$defs/launchd_resource_limits"
                       },
                       "kickstart": {
                         "type": "boolean",
