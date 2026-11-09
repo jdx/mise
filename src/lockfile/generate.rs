@@ -803,6 +803,11 @@ pub async fn populate_aube_locks(
         if backend.get_type() != BackendType::Npm {
             continue;
         }
+        // aube resolves a tarball URL without its optionalDependencies, so a
+        // graph for it would lack packages; the lockfile holds only the version.
+        if crate::backend::npm::is_tarball_spec(&ba.tool_name) {
+            continue;
+        }
         let options = backend.lockfile_options(&tv.request, &PlatformTarget::from_current())?;
         let backend_name = ba.stored_full();
         let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
