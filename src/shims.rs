@@ -9,7 +9,7 @@ use crate::backend::Backend;
 use crate::config::{Config, ConfigMap, Settings, SettingsExt, load_command_wrappers};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
@@ -2187,7 +2187,7 @@ fn no_version_message(bin_name: &str, tvs: &[ToolVersion]) -> String {
 /// mismatched configured version must still fail, not run something nobody chose.
 pub async fn installed_fallback_bin(
     config: &Arc<Config>,
-    ts: &Toolset,
+    ts: &mut Toolset,
     tvs: &[ToolVersion],
     shim_name: &str,
     bin_name: &str,
@@ -2195,17 +2195,31 @@ pub async fn installed_fallback_bin(
     if !Settings::get().shims.fallback_to_installed {
         return Ok(None);
     }
+    // A configured tool that is named like the command owns it, even when its version is missing
+    // and another installed tool (Node for a pinned npm) also ships the executable.
+    if ts
+        .versions
+        .keys()
+        .any(|ba| ba.matches_bin_name(shim_name) || ba.matches_bin_name(bin_name))
+    {
+        return Ok(None);
+    }
     let unconfigured = tvs
         .iter()
         .filter(|tv| !ts.versions.keys().any(|ba| ba.short == tv.ba().short))
         .cloned()
         .collect_vec();
-    let Some(tv) = preferred_installed_version(&unconfigured) else {
+    let Some(tv) = preferred_installed_version(&unconfigured).cloned() else {
         return Ok(None);
     };
     let backend = tv.backend()?;
-    let bin = backend_which_shim(backend.as_ref(), config, tv, shim_name, bin_name).await?;
+    let bin = backend_which_shim(backend.as_ref(), config, &tv, shim_name, bin_name).await?;
     if let Some(bin) = &bin {
+        // Put the chosen version in the toolset so the child gets its environment and PATH.
+        let mut tvl = ToolVersionList::new(tv.request.ba().clone(), ToolSource::Argument);
+        tvl.requests.push(tv.request.clone());
+        tvl.versions.push(tv.clone());
+        ts.versions.insert(tv.request.ba().clone(), tvl);
         debug!(
             "shim[{bin_name}] no version configured, using installed {tv} (shims.fallback_to_installed): {}",
             display_path(bin)

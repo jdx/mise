@@ -502,7 +502,7 @@ async fn which_shim(
         tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
     }
     if let Some(bin) =
-        crate::shims::installed_fallback_bin(config, &ts, &tvs, shim_name, bin_name).await?
+        crate::shims::installed_fallback_bin(config, &mut ts, &tvs, shim_name, bin_name).await?
     {
         return Ok((ShimCommand::Tool(bin), ts));
     }

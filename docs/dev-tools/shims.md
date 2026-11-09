@@ -431,7 +431,8 @@ mise settings shims.fallback_to_installed=true
 
 It is off by default because the version it runs is one nobody chose. It never
 replaces a tool a config file does select: a pinned version that is missing
-still fails.
+still fails, as does a command named like a configured tool. It applies to Unix
+shims; Windows `.exe` shims still fail with the one-line error.
 
 ## Keep shims out of mise activate {#activate-shims}
 
