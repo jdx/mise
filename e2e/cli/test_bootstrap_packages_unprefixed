@@ -16,6 +16,7 @@ assert_contains "mise bootstrap packages status 2>&1" "no package manager is ava
 # status lists them as skipped, in the table and in JSON
 assert_contains "mise bootstrap packages status 2>/dev/null" "skipped (no package manager is available for 'git'"
 assert_contains "mise bootstrap packages status --json 2>/dev/null" '"unprefixed"'
+assert_contains "mise bootstrap packages status --json 2>/dev/null" '"requested_version": "latest"'
 
 # prefixed keys ignore the preference list
 cat <<EOF2 >mise.toml

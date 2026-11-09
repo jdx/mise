@@ -180,26 +180,26 @@ impl SystemStatus {
                     json!({
                         "available": false,
                         "reason": "no package manager is available",
-                        "packages": unresolved.iter().map(|(key, reason)| {
+                        "packages": unresolved.iter().map(|pkg| {
                             json!({
-                                "package": key,
-                                "requested_version": "latest",
-                                "desired_state": "present",
+                                "package": pkg.key,
+                                "requested_version": pkg.version,
+                                "desired_state": if pkg.absent { "absent" } else { "present" },
                                 "state": "skipped",
                                 "installed_version": "",
-                                "reason": reason,
+                                "reason": pkg.reason,
                             })
                         }).collect::<Vec<_>>(),
                     }),
                 );
             }
         } else {
-            for (key, reason) in &unresolved {
+            for pkg in &unresolved {
                 rows.push(vec![
                     "-".to_string(),
-                    key.clone(),
+                    pkg.key.clone(),
                     "".to_string(),
-                    format!("skipped ({reason})"),
+                    format!("skipped ({})", pkg.reason),
                 ]);
             }
         }

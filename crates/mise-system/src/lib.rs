@@ -442,10 +442,19 @@ pub fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
     packages_from_config_files_with_brew_taps(&config.config_files(), &brew_taps, true)
 }
 
+/// An unprefixed `[bootstrap.packages]` key that no manager can take.
+pub struct UnresolvedPackage {
+    pub key: String,
+    pub reason: String,
+    /// the declared version, `"latest"` when none
+    pub version: String,
+    pub absent: bool,
+}
+
 /// Unprefixed `[bootstrap.packages]` keys that no manager can take on this
 /// machine, with why, for `status` to list as skipped. Keys the platform or
 /// config environment disables are not listed.
-pub fn unresolved_unprefixed_from_config(config: &Config) -> Vec<(String, String)> {
+pub fn unresolved_unprefixed_from_config(config: &Config) -> Vec<UnresolvedPackage> {
     let available = available_manager_names();
     package_configs_from_config_files(&config.config_files())
         .into_iter()
@@ -457,7 +466,12 @@ pub fn unresolved_unprefixed_from_config(config: &Config) -> Vec<(String, String
         .filter_map(|(spec, package)| {
             resolve_unprefixed(&spec, &package, &available)
                 .err()
-                .map(|err| (spec, err.to_string()))
+                .map(|err| UnresolvedPackage {
+                    key: spec,
+                    reason: err.to_string(),
+                    version: package.version().to_string(),
+                    absent: package.desired() == mise_system_packages::PackageDesiredState::Absent,
+                })
         })
         .collect()
 }
