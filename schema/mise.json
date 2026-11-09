@@ -3348,6 +3348,13 @@
               "type": "string",
               "enum": ["error", "layer"]
             },
+            "prefer": {
+              "description": "Package managers, in order, that an unprefixed `[bootstrap.packages]` key may use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "sudo": {
               "default": true,
               "description": "Let mise run `sudo` for steps that need root, such as system packages and `mise install --system`.",
@@ -9117,7 +9124,7 @@
         },
         "packages": {
           "type": "object",
-          "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\", or by a bare package name that mise installs with one manager chosen from system_packages.prefer (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
           "additionalProperties": {
             "oneOf": [
               {
@@ -9207,6 +9214,13 @@
                     "description": "desired package state; pacman, scoop, snap, and zypper support absent",
                     "enum": ["present", "absent"],
                     "default": "present"
+                  },
+                  "names": {
+                    "type": "object",
+                    "description": "package names per manager for a key without a manager prefix, e.g. { apt = \"libssl-dev\", dnf = \"openssl-devel\" }; a manager not listed uses the key as the name",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   }
                 },
                 "dependentRequired": {
@@ -9216,7 +9230,7 @@
             ]
           },
           "propertyNames": {
-            "pattern": "^[A-Za-z0-9_-]+:.+$"
+            "pattern": "^([A-Za-z0-9_-]+:.+|[^:\\s]+)$"
           }
         },
         "repos": {

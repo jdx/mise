@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# A key without a manager prefix picks one manager from the preference list,
+# by availability only. winget and scoop never run on Linux, so a list naming
+# only them leaves nothing to pick.
+
+cat <<EOF2 >mise.toml
+[bootstrap.packages]
+git = "latest"
+openssl = { names = { apt = "libssl-dev", dnf = "openssl-devel" } }
+EOF2
+
+export MISE_SYSTEM_PACKAGES_PREFER=winget,scoop
+assert_contains "mise bootstrap packages status 2>&1" "no package manager is available for 'git': tried winget, scoop"
+assert_contains "mise bootstrap packages status 2>&1" "no package manager is available for 'openssl'"
+# status lists them as skipped, in the table and in JSON
+assert_contains "mise bootstrap packages status 2>/dev/null" "skipped (no package manager is available for 'git'"
+assert_contains "mise bootstrap packages status --json 2>/dev/null" '"unprefixed"'
+assert_contains "mise bootstrap packages status --json 2>/dev/null" '"requested_version": "latest"'
+
+# prefixed keys ignore the preference list
+cat <<EOF2 >mise.toml
+[bootstrap.packages]
+"apt:git" = "latest"
+EOF2
+assert_not_contains "mise bootstrap packages status 2>&1" "no package manager is available"
+
+# a manager the list names but that is excluded is not a candidate
+unset MISE_SYSTEM_PACKAGES_PREFER
+cat <<EOF2 >mise.toml
+[bootstrap.packages]
+git = "latest"
+EOF2
+assert_contains "MISE_SYSTEM_PACKAGES_PREFER=apt MISE_SYSTEM_PACKAGES_MANAGERS=brew mise bootstrap packages status 2>&1" "no package manager is available for 'git': tried apt"

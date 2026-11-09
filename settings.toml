@@ -4104,6 +4104,32 @@ env = "MISE_SYSTEM_PACKAGES_OSTREE"
 rust_type = "SystemPackagesOstree"
 type = "String"
 
+[system_packages.prefer]
+description = "Package managers, in order, that an unprefixed `[bootstrap.packages]` key may use."
+docs = """
+A key without a `manager:` prefix, such as `git = "latest"`, installs through
+exactly one manager: the first in this list that is available and not excluded
+by [`system_packages.managers`](#system_packages.managers). When unset, mise
+tries the distribution's own manager first (`apt`, `dnf`, `pacman`, `zypper`,
+`apk`), then `brew`, `winget`, `scoop` and `choco`. A list replaces that default
+order and names the only candidates. A package manager plugin in the list counts
+as a candidate even when it cannot run; `status` and `apply` then report it as
+unavailable instead of choosing the next manager:
+
+```toml
+[settings]
+system_packages.prefer = ["apt", "dnf", "pacman", "brew"]
+```
+
+Prefixed keys such as `"apt:git"` ignore this setting. See
+[Unprefixed packages](/bootstrap/packages/#unprefixed-packages).
+"""
+env = "MISE_SYSTEM_PACKAGES_PREFER"
+optional = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [system_packages.sudo]
 default = true
 description = "Let mise run `sudo` for steps that need root, such as system packages and `mise install --system`."

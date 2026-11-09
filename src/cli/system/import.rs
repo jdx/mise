@@ -356,6 +356,7 @@ mod tests {
             artifact: None,
             channel: None,
             classic: None,
+            names: Default::default(),
         });
         assert_eq!(
             imported_package_value(None, Some(&inherited)).to_string(),
@@ -374,6 +375,7 @@ mod tests {
             artifact: None,
             channel: None,
             classic: None,
+            names: Default::default(),
         });
         assert_eq!(
             imported_package_value(None, Some(&adopted)).to_string(),
@@ -392,6 +394,7 @@ mod tests {
             artifact: None,
             channel: None,
             classic: None,
+            names: Default::default(),
         });
         assert_eq!(
             imported_package_value(None, Some(&appdir)).to_string(),
