@@ -110,11 +110,14 @@ fn scalars_for<'a>(
     if written.len() == 1 && count == 1 {
         return Some(&written[0].1);
     }
-    written
+    let mut same_version = written
         .iter()
-        .find(|(v, _)| v.as_deref() == Some(version))
-        .or_else(|| (written.len() == count).then(|| &written[index]))
-        .map(|(_, s)| s)
+        .filter(|(v, _)| v.as_deref() == Some(version));
+    // Two elements for one version cannot be told apart by it, so fall back to position.
+    match (same_version.next(), same_version.next()) {
+        (Some((_, s)), None) => Some(s),
+        _ => (written.len() == count).then(|| &written[index].1),
+    }
 }
 
 /// Whether a written scalar is the value `stored`, the string a backend option holds.
@@ -6338,6 +6341,33 @@ run = "cargo build"
         let dump = cf.dump().unwrap();
         assert!(dump.contains("flag = true, count = 1_000"), "{dump}");
         assert!(dump.contains(r#"flag = "true", count = 2"#), "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_duplicate_versions_do_not_share_scalars() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".replace-dup-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = [{{ version = "1", count = 1 }}, {{ version = "1", count = "1" }}, {{ version = "2" }}]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![
+                request("1", string_options(&[("count", "1")])),
+                request("1", string_options(&[("count", "1")])),
+            ],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(!dump.contains(r#"count = "1", count"#), "{dump}");
+        assert_eq!(dump.matches("count = 1").count(), 0, "{dump}");
         file::remove_file(&p).unwrap();
     }
 
