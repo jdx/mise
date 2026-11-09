@@ -152,10 +152,6 @@ soft_resource_limits = { number_of_files = 10240 }
 hard_resource_limits = { number_of_files = 65536 }
 ```
 
-Without this, the agent would need a shell wrapper such as
-`/bin/sh -c "ulimit -n 10240; exec ~/.local/bin/proxy"` to raise the limit
-itself.
-
 ## Use templates {#templates}
 
 String values are [Tera templates](/templates.html), rendered with the
