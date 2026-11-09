@@ -1736,6 +1736,14 @@ MISE_HISTORY_LOCK_WAIT=5m mise dot save --message "before upgrade"
 ```
 
 `mise dot watch` and `mise dot recover` never wait, whatever this is set to.
+A `mise dot` command the watcher starts, such as a `history.reload` command that
+runs `mise dot save`, inherits the watcher's environment and waits as
+configured, so set `MISE_HISTORY_LOCK_WAIT` on the commands that need it rather
+than in the watcher's environment.
+
+A `mise bootstrap` that starts with nothing to record only takes the lock at its
+first write. If the lock is still held after the wait, including with `0`, it
+warns and continues without a recovery journal instead of failing.
 """
 env = "MISE_HISTORY_LOCK_WAIT"
 type = "Duration"
