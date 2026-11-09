@@ -465,10 +465,10 @@ With colors off (`color = false`, `NO_COLOR` or `CLICOLOR=0`), prompts are
 unstyled whatever this is set to.
 """
 enum = [
-  { value = "auto", description = "`base16` on light terminals (detected from `COLORFGBG`), `charm` otherwise" },
+  { value = "auto", description = "`base16`" },
   { value = "default", description = "same as `auto`" },
-  { value = "charm", description = "suits dark terminals" },
-  { value = "base16", description = "suits light terminals" },
+  { value = "charm", description = "fixed 256-color greys; suits dark terminals" },
+  { value = "base16", description = "the terminal's own named colors, so it follows its palette" },
   { value = "catppuccin" },
   { value = "dracula" },
 ]
@@ -2652,7 +2652,7 @@ such as `pnpm_args` apply only to the package manager they name. See
 [Choosing an installer](/dev-tools/backends/npm.html#choosing-an-installer).
 """
 enum = [
-  { value = "auto", description = "the embedded aube, or npm when `npm.shell_out` is on" },
+  { value = "auto", description = "`base16`" },
   { value = "npm", description = "`npm install -g`" },
   { value = "aube", description = "the embedded aube, even when `npm.shell_out` is on" },
   { value = "aube_cli", description = "a standalone `aube` executable" },
@@ -3980,7 +3980,7 @@ block an install, and the check never fails an install on its own. See
 """
 enum = [
   { value = "prompt", description = "list what is missing and offer to install it with the first available package manager; without a terminal and without `--yes`, same as `warn`" },
-  { value = "auto", description = "install what is missing without asking, using sudo as `system_packages.sudo` allows" },
+  { value = "auto", description = "`base16`" },
   { value = "warn", description = "list what is missing and the commands to install it, then continue" },
   { value = "ignore", description = "skip the check" },
 ]

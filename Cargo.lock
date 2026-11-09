@@ -7342,6 +7342,7 @@ dependencies = [
  "shell-words",
  "strum 0.28.0",
  "tabled",
+ "termcolor",
  "tokio",
  "windows-sys 0.61.2",
  "xx",
