@@ -1574,7 +1574,9 @@ impl PackslipBackend {
         repo: &str,
         refresh: bool,
     ) -> Result<Vec<VersionInfo>> {
-        if let Some(versions) = self.mirrored_versions().await? {
+        // A refresh is asked for because the registry catalog lacked a
+        // release, so it reads the asset listing instead.
+        if !refresh && let Some(versions) = self.mirrored_versions().await? {
             return Ok(versions);
         }
         let asset_name = bundle_name(project);
@@ -1767,13 +1769,29 @@ impl PackslipBackend {
         };
         let mut found = None;
         let mut probe_error = None;
-        if let Some(tag) = self.mirrored_tag(project, &tv.version).await? {
-            let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
-            found = find(std::slice::from_ref(&release));
-            if found.is_none() {
-                // A mirrored release fetched before the packslip was uploaded
-                // must not stand in for the release as it is now.
-                debug!("packslip:{project}: the mirrored {tag} carries no {asset_name}");
+        // A failed lookup here defers to the standard tag probes and the
+        // catalog below, and is reported only if they find nothing either.
+        match self.mirrored_tag(project, &tv.version).await {
+            Ok(Some(tag)) => {
+                match github::get_release_with_versions_host(&repo, &tag, true).await {
+                    Ok(release) => {
+                        found = find(std::slice::from_ref(&release));
+                        if found.is_none() {
+                            // A mirrored release fetched before the packslip was uploaded
+                            // must not stand in for the release as it is now.
+                            debug!(
+                                "packslip:{project}: the mirrored {tag} carries no {asset_name}"
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        probe_error.get_or_insert(err);
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                probe_error.get_or_insert(err);
             }
         }
         if found.is_none() {

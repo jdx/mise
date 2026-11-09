@@ -462,3 +462,14 @@ fn test_a_server_error_whose_body_says_404_is_not_a_not_found() {
         crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
     assert!(!crate::versions_host::is_not_found(&failed));
 }
+
+#[test]
+fn test_a_server_error_body_quoting_a_client_error_is_not_a_not_found() {
+    let mirror = eyre::eyre!("mise-versions timed out");
+    let github = eyre::eyre!(
+        "HTTP status server error (502): HTTP status client error (404 Not Found) for url (x)"
+    );
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(!crate::versions_host::is_not_found(&failed));
+}

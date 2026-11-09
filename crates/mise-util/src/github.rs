@@ -731,13 +731,13 @@ async fn release_versions_with_asset(
                 .build()
         });
     if refresh {
+        // Fetch before taking the lock: paging and retries are slow, and the
+        // cache map is shared by every repository.
+        let fetched = fetch_release_versions_with_asset(repo, asset).await;
         let mut caches = RELEASE_VERSIONS_CACHE.write().await;
         let cache = caches.get_mut(&key).unwrap();
-        return match cache
-            .refresh_async(|| Box::pin(fetch_release_versions_with_asset(repo, asset)))
-            .await
-        {
-            Ok(versions) => Ok(versions),
+        return match fetched {
+            Ok(versions) => cache.refresh_async(|| async { Ok(versions) }).await,
             Err(err) => stale_on_temporary_failure(cache, err),
         };
     }
