@@ -215,9 +215,10 @@ impl Toolset {
         added.extend(add_paths);
         added.extend(self.list_paths(config).await);
         added.extend(config.path_dirs_append().await?.clone());
-        for p in added {
-            if !file::is_command_wrapper_dir(&p) {
-                path_env.add(p);
+        // An entry may hold several PATH components, which `add` splits.
+        for part in added.iter().flat_map(std::env::split_paths) {
+            if !file::is_command_wrapper_dir(&part) {
+                path_env.add(part);
             }
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
