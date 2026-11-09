@@ -18,33 +18,22 @@ use itertools::Itertools;
 use versions::Versioning;
 
 pub async fn rebuild_for_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<()> {
-    rebuild_for_toolset_in(config, ts, false).await
-}
-
-/// `manage_system` says the operation targets the system install dir, so its
-/// `global` link may follow the config. Otherwise a shared dir keeps its link:
-/// one user's global config must not retarget what the administrator chose.
-pub async fn rebuild_for_toolset_in(
-    config: &Arc<Config>,
-    ts: &Toolset,
-    manage_system: bool,
-) -> Result<()> {
-    rebuild_for_backends(
-        config,
-        ts,
-        ts.list_cached_and_current_backends(),
-        manage_system,
-    )
-    .await
+    rebuild_for_backends(config, ts, ts.list_cached_and_current_backends()).await
 }
 
 pub(crate) async fn rebuild_for_backends(
     config: &Arc<Config>,
     ts: &Toolset,
     backends: impl IntoIterator<Item = Arc<dyn Backend>>,
-    manage_system: bool,
 ) -> Result<()> {
-    let global = global_toolset(config).await;
+    let global = global_toolset(config, ConfigScope::GlobalOnly).await;
+    // A shared dir belongs to the administrator: its `global` link follows the
+    // system config alone, never the invoking user's global config.
+    let system = if env::shared_install_dirs().is_empty() {
+        None
+    } else {
+        global_toolset(config, ConfigScope::SystemOnly).await
+    };
     let rebuilds = backends.into_iter().flat_map(|backend| {
         install_dirs_for(&backend)
             .into_iter()
@@ -52,7 +41,11 @@ pub(crate) async fn rebuild_for_backends(
     });
     run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
         let shared = installs_dir != backend.ba().installs_path();
-        let global = global.as_ref().filter(|_| manage_system || !shared);
+        let global = if shared {
+            system.as_ref()
+        } else {
+            global.as_ref()
+        };
         rebuild_symlinks_in_dir(config, ts, global, &backend, &installs_dir).wrap_err_with(|| {
             format!(
                 "failed to rebuild runtime symlinks for {} in {}",
@@ -67,9 +60,9 @@ pub(crate) async fn rebuild_for_backends(
 /// installed. It backs the `global` link, which names the version in use
 /// outside any project, so project config and `MISE_*_VERSION` stay out of it.
 /// `None` when it could not be built, so the links already there are kept.
-async fn global_toolset(config: &Arc<Config>) -> Option<Toolset> {
+async fn global_toolset(config: &Arc<Config>, scope: ConfigScope) -> Option<Toolset> {
     let built = ToolsetBuilder::new()
-        .with_scope(ConfigScope::GlobalOnly)
+        .with_scope(scope)
         .without_runtime_env()
         .build_unresolved(config);
     let mut global = match built {
@@ -291,7 +284,15 @@ fn list_symlinks_for_dir(
                 .list_current_versions()
                 .into_iter()
                 .filter(|(b, _)| b.ba() == backend.ba())
-                .find_map(|(_, tv)| pin_target(backend, &tv, installs_dir)),
+                .find_map(|(_, tv)| pin_target(backend, &tv, installs_dir))
+                // The system config can resolve to an install outside this
+                // shared dir (a newer one in the user's dir); the administrator's
+                // link stays rather than being dropped.
+                .or_else(|| {
+                    (installs_dir != backend.ba().installs_path())
+                        .then(|| runtime_symlink_target(&global_link))
+                        .flatten()
+                }),
             // Global config could not be read: keep the link as it is.
             None => runtime_symlink_target(&global_link),
         };

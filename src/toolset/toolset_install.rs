@@ -467,8 +467,7 @@ impl Toolset {
             }
             if !failed_backends.is_empty()
                 && let Err(err) =
-                    runtime_symlinks::rebuild_for_backends(config, self, failed_backends, false)
-                        .await
+                    runtime_symlinks::rebuild_for_backends(config, self, failed_backends).await
             {
                 warn!("failed to restore runtime symlinks after install failure: {err:#}");
             }
@@ -484,8 +483,7 @@ impl Toolset {
             }
             if !failed_backends.is_empty()
                 && let Err(err) =
-                    runtime_symlinks::rebuild_for_backends(config, self, failed_backends, false)
-                        .await
+                    runtime_symlinks::rebuild_for_backends(config, self, failed_backends).await
             {
                 warn!("failed to restore runtime symlinks after install failure: {err:#}");
             }
