@@ -198,11 +198,21 @@ impl Toolset {
     /// Used during tool installation where tool-dependent env vars
     /// may reference tools that aren't installed yet, and in
     /// dependency_env to avoid triggering module hooks on a partial PATH.
+    ///
+    /// The command-wrapper directory is left out: a wrapper reroutes the commands a project
+    /// runs, not the ones mise runs to install its tools. `[wrappers.cargo]` pointing at `mbx`
+    /// would otherwise take over `cargo install` for a `cargo:` tool. (jdx/mr-boxington#919)
     pub(crate) async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
-        let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
+        let mut path_env = PathEnv::from_iter(
+            pristine_path_without_install_dirs()
+                .into_iter()
+                .filter(|p| !file::is_command_wrapper_dir(p)),
+        );
         for p in config.path_dirs().await?.clone() {
-            path_env.add(p);
+            if !file::is_command_wrapper_dir(&p) {
+                path_env.add(p);
+            }
         }
         for p in &add_paths {
             path_env.add(p.clone());
