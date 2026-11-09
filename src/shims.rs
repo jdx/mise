@@ -2215,12 +2215,12 @@ pub async fn installed_fallback_bin(
     let backend = tv.backend()?;
     // Run the documented latest or nothing: when the backend's latest installed version lacks the
     // executable, `preferred_installed_version` picked another one, which nobody chose.
-    if backend
-        .latest_installed_version(None)
-        .ok()
-        .flatten()
-        .as_deref()
-        != Some(tv.version.as_str())
+    // The install directory name counts too: a ref install is `ref:main` in `tv.version` but
+    // `ref-main` on disk, where the backend reads its latest from.
+    let latest = backend.latest_installed_version(None).ok().flatten();
+    let dir_name = tv.tv_pathname();
+    if latest.as_deref() != Some(tv.version.as_str())
+        && latest.as_deref() != Some(dir_name.as_str())
     {
         return Ok(None);
     }
