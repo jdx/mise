@@ -106,6 +106,7 @@ fn scalars_for<'a>(
     index: usize,
     count: usize,
     version: &str,
+    repeated: bool,
 ) -> Option<&'a WrittenScalars> {
     if written.len() == 1 && count == 1 {
         return Some(&written[0].1);
@@ -113,9 +114,9 @@ fn scalars_for<'a>(
     let mut same_version = written
         .iter()
         .filter(|(v, _)| v.as_deref() == Some(version));
-    // Two elements for one version cannot be told apart by it, so fall back to position.
+    // Elements sharing a version, on either side, cannot be told apart by it, so use position.
     match (same_version.next(), same_version.next()) {
-        (Some((_, s)), None) => Some(s),
+        (Some((_, s)), None) if !repeated => Some(s),
         _ => (written.len() == count).then(|| &written[index].1),
     }
 }
@@ -1911,7 +1912,7 @@ impl ConfigFile for MiseToml {
             } else {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
-                let scalars = scalars_for(&written_scalars, 0, 1, &versions[0].version());
+                let scalars = scalars_for(&written_scalars, 0, 1, &versions[0].version(), false);
                 for (k, v) in &options.opts {
                     table.insert(k, option_value_to_edit(k, v, scalars));
                 }
@@ -1930,6 +1931,7 @@ impl ConfigFile for MiseToml {
             let reusing = reused.is_some();
             let mut arr = reused.unwrap_or_else(Array::new);
             let count = versions.len();
+            let names: Vec<String> = versions.iter().map(|tr| tr.version()).collect();
             for (i, tr) in versions.into_iter().enumerate() {
                 let v = tr.version();
                 let val: Value = if output_empty_opts(&tr.options()) {
@@ -1938,7 +1940,13 @@ impl ConfigFile for MiseToml {
                     let mut table = InlineTable::new();
                     table.insert("version", v.to_string().into());
                     let options = tr.options();
-                    let scalars = scalars_for(&written_scalars, i, count, &v);
+                    let scalars = scalars_for(
+                        &written_scalars,
+                        i,
+                        count,
+                        &v,
+                        names.iter().filter(|n| **n == v).count() > 1,
+                    );
                     for (k, v) in &options.opts {
                         table.insert(k, option_value_to_edit(k, v, scalars));
                     }
@@ -6368,6 +6376,38 @@ run = "cargo build"
         let dump = cf.dump().unwrap();
         assert!(!dump.contains(r#"count = "1", count"#), "{dump}");
         assert_eq!(dump.matches("count = 1").count(), 0, "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_repeated_new_version_uses_position() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-repeat-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = [{{ version = "1", count = 1 }}, {{ version = "2", count = "1" }}]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![
+                request("1", string_options(&[("count", "1")])),
+                request("1", string_options(&[("count", "1")])),
+            ],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#"{ version = "1", count = 1 }, { version = "1", count = "1" }"#),
+            "{dump}"
+        );
         file::remove_file(&p).unwrap();
     }
 
