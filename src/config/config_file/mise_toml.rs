@@ -6342,6 +6342,32 @@ run = "cargo build"
     }
 
     #[tokio::test]
+    async fn test_replace_versions_keeps_exponent_float_spelling() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-float-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "1.0.0", ratio = 1e3 }}
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![request("1.0.1", string_options(&[("ratio", "1000.0")]))],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("ratio = 1e3"), "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
     async fn test_replace_versions_standard_table_keeps_scalar_options() {
         let _config = Config::get().await.unwrap();
         let p = CWD
