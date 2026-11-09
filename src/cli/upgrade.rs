@@ -1227,6 +1227,9 @@ impl Upgrade {
             let versions_needed_by_tracked = if to_remove.is_empty() {
                 NeededVersions::new()
             } else {
+                // This resolves every config tracked on the machine, which can take a
+                // while, so show progress rather than appearing to hang.
+                let scan_pr = mpr.add("checking tracked configs");
                 let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
                     config,
                     true,
@@ -1236,6 +1239,7 @@ impl Upgrade {
                 )
                 .await?;
                 needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
+                scan_pr.finish();
                 needed
             };
 
