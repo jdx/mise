@@ -402,13 +402,18 @@ async fn prompt_for_tasks(config: &Arc<Config>, load_all: bool) -> Result<Vec<Ta
         url = style::eunderline("https://mise.jdx.dev/tasks/")
     );
     let theme = crate::ui::theme::get_theme();
+    let visible = tasks.values().filter(|t| !t.hide).collect_vec();
+    ensure!(
+        !visible.is_empty(),
+        "no tasks to pick from; every task is hidden"
+    );
     let mut s = MultiSelect::new("Tasks")
         .description("Select the tasks to run")
         .min(1)
         .filtering(true)
         .filterable(true)
         .theme(&theme);
-    for t in tasks.values().filter(|t| !t.hide) {
+    for t in visible {
         // Truncate description to first line only, like tasks ls does
         let desc = t.description.lines().next().unwrap_or_default();
         s = s.option(
