@@ -21,6 +21,7 @@ regex = "1"
 shell-words = "1"
 strum = { version = "0.28", features = ["derive"] }
 tabled = { version = "0.22", features = ["ansi"] }
+termcolor = "1"
 tokio = { version = "1", features = ["full"] }
 xx = { version = "2", default-features = false }
 

@@ -1,4 +1,5 @@
 use demand::Theme;
+use termcolor::{Color, ColorSpec};
 
 use mise_settings::Settings;
 
@@ -6,10 +7,11 @@ use mise_settings::Settings;
 /// terminal color state.
 ///
 /// Available themes:
-/// - "auto" (or "default") - Auto-detect: use a light-friendly theme (base16) on
-///   light terminals, otherwise charm
-/// - "charm" - The charm theme (good for dark terminals, no auto-detection)
-/// - "base16" - Base16 theme (good for light terminals)
+/// - "base16" (or "default") - Base16 theme: the terminal's own named colors, so
+///   it follows the terminal's palette on light and dark backgrounds
+/// - "auto" - Auto-detect: base16 on light terminals (from
+///   `COLORFGBG`), otherwise charm
+/// - "charm" - The charm theme (fixed 256-color greys, suits dark terminals)
 /// - "catppuccin" - Catppuccin theme
 /// - "dracula" - Dracula theme
 ///
@@ -35,22 +37,21 @@ fn select_theme(colors_enabled: bool, color_theme: &str, light_background: bool)
     if !colors_enabled {
         return Theme::new();
     }
-    let auto = || {
-        if light_background {
-            Theme::base16()
-        } else {
-            Theme::charm()
-        }
-    };
     match color_theme.to_lowercase().as_str() {
-        "auto" | "default" | "" => auto(),
+        "auto" => {
+            if light_background {
+                base16()
+            } else {
+                Theme::charm()
+            }
+        }
         "charm" => Theme::charm(),
-        "base16" => Theme::base16(),
+        "base16" | "default" | "" => base16(),
         "catppuccin" => Theme::catppuccin(),
         "dracula" => Theme::dracula(),
         other => {
             log::warn!("Unknown color theme '{}', using default", other);
-            auto()
+            base16()
         }
     }
 }
@@ -80,9 +81,97 @@ fn colorfgbg_is_light(value: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// demand's base16 theme with its `Ansi256(0..=15)` colors swapped for the
+/// terminal's named colors (`ESC[3Xm`, and `ESC[9Xm` for the bright half), and
+/// unselected options and help text left in the terminal's default text color
+/// (demand uses ANSI white for unselected options, which shows as pale grey on
+/// light themes, and fixed dark greys for help).
+fn base16() -> Theme {
+    let mut theme = Theme::base16();
+    for spec in [
+        &mut theme.title,
+        &mut theme.description,
+        &mut theme.cursor,
+        &mut theme.selected_prefix_fg,
+        &mut theme.selected_option,
+        &mut theme.input_cursor,
+        &mut theme.input_placeholder,
+        &mut theme.input_prompt,
+        &mut theme.focused_button,
+        &mut theme.blurred_button,
+        &mut theme.error_indicator,
+        &mut theme.breadcrumb_active,
+        &mut theme.breadcrumb_clickable,
+        &mut theme.breadcrumb_future,
+    ] {
+        name_ansi_colors(spec);
+    }
+    theme.unselected_prefix_fg = ColorSpec::new();
+    theme.unselected_option = ColorSpec::new();
+    // demand's help colors are fixed dark greys (60..98), nearly invisible on a
+    // dark background, and bright black is the background itself in some
+    // palettes (Solarized dark), so help text uses the terminal's text color.
+    theme.help_key = ColorSpec::new();
+    theme.help_desc = ColorSpec::new();
+    theme.help_sep = ColorSpec::new();
+    theme
+}
+
+fn name_ansi_colors(spec: &mut ColorSpec) {
+    let fg = spec.fg().copied();
+    let bg = spec.bg().copied();
+    // Intense is one flag for the whole spec, so a spec mixing a normal and a
+    // bright color would lose one; base16 has none.
+    let intense = [fg, bg]
+        .into_iter()
+        .flatten()
+        .any(|c| matches!(c, Color::Ansi256(8..=15)));
+    spec.set_fg(fg.map(named_color));
+    spec.set_bg(bg.map(named_color));
+    spec.set_intense(intense);
+}
+
+fn named_color(color: Color) -> Color {
+    match color {
+        Color::Ansi256(0 | 8) => Color::Black,
+        Color::Ansi256(1 | 9) => Color::Red,
+        Color::Ansi256(2 | 10) => Color::Green,
+        Color::Ansi256(3 | 11) => Color::Yellow,
+        Color::Ansi256(4 | 12) => Color::Blue,
+        Color::Ansi256(5 | 13) => Color::Magenta,
+        Color::Ansi256(6 | 14) => Color::Cyan,
+        Color::Ansi256(7 | 15) => Color::White,
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn specs(theme: &Theme) -> Vec<&ColorSpec> {
+        vec![
+            &theme.title,
+            &theme.description,
+            &theme.cursor,
+            &theme.selected_prefix_fg,
+            &theme.selected_option,
+            &theme.unselected_prefix_fg,
+            &theme.unselected_option,
+            &theme.input_cursor,
+            &theme.input_placeholder,
+            &theme.input_prompt,
+            &theme.focused_button,
+            &theme.blurred_button,
+            &theme.error_indicator,
+            &theme.breadcrumb_active,
+            &theme.breadcrumb_clickable,
+            &theme.breadcrumb_future,
+            &theme.help_key,
+            &theme.help_desc,
+            &theme.help_sep,
+        ]
+    }
 
     #[test]
     fn colors_disabled_returns_unstyled_theme() {
@@ -114,57 +203,88 @@ mod tests {
 
     #[test]
     fn explicit_theme_is_applied_when_colors_enabled() {
-        // base16's title color differs from charm's; confirm the explicit
-        // request wins and is actually colored.
-        let base16 = select_theme(true, "base16", false);
-        assert_eq!(base16.title.fg(), Theme::base16().title.fg());
-        assert!(base16.title.fg().is_some());
-
-        let charm = select_theme(true, "charm", true /* ignored for explicit */);
+        let charm = select_theme(true, "charm", true);
         assert_eq!(charm.title.fg(), Theme::charm().title.fg());
+        assert_eq!(
+            charm.unselected_option.fg(),
+            Theme::charm().unselected_option.fg()
+        );
     }
 
     #[test]
-    fn auto_picks_base16_on_light_and_charm_on_dark() {
-        for theme in ["auto", "default", ""] {
-            let light = select_theme(true, theme, true);
-            assert_eq!(
-                light.title.fg(),
-                Theme::base16().title.fg(),
-                "theme={theme}"
-            );
-
-            let dark = select_theme(true, theme, false);
-            assert_eq!(dark.title.fg(), Theme::charm().title.fg(), "theme={theme}");
+    fn base16_and_unknown_themes_are_base16_on_any_background() {
+        for light in [false, true] {
+            for theme in ["base16", "default", "", "bogus"] {
+                let t = select_theme(true, theme, light);
+                assert_eq!(t.title.fg(), Some(&Color::Cyan), "theme={theme}");
+                assert!(t.title.bold(), "theme={theme}");
+                assert_eq!(t.selected_option.fg(), Some(&Color::Green), "theme={theme}");
+                assert_eq!(t.unselected_option.fg(), None, "theme={theme}");
+                assert_eq!(t.help_key.fg(), None, "theme={theme}");
+            }
         }
     }
 
     #[test]
-    fn unknown_theme_falls_back_to_auto() {
-        assert_eq!(
-            select_theme(true, "bogus", true).title.fg(),
-            Theme::base16().title.fg()
-        );
-        assert_eq!(
-            select_theme(true, "bogus", false).title.fg(),
-            Theme::charm().title.fg()
-        );
+    fn auto_picks_base16_on_light_and_charm_on_dark() {
+        let light = select_theme(true, "auto", true);
+        assert_eq!(light.title.fg(), Some(&Color::Cyan));
+
+        let dark = select_theme(true, "auto", false);
+        assert_eq!(dark.title.fg(), Theme::charm().title.fg());
     }
 
     #[test]
     fn colorfgbg_light_detection() {
-        // Light backgrounds (white / bright)
         assert!(colorfgbg_is_light("0;15"));
         assert!(colorfgbg_is_light("0;7"));
         assert!(colorfgbg_is_light("0;default;15"));
         assert!(colorfgbg_is_light(" 0 ; 15 "));
-        // Dark backgrounds
         assert!(!colorfgbg_is_light("15;0"));
         assert!(!colorfgbg_is_light("7;0"));
         assert!(!colorfgbg_is_light("15;8"));
-        // Unparseable -> assume dark
         assert!(!colorfgbg_is_light(""));
         assert!(!colorfgbg_is_light("foo"));
         assert!(!colorfgbg_is_light("0;default"));
+    }
+
+    #[test]
+    fn base16_uses_named_colors_not_ansi256() {
+        let theme = base16();
+        for spec in specs(&theme) {
+            for color in [spec.fg(), spec.bg()].into_iter().flatten() {
+                assert!(
+                    !matches!(color, Color::Ansi256(_)),
+                    "base16 still has {color:?}"
+                );
+            }
+        }
+        assert_eq!(theme.selected_option.fg(), Some(&Color::Green));
+        assert_eq!(theme.cursor.fg(), Some(&Color::Yellow));
+        // bright black, as demand's Ansi256(8)
+        assert_eq!(theme.description.fg(), Some(&Color::Black));
+        assert!(theme.description.intense());
+    }
+
+    #[test]
+    fn base16_help_text_uses_the_terminal_text_color() {
+        let theme = base16();
+        for spec in [&theme.help_key, &theme.help_desc, &theme.help_sep] {
+            assert_eq!(spec.fg(), None);
+            assert_eq!(spec.bg(), None);
+            // reset emits ESC[0m first, so the previous element's color
+            // cannot carry over
+            assert!(spec.reset());
+        }
+    }
+
+    #[test]
+    fn base16_leaves_unselected_options_in_the_terminal_text_color() {
+        let theme = base16();
+        for spec in [&theme.unselected_option, &theme.unselected_prefix_fg] {
+            assert_eq!(spec.fg(), None);
+            assert_eq!(spec.bg(), None);
+            assert!(spec.reset());
+        }
     }
 }

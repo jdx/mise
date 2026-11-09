@@ -52,11 +52,23 @@ impl error::Error for RenderError {}
 /// # Ok::<(), mise_dotenv::RenderError>(())
 /// ```
 pub fn render_value(value: &str) -> Result<Cow<'_, str>, RenderError> {
+    render_value_inner(value, false)
+}
+
+/// Like [`render_value`], for a reader that expands `$NAME` and `${NAME}`.
+///
+/// Any value containing a dollar sign is double-quoted with the dollar escaped, so the reader
+/// gets the literal text back instead of an expansion.
+pub fn render_value_for_substitution(value: &str) -> Result<Cow<'_, str>, RenderError> {
+    render_value_inner(value, true)
+}
+
+fn render_value_inner(value: &str, escape_dollars: bool) -> Result<Cow<'_, str>, RenderError> {
     if value.contains('\0') {
         return Err(RenderError::InvalidValueCharacter('\0'));
     }
 
-    if is_unquoted_safe(value) {
+    if !(escape_dollars && value.contains('$')) && is_unquoted_safe(value) {
         return Ok(Cow::Borrowed(value));
     }
 
@@ -90,11 +102,24 @@ pub fn render_value(value: &str) -> Result<Cow<'_, str>, RenderError> {
 pub fn render_var(key: &str, value: &str) -> Result<String, RenderError> {
     validate_key(key)?;
     let value = render_value(value)?;
+    Ok(join_assignment(key, &value))
+}
+
+/// Like [`render_var`], for a reader that expands `$NAME` and `${NAME}`.
+///
+/// See [`render_value_for_substitution`].
+pub fn render_var_for_substitution(key: &str, value: &str) -> Result<String, RenderError> {
+    validate_key(key)?;
+    let value = render_value_for_substitution(value)?;
+    Ok(join_assignment(key, &value))
+}
+
+fn join_assignment(key: &str, value: &str) -> String {
     let mut rendered = String::with_capacity(key.len() + value.len() + 1);
     rendered.push_str(key);
     rendered.push('=');
-    rendered.push_str(&value);
-    Ok(rendered)
+    rendered.push_str(value);
+    rendered
 }
 
 /// Renders assignments as a dotenv document in iterator order.
@@ -211,10 +236,20 @@ fn has_closing_quote(rest: &str, quote: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{RenderError, render, render_value, render_var};
+    use super::{RenderError, render, render_value, render_value_for_substitution, render_var};
     use crate::{EnvLoader, EnvMap, EnvSequence};
     use proptest::prelude::*;
     use std::io::Cursor;
+
+    #[test]
+    fn substitution_rendering_escapes_dollars() {
+        assert_eq!(
+            render_value_for_substitution("a $B c").unwrap(),
+            r#""a \$B c""#
+        );
+        assert_eq!(render_value_for_substitution("plain").unwrap(), "plain");
+        assert_eq!(render_value("a $B c").unwrap(), "a $B c");
+    }
 
     fn parse(document: &str) -> Result<EnvMap, crate::Error> {
         EnvLoader::with_reader(Cursor::new(document))

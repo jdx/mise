@@ -1774,7 +1774,7 @@
           "type": "boolean"
         },
         "color_theme": {
-          "default": "default",
+          "default": "base16",
           "description": "Color theme for interactive prompts, such as the task picker in `mise run`.",
           "type": "string",
           "enum": [
@@ -2305,6 +2305,11 @@
             "fetch_interval": {
               "default": "15m",
               "description": "How often the history watcher fetches from the setup repository.",
+              "type": "string"
+            },
+            "lock_wait": {
+              "default": "30s",
+              "description": "How long a command waits for another history operation before failing.",
               "type": "string"
             },
             "notify": {
@@ -10713,6 +10718,50 @@
                   }
                 ]
               },
+              "ports": {
+                "type": "object",
+                "description": "More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.",
+                "additionalProperties": {
+                  "description": "Port for this named port of the daemon: a fixed port, or an allocation that gives each linked git worktree its own.",
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 1
+                    },
+                    {
+                      "type": "object",
+                      "description": "Offset a base port by the same worktree slot the daemon's `port = \"auto\"` uses.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "auto": {
+                          "description": "Enable per-worktree allocation of this named port.",
+                          "const": true
+                        },
+                        "base": {
+                          "type": "integer",
+                          "description": "Port used by the primary checkout.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "stride": {
+                          "type": "integer",
+                          "description": "Distance between consecutive worktree slots. Defaults to 1.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        }
+                      },
+                      "required": ["auto", "base"]
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "not": {
+                    "enum": ["port", "container", "runtime"]
+                  }
+                }
+              },
               "proxy": {
                 "$ref": "#/$defs/daemon_proxy"
               },
@@ -10767,6 +10816,50 @@
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
+              },
+              "ports": {
+                "type": "object",
+                "description": "More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.",
+                "additionalProperties": {
+                  "description": "Port for this named port of the daemon: a fixed port, or an allocation that gives each linked git worktree its own.",
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 1
+                    },
+                    {
+                      "type": "object",
+                      "description": "Offset a base port by the same worktree slot the daemon's `port = \"auto\"` uses.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "auto": {
+                          "description": "Enable per-worktree allocation of this named port.",
+                          "const": true
+                        },
+                        "base": {
+                          "type": "integer",
+                          "description": "Port used by the primary checkout.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "stride": {
+                          "type": "integer",
+                          "description": "Distance between consecutive worktree slots. Defaults to 1.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        }
+                      },
+                      "required": ["auto", "base"]
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "not": {
+                    "enum": ["port", "container", "runtime"]
+                  }
+                }
               },
               "proxy": {
                 "$ref": "#/$defs/daemon_proxy"

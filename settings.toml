@@ -458,7 +458,7 @@ env = "MISE_COLOR"
 type = "Bool"
 
 [color_theme]
-default = "default"
+default = "base16"
 description = "Color theme for interactive prompts, such as the task picker in `mise run`."
 docs = """
 With colors off (`color = false`, `NO_COLOR` or `CLICOLOR=0`), prompts are
@@ -466,9 +466,9 @@ unstyled whatever this is set to.
 """
 enum = [
   { value = "auto", description = "`base16` on light terminals (detected from `COLORFGBG`), `charm` otherwise" },
-  { value = "default", description = "same as `auto`" },
-  { value = "charm", description = "suits dark terminals" },
-  { value = "base16", description = "suits light terminals" },
+  { value = "default", description = "the default theme, same as `base16`" },
+  { value = "charm", description = "fixed 256-color greys; suits dark terminals" },
+  { value = "base16", description = "the terminal's own named colors, so it follows its palette" },
   { value = "catppuccin" },
   { value = "dracula" },
 ]
@@ -1718,6 +1718,35 @@ Values below one second count as one second. To stop automatic fetching, set
 [`history.sync`](#history.sync) to `manual`.
 """
 env = "MISE_HISTORY_FETCH_INTERVAL"
+type = "Duration"
+
+[history.lock_wait]
+default = "30s"
+description = "How long a command waits for another history operation before failing."
+docs = """
+Operations that record history take a lock on the history store, so only one
+runs at a time. A command that finds the lock held waits this long for it, then
+fails with `another history operation is running`. `0` fails at once. Values
+above `1h` count as `1h`.
+
+A script that needs its own checkpoint can set it for one run:
+
+```sh
+MISE_HISTORY_LOCK_WAIT=5m mise dot save --description "before upgrade"
+```
+
+`mise dot watch` and `mise dot recover` never wait, whatever this is set to.
+A `mise dot` command the watcher starts, such as a `history.reload` command that
+runs `mise dot save`, inherits the watcher's environment and waits as
+configured, so set `MISE_HISTORY_LOCK_WAIT` on the commands that need it rather
+than in the watcher's environment.
+
+A `mise bootstrap` that starts with nothing to record tries to take the lock at
+its first write without waiting. If the lock is held, it warns and continues
+without a recovery journal instead of failing. If the run starts tracking before
+it ends, its end-of-run lock attempt uses this setting.
+"""
+env = "MISE_HISTORY_LOCK_WAIT"
 type = "Duration"
 
 [history.notify]

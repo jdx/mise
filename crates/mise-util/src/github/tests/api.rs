@@ -36,6 +36,38 @@ async fn test_pick_reachable_asset_url_falls_back_on_404() {
     mock.assert_async().await;
 }
 #[tokio::test]
+async fn test_pick_reachable_asset_url_falls_back_quickly_on_5xx() {
+    // github.com's edge can answer 5xx for a release URL for hours while the API asset
+    // endpoint still serves the file. The probe gives up after one retry instead of
+    // spending the whole `http_retries` budget.
+    struct Restore<'a>(#[allow(dead_code)] std::sync::MutexGuard<'a, ()>);
+    impl Drop for Restore<'_> {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _restore = {
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        let mut settings = <mise_settings::SettingsPartial as confique::Layer>::empty();
+        settings.http_retries = Some(5);
+        crate::testing::reset_settings(Some(settings));
+        Restore(lock)
+    };
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("HEAD", "/asset.tar.gz")
+        .with_status(504)
+        .expect(2)
+        .create_async()
+        .await;
+    let browser_url = format!("{}/asset.tar.gz", server.url());
+    assert_eq!(
+        pick_reachable_asset_url(&browser_url, ASSET_API_URL).await,
+        ASSET_API_URL
+    );
+    mock.assert_async().await;
+}
+#[tokio::test]
 async fn test_pick_reachable_asset_url_falls_back_on_html_login_page() {
     // Some private repos return a 200 HTML login page at the browser URL instead of a
     // 404; that is also treated as unreachable and falls back to the API endpoint.
