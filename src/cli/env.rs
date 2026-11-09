@@ -49,6 +49,9 @@ pub(crate) struct Env {
     tool: Vec<ToolArg>,
 
     /// Output in dotenv format
+    ///
+    /// Values are quoted and escaped where needed so mise reads them back unchanged. Tools that
+    /// do not interpret quotes, such as Docker `--env-file`, receive them literally.
     #[usage(long, short = 'D', overrides = "shell")]
     dotenv: bool,
 
@@ -266,10 +269,16 @@ impl Env {
             env.retain(|k, _| keys.matches(k));
         }
 
-        for (k, v) in env {
-            let k = k.to_string();
-            let v = v.to_string();
-            miseprint!("{}={}\n", k, v)?;
+        // Render everything first so one unrepresentable name does not leave a partial file.
+        let lines = env
+            .iter()
+            .map(|(k, v)| {
+                mise_dotenv::render_var_for_substitution(k, v)
+                    .map_err(|e| eyre::eyre!("cannot write {k} as dotenv: {e}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for line in lines {
+            miseprint!("{line}\n")?;
         }
         Ok(())
     }
