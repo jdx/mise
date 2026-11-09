@@ -2213,6 +2213,17 @@ pub async fn installed_fallback_bin(
         return Ok(None);
     };
     let backend = tv.backend()?;
+    // Run the documented latest or nothing: when the backend's latest installed version lacks the
+    // executable, `preferred_installed_version` picked another one, which nobody chose.
+    if backend
+        .latest_installed_version(None)
+        .ok()
+        .flatten()
+        .as_deref()
+        != Some(tv.version.as_str())
+    {
+        return Ok(None);
+    }
     let bin = backend_which_shim(backend.as_ref(), config, &tv, shim_name, bin_name).await?;
     if let Some(bin) = &bin {
         // Put the chosen version in the toolset so the child gets its environment and PATH.
