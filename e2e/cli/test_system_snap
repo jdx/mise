@@ -9,12 +9,12 @@ mkdir -p "$HOME/snap-bin"
 export PATH="$HOME/snap-bin:$PATH"
 export MISE_SYSTEM_PACKAGES_SUDO=true
 # snap ignores LC_ALL for its translations, so mise must override these too.
-export LC_MESSAGES=fr_FR.UTF-8 LANGUAGE=fr LANG=fr_FR.UTF-8
+export LC_MESSAGES=fr_FR.UTF-8 LANG=fr_FR.UTF-8
 touch "$HOME/snap-log"
 cat >"$HOME/snap-bin/snap" <<'SH'
 #!/bin/sh
 if [ "$1" = list ]; then
-  [ "$LC_ALL" = C ] && [ "$LC_MESSAGES" = C ] && [ "$LANGUAGE" = C ] || exit 2
+  [ "$LC_ALL" = C ] && [ "$LC_MESSAGES" = C ] || exit 2
   if [ -f "$HOME/snapd-down" ]; then
     echo 'error: cannot communicate with server: connection refused' >&2
     exit 1

@@ -185,9 +185,8 @@ async fn snap_list() -> Result<String> {
     let output = tokio::process::Command::new("snap")
         .arg("list")
         .env("LC_ALL", "C")
-        // snap ignores LC_ALL for its translations; it reads LC_MESSAGES, LANGUAGE and LANG.
+        // snap ignores LC_ALL for its translations; it reads LC_MESSAGES and LANG.
         .env("LC_MESSAGES", "C")
-        .env("LANGUAGE", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
