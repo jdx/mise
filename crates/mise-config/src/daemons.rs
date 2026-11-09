@@ -217,6 +217,10 @@ pub struct DaemonCommandDecl {
     pub mise: Option<bool>,
     pub port: Option<DaemonCommandPort>,
     /// More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.
+    #[schemars(extend("propertyNames" = {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+        "not": {"enum": ["port", "container", "runtime"]}
+    }))]
     pub ports: Option<std::collections::BTreeMap<String, DaemonCommandNamedPort>>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy")]
@@ -250,6 +254,10 @@ pub struct DaemonTaskDecl {
     #[schemars(schema_with = "refs::daemon_init")]
     pub init: Option<DaemonInit>,
     /// More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.
+    #[schemars(extend("propertyNames" = {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+        "not": {"enum": ["port", "container", "runtime"]}
+    }))]
     pub ports: Option<std::collections::BTreeMap<String, DaemonCommandNamedPort>>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy")]

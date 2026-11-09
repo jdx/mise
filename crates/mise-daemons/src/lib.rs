@@ -1082,6 +1082,7 @@ fn take_named_ports(
         Some(claim) if claim.is_auto() => (claim.port - claim.base) / claim.stride,
         _ => ports::slot(root),
     };
+    let mut seen: Vec<(&str, u16)> = claim.iter().map(|c| ("port", c.port)).collect();
     for (key, value) in declared {
         container::validate_port_name(name, key)?;
         // `http` and `http_port` are exported as the same variable.
@@ -1105,6 +1106,13 @@ fn take_named_ports(
                 ports::resolve_named(name, key, slot, Some(base), stride, base)?
             }
         };
+        if let Some((other, _)) = seen.iter().find(|(_, port)| *port == resolved.port) {
+            bail!(
+                "[daemons.{name}].ports.{key} and {other} both resolve to port {}; give them different ports",
+                resolved.port
+            );
+        }
+        seen.push((key, resolved.port));
         named.insert(key.clone(), resolved);
     }
     Ok(named)
@@ -3066,6 +3074,10 @@ mod tests {
         assert!(
             err("[daemons.s]\nrun = 'x'\nport = { expect = [3000] }\nports.admin = 9000")
                 .contains("structured port")
+        );
+        assert!(
+            err("[daemons.s]\nrun = 'x'\nport = 3000\nports.app = 3000")
+                .contains("both resolve to port 3000")
         );
         assert!(
             err("[daemons.s]\nrun = 'x'\nports.app = 1\nports.app_port = 2")

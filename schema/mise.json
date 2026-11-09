@@ -10749,6 +10749,12 @@
                       "required": ["auto", "base"]
                     }
                   ]
+                },
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "not": {
+                    "enum": ["port", "container", "runtime"]
+                  }
                 }
               },
               "proxy": {
@@ -10842,6 +10848,12 @@
                       "required": ["auto", "base"]
                     }
                   ]
+                },
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "not": {
+                    "enum": ["port", "container", "runtime"]
+                  }
                 }
               },
               "proxy": {
