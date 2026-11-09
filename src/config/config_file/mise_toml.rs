@@ -1730,18 +1730,15 @@ impl ConfigFile for MiseToml {
             .flat_map(|opts| opts.opts.keys().cloned())
             .collect();
         for tr in &mut versions {
-            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
-                // Options given on the command line or inline are explicit even when they match
-                // the registry default.
-                let explicit = tr.explicit_options();
-                let defaults = rt.backend_options(&tr.ba().full(), tr.ba().registry_version());
-                let opts = tr.options_mut();
-                opts.opts.retain(|k, v| {
-                    written_keys.contains(k)
-                        || explicit.opts.contains_key(k)
-                        || defaults.opts.get(k) != Some(v)
-                });
-            }
+            // Options given on the command line or inline are explicit even when they match
+            // the registry default. The request's own registry lookup follows aliases.
+            let explicit = tr.explicit_options();
+            let defaults = tr.ba().registry_opts();
+            tr.options_mut().opts.retain(|k, v| {
+                written_keys.contains(k)
+                    || explicit.opts.contains_key(k)
+                    || defaults.opts.get(k) != Some(v)
+            });
             restore_option_templates(tr, &templates);
         }
         let mut tools = self.tools.lock().unwrap();
