@@ -6070,6 +6070,10 @@ pub trait Backend: Debug + Send + Sync {
                 );
             if install_removed {
                 install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                // The per-version cache dir is wiped at the start of every install
+                // attempt, so nothing can resume from it. Like the marker, it stays
+                // while the install dir could not be removed.
+                let _ = remove_all_with_warning(tv.cache_path());
             }
             // Remove parent installs dir if it's now empty (no other versions present)
             let installs_path = &self.ba().installs_path();
