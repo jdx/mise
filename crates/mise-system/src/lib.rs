@@ -524,10 +524,10 @@ pub async fn config_files_declaring_package(
     ))
 }
 
-#[cfg(unix)]
 /// The package `spec` declares for `manager`, if it declares one. An unprefixed
 /// key declares its package for the manager it would select, with `names`
 /// applied.
+#[cfg(unix)]
 fn declared_spec(spec: &str, package: &PackageTomlConfig, manager: &str) -> Option<String> {
     let (mgr, pkg) = if spec.contains(':') {
         parse_spec(spec).ok()?
@@ -537,6 +537,7 @@ fn declared_spec(spec: &str, package: &PackageTomlConfig, manager: &str) -> Opti
     (mgr == manager).then_some(pkg)
 }
 
+#[cfg(unix)]
 fn config_files_declaring_package_in<'a>(
     config_files: impl Iterator<Item = (&'a PathBuf, &'a Arc<dyn crate::host::ConfigFileView>)>,
     manager: &str,
