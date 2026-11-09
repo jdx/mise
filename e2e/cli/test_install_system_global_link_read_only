@@ -10,7 +10,6 @@ if [[ $(id -u) == 0 ]]; then
   exit 0
 fi
 
-export MISE_SYSTEM_PACKAGES_SUDO=false
 export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
 export MISE_SYSTEM_CONFIG_DIR="$HOME/system-mise"
 SYSTEM_INSTALLS="$MISE_SYSTEM_DATA_DIR/installs"

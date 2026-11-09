@@ -18,13 +18,31 @@ use itertools::Itertools;
 use versions::Versioning;
 
 pub async fn rebuild_for_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<()> {
-    rebuild_for_backends(config, ts, ts.list_cached_and_current_backends()).await
+    rebuild_for_toolset_in(config, ts, false).await
+}
+
+/// `manage_system` says the operation targets the system install dir, so its
+/// `global` link may follow the config. Otherwise a shared dir keeps its link:
+/// one user's global config must not retarget what the administrator chose.
+pub async fn rebuild_for_toolset_in(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    manage_system: bool,
+) -> Result<()> {
+    rebuild_for_backends(
+        config,
+        ts,
+        ts.list_cached_and_current_backends(),
+        manage_system,
+    )
+    .await
 }
 
 pub(crate) async fn rebuild_for_backends(
     config: &Arc<Config>,
     ts: &Toolset,
     backends: impl IntoIterator<Item = Arc<dyn Backend>>,
+    manage_system: bool,
 ) -> Result<()> {
     let global = global_toolset(config).await;
     let rebuilds = backends.into_iter().flat_map(|backend| {
@@ -33,15 +51,15 @@ pub(crate) async fn rebuild_for_backends(
             .map(move |installs_dir| (backend.clone(), installs_dir))
     });
     run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
-        rebuild_symlinks_in_dir(config, ts, global.as_ref(), &backend, &installs_dir).wrap_err_with(
-            || {
-                format!(
-                    "failed to rebuild runtime symlinks for {} in {}",
-                    backend.ba().short,
-                    installs_dir.display()
-                )
-            },
-        )
+        let shared = installs_dir != backend.ba().installs_path();
+        let global = global.as_ref().filter(|_| manage_system || !shared);
+        rebuild_symlinks_in_dir(config, ts, global, &backend, &installs_dir).wrap_err_with(|| {
+            format!(
+                "failed to rebuild runtime symlinks for {} in {}",
+                backend.ba().short,
+                installs_dir.display()
+            )
+        })
     })
 }
 
@@ -269,12 +287,6 @@ fn list_symlinks_for_dir(
     let global_link = installs_dir.join(GLOBAL_LINK);
     if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
         let to = match global {
-            // A shared install dir this user cannot write belongs to whoever
-            // administers it, and the user's own global config must not
-            // retarget or remove its link.
-            _ if read_only_shared_dir(backend, installs_dir) => {
-                runtime_symlink_target(&global_link)
-            }
             Some(global) => global
                 .list_current_versions()
                 .into_iter()
@@ -292,23 +304,6 @@ fn list_symlinks_for_dir(
         .sorted_by_cached_key(|(k, _)| (Versioning::new(k), k.to_string()))
         .collect();
     symlinks
-}
-
-/// Whether `installs_dir` is a shared (system) install dir the current user
-/// cannot write to and mise may not elevate to write. With sudo enabled,
-/// `mise install --system` publishes there through the root helper.
-fn read_only_shared_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        installs_dir != backend.ba().installs_path()
-            && !crate::config::Settings::get().system_packages.sudo
-            && crate::system_install::needs_elevation(installs_dir)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (backend, installs_dir);
-        false
-    }
 }
 
 /// The link name for the version global config selects.

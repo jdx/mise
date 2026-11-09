@@ -5621,7 +5621,11 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
     lockfile_update_mode: lockfile::LockfileUpdateMode,
 ) -> Result<()> {
     measure!("rebuilding runtime symlinks", {
-        runtime_symlinks::rebuild_for_toolset(config, ts)
+        let system_installs = Settings::get().system_installs_dir().to_path_buf();
+        let manage_system = changed_install_paths
+            .iter()
+            .any(|path| path.starts_with(&system_installs));
+        runtime_symlinks::rebuild_for_toolset_in(config, ts, manage_system)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
     });
