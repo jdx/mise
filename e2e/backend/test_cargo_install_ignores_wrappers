@@ -34,4 +34,5 @@ cat >mise.toml <<'EOS'
 EOS
 mise reshim
 assert_succeed "mise install cargo:wrapper-test@1.0.0"
-assert_succeed "test -d '$(mise where cargo:wrapper-test@1.0.0)/bin'"
+install_path="$(mise where cargo:wrapper-test@1.0.0)"
+assert_succeed "test -n '$install_path' && test -d '$install_path/bin'"

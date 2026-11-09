@@ -204,24 +204,16 @@ impl Toolset {
     /// would otherwise take over `cargo install` for a `cargo:` tool. (jdx/mr-boxington#919)
     pub(crate) async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
-        let mut path_env = PathEnv::from_iter(
-            pristine_path_without_install_dirs()
-                .into_iter()
-                .filter(|p| !file::is_command_wrapper_dir(p)),
-        );
-        for p in config.path_dirs().await?.clone() {
+        let mut paths = pristine_path_without_install_dirs();
+        paths.extend(config.path_dirs().await?.clone());
+        paths.extend(add_paths);
+        paths.extend(self.list_paths(config).await);
+        paths.extend(config.path_dirs_append().await?.clone());
+        let mut path_env = PathEnv::new();
+        for p in paths {
             if !file::is_command_wrapper_dir(&p) {
                 path_env.add(p);
             }
-        }
-        for p in &add_paths {
-            path_env.add(p.clone());
-        }
-        for p in self.list_paths(config).await {
-            path_env.add(p);
-        }
-        for p in config.path_dirs_append().await?.clone() {
-            path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)
