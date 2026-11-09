@@ -272,6 +272,9 @@ mod tests {
         for spec in [&theme.help_key, &theme.help_desc, &theme.help_sep] {
             assert_eq!(spec.fg(), None);
             assert_eq!(spec.bg(), None);
+            // reset emits ESC[0m first, so the previous element's color
+            // cannot carry over
+            assert!(spec.reset());
         }
     }
 
@@ -281,6 +284,7 @@ mod tests {
         for spec in [&theme.unselected_option, &theme.unselected_prefix_fg] {
             assert_eq!(spec.fg(), None);
             assert_eq!(spec.bg(), None);
+            assert!(spec.reset());
         }
     }
 }
