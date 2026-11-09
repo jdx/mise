@@ -212,7 +212,7 @@ pub(crate) struct Run {
     /// Space checks a task, `/` filters, and Enter runs the checked tasks as
     /// if they were named with `:::`. Needs an interactive terminal. Combine
     /// with `--all` to list the tasks from every project in the monorepo.
-    #[usage(long, conflicts = ["task", "affected"])]
+    #[usage(long, conflicts = ["task", "affected", "tag"])]
     pub multi: bool,
 
     /// Continue running tasks even if one fails

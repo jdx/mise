@@ -13,9 +13,9 @@ TOML
 
 # Space checks the highlighted task; move down once and check the second one too.
 if [[ $(uname) == Darwin ]]; then
-  output=$(printf ' \033[B \r' | script -q /dev/null mise run --multi)
+  output=$(run_with_timeout 30 bash -c "printf ' \033[B \r' | script -q /dev/null mise run --multi")
 else
-  output=$(printf ' \033[B \r' | script -qec 'mise run --multi' /dev/null)
+  output=$(run_with_timeout 30 bash -c "printf ' \033[B \r' | script -qec 'mise run --multi' /dev/null")
 fi
 if [[ $output != *"alpha task ran"* || $output != *"beta task ran"* ]]; then
   echo "multi picker did not run both checked tasks"
@@ -29,4 +29,5 @@ fi
 
 assert_fail_contains "mise run --multi alpha" "cannot be used with"
 assert_fail_contains "mise run --multi --affected" "cannot be used with"
+assert_fail_contains "mise run --multi --tag lint" "cannot be used with"
 assert_fail_contains "mise run --multi </dev/null" "--multi requires an interactive terminal"
