@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# A non-root `mise install` must not try to retarget the `global` link in a
+# read-only system installs dir because the user's own global config selects a
+# different version than the administrator's system config.
+# Regression test for https://github.com/jdx/mise/issues/15520
+
+if [[ $(id -u) == 0 ]]; then
+  echo "skipping: root can write the system installs dir"
+  exit 0
+fi
+
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+export MISE_SYSTEM_CONFIG_DIR="$HOME/system-mise"
+SYSTEM_INSTALLS="$MISE_SYSTEM_DATA_DIR/installs"
+mkdir -p "$MISE_SYSTEM_CONFIG_DIR"
+
+mise install --system tiny@1.0.0 tiny@2.1.0
+cat >"$MISE_SYSTEM_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+tiny = "2.1.0"
+TOML
+mise install --system tiny@2.1.0
+assert "readlink $SYSTEM_INSTALLS/tiny/global" "./2.1.0"
+
+# The user's global config selects the other system-installed version.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+tiny = "1.0.0"
+TOML
+chmod -R a-w "$MISE_SYSTEM_DATA_DIR"
+
+assert_succeed "mise install dummy@1.0.0"
+assert "readlink $SYSTEM_INSTALLS/tiny/global" "./2.1.0"

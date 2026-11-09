@@ -269,6 +269,12 @@ fn list_symlinks_for_dir(
     let global_link = installs_dir.join(GLOBAL_LINK);
     if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
         let to = match global {
+            // A shared install dir this user cannot write belongs to whoever
+            // administers it, and the user's own global config must not
+            // retarget or remove its link.
+            _ if read_only_shared_dir(backend, installs_dir) => {
+                runtime_symlink_target(&global_link)
+            }
             Some(global) => global
                 .list_current_versions()
                 .into_iter()
@@ -286,6 +292,21 @@ fn list_symlinks_for_dir(
         .sorted_by_cached_key(|(k, _)| (Versioning::new(k), k.to_string()))
         .collect();
     symlinks
+}
+
+/// Whether `installs_dir` is a shared (system) install dir the current user
+/// cannot write to.
+fn read_only_shared_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        installs_dir != backend.ba().installs_path()
+            && crate::system_install::needs_elevation(installs_dir)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (backend, installs_dir);
+        false
+    }
 }
 
 /// The link name for the version global config selects.
