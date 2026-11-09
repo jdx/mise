@@ -344,6 +344,14 @@ impl TasksLs {
 
     async fn display_json(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         let mut array_items: Vec<serde_json::Value> = Vec::with_capacity(tasks.len());
+        // Reading history is best effort: a missing or unreadable record is no history.
+        let history: std::collections::HashMap<String, _> =
+            crate::task::task_history::TaskHistory::for_config(config)
+                .summaries(None)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|summary| (summary.task.clone(), summary))
+                .collect();
         for task in tasks {
             // Report the resolved dir (including any inherited task_config.dir)
             // so consumers see the directory the task will actually run in.
@@ -394,6 +402,7 @@ impl TasksLs {
                 "run": task.run(),
                 "args": task.args,
                 "file": task.file.as_ref().map(|p| p.to_string_lossy()),
+                "history": history.get(&task.name),
             }));
         }
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);

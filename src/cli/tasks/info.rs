@@ -9,6 +9,7 @@ use crate::file::display_path;
 use crate::task::Task;
 use crate::task::TaskOutputsExt;
 use crate::task::task_fetcher::TaskFetcher;
+use crate::task::task_history::TaskHistory;
 use crate::task::task_source_checker::task_cwd;
 use crate::ui::info;
 
@@ -167,6 +168,11 @@ impl TasksInfo {
             .dir(config)
             .await?
             .map(|p| p.to_string_lossy().to_string());
+        // Reading history is best effort: a missing or unreadable record is no history.
+        let history = TaskHistory::for_config(config)
+            .summaries(Some(&task.name))
+            .ok()
+            .and_then(|summaries| summaries.into_iter().next());
         let o = json!({
             "name": task.display_name,
             "aliases": task.aliases,
@@ -206,6 +212,7 @@ impl TasksInfo {
             "run": task.run(),
             "file": task.file.as_ref().map(|p| p.to_string_lossy()),
             "usage_spec": spec,
+            "history": history,
         });
         miseprintln!("{}", serde_json::to_string_pretty(&o)?);
         Ok(())

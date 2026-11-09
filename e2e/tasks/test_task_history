@@ -83,6 +83,12 @@ number
 number"
 assert_contains "mise tasks history --summary" "bad"
 
+# The same summary is part of a task's definition, for tools that plan around slow checks.
+assert "mise tasks info ok --json | jq -c '.history | [.runs, .failures, .last_status]'" '[3,0,"ok"]'
+assert "mise tasks info bad --json | jq -c '.history | [.failures, .median_ms, .last_status]'" '[1,null,"failed"]'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"ok\") | .history.runs'" "3"
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"all\") | .history.runs'" "null"
+
 # Only the last task.history_limit runs of each task are kept.
 MISE_TASK_HISTORY_LIMIT=2 mise run ok
 assert "mise tasks history ok --json | jq 'length'" "2"
