@@ -1741,9 +1741,10 @@ runs `mise dot save`, inherits the watcher's environment and waits as
 configured, so set `MISE_HISTORY_LOCK_WAIT` on the commands that need it rather
 than in the watcher's environment.
 
-A `mise bootstrap` that starts with nothing to record only takes the lock at its
-first write. If the lock is still held after the wait, including with `0`, it
-warns and continues without a recovery journal instead of failing.
+A `mise bootstrap` that starts with nothing to record tries to take the lock at
+its first write without waiting. If the lock is held, it warns and continues
+without a recovery journal instead of failing. If the run starts tracking before
+it ends, its end-of-run lock attempt uses this setting.
 """
 env = "MISE_HISTORY_LOCK_WAIT"
 type = "Duration"
