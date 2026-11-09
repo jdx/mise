@@ -29,6 +29,7 @@ done
 assert "mise env --json | jq -r .HASH" "a #b"
 
 # a literal `$` must survive too, since `_.file` expands dollar references
+literal=$(printf 'a %sUNSET_VAR_15484 b' '$')
 cat >.mise.toml <<'EOT'
 [settings]
 env_shell_expand = false
@@ -36,10 +37,10 @@ env_shell_expand = false
 [env]
 DOLLAR = "a $UNSET_VAR_15484 b"
 EOT
-assert "mise env --json | jq -r .DOLLAR" 'a $UNSET_VAR_15484 b'
+assert "mise env --json | jq -r .DOLLAR" "$literal"
 mise env --dotenv >out.env
 cat >.mise.toml <<'EOT'
 [env]
 _.file = "out.env"
 EOT
-assert "mise env --json | jq -r .DOLLAR" 'a $UNSET_VAR_15484 b'
+assert "mise env --json | jq -r .DOLLAR" "$literal"
