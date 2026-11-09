@@ -799,6 +799,15 @@ fn package_requests_from_config_files(
             Ok((mgr, name)) => {
                 let version = package.version();
                 let version = (version != "latest").then(|| version.to_string());
+                // Validated before any conflict handling can drop an earlier request
+                let incoming_snap = match snap_options_for(&mgr, &name, &package) {
+                    Ok(options) => options,
+                    Err(err) => {
+                        warn!("[bootstrap.packages]: {err}");
+                        continue;
+                    }
+                };
+                let mut replace_existing = false;
                 let is_bare = !spec.contains(':');
                 if is_bare {
                     let key = (mgr.clone(), name.clone());
@@ -806,8 +815,9 @@ fn package_requests_from_config_files(
                         .get(&mgr)
                         .and_then(|requests| requests.iter().find(|r| r.name == name));
                     if let Some(existing) = existing {
-                        let same =
-                            existing.version == version && existing.desired == package.desired();
+                        let same = existing.version == version
+                            && existing.desired == package.desired()
+                            && snap_options.get(&name) == incoming_snap.as_ref();
                         let mut skip = true;
                         if same {
                             debug!("[bootstrap.packages]: '{spec}' repeats {mgr}:{name}");
@@ -823,9 +833,16 @@ fn package_requests_from_config_files(
                                 "[bootstrap.packages]: '{spec}' and another unprefixed entry both resolve to '{mgr}:{name}' with a different state or version; keeping the one that installs it"
                             );
                             if replaces {
-                                if let Some(requests) = by_mgr.get_mut(&mgr) {
-                                    requests.retain(|r| r.name != name);
+                                // The replaced declaration owns no options any more
+                                snap_options.remove(&name);
+                                #[cfg(unix)]
+                                {
+                                    cask_adopt.remove(&name);
+                                    cask_appdirs.remove(&name);
+                                    app_specs.remove(&name);
+                                    app_adopt.remove(&name);
                                 }
+                                replace_existing = true;
                                 skip = false;
                             }
                         } else {
@@ -928,15 +945,11 @@ fn package_requests_from_config_files(
                         }
                     }
                 }
-                match snap_options_for(&mgr, &name, &package) {
-                    Ok(Some(options)) => {
-                        snap_options.insert(name.clone(), options);
-                    }
-                    Ok(None) => {}
-                    Err(err) => {
-                        warn!("[bootstrap.packages]: {err}");
-                        continue;
-                    }
+                if let Some(options) = incoming_snap {
+                    snap_options.insert(name.clone(), options);
+                }
+                if replace_existing && let Some(requests) = by_mgr.get_mut(&mgr) {
+                    requests.retain(|r| r.name != name);
                 }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
