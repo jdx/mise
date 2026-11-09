@@ -1862,6 +1862,9 @@ fn may_send_token_with(url: &url::Url, api_url: &str, enterprise_hosts: &[String
     }
 }
 
+/// Retries the reachability probe gets before the API asset endpoint is used.
+const PROBE_RETRIES: i64 = 1;
+
 /// Pick which URL to use for a GitHub download.
 ///
 /// Public repositories serve release assets, archives, and raw content at their browser-facing
@@ -1874,7 +1877,15 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     if browser_url == api_url {
         return browser_url.to_string();
     }
-    match crate::http::HTTP.head_without_netrc(browser_url).await {
+    // The API asset endpoint is the alternative, so one retry is all a flaky
+    // browser URL gets. The full `http_retries` budget (minutes at high
+    // settings) is for the download itself. When github.com's edge answers 5xx
+    // for a URL, it tends to keep doing so while the API endpoint still serves
+    // the file.
+    match crate::http::HTTP
+        .head_without_netrc(browser_url, PROBE_RETRIES)
+        .await
+    {
         Ok(resp) => {
             let is_html = resp
                 .headers()
