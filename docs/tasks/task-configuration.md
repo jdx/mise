@@ -757,12 +757,14 @@ entry can include a file that an earlier `!` excluded. For example,
 `*.test.ts` file except `src/keep.test.ts`. To match a literal path that starts
 with `!`, escape it as `\!` (`"\\!important.txt"` in a TOML basic string).
 
-mise does not read a directory when no source can come from it. That covers a
-directory that fails a leading component of a pattern (`packages/*/node_modules`
-for `packages/*/src/**/*`), and one that a `!` entry ending in `/**` excludes
-when no later entry includes it again (`!**/node_modules/**`). An entry without
-the trailing `/**`, such as `!**/node_modules`, excludes only the paths it
-matches, so files below them can still be sources and mise still reads them.
+To keep freshness checks fast, mise does not walk into a directory when no source
+can come from it. That covers a directory that fails a leading component of a
+pattern (`packages/*/node_modules` for `packages/*/src/**/*`), and one that a `!`
+entry ending in `/**` excludes (`!**/node_modules/**`). This is conservative: any
+positive entry after the `!` entry, even an unrelated one, turns that skipping
+off, and `task_source_files()` still walks excluded directories. An entry
+without the trailing `/**`, such as `!**/node_modules`, excludes only the paths it
+matches, so files below them can still be sources and mise still walks them.
 
 #### Dependency invalidation
 
