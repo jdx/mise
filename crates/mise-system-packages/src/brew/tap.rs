@@ -1330,6 +1330,28 @@ end"##
                 serde_json::json!([{"zap": expected}])
             );
         }
+        // Mixing the exemption with directives must fail, not emit an empty zap.
+        let mixed = CmdLineRunner::new(&ruby)
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(CASK_METADATA_SHIM_RB)
+            .stdin_string(
+                r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget.zip"
+  zap :not_required, trash: "~/.config/widget"
+end"##,
+            )
+            .env("MISE_BREW_TOKEN", "widget")
+            .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+            .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+            .env("MISE_BREW_TAP_COMMIT", "fixture")
+            .env("MISE_BREW_MACOS_VERSION", "26")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", "aarch64")
+            .read()
+            .await;
+        assert!(mixed.is_err(), "mixed zap arguments must be rejected");
         Ok(())
     }
 

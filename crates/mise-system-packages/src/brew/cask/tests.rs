@@ -4792,6 +4792,27 @@ fn parses_binary_artifacts_and_generated_completions() -> Result<()> {
 }
 
 #[test]
+fn accepts_empty_zap_artifact() -> Result<()> {
+    let mut cask = test_cask("widget", "1.2.3");
+    cask.artifacts = vec![
+        serde_json::json!({"binary": ["widget"]}),
+        serde_json::json!({"zap": []}),
+    ];
+
+    assert_eq!(
+        cask_artifacts(&cask)?,
+        CaskArtifacts {
+            binaries: vec![BinaryArtifact {
+                source: "widget".to_string(),
+                target: None
+            }],
+            ..Default::default()
+        }
+    );
+    Ok(())
+}
+
+#[test]
 fn rejects_generated_completions_with_no_shells() {
     let value = serde_json::json!({
         "generate_completions_from_executable": ["op", {"shells": []}]
