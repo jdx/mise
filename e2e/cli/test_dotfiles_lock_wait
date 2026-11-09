@@ -40,9 +40,9 @@ wait "$applying" || true
 # a longer wait takes the lock once the apply is done
 hold_the_lock
 echo 'three' >~/.config/app/a.conf
-assert_succeed "MISE_HISTORY_LOCK_WAIT=60s mise bootstrap dotfiles save"
+assert_succeed "MISE_HISTORY_LOCK_WAIT=60s mise bootstrap dotfiles save --description waited-for-the-lock --label waited"
 wait "$applying" || true
-assert_contains "mise bootstrap dotfiles history --json -n 1" "a.conf"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description, .[0].trigger, .[0].labels[0]'" $'waited-for-the-lock\nsave\nwaited'
 
 # an unreadable value warns and keeps the default wait
 assert_contains "MISE_HISTORY_LOCK_WAIT=soon mise bootstrap dotfiles save 2>&1" "history.lock_wait"
