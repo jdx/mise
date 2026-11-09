@@ -413,14 +413,18 @@ async fn prompt_for_tasks(config: &Arc<Config>, load_all: bool) -> Result<Vec<Ta
         .filtering(true)
         .filterable(true)
         .theme(&theme);
+    // Two tasks can share a display name (`hello.sh` and `hello.js`); the checklist shows their
+    // full names then, so what you check is what runs.
+    let display_counts = visible.iter().map(|t| &t.display_name).counts();
     for t in visible {
         // Truncate description to first line only, like tasks ls does
         let desc = t.description.lines().next().unwrap_or_default();
-        s = s.option(
-            DemandOption::new(&t.name)
-                .label(&t.display_name)
-                .description(desc),
-        );
+        let label = if display_counts[&t.display_name] > 1 {
+            &t.name
+        } else {
+            &t.display_name
+        };
+        s = s.option(DemandOption::new(&t.name).label(label).description(desc));
     }
     ctrlc::show_cursor_after_ctrl_c();
     match s.run() {
