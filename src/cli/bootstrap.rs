@@ -2735,6 +2735,7 @@ impl Bootstrap {
                     false,
                     skip_deps,
                     false,
+                    false,
                 )
                 .await?;
                 // Tasks-only config and template-free task files load without trust because
@@ -3099,6 +3100,7 @@ impl Bootstrap {
             args: vec![],
             args_last: vec![],
             all: false,
+            multi: false,
             at: None,
             at_setup: None,
             affected: false,

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+cat <<'TOML' >mise.toml
+[tasks.alpha]
+run = 'echo "alpha task ran"'
+
+[tasks.beta]
+run = 'echo "beta task ran"'
+
+[tasks.gamma]
+run = 'echo "gamma task ran"'
+TOML
+
+# Space checks the highlighted task; move down once and check the second one too.
+if [[ $(uname) == Darwin ]]; then
+  output=$(printf ' \033[B \r' | script -q /dev/null mise run --multi)
+else
+  output=$(printf ' \033[B \r' | script -qec 'mise run --multi' /dev/null)
+fi
+if [[ $output != *"alpha task ran"* || $output != *"beta task ran"* ]]; then
+  echo "multi picker did not run both checked tasks"
+  echo "$output"
+  exit 1
+fi
+if [[ $output == *"gamma task ran"* ]]; then
+  echo "multi picker ran a task that was not checked"
+  exit 1
+fi
+
+assert_fail_contains "mise run --multi alpha" "cannot be used with"
+assert_fail_contains "mise run --multi --affected" "cannot be used with"
+assert_fail_contains "mise run --multi </dev/null" "--multi requires an interactive terminal"
