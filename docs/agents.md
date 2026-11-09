@@ -24,7 +24,8 @@ agent the same `PATH` and variables that an activated interactive shell has.
 ## Claude Code {#claude-code}
 
 Claude Code sources the file named by `$CLAUDE_ENV_FILE` before each Bash
-command it runs. Only a `SessionStart` hook can write to it. Add this to
+command it runs. Only `SessionStart`, `Setup`, `CwdChanged` and `FileChanged`
+hooks can write to it. Add this to
 `~/.claude/settings.json`, or to a project's `.claude/settings.json`:
 
 ```json
