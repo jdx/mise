@@ -1325,7 +1325,7 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
                     }
                 }
                 if !glob_matched && walker.pruned() {
-                    glob_matched = glob_has_entries(&full);
+                    glob_matched = glob_has_entries(&full, true);
                 }
             }
             if require_matches && !glob_matched {

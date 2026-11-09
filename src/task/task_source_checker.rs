@@ -845,13 +845,14 @@ impl DirPruner {
 
 /// Whether `pattern` selects anything when walked without pruning. Callers use
 /// it to tell "everything it matched was pruned" from "it matched nothing". A
-/// walk error is not a match, except a symlink the walk could not follow, which
-/// the unpruned walks count too.
-pub(crate) fn glob_has_entries(pattern: &Path) -> bool {
+/// walk error is not a match. A symlink the walk could not follow counts only when
+/// `count_broken_symlinks` is set, mirroring the unpruned walk of the caller:
+/// the artifact cache counts such links, the freshness checks skip them.
+pub(crate) fn glob_has_entries(pattern: &Path, count_broken_symlinks: bool) -> bool {
     glob_walk(pattern, false).is_ok_and(|mut walker| {
         walker.any(|entry| match entry {
             Ok(_) => true,
-            Err(err) => symlink_walk_error_path(&err).is_some(),
+            Err(err) => count_broken_symlinks && symlink_walk_error_path(&err).is_some(),
         })
     })
 }
@@ -1547,7 +1548,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
             }
             if !glob_matched && walker.pruned() {
                 // Everything it matched may sit in a directory the walk skipped.
-                glob_matched = glob_has_entries(&full);
+                glob_matched = glob_has_entries(&full, false);
             }
         }
         // A glob that matches nothing means expected outputs are missing.
@@ -1776,7 +1777,10 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
                     }
                 }
                 // Matches that sit in a skipped directory still count as found.
-                if candidates.len() == before && walker.pruned() && glob_has_entries(&expanded) {
+                if candidates.len() == before
+                    && walker.pruned()
+                    && glob_has_entries(&expanded, false)
+                {
                     pruned_matches = true;
                 }
             }
@@ -2181,7 +2185,8 @@ mod tests {
     fn glob_has_entries_counts_dangling_symlinks() -> Result<()> {
         let temp = tempfile::tempdir()?;
         std::os::unix::fs::symlink("missing", temp.path().join("dangling.js"))?;
-        assert!(glob_has_entries(&temp.path().join("*.js")));
+        assert!(glob_has_entries(&temp.path().join("*.js"), true));
+        assert!(!glob_has_entries(&temp.path().join("*.js"), false));
         Ok(())
     }
 
@@ -2191,8 +2196,8 @@ mod tests {
         let root = temp.path();
         fs::create_dir_all(root.join("vendor/x"))?;
         fs::write(root.join("vendor/x/a.js"), "")?;
-        assert!(glob_has_entries(&root.join("vendor/**/*.js")));
-        assert!(!glob_has_entries(&root.join("vendor/**/*.rs")));
+        assert!(glob_has_entries(&root.join("vendor/**/*.js"), false));
+        assert!(!glob_has_entries(&root.join("vendor/**/*.rs"), false));
         Ok(())
     }
 
