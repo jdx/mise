@@ -2129,12 +2129,7 @@ pub async fn err_no_version_set(
         if let Some(msg) = lacks {
             return Err(eyre!(msg));
         }
-        let mut msg = format!("No version is set for shim: {bin_name}\n");
-        msg.push_str("Set a global default version with one of the following:\n");
-        for tv in tvs {
-            msg.push_str(&format!("mise use -g {}@{}\n", tv.ba(), tv.version));
-        }
-        Err(eyre!(msg.trim().to_string()))
+        Err(eyre!(no_version_message(bin_name, &tvs)))
     } else {
         let mut msg = format!(
             "Tool{} not installed for shim: {}\n",
@@ -2147,6 +2142,76 @@ pub async fn err_no_version_set(
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
     }
+}
+
+/// The installed version a shim without a configured version should use or suggest: the
+/// backend's own latest installed version of the first tool that provides the executable,
+/// or that tool's last listed version when the backend names none among `tvs`. Ordering is
+/// the backend's call; versions are not assumed to be semver.
+fn preferred_installed_version(tvs: &[ToolVersion]) -> Option<&ToolVersion> {
+    let first = tvs.first()?;
+    let same_tool = tvs.iter().filter(|tv| tv.ba() == first.ba()).collect_vec();
+    let latest = first
+        .backend()
+        .ok()
+        .and_then(|b| b.latest_installed_version(None).ok().flatten());
+    latest
+        .and_then(|v| same_tool.iter().find(|tv| tv.version == v).copied())
+        .or_else(|| same_tool.last().copied())
+}
+
+/// One line that names the fix, using an installed version. `--verbose` adds every installed
+/// version that provides the executable.
+fn no_version_message(bin_name: &str, tvs: &[ToolVersion]) -> String {
+    let Some(tv) = preferred_installed_version(tvs) else {
+        return format!("No version is set for shim: {bin_name}");
+    };
+    let (ba, version) = (tv.ba(), &tv.version);
+    let mut msg = format!(
+        "No version is set for shim: {bin_name}. Run `mise use -g {ba}@{version}` to set a default, or `mise x {ba}@{version} -- {bin_name}` to run it once."
+    );
+    if Settings::get().verbose {
+        msg.push_str("\nInstalled versions that provide it:");
+        for tv in tvs {
+            msg.push_str(&format!("\n  {}@{}", tv.ba(), tv.version));
+        }
+        msg.push_str(
+            "\nTo run the latest installed version without configuring one, set `shims.fallback_to_installed = true`.",
+        );
+    }
+    msg
+}
+
+/// With `shims.fallback_to_installed`, the executable of the preferred installed version of a tool
+/// that no config mentions. A tool a config does select is never substituted: a missing or
+/// mismatched configured version must still fail, not run something nobody chose.
+pub async fn installed_fallback_bin(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    tvs: &[ToolVersion],
+    shim_name: &str,
+    bin_name: &str,
+) -> Result<Option<PathBuf>> {
+    if !Settings::get().shims.fallback_to_installed {
+        return Ok(None);
+    }
+    let unconfigured = tvs
+        .iter()
+        .filter(|tv| !ts.versions.keys().any(|ba| ba.short == tv.ba().short))
+        .cloned()
+        .collect_vec();
+    let Some(tv) = preferred_installed_version(&unconfigured) else {
+        return Ok(None);
+    };
+    let backend = tv.backend()?;
+    let bin = backend_which_shim(backend.as_ref(), config, tv, shim_name, bin_name).await?;
+    if let Some(bin) = &bin {
+        debug!(
+            "shim[{bin_name}] no version configured, using installed {tv} (shims.fallback_to_installed): {}",
+            display_path(bin)
+        );
+    }
+    Ok(bin)
 }
 
 /// A config selects a version of the tool that is installed but does not provide `bin_name`, while
@@ -2790,6 +2855,24 @@ mod tests {
             .to_string();
         assert!(err.contains("does not provide codex"), "{err}");
         assert!(!err.contains("No executable found"), "{err}");
+    }
+
+    #[test]
+    fn no_version_message_is_one_line_without_installed_versions() {
+        let msg = no_version_message("rg", &[]);
+        assert_eq!(msg, "No version is set for shim: rg");
+    }
+
+    #[tokio::test]
+    async fn no_version_message_names_an_installed_version_on_one_line() {
+        let _config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from("gh"));
+        let request = ToolRequest::new(ba, "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+        let msg = no_version_message("gh", &[tv]);
+        assert_eq!(msg.lines().count(), 1, "{msg}");
+        assert!(msg.contains("`mise use -g gh@1.0.0`"), "{msg}");
+        assert!(msg.contains("`mise x gh@1.0.0 -- gh`"), "{msg}");
     }
 
     #[tokio::test]

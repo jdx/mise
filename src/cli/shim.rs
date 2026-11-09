@@ -501,6 +501,11 @@ async fn which_shim(
     if tvs.is_empty() && shim_name != bin_name {
         tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
     }
+    if let Some(bin) =
+        crate::shims::installed_fallback_bin(config, &ts, &tvs, shim_name, bin_name).await?
+    {
+        return Ok((ShimCommand::Tool(bin), ts));
+    }
     match err_no_version_set(config, ts, shim_name, tvs).await {
         Ok(_) => unreachable!("err_no_version_set always returns an error"),
         Err(err) => Err(err),

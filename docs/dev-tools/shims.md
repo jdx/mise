@@ -417,6 +417,22 @@ runs them by name, so a shim for one affects everything. Install them with your
 system package manager, which [`mise bootstrap`](/bootstrap.html) can manage.
 :::
 
+## Run an installed version when none is configured {#fallback-to-installed}
+
+A shim run in a directory where no config file selects its tool fails with
+`No version is set for shim`, and names the `mise use -g` and `mise x` commands
+that fix it, using an installed version. Set
+[`shims.fallback_to_installed`](/configuration/settings.html#shims.fallback_to_installed)
+to run the latest installed version instead:
+
+```sh
+mise settings shims.fallback_to_installed=true
+```
+
+It is off by default because the version it runs is one nobody chose. It never
+replaces a tool a config file does select: a pinned version that is missing
+still fails.
+
 ## Keep shims out of mise activate {#activate-shims}
 
 PATH activation puts real tool directories first. While

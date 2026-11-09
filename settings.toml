@@ -3697,6 +3697,23 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[shims.fallback_to_installed]
+default = false
+description = "Let a shim run the latest installed version of a tool that no config file selects."
+docs = """
+By default, running a shim in a directory where no config file selects a version
+of its tool fails with `No version is set for shim`, naming the `mise use -g` and
+`mise x` commands that fix it. When this is `true`, the shim runs the latest
+installed version of that tool instead, as the backend defines "latest".
+
+This applies only to a tool that no config file mentions. A tool a config does
+select, whose version is missing or lacks the executable, still fails, so a pinned
+version is never swapped for another. Running a version nobody chose can differ
+from the one a project expects, which is why this is off by default.
+"""
+env = "MISE_SHIMS_FALLBACK_TO_INSTALLED"
+type = "Bool"
+
 [shims_dir]
 default_docs = "`$MISE_DATA_DIR/shims`"
 description = "Directory where mise writes user shims."

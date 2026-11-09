@@ -3117,6 +3117,11 @@
               "items": {
                 "type": "string"
               }
+            },
+            "fallback_to_installed": {
+              "default": false,
+              "description": "Let a shim run the latest installed version of a tool that no config file selects.",
+              "type": "boolean"
             }
           }
         },
