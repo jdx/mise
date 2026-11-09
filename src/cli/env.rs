@@ -49,6 +49,9 @@ pub(crate) struct Env {
     tool: Vec<ToolArg>,
 
     /// Output in dotenv format
+    ///
+    /// Values are quoted and escaped where needed so mise reads them back unchanged. Tools that
+    /// do not interpret quotes, such as Docker `--env-file`, receive them literally.
     #[usage(long, short = 'D', overrides = "shell")]
     dotenv: bool,
 

@@ -3743,7 +3743,13 @@ JSON, dotenv, and shell output contain actual variable values, including secrets
 Tools you pass as TOOL@VERSION arguments are installed first if they are missing;
 missing tools from the config are reported, not installed.
 """#
-    flag "-D --dotenv" help="Output in dotenv format" overrides=--shell
+    flag "-D --dotenv" help="Output in dotenv format" overrides=--shell {
+        long_help #"""
+Output in dotenv format
+
+Values are quoted and escaped where needed so mise reads them back unchanged. Tools that do not interpret quotes, such as Docker `--env-file`, receive them literally.
+"""#
+    }
     flag "-J --json" help="Output in JSON format" overrides=--shell
     flag "-s --shell" help="Shell type to generate environment variables for" overrides=--json {
         arg <SHELL> {
