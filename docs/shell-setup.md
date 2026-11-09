@@ -107,10 +107,10 @@ Restart Nushell after saving both files. If `mise` is not on `PATH`, use its
 absolute path in `env.nu`. `env.nu` regenerates the module at every startup, so
 it follows mise upgrades.
 
-The `mise` command this module defines completes subcommands, flags and
-arguments by itself, so activation alone gives you tab completion. The
-[completion script](#autocompletion) is only needed for `^mise`, which bypasses
-the module.
+The `mise` command this module defines completes subcommands and arguments by
+itself, so activation alone gives you tab completion. Nushell does not offer
+flags for a wrapped command; `^mise --<Tab>` completes them through the
+[completion script](#autocompletion).
 
 ## Xonsh {#xonsh}
 
