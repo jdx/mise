@@ -458,14 +458,14 @@ env = "MISE_COLOR"
 type = "Bool"
 
 [color_theme]
-default = "default"
+default = "base16"
 description = "Color theme for interactive prompts, such as the task picker in `mise run`."
 docs = """
 With colors off (`color = false`, `NO_COLOR` or `CLICOLOR=0`), prompts are
 unstyled whatever this is set to.
 """
 enum = [
-  { value = "auto", description = "`base16`" },
+  { value = "auto", description = "`base16` on light terminals (detected from `COLORFGBG`), `charm` otherwise" },
   { value = "default", description = "same as `auto`" },
   { value = "charm", description = "fixed 256-color greys; suits dark terminals" },
   { value = "base16", description = "the terminal's own named colors, so it follows its palette" },

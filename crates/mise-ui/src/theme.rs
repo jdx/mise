@@ -7,9 +7,10 @@ use mise_settings::Settings;
 /// terminal color state.
 ///
 /// Available themes:
-/// - "auto" (or "default") - The base16 theme
-/// - "base16" - Base16 theme: the terminal's own 16 named colors, so it follows
-///   the terminal's palette on light and dark backgrounds
+/// - "base16" (the default) - Base16 theme: the terminal's own named colors, so
+///   it follows the terminal's palette on light and dark backgrounds
+/// - "auto" (or "default") - Auto-detect: base16 on light terminals (from
+///   `COLORFGBG`), otherwise charm
 /// - "charm" - The charm theme (fixed 256-color greys, suits dark terminals)
 /// - "catppuccin" - Catppuccin theme
 /// - "dracula" - Dracula theme
@@ -19,13 +20,17 @@ use mise_settings::Settings;
 /// behavior so that interactive prompts honor the color settings.
 pub fn get_theme() -> Theme {
     let settings = Settings::get();
-    select_theme(console::colors_enabled_stderr(), &settings.color_theme)
+    select_theme(
+        console::colors_enabled_stderr(),
+        &settings.color_theme,
+        detect_light_background(),
+    )
 }
 
 /// Pure theme-selection logic, separated from global state so it can be tested
 /// deterministically (the test harness forces colors off globally, so the
 /// branches cannot be exercised through `get_theme()` directly).
-fn select_theme(colors_enabled: bool, color_theme: &str) -> Theme {
+fn select_theme(colors_enabled: bool, color_theme: &str, light_background: bool) -> Theme {
     // Honor disabled colors regardless of the requested theme. This matches
     // `demand::Theme::default()`, which returns `Theme::new()` (no colors) when
     // `console::colors_enabled_stderr()` is false.
@@ -33,7 +38,13 @@ fn select_theme(colors_enabled: bool, color_theme: &str) -> Theme {
         return Theme::new();
     }
     match color_theme.to_lowercase().as_str() {
-        "auto" | "default" | "" => base16(),
+        "auto" | "default" | "" => {
+            if light_background {
+                base16()
+            } else {
+                Theme::charm()
+            }
+        }
         "charm" => Theme::charm(),
         "base16" => base16(),
         "catppuccin" => Theme::catppuccin(),
@@ -43,6 +54,31 @@ fn select_theme(colors_enabled: bool, color_theme: &str) -> Theme {
             base16()
         }
     }
+}
+
+/// Best-effort detection of a light terminal background via the `COLORFGBG`
+/// environment variable (set by many terminals, e.g. iTerm2, konsole, rxvt).
+/// We intentionally avoid OSC 11 terminal queries, which can hang or corrupt
+/// output. Returns false (assume dark) when detection is not possible.
+fn detect_light_background() -> bool {
+    std::env::var("COLORFGBG")
+        .ok()
+        .as_deref()
+        .map(colorfgbg_is_light)
+        .unwrap_or(false)
+}
+
+/// Parse a `COLORFGBG` value ("foreground;background", sometimes with a middle
+/// field) and decide whether the background indicates a light terminal.
+/// The background is the last `;`-separated field; ANSI codes 7 (white) and
+/// 10..=15 (bright colors / bright white) are treated as light.
+fn colorfgbg_is_light(value: &str) -> bool {
+    value
+        .rsplit(';')
+        .next()
+        .and_then(|bg| bg.trim().parse::<u8>().ok())
+        .map(|bg| bg == 7 || (10..=15).contains(&bg))
+        .unwrap_or(false)
 }
 
 /// demand's base16 theme with its `Ansi256(0..=15)` colors swapped for the
@@ -150,7 +186,7 @@ mod tests {
             "auto",
             "bogus",
         ] {
-            let t = select_theme(false, theme);
+            let t = select_theme(false, theme, false);
             let plain = Theme::new();
             assert_eq!(t.title.fg(), plain.title.fg(), "theme={theme}");
             assert_eq!(
@@ -168,7 +204,7 @@ mod tests {
 
     #[test]
     fn explicit_theme_is_applied_when_colors_enabled() {
-        let charm = select_theme(true, "charm");
+        let charm = select_theme(true, "charm", true);
         assert_eq!(charm.title.fg(), Theme::charm().title.fg());
         assert_eq!(
             charm.unselected_option.fg(),
@@ -177,12 +213,39 @@ mod tests {
     }
 
     #[test]
-    fn auto_and_unknown_themes_are_base16() {
-        for theme in ["auto", "default", "", "base16", "bogus"] {
-            let t = select_theme(true, theme);
-            assert_eq!(t.title.fg(), Some(&Color::Cyan), "theme={theme}");
-            assert!(t.title.bold(), "theme={theme}");
+    fn base16_and_unknown_themes_are_base16_on_any_background() {
+        for light in [false, true] {
+            for theme in ["base16", "bogus"] {
+                let t = select_theme(true, theme, light);
+                assert_eq!(t.title.fg(), Some(&Color::Cyan), "theme={theme}");
+                assert!(t.title.bold(), "theme={theme}");
+            }
         }
+    }
+
+    #[test]
+    fn auto_picks_base16_on_light_and_charm_on_dark() {
+        for theme in ["auto", "default", ""] {
+            let light = select_theme(true, theme, true);
+            assert_eq!(light.title.fg(), Some(&Color::Cyan), "theme={theme}");
+
+            let dark = select_theme(true, theme, false);
+            assert_eq!(dark.title.fg(), Theme::charm().title.fg(), "theme={theme}");
+        }
+    }
+
+    #[test]
+    fn colorfgbg_light_detection() {
+        assert!(colorfgbg_is_light("0;15"));
+        assert!(colorfgbg_is_light("0;7"));
+        assert!(colorfgbg_is_light("0;default;15"));
+        assert!(colorfgbg_is_light(" 0 ; 15 "));
+        assert!(!colorfgbg_is_light("15;0"));
+        assert!(!colorfgbg_is_light("7;0"));
+        assert!(!colorfgbg_is_light("15;8"));
+        assert!(!colorfgbg_is_light(""));
+        assert!(!colorfgbg_is_light("foo"));
+        assert!(!colorfgbg_is_light("0;default"));
     }
 
     #[test]
