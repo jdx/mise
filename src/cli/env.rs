@@ -267,9 +267,9 @@ impl Env {
         }
 
         for (k, v) in env {
-            let k = k.to_string();
-            let v = v.to_string();
-            miseprint!("{}={}\n", k, v)?;
+            let line = mise_dotenv::render_var(&k, &v)
+                .map_err(|e| eyre::eyre!("cannot write {k} as dotenv: {e}"))?;
+            miseprint!("{line}\n")?;
         }
         Ok(())
     }
