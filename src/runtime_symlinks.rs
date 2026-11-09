@@ -279,20 +279,30 @@ fn list_symlinks_for_dir(
     // name is the user's and stays untouched.
     let global_link = installs_dir.join(GLOBAL_LINK);
     if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
+        let shared = installs_dir != backend.ba().installs_path();
         let to = match global {
-            Some(global) => global
-                .list_current_versions()
-                .into_iter()
-                .filter(|(b, _)| b.ba() == backend.ba())
-                .find_map(|(_, tv)| pin_target(backend, &tv, installs_dir))
-                // The system config can resolve to an install outside this
-                // shared dir (a newer one in the user's dir); the administrator's
-                // link stays rather than being dropped.
-                .or_else(|| {
-                    (installs_dir != backend.ba().installs_path())
-                        .then(|| runtime_symlink_target(&global_link))
-                        .flatten()
-                }),
+            Some(global) => {
+                let selected = global
+                    .list_current_versions()
+                    .into_iter()
+                    .filter(|(b, _)| b.ba() == backend.ba())
+                    .map(|(_, tv)| tv)
+                    .collect_vec();
+                selected
+                    .iter()
+                    .find_map(|tv| {
+                        pin_target(backend, tv, installs_dir)
+                            .or_else(|| shared.then(|| pin_in_dir(backend, tv, installs_dir))?)
+                    })
+                    // The system config can select a version that resolves to an
+                    // install outside this shared dir; the administrator's link
+                    // stays then. A tool the config no longer selects loses it.
+                    .or_else(|| {
+                        (shared && !selected.is_empty())
+                            .then(|| runtime_symlink_target(&global_link))
+                            .flatten()
+                    })
+            }
             // Global config could not be read: keep the link as it is.
             None => runtime_symlink_target(&global_link),
         };
@@ -309,6 +319,18 @@ fn list_symlinks_for_dir(
 
 /// The link name for the version global config selects.
 const GLOBAL_LINK: &str = "global";
+
+/// The `./name` link target for `tv`'s copy inside a shared `installs_dir`,
+/// even when `tv.install_path()` prefers a copy in the user's own dir.
+fn pin_in_dir(
+    backend: &Arc<dyn Backend>,
+    tv: &crate::toolset::ToolVersion,
+    installs_dir: &Path,
+) -> Option<PathBuf> {
+    let name = tv.tv_pathname();
+    (installs_dir.join(&name).is_dir() && !is_install_incomplete(backend, installs_dir, &name))
+        .then(|| PathBuf::from(".").join(name))
+}
 
 /// The `./name` link target naming `tv`'s install inside `installs_dir`, or
 /// `None` when that install is not there or never finished.
