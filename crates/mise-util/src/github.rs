@@ -668,15 +668,13 @@ async fn list_releases_page_budget(repo: &str) -> Result<Vec<GithubRelease>> {
 }
 
 /// [`list_releases_page_budget`] from the GitHub API itself. GitHub's
-/// anonymous API rejects results beyond the first 1000, so the page count is
-/// bounded unless `MISE_LIST_ALL_VERSIONS` is set.
+/// anonymous API rejects results beyond the first 1000 even when it supplies a
+/// next-page link, so the page count is always bounded, as the mirror's is.
 async fn list_release_pages_from_api(repo: &str) -> Result<Vec<GithubRelease>> {
     let (mut url, mut releases, mut headers) = fetch_first_release_page(API_URL, repo).await?;
     let mut pages_fetched = 1;
     while let Some(next) = next_page(&headers) {
-        if !*env::MISE_LIST_ALL_VERSIONS
-            && pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES
-        {
+        if pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES {
             break;
         }
         url = crate::http::resolve_pagination_url(&url, &next)?;

@@ -418,3 +418,20 @@ async fn test_mirrored_releases_listing_all_pass_unrelated_stable_releases() {
     assert_eq!(releases.unwrap().unwrap(), ["server@1.0.0", "4.215.0"]);
     assert_eq!(requested, [1, 2]);
 }
+
+#[test]
+fn test_not_found_survives_the_mirror_then_github_failure() {
+    let mirror = eyre::eyre!("mise-versions timed out");
+    let github =
+        eyre::eyre!("HTTP status client error (404 Not Found) for url (https://api.github.com/x)");
+    let failed: eyre::Report =
+        crate::versions_host::GithubRetryFailed::new("release", &mirror, github).into();
+    assert!(crate::versions_host::is_not_found(&failed));
+    let other: eyre::Report = crate::versions_host::GithubRetryFailed::new(
+        "release",
+        &mirror,
+        eyre::eyre!("HTTP status server error (500)"),
+    )
+    .into();
+    assert!(!crate::versions_host::is_not_found(&other));
+}

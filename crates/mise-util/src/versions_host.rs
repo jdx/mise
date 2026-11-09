@@ -845,6 +845,27 @@ impl GithubRetryFailed {
     }
 }
 
+/// Whether `err` is a 404, including one api.github.com answered after
+/// mise-versions failed: [`GithubRetryFailed`] words itself without the
+/// status, so [`crate::http::error_code`] on the outer error cannot see it.
+pub fn is_not_found(err: &eyre::Report) -> bool {
+    crate::http::error_code(err) == Some(404)
+        || err.chain().any(|cause| {
+            cause
+                .downcast_ref::<GithubRetryFailed>()
+                .is_some_and(|failed| {
+                    let mut source = std::error::Error::source(failed);
+                    while let Some(inner) = source {
+                        if inner.to_string().contains("404") {
+                            return true;
+                        }
+                        source = inner.source();
+                    }
+                    false
+                })
+        })
+}
+
 fn versions_host_error_message(status: u16, body: &str) -> String {
     let body = body.trim();
     let status_code = reqwest::StatusCode::from_u16(status);

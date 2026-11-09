@@ -1774,7 +1774,7 @@ impl PackslipBackend {
             for tag in [tv.version.clone(), format!("v{}", tv.version)] {
                 match github::get_release_with_versions_host(&repo, &tag, true).await {
                     Ok(release) => found = find(std::slice::from_ref(&release)),
-                    Err(err) if crate::http::error_code(&err) == Some(404) => continue,
+                    Err(err) if crate::versions_host::is_not_found(&err) => continue,
                     Err(err) => return Err(err),
                 }
                 if found.is_some() {
