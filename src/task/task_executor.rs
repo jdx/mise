@@ -1394,7 +1394,16 @@ impl TaskExecutor {
 
         let needs_tera = task.run().iter().any(RunEntry::has_tera_template);
         let mut tera_state = if needs_tera {
-            let usage_values = crate::task::parse_usage_values_from_task(config, task).await?;
+            let usage_values = match crate::task::parse_usage_values_from_task(config, task).await {
+                Ok(values) => values,
+                // A bypassed task never uses its usage values, so a broken spec must not
+                // stop its templated entries from running.
+                Err(err) if task.should_bypass_usage_parser() => {
+                    trace!("Usage parser bypassed, spec failed to load: {err}");
+                    Default::default()
+                }
+                Err(err) => return Err(err),
+            };
             let config_root = task.config_root.clone().unwrap_or_default();
             let tera = crate::tera::get_tera(Some(&config_root));
             let mut tera_ctx = task.tera_ctx_for_usage(config).await?;

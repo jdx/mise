@@ -29,3 +29,15 @@ assert "mise run missing-include x" "bad x"
 
 # validation stays strict
 assert_fail "mise tasks validate"
+
+# a bypassed task's templated entries run too
+cat <<'TOML' >mise.toml
+[tasks.child]
+run = 'echo child'
+
+[tasks.templated]
+usage = 'include file="{{ config_root }}/missing.kdl"'
+raw_args = true
+run = [{ task = "{{ env.CHILD }}" }]
+TOML
+assert "CHILD=child mise run templated" "child"

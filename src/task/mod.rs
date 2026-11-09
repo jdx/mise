@@ -2216,7 +2216,10 @@ impl Task {
                 without_usage.usage = String::new();
                 let fallback = without_usage
                     .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
-                    .await?;
+                    .await
+                    .map_err(|retry_err| {
+                        eyre!("{retry_err}\n\nthe task's usage spec also failed to load:\n{err}")
+                    })?;
                 warn!("{err}");
                 fallback
             }
