@@ -288,6 +288,10 @@ fn list_symlinks_for_dir(
                     .filter(|(b, _)| b.ba() == backend.ba())
                     .map(|(_, tv)| tv)
                     .collect_vec();
+                let requested = global
+                    .list_versions_by_plugin()
+                    .iter()
+                    .any(|(b, tvl)| b.ba() == backend.ba() && !tvl.requests.is_empty());
                 selected
                     .iter()
                     .find_map(|tv| {
@@ -295,10 +299,12 @@ fn list_symlinks_for_dir(
                             .or_else(|| shared.then(|| pin_in_dir(backend, tv, installs_dir))?)
                     })
                     // The system config can select a version that resolves to an
-                    // install outside this shared dir; the administrator's link
-                    // stays then. A tool the config no longer selects loses it.
+                    // install outside this shared dir, or fail to resolve at all;
+                    // the administrator's link stays then. A tool it no longer
+                    // selects loses the link, unless this user cannot write the
+                    // dir: only someone who can may take it away.
                     .or_else(|| {
-                        (shared && !selected.is_empty())
+                        (shared && (requested || !writable_by_us(installs_dir)))
                             .then(|| runtime_symlink_target(&global_link))
                             .flatten()
                     })
@@ -319,6 +325,19 @@ fn list_symlinks_for_dir(
 
 /// The link name for the version global config selects.
 const GLOBAL_LINK: &str = "global";
+
+/// Whether this process can modify `dir` without elevating.
+fn writable_by_us(dir: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        !crate::system_install::needs_elevation(dir)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        true
+    }
+}
 
 /// The `./name` link target for `tv`'s copy inside a shared `installs_dir`,
 /// even when `tv.install_path()` prefers a copy in the user's own dir.
