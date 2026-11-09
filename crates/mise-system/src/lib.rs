@@ -774,10 +774,9 @@ fn package_requests_from_config_files(
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
     let available_managers = std::cell::LazyCell::new(available_manager_names);
-    // (manager, package) pairs an unprefixed key declared, and pairs two of them
-    // disagreed about
-    let mut bare_origin: BTreeSet<(String, String)> = BTreeSet::new();
-    let mut conflicted: BTreeSet<(String, String)> = BTreeSet::new();
+    // (manager, package) pairs an unprefixed key declared
+    let mut bare_origin: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
     // Entries with a prefix go first, so an unprefixed key that resolves to the
     // same package as one of them yields to it.
     let (explicit, unprefixed): (Vec<_>, Vec<_>) =
@@ -803,33 +802,40 @@ fn package_requests_from_config_files(
                 let is_bare = !spec.contains(':');
                 if is_bare {
                     let key = (mgr.clone(), name.clone());
-                    if conflicted.contains(&key) {
-                        continue;
-                    }
                     let existing = by_mgr
                         .get(&mgr)
                         .and_then(|requests| requests.iter().find(|r| r.name == name));
                     if let Some(existing) = existing {
                         let same =
                             existing.version == version && existing.desired == package.desired();
+                        let mut skip = true;
                         if same {
                             debug!("[bootstrap.packages]: '{spec}' repeats {mgr}:{name}");
                         } else if bare_origin.contains(&key) {
-                            // two unprefixed keys disagree about one package: neither
-                            // wins by merge order
+                            // Two unprefixed keys disagree about one package. Never drop
+                            // the package, which would also drop it from prune's keep-list:
+                            // keep the declaration that wants it installed.
+                            let replaces = existing.desired
+                                == mise_system_packages::PackageDesiredState::Absent
+                                && package.desired()
+                                    == mise_system_packages::PackageDesiredState::Present;
                             warn!(
-                                "[bootstrap.packages]: '{spec}' and another unprefixed entry both resolve to '{mgr}:{name}' with different state or version; skipping both"
+                                "[bootstrap.packages]: '{spec}' and another unprefixed entry both resolve to '{mgr}:{name}' with a different state or version; keeping the one that installs it"
                             );
-                            if let Some(requests) = by_mgr.get_mut(&mgr) {
-                                requests.retain(|r| r.name != name);
+                            if replaces {
+                                if let Some(requests) = by_mgr.get_mut(&mgr) {
+                                    requests.retain(|r| r.name != name);
+                                }
+                                skip = false;
                             }
-                            conflicted.insert(key);
                         } else {
                             warn!(
                                 "[bootstrap.packages]: '{spec}' resolves to '{mgr}:{name}', which another entry already declares; using that entry"
                             );
                         }
-                        continue;
+                        if skip {
+                            continue;
+                        }
                     }
                     bare_origin.insert(key);
                 }
