@@ -1730,7 +1730,6 @@ impl ConfigFile for MiseToml {
             .flat_map(|opts| opts.opts.keys().cloned())
             .collect();
         for tr in &mut versions {
-            *tr = tr.without_registry_options();
             if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
                 // Options given on the command line or inline are explicit even when they match
                 // the registry default.
