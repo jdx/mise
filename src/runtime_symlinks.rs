@@ -295,11 +295,13 @@ fn list_symlinks_for_dir(
 }
 
 /// Whether `installs_dir` is a shared (system) install dir the current user
-/// cannot write to.
+/// cannot write to and mise may not elevate to write. With sudo enabled,
+/// `mise install --system` publishes there through the root helper.
 fn read_only_shared_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> bool {
     #[cfg(unix)]
     {
         installs_dir != backend.ba().installs_path()
+            && !crate::config::Settings::get().system_packages.sudo
             && crate::system_install::needs_elevation(installs_dir)
     }
     #[cfg(not(unix))]

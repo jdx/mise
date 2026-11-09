@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 # A non-root `mise install` must not try to retarget the `global` link in a
 # read-only system installs dir because the user's own global config selects a
 # different version than the administrator's system config.
@@ -9,6 +10,7 @@ if [[ $(id -u) == 0 ]]; then
   exit 0
 fi
 
+export MISE_SYSTEM_PACKAGES_SUDO=false
 export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
 export MISE_SYSTEM_CONFIG_DIR="$HOME/system-mise"
 SYSTEM_INSTALLS="$MISE_SYSTEM_DATA_DIR/installs"
@@ -28,6 +30,7 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 tiny = "1.0.0"
 TOML
 chmod -R a-w "$MISE_SYSTEM_DATA_DIR"
+trap 'chmod -R u+w "$MISE_SYSTEM_DATA_DIR" 2>/dev/null || true' EXIT
 
 assert_succeed "mise install dummy@1.0.0"
 assert "readlink $SYSTEM_INSTALLS/tiny/global" "./2.1.0"
