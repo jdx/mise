@@ -401,3 +401,20 @@ fn test_whole_release_list_used_only_when_every_release_is_dated() {
     ])));
     assert!(!all_releases_dated(&list(&[Some("")])));
 }
+
+#[tokio::test]
+async fn test_mirrored_releases_listing_all_pass_unrelated_stable_releases() {
+    // Asset discovery in a monorepo must see past an unrelated stable release
+    // on page 1 to the older matching one, still through the paged mirror.
+    let (releases, requested) = paginate_canned(
+        vec![
+            Some(mirrored_page(vec![make_release("server@1.0.0")], Some(2))),
+            Some(mirrored_page(vec![make_release("4.215.0")], None)),
+        ],
+        false,
+        true,
+    )
+    .await;
+    assert_eq!(releases.unwrap().unwrap(), ["server@1.0.0", "4.215.0"]);
+    assert_eq!(requested, [1, 2]);
+}

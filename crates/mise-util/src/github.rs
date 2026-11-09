@@ -643,6 +643,54 @@ pub async fn list_release_versions(
     .await
 }
 
+/// Every release `repo` has within the release mirror's page budget, from the
+/// paged mirror first and GitHub only when the mirror cannot answer. Unlike
+/// [`list_releases_`] it does not stop at the first stable release, which in a
+/// monorepo may belong to an unrelated component.
+async fn list_releases_page_budget(repo: &str) -> Result<Vec<GithubRelease>> {
+    if mirrors_github_metadata(API_URL, repo) {
+        let mirrored = paginate_mirrored_releases(false, true, |page| {
+            crate::versions_host::github_releases(repo, page)
+        })
+        .await;
+        let listed = mirror_or_github(
+            &format!("GitHub releases of {repo}"),
+            mirrored,
+            async || list_release_pages_from_api(repo).await.map(Some),
+        )
+        .await?;
+        match listed {
+            Some(releases) => return Ok(releases),
+            None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
+        }
+    }
+    list_release_pages_from_api(repo).await
+}
+
+/// [`list_releases_page_budget`] from the GitHub API itself. GitHub's
+/// anonymous API rejects results beyond the first 1000, so the page count is
+/// bounded unless `MISE_LIST_ALL_VERSIONS` is set.
+async fn list_release_pages_from_api(repo: &str) -> Result<Vec<GithubRelease>> {
+    let (mut url, mut releases, mut headers) = fetch_first_release_page(API_URL, repo).await?;
+    let mut pages_fetched = 1;
+    while let Some(next) = next_page(&headers) {
+        if !*env::MISE_LIST_ALL_VERSIONS
+            && pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES
+        {
+            break;
+        }
+        url = crate::http::resolve_pagination_url(&url, &next)?;
+        let request_headers = get_headers(&url, API_URL)?;
+        let (more, h) = crate::http::HTTP_FETCH
+            .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &request_headers)
+            .await?;
+        releases.extend(more);
+        headers = h;
+        pages_fetched += 1;
+    }
+    Ok(releases)
+}
+
 /// [`list_release_versions`] limited to the releases carrying an asset named
 /// `asset`, which mise-versions filters for itself. The API fallback normally
 /// reads up to ten pages: unrelated stable releases must not stop discovery,
@@ -681,27 +729,11 @@ pub async fn list_release_versions_with_asset(
             return Ok(list.releases.into_iter().map(Into::into).collect());
         }
 
-        // Use the same page budget as the release mirror, rather than the
-        // generic listing's bounded search for any stable release. Keep this
-        // separate from that listing and its cache, which may contain only
-        // the first page of a busy monorepo.
-        let (mut url, mut releases, mut headers) = fetch_first_release_page(API_URL, repo).await?;
-        let mut pages_fetched = 1;
-        while let Some(next) = next_page(&headers) {
-            if !*env::MISE_LIST_ALL_VERSIONS
-                && pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES
-            {
-                break;
-            }
-            url = crate::http::resolve_pagination_url(&url, &next)?;
-            let request_headers = get_headers(&url, API_URL)?;
-            let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &request_headers)
-                .await?;
-            releases.extend(more);
-            headers = h;
-            pages_fetched += 1;
-        }
+        // Same page budget as the release mirror, rather than the generic
+        // listing's bounded search for any stable release. Kept separate from
+        // that listing and its cache, which may hold only the first page of a
+        // busy monorepo.
+        let releases = list_releases_page_budget(repo).await?;
         Ok(releases
             .into_iter()
             .filter(|r| !r.draft && r.assets.iter().any(|a| a.name == asset))
