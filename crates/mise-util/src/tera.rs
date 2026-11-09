@@ -140,11 +140,19 @@ fn hide_env_names(err: tera::Error, context: &Context) -> tera::Error {
     if names.join(", ") != listed {
         return err;
     }
+    let hint = format!(
+        "Field `{field}` is not defined in `env`. For an optional variable use \
+         `get_env(name=\"{field}\", default=\"\")` or `env.{field} | default(value=\"\")`."
+    );
+    // swap the message inside tera's report, which keeps its source line and
+    // underline
+    let rendered = err.to_string();
+    if rendered.contains(report.message()) {
+        return tera_err(rendered.replace(report.message(), &hint));
+    }
     let span = report.span();
     tera_err(format!(
-        "Field `{field}` is not defined in `env`. For an optional variable use \
-         `get_env(name=\"{field}\", default=\"\")` or `env.{field} | default(value=\"\")`.\n \
-         --> {}:{}:{}",
+        "{hint}\n --> {}:{}:{}",
         report.filename(),
         span.start_line,
         span.start_col + 1,

@@ -116,6 +116,8 @@ fn test_undefined_env_field_does_not_list_env_names() {
     );
     assert!(!msg.contains("MISE_TEST_SECRET_TOKEN"), "{msg}");
     assert!(!msg.contains("MISE_TEST_OTHER"), "{msg}");
+    // tera's source line and underline stay
+    assert!(msg.contains("{{ env.NOPE }}"), "{msg}");
 
     // other objects keep tera's own list of fields
     let err = render_str_v2(&mut tera, "{{ vars.nope }}", &ctx).unwrap_err();
