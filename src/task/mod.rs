@@ -2212,12 +2212,13 @@ impl Task {
             // A task that bypasses the usage parser never uses its spec, so a broken one
             // (a missing `include`, a parse error) must not keep the task from running.
             Err(err) if self.should_bypass_usage_parser() => {
-                warn!("{err}");
                 let mut without_usage = self.clone();
                 without_usage.usage = String::new();
-                without_usage
+                let fallback = without_usage
                     .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
-                    .await?
+                    .await?;
+                warn!("{err}");
+                fallback
             }
             Err(err) => return Err(err),
         };

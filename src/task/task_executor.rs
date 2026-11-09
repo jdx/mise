@@ -3309,13 +3309,20 @@ impl TaskExecutor {
             // so they must not influence spec discovery or parsing.
             crate::task::clear_usage_env(env);
         }
+        let parsed = task
+            .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
+            .await;
         if bypass_usage_parser {
+            // The spec is not used, so a broken one must not stop the task. Parsing still
+            // runs first so task-variable redactions get registered; rendering the scripts
+            // reports the broken spec.
+            if let Err(err) = &parsed {
+                trace!("Usage parser bypassed, spec failed to load: {err}");
+            }
             trace!("Usage parser bypassed");
             return Ok(());
         }
-        let (spec, _) = task
-            .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
-            .await?;
+        let (spec, _) = parsed?;
         let args = get_args();
         self.parse_usage_spec_and_init_env_from_spec(task, env, &args, &spec)
     }
