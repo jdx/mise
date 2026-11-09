@@ -833,21 +833,29 @@ fn package_requests_from_config_files(
                                 "[bootstrap.packages]: '{spec}' and another unprefixed entry both resolve to '{mgr}:{name}' with a different state or version; keeping the one that installs it"
                             );
                             if replaces {
-                                // The replaced declaration owns no options any more
-                                snap_options.remove(&name);
+                                // The replaced declaration owns no options any more. Options
+                                // are keyed by package name alone, so clear only the ones
+                                // this manager owns.
+                                if mgr == "snap" {
+                                    snap_options.remove(&name);
+                                }
                                 #[cfg(unix)]
                                 {
-                                    cask_adopt.remove(&name);
-                                    // the alias holds the same directory, unless an
-                                    // explicit entry for the alias set its own
-                                    if let Some(alias) = official_cask_alias(&name)
-                                        && cask_appdirs.get(&alias) == cask_appdirs.get(&name)
-                                    {
-                                        cask_appdirs.remove(&alias);
+                                    if mgr == "brew-cask" {
+                                        cask_adopt.remove(&name);
+                                        // the alias holds the same directory, unless an
+                                        // explicit entry for the alias set its own
+                                        if let Some(alias) = official_cask_alias(&name)
+                                            && cask_appdirs.get(&alias) == cask_appdirs.get(&name)
+                                        {
+                                            cask_appdirs.remove(&alias);
+                                        }
+                                        cask_appdirs.remove(&name);
                                     }
-                                    cask_appdirs.remove(&name);
-                                    app_specs.remove(&name);
-                                    app_adopt.remove(&name);
+                                    if mgr == "macos-app" {
+                                        app_specs.remove(&name);
+                                        app_adopt.remove(&name);
+                                    }
                                 }
                                 replace_existing = true;
                                 skip = false;
