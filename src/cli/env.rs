@@ -266,9 +266,15 @@ impl Env {
             env.retain(|k, _| keys.matches(k));
         }
 
-        for (k, v) in env {
-            let line = mise_dotenv::render_var_for_substitution(&k, &v)
-                .map_err(|e| eyre::eyre!("cannot write {k} as dotenv: {e}"))?;
+        // Render everything first so one unrepresentable name does not leave a partial file.
+        let lines = env
+            .iter()
+            .map(|(k, v)| {
+                mise_dotenv::render_var_for_substitution(k, v)
+                    .map_err(|e| eyre::eyre!("cannot write {k} as dotenv: {e}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for line in lines {
             miseprint!("{line}\n")?;
         }
         Ok(())
