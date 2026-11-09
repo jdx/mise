@@ -103,6 +103,15 @@ fn cutoff_channel_target(version: &str) -> Option<String> {
     (version == "stable").then(|| "latest".to_string())
 }
 
+/// The UTC day of a release-age cutoff, and whether builds dated that day are inside it.
+/// A date-only cutoff (`2026-11-09`) is the end of its day (`23:59:59Z`), which covers every
+/// build dated that day; a mid-day cutoff may precede a same-day build's publication.
+fn cutoff_day(before: jiff::Timestamp) -> (jiff::civil::Date, bool) {
+    let zoned = before.to_zoned(jiff::tz::TimeZone::UTC);
+    let end_of_day = jiff::civil::time(23, 59, 59, 0);
+    (zoned.date(), zoned.time() == end_of_day)
+}
+
 /// The date of the build a `nightly-YYYY-MM-DD` version names, which is in the name itself.
 fn dated_nightly_created_at(version: &str) -> Option<String> {
     let date = version.strip_prefix("nightly-")?.parse().ok()?;
@@ -874,19 +883,21 @@ impl Backend for RustPlugin {
             return Ok(None);
         }
         // Manifests are dated by day, so only a build from a day before the cutoff's own day is
-        // surely old enough; the newest such one is the build the cutoff allows.
+        // surely old enough; the newest such one is the build the cutoff allows. A date-only
+        // cutoff covers its whole day, so a build dated that day is old enough too.
         let config_env = config.env().await?;
-        let day = before.to_zoned(jiff::tz::TimeZone::UTC).date();
+        let (day, includes_day) = cutoff_day(before);
         let current = current_channel_created_at(version, &config_env)
             .await
             .and_then(|ts| ts.parse::<jiff::Timestamp>().ok())
             .map(|ts| ts.to_zoned(jiff::tz::TimeZone::UTC).date());
         // Already old enough: pin to that build so a lockfile or an upgrade cannot move it.
-        if let Some(date) = current.filter(|date| *date < day) {
+        if let Some(date) = current.filter(|date| *date < day || (includes_day && *date == day)) {
             return Ok(Some(format!("{version}-{date}")));
         }
         let server = rustup_dist_server(&config_env);
-        for date in (1..=cutoff_lookback_days(version))
+        let first_offset = if includes_day { 0 } else { 1 };
+        for date in (first_offset..=cutoff_lookback_days(version))
             .filter_map(|n| day.checked_sub(jiff::Span::new().days(n)).ok())
         {
             let url = dated_channel_manifest_url_for(server.as_deref(), version, date);
@@ -2030,6 +2041,15 @@ mod tests {
             parse_nightly_manifest("manifest-version = \"2\"\ndate = \"2026-08-13\"\n").unwrap(),
             "nightly-2026-08-13"
         );
+    }
+
+    #[test]
+    fn a_date_only_cutoff_includes_its_own_day() {
+        let day = jiff::civil::date(2026, 11, 9);
+        let date_only = mise_util::duration::parse_into_timestamp("2026-11-09").unwrap();
+        assert_eq!(cutoff_day(date_only), (day, true));
+        let mid_day: jiff::Timestamp = "2026-11-09T12:00:00Z".parse().unwrap();
+        assert_eq!(cutoff_day(mid_day), (day, false));
     }
 
     #[test]
