@@ -218,6 +218,9 @@ mod tests {
                 let t = select_theme(true, theme, light);
                 assert_eq!(t.title.fg(), Some(&Color::Cyan), "theme={theme}");
                 assert!(t.title.bold(), "theme={theme}");
+                assert_eq!(t.selected_option.fg(), Some(&Color::Green), "theme={theme}");
+                assert_eq!(t.unselected_option.fg(), None, "theme={theme}");
+                assert_eq!(t.help_key.fg(), None, "theme={theme}");
             }
         }
     }
