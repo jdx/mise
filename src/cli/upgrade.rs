@@ -1229,9 +1229,13 @@ impl Upgrade {
             } else {
                 // This resolves every config tracked on the machine, which can take a
                 // while, so show progress rather than appearing to hang.
-                let scan_pr = mpr.add("checking tracked configs");
+                let scan_pr = self
+                    .show_resolution_progress()
+                    .then(|| mpr.add("checking tracked configs"));
                 // Text-mode reports print nothing until the first message.
-                scan_pr.set_message("resolving tracked configs".into());
+                if let Some(pr) = &scan_pr {
+                    pr.set_message("resolving tracked configs".into());
+                }
                 let result: Result<_> = async {
                     let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
                         config,
@@ -1245,9 +1249,11 @@ impl Upgrade {
                     Ok(needed)
                 }
                 .await;
-                match &result {
-                    Ok(_) => scan_pr.finish(),
-                    Err(_) => scan_pr.finish_with_icon(String::new(), ProgressIcon::Error),
+                if let Some(pr) = &scan_pr {
+                    match &result {
+                        Ok(_) => pr.finish(),
+                        Err(_) => pr.finish_with_icon(String::new(), ProgressIcon::Error),
+                    }
                 }
                 result?
             };
