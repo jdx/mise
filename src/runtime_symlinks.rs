@@ -346,9 +346,25 @@ fn pin_in_dir(
     tv: &crate::toolset::ToolVersion,
     installs_dir: &Path,
 ) -> Option<PathBuf> {
-    let name = tv.tv_pathname();
-    (installs_dir.join(&name).is_dir() && !is_install_incomplete(backend, installs_dir, &name))
-        .then(|| PathBuf::from(".").join(name))
+    let install_path = tv.install_path();
+    // A legacy graph install keeps a suffix `tv_pathname` omits, but the
+    // retained path names it, so try that basename first. An identity-layout
+    // path is a hash, never a name in this dir.
+    let retained = crate::install_layout::resolver::dir_name_of(&install_path)
+        .is_none()
+        .then(|| {
+            install_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+        })
+        .flatten();
+    retained
+        .into_iter()
+        .chain([tv.tv_pathname()])
+        .find(|name| {
+            installs_dir.join(name).is_dir() && !is_install_incomplete(backend, installs_dir, name)
+        })
+        .map(|name| PathBuf::from(".").join(name))
 }
 
 /// The `./name` link target naming `tv`'s install inside `installs_dir`, or
