@@ -32,3 +32,12 @@ cd bar || exit 1
 assert "mise run :bar_task" "bar"
 assert "mise run //foo:foo_task" "foo hello"
 assert_contains "mise tasks ls --all" "//foo:foo_task"
+
+# A global override file outranks the project's own template.
+mkdir -p "$HOME/.config/mise"
+export MISE_CONFIG_DIR="$HOME/.config/mise"
+cat <<'EOT' >"$MISE_CONFIG_DIR/config.override.toml"
+[task_templates.example]
+env = { GREETING = "override" }
+EOT
+assert "mise run //foo:foo_task" "foo override"

@@ -5928,7 +5928,12 @@ async fn load_local_tasks_with_context(
                     let configs = configs_at_root(&subdir, &hierarchy_configs);
                     let cascaded_task_config =
                         cascaded_task_config_for_dir(&subdir, &hierarchy_configs)?;
-                    let templates = with_project_templates(&templates, &subdir, &hierarchy_configs);
+                    let templates = with_project_templates(
+                        &templates,
+                        &subdir,
+                        &hierarchy_configs,
+                        &config.config_files,
+                    );
 
                     if found_config {
                         if configs.is_empty() {
@@ -5988,6 +5993,7 @@ fn with_project_templates(
     base: &TaskDefinitions,
     project_dir: &Path,
     project_configs: &ConfigMap,
+    loaded_configs: &ConfigMap,
 ) -> TaskDefinitions {
     // Highest precedence first, as `collect_task_definitions` expects: the project's own
     // directory, then each ancestor up to the monorepo root.
@@ -6003,6 +6009,15 @@ fn with_project_templates(
     definitions
         .templates
         .extend(collect_task_definitions(&ordered, None).templates);
+    // Global override files outrank all project config, so they keep the final say.
+    let overrides = loaded_configs
+        .iter()
+        .filter(|(path, _)| is_override_config(path))
+        .map(|(path, cf)| (path.clone(), cf.clone()))
+        .collect::<ConfigMap>();
+    definitions
+        .templates
+        .extend(collect_task_definitions(&overrides, None).templates);
     definitions
 }
 
