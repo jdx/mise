@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# A file task grouped in a subdirectory of the task directory shares the
+# project's config root in its `env`, like a task directly in the directory.
+mkdir -p mise-tasks/sub
+touch mise.toml
+echo 'WHERE=project' >.env
+echo 'WHERE=sub' >mise-tasks/sub/.env
+for task in mise-tasks/top mise-tasks/sub/nested; do
+  cat >"$task" <<'TASK'
+#!/usr/bin/env bash
+#MISE env={ROOT="{{config_root}}", _={file=".env"}}
+echo "root=$ROOT where=$WHERE"
+TASK
+  chmod +x "$task"
+done
+
+assert "mise run -q top" "root=$PWD where=project"
+assert "mise run -q sub:nested" "root=$PWD where=project"
