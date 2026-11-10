@@ -8618,9 +8618,9 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "platforms"
-version = "4.2.1"
+version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e05aab6dead429c5ea7f03834bacdb63934f3e688ef92d969bc2b0a7c34f1d8d"
+checksum = "88cbb777b9edffacb1c3f67902fbd3b3654744476402ad0a0c867daf9b2e549c"
 
 [[package]]
 name = "plist"
