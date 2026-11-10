@@ -56,6 +56,97 @@ use super::{tool_key_requires_trust, version_requires_trust};
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
 
+/// Non-string scalars (`uvx = true`) one tool entry already holds, by option name.
+///
+/// Backend options are stored as strings, so writing them back unchanged would turn
+/// `uvx = true` into `uvx = "true"`.
+type WrittenScalars = HashMap<String, Value>;
+
+fn scalars_of<'a>(entries: impl Iterator<Item = (&'a str, &'a Value)>) -> WrittenScalars {
+    entries
+        .filter(|(_, v)| matches!(v, Value::Boolean(_) | Value::Integer(_) | Value::Float(_)))
+        .map(|(k, v)| {
+            let mut v = v.clone();
+            v.decor_mut().clear();
+            (k.to_string(), v)
+        })
+        .collect()
+}
+
+/// The scalars of each entry of an existing tool item, with the version it was written for.
+/// An array has one entry per element; keeping them apart stops one element's types from being
+/// applied to another's.
+fn written_scalar_options(item: Option<&Item>) -> Vec<(Option<String>, WrittenScalars)> {
+    let inline = |t: &InlineTable| {
+        (
+            t.get("version").and_then(Value::as_str).map(str::to_string),
+            scalars_of(t.iter()),
+        )
+    };
+    match item {
+        Some(Item::Table(t)) => vec![(
+            None,
+            scalars_of(t.iter().filter_map(|(k, v)| Some((k, v.as_value()?)))),
+        )],
+        Some(Item::Value(Value::InlineTable(t))) => vec![inline(t)],
+        Some(Item::Value(Value::Array(a))) => a
+            .iter()
+            // Every element keeps its slot, plain strings included, so positions line up with
+            // the array being replaced.
+            .map(|v| match v.as_inline_table() {
+                Some(t) => inline(t),
+                None => (v.as_str().map(str::to_string), WrittenScalars::new()),
+            })
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// The scalars to reuse for the `index`th of `count` new versions: the existing element written
+/// for the same version, else the one at the same position when the count is unchanged. A
+/// single-entry item applies to the one new version.
+fn scalars_for<'a>(
+    written: &'a [(Option<String>, WrittenScalars)],
+    index: usize,
+    count: usize,
+    version: &str,
+    repeated: bool,
+) -> Option<&'a WrittenScalars> {
+    if written.len() == 1 && count == 1 {
+        return Some(&written[0].1);
+    }
+    let mut same_version = written
+        .iter()
+        .filter(|(v, _)| v.as_deref() == Some(version));
+    // Elements sharing a version, on either side, cannot be told apart by it, so use position.
+    match (same_version.next(), same_version.next()) {
+        (Some((_, s)), None) if !repeated => Some(s),
+        _ => (written.len() == count).then(|| &written[index].1),
+    }
+}
+
+/// Whether a written scalar is the value `stored`, the string a backend option holds.
+fn scalar_matches(original: &Value, stored: &str) -> bool {
+    match original {
+        Value::Boolean(b) => b.value().to_string() == stored,
+        Value::Integer(i) => i.value().to_string() == stored,
+        Value::Float(f) => toml::Value::Float(*f.value()).to_string() == stored,
+        _ => false,
+    }
+}
+
+/// The value to write for an option: the scalar the document already had when it is the same
+/// value, otherwise the stored value.
+fn option_value_to_edit(key: &str, value: &toml::Value, written: Option<&WrittenScalars>) -> Value {
+    if let toml::Value::String(s) = value
+        && let Some(original) = written.and_then(|w| w.get(key))
+        && scalar_matches(original, s)
+    {
+        return original.clone();
+    }
+    toml_value_to_edit(value.clone())
+}
+
 /// Convert a `toml::Value` to a `toml_edit::Value` for serialization.
 fn toml_value_to_edit(v: toml::Value) -> Value {
     match v {
@@ -271,11 +362,12 @@ fn update_install_env_table(table: &mut toml_edit::Table, options: &ToolVersionO
 }
 
 fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVersionOptions) {
+    let written = scalars_of(table.iter().filter_map(|(k, v)| Some((k, v.as_value()?))));
     for (key, value) in &options.opts {
         insert_table_item_preserving_decor(
             table,
             key,
-            Item::Value(toml_value_to_edit(value.clone())),
+            Item::Value(option_value_to_edit(key, value, Some(&written))),
         );
     }
     if let Some(os) = options.os.as_ref().filter(|os| !os.is_empty()) {
@@ -1716,7 +1808,29 @@ impl ConfigFile for MiseToml {
         // replace `{{ env.TOKEN }}` with the token, so a value that a template renders to is
         // written as that template.
         let templates = self.templates_for_rewrite(ba);
+        // The registry's defaults for a tool are not the file's to record: they apply on their
+        // own, and writing them would pin today's registry choices (such as packslip's
+        // `workflow`) into the user's config. An option the file already spells out stays.
+        let written_keys: std::collections::HashSet<String> = self
+            .tools
+            .lock()
+            .unwrap()
+            .get(ba)
+            .into_iter()
+            .flat_map(|tools| tools.0.iter())
+            .filter_map(|tool| tool.options.as_ref())
+            .flat_map(|opts| opts.opts.keys().cloned())
+            .collect();
         for tr in &mut versions {
+            // Options given on the command line or inline are explicit even when they match
+            // the registry default. The request's own registry lookup follows aliases.
+            let explicit = tr.explicit_options();
+            let defaults = tr.ba().registry_opts();
+            tr.options_mut().opts.retain(|k, v| {
+                written_keys.contains(k)
+                    || explicit.opts.contains_key(k)
+                    || defaults.opts.get(k) != Some(v)
+            });
             restore_option_templates(tr, &templates);
         }
         let mut tools = self.tools.lock().unwrap();
@@ -1783,6 +1897,7 @@ impl ConfigFile for MiseToml {
         // keep the array as it was written so its layout — multi-line shape, trailing comma and any
         // comments between the elements — can be reused when only the versions change. Read before
         // the removal below, which drops the entry when it is stored under a long name.
+        let written_scalars = written_scalar_options(tools.get(&effective));
         let existing_arr = tools
             .get(&existing)
             .and_then(|i| i.as_value())
@@ -1823,8 +1938,9 @@ impl ConfigFile for MiseToml {
             } else {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
+                let scalars = scalars_for(&written_scalars, 0, 1, &versions[0].version(), false);
                 for (k, v) in &options.opts {
-                    table.insert(k, toml_value_to_edit(v.clone()));
+                    table.insert(k, option_value_to_edit(k, v, scalars));
                 }
                 insert_core_options(&mut table, options);
                 Item::Value(Value::InlineTable(table))
@@ -1840,6 +1956,8 @@ impl ConfigFile for MiseToml {
             let reused = existing_arr.filter(|a| a.len() == versions.len());
             let reusing = reused.is_some();
             let mut arr = reused.unwrap_or_else(Array::new);
+            let count = versions.len();
+            let names: Vec<String> = versions.iter().map(|tr| tr.version()).collect();
             for (i, tr) in versions.into_iter().enumerate() {
                 let v = tr.version();
                 let val: Value = if output_empty_opts(&tr.options()) {
@@ -1848,8 +1966,15 @@ impl ConfigFile for MiseToml {
                     let mut table = InlineTable::new();
                     table.insert("version", v.to_string().into());
                     let options = tr.options();
+                    let scalars = scalars_for(
+                        &written_scalars,
+                        i,
+                        count,
+                        &v,
+                        names.iter().filter(|n| **n == v).count() > 1,
+                    );
                     for (k, v) in &options.opts {
-                        table.insert(k, toml_value_to_edit(v.clone()));
+                        table.insert(k, option_value_to_edit(k, v, scalars));
                     }
                     insert_core_options(&mut table, options);
                     table.into()
@@ -6158,6 +6283,239 @@ run = "cargo build"
         let dump = cf.dump().unwrap();
         assert!(dump.contains(r#"dummy = "1.0.1""#));
         assert!(!dump.contains("os"), "empty os should not be written back");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_keeps_scalar_option_types() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".replace-scalar-opts.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "1.0.0", flag = true, count = 3, name = "true" }}
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = "dummy".into();
+        let mut options = ToolVersionOptions::default();
+        for (k, v) in [("flag", "true"), ("count", "3"), ("name", "true")] {
+            options
+                .insert_option(k.to_string(), toml::Value::String(v.to_string()))
+                .unwrap();
+        }
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_with_options(
+                    Arc::new("dummy".into()),
+                    "1.0.1",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("flag = true"), "{dump}");
+        assert!(dump.contains("count = 3"), "{dump}");
+        assert!(dump.contains(r#"name = "true""#), "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    fn string_options(pairs: &[(&str, &str)]) -> ToolVersionOptions {
+        let mut options = ToolVersionOptions::default();
+        for (k, v) in pairs {
+            options
+                .insert_option((*k).to_string(), toml::Value::String((*v).to_string()))
+                .unwrap();
+        }
+        options
+    }
+
+    fn request(version: &str, options: ToolVersionOptions) -> ToolRequest {
+        ToolRequest::new_with_options(
+            Arc::new("dummy".into()),
+            version,
+            options,
+            ToolSource::Unknown,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_scalar_options_stay_with_their_array_entry() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-array-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = [{{ version = "1", flag = true, count = 1_000 }}, {{ version = "2", flag = "true", count = 2 }}]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![
+                request("1", string_options(&[("flag", "true"), ("count", "1000")])),
+                request("2", string_options(&[("flag", "true"), ("count", "2")])),
+            ],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("flag = true, count = 1_000"), "{dump}");
+        assert!(dump.contains(r#"flag = "true", count = 2"#), "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_duplicate_versions_do_not_share_scalars() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".replace-dup-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = [{{ version = "1", count = 1 }}, {{ version = "1", count = "1" }}, {{ version = "2" }}]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![
+                request("1", string_options(&[("count", "1")])),
+                request("1", string_options(&[("count", "1")])),
+            ],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(!dump.contains(r#"count = "1", count"#), "{dump}");
+        assert_eq!(dump.matches("count = 1").count(), 0, "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_repeated_new_version_uses_position() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-repeat-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = [{{ version = "1", count = 1 }}, {{ version = "2", count = "1" }}]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![
+                request("1", string_options(&[("count", "1")])),
+                request("1", string_options(&[("count", "1")])),
+            ],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#"{ version = "1", count = 1 }, { version = "1", count = "1" }"#),
+            "{dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_mixed_array_keeps_scalar_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-mixed-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = ["1", {{ version = "2", compile = true }}]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![
+                request("1.1", ToolVersionOptions::default()),
+                request("2.1", string_options(&[("compile", "true")])),
+            ],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("compile = true"), "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_keeps_exponent_float_spelling() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-float-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = {{ version = "1.0.0", ratio = 1e3 }}
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![request("1.0.1", string_options(&[("ratio", "1000.0")]))],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("ratio = 1e3"), "{dump}");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_standard_table_keeps_scalar_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-table-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools.dummy]
+            version = "1.0.0"
+            flag = true
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![request("1.0.1", string_options(&[("flag", "true")]))],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("flag = true"), "{dump}");
         file::remove_file(&p).unwrap();
     }
 

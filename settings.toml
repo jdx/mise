@@ -566,6 +566,9 @@ default = false
 description = "Suppress warnings when a newer mise version is available."
 docs = """
 Hides the update notice in `mise version`, `mise --version` and `mise doctor`.
+It is also hidden from the output of `mise version` and `mise doctor` when mise
+detects a coding agent, which cannot act on it. `mise doctor` still lists the
+new version among its warnings.
 Other warnings are unaffected. It does not turn off `mise self-update` or
 automatic updates with [`self_update.auto`](#self_update.auto).
 """
@@ -3725,6 +3728,27 @@ env = "MISE_SHIMS_EXCLUDE"
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[shims.fallback_to_installed]
+default = false
+description = "Let a shim run the latest installed version of a tool that no config file selects."
+docs = """
+By default, running a shim in a directory where no config file selects a version
+of its tool fails with `No version is set for shim`, naming the `mise use -g` and
+`mise x` commands that fix it. When this is `true`, the shim runs the latest
+installed version of that tool instead, as the backend defines "latest".
+
+This applies only to a tool that no config file mentions. A tool a config does
+select, whose version is missing or lacks the executable, still fails, so a pinned
+version is never swapped for another. That includes a command named like a
+configured tool, such as a pinned `npm` whose version is not installed: Node's
+bundled `npm` is not substituted. The fallback covers the shims `mise reshim`
+creates on Unix; Windows `.exe` shims, which dispatch through `mise x`, still
+fail with the one-line error. Running a version nobody chose can differ
+from the one a project expects, which is why this is off by default.
+"""
+env = "MISE_SHIMS_FALLBACK_TO_INSTALLED"
+type = "Bool"
 
 [shims_dir]
 default_docs = "`$MISE_DATA_DIR/shims`"
