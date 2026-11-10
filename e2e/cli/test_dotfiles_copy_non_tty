@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Without a terminal, apply cannot ask before replacing an edited copy target
+# that no history keeps, so it fails and names --yes. e2e runs with stderr
+# and stdin detached from any tty.
+export MISE_YES=0
+
+mkdir -p src/sys
+echo original >src/sys/x.conf
+mkdir -p ~/.config/mise
+cat >~/.config/mise/config.toml <<TOML
+[settings]
+dotfiles.root = "$PWD/src"
+
+[dotfile_groups.sys]
+root = "sys"
+target = "$HOME/dst"
+mode = "copy"
+TOML
+
+# nothing to overwrite: applies without asking
+assert_succeed "mise dot apply"
+assert "cat ~/dst/x.conf" original
+
+# a copy that already matches is untouched
+assert_succeed "mise dot apply"
+
+# an edited copy is not replaced silently
+echo "local edit" >>~/dst/x.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/dst/x.conf" "original
+local edit"
+
+# a file mise never wrote is protected too
+echo "mine" >~/dst/x.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/dst/x.conf" mine
+
+# --yes replaces it
+assert_succeed "mise dot apply --yes"
+assert "cat ~/dst/x.conf" original
+
+# a link at the target is replaced by a file, which nothing brings back
+rm ~/dst/x.conf
+ln -s /etc/hostname ~/dst/x.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "test -L ~/dst/x.conf && echo link" link
+
+# MISE_YES counts as consent, like --yes
+assert_succeed "MISE_YES=1 mise dot apply"
+assert "cat ~/dst/x.conf" original
+
+# a mode-only difference is a repair, not a lost edit
+chmod 600 ~/dst/x.conf
+assert_succeed "mise dot apply"
+
+# a tracked target is recoverable, so it applies without asking
+mkdir -p src/tr
+echo tracked >src/tr/t.conf
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfile_groups.tr]
+root = "tr"
+target = "$HOME/tracked"
+mode = "copy"
+TOML
+assert_succeed "mise dot apply"
+assert_succeed "mise bootstrap dotfiles track ~/tracked --yes"
+echo edited >~/tracked/t.conf
+assert_succeed "mise dot apply"
+assert "cat ~/tracked/t.conf" tracked
+
+# a directory copy through a link to a directory only adds files
+mkdir -p src/lk ~/real
+echo new >src/lk/n.conf
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfile_groups.lk]
+root = "lk"
+target = "$HOME/linked"
+mode = "copy"
+TOML
+ln -s "$HOME/real" ~/linked
+assert_succeed "mise dot apply"
+assert "cat ~/real/n.conf" new
+
+# --force alone does not remove a directory where a file belongs
+mkdir -p src/fl ~/flat/keep
+echo mine >~/flat/keep/note
+echo file >src/fl/flat
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfiles]
+"~/flat" = { source = "$PWD/src/fl/flat", mode = "copy" }
+TOML
+assert_fail_contains "mise dot apply --force" "pass --yes"
+assert "cat ~/flat/keep/note" mine
+
+# a whole-file [dotfiles] copy is guarded the same way
+rm -rf ~/flat
+assert_succeed "mise dot apply"
+assert "cat ~/flat" file
+echo edited >~/flat
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/flat" edited
+assert_succeed "mise dot apply --yes"
+assert "cat ~/flat" file
+
+# history saves a link to a directory as the link alone, so a file reached
+# through one inside a tracked directory is not kept
+mkdir -p src/th ~/tracked2 ~/outside
+echo base >src/th/y.conf
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfile_groups.th]
+root = "th"
+target = "$HOME/tracked2/lnk"
+mode = "copy"
+TOML
+ln -s "$HOME/outside" ~/tracked2/lnk
+assert_succeed "mise dot apply"
+assert_succeed "mise bootstrap dotfiles track ~/tracked2 --yes"
+echo edited >~/outside/y.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/outside/y.conf" edited

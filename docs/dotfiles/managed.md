@@ -713,6 +713,13 @@ When `apply` is about to overwrite a `template` target that you edited since mis
 last wrote it, it warns first, so you can move the edit into the source.
 Check `mise dot diff` before you change which source a target uses.
 
+Without a terminal (a script, `ssh` without `-t`, an agent shell), `apply` cannot
+ask before replacing a `copy` target whose content differs from the source,
+unless the file is [tracked](/dotfiles/history.html), because `mise dot undo`
+cannot bring an untracked edit back. It stops with an error that names `--yes`;
+pass `--yes` to replace the content. Copies that already match the source, and
+tracked files, apply without asking.
+
 [Edit entries](/dotfiles/edits.html#conflicts) apply without `--force`.
 
 ## Unapply {#unapplying}

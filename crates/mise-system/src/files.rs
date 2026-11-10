@@ -5385,6 +5385,140 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
     Ok(lines)
 }
 
+/// The copy targets an apply would overwrite with different content that no
+/// history tracks, so neither `mise dot undo` nor a rollback can bring the
+/// edit back. A file mise has no record of counts: it may be the user's.
+fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec<String>> {
+    // loaded when a path needs classifying, so a tracking error surfaces then
+    // and not for an apply that overwrites nothing
+    let mut tracked: Option<crate::history::tracked::TrackedSet> = None;
+    // history keeps the path: covered by an entry and not left out by an
+    // exclude rule, and history is on
+    let mut is_tracked = |path: &Path| -> Result<bool> {
+        if !Settings::get().history.enabled {
+            return Ok(false);
+        }
+        if tracked.is_none() {
+            tracked = Some(crate::history::tracked::TrackedSet::from_config(config)?);
+        }
+        let Some(set) = tracked.as_ref() else {
+            return Ok(false);
+        };
+        if !set.would_capture(path)? {
+            return Ok(false);
+        }
+        // history saves a symlinked directory as the link alone, so a file
+        // reached through one below the tracked path is not kept
+        let Some(owner) = set.entry_for(path) else {
+            return Ok(false);
+        };
+        let through_link = path
+            .ancestors()
+            .skip(1)
+            .take_while(|dir| dir.starts_with(&owner.path) && *dir != owner.path.as_path())
+            .any(file::is_symlink_or_junction);
+        Ok(!through_link)
+    };
+    let mut out = vec![];
+    for (req, _) in &plan.todo {
+        if req.mode != FileMode::Copy || keeps_existing(req) {
+            continue;
+        }
+        let mut pairs = vec![];
+        if req.source.is_dir() {
+            // a file or link where the directory belongs is replaced by it
+            // under `--force`, whatever the source holds
+            // (a link to a directory stays and the files go through it)
+            if req.target.exists() && !req.target.is_dir() && !is_tracked(&req.target)? {
+                out.push(req.target.display_user().to_string());
+            }
+            // an unreadable source stops the apply before anything is written
+            pairs.extend(walk_source_files(req)?);
+        } else {
+            pairs.push((req.source.clone(), req.target.clone()));
+        }
+        for (src, tgt) in pairs {
+            let Ok(meta) = std::fs::symlink_metadata(&tgt) else {
+                continue;
+            };
+            // a link is replaced by a file, which history cannot bring back
+            let replaced = if meta.file_type().is_symlink() {
+                true
+            } else if meta.is_file() {
+                // a mode-only difference is a repair, not a lost edit
+                !matches!((std::fs::read(&tgt), std::fs::read(&src)), (Ok(a), Ok(b)) if a == b)
+            } else {
+                // `--force` removes a directory where a file copy belongs,
+                // with everything in it; inside a directory copy it is a
+                // conflict that stops the apply instead
+                meta.is_dir() && !req.source.is_dir()
+            };
+            let kept = if !replaced {
+                true
+            } else if meta.is_dir() {
+                // every file the removal takes must be kept by history
+                // and the directory itself, which an undo must recreate
+                let mut all = is_tracked(&tgt)?;
+                if all {
+                    for file in files_under(&tgt)? {
+                        if !is_tracked(&file)? {
+                            all = false;
+                            break;
+                        }
+                    }
+                }
+                all
+            } else {
+                is_tracked(&tgt)?
+            };
+            if !kept {
+                out.push(tgt.display_user().to_string());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The files and links below `dir`, none followed. A directory that cannot be
+/// listed is an error, so the apply stops before removing what it cannot see.
+fn files_under(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = vec![];
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let entries = std::fs::read_dir(&next)
+            .wrap_err_with(|| format!("cannot list {}", next.display_user()))?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Without a terminal nobody can confirm replacing a copy target that holds
+/// content history cannot restore, so apply fails and names `--yes` instead of
+/// discarding it silently.
+fn refuse_unattended_overwrite(config: &Config, plan: &ApplyPlan<'_>) -> Result<()> {
+    let targets = unrecoverable_overwrites(config, plan)?;
+    if targets.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "files: applying would overwrite {} and nothing keeps the current content, but there was nobody to ask; run `mise dot diff` to review it, then pass --yes to proceed non-interactively",
+        targets.iter().take(5).join(", ")
+            + &if targets.len() > 5 {
+                format!(" and {} more", targets.len() - 5)
+            } else {
+                String::new()
+            }
+    )
+}
+
 /// Something sits at `dir` that is not a directory, a dangling symlink
 /// included, so nothing can be created below it.
 fn is_blocking_dir(dir: &Path) -> bool {
@@ -5472,6 +5606,9 @@ fn execute_layer(
         if req.mode == FileMode::Template && rendered.is_some() {
             warn_if_template_target_edited(req);
         }
+    }
+    if !opts.yes && !Settings::get().yes && !console::user_attended_stderr() {
+        refuse_unattended_overwrite(config, &plan)?;
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = plan
