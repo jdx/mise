@@ -35,6 +35,12 @@ assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTI
 assert_contains 'mise version --json' '9999.0.0'
 unset MISE_DISABLE_UPDATE_WARNING
 
+# A coding agent cannot act on the notice, and it would stay in its context, so it never sees it.
+assert_not_contains 'AI_AGENT=test MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' '9999.0.0 available'
+assert_not_contains 'CLAUDECODE=1 MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' 'mise self-update'
+assert_contains 'AI_AGENT=test mise version --json' '9999.0.0'
+assert_contains 'AI_AGENT=0 MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' '9999.0.0 available'
+
 # The setting also works in configuration and both doctor output formats.
 cat >mise.toml <<'TOML'
 [settings]

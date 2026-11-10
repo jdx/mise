@@ -128,7 +128,9 @@ fn name_ansi_colors(spec: &mut ColorSpec) {
         .any(|c| matches!(c, Color::Ansi256(8..=15)));
     spec.set_fg(fg.map(named_color));
     spec.set_bg(bg.map(named_color));
-    spec.set_intense(intense);
+    // demand 2.4.2+ already names its colors and marks the bright ones, so keep
+    // an intense flag it set rather than clearing it.
+    spec.set_intense(spec.intense() || intense);
 }
 
 fn named_color(color: Color) -> Color {
