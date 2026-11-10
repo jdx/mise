@@ -282,6 +282,73 @@ pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
     }
 }
 
+/// Managers an unprefixed key tries when `system_packages.prefer` is unset: the
+/// distribution's own manager before Homebrew, which also runs on Linux, and
+/// before the Windows ones.
+const DEFAULT_MANAGER_PREFERENCE: &[&str] = &[
+    "apt", "dnf", "pacman", "zypper", "apk", "brew", "winget", "scoop", "choco",
+];
+
+/// Names of the managers an unprefixed key may choose: built-in managers that
+/// can run on this machine, and package manager plugins.
+///
+/// A plugin's binaries can come from mise's global toolset, which only the
+/// async availability check resolves, and selection here is synchronous. A
+/// plugin is therefore a candidate as declared, and `status` and `apply`
+/// report it as unavailable when it cannot run, as for a prefixed entry.
+/// Nothing moves on to the next manager. `system_packages.managers` still
+/// excludes managers.
+fn available_manager_names() -> Vec<String> {
+    let builtin: std::collections::HashSet<String> = packages::builtin_managers()
+        .iter()
+        .map(|manager| manager.name().to_string())
+        .collect();
+    packages::all_managers()
+        .into_iter()
+        .filter(|manager| {
+            package_manager_is_enabled(manager.name())
+                && (manager.is_available() || !builtin.contains(manager.name()))
+        })
+        .map(|manager| manager.name().to_string())
+        .collect()
+}
+
+/// Pick the one manager for a `[bootstrap.packages]` key without a prefix.
+///
+/// The choice depends only on which managers are available, never on the
+/// package repositories, so the same config plans the same way on every
+/// machine with the same managers. A failed install is an error; it does not
+/// move on to the next manager.
+fn resolve_unprefixed(
+    key: &str,
+    package: &PackageTomlConfig,
+    available: &[String],
+) -> eyre::Result<(String, String)> {
+    let settings = mise_settings::Settings::get();
+    let configured = settings.system_packages.prefer.as_deref();
+    let candidates: Vec<&str> = match configured {
+        Some(list) => list.iter().map(String::as_str).collect(),
+        None => DEFAULT_MANAGER_PREFERENCE.to_vec(),
+    };
+    let Some(manager) = candidates
+        .iter()
+        .find(|name| available.iter().any(|a| a == **name))
+    else {
+        bail!(
+            "no package manager is available for '{key}': tried {}. Prefix the key with a manager such as \"apt:{key}\"",
+            candidates.join(", ")
+        );
+    };
+    let reason = if configured.is_some() {
+        "system_packages.prefer"
+    } else {
+        "default order"
+    };
+    let name = package.name_for(manager).unwrap_or(key);
+    debug!("[bootstrap.packages]: '{key}' uses {manager}:{name} ({reason})");
+    Ok(((*manager).to_string(), name.to_string()))
+}
+
 /// Split a `mise bootstrap packages use` spec `manager:package[@version]` into its parts.
 ///
 /// `@version` mirrors `mise use tool@version`; `@latest` (or no `@`) means no
@@ -375,6 +442,40 @@ pub fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
     packages_from_config_files_with_brew_taps(&config.config_files(), &brew_taps, true)
 }
 
+/// An unprefixed `[bootstrap.packages]` key that no manager can take.
+pub struct UnresolvedPackage {
+    pub key: String,
+    pub reason: String,
+    /// the declared version, `"latest"` when none
+    pub version: String,
+    pub absent: bool,
+}
+
+/// Unprefixed `[bootstrap.packages]` keys that no manager can take on this
+/// machine, with why, for `status` to list as skipped. Keys the platform or
+/// config environment disables are not listed.
+pub fn unresolved_unprefixed_from_config(config: &Config) -> Vec<UnresolvedPackage> {
+    let available = available_manager_names();
+    package_configs_from_config_files(&config.config_files())
+        .into_iter()
+        .filter(|(spec, package)| {
+            !spec.contains(':')
+                && package.is_os_supported()
+                && package.is_env_supported(crate::host::mise_env_with_auto())
+        })
+        .filter_map(|(spec, package)| {
+            resolve_unprefixed(&spec, &package, &available)
+                .err()
+                .map(|err| UnresolvedPackage {
+                    key: spec,
+                    reason: err.to_string(),
+                    version: package.version().to_string(),
+                    absent: package.desired() == mise_system_packages::PackageDesiredState::Absent,
+                })
+        })
+        .collect()
+}
+
 /// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
 /// applying host filters. Configs more local than the target are excluded.
 #[cfg(unix)]
@@ -457,6 +558,24 @@ pub async fn config_files_declaring_package(
     ))
 }
 
+/// The package `spec` declares for `manager`, if it declares one. An unprefixed
+/// key declares its package for the manager it would select, with `names`
+/// applied.
+#[cfg(unix)]
+fn declared_spec(
+    spec: &str,
+    package: &PackageTomlConfig,
+    manager: &str,
+    available: &[String],
+) -> Option<String> {
+    let (mgr, pkg) = if spec.contains(':') {
+        parse_spec(spec).ok()?
+    } else {
+        resolve_unprefixed(spec, package, available).ok()?
+    };
+    (mgr == manager).then_some(pkg)
+}
+
 #[cfg(unix)]
 fn config_files_declaring_package_in<'a>(
     config_files: impl Iterator<Item = (&'a PathBuf, &'a Arc<dyn crate::host::ConfigFileView>)>,
@@ -465,15 +584,15 @@ fn config_files_declaring_package_in<'a>(
 ) -> Vec<PathBuf> {
     // brew resolves `homebrew/core/<name>` to the bare formula name
     let core_name = format!("homebrew/core/{name}");
+    let available = std::cell::LazyCell::new(available_manager_names);
     let mut paths: Vec<PathBuf> = vec![];
     for (path, cf) in config_files {
         let declares = cf.bootstrap_config().is_some_and(|sys| {
             sys.packages.iter().any(|(spec, package)| {
                 // skipped declarations never reach prune's keep-list
                 package.is_os_supported()
-                    && parse_spec(spec).is_ok_and(|(mgr, pkg)| {
-                        mgr == manager && (pkg == name || (manager == "brew" && pkg == core_name))
-                    })
+                    && declared_spec(spec, package, manager, &available)
+                        .is_some_and(|pkg| pkg == name || (manager == "brew" && pkg == core_name))
             })
         });
         if declares && !paths.contains(path) {
@@ -688,7 +807,20 @@ fn package_requests_from_config_files(
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
-    for (spec, package) in merged {
+    let available_managers = std::cell::LazyCell::new(available_manager_names);
+    // (manager, package) pairs an unprefixed key declared
+    let mut bare_origin: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+    // Entries with a prefix go first, so an unprefixed key that resolves to the
+    // same package as one of them yields to it.
+    // Among unprefixed keys, those that install a package go before those that
+    // remove it, so when two disagree the one that installs it wins.
+    let (explicit, mut unprefixed): (Vec<_>, Vec<_>) =
+        merged.into_iter().partition(|(spec, _)| spec.contains(':'));
+    unprefixed.sort_by_key(|(_, package)| {
+        package.desired() == mise_system_packages::PackageDesiredState::Absent
+    });
+    for (spec, package) in explicit.into_iter().chain(unprefixed) {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
             continue;
@@ -697,10 +829,51 @@ fn package_requests_from_config_files(
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this environment");
             continue;
         }
-        match parse_spec(&spec) {
+        let parsed = if spec.contains(':') {
+            parse_spec(&spec)
+        } else {
+            resolve_unprefixed(&spec, &package, &available_managers)
+        };
+        match parsed {
             Ok((mgr, name)) => {
                 let version = package.version();
                 let version = (version != "latest").then(|| version.to_string());
+                // Validated before any conflict handling can drop an earlier request
+                let incoming_snap = match snap_options_for(&mgr, &name, &package) {
+                    Ok(options) => options,
+                    Err(err) => {
+                        warn!("[bootstrap.packages]: {err}");
+                        continue;
+                    }
+                };
+                let is_bare = !spec.contains(':');
+                if is_bare {
+                    let key = (mgr.clone(), name.clone());
+                    let existing = by_mgr
+                        .get(&mgr)
+                        .and_then(|requests| requests.iter().find(|r| r.name == name));
+                    if let Some(existing) = existing {
+                        let same = existing.version == version
+                            && existing.desired == package.desired()
+                            && snap_options.get(&name) == incoming_snap.as_ref();
+                        if same {
+                            debug!("[bootstrap.packages]: '{spec}' repeats {mgr}:{name}");
+                        } else if bare_origin.contains(&key) {
+                            // Two unprefixed keys disagree about one package. The one that
+                            // installs it was processed first, and the package is never
+                            // dropped, which would also drop it from prune's keep-list.
+                            warn!(
+                                "[bootstrap.packages]: '{spec}' and another unprefixed entry both resolve to '{mgr}:{name}' with a different state or version; keeping the one that installs it"
+                            );
+                        } else {
+                            warn!(
+                                "[bootstrap.packages]: '{spec}' resolves to '{mgr}:{name}', which another entry already declares; using that entry"
+                            );
+                        }
+                        continue;
+                    }
+                    bare_origin.insert(key);
+                }
                 if let Err(err) = validate_package_name(&mgr, &name) {
                     warn!("[bootstrap.packages]: {err}");
                     continue;
@@ -790,15 +963,8 @@ fn package_requests_from_config_files(
                         }
                     }
                 }
-                match snap_options_for(&mgr, &name, &package) {
-                    Ok(Some(options)) => {
-                        snap_options.insert(name.clone(), options);
-                    }
-                    Ok(None) => {}
-                    Err(err) => {
-                        warn!("[bootstrap.packages]: {err}");
-                        continue;
-                    }
+                if let Some(options) = incoming_snap {
+                    snap_options.insert(name.clone(), options);
                 }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
@@ -3753,6 +3919,7 @@ mod tests {
             artifact: None,
             channel: None,
             classic: None,
+            names: Default::default(),
         });
 
         assert!(package.is_env_supported(&["work".to_string()]));
@@ -4406,5 +4573,45 @@ value = []"#;
             value: tv("3"),
         });
         assert_eq!(macos_defaults_entry_count(&macos), 6);
+    }
+
+    #[test]
+    fn unprefixed_key_picks_the_first_available_manager_and_applies_names() {
+        let plain = PackageTomlConfig::Version("latest".to_string());
+        let available = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+
+        // the distribution's manager beats Homebrew, which also runs on Linux
+        let both = available(&["brew", "apt"]);
+        assert_eq!(
+            resolve_unprefixed("git", &plain, &both).unwrap(),
+            ("apt".to_string(), "git".to_string())
+        );
+        let fedora = available(&["brew", "dnf"]);
+        assert_eq!(resolve_unprefixed("git", &plain, &fedora).unwrap().0, "dnf");
+        let mac = available(&["brew"]);
+        assert_eq!(resolve_unprefixed("git", &plain, &mac).unwrap().0, "brew");
+
+        // names renames the package for the selected manager only
+        let mapped: PackageTomlConfig =
+            toml::from_str(r#"v = { names = { apt = "libssl-dev", dnf = "openssl-devel" } }"#)
+                .map(|t: std::collections::BTreeMap<String, PackageTomlConfig>| {
+                    t.into_values().next().unwrap()
+                })
+                .unwrap();
+        assert_eq!(
+            resolve_unprefixed("openssl", &mapped, &both).unwrap().1,
+            "libssl-dev"
+        );
+        assert_eq!(
+            resolve_unprefixed("openssl", &mapped, &fedora).unwrap().1,
+            "openssl-devel"
+        );
+        assert_eq!(
+            resolve_unprefixed("openssl", &mapped, &mac).unwrap().1,
+            "openssl"
+        );
+
+        // nothing available is an error, not a guess
+        assert!(resolve_unprefixed("git", &plain, &[]).is_err());
     }
 }

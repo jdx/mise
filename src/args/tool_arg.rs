@@ -122,6 +122,29 @@ impl ToolArg {
         Ok(tools)
     }
 
+    /// A tool and its version from separate parts, as a task declares one. An
+    /// npm tarball URL is the whole tool name, `@` included, so its version
+    /// cannot be joined on and split off again.
+    pub fn from_parts(tool: &str, version: &str) -> eyre::Result<Self> {
+        let tarball = tool
+            .strip_prefix("npm:")
+            .is_some_and(|rest| rest.starts_with("https://") || rest.starts_with("http://"));
+        if tarball {
+            // `with_version` unwraps, and a task can declare any string here.
+            let arg: Self = tool.parse()?;
+            let request = ToolRequest::new(arg.ba.clone(), version, ToolSource::Argument)?;
+            Ok(Self {
+                ba: request.ba().clone(),
+                tvr: Some(request),
+                version: Some(version.into()),
+                version_type: version.parse()?,
+                ..arg
+            })
+        } else {
+            format!("{tool}@{version}").parse()
+        }
+    }
+
     pub fn with_version(self, version: &str) -> Self {
         let request = ToolRequest::new(self.ba.clone(), version, ToolSource::Argument).unwrap();
         Self {
@@ -175,6 +198,15 @@ pub fn split_tool_version(s: &str) -> (&str, Option<&str>) {
                 (!version.is_empty()).then_some(version),
             );
         }
+    }
+
+    // An npm tarball URL is the whole tool name: its path may hold '@' (a
+    // scope, or a `@ref` like pkg.pr.new's `…/pkg@343`), and it has no versions
+    // to choose from.
+    if s.strip_prefix("npm:")
+        .is_some_and(|rest| rest.starts_with("https://") || rest.starts_with("http://"))
+    {
+        return (s, None);
     }
 
     let Some((left, right)) = s.split_once('@') else {
@@ -296,6 +328,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_tool_arg_from_parts_keeps_tarball_url_whole() {
+        let _config = Config::get().await.unwrap();
+        let url = "npm:https://pkg.pr.new/kjanat/actionlint/@kjanat/actionlint@343";
+        let arg = ToolArg::from_parts(url, "latest").unwrap();
+        assert_eq!(arg.ba.tool_name, url.strip_prefix("npm:").unwrap());
+        assert_eq!(arg.version.as_deref(), Some("latest"));
+        // an invalid version is an error, not a panic
+        assert!(ToolArg::from_parts(url, "bad:123").is_err());
+        // and the same URL parsed as an argument is one whole tool name
+        let parsed = ToolArg::from_str(url).unwrap();
+        assert_eq!(parsed.ba.tool_name, url.strip_prefix("npm:").unwrap());
+        assert_eq!(parsed.version, None);
+        let arg = ToolArg::from_parts("erlang", "27.2").unwrap();
+        assert_eq!(arg.ba.tool_name, "erlang");
+        assert_eq!(arg.version.as_deref(), Some("27.2"));
+    }
+
+    #[tokio::test]
     async fn test_tool_arg_parse_input() {
         let _config = Config::get().await.unwrap();
         let t = |input: &str, f: &str, v: Option<&str>| {
@@ -313,6 +363,13 @@ mod tests {
         t("npm:", "npm:", None);
         t("npm:prettier", "npm:prettier", None);
         t("npm:prettier@1.0.0", "npm:prettier", Some("1.0.0"));
+        // an npm tarball URL keeps every '@' in its path
+        let tarball = "npm:https://pkg.pr.new/kjanat/actionlint/@kjanat/actionlint@343";
+        t(tarball, tarball, None);
+        t("npm:https://h/p/tool.tgz", "npm:https://h/p/tool.tgz", None);
+        // a trailing ref is part of the URL, never a version
+        let latest = format!("{tarball}@latest");
+        t(&latest, &latest, None);
         // URL userinfo is part of the name, not a version separator
         let ssh = "pypi:git+ssh://git@github.com/psf/black.git";
         t(ssh, ssh, None);

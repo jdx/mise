@@ -198,20 +198,28 @@ impl Toolset {
     /// Used during tool installation where tool-dependent env vars
     /// may reference tools that aren't installed yet, and in
     /// dependency_env to avoid triggering module hooks on a partial PATH.
+    ///
+    /// The command-wrapper directory is left out: a wrapper reroutes the commands a project
+    /// runs, not the ones mise runs to install its tools. `[wrappers.cargo]` pointing at `mbx`
+    /// would otherwise take over `cargo install` for a `cargo:` tool. (jdx/mr-boxington#919)
     pub(crate) async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
-        let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
-        for p in config.path_dirs().await?.clone() {
-            path_env.add(p);
-        }
-        for p in &add_paths {
-            path_env.add(p.clone());
-        }
-        for p in self.list_paths(config).await {
-            path_env.add(p);
-        }
-        for p in config.path_dirs_append().await?.clone() {
-            path_env.add(p);
+        // The inherited PATH goes through `from_iter`, which keeps it behind the directories added
+        // below; only the command-wrapper directory is dropped from every source.
+        let mut path_env = PathEnv::from_iter(
+            pristine_path_without_install_dirs()
+                .into_iter()
+                .filter(|p| !file::is_command_wrapper_dir(p)),
+        );
+        let mut added = config.path_dirs().await?.clone();
+        added.extend(add_paths);
+        added.extend(self.list_paths(config).await);
+        added.extend(config.path_dirs_append().await?.clone());
+        // An entry may hold several PATH components, which `add` splits.
+        for part in added.iter().flat_map(std::env::split_paths) {
+            if !file::is_command_wrapper_dir(&part) {
+                path_env.add(part);
+            }
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)

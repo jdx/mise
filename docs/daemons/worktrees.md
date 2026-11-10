@@ -176,6 +176,32 @@ port = "auto"
 COCKROACH_CONSOLE = "http://127.0.0.1:{{ env.CRDB_HTTP_PORT }}"
 ```
 
+### Named ports on custom daemons
+
+A `run` or `task` daemon can declare several ports of its own, for example a
+Docker Compose stack that publishes more than one. Each gets a name, and an
+allocated one needs a `base` because there is no preset default to start from:
+
+```toml
+[daemons.stack]
+run = "docker compose up"
+ports.app = { auto = true, base = 8080 }
+ports.db = { auto = true, base = 5432 }
+```
+
+The primary checkout uses `8080` and `5432`, and each linked worktree adds the
+same slot to both. mise exports them as `STACK_APP_PORT` and `STACK_DB_PORT`
+before the daemon starts, so `mise env` and `mise exec` see them, and you can map
+them to the names the stack reads:
+
+```toml
+[env]
+APP_PORT = "{{ env.STACK_APP_PORT }}"
+DB_PORT = "{{ env.STACK_DB_PORT }}"
+```
+
+Named ports take part in the same collision checks as on a preset.
+
 ### Automatic ports
 
 Use `port = "auto"` to run the same daemon in the primary checkout and in

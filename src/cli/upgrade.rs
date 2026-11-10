@@ -25,7 +25,7 @@ use crate::toolset::{
 use crate::toolset::{OutdatedSelection, OutdatedVersions};
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::SingleReport;
+use crate::ui::progress_report::{ProgressIcon, SingleReport};
 use crate::{config, env, exit, runtime_symlinks, ui};
 use console::Term;
 use demand::DemandOption;
@@ -1227,16 +1227,35 @@ impl Upgrade {
             let versions_needed_by_tracked = if to_remove.is_empty() {
                 NeededVersions::new()
             } else {
-                let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
-                    config,
-                    true,
-                    false,
-                    &upgraded_config_paths,
-                    self.defers_missing_lazy(),
-                )
-                .await?;
-                needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
-                needed
+                // This resolves every config tracked on the machine, which can take a
+                // while, so show progress rather than appearing to hang.
+                let scan_pr = self
+                    .show_resolution_progress()
+                    .then(|| mpr.add("checking tracked configs"));
+                // Text-mode reports print nothing until the first message.
+                if let Some(pr) = &scan_pr {
+                    pr.set_message("resolving tracked configs".into());
+                }
+                let result: Result<_> = async {
+                    let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
+                        config,
+                        true,
+                        false,
+                        &upgraded_config_paths,
+                        self.defers_missing_lazy(),
+                    )
+                    .await?;
+                    needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
+                    Ok(needed)
+                }
+                .await;
+                if let Some(pr) = &scan_pr {
+                    match &result {
+                        Ok(_) => pr.finish(),
+                        Err(_) => pr.finish_with_icon(String::new(), ProgressIcon::Error),
+                    }
+                }
+                result?
             };
 
             // Only uninstall old versions of tools that were successfully upgraded

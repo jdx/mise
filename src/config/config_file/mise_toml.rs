@@ -3588,6 +3588,7 @@ mod tests {
                         artifact: None,
                         channel: None,
                         classic: None,
+                        names: Default::default(),
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",
@@ -3608,6 +3609,7 @@ mod tests {
                         artifact: None,
                         channel: None,
                         classic: None,
+                        names: Default::default(),
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew-cask:1password",

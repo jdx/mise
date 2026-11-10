@@ -1242,7 +1242,14 @@ impl Client {
     /// URL-replacement host still applies). For reachability probes where a
     /// credentialed request changes the answer: github.com redirects an
     /// authenticated release download to a presigned URL that rejects HEAD.
-    pub async fn head_without_netrc<U: IntoUrl>(&self, url: U) -> Result<Response> {
+    ///
+    /// `max_retries` caps the retry budget below `http_retries`, so a probe
+    /// with somewhere else to go can give up quickly.
+    pub async fn head_without_netrc<U: IntoUrl>(
+        &self,
+        url: U,
+        max_retries: i64,
+    ) -> Result<Response> {
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
@@ -1253,7 +1260,7 @@ impl Client {
         let resp = retry_async_with_retries(
             "HEAD",
             &url,
-            crate::network::http_retries(&Settings::get()),
+            crate::network::http_retries(&Settings::get()).min(max_retries),
             || async {
                 let (headers, options) = attempt_options(&retry_state, true);
                 self.send_once_with_https_fallback_with_retry_headers(

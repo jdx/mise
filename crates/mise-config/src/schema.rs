@@ -38,7 +38,7 @@ use crate::hooks::{
     HookInstallScriptsTable, HookRunString, HookRunTableDecl, HookScripts, HookSpawnedScriptTable,
     HookSpawnedScriptsTable, HookTaskRef, HooksDecl,
 };
-use crate::launchd::LaunchdCalendarInterval;
+use crate::launchd::{LaunchdCalendarInterval, LaunchdResourceLimits};
 use crate::mise_toml::MiseTomlDecl;
 use crate::monorepo::MonorepoConfig;
 use crate::remote::InstallMiseTomlConfig;
@@ -246,6 +246,10 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
             fragment::<LaunchdCalendarInterval>(generator),
         ),
         (
+            "launchd_resource_limits",
+            fragment::<LaunchdResourceLimits>(generator),
+        ),
+        (
             "bootstrap_remote_install_mise",
             fragment::<InstallMiseTomlConfig>(generator),
         ),
@@ -383,6 +387,7 @@ pub(crate) mod refs {
         hook_task_ref,
         hooks,
         launchd_calendar_interval,
+        launchd_resource_limits,
         macos_defaults_value,
         monorepo,
         monorepo_root,

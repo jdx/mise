@@ -71,9 +71,80 @@ pub struct LaunchdTomlConfig {
     /// write StandardErrorPath
     #[serde(default)]
     pub stderr_path: Option<String>,
+    /// write SoftResourceLimits, the resource limits the program starts with and may raise up to the hard limits
+    #[serde(default)]
+    #[schemars(schema_with = "refs::launchd_resource_limits")]
+    pub soft_resource_limits: Option<LaunchdResourceLimits>,
+    /// write HardResourceLimits, the ceilings the program cannot raise its soft limits above
+    #[serde(default)]
+    #[schemars(schema_with = "refs::launchd_resource_limits")]
+    pub hard_resource_limits: Option<LaunchdResourceLimits>,
     /// run `launchctl kickstart -k` after loading the agent
     #[serde(default)]
     pub kickstart: bool,
+}
+
+/// resource limits for launchd SoftResourceLimits and HardResourceLimits
+// Each field is one key of the plist dictionary, named after it in snake case. The values are
+// plain counts and byte sizes, as launchd.plist(5) documents them; launchd has no spelling for
+// "unlimited" in a plist, so neither does this.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[schemars(extend("minProperties" = 1))]
+pub struct LaunchdResourceLimits {
+    /// write Core, the largest core file in bytes
+    #[serde(default)]
+    pub core: Option<u64>,
+    /// write CPU, the CPU time in seconds
+    #[serde(default)]
+    pub cpu: Option<u64>,
+    /// write Data, the data segment size in bytes
+    #[serde(default)]
+    pub data: Option<u64>,
+    /// write FileSize, the largest file the program may create in bytes
+    #[serde(default)]
+    pub file_size: Option<u64>,
+    /// write MemoryLock, the memory the program may lock in bytes
+    #[serde(default)]
+    pub memory_lock: Option<u64>,
+    /// write NumberOfFiles, the open file descriptors; launchd starts agents with a soft limit of 256
+    #[serde(default)]
+    pub number_of_files: Option<u64>,
+    /// write NumberOfProcesses, the processes the user may run
+    #[serde(default)]
+    pub number_of_processes: Option<u64>,
+    /// write ResidentSetSize, the resident memory in bytes
+    #[serde(default)]
+    pub resident_set_size: Option<u64>,
+    /// write Stack, the stack size in bytes
+    #[serde(default)]
+    pub stack: Option<u64>,
+}
+
+impl LaunchdResourceLimits {
+    /// The plist key and value of each limit that is set, in launchd's spelling.
+    pub fn entries(&self) -> Vec<(&'static str, u64)> {
+        [
+            ("Core", self.core),
+            ("CPU", self.cpu),
+            ("Data", self.data),
+            ("FileSize", self.file_size),
+            ("MemoryLock", self.memory_lock),
+            ("NumberOfFiles", self.number_of_files),
+            ("NumberOfProcesses", self.number_of_processes),
+            ("ResidentSetSize", self.resident_set_size),
+            ("Stack", self.stack),
+        ]
+        .into_iter()
+        .filter_map(|(key, value)| value.map(|value| (key, value)))
+        .collect()
+    }
+
+    pub fn validate(&self, agent_name: &str, field: &str) -> Result<()> {
+        if self.entries().is_empty() {
+            bail!("agent '{agent_name}' `{field}` must set at least one limit");
+        }
+        Ok(())
+    }
 }
 
 fn launch_events(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {

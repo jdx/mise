@@ -207,6 +207,14 @@ pub(crate) struct Run {
     #[usage(long, conflicts = ["task", "affected"])]
     pub all: bool,
 
+    /// Open the task picker as a checklist and run every task you check
+    ///
+    /// Space checks a task, `/` filters, and Enter runs the checked tasks as
+    /// if they were named with `:::`. Needs an interactive terminal. Combine
+    /// with `--all` to list the tasks from every project in the monorepo.
+    #[usage(long, conflicts = ["task", "affected", "tag"])]
+    pub multi: bool,
+
     /// Continue running tasks even if one fails
     #[usage(long, short = 'c')]
     pub continue_on_error: bool,
@@ -651,7 +659,7 @@ async fn get_affected_task_list(
         .collect::<BTreeSet<_>>();
 
     let args = affected_task_args(args);
-    let mut tasks = get_task_lists(config, &args, true, only, false).await?;
+    let mut tasks = get_task_lists(config, &args, true, only, false, false).await?;
     // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
     // after this returns, so prerequisites from unaffected projects remain intact.
     tasks.retain(|task| {
@@ -686,7 +694,7 @@ async fn get_source_affected_task_list(
     use crate::task::task_affected::affected_task_reasons;
 
     let mut repos = crate::task::task_affected::AffectedRepos::new(&revisions, config)?;
-    let mut tasks = get_task_lists(config, args, true, only, false).await?;
+    let mut tasks = get_task_lists(config, args, true, only, false, false).await?;
     // As in a monorepo, finding no tagged task is not an error.
     keep_tagged(config, &mut tasks, tags.tags, tags.no_cache).await?;
     // As in a monorepo, only the pattern matches are filtered: `Run::run` resolves their
@@ -1025,7 +1033,7 @@ impl Run {
                 )
                 .collect_vec();
 
-            let mut task_list = get_task_lists(&config, &args, false, false, false).await?;
+            let mut task_list = get_task_lists(&config, &args, false, false, false, false).await?;
             // Help is for the task `--tag` would run.
             retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
 
@@ -1091,7 +1099,7 @@ impl Run {
             )
             .await?
         } else {
-            get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
+            get_task_lists(&config, &args, true, self.skip_deps, self.all, self.multi).await?
         };
         if !self.affected {
             retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;

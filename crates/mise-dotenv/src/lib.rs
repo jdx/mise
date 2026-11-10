@@ -22,7 +22,10 @@ mod parse;
 mod render;
 
 pub use crate::parse::{ParseError, ParseErrorKind, ParseOptions};
-pub use crate::render::{RenderError, render, render_value, render_var};
+pub use crate::render::{
+    RenderError, render, render_value, render_value_for_substitution, render_var,
+    render_var_for_substitution,
+};
 
 /// A map of environment variables.
 ///

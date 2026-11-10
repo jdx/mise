@@ -155,7 +155,8 @@ impl Watch {
             args.push("default".to_string());
         }
         let tasks =
-            crate::task::task_list::get_task_lists(&config, &args, false, false, false).await?;
+            crate::task::task_list::get_task_lists(&config, &args, false, false, false, false)
+                .await?;
         let watched_tasks = if self.skip_deps {
             tasks.to_vec()
         } else {

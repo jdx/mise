@@ -52,6 +52,15 @@ mise run build arg1 arg2 ::: test arg3 arg4
 
 The tasks run in parallel unless one depends on another.
 
+To pick the tasks from a menu instead of typing them, use `--multi`. It opens
+the task selector as a checklist: Space checks a task, `/` filters, and Enter
+runs the checked tasks as if they were named with `:::`. It needs an interactive
+terminal.
+
+```sh
+mise run --multi
+```
+
 ## Select tasks by name
 
 Name related tasks with `:`-separated groups, such as `test:unit` and

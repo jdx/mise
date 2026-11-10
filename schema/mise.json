@@ -1435,6 +1435,59 @@
       "minProperties": 1,
       "additionalProperties": false
     },
+    "launchd_resource_limits": {
+      "type": "object",
+      "description": "resource limits for launchd SoftResourceLimits and HardResourceLimits",
+      "properties": {
+        "core": {
+          "type": "integer",
+          "description": "write Core, the largest core file in bytes",
+          "minimum": 0
+        },
+        "cpu": {
+          "type": "integer",
+          "description": "write CPU, the CPU time in seconds",
+          "minimum": 0
+        },
+        "data": {
+          "type": "integer",
+          "description": "write Data, the data segment size in bytes",
+          "minimum": 0
+        },
+        "file_size": {
+          "type": "integer",
+          "description": "write FileSize, the largest file the program may create in bytes",
+          "minimum": 0
+        },
+        "memory_lock": {
+          "type": "integer",
+          "description": "write MemoryLock, the memory the program may lock in bytes",
+          "minimum": 0
+        },
+        "number_of_files": {
+          "type": "integer",
+          "description": "write NumberOfFiles, the open file descriptors; launchd starts agents with a soft limit of 256",
+          "minimum": 0
+        },
+        "number_of_processes": {
+          "type": "integer",
+          "description": "write NumberOfProcesses, the processes the user may run",
+          "minimum": 0
+        },
+        "resident_set_size": {
+          "type": "integer",
+          "description": "write ResidentSetSize, the resident memory in bytes",
+          "minimum": 0
+        },
+        "stack": {
+          "type": "integer",
+          "description": "write Stack, the stack size in bytes",
+          "minimum": 0
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
     "macos_defaults_value": {
       "description": "a property list value: boolean, integer, real, string, or an array or dictionary of these",
       "anyOf": [
@@ -1774,7 +1827,7 @@
           "type": "boolean"
         },
         "color_theme": {
-          "default": "default",
+          "default": "base16",
           "description": "Color theme for interactive prompts, such as the task picker in `mise run`.",
           "type": "string",
           "enum": [
@@ -2305,6 +2358,11 @@
             "fetch_interval": {
               "default": "15m",
               "description": "How often the history watcher fetches from the setup repository.",
+              "type": "string"
+            },
+            "lock_wait": {
+              "default": "30s",
+              "description": "How long a command waits for another history operation before failing.",
               "type": "string"
             },
             "notify": {
@@ -3289,6 +3347,13 @@
               "description": "What mise does with `dnf:` packages on an image-based Fedora host such as Silverblue or Bazzite.",
               "type": "string",
               "enum": ["error", "layer"]
+            },
+            "prefer": {
+              "description": "Package managers, in order, that an unprefixed `[bootstrap.packages]` key may use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "sudo": {
               "default": true,
@@ -9059,7 +9124,7 @@
         },
         "packages": {
           "type": "object",
-          "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
+          "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\", or by a bare package name that mise installs with one manager chosen from system_packages.prefer (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
           "additionalProperties": {
             "oneOf": [
               {
@@ -9149,6 +9214,13 @@
                     "description": "desired package state; pacman, scoop, snap, and zypper support absent",
                     "enum": ["present", "absent"],
                     "default": "present"
+                  },
+                  "names": {
+                    "type": "object",
+                    "description": "package names per manager for a key without a manager prefix, e.g. { apt = \"libssl-dev\", dnf = \"openssl-devel\" }; a manager not listed uses the key as the name",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   }
                 },
                 "dependentRequired": {
@@ -9158,7 +9230,7 @@
             ]
           },
           "propertyNames": {
-            "pattern": "^[A-Za-z0-9_-]+:.+$"
+            "pattern": "^([A-Za-z0-9_-]+:.+|[^:\\s]+)$"
           }
         },
         "repos": {
@@ -9393,6 +9465,14 @@
                       "stderr_path": {
                         "type": "string",
                         "description": "write StandardErrorPath"
+                      },
+                      "soft_resource_limits": {
+                        "description": "write SoftResourceLimits, the resource limits the program starts with and may raise up to the hard limits",
+                        "$ref": "#/$defs/launchd_resource_limits"
+                      },
+                      "hard_resource_limits": {
+                        "description": "write HardResourceLimits, the ceilings the program cannot raise its soft limits above",
+                        "$ref": "#/$defs/launchd_resource_limits"
                       },
                       "kickstart": {
                         "type": "boolean",
@@ -10713,6 +10793,50 @@
                   }
                 ]
               },
+              "ports": {
+                "type": "object",
+                "description": "More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.",
+                "additionalProperties": {
+                  "description": "Port for this named port of the daemon: a fixed port, or an allocation that gives each linked git worktree its own.",
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 1
+                    },
+                    {
+                      "type": "object",
+                      "description": "Offset a base port by the same worktree slot the daemon's `port = \"auto\"` uses.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "auto": {
+                          "description": "Enable per-worktree allocation of this named port.",
+                          "const": true
+                        },
+                        "base": {
+                          "type": "integer",
+                          "description": "Port used by the primary checkout.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "stride": {
+                          "type": "integer",
+                          "description": "Distance between consecutive worktree slots. Defaults to 1.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        }
+                      },
+                      "required": ["auto", "base"]
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "not": {
+                    "enum": ["port", "container", "runtime"]
+                  }
+                }
+              },
               "proxy": {
                 "$ref": "#/$defs/daemon_proxy"
               },
@@ -10767,6 +10891,50 @@
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
+              },
+              "ports": {
+                "type": "object",
+                "description": "More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.",
+                "additionalProperties": {
+                  "description": "Port for this named port of the daemon: a fixed port, or an allocation that gives each linked git worktree its own.",
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 1
+                    },
+                    {
+                      "type": "object",
+                      "description": "Offset a base port by the same worktree slot the daemon's `port = \"auto\"` uses.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "auto": {
+                          "description": "Enable per-worktree allocation of this named port.",
+                          "const": true
+                        },
+                        "base": {
+                          "type": "integer",
+                          "description": "Port used by the primary checkout.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "stride": {
+                          "type": "integer",
+                          "description": "Distance between consecutive worktree slots. Defaults to 1.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        }
+                      },
+                      "required": ["auto", "base"]
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "not": {
+                    "enum": ["port", "container", "runtime"]
+                  }
+                }
               },
               "proxy": {
                 "$ref": "#/$defs/daemon_proxy"

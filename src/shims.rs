@@ -122,11 +122,10 @@ pub fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
     serde_json::from_str::<Vec<TaskToolArg>>(&serialized)?
         .into_iter()
         .map(|tool| {
-            let input = tool.version.as_ref().map_or_else(
-                || tool.backend.clone(),
-                |version| format!("{}@{version}", tool.backend),
-            );
-            let mut arg: ToolArg = input.parse()?;
+            let mut arg: ToolArg = match &tool.version {
+                Some(version) => ToolArg::from_parts(&tool.backend, version)?,
+                None => tool.backend.parse()?,
+            };
             if !tool.options.is_empty() {
                 Arc::make_mut(&mut arg.ba).set_opts(Some(tool.options));
             }

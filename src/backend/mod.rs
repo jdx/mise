@@ -3924,6 +3924,13 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Whether the concrete versions of the `request` version have no order, such
+    /// as content digests: a candidate is newer exactly when it differs from the
+    /// installed one, however the two would sort as version strings.
+    fn versions_are_unordered(&self, _request: &str) -> bool {
+        false
+    }
+
     /// Whether a rolling channel must be resolved to a concrete version before it
     /// can be used. Backends that opt in fail in offline mode when neither a lock
     /// entry nor a concrete installed channel build is available.
@@ -6063,6 +6070,10 @@ pub trait Backend: Debug + Send + Sync {
                 );
             if install_removed {
                 install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                // The per-version cache dir is wiped at the start of every install
+                // attempt, so nothing can resume from it. Like the marker, it stays
+                // while the install dir could not be removed.
+                let _ = remove_all_with_warning(tv.cache_path());
             }
             // Remove parent installs dir if it's now empty (no other versions present)
             let installs_path = &self.ba().installs_path();
