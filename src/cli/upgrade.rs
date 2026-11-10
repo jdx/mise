@@ -452,7 +452,7 @@ impl Upgrade {
                 let request = ToolRequest::new_with_options(
                     configured_ba.clone(),
                     &request.version(),
-                    configured_request.options(),
+                    configured_request.without_registry_options().options(),
                     configured_request.source().clone(),
                 )?;
                 explicit_config_bumps.push(ExplicitConfigBump {

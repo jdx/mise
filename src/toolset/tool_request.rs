@@ -459,7 +459,7 @@ impl ToolRequest {
     /// This request without the registry's defaults, for a lock entry bound to
     /// another backend than the one the registry chose: those defaults belong
     /// to the registry's backend, which may read them as its own settings.
-    pub(crate) fn without_registry_options(&self) -> Self {
+    pub fn without_registry_options(&self) -> Self {
         let mut request = self.clone();
         let mut options = ResolvedToolOptions::default();
         self.resolved_options()
