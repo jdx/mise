@@ -1061,6 +1061,42 @@ fn build(
     })
 }
 
+/// The ports a linked worktree's slot moves onto the number the primary
+/// checkout uses for another of the daemon's ports, as (port, resolved number,
+/// the other port). The slots come from the path, so this is a property of one
+/// worktree: its app would bind the primary checkout's database port, and
+/// starting both fails. It is only a warning, since the project still loads and
+/// one worktree can override the daemon, but it is known before anything starts.
+fn primary_collisions(
+    slot: u16,
+    primary: Option<PortClaim>,
+    named: &IndexMap<String, PortClaim>,
+) -> Vec<(String, u16, String)> {
+    if slot == 0 {
+        return Vec::new();
+    }
+    let ports: Vec<(String, PortClaim)> = primary
+        .map(|claim| ("port".to_string(), claim))
+        .into_iter()
+        .chain(
+            named
+                .iter()
+                .map(|(key, claim)| (format!("ports.{key}"), *claim)),
+        )
+        .filter(|(_, claim)| claim.is_auto())
+        .collect();
+    let mut found = Vec::new();
+    for (what, claim) in &ports {
+        if let Some((other, _)) = ports
+            .iter()
+            .find(|(other, other_claim)| other != what && other_claim.base == claim.port)
+        {
+            found.push((what.clone(), claim.port, other.clone()));
+        }
+    }
+    found
+}
+
 /// The named `ports` of a `run` or `task` daemon. Unlike a preset there is no
 /// default to fall back on, so an allocated port needs its own `base`. It moves
 /// with the same slot as the primary port, so a worktree's ports never collide
@@ -1114,6 +1150,12 @@ fn take_named_ports(
         }
         seen.push((key, resolved.port));
         named.insert(key.clone(), resolved);
+    }
+    for (what, port, other) in primary_collisions(slot, claim, &named) {
+        warn_once!(
+            "[daemons.{name}].{what} resolves to {port} in this worktree, the port the primary checkout uses for {other}; both cannot run at once. \
+             Give them bases at least 512 ports apart (more with a larger stride), or move this worktree's ports in a gitignored mise.local.toml"
+        );
     }
     Ok(named)
 }
@@ -2314,6 +2356,38 @@ mod tests {
             set.daemons["db"].table["stop_signal"].as_str(),
             Some("SIGINT")
         );
+    }
+
+    #[test]
+    fn a_worktree_slot_that_lands_on_the_primarys_other_port_is_found() {
+        let named = |app: u16, db: u16| {
+            IndexMap::from([
+                (
+                    "app".to_string(),
+                    PortClaim {
+                        port: app,
+                        base: 5173,
+                        stride: 1,
+                    },
+                ),
+                (
+                    "db".to_string(),
+                    PortClaim {
+                        port: db,
+                        base: 5432,
+                        stride: 1,
+                    },
+                ),
+            ])
+        };
+        // Slot 259: the app moves from 5173 to 5432, the primary's database port.
+        assert_eq!(
+            primary_collisions(259, None, &named(5432, 5691)),
+            vec![("ports.app".to_string(), 5432, "ports.db".to_string())]
+        );
+        // Another slot is clear, and so is the primary checkout itself.
+        assert!(primary_collisions(116, None, &named(5289, 5548)).is_empty());
+        assert!(primary_collisions(0, None, &named(5173, 5432)).is_empty());
     }
 
     #[test]
