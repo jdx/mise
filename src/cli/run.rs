@@ -1016,10 +1016,8 @@ impl Run {
         // Check if --help or -h is in the task args BEFORE toolset/deps
         // NOTE: Only check self.args, not self.args_last, because args_last contains
         // arguments after explicit -- which should always be passed through to the task
-        // A short bundle such as `-vh` can carry the help letter too, but only a task's usage
-        // spec can say so; without one it is just an argument.
-        let has_help_in_task_args = self.args.iter().any(|a| a == "--help" || a == "-h")
-            || self.args.iter().any(|a| word_may_bundle_help(a));
+        let has_help_in_task_args =
+            self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
 
         let mut config = Config::get().await?;
 
@@ -1058,7 +1056,7 @@ impl Run {
                             miseprintln!("{}", render_usage_help(&spec, &self.args));
                             return Ok(());
                         }
-                    } else if self.args.iter().any(|a| a == "--help" || a == "-h") {
+                    } else {
                         // Task has no usage defined, show basic task info
                         display_task_help(task)?;
                         return Ok(());
@@ -2380,11 +2378,6 @@ fn display_task_help(task: &Task) -> Result<()> {
     miseprintln!("{hint}");
     miseprintln!("See https://mise.jdx.dev/tasks/task-configuration.html for more information.");
     Ok(())
-}
-
-/// Whether a word could be a short-flag bundle that includes the help letter, such as `-vh`.
-fn word_may_bundle_help(word: &str) -> bool {
-    word.starts_with('-') && !word.starts_with("--") && word.contains('h')
 }
 
 /// Whether the task's usage spec takes `-h`/`--help` in `args` as a request for help.
