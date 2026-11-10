@@ -480,6 +480,9 @@ pub(super) async fn tap_checkout(
             .map(|elapsed| elapsed.as_nanos())
             .unwrap_or_default()
     );
+    // A private tap's files must stay unreadable to other local users, like
+    // its cached sources.
+    create_owner_only_dir(&cache)?;
     let archive = cache.join(format!("{owner}-{repo}-{commit}.{unique}.tar.gz"));
     // The API host is the one mise sends the GitHub token to, so a private tap
     // downloads like its tree and formula files do.
