@@ -3743,7 +3743,13 @@ JSON, dotenv, and shell output contain actual variable values, including secrets
 Tools you pass as TOOL@VERSION arguments are installed first if they are missing;
 missing tools from the config are reported, not installed.
 """#
-    flag "-D --dotenv" help="Output in dotenv format" overrides=--shell
+    flag "-D --dotenv" help="Output in dotenv format" overrides=--shell {
+        long_help #"""
+Output in dotenv format
+
+Values are quoted and escaped where needed so mise reads them back unchanged. Tools that do not interpret quotes, such as Docker `--env-file`, receive them literally.
+"""#
+    }
     flag "-J --json" help="Output in JSON format" overrides=--shell
     flag "-s --shell" help="Shell type to generate environment variables for" overrides=--json {
         arg <SHELL> {
@@ -6002,6 +6008,14 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
         arg <CMD>
     }
     flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+    flag --multi help="Open the task picker as a checklist and run every task you check" {
+        long_help #"""
+Open the task picker as a checklist and run every task you check
+
+Space checks a task, `/` filters, and Enter runs the checked tasks as if they were named with `:::`. Needs an interactive terminal. Combine with `--all` to list the tasks from every project in the monorepo.
+"""#
+        conflicts "--affected" "--tag"
+    }
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before running the tasks" {
         arg <DIR>
@@ -7277,6 +7291,14 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
             arg <CMD>
         }
         flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+        flag --multi help="Open the task picker as a checklist and run every task you check" {
+            long_help #"""
+Open the task picker as a checklist and run every task you check
+
+Space checks a task, `/` filters, and Enter runs the checked tasks as if they were named with `:::`. Needs an interactive terminal. Combine with `--all` to list the tasks from every project in the monorepo.
+"""#
+            conflicts "--affected" "--tag"
+        }
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before running the tasks" {
             arg <DIR>

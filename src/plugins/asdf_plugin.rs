@@ -316,8 +316,23 @@ impl Plugin for AsdfPlugin {
         if !dry_run {
             let _lock = lock_file::get(&self.plugin_path, force)?;
             self.install(config, pr.as_ref()).await?;
-            let plugin_type =
-                PluginType::from_plugin_path(&self.plugin_path).unwrap_or(PluginType::Asdf);
+            let Some(plugin_type) = PluginType::from_plugin_path(&self.plugin_path) else {
+                // Not a plugin at all (e.g. a plain tool repo): drop the clone
+                // instead of leaving the whole repo in the plugins dir.
+                if let Err(err) =
+                    remove_git_plugin_source(&self.name, &self.plugin_path, pr.as_ref())
+                {
+                    warn!(
+                        "failed to remove {}: {err:#}",
+                        display_path(&self.plugin_path)
+                    );
+                }
+                bail!(
+                    "{} is not an asdf or vfox plugin: it has no bin/list-all or metadata.lua. \
+                     To install a tool from a GitHub repo's releases, use the github: backend",
+                    self.name
+                );
+            };
             install_state::add_plugin(&self.name, plugin_type).await?;
             backend::remove(&self.name);
             Ok(())

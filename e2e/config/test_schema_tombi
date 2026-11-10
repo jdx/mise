@@ -103,6 +103,11 @@ program = "/bin/echo"
 throttle_interval = 300
 queue_directories = ["~/Library/Queues/sync", "/var/spool/sync"]
 
+[bootstrap.macos.launchd.agents.proxy]
+program = "/bin/echo"
+soft_resource_limits = { number_of_files = 10240, stack = 8388608 }
+hard_resource_limits = { core = 0, cpu = 3600, data = 1, file_size = 2, memory_lock = 3, number_of_files = 65536, number_of_processes = 4, resident_set_size = 5, stack = 8388608 }
+
 [bootstrap.linux.systemd.units.sync]
 exec_start = "/usr/bin/rsync --archive source/ destination/"
 type = "oneshot"
@@ -284,7 +289,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-python-venv.toml", "mise-bad-env-python.toml", "mise-bad-env-value-required.toml", "mise-bad-env-value-required-help.toml", "mise-bad-env-required-false.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-bootstrap-absent-group-gid.toml", "mise-bad-bootstrap-user-no-group.toml", "mise-bad-bootstrap-user-remove-home.toml", "mise-bad-bootstrap-absent-user-uid.toml", "mise-bad-bootstrap-exclusive-groups.toml", "mise-bad-bootstrap-move-home.toml", "mise-bad-bootstrap-relative-home.toml", "mise-bad-bootstrap-user-name.toml", "mise-bad-bootstrap-secret-key.toml", "mise-bad-bootstrap-secret-env.toml", "mise-bad-bootstrap-secret-name.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-python-venv.toml", "mise-bad-env-python.toml", "mise-bad-env-value-required.toml", "mise-bad-env-value-required-help.toml", "mise-bad-env-required-false.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-launchd-limits.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-bootstrap-absent-group-gid.toml", "mise-bad-bootstrap-user-no-group.toml", "mise-bad-bootstrap-user-remove-home.toml", "mise-bad-bootstrap-absent-user-uid.toml", "mise-bad-bootstrap-exclusive-groups.toml", "mise-bad-bootstrap-move-home.toml", "mise-bad-bootstrap-relative-home.toml", "mise-bad-bootstrap-user-name.toml", "mise-bad-bootstrap-secret-key.toml", "mise-bad-bootstrap-secret-env.toml", "mise-bad-bootstrap-secret-name.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -579,6 +584,25 @@ program = "/bin/echo"
 throttle_interval = -1
 TOML
 assert_fail "$TOMBI_LINT mise-bad-launchd-throttle.toml"
+
+# Verify that launchd resource limits match runtime validation: a table must
+# set at least one limit, limits are non-negative, and only launchd's keys
+# (in snake case) are accepted
+for limits in \
+  '{}' \
+  '{ number_of_files = -1 }' \
+  '{ nofile = 10240 }' \
+  '{ NumberOfFiles = 10240 }' \
+  '{ number_of_files = "unlimited" }'; do
+  for field in soft_resource_limits hard_resource_limits; do
+    cat >"$HOME/workdir/mise-bad-launchd-limits.toml" <<TOML
+[bootstrap.macos.launchd.agents.invalid]
+program = "/bin/echo"
+$field = $limits
+TOML
+    assert_fail "$TOMBI_LINT mise-bad-launchd-limits.toml"
+  done
+done
 
 # Verify that systemd service/timer declarations match runtime validation
 for unit in \

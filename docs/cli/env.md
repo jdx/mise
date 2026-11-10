@@ -26,6 +26,8 @@ missing tools from the config are reported, not installed.
 
 ## Flags
 - **`-D --dotenv`** — Output in dotenv format
+
+  Values are quoted and escaped where needed so mise reads them back unchanged. Tools that do not interpret quotes, such as Docker `--env-file`, receive them literally.
 - **`-J --json`** — Output in JSON format
 - **`-s --shell <SHELL>`** — Shell type to generate environment variables for
 

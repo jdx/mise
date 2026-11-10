@@ -8,8 +8,9 @@ use crate::task::task_cache_store::{
     compose_task_cache_stores,
 };
 use crate::task::task_source_checker::{
-    TaskCacheInputs, build_output_matcher, expand_enumeration_patterns, glob_walk, is_output,
-    output_glob_patterns, symlink_walk_error_path, task_cache_inputs, task_cwd,
+    DirPruner, TaskCacheInputs, build_output_matcher, expand_enumeration_patterns,
+    glob_has_entries, glob_walk_pruned, is_output, output_glob_patterns, symlink_walk_error_path,
+    task_cache_inputs, task_cwd,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -697,7 +698,13 @@ impl TaskArtifactCache {
         });
         let archive_bytes = if !roots.is_empty() {
             let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
-            write_archive(write.artifact_path(), &self.root, &roots, &output_matcher)?
+            write_archive(
+                write.artifact_path(),
+                &self.root,
+                &roots,
+                &output_matcher,
+                &DirPruner::for_outputs(&self.root, &task.outputs.patterns()),
+            )?
         } else {
             0
         };
@@ -1292,13 +1299,16 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
     let mut resolved = BTreeSet::new();
     let patterns = task.outputs.patterns();
     let matcher = build_output_matcher(root, &patterns)?;
+    let pruner = crate::task::task_source_checker::DirPruner::for_outputs(root, &patterns);
     for output in output_glob_patterns(&patterns) {
         ensure_safe_relative(Path::new(&output))?;
         if crate::task::task_source_checker::is_glob_pattern(&output) {
             let mut glob_matched = false;
             for expanded in expand_enumeration_patterns(&output)? {
                 ensure_safe_relative(Path::new(&expanded))?;
-                for entry in glob_walk(&root.join(expanded), false)? {
+                let full = root.join(expanded);
+                let mut walker = glob_walk_pruned(&full, false, &pruner)?;
+                for entry in walker.by_ref() {
                     let path = match entry {
                         Ok(entry) => entry.into_path(),
                         Err(err) => match symlink_walk_error_path(&err) {
@@ -1313,6 +1323,9 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
                     if is_output(&matcher, &path, is_dir) {
                         resolved.insert(rel);
                     }
+                }
+                if !glob_matched && walker.pruned() {
+                    glob_matched = glob_has_entries(&full, true);
                 }
             }
             if require_matches && !glob_matched {
@@ -1613,6 +1626,7 @@ fn write_archive(
     root: &Path,
     roots: &[PathBuf],
     output_matcher: &Override,
+    pruner: &DirPruner,
 ) -> Result<u64> {
     let file = File::create(path)?;
     let encoder = zstd::Encoder::new(file, 0)?;
@@ -1627,7 +1641,7 @@ fn write_archive(
             }
             continue;
         }
-        for entry in WalkDir::new(&abs_root).follow_links(false) {
+        for entry in pruner.walk_dir(&abs_root, false) {
             let entry = entry?;
             let abs = entry.path().to_path_buf();
             let rel = abs.strip_prefix(root)?.to_path_buf();

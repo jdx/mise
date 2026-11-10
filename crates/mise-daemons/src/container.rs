@@ -257,7 +257,7 @@ fn port_number(name: &str, key: &str, value: &toml::Value) -> Result<u16> {
 
 /// A named port becomes a template variable and the middle of an exported
 /// variable name.
-fn validate_port_name(name: &str, key: &str) -> Result<()> {
+pub(crate) fn validate_port_name(name: &str, key: &str) -> Result<()> {
     let mut chars = key.chars();
     let valid = chars
         .next()

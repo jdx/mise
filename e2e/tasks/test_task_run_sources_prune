@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# Freshness checks do not read directories that no source or output can come
+# from. An unreadable directory only matters to a walk that enters it, and the
+# output checks fail on one, so a task stays fresh only if the walk skips it.
+mkdir -p packages/p1/src packages/p1/node_modules/locked packages/p2/src
+touch packages/p1/src/a.ts packages/p2/src/b.ts
+touch packages/p1/node_modules/locked/c.ts
+mkdir -p dist/.vite/locked dist/cache dist2/.vite/locked
+touch src.txt
+
+cat <<TOML >mise.toml
+[tasks.prefix]
+sources = ["packages/*/src/**/*"]
+outputs = ["out-prefix.txt"]
+run = "echo built > out-prefix.txt && echo built"
+
+[tasks.negated]
+sources = ["packages/**/*.ts", "!**/node_modules/**"]
+outputs = ["out-negated.txt"]
+run = "echo built > out-negated.txt && echo built"
+
+[tasks.reincluded]
+sources = ["packages/**/*.ts", "!**/node_modules/**", "packages/p1/node_modules/locked/c.ts"]
+outputs = ["out-reincluded.txt"]
+run = "echo built > out-reincluded.txt && echo built"
+
+[tasks.outdir]
+sources = ["src.txt"]
+outputs = ["dist", "!dist/.vite"]
+run = "touch dist/a.txt && echo built"
+
+[tasks.outglob]
+sources = ["src.txt"]
+outputs = ["dist2/**/*", "!dist2/.vite/**"]
+run = "touch dist2/a.txt && echo built"
+TOML
+
+chmod 000 packages/p1/node_modules/locked dist/.vite/locked dist2/.vite/locked
+for task in prefix negated outdir outglob; do
+  assert "mise -q $task" "built"
+done
+# root ignores permissions, so the walk cannot fail there.
+if [ "$(id -u)" != 0 ]; then
+  for task in prefix negated outdir outglob; do
+    assert_empty "mise -q $task"
+  done
+fi
+chmod 755 packages/p1/node_modules/locked dist/.vite/locked dist2/.vite/locked
+
+# Excluded or not, a change to a selected file still reruns the task.
+sleep 1
+touch packages/p2/src/b.ts
+assert "mise -q prefix" "built"
+assert "mise -q negated" "built"
+
+# A later entry that includes a file again keeps the directory walked.
+assert "mise -q reincluded" "built"
+assert_empty "mise -q reincluded"
+sleep 1
+touch packages/p1/node_modules/locked/c.ts
+assert "mise -q reincluded" "built"

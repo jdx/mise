@@ -5868,6 +5868,8 @@ missing tools from the config are reported, not installed.
 .TP
 \fB\-D, \-\-dotenv\fR
 Output in dotenv format
+
+Values are quoted and escaped where needed so mise reads them back unchanged. Tools that do not interpret quotes, such as Docker `\-\-env\-file`, receive them literally.
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
@@ -8915,6 +8917,11 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
 .TP
 \fB\-\-all\fR
 Open the task picker with tasks from every project in the monorepo
+.TP
+\fB\-\-multi\fR
+Open the task picker as a checklist and run every task you check
+
+Space checks a task, `/` filters, and Enter runs the checked tasks as if they were named with `:::`. Needs an interactive terminal. Combine with `\-\-all` to list the tasks from every project in the monorepo.
 .TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails

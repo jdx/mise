@@ -1546,11 +1546,12 @@ impl PackslipBackend {
         refresh: bool,
     ) -> Result<Vec<VersionInfo>> {
         // A listing from the versions host lags GitHub, so it is not reused
-        // once the host is turned off.
+        // once the host is turned off. Do not reuse the old contexts either:
+        // their API fallback could stop at an unrelated stable release.
         let context = if self.versions_host_tool().is_some() {
-            "packslip-vendor-listing"
+            "packslip-vendor-listing-paged"
         } else {
-            "packslip-vendor-listing-direct"
+            "packslip-vendor-listing-direct-paged"
         };
         let cache = self.get_remote_version_cache_with_context(Some(context));
         let mut cache = cache.lock().await;
@@ -1559,7 +1560,7 @@ impl PackslipBackend {
                 &self.ba, &cache,
             ));
         }
-        let fetch = || self.fetch_vendor_listing(project, repo);
+        let fetch = || self.fetch_vendor_listing(project, repo, refresh);
         if refresh {
             cache.refresh_async(fetch).await
         } else {
@@ -1567,27 +1568,37 @@ impl PackslipBackend {
         }
     }
 
-    async fn fetch_vendor_listing(&self, project: &str, repo: &str) -> Result<Vec<VersionInfo>> {
-        if let Some(versions) = self.mirrored_versions().await? {
+    async fn fetch_vendor_listing(
+        &self,
+        project: &str,
+        repo: &str,
+        refresh: bool,
+    ) -> Result<Vec<VersionInfo>> {
+        // A refresh is asked for because the registry catalog lacked a
+        // release, so it reads the asset listing instead.
+        if !refresh && let Some(versions) = self.mirrored_versions().await? {
             return Ok(versions);
         }
         let asset_name = bundle_name(project);
         // GitHub's prerelease flag is not consulted: the version says.
-        let mut versions: Vec<VersionInfo> =
-            github::list_release_versions_with_asset(repo, &asset_name)
-                .await?
-                .into_iter()
-                .filter_map(|r| {
-                    version_info(
-                        tag_version(&r.tag_name, project),
-                        r.released_at,
-                        Some(format!(
-                            "https://github.com/{repo}/releases/tag/{}",
-                            r.tag_name
-                        )),
-                    )
-                })
-                .collect();
+        let releases = if refresh {
+            github::refresh_release_versions_with_asset(repo, &asset_name).await?
+        } else {
+            github::list_release_versions_with_asset(repo, &asset_name).await?
+        };
+        let mut versions: Vec<VersionInfo> = releases
+            .into_iter()
+            .filter_map(|r| {
+                version_info(
+                    tag_version(&r.tag_name, project),
+                    r.released_at,
+                    Some(format!(
+                        "https://github.com/{repo}/releases/tag/{}",
+                        r.tag_name
+                    )),
+                )
+            })
+            .collect();
         versions.reverse();
         Ok(versions)
     }
@@ -1750,24 +1761,98 @@ impl PackslipBackend {
         let repo = Self::repo(project)
             .ok_or_else(|| eyre!("packslip:{project} publishes no signed release list"))?;
         let find = |releases: &[github::GithubRelease]| {
-            releases.iter().find_map(|r| {
+            releases.iter().filter(|r| !r.draft).find_map(|r| {
                 let asset = r.assets.iter().find(|a| a.name == asset_name)?;
                 (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
                     .then(|| asset.clone())
             })
         };
         let mut found = None;
-        if let Some(tag) = self.mirrored_tag(project, &tv.version).await? {
-            let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
-            found = find(std::slice::from_ref(&release));
-            if found.is_none() {
-                // A mirrored release fetched before the packslip was uploaded
-                // must not stand in for the release as it is now.
-                debug!("packslip:{project}: the mirrored {tag} carries no {asset_name}");
+        let mut probe_error = None;
+        // A failed lookup here defers to the standard tag probes and the
+        // catalog below, and is reported only if they find nothing either.
+        match self.mirrored_tag(project, &tv.version).await {
+            Ok(Some(tag)) => {
+                match github::get_release_with_versions_host(&repo, &tag, true).await {
+                    Ok(release) => {
+                        found = find(std::slice::from_ref(&release));
+                        if found.is_none() {
+                            // A mirrored release fetched before the packslip was uploaded
+                            // must not stand in for the release as it is now.
+                            debug!(
+                                "packslip:{project}: the mirrored {tag} carries no {asset_name}"
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        probe_error.get_or_insert(err);
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                probe_error.get_or_insert(err);
             }
         }
         if found.is_none() {
-            found = find(&github::list_releases_including_prereleases(&repo).await?);
+            // An exact version need not appear in a busy repository's recent
+            // release listing. Ask for the common tag forms directly; the
+            // signed manifest still has to name this project and version.
+            for tag in [tv.version.clone(), format!("v{}", tv.version)] {
+                match github::get_release_with_versions_host(&repo, &tag, true).await {
+                    Ok(release) => found = find(std::slice::from_ref(&release)),
+                    // A missing tag is the common case; any other failure
+                    // still lets the catalog try, and is reported if it
+                    // cannot find the release either.
+                    Err(err) if crate::versions_host::is_not_found(&err) => continue,
+                    Err(err) => {
+                        probe_error.get_or_insert(err);
+                        continue;
+                    }
+                }
+                if found.is_some() {
+                    break;
+                }
+            }
+        }
+        if found.is_none() {
+            // Nonstandard tag prefixes come from the asset-filtered catalog,
+            // not the generic listing that may stop at an unrelated release.
+            // A cached listing from before the release was published lacks
+            // it, so a miss refreshes the listing once.
+            let tag_of = |versions: &[VersionInfo]| {
+                versions
+                    .iter()
+                    .find(|v| v.version == tv.version)
+                    .and_then(|v| v.release_url.as_deref())
+                    .and_then(release_url_tag)
+            };
+            let looked_up: Result<Option<github::GithubRelease>> = async {
+                let mut tag = tag_of(&self.vendor_listing(project, &repo, false).await?);
+                if tag.is_none() && !Settings::get().offline() {
+                    tag = tag_of(&self.vendor_listing(project, &repo, true).await?);
+                }
+                match tag {
+                    Some(tag) => Ok(Some(
+                        github::get_release_with_versions_host(&repo, &tag, true).await?,
+                    )),
+                    None => Ok(None),
+                }
+            }
+            .await;
+            match looked_up {
+                Ok(release) => {
+                    found = release.and_then(|release| find(std::slice::from_ref(&release)));
+                }
+                // The probe's failure explains a miss better than the
+                // catalog's.
+                Err(err) => return Err(probe_error.take().unwrap_or(err)),
+            }
+        }
+        if found.is_none()
+            && let Some(err) = probe_error
+        {
+            return Err(err);
         }
         let Some(asset) = found else {
             bail!(
@@ -3218,6 +3303,113 @@ mod tests {
         settings.url_replacements = Some(replacements);
         settings.http_retries = Some(0);
         Settings::reset(Some(settings));
+    }
+
+    #[tokio::test]
+    async fn a_pinned_release_need_not_be_in_the_recent_listing() {
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.url_replacements = Some(indexmap::IndexMap::from([(
+            "https://api.github.com".to_string(),
+            server.url(),
+        )]));
+        settings.use_versions_host = Some(false);
+        settings.http_retries = Some(0);
+        Settings::reset(Some(settings));
+
+        let suffix = server.socket_address().port();
+        for (repo, tag) in [
+            (format!("o/pinned-bare-version-{suffix}"), "4.215.0".into()),
+            (format!("o/pinned-v-prefix-{suffix}"), "v4.215.0".into()),
+            (
+                format!("o/pinned-prefixed-{suffix}"),
+                format!("pinned-prefixed-{suffix}@4.215.0"),
+            ),
+        ] {
+            let url = format!(
+                "{}/{repo}/releases/download/{tag}/packslip.sigstore.json",
+                server.url()
+            );
+            server
+                .mock(
+                    "HEAD",
+                    format!("/{repo}/releases/download/{tag}/packslip.sigstore.json").as_str(),
+                )
+                .with_header("content-type", "application/octet-stream")
+                .create_async()
+                .await;
+            let release = serde_json::json!({
+                "tag_name": tag,
+                "draft": false,
+                "prerelease": false,
+                "created_at": "2026-11-03T00:00:00Z",
+                "assets": [{
+                    "name": "packslip.sigstore.json",
+                    "browser_download_url": url,
+                    "url": format!("https://api.github.com/repos/{repo}/releases/assets/1")
+                }]
+            });
+            let exact = server
+                .mock(
+                    "GET",
+                    format!("/repos/{repo}/releases/tags/{}", urlencoding::encode(&tag)).as_str(),
+                )
+                .with_header("content-type", "application/json")
+                .with_body(release.to_string())
+                .create_async()
+                .await;
+            for absent in ["4.215.0", "v4.215.0"] {
+                if absent != tag {
+                    server
+                        .mock(
+                            "GET",
+                            format!("/repos/{repo}/releases/tags/{absent}").as_str(),
+                        )
+                        .with_status(404)
+                        .create_async()
+                        .await;
+                }
+            }
+            // Standard tags need no listing; nonstandard prefixes still work
+            // through the asset-filtered catalog.
+            server
+                .mock(
+                    "GET",
+                    format!("/repos/{repo}/releases?per_page=100").as_str(),
+                )
+                .with_header("content-type", "application/json")
+                .with_body(if tag.starts_with("pinned-") {
+                    serde_json::json!([release]).to_string()
+                } else {
+                    "[]".into()
+                })
+                .create_async()
+                .await;
+            let project = format!("github.com/{repo}");
+            let ba = Arc::new(BackendArg::new_raw(
+                format!("packslip:{project}"),
+                Some(format!("packslip:{project}")),
+                project.clone(),
+                None,
+                BackendResolution::new(true),
+            ));
+            let tv = ToolVersion::new(
+                ToolRequest::new(ba.clone(), "4.215.0", ToolSource::Argument).unwrap(),
+                "4.215.0".into(),
+            );
+            let backend = PackslipBackend::from_arg((*ba).clone());
+            let located = backend
+                .locate_vendor_bundle(&project, &tv, Vendor::NoList)
+                .await
+                .unwrap();
+            assert_eq!(located.url, url);
+            assert!(located.list_missing);
+            exact.assert_async().await;
+        }
     }
 
     #[tokio::test]

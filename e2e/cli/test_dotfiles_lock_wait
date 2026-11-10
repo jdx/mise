@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# `history.lock_wait` (MISE_HISTORY_LOCK_WAIT) sets how long a command waits for
+# a running history operation: `0` fails at once, a longer wait lets a script
+# take its own checkpoint once the operation finishes.
+
+require_cmd git
+export MISE_EXPERIMENTAL=0
+
+mkdir -p ~/.config/app
+echo 'one' >~/.config/app/a.conf
+assert_succeed "mise bootstrap dotfiles track ~/.config/app"
+
+# an apply whose pre-dotfiles hook holds the operation lock for a while
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "date +%s%N >>$HOME/applying && sleep 6"
+EOF
+
+hold_the_lock() {
+  : >~/applying
+  mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
+  applying=$!
+  local deadline=$((SECONDS + 30))
+  until test -s ~/applying; do
+    ((SECONDS < deadline)) || {
+      echo "the apply never started" >&2
+      return 1
+    }
+    sleep 0.2
+  done
+}
+
+# 0 fails at once
+hold_the_lock
+echo 'two' >~/.config/app/a.conf
+assert_fail "MISE_HISTORY_LOCK_WAIT=0 mise bootstrap dotfiles save 2>&1" "another history operation is running"
+wait "$applying" || true
+
+# a longer wait takes the lock once the apply is done
+hold_the_lock
+echo 'three' >~/.config/app/a.conf
+assert_succeed "MISE_HISTORY_LOCK_WAIT=60s mise bootstrap dotfiles save --description waited-for-the-lock --label waited"
+wait "$applying" || true
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description, .[0].trigger, .[0].labels[0]'" $'waited-for-the-lock\nsave\nwaited'
+
+# an unreadable value warns and keeps the default wait
+assert_contains "MISE_HISTORY_LOCK_WAIT=soon mise bootstrap dotfiles save 2>&1" "history.lock_wait"

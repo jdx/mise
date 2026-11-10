@@ -170,6 +170,39 @@ impl SystemStatus {
                 );
             }
         }
+        // unprefixed keys that no manager can take are listed like those of an
+        // unavailable manager
+        let unresolved = system::unresolved_unprefixed_from_config(&config);
+        if self.json {
+            if !unresolved.is_empty() {
+                json_out.insert(
+                    "unprefixed".to_string(),
+                    json!({
+                        "available": false,
+                        "reason": "no package manager is available",
+                        "packages": unresolved.iter().map(|pkg| {
+                            json!({
+                                "package": pkg.key,
+                                "requested_version": pkg.version,
+                                "desired_state": if pkg.absent { "absent" } else { "present" },
+                                "state": "skipped",
+                                "installed_version": "",
+                                "reason": pkg.reason,
+                            })
+                        }).collect::<Vec<_>>(),
+                    }),
+                );
+            }
+        } else {
+            for pkg in &unresolved {
+                rows.push(vec![
+                    "-".to_string(),
+                    pkg.key.clone(),
+                    "".to_string(),
+                    format!("skipped ({})", pkg.reason),
+                ]);
+            }
+        }
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
         } else {

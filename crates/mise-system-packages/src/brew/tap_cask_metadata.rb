@@ -252,7 +252,17 @@ class CaskMetadata
   def installer(**values) = @artifacts << { "installer" => values }
   def artifact(source, target: nil) = add_artifact("artifact", source, target)
   def uninstall(**values) = @artifacts << { "uninstall" => values }
-  def zap(**values) = @artifacts << { "zap" => values }
+  # `zap :not_required` is Homebrew's explicit "nothing to clean up" marker;
+  # Homebrew reports it as an empty zap list.
+  def zap(exemption = nil, **values)
+    if exemption.nil?
+      @artifacts << { "zap" => values }
+    elsif exemption == :not_required && values.empty?
+      @artifacts << { "zap" => [] }
+    else
+      raise ArgumentError, "zap requires either directives or only :not_required"
+    end
+  end
   def preflight_steps(&block) = add_flight_steps("preflight_steps", &block)
   def postflight_steps(&block) = add_flight_steps("postflight_steps", &block)
   def preflight(*) = @artifacts << { "preflight" => nil }
