@@ -11,6 +11,7 @@
 - [Editors and IDEs](https://mise.jdx.dev/ide-integration.html): An editor's integrated terminal, language servers, debugger and extensions can each run with a different environment. Find out which process needs the tool or variable, then pick an integration.
 - [Continuous integration](https://mise.jdx.dev/continuous-integration.html): Use the same mise.toml in CI and development so both environments select the same tools. Run commands with mise exec or mise run to load those tools and the project's environment variables.
 - [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Run mise in a container in one of two ways: build on the -debian image, which has mise, curl and git ready for CI jobs and development containers, or copy the static binary from the scratch image into…
+- [Coding agents](https://mise.jdx.dev/agents.html): A coding agent such as Claude Code or Codex runs each command in a non-interactive shell. mise activate in your .zshrc or .bashrc never runs there, so the agent does not get the project's tools or…
 - [AI assistants (MCP)](https://mise.jdx.dev/mcp.html): mise mcp runs a Model Context Protocol server that lets an AI assistant read a project's tools, tasks, environment variables and config files, and run its tasks.
 
 ## Dev tools

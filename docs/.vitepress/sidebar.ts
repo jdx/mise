@@ -20,6 +20,7 @@ export const sidebar: SidebarItem[] = [
       { text: "Editors and IDEs", link: "/ide-integration" },
       { text: "Continuous integration", link: "/continuous-integration" },
       { text: "Docker", link: "/mise-cookbook/docker" },
+      { text: "Coding agents", link: "/agents" },
       { text: "AI assistants (MCP)", link: "/mcp" },
     ],
   },
