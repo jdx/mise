@@ -53,11 +53,14 @@ pub(crate) static DISPLAYED_HINTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| {
     Mutex::new(hints)
 });
 
+/// Hints are for a person at a terminal: an agent cannot act on them and they
+/// stay in its context, so neither function below allows one under an agent.
 /// Would `hint!` display this id? Unlike [`should_display_hint`], this does
 /// not mark the hint as displayed — use it to skip expensive work whose only
 /// purpose is feeding a hint.
 pub fn hint_would_display(id: &str) -> bool {
     if mise_util::testing::in_tests()
+        || *mise_util::env::AI_AGENT
         || !console::user_attended()
         || !console::user_attended_stderr()
     {
@@ -78,6 +81,7 @@ pub fn hint_would_display(id: &str) -> bool {
 /// for hints that should appear on every run until the user disables them.
 pub fn hint_enabled(id: &str) -> bool {
     if mise_util::testing::in_tests()
+        || *mise_util::env::AI_AGENT
         || !console::user_attended()
         || !console::user_attended_stderr()
     {

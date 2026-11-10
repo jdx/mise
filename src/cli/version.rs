@@ -207,6 +207,7 @@ fn show_version() -> std::io::Result<()> {
 
 pub(crate) async fn show_latest() {
     if (ci_info::is_ci() && !cfg!(test))
+        || *env::AI_AGENT
         || Settings::try_get().is_ok_and(|settings| settings.disable_update_warning)
     {
         return;
