@@ -1233,7 +1233,7 @@ impl SkillsTarget {
 /// `.agents/skills` is used and `.claude/skills` is linked to it.
 pub fn skills_target(root: &Path) -> SkillsTarget {
     if let Some(dir) = &Settings::get().skills.dir {
-        return SkillsTarget::at(root.join(dir));
+        return SkillsTarget::at(root.join(file::replace_path(dir)));
     }
     let agents = root.join(".agents/skills");
     let claude = root.join(".claude/skills");
