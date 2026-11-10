@@ -111,12 +111,26 @@ pub fn config_root(path: &Path) -> PathBuf {
         f == "config.toml" || f == "config.local.toml" || regex!(r"config\..+\.toml").is_match(f)
     };
     // A file task grouped in a subdirectory (`mise-tasks/sub/nested`) belongs
-    // to the same project as one directly in the task directory. Project
-    // configs are not task files, so a `mise.toml` that merely lives below a
-    // directory called `tasks` keeps its own directory as the root.
-    let is_project_config = is_config_filename(filename)
-        || (filename.starts_with("mise") || filename.starts_with(".mise"))
-            && filename.ends_with(".toml");
+    // to the same project as one directly in the task directory. Files that
+    // are project configs rather than tasks (`mise.toml`, `.tool-versions`,
+    // idiomatic version files) keep their own directory as the root, so a
+    // project that merely lives below a directory called `tasks` is not folded
+    // into the outer one. A `config.toml` here is a task include, not a
+    // project config: the project-config spelling is handled above.
+    let is_project_config = filename.starts_with('.')
+        || (filename.starts_with("mise") && filename.ends_with(".toml"))
+        || matches!(
+            filename,
+            "package.json"
+                | "go.mod"
+                | "Gemfile"
+                | "Pipfile"
+                | "pyproject.toml"
+                | "rust-toolchain.toml"
+                | "global.json"
+                | "deno.json"
+                | "deno.jsonc"
+        );
     let nested_task_root = || {
         if is_project_config {
             return None;
@@ -218,7 +232,16 @@ mod tests {
         ] {
             assert_eq!(config_root(Path::new(p)), Path::new("/foo/bar"), "{p}");
         }
-        // A project config below a directory named `tasks` is its own root.
+        // Project configs below a directory named `tasks` are their own root,
+        // while a `config.toml` task include is not.
+        assert_eq!(
+            config_root(Path::new("/foo/mise/tasks/proj/.tool-versions")),
+            Path::new("/foo/mise/tasks/proj")
+        );
+        assert_eq!(
+            config_root(Path::new("/foo/bar/mise-tasks/sub/config.toml")),
+            Path::new("/foo/bar")
+        );
         assert_eq!(
             config_root(Path::new("/foo/mise/tasks/proj/mise.toml")),
             Path::new("/foo/mise/tasks/proj")
