@@ -22,4 +22,8 @@ TOML
 assert_succeed "mise install"
 assert_contains "mise exec -- pnpm --version" "12.15.0"
 # pnpm only prints the warning to a terminal, so run it under a PTY.
-assert_not_contains "script --quiet --command 'mise exec -- pnpm --version' /dev/null 2>&1" "running through Node.js"
+if [[ $(uname) == Darwin ]]; then
+  assert_not_contains "script -q /dev/null mise exec -- pnpm --version 2>&1" "running through Node.js"
+else
+  assert_not_contains "script --quiet --command 'mise exec -- pnpm --version' /dev/null 2>&1" "running through Node.js"
+fi
