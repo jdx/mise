@@ -1163,6 +1163,9 @@ async fn artifact_checksum(
     } else {
         url.to_owned()
     };
+    // Headers resolved for the API asset endpoint (a forge token) are only valid
+    // there; the browser URL was reachable without them.
+    let headers = headers.filter(|_| api_url.is_none_or(|api_url| api_url == url));
     match headers.filter(|headers| !headers.is_empty()) {
         Some(headers) => {
             crate::backend::vfox::download_with_plugin_headers(&url, &path, headers).await?
@@ -2164,5 +2167,26 @@ mod tests {
         // The headers are never persisted.
         let written = toml::to_string(&info).unwrap();
         assert!(!written.contains("secret"), "{written}");
+    }
+
+    #[tokio::test]
+    async fn artifact_checksum_sends_headers_only_to_the_api_asset_url() {
+        let mut server = mockito::Server::new_async().await;
+        let api = server
+            .mock("GET", "/api/asset")
+            .match_header("authorization", "Bearer secret")
+            .with_body("artifact")
+            .create_async()
+            .await;
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("authorization", "Bearer secret".parse().unwrap());
+        let api_url = format!("{}/api/asset", server.url());
+        // The browser URL is the same URL here, so the probe picks the API
+        // endpoint and the token must be sent.
+        let checksum = artifact_checksum(&api_url, Some(&api_url), Some(&headers))
+            .await
+            .unwrap();
+        api.assert_async().await;
+        assert!(checksum.starts_with("sha256:"));
     }
 }
