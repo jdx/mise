@@ -27,6 +27,8 @@ if [[ $(uname) == Darwin ]]; then
 else
   pty_cmd="script --quiet --command 'mise exec -- pnpm --version' /dev/null 2>&1"
 fi
-# The version must print too, so a PTY run that fails outright cannot pass.
-assert_contains "$pty_cmd" "12.15.0"
-assert_not_contains "$pty_cmd" "running through Node.js"
+# Run once and check that output twice: the version must print, so a PTY run that
+# fails outright cannot pass the negative check.
+pty_out="$(quiet_assert_succeed "$pty_cmd")"
+assert_contains_text "$pty_out" "12.15.0"
+assert_not_contains_text "$pty_out" "running through Node.js"
