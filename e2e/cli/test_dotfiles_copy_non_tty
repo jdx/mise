@@ -94,3 +94,13 @@ cat >>~/.config/mise/config.toml <<TOML
 TOML
 assert_fail_contains "mise dot apply --force" "pass --yes"
 assert "cat ~/flat/keep/note" mine
+
+# a whole-file [dotfiles] copy is guarded the same way
+rm -rf ~/flat
+assert_succeed "mise dot apply"
+assert "cat ~/flat" file
+echo edited >~/flat
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/flat" edited
+assert_succeed "mise dot apply --yes"
+assert "cat ~/flat" file
