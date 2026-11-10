@@ -330,9 +330,20 @@ fn list_symlinks_for_dir(
 const GLOBAL_LINK: &str = "global";
 
 /// Whether this process can modify `dir`: it can write there, or it may
-/// elevate (`system_packages.sudo`) to do so.
+/// elevate (`system_packages.sudo`) to do so. The privileged helper only
+/// serves the system installs dir, so other shared dirs never count.
 fn can_modify(dir: &Path) -> bool {
-    writable_by_us(dir) || crate::config::Settings::get().system_packages.sudo
+    #[cfg(unix)]
+    {
+        let settings = crate::config::Settings::get();
+        writable_by_us(dir)
+            || (settings.system_packages.sudo
+                && dir.parent() == Some(settings.system_installs_dir()))
+    }
+    #[cfg(not(unix))]
+    {
+        writable_by_us(dir)
+    }
 }
 
 /// Whether this process can modify `dir` without elevating.
@@ -356,19 +367,21 @@ fn pin_in_dir(
     installs_dir: &Path,
 ) -> Option<PathBuf> {
     let install_path = tv.install_path();
+    // An identity-layout install is one build among possibly several sharing a
+    // version name, so a name here cannot say this dir holds the same build.
+    if crate::install_layout::resolver::dir_name_of(&install_path).is_some() {
+        return None;
+    }
     // A legacy graph install keeps a suffix `tv_pathname` omits, but the
-    // retained path names it, so try that basename first. An identity-layout
-    // path is a hash, never a name in this dir.
-    // A `path:` request names an arbitrary directory, whose basename says
+    // retained path names it, so try that basename first. A `path:` request names an arbitrary directory, whose basename says
     // nothing about this dir's installs.
-    let retained = (crate::install_layout::resolver::dir_name_of(&install_path).is_none()
-        && !matches!(tv.request, ToolRequest::Path { .. }))
-    .then(|| {
-        install_path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-    })
-    .flatten();
+    let retained = (!matches!(tv.request, ToolRequest::Path { .. }))
+        .then(|| {
+            install_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+        })
+        .flatten();
     retained
         .into_iter()
         .chain([tv.tv_pathname()])
