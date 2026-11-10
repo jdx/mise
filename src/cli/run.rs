@@ -1047,7 +1047,10 @@ impl Run {
                     // Get usage spec to check if task has defined args/flags
                     let spec = task.parse_usage_spec_for_display(&config).await?;
 
-                    if has_any_usage_spec(&spec) {
+                    // A spec that only turns help off still controls what `-h` means.
+                    let opts_out_of_help =
+                        spec.disable_help == Some(true) || spec.cmd.disable_help_flag;
+                    if has_any_usage_spec(&spec) || opts_out_of_help {
                         // Whether `-h`/`--help` asks for help is the spec's to say: it may
                         // disable help, declare a flag of its own named `-h`, or take the word
                         // as a flag's value. Otherwise the task runs and gets it as an argument.
