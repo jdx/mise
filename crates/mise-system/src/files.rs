@@ -5385,6 +5385,61 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
     Ok(lines)
 }
 
+/// The copy targets an apply would overwrite with different content that no
+/// history tracks, so neither `mise dot undo` nor a rollback can bring the
+/// edit back. A file mise has no record of counts: it may be the user's.
+fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Vec<String> {
+    let tracked = crate::history::tracked::TrackedSet::from_config(config).ok();
+    let is_tracked = |path: &Path| {
+        tracked
+            .as_ref()
+            .is_some_and(|set| set.entry_for(path).is_some())
+    };
+    let mut out = vec![];
+    for (req, _) in &plan.todo {
+        if req.mode != FileMode::Copy || keeps_existing(req) {
+            continue;
+        }
+        let pairs = if req.source.is_dir() {
+            match walk_source_files(req) {
+                Ok(pairs) => pairs,
+                Err(_) => continue,
+            }
+        } else {
+            vec![(req.source.clone(), req.target.clone())]
+        };
+        for (src, tgt) in pairs {
+            let Ok(meta) = std::fs::symlink_metadata(&tgt) else {
+                continue;
+            };
+            if !meta.is_file() || file_matches(&src, &tgt, &meta) || is_tracked(&tgt) {
+                continue;
+            }
+            out.push(tgt.display_user().to_string());
+        }
+    }
+    out
+}
+
+/// Without a terminal nobody can confirm replacing a copy target that holds
+/// content history cannot restore, so apply fails and names `--yes` instead of
+/// discarding it silently.
+fn refuse_unattended_overwrite(config: &Config, plan: &ApplyPlan<'_>) -> Result<()> {
+    let targets = unrecoverable_overwrites(config, plan);
+    if targets.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "files: applying would overwrite {} and nothing keeps the current content, but there was nobody to ask; run `mise dot diff` to review it, then pass --yes to proceed non-interactively",
+        targets.iter().take(5).join(", ")
+            + &if targets.len() > 5 {
+                format!(" and {} more", targets.len() - 5)
+            } else {
+                String::new()
+            }
+    )
+}
+
 /// Something sits at `dir` that is not a directory, a dangling symlink
 /// included, so nothing can be created below it.
 fn is_blocking_dir(dir: &Path) -> bool {
@@ -5472,6 +5527,9 @@ fn execute_layer(
         if req.mode == FileMode::Template && rendered.is_some() {
             warn_if_template_target_edited(req);
         }
+    }
+    if !opts.yes && !console::user_attended_stderr() {
+        refuse_unattended_overwrite(config, &plan)?;
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = plan

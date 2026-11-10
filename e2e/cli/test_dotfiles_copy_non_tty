@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Without a terminal, apply cannot ask before replacing an edited copy target
+# that no history keeps, so it fails and names --yes. e2e runs with stderr
+# and stdin detached from any tty.
+export MISE_YES=0
+
+mkdir -p src/sys
+echo original >src/sys/x.conf
+mkdir -p ~/.config/mise
+cat >~/.config/mise/config.toml <<TOML
+[settings]
+dotfiles.root = "$PWD/src"
+
+[dotfile_groups.sys]
+root = "sys"
+target = "$HOME/dst"
+mode = "copy"
+TOML
+
+# nothing to overwrite: applies without asking
+assert_succeed "mise dot apply"
+assert "cat ~/dst/x.conf" original
+
+# a copy that already matches is untouched
+assert_succeed "mise dot apply"
+
+# an edited copy is not replaced silently
+echo "local edit" >>~/dst/x.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/dst/x.conf" "original
+local edit"
+
+# a file mise never wrote is protected too
+echo "mine" >~/dst/x.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/dst/x.conf" mine
+
+# --yes replaces it
+assert_succeed "mise dot apply --yes"
+assert "cat ~/dst/x.conf" original
