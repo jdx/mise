@@ -5928,6 +5928,12 @@ async fn load_local_tasks_with_context(
                     let configs = configs_at_root(&subdir, &hierarchy_configs);
                     let cascaded_task_config =
                         cascaded_task_config_for_dir(&subdir, &hierarchy_configs)?;
+                    let templates = with_project_templates(
+                        &templates,
+                        &subdir,
+                        &hierarchy_configs,
+                        &config.config_files,
+                    );
 
                     if found_config {
                         if configs.is_empty() {
@@ -5976,6 +5982,43 @@ async fn load_local_tasks_with_context(
     }
 
     Ok(tasks)
+}
+
+/// Layer the templates a monorepo project's own config files define over `base`.
+///
+/// `base` holds the templates of the configs loaded for the current directory, which may
+/// not include a sibling project's. Without this, a task in `/foo` that extends a template
+/// defined in `/foo/mise.toml` fails to resolve when mise runs from `/bar`.
+fn with_project_templates(
+    base: &TaskDefinitions,
+    project_dir: &Path,
+    project_configs: &ConfigMap,
+    loaded_configs: &ConfigMap,
+) -> TaskDefinitions {
+    // Highest precedence first, as `collect_task_definitions` expects: the project's own
+    // directory, then each ancestor up to the monorepo root.
+    let mut ordered = ConfigMap::new();
+    for dir in project_dir.ancestors() {
+        for cf in configs_at_root(dir, project_configs) {
+            ordered
+                .entry(cf.get_path().to_path_buf())
+                .or_insert_with(|| cf.clone());
+        }
+    }
+    let mut definitions = base.clone();
+    definitions
+        .templates
+        .extend(collect_task_definitions(&ordered, None).templates);
+    // Global override files outrank all project config, so they keep the final say.
+    let overrides = loaded_configs
+        .iter()
+        .filter(|(path, _)| is_override_config(path))
+        .map(|(path, cf)| (path.clone(), cf.clone()))
+        .collect::<ConfigMap>();
+    definitions
+        .templates
+        .extend(collect_task_definitions(&overrides, None).templates);
+    definitions
 }
 
 /// Expand [monorepo].config_roots patterns to actual directories.
