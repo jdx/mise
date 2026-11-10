@@ -1,5 +1,51 @@
 # Changelog
 
+## [2026.11.6](https://github.com/jdx/mise/releases/tag/v2026.11.6) - 2026-11-10
+
+### 🚀 Features
+
+- **(bootstrap)** add soft_resource_limits and hard_resource_limits to launchd agents by @jdx in [#15509](https://github.com/jdx/mise/pull/15509)
+- **(bootstrap)** pick one package manager for unprefixed bootstrap.packages keys by @jdx in [#15506](https://github.com/jdx/mise/pull/15506)
+- **(daemons)** add named ports to custom daemons by @jdx in [#15504](https://github.com/jdx/mise/pull/15504)
+- **(dot)** add history.lock_wait to wait longer for a running history operation by @jdx in [#15498](https://github.com/jdx/mise/pull/15498)
+- **(npm)** install from an https tarball URL such as a pkg.pr.new preview by @jdx in [#15461](https://github.com/jdx/mise/pull/15461)
+- **(task)** add mise run --multi to pick several tasks from a menu by @jdx in [#15503](https://github.com/jdx/mise/pull/15503)
+- **(upgrade)** show progress while checking tracked configs by @jdx in [#15489](https://github.com/jdx/mise/pull/15489)
+
+### 🐛 Bug Fixes
+
+- **(activate)** complete mise subcommands in Nushell when activation is on by @jdx in [#15505](https://github.com/jdx/mise/pull/15505)
+- **(backend)** find the dated rust install when checking cargo install dependencies by @jdx in [#15460](https://github.com/jdx/mise/pull/15460)
+- **(backend)** install tools without command wrappers on PATH by @jdx in [#15495](https://github.com/jdx/mise/pull/15495)
+- **(brew)** accept zap :not_required in tap cask metadata by @jdx in [#15491](https://github.com/jdx/mise/pull/15491)
+- **(core)** include the cutoff's own day for date-only release ages on rust channels by @jdx in [#15486](https://github.com/jdx/mise/pull/15486)
+- **(env)** quote values in `mise env --dotenv` so they read back unchanged by @jdx in [#15490](https://github.com/jdx/mise/pull/15490)
+- **(env)** stop an undefined env field from listing every environment variable name by @jdx in [#15510](https://github.com/jdx/mise/pull/15510)
+- **(github)** fall back to the API asset endpoint after one probe retry on 5xx by @jdx in [#15485](https://github.com/jdx/mise/pull/15485)
+- **(http)** keep staging directory names under NAME_MAX for long cache keys by @jdx in [#15493](https://github.com/jdx/mise/pull/15493)
+- **(install)** clean up after a failed install by @jdx in [#15511](https://github.com/jdx/mise/pull/15511)
+- **(packslip)** find releases past unrelated ones in busy monorepos by @jdx in [#15501](https://github.com/jdx/mise/pull/15501)
+- **(task)** keep other tasks working when one TOML task's usage fails to load by @jdx in [#15465](https://github.com/jdx/mise/pull/15465)
+- **(task)** make MISE_ORIGINAL_CWD the directory mise was started in by @jdx in [#15464](https://github.com/jdx/mise/pull/15464)
+- **(ui)** keep prompt options readable on light terminals by @jdx in [#15494](https://github.com/jdx/mise/pull/15494)
+- **(ui)** keep demand's bright base16 colors bright by @jdx in [#15524](https://github.com/jdx/mise/pull/15524)
+
+### ⚡ Performance
+
+- **(task)** skip directories that no source or output can come from by @jdx in [#15499](https://github.com/jdx/mise/pull/15499)
+- **(task)** avoid repeated realpath calls resolving the task config cascade by @jdx in [#15512](https://github.com/jdx/mise/pull/15512)
+
+### 📦️ Dependency Updates
+
+- update rmcp to 3.9.0 for RUSTSEC-2026-0462 by @jdx in [#15492](https://github.com/jdx/mise/pull/15492)
+- update rust crate demand to v2.4.2 by @renovate[bot] in [#15516](https://github.com/jdx/mise/pull/15516)
+- update aube to v2.10.0 by @renovate[bot] in [#15530](https://github.com/jdx/mise/pull/15530)
+- lock file maintenance by @renovate[bot] in [#15538](https://github.com/jdx/mise/pull/15538)
+- update docker images by @renovate[bot] in [#15534](https://github.com/jdx/mise/pull/15534)
+- update rattler by @renovate[bot] in [#15535](https://github.com/jdx/mise/pull/15535)
+- update github actions by @renovate[bot] in [#15536](https://github.com/jdx/mise/pull/15536)
+- lock file maintenance by @renovate[bot] in [#15539](https://github.com/jdx/mise/pull/15539)
+
 ## [2026.11.5](https://github.com/jdx/mise/releases/tag/v2026.11.5) - 2026-11-08
 
 ### 🚀 Features
