@@ -1313,7 +1313,20 @@ impl Backend for UnifiedGitBackend {
                     });
                 }
 
+                // `mise lock` downloads the asset to hash it when the release has no
+                // digest. A private repository's API asset endpoint needs the same
+                // token the install download sends.
+                let download_headers = if asset.url_api.is_empty() {
+                    None
+                } else if self.is_gitlab() {
+                    gitlab::get_headers(&asset.url_api, &opts.api_url())?.into()
+                } else if self.is_forgejo() {
+                    forgejo::get_headers(&asset.url_api, &opts.api_url())?.into()
+                } else {
+                    github::get_headers(&asset.url_api, &opts.api_url())?.into()
+                };
                 Ok(PlatformInfo {
+                    download_headers,
                     checksum_source: locked_digest_source(&asset, primary_downloaded),
                     url: Some(asset.url),
                     url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
