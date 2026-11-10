@@ -143,7 +143,17 @@ fn package_manager_checksum_backend(
             "npm:bun"
         }
         "npm" => "npm:npm",
-        "pnpm" => "npm:pnpm",
+        "pnpm" => {
+            // pnpm 12 installs its native binary from an install script; without it
+            // pnpm falls back to Node.js and warns on every run. A per-package
+            // `["pnpm"]` approval is ignored for the archive a checksum installs
+            // from, so approve all builds; pnpm's only dependencies are its
+            // platform binaries.
+            options
+                .opts
+                .insert("allow_builds".to_string(), toml::Value::Boolean(true));
+            "npm:pnpm"
+        }
         "yarn" => {
             let version = semver::Version::parse(version).map_err(|error| {
                 eyre!("packageManager checksum requires an exact Yarn version: {error}")
@@ -384,7 +394,7 @@ mod tests {
             // tool's explicit choice, so later requests follow the registry.
             assert!(backend.has_explicit_backend());
             assert!(!backend.records_explicit_backend());
-            if tool == "bun" {
+            if tool == "bun" || tool == "pnpm" {
                 assert_eq!(
                     options.opts.get("allow_builds"),
                     Some(&toml::Value::Boolean(true))

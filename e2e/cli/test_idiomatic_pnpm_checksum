@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Regression for #15529: a packageManager checksum installs pnpm through the
+# npm backend, which skips lifecycle scripts. pnpm 12 installs its native binary
+# in a script, so without approving it pnpm warns that it runs through Node.js.
+
+cat >package.json <<'JSON'
+{
+  "private": true,
+  "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61"
+}
+JSON
+
+cat >mise.toml <<'TOML'
+[settings]
+idiomatic_version_file_enable_tools = ["pnpm"]
+
+[tools]
+node = "24"
+TOML
+
+assert_succeed "mise install"
+assert_contains "mise exec -- pnpm --version" "12.15.0"
+# pnpm only prints the warning to a terminal, so run it under a PTY.
+if [[ $(uname) == Darwin ]]; then
+  pty_cmd="script -q /dev/null mise exec -- pnpm --version 2>&1"
+else
+  pty_cmd="script -qec 'mise exec -- pnpm --version' /dev/null 2>&1"
+fi
+# Run once and check that output twice: the version must print, so a PTY run that
+# fails outright cannot pass the negative check.
+pty_out="$(quiet_assert_succeed "$pty_cmd")"
+assert_contains_text "$pty_out" "12.15.0"
+assert_not_contains_text "$pty_out" "running through Node.js"
