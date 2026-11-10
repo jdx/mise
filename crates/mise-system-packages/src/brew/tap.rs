@@ -107,6 +107,9 @@ async fn evaluate_formula(
     let mut sandbox = metadata_sandbox()?;
     if let Some(checkout) = &checkout {
         sandbox.allow_read.push(checkout.clone());
+        // Seatbelt matches real paths, so a cache reached through a symlink
+        // has to be allowed by the path it resolves to.
+        sandbox.resolve_paths(&[])?;
     }
     let mut runner = CmdLineRunner::new(&ruby)
         .arg("--disable-gems")
@@ -466,25 +469,38 @@ pub(super) async fn tap_checkout(
     if dest.is_dir() {
         return Ok(dest);
     }
-    let archive = cache.join(format!("{owner}-{repo}-{commit}.tar.gz"));
-    let url = format!("https://github.com/{owner}/{repo}/archive/{commit}.tar.gz");
+    // Each caller works in its own paths: formulae from one tap are evaluated
+    // concurrently, and a shared archive or staging directory would be deleted
+    // or half-written under another caller.
+    let unique = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or_default()
+    );
+    let archive = cache.join(format!("{owner}-{repo}-{commit}.{unique}.tar.gz"));
+    // The API host is the one mise sends the GitHub token to, so a private tap
+    // downloads like its tree and formula files do.
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/tarball/{commit}");
     HTTP_FETCH
         .download_file(&url, &archive, pr)
         .await
         .wrap_err_with(|| format!("failed to download tap {owner}/{repo}"))?;
     // Extracted beside the destination and renamed into place, so an
     // interrupted run never leaves a partial checkout that reads as complete.
-    let staging = cache.join(format!("{owner}-{repo}-{commit}.partial"));
-    if staging.exists() {
-        file::remove_all(&staging)?;
-    }
+    let staging = cache.join(format!("{owner}-{repo}-{commit}.{unique}.partial"));
     file::create_dir_all(&staging)?;
     let opts = ExtractOptions {
         strip_components: 1,
         ..Default::default()
     };
-    file::extract_archive(&archive, &staging, ExtractionFormat::TarGz, &opts)
-        .wrap_err_with(|| format!("failed to extract tap {owner}/{repo}"))?;
+    if let Err(err) = file::extract_archive(&archive, &staging, ExtractionFormat::TarGz, &opts) {
+        let _ = file::remove_all(&staging);
+        let _ = file::remove_all(&archive);
+        return Err(err).wrap_err_with(|| format!("failed to extract tap {owner}/{repo}"));
+    }
     if let Err(err) = std::fs::rename(&staging, &dest) {
         // Another process may have finished the same checkout first.
         if !dest.is_dir() {
