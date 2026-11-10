@@ -57,6 +57,28 @@ impl PortClaim {
     }
 }
 
+/// The key a daemon's named port is recorded under in `state.json`: the daemon
+/// and the port's name, joined by a `/` a daemon name cannot contain. The
+/// primary `port` stays under the bare daemon name.
+pub(crate) fn named_claim_key(daemon: &str, port: &str) -> String {
+    format!("{daemon}/{port}")
+}
+
+/// The daemon a recorded claim belongs to, whether it is the primary `port` or
+/// one of its named ports.
+pub(crate) fn claim_daemon(key: &str) -> &str {
+    key.split_once('/').map_or(key, |(daemon, _)| daemon)
+}
+
+/// How a recorded claim reads in a message: the daemon alone for its primary
+/// `port`, `daemon (ports.name)` for a named one.
+pub(crate) fn describe_claim(key: &str) -> String {
+    match key.split_once('/') {
+        Some((daemon, port)) => format!("{daemon} (ports.{port})"),
+        None => key.to_string(),
+    }
+}
+
 /// Parse the `port` value of a daemon declaration.
 pub fn parse(name: &str, value: toml::Value) -> Result<PortRequest> {
     match value {
