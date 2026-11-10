@@ -567,8 +567,7 @@ impl Exec {
         // command must not be reinterpreted as a shell body.
         // `_.path` directories the caller's PATH may already hold. They stay ahead of
         // the tool bins when `exec_program` resolves the program.
-        let mut configured_paths = config.path_dirs().await?.clone();
-        configured_paths.extend(config.path_dirs_append().await?.iter().cloned());
+        let configured_paths = config.path_dirs().await?.clone();
         exec_program(
             program,
             args,
@@ -697,20 +696,15 @@ async fn warn_if_command_falls_back(
             return Ok(vec![]);
         }
     }
-    // A `_.path` entry that the inherited PATH lacks is searched ahead of every tool path, so it
-    // supplies the command whether or not the tool is installed. An inherited entry is searched
-    // after the tool paths, as in `exec_program`. Entries declared with `tools = true` resolve
-    // only with the full tool environment and are not consulted here.
+    // A `_.path` entry is searched ahead of every tool path, even when the inherited PATH already
+    // has it, so it supplies the command whether or not the tool is installed. Entries declared
+    // with `tools = true` resolve only with the full tool environment and are not consulted here.
     let path_dirs = config
         .path_dirs()
         .await?
         .iter()
         .filter(|dir| {
-            !env::PATH
-                .iter()
-                .any(|inherited| crate::file::paths_eq(inherited, dir))
-                && !crate::file::is_mise_shims_dir(dir)
-                && !crate::file::is_command_wrapper_dir(dir)
+            !crate::file::is_mise_shims_dir(dir) && !crate::file::is_command_wrapper_dir(dir)
         })
         .collect_vec();
     if !path_dirs.is_empty()
@@ -771,7 +765,8 @@ impl Drop for ScrubOnDrop<'_> {
 pub(crate) struct ExecExtras<'a> {
     /// Variable names to take back out of mise's own environment when the exec fails.
     pub scrub_on_failure: &'a [String],
-    /// `_.path` directories from the config. The caller's PATH may already hold them, but they
+    /// `_.path` directories from the config (not the `position = "append"` ones, which rank with the
+    /// tool paths). The caller's PATH may already hold them, but they
     /// still rank as mise-added when the program is resolved.
     pub configured_paths: &'a [std::path::PathBuf],
 }
@@ -1032,15 +1027,18 @@ where
     // Reorder PATH for program resolution: mise-added paths first, then
     // original system paths (minus shims). See Unix version for full rationale.
     let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+        let normalize = |p: &std::path::Path| {
+            crate::file::replace_path(p)
+                .to_string_lossy()
+                .to_lowercase()
+                .replace('/', "\\")
+        };
+        let configured: std::collections::HashSet<_> =
+            configured_paths.iter().map(|p| normalize(p)).collect();
         let pristine: std::collections::HashSet<_> = crate::env::PATH
             .iter()
-            .filter(|p| !configured_paths.contains(p))
-            .map(|p| {
-                crate::file::replace_path(p)
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .replace('/', "\\")
-            })
+            .map(|p| normalize(p))
+            .filter(|p| !configured.contains(p))
             .collect();
         let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
         let wrappers: Vec<_> = all_paths
