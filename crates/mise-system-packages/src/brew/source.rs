@@ -211,6 +211,16 @@ async fn fetch_formula_rb(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result
         return Ok(downloaded);
     }
     let checkout = super::tap::tap_checkout(raw_base, commit, Some(pr)).await?;
+    // `rb_path` comes from the tap's metadata, so keep it inside the checkout.
+    if Path::new(rb_path)
+        .components()
+        .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        bail!(
+            "{}: formula source path '{rb_path}' is not a relative path inside its tap",
+            rf.formula.name
+        );
+    }
     let in_tap = checkout.join(rb_path);
     mise_util::hash::ensure_checksum(&in_tap, sha256, Some(pr), "sha256")?;
     Ok(in_tap)
