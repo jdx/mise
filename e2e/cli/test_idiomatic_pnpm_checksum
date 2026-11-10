@@ -25,7 +25,7 @@ assert_contains "mise exec -- pnpm --version" "12.15.0"
 if [[ $(uname) == Darwin ]]; then
   pty_cmd="script -q /dev/null mise exec -- pnpm --version 2>&1"
 else
-  pty_cmd="script --quiet --command 'mise exec -- pnpm --version' /dev/null 2>&1"
+  pty_cmd="script -qec 'mise exec -- pnpm --version' /dev/null 2>&1"
 fi
 # Run once and check that output twice: the version must print, so a PTY run that
 # fails outright cannot pass the negative check.
