@@ -5434,9 +5434,10 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
                 // a mode-only difference is a repair, not a lost edit
                 !matches!((std::fs::read(&tgt), std::fs::read(&src)), (Ok(a), Ok(b)) if a == b)
             } else {
-                // `--force` removes a directory where the file belongs, with
-                // everything in it
-                meta.is_dir()
+                // `--force` removes a directory where a file copy belongs,
+                // with everything in it; inside a directory copy it is a
+                // conflict that stops the apply instead
+                meta.is_dir() && !req.source.is_dir()
             };
             if replaced && !is_tracked(&tgt)? {
                 out.push(tgt.display_user().to_string());
