@@ -281,12 +281,10 @@ fn list_symlinks_for_dir(
     if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
         let shared = installs_dir != backend.ba().installs_path();
         // A shared dir this process can neither write nor elevate for cannot
-        // take a new target: retargeting would only fail the install.
+        // take a new target or a new link: writing would only fail the install.
         let frozen = shared && !can_modify(installs_dir);
         let to = match global {
-            _ if frozen && runtime_symlink_target(&global_link).is_some() => {
-                runtime_symlink_target(&global_link)
-            }
+            _ if frozen => runtime_symlink_target(&global_link),
             Some(global) => {
                 let selected = global
                     .list_current_versions()
