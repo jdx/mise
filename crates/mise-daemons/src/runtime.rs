@@ -54,6 +54,27 @@ fn port_is_taken(port: u16) -> bool {
             .is_err_and(|err| err.kind() == std::io::ErrorKind::AddrInUse)
 }
 
+/// The claim key for one of a daemon's named ports. The primary port is keyed
+/// by the daemon's bare name, so a named port needs a separator no daemon name
+/// holds, and every consumer of the claims goes through [`claim_owner`] and
+/// [`claim_label`] instead of splitting it again.
+fn named_claim_key(daemon: &str, port: &str) -> String {
+    format!("{daemon}:{port}")
+}
+
+/// The daemon a claim belongs to.
+fn claim_owner(key: &str) -> &str {
+    key.split_once(':').map_or(key, |(daemon, _)| daemon)
+}
+
+/// A claim as a message names it: `stack`, or `stack (ports.app)`.
+fn claim_label(key: &str) -> String {
+    match key.split_once(':') {
+        Some((daemon, port)) => format!("{daemon} (ports.{port})"),
+        None => key.to_string(),
+    }
+}
+
 /// Where an automatic port came from, for a message about it being in use.
 fn port_origin(claim: &PortClaim) -> &'static str {
     if claim.port == claim.base {
@@ -264,14 +285,19 @@ fn carry_port_claims(
 ) -> BTreeMap<String, PortClaim> {
     let mut ports: BTreeMap<String, PortClaim> = previous
         .iter()
-        .filter(|(name, _)| !set.daemons.contains_key(*name))
+        .filter(|(name, _)| !set.daemons.contains_key(claim_owner(name)))
         .map(|(name, claim)| (name.clone(), *claim))
         .collect();
-    ports.extend(
-        set.daemons
-            .values()
-            .filter_map(|d| d.port.map(|claim| (d.name.clone(), claim))),
-    );
+    for d in set.daemons.values() {
+        ports.extend(d.port.map(|claim| (d.name.clone(), claim)));
+        // A daemon declared with only `ports.*` has no primary port, and its
+        // named ports bind just the same, so they are claimed like it.
+        ports.extend(
+            d.named_ports
+                .iter()
+                .map(|(key, claim)| (named_claim_key(&d.name, key), *claim)),
+        );
+    }
     ports
 }
 
@@ -285,7 +311,7 @@ fn ports_being_started(
 ) -> BTreeMap<String, PortClaim> {
     ports
         .iter()
-        .filter(|(name, _)| starting.iter().any(|s| s == *name))
+        .filter(|(name, _)| starting.iter().any(|s| s == claim_owner(name)))
         .map(|(name, claim)| (name.clone(), *claim))
         .collect()
 }
@@ -488,9 +514,9 @@ impl Runtime {
             let id = other
                 .ids
                 .iter()
-                .find(|id| id.rsplit('/').next() == Some(other_name.as_str()))
+                .find(|id| id.rsplit('/').next() == Some(claim_owner(&other_name)))
                 .cloned()
-                .unwrap_or_else(|| format!("{}/{other_name}", other.namespace));
+                .unwrap_or_else(|| format!("{}/{}", other.namespace, claim_owner(&other_name)));
             let serving = self
                 .status(&other.root, &id)
                 .await
@@ -503,8 +529,10 @@ impl Runtime {
                 continue;
             }
             bail!(
-                "daemon {name} would use port {port}, in use by {other_name} running in {}. \
+                "daemon {} would use port {port}, in use by {} running in {}. \
                  Stop it, or {PIN_A_PORT}",
+                claim_label(name),
+                claim_label(&other_name),
                 other.root.display()
             );
         }
@@ -792,7 +820,8 @@ impl Runtime {
         if result.is_err() {
             for (name, claim) in self.taken_auto_ports(root, ids, ports).await {
                 warn!(
-                    "[daemons] {name} did not start and its automatically allocated port {} ({}) is in use by another process. To move it, {PIN_A_PORT}",
+                    "[daemons] {} did not start and its automatically allocated port {} ({}) is in use by another process. To move it, {PIN_A_PORT}",
+                    claim_label(&name),
                     claim.port,
                     port_origin(&claim)
                 );
@@ -812,10 +841,13 @@ impl Runtime {
         let mut taken = Vec::new();
         for id in ids {
             let name = id.rsplit('/').next().unwrap_or(id);
-            let Some(claim) = ports.get(name).filter(|claim| claim.is_auto()) else {
-                continue;
-            };
-            if !port_is_taken(claim.port) {
+            let busy: Vec<_> = ports
+                .iter()
+                .filter(|(key, claim)| {
+                    claim_owner(key) == name && claim.is_auto() && port_is_taken(claim.port)
+                })
+                .collect();
+            if busy.is_empty() {
                 continue;
             }
             // A daemon that is up holds its own port, and a sibling's failure
@@ -827,7 +859,7 @@ impl Runtime {
                 )
             });
             if !running {
-                taken.push((name.to_string(), *claim));
+                taken.extend(busy.into_iter().map(|(key, claim)| (key.clone(), *claim)));
             }
         }
         taken
@@ -1731,6 +1763,56 @@ cmd config help="Attach externally generated configuration to a project." {
         let dropped = carry_port_claims(&previous, &set(vec![bare]));
         assert!(!dropped.contains_key("redis"));
         assert_eq!(dropped["postgres"].port, 5432);
+    }
+
+    #[test]
+    fn named_ports_are_claimed_under_their_daemon() {
+        let stack = super::super::Daemon {
+            name: "stack".to_string(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::new(),
+            preset: None,
+            data_dir: None,
+            task: None,
+            tool: None,
+            provider: None,
+            exports: Default::default(),
+            port: None,
+            named_ports: [("app".to_string(), PortClaim::fixed(5174))].into(),
+            imported: false,
+            host: None,
+        };
+        let set = |daemons: Vec<super::super::Daemon>| DaemonSet {
+            daemons: daemons.into_iter().map(|d| (d.name.clone(), d)).collect(),
+            ..Default::default()
+        };
+
+        // A daemon with only `ports.*` still claims them.
+        let claims = carry_port_claims(&BTreeMap::new(), &set(vec![stack.clone()]));
+        assert_eq!(claims["stack:app"].port, 5174);
+
+        // A removed daemon keeps its named claims, a redeclared one drops a
+        // named port it no longer has.
+        let previous = BTreeMap::from([
+            ("old:db".to_string(), PortClaim::fixed(5432)),
+            ("stack:gone".to_string(), PortClaim::fixed(9999)),
+        ]);
+        let claims = carry_port_claims(&previous, &set(vec![stack]));
+        assert_eq!(claims["old:db"].port, 5432);
+        assert!(!claims.contains_key("stack:gone"));
+
+        // Starting the daemon checks its named ports; starting another does not.
+        let names = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            ports_being_started(&claims, &names(&["stack"]))
+                .keys()
+                .collect::<Vec<_>>(),
+            ["stack:app"]
+        );
+        assert!(ports_being_started(&claims, &names(&["web"])).is_empty());
+        assert_eq!(claim_label("stack:app"), "stack (ports.app)");
+        assert_eq!(claim_label("stack"), "stack");
     }
 
     #[test]

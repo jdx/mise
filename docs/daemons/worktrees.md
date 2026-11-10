@@ -153,9 +153,11 @@ existing configuration is unaffected.
 
 When mise loads the config it rejects an allocated named port that resolves to
 a port another daemon in the same project uses, or that runs past 65535 in a
-worktree. That check covers one project in one checkout. mise does not compare
-ports across worktrees or projects, so ranges that overlap can still collide
-there: slots run up to 511 times the `stride`, so one daemon's `27000` in a
+worktree. That check covers one project in one checkout. mise does not search
+for a free port across worktrees or projects, so ranges that overlap can still
+collide there. A start then fails with an error naming the other checkout when
+one of its daemons is running on the port (see [Port conflicts](#port-conflicts)).
+Slots run up to 511 times the `stride`, so one daemon's `27000` in a
 worktree can equal another daemon's `27000 + n` in a different checkout. Give
 each daemon, and each named port, a `base` at least 512 ports (more with a larger
 `stride`) away from the others.
@@ -308,7 +310,8 @@ port = { auto = true, base = 5500 }
 
 Automatic ports come from paths, so different projects can get the same port.
 When another mise project has a running daemon on that port, the start fails
-with an error that names the daemon and its project root. Change one project's
+with an error that names the daemon and its project root. This covers a daemon's
+named ports too, which the error names as `stack (ports.app)`. Change one project's
 `base`, or stop the other daemon, and start again.
 
 Stopped daemons do not hold their ports. The check covers only the daemons
