@@ -468,7 +468,7 @@ fn homebrew_version_ignores_mise_working_directories() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
-    file::create_dir_all(token_dir.join(".metadata"))?;
+    file::create_dir_all(token_dir.join(".metadata/1.0.0"))?;
     file::create_dir_all(token_dir.join("1.0.0"))?;
     file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
     file::create_dir_all(token_dir.join(".mise-backup-interrupted"))?;
@@ -487,7 +487,7 @@ fn rejects_non_utf8_homebrew_version_name() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
-    file::create_dir_all(token_dir.join(".metadata"))?;
+    file::create_dir_all(token_dir.join(".metadata/1.0.0"))?;
     file::create_dir_all(token_dir.join("1.0.0"))?;
     file::create_dir_all(token_dir.join(Path::new(std::ffi::OsStr::from_bytes(b"\xff"))))?;
 
@@ -567,7 +567,8 @@ fn rejects_homebrew_metadata_with_multiple_versions() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
-    file::create_dir_all(token_dir.join(".metadata"))?;
+    file::create_dir_all(token_dir.join(".metadata/2.0.0"))?;
+    file::create_dir_all(token_dir.join(".metadata/1.0.0"))?;
     file::create_dir_all(token_dir.join("2.0.0"))?;
     file::create_dir_all(token_dir.join("1.0.0"))?;
 
@@ -581,12 +582,30 @@ fn rejects_homebrew_metadata_with_multiple_versions() -> Result<()> {
 }
 
 #[test]
+fn homebrew_version_ignores_directories_without_a_metadata_record() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    // miniconda installs its conda root to `Caskroom/miniconda/base`.
+    let token_dir = caskroom_token_dir(CaskManager::BrewCask, "miniconda");
+    file::create_dir_all(token_dir.join(".metadata/py312_25.1.1-2"))?;
+    file::create_dir_all(token_dir.join("py312_25.1.1-2"))?;
+    file::create_dir_all(token_dir.join("base"))?;
+
+    assert_eq!(
+        homebrew_installed_version("miniconda")?,
+        Some("py312_25.1.1-2".to_string())
+    );
+    Ok(())
+}
+
+#[test]
 fn externally_managed_version_precedes_artifact_parsing() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
-    file::create_dir_all(token_dir.join(".metadata"))?;
+    file::create_dir_all(token_dir.join(".metadata/1.0.0"))?;
     file::create_dir_all(token_dir.join("1.0.0"))?;
     let mut cask = test_cask("example", "1.0.0");
     cask.artifacts = vec![serde_json::json!({
@@ -620,6 +639,7 @@ fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
         caskroom_token_dir(CaskManager::BrewCask, &cask.token).join(".metadata/receipt.json");
     file::create_dir_all(metadata.parent().unwrap())?;
     file::write(&metadata, "homebrew")?;
+    file::create_dir_all(metadata.parent().unwrap().join(&cask.version))?;
     let mise_receipt = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version)
         .join(".mise-cask.toml");
     let receipt_before = file::read_to_string(&mise_receipt)?;
@@ -644,6 +664,7 @@ fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
         &cask.token,
         "2.0.0",
     ))?;
+    file::create_dir_all(metadata.parent().unwrap().join("2.0.0"))?;
     let error = package_state(&request, &cask).unwrap_err();
     assert!(error.to_string().contains("multiple Caskroom versions"));
     assert_eq!(file::read_to_string(&mise_receipt)?, receipt_before);
@@ -10505,7 +10526,7 @@ fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
 
     // Homebrew owns a cask called "nuvio" in its Caskroom.
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "nuvio");
-    file::create_dir_all(token_dir.join(".metadata"))?;
+    file::create_dir_all(token_dir.join(".metadata/9.9.9"))?;
     file::create_dir_all(token_dir.join("9.9.9"))?;
 
     let spec = crate::options::AppSpec {
