@@ -1016,8 +1016,10 @@ impl Run {
         // Check if --help or -h is in the task args BEFORE toolset/deps
         // NOTE: Only check self.args, not self.args_last, because args_last contains
         // arguments after explicit -- which should always be passed through to the task
-        let has_help_in_task_args =
-            self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
+        // A short bundle such as `-vh` can carry the help letter too, but only a task's usage
+        // spec can say so; without one it is just an argument.
+        let has_help_in_task_args = self.args.iter().any(|a| a == "--help" || a == "-h")
+            || self.args.iter().any(|a| word_may_bundle_help(a));
 
         let mut config = Config::get().await?;
 
@@ -1046,13 +1048,18 @@ impl Run {
                     let spec = task.parse_usage_spec_for_display(&config).await?;
 
                     if has_any_usage_spec(&spec) {
-                        // Task has usage spec defined, render help using usage library
-                        miseprintln!("{}", render_usage_help(&spec, &self.args));
-                    } else {
+                        // Whether `-h`/`--help` asks for help is the spec's to say: it may
+                        // disable help, declare a flag of its own named `-h`, or take the word
+                        // as a flag's value. Otherwise the task runs and gets it as an argument.
+                        if asks_for_help(&spec, &task.name, &self.args) {
+                            miseprintln!("{}", render_usage_help(&spec, &self.args));
+                            return Ok(());
+                        }
+                    } else if self.args.iter().any(|a| a == "--help" || a == "-h") {
                         // Task has no usage defined, show basic task info
                         display_task_help(task)?;
+                        return Ok(());
                     }
-                    return Ok(());
                 }
             } else {
                 // No task found, show run command help
@@ -2370,6 +2377,34 @@ fn display_task_help(task: &Task) -> Result<()> {
     miseprintln!("{hint}");
     miseprintln!("See https://mise.jdx.dev/tasks/task-configuration.html for more information.");
     Ok(())
+}
+
+/// Whether a word could be a short-flag bundle that includes the help letter, such as `-vh`.
+fn word_may_bundle_help(word: &str) -> bool {
+    word.starts_with('-') && !word.starts_with("--") && word.contains('h')
+}
+
+/// Whether the task's usage spec takes `-h`/`--help` in `args` as a request for help.
+///
+/// Asks usage's parser rather than scanning the words, so a spec that disables help, a declared
+/// flag named `-h`, and a flag's value are all kept as the arguments they are. Only the words are
+/// read: no `choices run=` command runs, and environment values and defaults are not checked.
+fn asks_for_help(spec: &usage::Spec, task_name: &str, args: &[String]) -> bool {
+    use usage::parse::{Parser, TokenRole};
+    let argv = once(task_name.to_string())
+        .chain(args.iter().cloned())
+        .collect_vec();
+    let tokens = match Parser::new(spec)
+        .without_running_commands()
+        .explain_refused(&argv)
+    {
+        Ok(out) => out.tokens,
+        Err(tokens) => tokens,
+    };
+    tokens
+        .iter()
+        .flat_map(|token| &token.roles)
+        .any(|role| matches!(role, TokenRole::Builtin { spelling } if spelling == "-h" || spelling == "--help"))
 }
 
 fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# `-h`/`--help` is a help request only where the task's usage spec takes it as one.
+cat <<'TOML' >mise.toml
+[tasks.dh]
+usage = '''
+disable_help #true
+flag "-h --host <host>"
+'''
+run = 'echo "host=$usage_host"'
+
+[tasks.dhf]
+usage = '''
+disable_help_flag #true
+flag "-h --host <host>"
+'''
+run = 'echo "host=$usage_host"'
+
+[tasks.hv]
+usage = 'flag "--pat <pat>" allow_hyphen_values=#true'
+run = 'echo "pat=$usage_pat"'
+
+[tasks.bundle]
+usage = 'flag "-v --verbose"'
+run = 'echo "verbose=$usage_verbose"'
+TOML
+
+assert "mise run -q dh -h x" "host=x"
+assert "mise run -q dh --host x" "host=x"
+assert "mise run -q dhf -h x" "host=x"
+assert "mise run -q hv --pat -h" "pat=-h"
+assert "mise run -q hv --pat --help" "pat=--help"
+
+# Tasks that do not opt out keep printing help.
+assert_contains "mise run hv --help 2>&1" "Usage: hv"
+assert_contains "mise run hv -h 2>&1" "Usage: hv"
+assert_contains "mise run bundle -vh 2>&1" "Usage: bundle"
