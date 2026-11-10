@@ -940,9 +940,9 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "aws-config"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "515fb9175dcf49db2eaa95b7913326d95469172e4ef4bec8b7888b8304c6e655"
+checksum = "16ec023cac0d0c0432e606a2d14f04eb70d09c71a739a406141e7be6b923ab95"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1050,9 +1050,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.158.0"
+version = "1.159.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "453a8913ce5559e09b00138105107a8ac1ae26ffa1e9ac84c9202bd3ede62724"
+checksum = "8d5c431c5db2f1f6f536c2a19425575e28273859c6ab399d9ac957f73678c7db"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -1086,9 +1086,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-sso"
-version = "1.120.0"
+version = "1.121.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b6cbbbd3906e5e5c0898ec30a06d867ced79ff6f9080efcabb2f25fad76f8e3"
+checksum = "d8d414ba8f00c2b4b506893ded67827e63be88b5e6cce71b7c0ac8f96ce09bc5"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -1111,9 +1111,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-ssooidc"
-version = "1.122.0"
+version = "1.123.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "965a652b21ed2d64b9e172e0cde9468b3998f6697636aaac8d0b096b9b93a70a"
+checksum = "db26187b124bcc637641f7963d5200c5ec2409ea5b7730dd7e014ef4e0ab6f19"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -1134,9 +1134,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-sts"
-version = "1.125.0"
+version = "1.126.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89a20505b0fd7a2175475a00591df8ec7f6448b833cf7b2e1d2801b9ab69eb83"
+checksum = "c667da7839295125cfe23280f798c07ba694a9fed191af804edb4bda09ac7f10"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
