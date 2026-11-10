@@ -55,6 +55,8 @@ struct TapSource {
     raw_base: String,
     api_base: String,
     commit: String,
+    /// A checkout of the tap at `commit`, for a formula that reads its files.
+    checkout: Option<PathBuf>,
 }
 
 pub(super) async fn formula_from_ruby(
@@ -65,9 +67,13 @@ pub(super) async fn formula_from_ruby(
     provision_ruby: bool,
 ) -> Result<Formula> {
     validate_name(name)?;
-    let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
+    let mut tap_source = resolve_tap_source(owner, tap, tap_url).await?;
     let (source, source_path) = fetch_formula_source(&tap_source, name).await?;
     let source_url = ruby_source_url(&tap_source.raw_base, &source_path);
+    if needs_tap_checkout(&source) {
+        tap_source.checkout =
+            Some(tap_checkout(&tap_source.raw_base, &tap_source.commit, None).await?);
+    }
     let evaluated = evaluate_formula(
         owner,
         tap,
@@ -95,8 +101,13 @@ async fn evaluate_formula(
     source: String,
     source_path: String,
 ) -> Result<Formula> {
+    let checkout = tap_source.checkout.clone();
     let checksum = mise_util::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
+    let mut sandbox = metadata_sandbox()?;
+    if let Some(checkout) = &checkout {
+        sandbox.allow_read.push(checkout.clone());
+    }
     let mut runner = CmdLineRunner::new(&ruby)
         .arg("--disable-gems")
         .arg("-e")
@@ -113,7 +124,14 @@ async fn evaluate_formula(
             ("MISE_BREW_ARCH", std::env::consts::ARCH.to_string()),
         ])
         .with_timeout(METADATA_TIMEOUT)
-        .with_sandbox(metadata_sandbox()?);
+        .with_sandbox(sandbox);
+    if let Some(checkout) = &checkout {
+        // Loaded by its path in the tap, so a `require_relative` resolves next
+        // to the formula, not against the directory mise runs in.
+        runner = runner
+            .current_dir(checkout)
+            .env("MISE_BREW_SOURCE_FILE", checkout.join(&source_path));
+    }
     runner.apply_sandbox().await?;
     let output = runner
         .read_bounded(METADATA_MAX_OUTPUT_BYTES)
@@ -273,6 +291,7 @@ async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Re
         raw_base: raw_base.trim_end_matches("/HEAD").to_string() + "/" + &commit.sha,
         api_base,
         commit: commit.sha,
+        checkout: None,
     })
 }
 
@@ -406,6 +425,77 @@ fn formula_source_path(directory: &str, tree: &GithubTree, name: &str) -> Option
 }
 
 /// Encode each repository path component without turning directory separators into data.
+/// Whether a formula reads other files from its tap, which only resolve when
+/// it is loaded from a checkout of that tap rather than from its text alone.
+pub(super) fn needs_tap_checkout(source: &str) -> bool {
+    source.contains("require_relative")
+}
+
+/// A checkout of the tap at `commit`, downloaded once and cached. Homebrew
+/// loads a formula by its path inside the tap, so a `require_relative` finds
+/// the tap's own files; mise evaluates and builds from the same layout.
+///
+/// `raw_base` is the tap's `raw.githubusercontent.com` base, as
+/// [`api::tap_raw_base`] returns it.
+pub(super) async fn tap_checkout(
+    raw_base: &str,
+    commit: &str,
+    pr: Option<&dyn mise_ui::progress_report::SingleReport>,
+) -> Result<PathBuf> {
+    use mise_util::file::{self, ExtractOptions, ExtractionFormat};
+
+    if commit.len() != 40 || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("tap commit '{commit}' is not a full commit SHA");
+    }
+    let repository = raw_base
+        .strip_prefix("https://raw.githubusercontent.com/")
+        .and_then(|rest| {
+            // `<owner>/<repo>`, followed by `HEAD` or a commit.
+            let mut parts = rest.split('/');
+            Some((parts.next()?, parts.next()?))
+        })
+        .filter(|(owner, repo)| {
+            [owner, repo]
+                .iter()
+                .all(|part| !part.is_empty() && !part.starts_with('.'))
+        })
+        .ok_or_else(|| eyre::eyre!("only GitHub taps can be checked out: {raw_base}"))?;
+    let (owner, repo) = repository;
+    let cache = mise_util::dirs::CACHE.join("system-brew").join("tap");
+    let dest = cache.join(format!("{owner}-{repo}-{commit}"));
+    if dest.is_dir() {
+        return Ok(dest);
+    }
+    let archive = cache.join(format!("{owner}-{repo}-{commit}.tar.gz"));
+    let url = format!("https://github.com/{owner}/{repo}/archive/{commit}.tar.gz");
+    HTTP_FETCH
+        .download_file(&url, &archive, pr)
+        .await
+        .wrap_err_with(|| format!("failed to download tap {owner}/{repo}"))?;
+    // Extracted beside the destination and renamed into place, so an
+    // interrupted run never leaves a partial checkout that reads as complete.
+    let staging = cache.join(format!("{owner}-{repo}-{commit}.partial"));
+    if staging.exists() {
+        file::remove_all(&staging)?;
+    }
+    file::create_dir_all(&staging)?;
+    let opts = ExtractOptions {
+        strip_components: 1,
+        ..Default::default()
+    };
+    file::extract_archive(&archive, &staging, ExtractionFormat::TarGz, &opts)
+        .wrap_err_with(|| format!("failed to extract tap {owner}/{repo}"))?;
+    if let Err(err) = std::fs::rename(&staging, &dest) {
+        // Another process may have finished the same checkout first.
+        if !dest.is_dir() {
+            return Err(err).wrap_err("failed to install the tap checkout");
+        }
+        file::remove_all(&staging)?;
+    }
+    file::remove_all(&archive)?;
+    Ok(dest)
+}
+
 pub(super) fn ruby_source_url(raw_base: &str, source_path: &str) -> String {
     let encoded_path = source_path
         .split('/')
@@ -751,6 +841,7 @@ mod tests {
                 api_base: format!("{}/api/{directory}", server.url()),
                 raw_base: format!("{}/raw/{directory}/deadbeef", server.url()),
                 commit: "deadbeef".to_string(),
+                checkout: None,
             };
             let (root_entries, source_path, encoded_path) = if directory.is_empty() {
                 (
@@ -824,6 +915,87 @@ mod tests {
             raw.assert_async().await;
         }
         Ok(())
+    }
+
+    /// `require_relative` resolves next to the formula when it is evaluated
+    /// from a tap checkout, whatever directory mise runs in.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn evaluates_require_relative_from_a_tap_checkout() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let tap = tempfile::tempdir()?;
+        mise_util::file::create_dir_all(tap.path().join("Formula"))?;
+        mise_util::file::create_dir_all(tap.path().join("require"))?;
+        mise_util::file::write(
+            tap.path().join("require/shared.rb"),
+            "SHARED_DEPENDENCY = \"libshared\"\n",
+        )?;
+        let source = r#"
+require_relative "../require/shared"
+class Widget < Formula
+  version "1.2.3"
+  url "https://example.com/widget-1.2.3.tar.gz"
+  sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  depends_on SHARED_DEPENDENCY
+end
+"#;
+        mise_util::file::write(tap.path().join("Formula/widget.rb"), source)?;
+        let mut sandbox = metadata_sandbox()?;
+        sandbox.allow_read.push(tap.path().to_path_buf());
+        // A mise-installed Ruby lives outside the paths a sandbox always reads.
+        if let Some(prefix) = ruby.parent().and_then(Path::parent) {
+            sandbox.allow_read.push(prefix.to_path_buf());
+        }
+        let mut runner = CmdLineRunner::new(&ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(METADATA_SHIM_RB)
+            .stdin_string(source.to_string())
+            .current_dir(tap.path())
+            .env("MISE_BREW_NAME", "widget")
+            .env("MISE_BREW_TAP", "acme/tools")
+            .env("MISE_BREW_SOURCE_PATH", "Formula/widget.rb")
+            .env(
+                "MISE_BREW_SOURCE_FILE",
+                tap.path().join("Formula/widget.rb"),
+            )
+            .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
+            .env("MISE_BREW_TAP_COMMIT", "deadbeef")
+            .env("MISE_BREW_MACOS_VERSION", "15.3")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", std::env::consts::ARCH)
+            .with_sandbox(sandbox);
+        runner.apply_sandbox().await?;
+        let formula: Formula = serde_json::from_str(&runner.read().await?)?;
+        assert_eq!(formula.dependencies, ["libshared"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tap_checkout_rejects_a_tap_that_is_not_on_github() {
+        let err = tap_checkout(
+            "https://example.com/acme/homebrew-tools/HEAD",
+            "0123456789abcdef0123456789abcdef01234567",
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("only GitHub taps"));
+    }
+
+    #[tokio::test]
+    async fn tap_checkout_rejects_a_commit_that_is_not_a_full_sha() {
+        let err = tap_checkout(
+            "https://raw.githubusercontent.com/acme/homebrew-tools/HEAD",
+            "../../etc",
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("not a full commit SHA"));
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
