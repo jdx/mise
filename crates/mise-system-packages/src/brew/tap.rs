@@ -967,6 +967,9 @@ end
         if let Some(prefix) = ruby.parent().and_then(Path::parent) {
             sandbox.allow_read.push(prefix.to_path_buf());
         }
+        // The temp directory is behind a symlink on macOS (`/var` is
+        // `/private/var`), and Seatbelt matches the real path.
+        sandbox.resolve_paths(&[])?;
         let mut runner = CmdLineRunner::new(&ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
             .arg("--disable-gems")
