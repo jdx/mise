@@ -2,6 +2,12 @@
 
 # `lts` and `sts` follow Microsoft's release index, so the answer moves with each
 # release. Assert the shape: an SDK version in a supported channel.
+#
+# The default `minimum_release_age` would hide the only stable SDK of a channel
+# released that day, leaving `latest` empty for a day after every new channel.
+# That is the cutoff working, not what this test checks.
+export MISE_MINIMUM_RELEASE_AGE=0s
+
 assert_matches "mise latest dotnet@lts" '^[0-9]+\.[0-9]+\.[0-9]+$'
 assert_matches "mise latest dotnet@sts" '^[0-9]+\.[0-9]+\.[0-9]+$'
 

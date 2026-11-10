@@ -3811,6 +3811,7 @@ fn stage_generated_completions(
     if executable.starts_with(stage) || executable.starts_with(caskroom) {
         file::make_executable(&executable)?;
     }
+    let args = expand_generated_completion_args(caskroom, cask, &completion.args);
     let base_name = completion.resolved_base_name(cask);
     for shell in &completion.shells {
         let target = generated_completion_target_path(*shell, &base_name)?;
@@ -3818,7 +3819,7 @@ fn stage_generated_completions(
         if let Some(parent) = caskroom_completion.parent() {
             file::create_dir_all(parent)?;
         }
-        let output = generate_completion_output(&executable, completion, *shell)?;
+        let output = generate_completion_output(&executable, &args, completion, *shell)?;
         mise_util::file::write(caskroom_completion, output)?;
     }
     Ok(())
@@ -4043,13 +4044,36 @@ fn find_file_artifacts(root: &Path, name: &Path) -> Vec<PathBuf> {
     matches
 }
 
+/// Expands `$HOMEBREW_PREFIX` in the arguments of a completion command. The
+/// command may be a wrapper such as `/usr/bin/env`, which names the real
+/// executable in its arguments; a path into the cask's own Caskroom version
+/// directory is redirected to `caskroom`, where it is staged until installed.
+fn expand_generated_completion_args(caskroom: &Path, cask: &Cask, args: &[String]) -> Vec<String> {
+    args.iter()
+        .map(|arg| {
+            if !arg.contains("$HOMEBREW_PREFIX") {
+                return arg.clone();
+            }
+            generated_caskroom_artifact(caskroom, cask, arg)
+                .unwrap_or_else(|| {
+                    PathBuf::from(
+                        arg.replace("$HOMEBREW_PREFIX", &prefix::prefix().to_string_lossy()),
+                    )
+                })
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect()
+}
+
 fn generate_completion_output(
     executable: &Path,
+    args: &[String],
     completion: &GeneratedCompletionArtifact,
     shell: CompletionShell,
 ) -> Result<String> {
     let mut command = std::process::Command::new(executable);
-    command.args(&completion.args);
+    command.args(args);
     command.env("SHELL", shell.name());
     let (shell_args, shell_env) = completion_shell_parameter(
         completion.shell_parameter_format.as_deref(),
