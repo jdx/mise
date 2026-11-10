@@ -7251,6 +7251,15 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                             .wrap_err_with(copy_failure(&source, &target))?;
                         from.copy_into(to)?;
                     } else if target.is_file() {
+                        // a file that already matches in content and mode is
+                        // left alone, as the plan shows: rewriting it would
+                        // bump its mtime and count it as written, firing
+                        // `[history.reload]` for a file that did not change
+                        if let Ok(meta) = std::fs::metadata(&target)
+                            && file_matches(&source, &target, &meta)
+                        {
+                            continue;
+                        }
                         overwrite_recorded(&source, &target, written)?;
                     } else {
                         match std::fs::symlink_metadata(&target) {

@@ -108,3 +108,26 @@ EOF
   assert_fail "test -e ~/multi/sub/b.conf"
   assert "cat ~/reloads-multi" "a"
 fi
+
+# a directory copy writes only the files that changed, so only their reload
+# commands run and an unchanged file keeps its mtime
+rm -rf ~/.config/tree "$MISE_CONFIG_DIR/dotfiles/tree"
+mkdir -p "$MISE_CONFIG_DIR/dotfiles/tree/a" "$MISE_CONFIG_DIR/dotfiles/tree/b"
+echo original >"$MISE_CONFIG_DIR/dotfiles/tree/a/x.conf"
+echo original >"$MISE_CONFIG_DIR/dotfiles/tree/b/y.conf"
+cat <<EOF2 >"$config"
+[dotfiles]
+"~/.config/tree" = { source = "dotfiles/tree", mode = "copy" }
+
+[history.reload]
+"~/.config/tree/a/**" = "echo a >> $HOME/reloads-tree"
+"~/.config/tree/b/**" = "echo b >> $HOME/reloads-tree"
+EOF2
+assert_succeed "mise dot apply --yes"
+rm -f ~/reloads-tree
+echo changed >"$MISE_CONFIG_DIR/dotfiles/tree/a/x.conf"
+touch -d 2020-01-01 ~/.config/tree/b/y.conf
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.config/tree/a/x.conf" "changed"
+assert "cat ~/reloads-tree" "a"
+assert "stat -c %Y ~/.config/tree/b/y.conf" "$(date -d 2020-01-01 +%s)"
