@@ -5401,9 +5401,23 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
         if tracked.is_none() {
             tracked = Some(crate::history::tracked::TrackedSet::from_config(config)?);
         }
-        tracked
-            .as_ref()
-            .map_or(Ok(false), |set| set.would_capture(path))
+        let Some(set) = tracked.as_ref() else {
+            return Ok(false);
+        };
+        if !set.would_capture(path)? {
+            return Ok(false);
+        }
+        // history saves a symlinked directory as the link alone, so a file
+        // reached through one below the tracked path is not kept
+        let Some(owner) = set.entry_for(path) else {
+            return Ok(false);
+        };
+        let through_link = path
+            .ancestors()
+            .skip(1)
+            .take_while(|dir| *dir != owner.path.as_path())
+            .any(file::is_symlink_or_junction);
+        Ok(!through_link)
     };
     let mut out = vec![];
     for (req, _) in &plan.todo {
@@ -5439,12 +5453,46 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
                 // conflict that stops the apply instead
                 meta.is_dir() && !req.source.is_dir()
             };
-            if replaced && !is_tracked(&tgt)? {
+            let kept = if !replaced {
+                true
+            } else if meta.is_dir() {
+                // every file the removal takes must be kept by history
+                let mut all = true;
+                for file in files_under(&tgt) {
+                    if !is_tracked(&file)? {
+                        all = false;
+                        break;
+                    }
+                }
+                all
+            } else {
+                is_tracked(&tgt)?
+            };
+            if !kept {
                 out.push(tgt.display_user().to_string());
             }
         }
     }
     Ok(out)
+}
+
+/// The files and links below `dir`, none followed.
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = vec![];
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => stack.push(path),
+                _ => out.push(path),
+            }
+        }
+    }
+    out
 }
 
 /// Without a terminal nobody can confirm replacing a copy target that holds

@@ -104,3 +104,21 @@ assert_fail_contains "mise dot apply" "pass --yes"
 assert "cat ~/flat" edited
 assert_succeed "mise dot apply --yes"
 assert "cat ~/flat" file
+
+# history saves a link to a directory as the link alone, so a file reached
+# through one inside a tracked directory is not kept
+mkdir -p src/th ~/tracked2 ~/outside
+echo base >src/th/y.conf
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfile_groups.th]
+root = "th"
+target = "$HOME/tracked2/lnk"
+mode = "copy"
+TOML
+ln -s "$HOME/outside" ~/tracked2/lnk
+assert_succeed "mise dot apply"
+assert_succeed "mise bootstrap dotfiles track ~/tracked2 --yes"
+echo edited >~/outside/y.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "cat ~/outside/y.conf" edited
