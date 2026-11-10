@@ -293,6 +293,7 @@ impl Doctor {
         self.analyze_native_shim_template();
         self.analyze_plugins();
         self.analyze_env_modules(&config);
+        self.analyze_package_json_files(&config);
         self.analyze_plugin_drift(&config);
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
