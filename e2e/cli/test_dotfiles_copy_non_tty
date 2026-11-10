@@ -68,3 +68,17 @@ assert_succeed "mise bootstrap dotfiles track ~/tracked --yes"
 echo edited >~/tracked/t.conf
 assert_succeed "mise dot apply"
 assert "cat ~/tracked/t.conf" tracked
+
+# a directory copy through a link to a directory only adds files
+mkdir -p src/lk ~/real
+echo new >src/lk/n.conf
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfile_groups.lk]
+root = "lk"
+target = "$HOME/linked"
+mode = "copy"
+TOML
+ln -s "$HOME/real" ~/linked
+assert_succeed "mise dot apply"
+assert "cat ~/real/n.conf" new

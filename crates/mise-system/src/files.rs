@@ -5414,9 +5414,8 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
         if req.source.is_dir() {
             // a file or link where the directory belongs is replaced by it
             // under `--force`, whatever the source holds
-            if std::fs::symlink_metadata(&req.target).is_ok_and(|meta| !meta.is_dir())
-                && !is_tracked(&req.target)?
-            {
+            // (a link to a directory stays and the files go through it)
+            if req.target.exists() && !req.target.is_dir() && !is_tracked(&req.target)? {
                 out.push(req.target.display_user().to_string());
             }
             // an unreadable source stops the apply before anything is written
