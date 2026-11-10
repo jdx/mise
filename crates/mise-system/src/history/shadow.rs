@@ -2346,7 +2346,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("repo.git");
         let output = std::process::Command::new(mise_util::git::plumbing_binary().unwrap())
-            .args(["init", "--bare", "--quiet"])
+            .args(["init", "--bare", "--quiet", "--object-format=sha1"])
             .arg(&path)
             .output()
             .unwrap();
@@ -2359,6 +2359,14 @@ mod tests {
         let message = format!("apply\n\n{}", "x".repeat(200 * 1024));
         let commit = repo.commit_tree(&tree, vec![], &message).unwrap();
         assert_eq!(commit.len(), 40);
+        let git = repo.gix().unwrap();
+        let object = git
+            .find_commit(gix::ObjectId::from_hex(commit.as_bytes()).unwrap())
+            .unwrap();
+        assert_eq!(
+            object.message_raw().unwrap(),
+            format!("{message}\n").as_bytes()
+        );
     }
 
     /// Blobs written in-process get the ids `hash-object` gives them, in
