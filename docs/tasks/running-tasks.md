@@ -489,6 +489,16 @@ scripts:
 mise tasks history --summary --json | jq -r '.[] | "\(.task) \(.median_ms)"'
 ```
 
+The same summary is in the `history` field of
+[`mise tasks info <task> --json`](/cli/tasks/info.html) and of each task in
+[`mise tasks ls --json`](/cli/tasks/ls.html), so a tool that already reads a
+task's definition learns how long it takes without a second command. It is
+`null` for a task that has not run:
+
+```sh
+mise tasks info test --json | jq '.history | {median_ms, last_status}'
+```
+
 A duration is the wall time from when the task was ready to start until it
 ended, including resolving its environment and waiting for a
 [`lock`](/tasks/task-configuration.html#lock). It does not include its
