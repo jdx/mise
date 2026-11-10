@@ -5434,7 +5434,9 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
                 // a mode-only difference is a repair, not a lost edit
                 !matches!((std::fs::read(&tgt), std::fs::read(&src)), (Ok(a), Ok(b)) if a == b)
             } else {
-                false
+                // `--force` removes a directory where the file belongs, with
+                // everything in it
+                meta.is_dir()
             };
             if replaced && !is_tracked(&tgt)? {
                 out.push(tgt.display_user().to_string());

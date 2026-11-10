@@ -82,3 +82,15 @@ TOML
 ln -s "$HOME/real" ~/linked
 assert_succeed "mise dot apply"
 assert "cat ~/real/n.conf" new
+
+# --force alone does not remove a directory where a file belongs
+mkdir -p src/fl ~/flat/keep
+echo mine >~/flat/keep/note
+echo file >src/fl/flat
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfiles]
+"~/flat" = { source = "$PWD/src/fl/flat", mode = "copy" }
+TOML
+assert_fail_contains "mise dot apply --force" "pass --yes"
+assert "cat ~/flat/keep/note" mine
