@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# Regression test: a directory from `env._.path` keeps its precedence over tool
+# bins in `mise x -- tool` when the caller's PATH already contains it.
+# See: https://github.com/jdx/mise/issues/15542
+
+overridedir="$HOME/override/bin"
+mkdir -p "$overridedir"
+cat >"$overridedir/dummy" <<'SCRIPT'
+#!/bin/sh
+echo OVERRIDE_DUMMY
+SCRIPT
+chmod +x "$overridedir/dummy"
+
+cat >mise.toml <<EOF
+[tools]
+dummy = "latest"
+
+[env]
+_.path = ["$overridedir"]
+EOF
+
+mise i
+
+assert "mise x -- dummy" "OVERRIDE_DUMMY"
+export PATH="$overridedir:$PATH"
+assert "mise x -- dummy" "OVERRIDE_DUMMY"
