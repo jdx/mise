@@ -86,7 +86,8 @@ assert_contains "mise tasks history --summary" "bad"
 # The same summary is part of a task's definition, for tools that plan around slow checks.
 assert "mise tasks info ok --json | jq -c '.history | [.runs, .failures, .last_status]'" '[3,0,"ok"]'
 assert "mise tasks info bad --json | jq -c '.history | [.failures, .median_ms, .last_status]'" '[1,null,"failed"]'
-assert "mise tasks ls --json | jq -c '.[] | select(.name == \"ok\") | .history.runs'" "3"
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"ok\") | .history | [.runs, .failures, .last_status]'" '[3,0,"ok"]'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"bad\") | .history | [.failures, .median_ms, .last_status]'" '[1,null,"failed"]'
 assert "mise tasks ls --json | jq -c '.[] | select(.name == \"all\") | has(\"history\") and .history == null'" "true"
 assert "mise tasks info all --json | jq -c 'has(\"history\") and .history == null'" "true"
 
