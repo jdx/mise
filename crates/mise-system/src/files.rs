@@ -5390,32 +5390,51 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
 /// edit back. A file mise has no record of counts: it may be the user's.
 fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Vec<String> {
     let tracked = crate::history::tracked::TrackedSet::from_config(config).ok();
+    // history keeps the path: covered by an entry and not left out by an
+    // exclude rule, and history is on
     let is_tracked = |path: &Path| {
-        tracked
-            .as_ref()
-            .is_some_and(|set| set.entry_for(path).is_some())
+        Settings::get().history.enabled
+            && tracked
+                .as_ref()
+                .is_some_and(|set| set.would_capture(path).unwrap_or(false))
     };
     let mut out = vec![];
     for (req, _) in &plan.todo {
         if req.mode != FileMode::Copy || keeps_existing(req) {
             continue;
         }
-        let pairs = if req.source.is_dir() {
+        let mut pairs = vec![];
+        if req.source.is_dir() {
+            // a file or link where the directory belongs is replaced by it
+            // under `--force`, whatever the source holds
+            if std::fs::symlink_metadata(&req.target).is_ok_and(|meta| !meta.is_dir())
+                && !is_tracked(&req.target)
+            {
+                out.push(req.target.display_user().to_string());
+            }
             match walk_source_files(req) {
-                Ok(pairs) => pairs,
+                Ok(files) => pairs.extend(files),
                 Err(_) => continue,
             }
         } else {
-            vec![(req.source.clone(), req.target.clone())]
-        };
+            pairs.push((req.source.clone(), req.target.clone()));
+        }
         for (src, tgt) in pairs {
             let Ok(meta) = std::fs::symlink_metadata(&tgt) else {
                 continue;
             };
-            if !meta.is_file() || file_matches(&src, &tgt, &meta) || is_tracked(&tgt) {
-                continue;
+            // a link is replaced by a file, which history cannot bring back
+            let replaced = if meta.file_type().is_symlink() {
+                true
+            } else if meta.is_file() {
+                // a mode-only difference is a repair, not a lost edit
+                !matches!((std::fs::read(&tgt), std::fs::read(&src)), (Ok(a), Ok(b)) if a == b)
+            } else {
+                false
+            };
+            if replaced && !is_tracked(&tgt) {
+                out.push(tgt.display_user().to_string());
             }
-            out.push(tgt.display_user().to_string());
         }
     }
     out
@@ -5528,7 +5547,7 @@ fn execute_layer(
             warn_if_template_target_edited(req);
         }
     }
-    if !opts.yes && !console::user_attended_stderr() {
+    if !opts.yes && !Settings::get().yes && !console::user_attended_stderr() {
         refuse_unattended_overwrite(config, &plan)?;
     }
     if !opts.yes && console::user_attended_stderr() {

@@ -38,3 +38,33 @@ assert "cat ~/dst/x.conf" mine
 # --yes replaces it
 assert_succeed "mise dot apply --yes"
 assert "cat ~/dst/x.conf" original
+
+# a link at the target is replaced by a file, which nothing brings back
+rm ~/dst/x.conf
+ln -s /etc/hostname ~/dst/x.conf
+assert_fail_contains "mise dot apply" "pass --yes"
+assert "test -L ~/dst/x.conf && echo link" link
+
+# MISE_YES counts as consent, like --yes
+assert_succeed "MISE_YES=1 mise dot apply"
+assert "cat ~/dst/x.conf" original
+
+# a mode-only difference is a repair, not a lost edit
+chmod 600 ~/dst/x.conf
+assert_succeed "mise dot apply"
+
+# a tracked target is recoverable, so it applies without asking
+mkdir -p src/tr
+echo tracked >src/tr/t.conf
+cat >>~/.config/mise/config.toml <<TOML
+
+[dotfile_groups.tr]
+root = "tr"
+target = "$HOME/tracked"
+mode = "copy"
+TOML
+assert_succeed "mise dot apply"
+assert_succeed "mise bootstrap dotfiles track ~/tracked --yes"
+echo edited >~/tracked/t.conf
+assert_succeed "mise dot apply"
+assert "cat ~/tracked/t.conf" tracked
