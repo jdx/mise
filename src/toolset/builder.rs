@@ -24,6 +24,8 @@ pub enum ConfigScope {
     LocalOnly,
     /// Only include tools from the global config file
     GlobalOnly,
+    /// Only include tools from the system config file
+    SystemOnly,
 }
 
 #[derive(Debug, Default)]
@@ -155,6 +157,7 @@ impl ToolsetBuilder {
             match self.scope {
                 ConfigScope::GlobalOnly if !is_global => continue,
                 ConfigScope::LocalOnly if is_global => continue,
+                ConfigScope::SystemOnly if !config::is_system_config(cf.get_path()) => continue,
                 _ => {}
             }
             ts.merge(cf.to_toolset()?);
@@ -165,6 +168,7 @@ impl ToolsetBuilder {
                 ConfigScope::All => true,
                 ConfigScope::LocalOnly => !config::is_global_config(cf.get_path()),
                 ConfigScope::GlobalOnly => config::is_global_config(cf.get_path()),
+                ConfigScope::SystemOnly => config::is_system_config(cf.get_path()),
             })
             .map(|(path, cf)| (path.clone(), cf.clone()))
             .collect();
