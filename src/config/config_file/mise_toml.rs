@@ -91,8 +91,12 @@ fn written_scalar_options(item: Option<&Item>) -> Vec<(Option<String>, WrittenSc
         Some(Item::Value(Value::InlineTable(t))) => vec![inline(t)],
         Some(Item::Value(Value::Array(a))) => a
             .iter()
-            .filter_map(Value::as_inline_table)
-            .map(inline)
+            // Every element keeps its slot, plain strings included, so positions line up with
+            // the array being replaced.
+            .map(|v| match v.as_inline_table() {
+                Some(t) => inline(t),
+                None => (v.as_str().map(str::to_string), WrittenScalars::new()),
+            })
             .collect(),
         _ => vec![],
     }
@@ -6408,6 +6412,35 @@ run = "cargo build"
             dump.contains(r#"{ version = "1", count = 1 }, { version = "1", count = "1" }"#),
             "{dump}"
         );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_mixed_array_keeps_scalar_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".replace-mixed-scalars.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = ["1", {{ version = "2", compile = true }}]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &"dummy".into(),
+            vec![
+                request("1.1", ToolVersionOptions::default()),
+                request("2.1", string_options(&[("compile", "true")])),
+            ],
+        )
+        .unwrap();
+        let dump = cf.dump().unwrap();
+        assert!(dump.contains("compile = true"), "{dump}");
         file::remove_file(&p).unwrap();
     }
 
