@@ -2170,8 +2170,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn artifact_checksum_sends_headers_only_to_the_api_asset_url() {
+    async fn artifact_checksum_withholds_headers_from_a_reachable_browser_url() {
         let mut server = mockito::Server::new_async().await;
+        let head = server
+            .mock("HEAD", "/browser")
+            .with_header("content-type", "application/octet-stream")
+            .create_async()
+            .await;
+        let browser = server
+            .mock("GET", "/browser")
+            .match_header("authorization", mockito::Matcher::Missing)
+            .with_body("artifact")
+            .create_async()
+            .await;
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("authorization", "Bearer secret".parse().unwrap());
+        let browser_url = format!("{}/browser", server.url());
+        let api_url = format!("{}/api/asset", server.url());
+        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers))
+            .await
+            .unwrap();
+        head.assert_async().await;
+        browser.assert_async().await;
+        assert!(checksum.starts_with("sha256:"));
+    }
+
+    #[tokio::test]
+    async fn artifact_checksum_sends_headers_to_the_api_url_when_the_browser_url_is_html() {
+        let mut server = mockito::Server::new_async().await;
+        let head = server
+            .mock("HEAD", "/browser")
+            .with_header("content-type", "text/html; charset=utf-8")
+            .create_async()
+            .await;
         let api = server
             .mock("GET", "/api/asset")
             .match_header("authorization", "Bearer secret")
@@ -2180,12 +2211,12 @@ mod tests {
             .await;
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("authorization", "Bearer secret".parse().unwrap());
+        let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        // The browser URL is the same URL here, so the probe picks the API
-        // endpoint and the token must be sent.
-        let checksum = artifact_checksum(&api_url, Some(&api_url), Some(&headers))
+        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers))
             .await
             .unwrap();
+        head.assert_async().await;
         api.assert_async().await;
         assert!(checksum.starts_with("sha256:"));
     }
