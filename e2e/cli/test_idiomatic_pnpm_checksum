@@ -23,7 +23,10 @@ assert_succeed "mise install"
 assert_contains "mise exec -- pnpm --version" "12.15.0"
 # pnpm only prints the warning to a terminal, so run it under a PTY.
 if [[ $(uname) == Darwin ]]; then
-  assert_not_contains "script -q /dev/null mise exec -- pnpm --version 2>&1" "running through Node.js"
+  pty_cmd="script -q /dev/null mise exec -- pnpm --version 2>&1"
 else
-  assert_not_contains "script --quiet --command 'mise exec -- pnpm --version' /dev/null 2>&1" "running through Node.js"
+  pty_cmd="script --quiet --command 'mise exec -- pnpm --version' /dev/null 2>&1"
 fi
+# The version must print too, so a PTY run that fails outright cannot pass.
+assert_contains "$pty_cmd" "12.15.0"
+assert_not_contains "$pty_cmd" "running through Node.js"
