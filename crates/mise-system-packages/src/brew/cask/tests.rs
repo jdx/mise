@@ -5256,6 +5256,32 @@ fn generated_completion_executable_prefers_staged_prefix_binary() -> Result<()> 
 }
 
 #[test]
+fn generated_completion_args_expand_the_homebrew_prefix() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let caskroom = tmp.path().join("staged");
+    let cask = test_cask("ngrok", "3.39.13,msmi2kd3cjc,a");
+    let args = vec![
+        "SHELL=/bin/bash".to_string(),
+        "$HOMEBREW_PREFIX/Caskroom/ngrok/3.39.13,msmi2kd3cjc,a/ngrok".to_string(),
+        "$HOMEBREW_PREFIX/bin/other".to_string(),
+        "completion".to_string(),
+    ];
+
+    assert_eq!(
+        expand_generated_completion_args(&caskroom, &cask, &args),
+        vec![
+            "SHELL=/bin/bash".to_string(),
+            caskroom.join("ngrok").to_string_lossy().into_owned(),
+            tmp.path().join("bin/other").to_string_lossy().into_owned(),
+            "completion".to_string(),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
 fn rejects_ambiguous_generated_completion_bare_executable() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;

@@ -26,22 +26,33 @@ pub(crate) async fn rebuild_for_backends(
     ts: &Toolset,
     backends: impl IntoIterator<Item = Arc<dyn Backend>>,
 ) -> Result<()> {
-    let global = global_toolset(config).await;
+    let global = global_toolset(config, ConfigScope::GlobalOnly).await;
+    // A shared dir belongs to the administrator: its `global` link follows the
+    // system config alone, never the invoking user's global config.
+    let system = if env::shared_install_dirs().is_empty() {
+        None
+    } else {
+        global_toolset(config, ConfigScope::SystemOnly).await
+    };
     let rebuilds = backends.into_iter().flat_map(|backend| {
         install_dirs_for(&backend)
             .into_iter()
             .map(move |installs_dir| (backend.clone(), installs_dir))
     });
     run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
-        rebuild_symlinks_in_dir(config, ts, global.as_ref(), &backend, &installs_dir).wrap_err_with(
-            || {
-                format!(
-                    "failed to rebuild runtime symlinks for {} in {}",
-                    backend.ba().short,
-                    installs_dir.display()
-                )
-            },
-        )
+        let shared = installs_dir != backend.ba().installs_path();
+        let global = if shared {
+            system.as_ref()
+        } else {
+            global.as_ref()
+        };
+        rebuild_symlinks_in_dir(config, ts, global, &backend, &installs_dir).wrap_err_with(|| {
+            format!(
+                "failed to rebuild runtime symlinks for {} in {}",
+                backend.ba().short,
+                installs_dir.display()
+            )
+        })
     })
 }
 
@@ -49,9 +60,9 @@ pub(crate) async fn rebuild_for_backends(
 /// installed. It backs the `global` link, which names the version in use
 /// outside any project, so project config and `MISE_*_VERSION` stay out of it.
 /// `None` when it could not be built, so the links already there are kept.
-async fn global_toolset(config: &Arc<Config>) -> Option<Toolset> {
+async fn global_toolset(config: &Arc<Config>, scope: ConfigScope) -> Option<Toolset> {
     let built = ToolsetBuilder::new()
-        .with_scope(ConfigScope::GlobalOnly)
+        .with_scope(scope)
         .without_runtime_env()
         .build_unresolved(config);
     let mut global = match built {
@@ -268,12 +279,39 @@ fn list_symlinks_for_dir(
     // name is the user's and stays untouched.
     let global_link = installs_dir.join(GLOBAL_LINK);
     if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
+        let shared = installs_dir != backend.ba().installs_path();
+        // A shared dir this process can neither write nor elevate for cannot
+        // take a new target or a new link: writing would only fail the install.
+        let frozen = shared && !can_modify(installs_dir);
         let to = match global {
-            Some(global) => global
-                .list_current_versions()
-                .into_iter()
-                .filter(|(b, _)| b.ba() == backend.ba())
-                .find_map(|(_, tv)| pin_target(backend, &tv, installs_dir)),
+            _ if frozen => runtime_symlink_target(&global_link),
+            Some(global) => {
+                let selected = global
+                    .list_current_versions()
+                    .into_iter()
+                    .filter(|(b, _)| b.ba() == backend.ba())
+                    .map(|(_, tv)| tv)
+                    .collect_vec();
+                let requested = global.list_versions_by_plugin().iter().any(|(b, tvl)| {
+                    b.ba() == backend.ba() && tvl.os_supported_requests().next().is_some()
+                });
+                selected
+                    .iter()
+                    .find_map(|tv| {
+                        pin_target(backend, tv, installs_dir)
+                            .or_else(|| shared.then(|| pin_in_dir(backend, tv, installs_dir))?)
+                    })
+                    // The system config can select a version that resolves to an
+                    // install outside this shared dir, or fail to resolve at all;
+                    // the administrator's link stays then. A tool it no longer
+                    // selects loses the link, unless this user cannot write the
+                    // dir: only someone who can may take it away.
+                    .or_else(|| {
+                        (shared && (requested || !writable_by_us(installs_dir)))
+                            .then(|| runtime_symlink_target(&global_link))
+                            .flatten()
+                    })
+            }
             // Global config could not be read: keep the link as it is.
             None => runtime_symlink_target(&global_link),
         };
@@ -290,6 +328,68 @@ fn list_symlinks_for_dir(
 
 /// The link name for the version global config selects.
 const GLOBAL_LINK: &str = "global";
+
+/// Whether this process can modify `dir`: it can write there, or it may
+/// elevate (`system_packages.sudo`) to do so. The privileged helper only
+/// serves the system installs dir, so other shared dirs never count.
+fn can_modify(dir: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        let settings = crate::config::Settings::get();
+        writable_by_us(dir)
+            || (settings.system_packages.sudo
+                && dir.parent() == Some(settings.system_installs_dir()))
+    }
+    #[cfg(not(unix))]
+    {
+        writable_by_us(dir)
+    }
+}
+
+/// Whether this process can modify `dir` without elevating.
+fn writable_by_us(dir: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        !crate::system_install::needs_elevation(dir)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        true
+    }
+}
+
+/// The `./name` link target for `tv`'s copy inside a shared `installs_dir`,
+/// even when `tv.install_path()` prefers a copy in the user's own dir.
+fn pin_in_dir(
+    backend: &Arc<dyn Backend>,
+    tv: &crate::toolset::ToolVersion,
+    installs_dir: &Path,
+) -> Option<PathBuf> {
+    let install_path = tv.install_path();
+    // An identity-layout install is one build among possibly several sharing a
+    // version name, so a name here cannot say this dir holds the same build.
+    if crate::install_layout::resolver::dir_name_of(&install_path).is_some() {
+        return None;
+    }
+    // A legacy graph install keeps a suffix `tv_pathname` omits, but the
+    // retained path names it, so try that basename first. A `path:` request names an arbitrary directory, whose basename says
+    // nothing about this dir's installs.
+    let retained = (!matches!(tv.request, ToolRequest::Path { .. }))
+        .then(|| {
+            install_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+        })
+        .flatten();
+    retained
+        .into_iter()
+        .chain([tv.tv_pathname()])
+        .find(|name| {
+            installs_dir.join(name).is_dir() && !is_install_incomplete(backend, installs_dir, name)
+        })
+        .map(|name| PathBuf::from(".").join(name))
+}
 
 /// The `./name` link target naming `tv`'s install inside `installs_dir`, or
 /// `None` when that install is not there or never finished.

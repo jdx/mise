@@ -1,4 +1,4 @@
-use super::ports::PortClaim;
+use super::ports::{PortClaim, claim_daemon, describe_claim, named_claim_key};
 use super::{DaemonSet, DaemonSettings, state_dir};
 use eyre::{Result, bail};
 use mise_util::cmd::CmdLineRunner;
@@ -14,6 +14,17 @@ use tokio::process::Command;
 /// higher-precedence file replaces the whole daemon, so the other keys are
 /// repeated there.
 const PIN_A_PORT: &str = "declare the daemon again in a gitignored mise.local.toml with a fixed `port = <n>`, or with `port = { auto = true, base = <n> }` to move its range. That declaration replaces the whole daemon, so repeat its other keys.";
+
+/// The same for a named port, which is moved with its own key instead of `port`.
+const PIN_A_NAMED_PORT: &str = "declare the daemon again in a gitignored mise.local.toml with that port fixed (`ports.<name> = <n>`) or given another base (`ports.<name> = { auto = true, base = <n> }`). That declaration replaces the whole daemon, so repeat its other keys.";
+
+fn pin_a_port(key: &str) -> &'static str {
+    if key.contains('/') {
+        PIN_A_NAMED_PORT
+    } else {
+        PIN_A_PORT
+    }
+}
 
 /// Names a nested mise withholds from pitchfork: the secrets it inherited and
 /// the marker that names them.
@@ -264,14 +275,17 @@ fn carry_port_claims(
 ) -> BTreeMap<String, PortClaim> {
     let mut ports: BTreeMap<String, PortClaim> = previous
         .iter()
-        .filter(|(name, _)| !set.daemons.contains_key(*name))
-        .map(|(name, claim)| (name.clone(), *claim))
+        .filter(|(key, _)| !set.daemons.contains_key(claim_daemon(key)))
+        .map(|(key, claim)| (key.clone(), *claim))
         .collect();
-    ports.extend(
-        set.daemons
-            .values()
-            .filter_map(|d| d.port.map(|claim| (d.name.clone(), claim))),
-    );
+    for d in set.daemons.values() {
+        ports.extend(d.port.map(|claim| (d.name.clone(), claim)));
+        ports.extend(
+            d.named_ports
+                .iter()
+                .map(|(key, claim)| (named_claim_key(&d.name, key), *claim)),
+        );
+    }
     ports
 }
 
@@ -285,7 +299,7 @@ fn ports_being_started(
 ) -> BTreeMap<String, PortClaim> {
     ports
         .iter()
-        .filter(|(name, _)| starting.iter().any(|s| s == *name))
+        .filter(|(key, _)| starting.iter().any(|s| s == claim_daemon(key)))
         .map(|(name, claim)| (name.clone(), *claim))
         .collect()
 }
@@ -485,12 +499,13 @@ impl Runtime {
             // Probing costs a pitchfork call per matching root, so it runs only
             // here. An unreachable supervisor leaves the port available rather
             // than blocking a start that used to work.
+            let other_daemon = claim_daemon(&other_name);
             let id = other
                 .ids
                 .iter()
-                .find(|id| id.rsplit('/').next() == Some(other_name.as_str()))
+                .find(|id| id.rsplit('/').next() == Some(other_daemon))
                 .cloned()
-                .unwrap_or_else(|| format!("{}/{other_name}", other.namespace));
+                .unwrap_or_else(|| format!("{}/{other_daemon}", other.namespace));
             let serving = self
                 .status(&other.root, &id)
                 .await
@@ -503,9 +518,12 @@ impl Runtime {
                 continue;
             }
             bail!(
-                "daemon {name} would use port {port}, in use by {other_name} running in {}. \
-                 Stop it, or {PIN_A_PORT}",
-                other.root.display()
+                "daemon {} would use port {port}, in use by {} running in {}. \
+                 Stop it, or {}",
+                describe_claim(name),
+                describe_claim(&other_name),
+                other.root.display(),
+                pin_a_port(name)
             );
         }
         Ok(clear)
@@ -792,17 +810,19 @@ impl Runtime {
         if result.is_err() {
             for (name, claim) in self.taken_auto_ports(root, ids, ports).await {
                 warn!(
-                    "[daemons] {name} did not start and its automatically allocated port {} ({}) is in use by another process. To move it, {PIN_A_PORT}",
+                    "[daemons] {} did not start and its automatically allocated port {} ({}) is in use by another process. To move it, {}",
+                    describe_claim(&name),
                     claim.port,
-                    port_origin(&claim)
+                    port_origin(&claim),
+                    pin_a_port(&name)
                 );
             }
         }
         result
     }
 
-    /// The daemons in `ids` whose automatically allocated port is held by
-    /// something other than the daemon itself.
+    /// The automatically allocated ports, primary or named, of the daemons in
+    /// `ids` that something other than the daemon itself holds.
     async fn taken_auto_ports(
         &self,
         root: &Path,
@@ -811,11 +831,14 @@ impl Runtime {
     ) -> Vec<(String, PortClaim)> {
         let mut taken = Vec::new();
         for id in ids {
-            let name = id.rsplit('/').next().unwrap_or(id);
-            let Some(claim) = ports.get(name).filter(|claim| claim.is_auto()) else {
-                continue;
-            };
-            if !port_is_taken(claim.port) {
+            let daemon = id.rsplit('/').next().unwrap_or(id);
+            let held: Vec<_> = ports
+                .iter()
+                .filter(|(key, claim)| {
+                    claim_daemon(key) == daemon && claim.is_auto() && port_is_taken(claim.port)
+                })
+                .collect();
+            if held.is_empty() {
                 continue;
             }
             // A daemon that is up holds its own port, and a sibling's failure
@@ -827,7 +850,7 @@ impl Runtime {
                 )
             });
             if !running {
-                taken.push((name.to_string(), *claim));
+                taken.extend(held.into_iter().map(|(key, claim)| (key.clone(), *claim)));
             }
         }
         taken
@@ -1731,6 +1754,30 @@ cmd config help="Attach externally generated configuration to a project." {
         let dropped = carry_port_claims(&previous, &set(vec![bare]));
         assert!(!dropped.contains_key("redis"));
         assert_eq!(dropped["postgres"].port, 5432);
+
+        // Named ports are recorded under the daemon, so another checkout's
+        // collision message can name them.
+        let mut stack = with_port("stack", 0);
+        stack.port = None;
+        stack.named_ports = indexmap::IndexMap::from([
+            ("app".to_string(), PortClaim::fixed(5174)),
+            ("db".to_string(), PortClaim::fixed(5433)),
+        ]);
+        let claims = carry_port_claims(&BTreeMap::new(), &set(vec![stack.clone()]));
+        assert_eq!(claims["stack/app"].port, 5174);
+        assert_eq!(claims["stack/db"].port, 5433);
+        assert_eq!(describe_claim("stack/db"), "stack (ports.db)");
+        assert_eq!(describe_claim("stack"), "stack");
+
+        // A named port dropped from a daemon that is still declared is not carried.
+        stack.named_ports.shift_remove("db");
+        let kept = carry_port_claims(&claims, &set(vec![stack]));
+        assert!(kept.contains_key("stack/app") && !kept.contains_key("stack/db"));
+
+        // Starting the daemon checks all of its ports, and only its ports.
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(ports_being_started(&claims, &names(&["stack"])).len(), 2);
+        assert!(ports_being_started(&claims, &names(&["other"])).is_empty());
     }
 
     #[test]
