@@ -3812,7 +3812,8 @@ type = "Bool"
 description = "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`."
 docs = """
 Set it to the directory the agents you use read, such as `.claude/skills`. An
-absolute path is used as written, and `--dir` overrides it for one run.
+absolute path is used as written, a leading `~` means the home directory, and
+`--dir` overrides it for one run.
 
 Left unset, mise uses `.agents/skills` if it exists, then `.claude/skills` if it
 exists. When neither exists it creates `.agents/skills` and a `.claude/skills`
@@ -3821,7 +3822,7 @@ symlink to it, so agents that read either path find the skills. See
 """
 env = "MISE_SKILLS_DIR"
 optional = true
-type = "String"
+type = "Path"
 
 [skills.fetch]
 default = true
