@@ -26,7 +26,7 @@ binary_target="$MISE_SYSTEM_BREW_PREFIX/bin/example"
 app_target="$MISE_SYSTEM_BREW_PREFIX/Applications/External.app"
 
 mkdir -p \
-  "$token_dir/.metadata" \
+  "$token_dir/.metadata/current-2" \
   "$version_dir/bin" \
   "$MISE_SYSTEM_BREW_PREFIX/bin" \
   "$MISE_SYSTEM_BREW_PREFIX/etc/bash_completion.d" \
@@ -106,7 +106,7 @@ assert_succeed "test '$auto_before' = '$auto_after'"
 assert "cat $version_dir/.mise-cask.toml" $'schema_version = 3\nversion = "current-2"'
 assert "cat $token_dir/.metadata/INSTALL_RECEIPT.json" '{"owned_by":"homebrew"}'
 
-mkdir "$token_dir/stale-1"
+mkdir "$token_dir/stale-1" "$token_dir/.metadata/stale-1"
 malformed_before="$(snapshot_prefix)"
 
 assert_fail_contains "mise bootstrap packages status 2>&1" "multiple Caskroom versions"
