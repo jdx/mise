@@ -110,6 +110,37 @@ pub fn config_root(path: &Path) -> PathBuf {
     let is_config_filename = |f: &str| {
         f == "config.toml" || f == "config.local.toml" || regex!(r"config\..+\.toml").is_match(f)
     };
+    // A file task grouped in a subdirectory (`mise-tasks/sub/nested`) belongs
+    // to the same project as one directly in the task directory. Project
+    // configs are not task files, so a `mise.toml` that merely lives below a
+    // directory called `tasks` keeps its own directory as the root.
+    let is_project_config = is_config_filename(filename)
+        || (filename.starts_with("mise") || filename.starts_with(".mise"))
+            && filename.ends_with(".toml");
+    let nested_task_root = || {
+        if is_project_config {
+            return None;
+        }
+        // Skip the file's own directory: the direct-child cases are below.
+        let dirs = path.ancestors().skip(2).collect::<Vec<_>>();
+        dirs.iter().find_map(|dir| {
+            let name = dir.file_name()?.to_string_lossy();
+            let above = dir.parent()?;
+            let above_name = above.file_name().map(|n| n.to_string_lossy());
+            if name == "mise-tasks" || name == ".mise-tasks" {
+                dir.parent().map(Path::to_path_buf)
+            } else if name == "tasks" && above_name.as_deref().is_some_and(is_mise_dir) {
+                let base = above.parent()?;
+                if base.file_name().is_some_and(|n| n == ".config") {
+                    base.parent().map(Path::to_path_buf)
+                } else {
+                    Some(base.to_path_buf())
+                }
+            } else {
+                None
+            }
+        })
+    };
     let out = if parent == "mise-tasks" || parent == ".mise-tasks" {
         grandparent_path()
     } else if (parent == "tasks" || parent == "conf.d") && is_mise_dir(grandparent) {
@@ -126,6 +157,8 @@ pub fn config_root(path: &Path) -> PathBuf {
         }
     } else if parent == ".config" {
         grandparent_path()
+    } else if let Some(root) = nested_task_root() {
+        root
     } else {
         parent_path()
     };
@@ -169,6 +202,26 @@ mod tests {
         assert_eq!(
             std::fs::canonicalize(&link).unwrap(),
             std::fs::canonicalize(&real).unwrap()
+        );
+    }
+
+    /// A file task grouped in a subdirectory shares its project's root.
+    #[test]
+    fn nested_file_tasks_share_the_project_root() {
+        for p in [
+            "/foo/bar/mise-tasks/sub/nested",
+            "/foo/bar/mise-tasks/a/b/nested",
+            "/foo/bar/.mise-tasks/sub/nested",
+            "/foo/bar/.mise/tasks/sub/nested",
+            "/foo/bar/mise/tasks/sub/nested",
+            "/foo/bar/.config/mise/tasks/sub/nested",
+        ] {
+            assert_eq!(config_root(Path::new(p)), Path::new("/foo/bar"), "{p}");
+        }
+        // A project config below a directory named `tasks` is its own root.
+        assert_eq!(
+            config_root(Path::new("/foo/mise/tasks/proj/mise.toml")),
+            Path::new("/foo/mise/tasks/proj")
         );
     }
 
