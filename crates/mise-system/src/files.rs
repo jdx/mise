@@ -5415,7 +5415,7 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
         let through_link = path
             .ancestors()
             .skip(1)
-            .take_while(|dir| *dir != owner.path.as_path())
+            .take_while(|dir| dir.starts_with(&owner.path) && *dir != owner.path.as_path())
             .any(file::is_symlink_or_junction);
         Ok(!through_link)
     };
@@ -5457,11 +5457,14 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
                 true
             } else if meta.is_dir() {
                 // every file the removal takes must be kept by history
-                let mut all = true;
-                for file in files_under(&tgt) {
-                    if !is_tracked(&file)? {
-                        all = false;
-                        break;
+                // and the directory itself, which an undo must recreate
+                let mut all = is_tracked(&tgt)?;
+                if all {
+                    for file in files_under(&tgt)? {
+                        if !is_tracked(&file)? {
+                            all = false;
+                            break;
+                        }
                     }
                 }
                 all
@@ -5476,23 +5479,25 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec
     Ok(out)
 }
 
-/// The files and links below `dir`, none followed.
-fn files_under(dir: &Path) -> Vec<PathBuf> {
+/// The files and links below `dir`, none followed. A directory that cannot be
+/// listed is an error, so the apply stops before removing what it cannot see.
+fn files_under(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = vec![];
     let mut stack = vec![dir.to_path_buf()];
     while let Some(next) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&next) else {
-            continue;
-        };
-        for entry in entries.flatten() {
+        let entries = std::fs::read_dir(&next)
+            .wrap_err_with(|| format!("cannot list {}", next.display_user()))?;
+        for entry in entries {
+            let entry = entry?;
             let path = entry.path();
-            match entry.file_type() {
-                Ok(kind) if kind.is_dir() => stack.push(path),
-                _ => out.push(path),
+            if entry.file_type()?.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// Without a terminal nobody can confirm replacing a copy target that holds
