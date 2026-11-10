@@ -300,8 +300,11 @@ appears, set
 
 You ran a [shim](/dev-tools/shims.html) in a directory where no config selects
 a version of its tool. Add one with `mise use <tool>@<version>`, or set a
-default for every directory with `mise use -g <tool>@<version>`; the message
-lists the installed versions to choose from.
+default for every directory with `mise use -g <tool>@<version>`. The message
+names an installed version in both commands, and `mise x <tool>@<version> -- <command>`
+runs it once; `--verbose` lists every installed version. To run the latest
+installed version instead of failing, set
+[`shims.fallback_to_installed`](/configuration/settings.html#shims.fallback_to_installed).
 
 `Tool not installed for shim` means a config selects a version that is not
 installed, and automatic installation did not run. Run `mise install`.
