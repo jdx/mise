@@ -115,6 +115,7 @@ rm -rf ~/.config/tree "$MISE_CONFIG_DIR/dotfiles/tree"
 mkdir -p "$MISE_CONFIG_DIR/dotfiles/tree/a" "$MISE_CONFIG_DIR/dotfiles/tree/b"
 echo original >"$MISE_CONFIG_DIR/dotfiles/tree/a/x.conf"
 echo original >"$MISE_CONFIG_DIR/dotfiles/tree/b/y.conf"
+echo original >"$MISE_CONFIG_DIR/dotfiles/tree/a/z.conf"
 cat <<EOF2 >"$config"
 [dotfiles]
 "~/.config/tree" = { source = "dotfiles/tree", mode = "copy" }
@@ -126,8 +127,11 @@ EOF2
 assert_succeed "mise dot apply --yes"
 rm -f ~/reloads-tree
 echo changed >"$MISE_CONFIG_DIR/dotfiles/tree/a/x.conf"
-touch -d 2020-01-01 ~/.config/tree/b/y.conf
+chmod +x "$MISE_CONFIG_DIR/dotfiles/tree/a/z.conf"
+touch -t 202001010000 ~/.config/tree/b/y.conf
+touch -t 202001010001 "$HOME/mtime-ref"
 assert_succeed "mise dot apply --yes"
 assert "cat ~/.config/tree/a/x.conf" "changed"
 assert "cat ~/reloads-tree" "a"
-assert "stat -c %Y ~/.config/tree/b/y.conf" "$(date -d 2020-01-01 +%s)"
+assert_succeed "test -x ~/.config/tree/a/z.conf"
+assert_succeed "test ! ~/.config/tree/b/y.conf -nt ~/mtime-ref"
