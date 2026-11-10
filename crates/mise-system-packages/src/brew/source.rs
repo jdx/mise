@@ -193,6 +193,41 @@ pub(super) async fn build(
 /// Download the formula's .rb from homebrew/core, pinned to the commit the
 /// API metadata was generated from and verified against its sha256.
 async fn fetch_formula_rb(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result<PathBuf> {
+    let downloaded = fetch_formula_rb_file(rf, pr).await?;
+    // A tap formula that reads other files from its tap is loaded from a
+    // checkout of the tap, where `require_relative` finds them.
+    let (Some(raw_base), Some(commit), Some(rb_path), Some(sha256)) = (
+        rf.tap_raw_base.as_deref(),
+        rf.formula.tap_git_head.as_deref(),
+        rf.formula.ruby_source_path.as_deref(),
+        rf.formula
+            .ruby_source_checksum
+            .as_ref()
+            .and_then(|c| c.sha256.as_deref()),
+    ) else {
+        return Ok(downloaded);
+    };
+    if !super::tap::needs_tap_checkout(&mise_util::file::read_to_string(&downloaded)?) {
+        return Ok(downloaded);
+    }
+    let checkout = super::tap::tap_checkout(raw_base, commit, Some(pr)).await?;
+    // `rb_path` comes from the tap's metadata, so keep it inside the checkout.
+    if Path::new(rb_path)
+        .components()
+        .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        bail!(
+            "{}: formula source path '{rb_path}' is not a relative path inside its tap",
+            rf.formula.name
+        );
+    }
+    let in_tap = checkout.join(rb_path);
+    mise_util::hash::ensure_checksum(&in_tap, sha256, Some(pr), "sha256")?;
+    Ok(in_tap)
+}
+
+/// Download the formula's .rb on its own into the cache.
+async fn fetch_formula_rb_file(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result<PathBuf> {
     let formula = &rf.formula;
     // all guaranteed present by check_buildable
     let rb_path = formula.ruby_source_path.as_ref().unwrap();
