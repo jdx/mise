@@ -1962,11 +1962,16 @@ impl HistoryRepo {
             args.push("-p".to_string());
             args.push(parent.to_string());
         }
-        args.push("-m".to_string());
-        args.push(message.to_string());
+        // The message goes on stdin: a large operation lists every affected
+        // path, which overflows the kernel's per-argument limit as `-m`.
+        let mut body = message.to_string();
+        if !body.ends_with('\n') {
+            body.push('\n');
+        }
         let email = super::config::git_email()?;
         self.output_str(
             PlumbingCall::new(args)
+                .stdin(body.as_bytes())
                 .env("GIT_AUTHOR_EMAIL", email.as_str())
                 .env("GIT_COMMITTER_EMAIL", email),
         )
@@ -2333,6 +2338,35 @@ mod tests {
         let checkpoint = repo.read_meta(&commit).unwrap();
         assert_eq!(checkpoint.uuid, commit);
         assert_eq!(checkpoint.description, "sha256 history");
+    }
+
+    /// A message past the kernel's per-argument limit (128 KiB) still commits.
+    #[test]
+    fn commit_tree_accepts_a_message_larger_than_one_argument() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("repo.git");
+        let output = std::process::Command::new(mise_util::git::plumbing_binary().unwrap())
+            .args(["init", "--bare", "--quiet", "--object-format=sha1"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let repo = super::HistoryRepo {
+            git: mise_util::git::GitPlumbing::new(path),
+            transient: Default::default(),
+        };
+        let tree = repo.empty_object("tree").unwrap();
+        let message = format!("apply\n\n{}", "x".repeat(200 * 1024));
+        let commit = repo.commit_tree(&tree, vec![], &message).unwrap();
+        assert_eq!(commit.len(), 40);
+        let git = repo.gix().unwrap();
+        let object = git
+            .find_commit(gix::ObjectId::from_hex(commit.as_bytes()).unwrap())
+            .unwrap();
+        assert_eq!(
+            object.message_raw().unwrap(),
+            format!("{message}\n").as_bytes()
+        );
     }
 
     /// Blobs written in-process get the ids `hash-object` gives them, in
