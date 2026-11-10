@@ -5388,15 +5388,22 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
 /// The copy targets an apply would overwrite with different content that no
 /// history tracks, so neither `mise dot undo` nor a rollback can bring the
 /// edit back. A file mise has no record of counts: it may be the user's.
-fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Vec<String> {
-    let tracked = crate::history::tracked::TrackedSet::from_config(config).ok();
+fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec<String>> {
+    // loaded when a path needs classifying, so a tracking error surfaces then
+    // and not for an apply that overwrites nothing
+    let mut tracked: Option<crate::history::tracked::TrackedSet> = None;
     // history keeps the path: covered by an entry and not left out by an
     // exclude rule, and history is on
-    let is_tracked = |path: &Path| {
-        Settings::get().history.enabled
-            && tracked
-                .as_ref()
-                .is_some_and(|set| set.would_capture(path).unwrap_or(false))
+    let mut is_tracked = |path: &Path| -> Result<bool> {
+        if !Settings::get().history.enabled {
+            return Ok(false);
+        }
+        if tracked.is_none() {
+            tracked = Some(crate::history::tracked::TrackedSet::from_config(config)?);
+        }
+        tracked
+            .as_ref()
+            .map_or(Ok(false), |set| set.would_capture(path))
     };
     let mut out = vec![];
     for (req, _) in &plan.todo {
@@ -5408,14 +5415,12 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Vec<String
             // a file or link where the directory belongs is replaced by it
             // under `--force`, whatever the source holds
             if std::fs::symlink_metadata(&req.target).is_ok_and(|meta| !meta.is_dir())
-                && !is_tracked(&req.target)
+                && !is_tracked(&req.target)?
             {
                 out.push(req.target.display_user().to_string());
             }
-            match walk_source_files(req) {
-                Ok(files) => pairs.extend(files),
-                Err(_) => continue,
-            }
+            // an unreadable source stops the apply before anything is written
+            pairs.extend(walk_source_files(req)?);
         } else {
             pairs.push((req.source.clone(), req.target.clone()));
         }
@@ -5432,19 +5437,19 @@ fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Vec<String
             } else {
                 false
             };
-            if replaced && !is_tracked(&tgt) {
+            if replaced && !is_tracked(&tgt)? {
                 out.push(tgt.display_user().to_string());
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// Without a terminal nobody can confirm replacing a copy target that holds
 /// content history cannot restore, so apply fails and names `--yes` instead of
 /// discarding it silently.
 fn refuse_unattended_overwrite(config: &Config, plan: &ApplyPlan<'_>) -> Result<()> {
-    let targets = unrecoverable_overwrites(config, plan);
+    let targets = unrecoverable_overwrites(config, plan)?;
     if targets.is_empty() {
         return Ok(());
     }
