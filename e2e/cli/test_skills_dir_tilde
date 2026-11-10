@@ -32,6 +32,13 @@ export MISE_SKILLS_DIR='~/agent-skills'
 mise skills sync
 assert_contains "cat $HOME/agent-skills/skilled/SKILL.md" "# skilled 1.0.0"
 assert 'test -e "~"; echo $?' "1"
+assert "test -e $HOME/~; echo \$?" "1"
+
+# A global tool at another version, synced into a fresh directory, so the
+# --global write is the only thing that can create the link.
+mise use -g skilled@2.0.0
+rm -rf "$HOME/agent-skills"
 mise skills sync -g
-assert_contains "cat $HOME/agent-skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert_contains "cat $HOME/agent-skills/skilled/SKILL.md" "# skilled 2.0.0"
 assert 'test -e "~"; echo $?' "1"
+assert "test -e $HOME/~; echo \$?" "1"
