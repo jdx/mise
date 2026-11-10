@@ -27,7 +27,7 @@ struct DevEngine {
     version: Option<String>,
 }
 
-pub(crate) fn is_package_json(path: &Path) -> bool {
+pub fn is_package_json(path: &Path) -> bool {
     path.file_name()
         .is_some_and(|file_name| file_name == "package.json")
 }
@@ -156,6 +156,21 @@ fn checksum_from_suffix(suffix: &str) -> Option<String> {
     valid.then(|| format!("{algorithm}:{digest}"))
 }
 
+/// Why mise cannot read version declarations from this `package.json`, if it cannot.
+///
+/// Reading a version out of it quietly yields nothing when the file is malformed, since the file
+/// belongs to npm and most of them declare nothing for mise. `mise doctor` reports it instead.
+pub fn problem(path: &Path) -> Option<String> {
+    // Reading a link to a file of another name is refused when versions are read, and the parse
+    // error can quote the file's content, so a diagnostic must not read it either.
+    if super::super::diagnostic::links_to_another_name(path) {
+        return None;
+    }
+    PackageJsonData::parse(path)
+        .err()
+        .map(|err| format!("{err:#}"))
+}
+
 pub(crate) fn parse_with_options(
     path: &Path,
     tool_name: &str,
@@ -203,6 +218,29 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn problem_reports_malformed_files_only() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(&path, r#"{"devEngines": {"runtime": {"name": "node"},}}"#).unwrap();
+        assert!(problem(&path).is_some());
+        fs::write(&path, r#"{"devEngines": {"runtime": "node"}}"#).unwrap();
+        assert!(problem(&path).is_some());
+        fs::write(&path, r#"{"name": "x"}"#).unwrap();
+        assert!(problem(&path).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn problem_ignores_a_link_to_a_file_of_another_name() {
+        let dir = tempdir().unwrap();
+        let secret = dir.path().join("secret.txt");
+        fs::write(&secret, r#""hunter2""#).unwrap();
+        let path = dir.path().join("package.json");
+        std::os::unix::fs::symlink(&secret, &path).unwrap();
+        assert_eq!(problem(&path), None);
+    }
 
     #[test]
     fn test_parse_package_json() {

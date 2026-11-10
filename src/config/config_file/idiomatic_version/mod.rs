@@ -11,7 +11,7 @@ use crate::plugins;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 use crate::watch_files::WatchFile;
 
-pub(crate) mod package_json;
+pub mod package_json;
 
 #[derive(Debug, Clone)]
 pub(crate) struct IdiomaticVersionFile {

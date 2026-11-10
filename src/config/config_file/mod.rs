@@ -45,7 +45,7 @@ use super::Config;
 
 pub mod config_root;
 pub mod diagnostic;
-pub(crate) mod idiomatic_version;
+pub mod idiomatic_version;
 pub(crate) mod min_version;
 pub mod mise_toml;
 pub(crate) mod tool_versions;

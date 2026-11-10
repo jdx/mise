@@ -293,6 +293,7 @@ impl Doctor {
         self.analyze_native_shim_template();
         self.analyze_plugins();
         self.analyze_env_modules(&config);
+        self.analyze_package_json_files(&config);
         self.analyze_plugin_drift(&config);
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
@@ -645,6 +646,7 @@ impl Doctor {
             }
         }
         self.analyze_env_modules(config);
+        self.analyze_package_json_files(config);
 
         if !env::is_activated() && !shims_on_path() {
             let shims = style::ncyan(display_path(dirs::shims()));
@@ -684,6 +686,24 @@ impl Doctor {
         self.analyze_system_login_shell(config).await?;
 
         Ok(())
+    }
+
+    /// A malformed `package.json` that mise reads as a version file is skipped without a message
+    /// at runtime, so say so here.
+    fn analyze_package_json_files(&mut self, config: &Arc<Config>) {
+        for path in config.config_files.keys() {
+            if !crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
+                continue;
+            }
+            if let Some(problem) =
+                crate::config::config_file::idiomatic_version::package_json::problem(path)
+            {
+                self.warnings.push(format!(
+                    "{} is not valid, so mise ignores the versions it declares: {problem}",
+                    display_path(path)
+                ));
+            }
+        }
     }
 
     /// same diagnostics as [`Self::analyze_system_packages`] for `doctor -J`
