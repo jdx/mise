@@ -326,6 +326,8 @@ fn is_inherited_var(name: &str) -> bool {
         "CURL_CA_BUNDLE",
         "REQUESTS_CA_BUNDLE",
         "SOURCE_DATE_EPOCH",
+        // the shim prints Ruby backtraces on failure only when this is set
+        "MISE_DEBUG",
     ];
     EXACT.contains(&name)
         || name.starts_with("LC_")
@@ -482,6 +484,7 @@ mod tests {
             ("GOFLAGS", "-x"),
             ("PYTHONPATH", "/x"),
             ("HOME", "/home/u"),
+            ("MISE_DEBUG", "1"),
             ("HTTPS_PROXY", "http://p"),
             ("no_proxy", "localhost"),
             ("LC_ALL", "C"),
