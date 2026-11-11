@@ -117,6 +117,7 @@ pub async fn start(
     tasks: &[Task],
     dry_run: bool,
     install_tools: bool,
+    quiet: bool,
 ) -> Result<()> {
     // This run is the body of a task-backed daemon. Starting daemons again from
     // here is what would recurse, so stop at this one point and leave the rest
@@ -291,7 +292,7 @@ pub async fn start(
     // `--quiet` and `--silent` hide mise's own messages; the supervisor's
     // startup log lines belong with them.
     let settings = Settings::get();
-    let hush = settings.quiet || settings.silent;
+    let hush = quiet || settings.quiet || settings.silent;
     for (rt, root, ids, checked, ports, _project_lock) in pending {
         let mut args = vec!["start".to_string()];
         if hush {
