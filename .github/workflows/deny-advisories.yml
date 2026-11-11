@@ -30,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           persist-credentials: false
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
         with:
@@ -71,7 +72,7 @@ jobs:
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/body.md"
           fi
       - name: Send failure email via Resend
-        if: steps.deny.outputs.status != '0'
+        if: ${{ !cancelled() && steps.deny.outputs.status != '0' }}
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
@@ -102,5 +103,5 @@ jobs:
             -H 'Content-Type: application/json' \
             -d "$payload"
       - name: Fail run
-        if: steps.deny.outputs.status != '0'
+        if: ${{ !cancelled() && steps.deny.outputs.status != '0' }}
         run: exit 1
