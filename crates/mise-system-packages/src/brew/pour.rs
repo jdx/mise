@@ -310,16 +310,23 @@ fn rack_lock_path(rack: &Path) -> PathBuf {
 /// that still hold a keg. Temporary: guarded by `remove_by!` id
 /// `legacy-brew-rack-locks` in src/migrate.rs.
 pub(super) fn remove_legacy_rack_locks() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| remove_legacy_rack_locks_in(&prefix::cellar(), rack_lock_path));
+    // Only a complete sweep counts: one that could not write to a root-owned
+    // prefix yet is retried after the prefix has been set up.
+    static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    use std::sync::atomic::Ordering::Relaxed;
+    if !DONE.load(Relaxed) && remove_legacy_rack_locks_in(&prefix::cellar(), rack_lock_path) {
+        DONE.store(true, Relaxed);
+    }
 }
 
 /// Takes each rack's staging lock around the removal, so a process that is
-/// creating that rack at the same moment is not left without it.
-fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathBuf) {
+/// creating that rack at the same moment is not left without it. Returns
+/// whether every leftover lock file was removed.
+fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathBuf) -> bool {
     let Ok(racks) = cellar.read_dir() else {
-        return;
+        return true;
     };
+    let mut complete = true;
     for rack in racks.flatten() {
         let path = rack.path();
         let legacy = path.join(".mise-staging.lock");
@@ -327,12 +334,18 @@ fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathB
             continue;
         }
         let Ok(_lock) = mise_util::lock_file::LockFile::at(&lock_path(&path)).lock() else {
+            complete = false;
             continue;
         };
-        if std::fs::remove_file(&legacy).is_ok() {
-            let _ = std::fs::remove_dir(&path);
+        match std::fs::remove_file(&legacy) {
+            Ok(()) => {
+                let _ = std::fs::remove_dir(&path);
+            }
+            Err(err) if err.kind() == ErrorKind::NotFound => {}
+            Err(_) => complete = false,
         }
     }
+    complete
 }
 
 fn remove_abandoned_staging_dirs(rack: &Path) -> Result<()> {
@@ -974,9 +987,9 @@ mod tests {
         mise_util::file::write(empty.join(".mise-staging.lock"), "").unwrap();
         mise_util::file::write(installed.join(".mise-staging.lock"), "").unwrap();
 
-        remove_legacy_rack_locks_in(cellar.path(), |rack| {
+        assert!(remove_legacy_rack_locks_in(cellar.path(), |rack| {
             locks.path().join(rack.file_name().unwrap())
-        });
+        }));
 
         assert!(!empty.exists());
         assert!(!installed.join(".mise-staging.lock").exists());
