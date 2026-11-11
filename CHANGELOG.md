@@ -1,5 +1,80 @@
 # Changelog
 
+## [2026.11.7](https://github.com/jdx/mise/releases/tag/v2026.11.7) - 2026-11-11
+
+### 🚀 Features
+
+- **(shim)** one-line no-version error and opt-in shims.fallback_to_installed by @jdx in [#15525](https://github.com/jdx/mise/pull/15525)
+- **(task)** show run history in tasks info and tasks ls --json by @jdx in [#15522](https://github.com/jdx/mise/pull/15522)
+- **(vfox)** let tool plugins that download nothing install in locked mode by @jdx in [#15586](https://github.com/jdx/mise/pull/15586)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** read snap list in the C locale by @jdx in [#15518](https://github.com/jdx/mise/pull/15518)
+- **(bootstrap)** expand $HOMEBREW_PREFIX in brew-cask completion commands by @jdx in [#15562](https://github.com/jdx/mise/pull/15562)
+- **(bootstrap)** ignore brew-cask Caskroom directories Homebrew has no record of by @jdx in [#15560](https://github.com/jdx/mise/pull/15560)
+- **(bootstrap)** evaluate and build brew tap formulae from a tap checkout by @jdx in [#15572](https://github.com/jdx/mise/pull/15572)
+- **(config)** keep boolean and numeric tool options unquoted when rewriting a tool by @jdx in [#15517](https://github.com/jdx/mise/pull/15517)
+- **(config)** run pnpm's install script when a packageManager checksum is set by @jdx in [#15563](https://github.com/jdx/mise/pull/15563)
+- **(daemons)** name the other checkout when a named port collides by @jdx in [#15561](https://github.com/jdx/mise/pull/15561)
+- **(daemons)** hide startup logs of task daemons under --quiet and --silent by @jdx in [#15588](https://github.com/jdx/mise/pull/15588)
+- **(doctor)** report a malformed package.json that mise skips as a version file by @jdx in [#15567](https://github.com/jdx/mise/pull/15567)
+- **(dotfiles)** refuse to overwrite edited copies without a terminal by @jdx in [#15565](https://github.com/jdx/mise/pull/15565)
+- **(dotfiles)** skip unchanged files when applying a directory copy by @jdx in [#15558](https://github.com/jdx/mise/pull/15558)
+- **(dotfiles)** close large history operations by sending the commit message on stdin by @jdx in [#15575](https://github.com/jdx/mise/pull/15575)
+- **(exec)** keep env._.path ahead of tool bins when the caller's PATH already has it by @jdx in [#15564](https://github.com/jdx/mise/pull/15564)
+- **(exec)** stop a detached tool process from holding the caller's stdout pipe on Windows by @jdx in [#15583](https://github.com/jdx/mise/pull/15583)
+- **(install)** leave read-only system global links alone by @jdx in [#15526](https://github.com/jdx/mise/pull/15526)
+- **(install)** read the idiomatic version file of a plugin installed in the same run by @jdx in [#15585](https://github.com/jdx/mise/pull/15585)
+- **(lock)** send the forge token when hashing private release assets by @jdx in [#15556](https://github.com/jdx/mise/pull/15556)
+- **(skills)** expand a leading ~ in skills.dir by @jdx in [#15559](https://github.com/jdx/mise/pull/15559)
+- **(task)** resolve a monorepo project's own task templates from sibling projects by @jdx in [#15568](https://github.com/jdx/mise/pull/15568)
+- **(task)** let the task's usage spec decide whether -h asks for help by @jdx in [#15573](https://github.com/jdx/mise/pull/15573)
+- **(task)** use the project root for env of file tasks in subdirectories by @jdx in [#15557](https://github.com/jdx/mise/pull/15557)
+- **(upgrade)** keep registry options out of mise.toml on --bump by @jdx in [#15519](https://github.com/jdx/mise/pull/15519)
+- **(version)** hide the update notice and hints from coding agents by @jdx in [#15523](https://github.com/jdx/mise/pull/15523)
+
+### 📚 Documentation
+
+- add a coding agents page with a Claude Code hook by @jdx in [#15521](https://github.com/jdx/mise/pull/15521)
+
+### 🧪 Testing
+
+- **(dotnet)** stop the channel alias test failing for a day after a new release by @jdx in [#15574](https://github.com/jdx/mise/pull/15574)
+
+### 📦️ Dependency Updates
+
+- update github actions by @renovate[bot] in [#15551](https://github.com/jdx/mise/pull/15551)
+- lock file maintenance by @renovate[bot] in [#15552](https://github.com/jdx/mise/pull/15552)
+- lock file maintenance by @renovate[bot] in [#15569](https://github.com/jdx/mise/pull/15569)
+- lock file maintenance by @renovate[bot] in [#15576](https://github.com/jdx/mise/pull/15576)
+- lock file maintenance by @renovate[bot] in [#15577](https://github.com/jdx/mise/pull/15577)
+- lock file maintenance by @renovate[bot] in [#15578](https://github.com/jdx/mise/pull/15578)
+- lock file maintenance by @renovate[bot] in [#15579](https://github.com/jdx/mise/pull/15579)
+
+### Ci
+
+- run untrusted macOS jobs on macos-latest by @jdx in [#15584](https://github.com/jdx/mise/pull/15584)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (9)
+
+- [`acelot/termtastic`](https://github.com/acelot/termtastic)
+- [`cplieger/grelot`](https://github.com/cplieger/grelot)
+- [`emanuele-em/proxelar`](https://github.com/emanuele-em/proxelar)
+- [`gmr/pgfmt`](https://github.com/gmr/pgfmt)
+- [`guarnz/deadvalues`](https://github.com/guarnz/deadvalues)
+- [`junior/kcx`](https://github.com/junior/kcx)
+- [`p10node/k10s`](https://github.com/p10node/k10s)
+- [`vercel-labs/agent-desktop`](https://github.com/vercel-labs/agent-desktop)
+- [`vshulcz/deja-vu`](https://github.com/vshulcz/deja-vu)
+
+#### Updated Packages (2)
+
+- [`aakso/ssh-inscribe/sshi`](https://github.com/aakso/ssh-inscribe)
+- [`sharkdp/fd`](https://github.com/sharkdp/fd)
+
 ## [2026.11.6](https://github.com/jdx/mise/releases/tag/v2026.11.6) - 2026-11-10
 
 ### 🚀 Features
