@@ -288,14 +288,17 @@ pub async fn start(
             .collect();
         pending.push((rt, root, ids, checked, state.ports, _project_lock));
     }
+    // `--quiet` and `--silent` hide mise's own messages; the supervisor's
+    // startup log lines belong with them.
+    let settings = Settings::get();
+    let hush = settings.quiet || settings.silent;
     for (rt, root, ids, checked, ports, _project_lock) in pending {
-        rt.start(
-            &root,
-            [vec!["start".into()], ids].concat(),
-            &checked,
-            &ports,
-        )
-        .await?;
+        let mut args = vec!["start".to_string()];
+        if hush {
+            args.push("--quiet".into());
+        }
+        rt.start(&root, [args, ids].concat(), &checked, &ports)
+            .await?;
     }
     Ok(())
 }

@@ -118,6 +118,10 @@ its tools.
 yourself, run `mise daemons start api`, and read its output with
 `mise daemons logs api`.
 
+Starting a daemon prints its first log lines. `mise daemons start -q` hides
+them, and `mise run --quiet` or `--silent` does the same for the daemons a task
+starts.
+
 ## Open it by URL
 
 Open `https://api.shop.localhost`. The request starts the database, waits until
