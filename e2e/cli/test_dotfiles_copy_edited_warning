@@ -80,3 +80,11 @@ EOT2
 echo A >"$HOME/gx.conf"
 assert_contains "mise dot apply --yes 2>&1" "gx.conf was edited since mise last wrote it"
 assert "cat $HOME/gx.conf" "B"
+
+# ...and when it leaves its group for [dotfiles].
+cat <<EOT2 >mise.toml
+[dotfiles]
+"~/gx.conf" = { source = "srcx", mode = "copy" }
+EOT2
+echo C >"$HOME/gx.conf"
+assert_contains "mise dot apply --yes 2>&1" "gx.conf was edited since mise last wrote it"
