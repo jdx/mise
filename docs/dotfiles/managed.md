@@ -711,7 +711,7 @@ A directory where a copied, templated, or inline file should go, or a file
 where a directory copy should go, is still a conflict and needs `--force`.
 When `apply` is about to overwrite a `template` or `copy` target that you edited
 since mise last wrote it, it warns first, so you can move the edit into the
-source. `--dry-run` and the confirmation list mark those targets too. A file
+source. For a `copy` target, `--dry-run` and the confirmation list mark it too. A file
 mise has no record of, such as one that predates the entry, is not marked.
 Check `mise dot diff` before you change which source a target uses.
 

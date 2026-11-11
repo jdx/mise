@@ -4293,6 +4293,10 @@ fn warn_if_template_target_edited(req: &FileRequest) {
 /// apply can tell an edit of the copy from what mise wrote. A record that
 /// cannot be written only costs the warning, so it warns.
 fn save_copy_state(req: &FileRequest) {
+    // a grouped file is recorded by its group; a second record would go stale
+    if req.group.is_some() {
+        return;
+    }
     if let Ok(digest) = mise_util::hash::file_hash_sha256(&req.target, None) {
         update_target_state(req, |state| state.content_digest = Some(digest));
     }
@@ -4313,7 +4317,9 @@ fn recorded_copy_digests(req: &FileRequest) -> HashMap<PathBuf, String> {
             }
         }
     }
+    // a grouped file is recorded by its group, which every apply of it updates
     if !req.source.is_dir()
+        && req.group.is_none()
         && let Some(digest) = load_target_state(req).and_then(|state| state.content_digest)
     {
         digests.insert(req.target.clone(), digest);
