@@ -758,6 +758,50 @@ fn excluded(globs: &globset::GlobSet, relative: &Path) -> bool {
     (0..parts.len()).any(|start| globs.is_match(parts[start..].join("/")))
 }
 
+/// Escape the braces of a tar exclude that sit outside a bracket expression,
+/// where they are already literal.
+fn literal_braces(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars().peekable();
+    let mut in_class = false;
+    // the first `]` of a class (after an optional `!` or `^`) is a member
+    let mut class_start = false;
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                out.push(c);
+                if let Some(next) = chars.next() {
+                    out.push(next);
+                }
+                class_start = false;
+                continue;
+            }
+            '[' if !in_class => {
+                in_class = true;
+                class_start = true;
+                out.push(c);
+                if matches!(chars.peek(), Some('!' | '^')) {
+                    out.extend(chars.next());
+                }
+                continue;
+            }
+            ']' if in_class && !class_start => in_class = false,
+            '{' if !in_class => {
+                out.push_str("[{]");
+                continue;
+            }
+            '}' if !in_class => {
+                out.push_str("[}]");
+                continue;
+            }
+            _ => {}
+        }
+        class_start = false;
+        out.push(c);
+    }
+    out
+}
+
 /// Running totals for [`check_source`].
 struct SourceTally<'a> {
     bytes: u64,
@@ -851,8 +895,7 @@ fn check_source(host: &RemoteHost, home: &Path, max_bytes: u64, max_files: u64) 
     for exclude in &host.exclude {
         // tar wildcards are `*`, `?` and `[..]`; globset also reads braces as
         // alternation, which would skip files tar archives
-        let pattern = exclude.replace('{', "[{]").replace('}', "[}]");
-        if let Ok(glob) = globset::Glob::new(&pattern) {
+        if let Ok(glob) = globset::Glob::new(&literal_braces(exclude)) {
             globs.add(glob);
         }
     }
@@ -2464,6 +2507,16 @@ mod tests {
     fn source_host(source: &Path, excludes: &[&str]) -> Result<RemoteHost> {
         let excludes: Vec<String> = excludes.iter().map(|e| e.to_string()).collect();
         ad_hoc_host("example.test", source.to_path_buf(), &excludes)
+    }
+
+    #[test]
+    fn literal_braces_leaves_bracket_expressions_alone() {
+        assert_eq!(literal_braces("{a,b}"), "[{]a,b[}]");
+        assert_eq!(literal_braces("[{]cache"), "[{]cache");
+        assert_eq!(literal_braces("[!}]x{"), "[!}]x[{]");
+        assert_eq!(literal_braces("[]{]{"), "[]{][{]");
+        assert_eq!(literal_braces("\\{x"), "\\{x");
+        assert_eq!(literal_braces("plain*"), "plain*");
     }
 
     #[test]
