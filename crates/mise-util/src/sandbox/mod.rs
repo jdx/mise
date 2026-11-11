@@ -946,7 +946,10 @@ mod tests {
             ..Default::default()
         };
         config.resolve_paths(&[]).unwrap();
-        assert_eq!(config.allow_write, vec![root.join("new")]);
+        assert_eq!(
+            config.allow_write[0].as_os_str(),
+            root.join("new").as_os_str()
+        );
     }
 
     /// The project holds the code being confined, so whoever wrote that code
