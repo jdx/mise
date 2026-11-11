@@ -1352,7 +1352,9 @@ impl Run {
                     &resolved_tasks,
                     self.dry_run,
                     !self.skip_tools,
-                    self.silent || self.quiet || self.output.is_some_and(|o| o.is_quiet()),
+                    self.silent
+                        || self.quiet
+                        || self.output.is_some_and(|o| o.is_quiet() || o.is_silent()),
                 ),
             )
             .await?;

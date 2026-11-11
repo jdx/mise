@@ -118,9 +118,9 @@ its tools.
 yourself, run `mise daemons start api`, and read its output with
 `mise daemons logs api`.
 
-Starting a daemon prints its first log lines. `mise daemons start -q` hides
-them, and `mise run --quiet` or `--silent` does the same for the daemons a task
-starts.
+Starting a daemon prints its first log lines. Add `--quiet` or `--silent` to
+`mise daemons start` or `mise run` to hide them, including for the daemons a
+task starts.
 
 ## Open it by URL
 
