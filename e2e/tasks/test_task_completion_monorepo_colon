@@ -19,6 +19,9 @@ run = 'echo updated'
 [tasks."env:clear"]
 run = 'echo cleared'
 
+[tasks."node:web#build"]
+run = 'echo ws'
+
 [tasks.precedence]
 alias = ["//apps/web:collision", "pc"]
 run = 'echo precedence'
@@ -34,6 +37,13 @@ flag "--mode <mode>" {
 }
 '''
 run = 'echo built'
+EOF
+
+mkdir -p apps/api
+cat <<'EOF' >apps/api/mise.toml
+[tasks.serve]
+alias = ["//apps/web:deploy"]
+run = 'echo serve'
 EOF
 
 assert "mise -q :env:update" "updated"
@@ -85,3 +95,8 @@ assert_contains_text "$(mise __complete_word__ --shell zsh --line 'mise run prec
 assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
 cd apps/web || exit 1
 assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
+# A task of another root is not reached through an alias qualified with this one
+assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run dep')" 'deploy'
+# A workspace identity is not expanded by the resolver, so it gets no bare spelling
+cd ../.. || exit 1
+assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run node:')" $'\nnode:web#build'

@@ -504,10 +504,15 @@ fn bare_names(current_root: Option<&str>, task: &Task) -> Vec<String> {
     let Some(root) = current_root else {
         return vec![];
     };
+    // A task of another root (`//apps/api:x`) may carry an alias qualified with this root, but
+    // running that spelling loads only this root's scope and would not find it.
+    let own_aliases = task.display_name.starts_with(root) || !task.display_name.starts_with("//");
+    let aliases: &[String] = if own_aliases { &task.aliases } else { &[] };
     let mut names: Vec<String> = std::iter::once(&task.display_name)
-        .chain(&task.aliases)
+        .chain(aliases)
         .filter_map(|n| n.strip_prefix(root))
-        .filter(|n| !n.is_empty())
+        // `node:web#build` is a workspace identity the resolver does not expand.
+        .filter(|n| !n.is_empty() && !crate::task::is_workspace_project_task(n))
         .map(str::to_string)
         .collect();
     names.dedup();
