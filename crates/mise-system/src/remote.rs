@@ -810,16 +810,20 @@ impl SourceTally<'_> {
                     .and_then(|relative| relative.components().next())
                     .map(|part| part.as_os_str().to_string_lossy().into_owned()),
             };
-            if self.count(top, metadata.len()) {
+            if self.count(top, metadata.len(), false) {
                 return Ok(true);
             }
         }
         Ok(false)
     }
 
-    /// Count one file; true once a limit is passed.
-    fn count(&mut self, top: Option<String>, len: u64) -> bool {
-        self.files += 1;
+    /// Count `len` bytes, and a file unless `replaces_link` says the bytes
+    /// replace a link the first walk already counted as a file. True once a
+    /// limit is passed.
+    fn count(&mut self, top: Option<String>, len: u64, replaces_link: bool) -> bool {
+        if !replaces_link {
+            self.files += 1;
+        }
         self.bytes += len;
         if let Some(top) = top {
             *self.top_level.entry(top).or_default() += len;
@@ -882,7 +886,7 @@ fn check_source(host: &RemoteHost, home: &Path, max_bytes: u64, max_files: u64) 
                 tally.walk(&target, source, Some(name), false)?
             } else {
                 let len = fs::metadata(&target).map_or(0, |metadata| metadata.len());
-                tally.count(Some(name.to_string()), len)
+                tally.count(Some(name.to_string()), len, true)
             };
             if exceeded {
                 break;
@@ -2566,9 +2570,13 @@ mod tests {
         host.copy_links = true;
         check_source(&host, &home, 1024, 100)?;
 
-        // a linked file counts too
+        // a linked file counts too, in place of the link itself
         fs::write(temp.path().join("big.bin"), vec![0u8; 4096])?;
         symlink(temp.path().join("big.bin"), source.join("big"))?;
+        // main.rs and the big link are two files; the target replaces the link
+        let mut host = source_host(&source, &["shared"])?;
+        host.copy_link = vec![PathBuf::from("big")];
+        check_source(&host, &home, 1 << 20, 2)?;
         let mut host = source_host(&source, &["shared"])?;
         host.copy_link = vec![PathBuf::from("big")];
         let message = check_source(&host, &home, 1024, 100)
