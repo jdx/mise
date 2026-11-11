@@ -4348,8 +4348,15 @@ fn edited_copy_targets(req: &FileRequest) -> Vec<(PathBuf, PathBuf)> {
     pairs
         .into_iter()
         .filter(|(source, target)| {
+            // only an existing file can hold an edit
+            if target.is_symlink() || !target.is_file() {
+                return false;
+            }
             let Some(digest) = recorded.get(target).or_else(|| {
                 // a record keeps the spelling of an earlier apply, and Windows ignores case
+                if !cfg!(windows) {
+                    return None;
+                }
                 recorded
                     .iter()
                     .find(|(path, _)| same_path_any_case(path, target))
@@ -4357,9 +4364,6 @@ fn edited_copy_targets(req: &FileRequest) -> Vec<(PathBuf, PathBuf)> {
             }) else {
                 return false;
             };
-            if target.is_symlink() || !target.is_file() {
-                return false;
-            }
             match hash(target) {
                 Some(current) => &current != digest && hash(source) != Some(current),
                 None => false,
