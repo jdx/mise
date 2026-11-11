@@ -4441,7 +4441,8 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     let global_tools = declared_tools(true);
     let mut project_tools = declared_tools(false);
 
-    for config_file in config_files.values() {
+    // Iterate in reverse order (global -> local) so the closest config wins.
+    for config_file in config_files.values().rev() {
         let project = safe_mode && !is_global_config(config_file.get_path());
         let ignore_path_versions = project;
         for (plugin, plugin_aliases) in config_file.aliases()? {
