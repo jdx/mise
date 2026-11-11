@@ -10,7 +10,7 @@ use eyre::{Result, eyre};
 use itertools::Itertools;
 
 use crate::args::ToolArg;
-#[cfg(any(test, windows))]
+#[cfg(test)]
 use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::deps::{DepsEngine, DepsOptions};
@@ -1186,9 +1186,13 @@ where
         };
     }
 
-    let cmd = cmd::cmd(program, args);
-    let res = cmd.unchecked().run()?;
-    match res.status.code() {
+    // Not `duct`: it keeps its own inheritable copies of mise's standard handles while the child
+    // starts, and the child passes them on to any process it detaches, which then holds the
+    // caller's pipe open until it exits (#15582).
+    debug!("$ {} {}", program.display(), args.len());
+    mise_util::windows_process::disinherit_std_handles();
+    let status = std::process::Command::new(&program).args(&args).status()?;
+    match status.code() {
         Some(code) => Err(crate::request_exit(code)),
         None => Err(eyre!("command failed: terminated by signal")),
     }

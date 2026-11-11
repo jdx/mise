@@ -150,6 +150,7 @@ fn run() -> Result<i32, String> {
             exe.as_os_str(),
         )
     } else {
+        windows_process::disinherit_std_handles();
         command.status()
     };
     #[cfg(not(windows))]
