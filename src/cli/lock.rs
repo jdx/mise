@@ -621,7 +621,14 @@ pub(crate) fn skip_lockfile_updates_when_tasks_fail() {
 
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
-        self.run_with_installed(None, Config::get().await?).await
+        // Plugins decide which idiomatic version files map to their tool, so a
+        // missing one must be installed before the tools to lock are known.
+        // Listing sidecars is read-only, so it never installs anything.
+        let mut config = Config::get().await?;
+        if !self.sidecars {
+            config = Toolset::install_config_plugins_and_reload(config, self.dry_run).await?;
+        }
+        self.run_with_installed(None, config).await
     }
 
     pub(crate) async fn generate_after_install(

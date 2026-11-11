@@ -1127,20 +1127,44 @@ impl Toolset {
         config: &Arc<Config>,
         dry_run: bool,
     ) -> Result<()> {
-        Self::ensure_config_plugins_installed_from_urls(config, &config.repo_urls, dry_run).await
+        Self::ensure_config_plugins_installed_from_urls(config, &config.repo_urls, dry_run)
+            .await
+            .map(|_| ())
     }
 
-    /// Install all plugins from an explicit plugin URL map.
+    /// Install the plugins of the [plugins] config section that are missing and
+    /// reload the config if any were installed.
+    ///
+    /// A plugin decides which idiomatic version files map to its tool, and the
+    /// config reads those when it loads. A plugin installed afterwards would
+    /// leave its version files unread until the next run.
+    pub async fn install_config_plugins_and_reload(
+        config: Arc<Config>,
+        dry_run: bool,
+    ) -> Result<Arc<Config>> {
+        let installed =
+            Self::ensure_config_plugins_installed_from_urls(&config, &config.repo_urls, dry_run)
+                .await?;
+        if installed {
+            Config::reset().await
+        } else {
+            Ok(config)
+        }
+    }
+
+    /// Install all plugins from an explicit plugin URL map. Returns whether a
+    /// plugin was installed.
     pub async fn ensure_config_plugins_installed_from_urls(
         config: &Arc<Config>,
         repo_urls: &HashMap<String, String>,
         dry_run: bool,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if repo_urls.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         let mpr = MultiProgressReport::get();
+        let mut installed = false;
 
         for (plugin_key, url) in repo_urls {
             let (plugin_type, name) = PluginType::from_plugin_entry(plugin_key, url);
@@ -1167,9 +1191,10 @@ impl Toolset {
                 plugin
                     .ensure_installed(config, &mpr, false, dry_run)
                     .await?;
+                installed |= !dry_run && plugin.is_installed();
             }
         }
-        Ok(())
+        Ok(installed)
     }
 }
 
