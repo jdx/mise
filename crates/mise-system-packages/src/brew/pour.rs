@@ -273,6 +273,9 @@ fn create_staging_dir(
     rack: &Path,
     pkg_version: &str,
 ) -> Result<(tempfile::TempDir, fslock::LockFile)> {
+    // Sweep before creating the rack: the sweep removes racks that only hold
+    // an old lock file, and must not delete the one we are about to use.
+    remove_legacy_rack_locks();
     mise_util::file::create_dir_all(rack)?;
     // Serialize the short cleanup/create handshake within a formula rack. The
     // per-directory lock then protects active extraction after this lock is
@@ -280,7 +283,6 @@ fn create_staging_dir(
     // outside the Cellar: Homebrew treats every rack directory as an installed
     // formula, so a leftover file there would outlive `brew uninstall`.
     let _rack_lock = mise_util::lock_file::LockFile::at(&rack_lock_path(rack)).lock()?;
-    remove_legacy_rack_locks();
     remove_abandoned_staging_dirs(rack)?;
     let staging = tempfile::Builder::new()
         .prefix(&format!(".mise-extract-{pkg_version}-"))
