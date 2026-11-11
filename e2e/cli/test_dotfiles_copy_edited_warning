@@ -88,3 +88,23 @@ cat <<EOT2 >mise.toml
 EOT2
 echo C >"$HOME/gx.conf"
 assert_contains "mise dot apply --yes 2>&1" "gx.conf was edited since mise last wrote it"
+
+# A copy that returns to a group uses the latest write, not that group's old record.
+write_group() {
+  cat <<EOT2 >mise.toml
+[dotfile_groups.$1]
+root = "$1"
+mode = "copy"
+entries."~/gy.conf" = { source = "gy.conf" }
+EOT2
+}
+echo A >"$DOTS/g1/gy.conf"
+echo B >"$DOTS/g2/gy.conf"
+write_group g1
+assert_succeed "mise dot apply --yes"
+write_group g2
+assert_succeed "mise dot apply --yes"
+echo X >"$DOTS/g1/gy.conf"
+write_group g1
+echo A >"$HOME/gy.conf"
+assert_contains "mise dot apply --yes 2>&1" "gy.conf was edited since mise last wrote it"

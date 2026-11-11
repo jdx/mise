@@ -4316,11 +4316,10 @@ fn recorded_copy_digests(req: &FileRequest) -> HashMap<PathBuf, String> {
             }
         }
     }
-    // a grouped file is recorded by its group, which every apply of it updates;
-    // the entry's own record is the fallback for one the group has not
-    // recorded, such as a copy that joined the group after mise wrote it
+    // a single file's own record follows every apply, grouped or not, so it is
+    // the latest write; a group's record can be older when the copy spent time
+    // in another group, so it only covers what has no record of its own
     if !req.source.is_dir()
-        && !digests.contains_key(&req.target)
         && let Some(digest) = load_target_state(req).and_then(|state| state.content_digest)
     {
         digests.insert(req.target.clone(), digest);
