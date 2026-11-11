@@ -517,7 +517,7 @@ async fn run_staged(
         .status_async(&["mkdir", "-p", &project], false)
         .await?;
     if repository.is_none() {
-        upload_source(session, tar, &project, options.yes).await?;
+        upload_source(session, tar, &project).await?;
     }
     let mise = provision_mise(session, staging, &project, options.dry_run, artifacts).await?;
     #[cfg(unix)]
@@ -738,15 +738,89 @@ pub async fn ssh(
 const MAX_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_SOURCE_FILES: u64 = 100_000;
 
-/// Refuse a source that cannot be a project directory, and one so large the
-/// archive would look like a hang. Nothing here reads file contents.
-fn check_source(
-    source: &Path,
-    excludes: &[String],
-    home: &Path,
+/// Whether `tar --exclude=PATTERN` would skip `relative`. GNU and BSD tar match
+/// an exclude against the member name as archived (`./a/b`) and against every
+/// trailing run of its components (`a/b`, `b`), and `*` matches `/`.
+fn excluded(globs: &globset::GlobSet, relative: &Path) -> bool {
+    let parts: Vec<_> = relative
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    if parts.is_empty() {
+        return false;
+    }
+    if globs.is_match(format!("./{}", parts.join("/"))) {
+        return true;
+    }
+    (0..parts.len()).any(|start| globs.is_match(parts[start..].join("/")))
+}
+
+/// Running totals for [`check_source`].
+struct SourceTally<'a> {
+    bytes: u64,
+    files: u64,
+    top_level: IndexMap<String, u64>,
     max_bytes: u64,
     max_files: u64,
-) -> Result<()> {
+    globs: &'a globset::GlobSet,
+}
+
+impl SourceTally<'_> {
+    /// Count what `tar` would archive below `root`, following links when
+    /// `follow` is set. `name` is the entry of the source `root` is reported
+    /// under, or `None` to name each entry by its own first component.
+    fn walk(&mut self, root: &Path, source: &Path, name: Option<&str>, follow: bool) -> bool {
+        let base = name.map_or(source, |_| root);
+        let walker = walkdir::WalkDir::new(root)
+            .min_depth(1)
+            .follow_links(follow)
+            .into_iter()
+            .filter_entry(|entry| {
+                let relative = entry.path().strip_prefix(base).unwrap_or(entry.path());
+                let relative = match name {
+                    Some(name) => Path::new(name).join(relative),
+                    None => relative.to_path_buf(),
+                };
+                !excluded(self.globs, &relative)
+            });
+        for entry in walker.filter_map(|entry| entry.ok()) {
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            if metadata.is_dir() {
+                continue;
+            }
+            self.files += 1;
+            self.bytes += metadata.len();
+            let top = match name {
+                Some(name) => Some(name.to_string()),
+                None => entry
+                    .path()
+                    .strip_prefix(source)
+                    .ok()
+                    .and_then(|relative| relative.components().next())
+                    .map(|part| part.as_os_str().to_string_lossy().into_owned()),
+            };
+            if let Some(top) = top {
+                *self.top_level.entry(top).or_default() += metadata.len();
+            }
+            if self.bytes > self.max_bytes || self.files > self.max_files {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Refuse a source that cannot be a project directory, and one so large the
+/// archive would look like a hang. Nothing here reads file contents. It counts
+/// what the archive will hold: `copy_links` follows every link and
+/// `copy_link` follows the listed ones.
+fn check_source(host: &RemoteHost, home: &Path, max_bytes: u64, max_files: u64) -> Result<()> {
+    let source = host.source.as_path();
     let canonical = fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
     let home = fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
     if canonical == home || canonical.parent().is_none() {
@@ -757,80 +831,69 @@ fn check_source(
         );
     }
     let mut globs = globset::GlobSetBuilder::new();
-    for exclude in excludes {
+    for exclude in &host.exclude {
         if let Ok(glob) = globset::Glob::new(exclude) {
             globs.add(glob);
         }
     }
     let globs = globs.build()?;
-    let (mut bytes, mut files) = (0u64, 0u64);
-    let mut top_level: IndexMap<std::ffi::OsString, u64> = IndexMap::new();
-    let walker = walkdir::WalkDir::new(source)
-        .min_depth(1)
-        .into_iter()
-        .filter_entry(|entry| {
-            let relative = entry.path().strip_prefix(source).unwrap_or(entry.path());
-            !(globs.is_match(relative) || globs.is_match(entry.file_name()))
-        });
-    for entry in walker.filter_map(|entry| entry.ok()) {
-        let Ok(metadata) = entry.metadata() else {
-            continue;
-        };
-        if metadata.is_dir() {
-            continue;
+    let mut tally = SourceTally {
+        bytes: 0,
+        files: 0,
+        top_level: IndexMap::new(),
+        max_bytes,
+        max_files,
+        globs: &globs,
+    };
+    let mut exceeded = tally.walk(source, source, None, host.copy_links);
+    if !exceeded && !host.copy_links {
+        for link in &host.copy_link {
+            let Ok(target) = fs::canonicalize(source.join(link)) else {
+                continue;
+            };
+            let name = link.to_string_lossy();
+            if tally.walk(&target, source, Some(name.trim_start_matches("./")), false) {
+                exceeded = true;
+                break;
+            }
         }
-        files += 1;
-        bytes += metadata.len();
-        if let Some(Component::Normal(name)) = entry
-            .path()
-            .strip_prefix(source)
-            .ok()
-            .and_then(|relative| relative.components().next())
-        {
-            *top_level.entry(name.to_os_string()).or_default() += metadata.len();
-        }
-        if bytes > max_bytes || files > max_files {
-            top_level.sort_by(|_, a, _, b| b.cmp(a));
-            let largest = top_level
-                .iter()
-                .take(5)
-                .map(|(name, size)| {
-                    format!(
-                        "  {} ({})",
-                        name.to_string_lossy(),
-                        bytesize::ByteSize(*size)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            bail!(
-                "{} holds more than {} or {} files to send to the remote host, which is too large to be a project. \
-                 Largest entries so far:\n{largest}\n\
-                 Run from your project, pass --source <DIR>, add `exclude` entries (or --exclude) for what should not be sent, or pass --yes to send it all",
-                source.display(),
-                bytesize::ByteSize(max_bytes),
-                max_files,
-            );
-        }
+    }
+    if exceeded {
+        tally.top_level.sort_by(|_, a, _, b| b.cmp(a));
+        let largest = tally
+            .top_level
+            .iter()
+            .take(5)
+            .map(|(name, size)| format!("  {name} ({})", bytesize::ByteSize(*size)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        bail!(
+            "{} holds more than {} or {} files to send to the remote host, which is too large to be a project. \
+             Largest entries so far:\n{largest}\n\
+             Run from your project, pass --source <DIR>, add `exclude` entries (or --exclude) for what should not be sent, or pass --yes to send it all",
+            source.display(),
+            bytesize::ByteSize(max_bytes),
+            max_files,
+        );
     }
     Ok(())
 }
 
-async fn upload_source(
-    session: &SshSession<'_>,
-    tar: &Path,
-    project: &str,
-    yes: bool,
-) -> Result<()> {
-    if !yes {
+impl RemoteHost {
+    /// Reject a source `bootstrap remote` should not archive. Callers run this
+    /// for every selected host before the first connection, so one bad source
+    /// cannot leave other hosts half bootstrapped.
+    pub fn check_source(&self) -> Result<()> {
         check_source(
-            &session.host.source,
-            &session.host.exclude,
+            self,
             &mise_util::dirs::HOME,
             MAX_SOURCE_BYTES,
             MAX_SOURCE_FILES,
-        )?;
+        )
     }
+}
+
+async fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
     info!("archiving {}", session.host.source.display());
     let temporary = tempfile::tempdir()?;
     let archive = temporary.path().join("source.tar.gz");
@@ -2363,18 +2426,25 @@ fn dedupe_paths(values: Vec<PathBuf>) -> Vec<PathBuf> {
 mod tests {
     use super::*;
 
+    fn source_host(source: &Path, excludes: &[&str]) -> Result<RemoteHost> {
+        let excludes: Vec<String> = excludes.iter().map(|e| e.to_string()).collect();
+        ad_hoc_host("example.test", source.to_path_buf(), &excludes)
+    }
+
     #[test]
     fn check_source_refuses_home_and_root() -> Result<()> {
         let temp = tempfile::tempdir()?;
-        let err = check_source(temp.path(), &[], temp.path(), u64::MAX, u64::MAX).unwrap_err();
+        let host = source_host(temp.path(), &[])?;
+        let err = check_source(&host, temp.path(), u64::MAX, u64::MAX).unwrap_err();
         assert!(err.to_string().contains("not a project directory"), "{err}");
-        let err = check_source(Path::new("/"), &[], temp.path(), u64::MAX, u64::MAX).unwrap_err();
+        let host = source_host(Path::new("/"), &[])?;
+        let err = check_source(&host, temp.path(), u64::MAX, u64::MAX).unwrap_err();
         assert!(err.to_string().contains("not a project directory"), "{err}");
         Ok(())
     }
 
     #[test]
-    fn check_source_stops_at_the_size_limit_and_honors_excludes() -> Result<()> {
+    fn check_source_stops_at_the_size_limit() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let home = temp.path().join("home");
         let source = temp.path().join("source");
@@ -2383,14 +2453,79 @@ mod tests {
         fs::write(source.join("cache/blob"), vec![0u8; 4096])?;
         fs::write(source.join("src/main.rs"), "fn main() {}")?;
 
-        let err = check_source(&source, &[], &home, 1024, 100).unwrap_err();
-        let message = err.to_string();
+        let host = source_host(&source, &[])?;
+        let message = check_source(&host, &home, 1024, 100)
+            .unwrap_err()
+            .to_string();
         assert!(message.contains("too large"), "{message}");
         assert!(message.contains("cache"), "{message}");
-
-        check_source(&source, &["cache".to_string()], &home, 1024, 100)?;
-        let err = check_source(&source, &[], &home, u64::MAX, 1).unwrap_err();
+        let err = check_source(&host, &home, u64::MAX, 1).unwrap_err();
         assert!(err.to_string().contains("too large"), "{err}");
+        Ok(())
+    }
+
+    #[test]
+    fn check_source_excludes_like_tar() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let home = temp.path().join("home");
+        let source = temp.path().join("source");
+        fs::create_dir_all(source.join("cache"))?;
+        fs::create_dir_all(source.join("vendor/cache"))?;
+        fs::write(source.join("cache/blob"), vec![0u8; 4096])?;
+        fs::write(source.join("vendor/cache/blob"), vec![0u8; 4096])?;
+        fs::write(source.join("main.rs"), "fn main() {}")?;
+
+        // a bare name matches at any depth; `./name` and `a/b` match as tar does
+        for excludes in [
+            vec!["cache"],
+            vec!["./cache", "vendor/cache"],
+            vec!["cache/blob"],
+            vec!["*/blob", "blob"],
+        ] {
+            let host = source_host(&source, &excludes)?;
+            check_source(&host, &home, 1024, 100)
+                .map_err(|err| eyre!("exclude {excludes:?} was not honored: {err}"))?;
+        }
+        // `./cache` is anchored at the source, so the nested copy still counts
+        let host = source_host(&source, &["./cache"])?;
+        assert!(check_source(&host, &home, 1024, 100).is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn check_source_counts_linked_directories_the_archive_will_hold() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let home = temp.path().join("home");
+        let source = temp.path().join("source");
+        let shared = temp.path().join("shared");
+        fs::create_dir_all(&source)?;
+        fs::create_dir_all(&shared)?;
+        fs::write(shared.join("blob"), vec![0u8; 4096])?;
+        fs::write(source.join("main.rs"), "fn main() {}")?;
+        symlink(&shared, source.join("shared"))?;
+
+        // an ordinary link is archived as a link
+        let host = source_host(&source, &[])?;
+        check_source(&host, &home, 1024, 100)?;
+
+        let mut host = source_host(&source, &[])?;
+        host.copy_link = vec![PathBuf::from("shared")];
+        let message = check_source(&host, &home, 1024, 100)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("shared"), "{message}");
+
+        let mut host = source_host(&source, &[])?;
+        host.copy_links = true;
+        assert!(check_source(&host, &home, 1024, 100).is_err());
+
+        // an exclude still applies to the copied directory
+        let mut host = source_host(&source, &["shared"])?;
+        host.copy_links = true;
+        check_source(&host, &home, 1024, 100)?;
         Ok(())
     }
 

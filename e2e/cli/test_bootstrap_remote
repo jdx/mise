@@ -198,8 +198,11 @@ assert_contains "cat $ssh_log" "bootstrap --dry-run --yes"
 assert_fail "test -d $remote_stage"
 
 # A home directory is not a project: refuse it unless --yes says otherwise.
+: >"$ssh_log"
 home_out=$(mise bootstrap remote --host root@ad-hoc.test --source "$HOME" --remote-mise "$HOME/.local/bin/mise" --dry-run 2>&1 || true)
 assert_contains_text "$home_out" "not a project directory"
+# the refusal comes before any connection
+assert_fail "test -s $ssh_log"
 assert_succeed "mise bootstrap remote --host root@ad-hoc.test --source $HOME --remote-mise $HOME/.local/bin/mise --dry-run --yes"
 
 : >"$ssh_log"
