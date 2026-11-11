@@ -27,9 +27,20 @@ out="$(mise __complete_word__ --shell bash --line 'mise run a f1 ::: b -')"
 assert_contains_text "$out" "--slow"
 assert_not_contains_text "$out" "--fast"
 
-out="$(mise __complete_word__ --shell bash --line 'mise run a f1 ::: b --slow ::: c')"
+out="$(mise __complete_word__ --shell bash --line 'mise run a f1 ::: b --slow ::: c -')"
+assert_contains_text "$out" "--help"
 assert_not_contains_text "$out" "--fast"
+assert_not_contains_text "$out" "--slow"
 
-# a line that is not a `mise run` one keeps `:::` as an ordinary word
-out="$(mise __complete_word__ --shell bash --line 'mise exec -- ls ::: ')"
-assert_not_contains_text "$out" $'\ntest'
+for line in 'mise t run a f1 ::: ' 'mise tasks run a f1 ::: ' 'mise -C . run a ::: ' 'mise -- exec ::: '; do
+  out="$(mise __complete_word__ --shell bash --line "$line")"
+  assert_contains_text "$out" "b"
+  assert_contains_text "$out" "c"
+done
+
+# a line that is not a `mise run` one keeps `:::` as an ordinary word: files, not tasks
+for line in 'mise exec -- ls ::: ' 'mise -C . exec -- ls ::: '; do
+  out="$(mise __complete_word__ --shell bash --line "$line")"
+  assert_contains_text "$out" $'\001files'
+  assert_not_contains_text "$out" "$(printf 'a\nb\nc')"
+done

@@ -19,7 +19,9 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
     }
 
     let spec = super::usage::completion_spec();
-    complete_spec(&spec, &request)
+    let restarted = restart_after_task_separator(&spec, &request);
+    let request = restarted.as_ref().unwrap_or(&request);
+    complete_spec(&spec, request)
         .ok()
         .or_else(|| Cli::completion_request(argv))
 }
@@ -115,8 +117,6 @@ fn complete_spec(
     spec: &usage::Spec,
     request: &usage_rs::complete::CompletionRequest,
 ) -> Result<String> {
-    let restarted = restart_after_task_separator(spec, request);
-    let request = restarted.as_ref().unwrap_or(request);
     let answer = usage_cli::complete_answer(
         spec,
         &request.split.words,
@@ -169,14 +169,7 @@ fn restart_after_task_separator(
     if sep == 0 {
         return None;
     }
-    let mut before = split.words[1..sep].iter().filter(|w| !w.starts_with('-'));
-    let is_run = |w: &str| spec.cmd.find_subcommand(w).is_some_and(|c| c.name == "run");
-    let runs_tasks = match before.next() {
-        Some(first) if first == "tasks" => before.next().is_some_and(|w| is_run(w)),
-        Some(first) => is_run(first) || spec.cmd.find_subcommand(first).is_none(),
-        None => false,
-    };
-    if !runs_tasks {
+    if !runs_tasks(spec, &split.words[1..sep]) {
         return None;
     }
     let mut restarted = request.clone();
@@ -185,6 +178,60 @@ fn restart_after_task_separator(
     restarted.split.cword = split.cword - sep + 1;
     restarted.split.words = words;
     Some(restarted)
+}
+
+/// Whether the words before a `:::` make a `mise run` line: `run`, `tasks run`, or a task
+/// named in place of a command (`mise <task>`, or `mise -- <task>` for a task named like one).
+fn runs_tasks(spec: &usage::Spec, words: &[String]) -> bool {
+    let takes_value = |word: &str| {
+        let flag = |f: &&usage::SpecFlag| match word.strip_prefix("--") {
+            Some(long) => f.long.iter().any(|l| l == long),
+            None => word.chars().nth(1).is_some_and(|c| f.short.contains(&c)),
+        };
+        !word.contains('=')
+            && (word.starts_with("--") || word.chars().count() == 2)
+            && spec
+                .cmd
+                .flags
+                .iter()
+                .find(flag)
+                .is_some_and(|f| f.arg.is_some())
+    };
+    // The next command word, past flags and the values they take, and whether a `--` ended
+    // the flags first.
+    fn next_word<'a>(
+        rest: &mut std::slice::Iter<'a, String>,
+        takes_value: &dyn Fn(&str) -> bool,
+    ) -> Option<(&'a String, bool)> {
+        while let Some(word) = rest.next() {
+            if word == "--" {
+                return rest.next().map(|w| (w, true));
+            }
+            if !word.starts_with('-') {
+                return Some((word, false));
+            }
+            if takes_value(word) {
+                rest.next();
+            }
+        }
+        None
+    }
+    let mut rest = words.iter();
+    let Some((first, after_dashes)) = next_word(&mut rest, &takes_value) else {
+        return false;
+    };
+    let Some(cmd) = spec.cmd.find_subcommand(first) else {
+        return true;
+    };
+    if after_dashes {
+        return true;
+    }
+    match cmd.name.as_str() {
+        "run" => true,
+        "tasks" => next_word(&mut rest, &takes_value)
+            .is_some_and(|(w, _)| cmd.find_subcommand(w).is_some_and(|c| c.name == "run")),
+        _ => false,
+    }
 }
 
 /// Whether `value` can be offered to a shell as a candidate.
