@@ -517,7 +517,7 @@ async fn run_staged(
         .status_async(&["mkdir", "-p", &project], false)
         .await?;
     if repository.is_none() {
-        upload_source(session, tar, &project).await?;
+        upload_source(session, tar, &project, options.yes).await?;
     }
     let mise = provision_mise(session, staging, &project, options.dry_run, artifacts).await?;
     #[cfg(unix)]
@@ -733,7 +733,105 @@ pub async fn ssh(
     result
 }
 
-async fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
+/// Most an archive may hold before `bootstrap remote` stops to ask. A project
+/// that needs more passes `--yes`.
+const MAX_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_SOURCE_FILES: u64 = 100_000;
+
+/// Refuse a source that cannot be a project directory, and one so large the
+/// archive would look like a hang. Nothing here reads file contents.
+fn check_source(
+    source: &Path,
+    excludes: &[String],
+    home: &Path,
+    max_bytes: u64,
+    max_files: u64,
+) -> Result<()> {
+    let canonical = fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
+    let home = fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    if canonical == home || canonical.parent().is_none() {
+        bail!(
+            "refusing to send {} to the remote host: it is not a project directory and would include credentials such as ~/.ssh. \
+             Run from your project, pass --source <DIR>, or pass --yes to send it anyway",
+            canonical.display()
+        );
+    }
+    let mut globs = globset::GlobSetBuilder::new();
+    for exclude in excludes {
+        if let Ok(glob) = globset::Glob::new(exclude) {
+            globs.add(glob);
+        }
+    }
+    let globs = globs.build()?;
+    let (mut bytes, mut files) = (0u64, 0u64);
+    let mut top_level: IndexMap<std::ffi::OsString, u64> = IndexMap::new();
+    let walker = walkdir::WalkDir::new(source)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(|entry| {
+            let relative = entry.path().strip_prefix(source).unwrap_or(entry.path());
+            !(globs.is_match(relative) || globs.is_match(entry.file_name()))
+        });
+    for entry in walker.filter_map(|entry| entry.ok()) {
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if metadata.is_dir() {
+            continue;
+        }
+        files += 1;
+        bytes += metadata.len();
+        if let Some(Component::Normal(name)) = entry
+            .path()
+            .strip_prefix(source)
+            .ok()
+            .and_then(|relative| relative.components().next())
+        {
+            *top_level.entry(name.to_os_string()).or_default() += metadata.len();
+        }
+        if bytes > max_bytes || files > max_files {
+            top_level.sort_by(|_, a, _, b| b.cmp(a));
+            let largest = top_level
+                .iter()
+                .take(5)
+                .map(|(name, size)| {
+                    format!(
+                        "  {} ({})",
+                        name.to_string_lossy(),
+                        bytesize::ByteSize(*size)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            bail!(
+                "{} holds more than {} or {} files to send to the remote host, which is too large to be a project. \
+                 Largest entries so far:\n{largest}\n\
+                 Run from your project, pass --source <DIR>, add `exclude` entries (or --exclude) for what should not be sent, or pass --yes to send it all",
+                source.display(),
+                bytesize::ByteSize(max_bytes),
+                max_files,
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn upload_source(
+    session: &SshSession<'_>,
+    tar: &Path,
+    project: &str,
+    yes: bool,
+) -> Result<()> {
+    if !yes {
+        check_source(
+            &session.host.source,
+            &session.host.exclude,
+            &mise_util::dirs::HOME,
+            MAX_SOURCE_BYTES,
+            MAX_SOURCE_FILES,
+        )?;
+    }
+    info!("archiving {}", session.host.source.display());
     let temporary = tempfile::tempdir()?;
     let archive = temporary.path().join("source.tar.gz");
     let archive_source = if session.host.copy_links || session.host.copy_link.is_empty() {
@@ -2264,6 +2362,37 @@ fn dedupe_paths(values: Vec<PathBuf>) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_source_refuses_home_and_root() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let err = check_source(temp.path(), &[], temp.path(), u64::MAX, u64::MAX).unwrap_err();
+        assert!(err.to_string().contains("not a project directory"), "{err}");
+        let err = check_source(Path::new("/"), &[], temp.path(), u64::MAX, u64::MAX).unwrap_err();
+        assert!(err.to_string().contains("not a project directory"), "{err}");
+        Ok(())
+    }
+
+    #[test]
+    fn check_source_stops_at_the_size_limit_and_honors_excludes() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let home = temp.path().join("home");
+        let source = temp.path().join("source");
+        fs::create_dir_all(source.join("cache"))?;
+        fs::create_dir_all(source.join("src"))?;
+        fs::write(source.join("cache/blob"), vec![0u8; 4096])?;
+        fs::write(source.join("src/main.rs"), "fn main() {}")?;
+
+        let err = check_source(&source, &[], &home, 1024, 100).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("too large"), "{message}");
+        assert!(message.contains("cache"), "{message}");
+
+        check_source(&source, &["cache".to_string()], &home, 1024, 100)?;
+        let err = check_source(&source, &[], &home, u64::MAX, 1).unwrap_err();
+        assert!(err.to_string().contains("too large"), "{err}");
+        Ok(())
+    }
 
     #[test]
     #[cfg(unix)]
