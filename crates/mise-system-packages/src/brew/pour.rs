@@ -276,8 +276,11 @@ fn create_staging_dir(
     mise_util::file::create_dir_all(rack)?;
     // Serialize the short cleanup/create handshake within a formula rack. The
     // per-directory lock then protects active extraction after this lock is
-    // released, including work owned by another mise process.
-    let _rack_lock = mise_util::lock_file::LockFile::at(&rack.join(".mise-staging.lock")).lock()?;
+    // released, including work owned by another mise process. The lock lives
+    // outside the Cellar: Homebrew treats every rack directory as an installed
+    // formula, so a leftover file there would outlive `brew uninstall`.
+    let _rack_lock = mise_util::lock_file::LockFile::at(&rack_lock_path(rack)).lock()?;
+    remove_legacy_rack_locks();
     remove_abandoned_staging_dirs(rack)?;
     let staging = tempfile::Builder::new()
         .prefix(&format!(".mise-extract-{pkg_version}-"))
@@ -285,6 +288,37 @@ fn create_staging_dir(
     let staging_lock =
         mise_util::lock_file::LockFile::at(&staging.path().join(".mise-lock")).lock()?;
     Ok((staging, staging_lock))
+}
+
+fn rack_lock_path(rack: &Path) -> PathBuf {
+    let name = rack
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    prefix::prefix()
+        .join("var/homebrew/locks")
+        .join(format!("mise-staging-{name}.lock"))
+}
+
+/// Older mise versions kept the rack lock at `<rack>/.mise-staging.lock`,
+/// which made `brew list` report uninstalled formulae. Delete those files and
+/// the racks they left empty. Runs once per process; `remove_dir` skips racks
+/// that still hold a keg.
+fn remove_legacy_rack_locks() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| remove_legacy_rack_locks_in(&prefix::cellar()));
+}
+
+fn remove_legacy_rack_locks_in(cellar: &Path) {
+    let Ok(racks) = cellar.read_dir() else {
+        return;
+    };
+    for rack in racks.flatten() {
+        let path = rack.path();
+        if std::fs::remove_file(path.join(".mise-staging.lock")).is_ok() {
+            let _ = std::fs::remove_dir(&path);
+        }
+    }
 }
 
 fn remove_abandoned_staging_dirs(rack: &Path) -> Result<()> {
@@ -913,6 +947,31 @@ mod tests {
         remove_abandoned_staging_dirs(rack.path()).unwrap();
 
         assert!(!extract.exists());
+    }
+
+    #[test]
+    fn removes_legacy_rack_locks_and_empty_racks() {
+        let cellar = tempfile::tempdir().unwrap();
+        let empty = cellar.path().join("qpdf");
+        let installed = cellar.path().join("git");
+        mise_util::file::create_dir_all(&empty).unwrap();
+        mise_util::file::create_dir_all(installed.join("2.56.0")).unwrap();
+        mise_util::file::write(empty.join(".mise-staging.lock"), "").unwrap();
+        mise_util::file::write(installed.join(".mise-staging.lock"), "").unwrap();
+
+        remove_legacy_rack_locks_in(cellar.path());
+
+        assert!(!empty.exists());
+        assert!(!installed.join(".mise-staging.lock").exists());
+        assert!(installed.join("2.56.0").exists());
+    }
+
+    #[test]
+    fn rack_lock_lives_outside_the_rack() {
+        let rack = Path::new("/opt/homebrew/Cellar/git");
+        let lock = rack_lock_path(rack);
+        assert!(!lock.starts_with(rack));
+        assert!(lock.ends_with("var/homebrew/locks/mise-staging-git.lock"));
     }
 
     #[test]
