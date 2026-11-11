@@ -134,7 +134,7 @@ jobs:
 
   unit:
     name: unit-macos
-    runs-on: ${{ !inputs.trusted && 'macos-14' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=cache' }}
+    runs-on: ${{ !inputs.trusted && 'macos-latest' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=cache' }}
     timeout-minutes: 180
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -146,7 +146,7 @@ jobs:
       MBX_TARGET_VIEWS: "0"
       MISE_CARGO_BUILD_COMMAND: cargo build
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
-      # Untrusted runs land on a shared macos-14 runner that is roughly twice as
+      # Untrusted runs land on a shared macos-latest runner that is roughly twice as
       # slow, where the strict per-test ceilings only produce false failures.
       NEXTEST_PROFILE: ${{ inputs.trusted && 'ci' || 'ci-shared' }}
     steps:
@@ -215,7 +215,7 @@ jobs:
       # Line Tools guard exercised on a real macOS runner. Each test has its
       # own HOME, TMPDIR, and mise directories, so these run concurrently.
       # They are listed longest first so the slowest start immediately.
-      # macos-14 runners have 3 cores; Namespace runners have 6.
+      # macos-latest runners have 3 cores; Namespace runners have 6.
       - name: Test dotfiles and bootstrap e2e
         env:
           E2E_JOBS: ${{ inputs.trusted && '3' || '2' }}
