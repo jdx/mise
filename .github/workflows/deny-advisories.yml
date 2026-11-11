@@ -101,6 +101,7 @@ jobs:
             -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
             -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: deny-advisories-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             -d "$payload"
       - name: Fail run
         if: ${{ !cancelled() && steps.deny.outputs.status != '' && steps.deny.outputs.status != '0' }}
