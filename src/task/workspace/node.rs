@@ -264,20 +264,28 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         if lockfile_path == Path::new(PNPM_LOCKFILE) {
             return Ok(Some(pnpm_affected_projects(before, after, graph)?));
         }
-        // Other lockfiles cannot be attributed to a package. A root project owns
-        // every file outside the packages, so without this a lockfile change
-        // would select only the root and skip the packages that depend on it.
-        if SHARED_LOCKFILES
-            .iter()
-            .any(|lockfile| lockfile_path == Path::new(lockfile))
-            && graph.projects().any(|project| {
-                project.root == Path::new(".") && project.id.as_str().starts_with("node:")
-            })
-        {
-            return Ok(Some(node_project_ids(graph)));
-        }
         Ok(None)
     }
+}
+
+/// Node projects selected by a change to a lockfile that cannot be attributed
+/// to a single package. A named root project owns every file outside the
+/// packages, so without this a change would select only the root and skip the
+/// packages that depend on it. This never reads the lockfile, so binary
+/// lockfiles such as `bun.lockb` are fine. Callers should still treat the path
+/// as an ordinary changed path so `global_inputs` keeps applying to it.
+pub fn shared_lockfile_projects(
+    lockfile_path: &Path,
+    graph: &WorkspaceProjectGraph,
+) -> Option<BTreeSet<ProjectId>> {
+    let has_root_project = graph
+        .projects()
+        .any(|project| project.root == Path::new(".") && project.id.as_str().starts_with("node:"));
+    (has_root_project
+        && SHARED_LOCKFILES
+            .iter()
+            .any(|lockfile| lockfile_path == Path::new(lockfile)))
+    .then(|| node_project_ids(graph))
 }
 
 fn pnpm_affected_projects(
@@ -910,33 +918,39 @@ snapshots:
     }
 
     #[test]
-    fn shared_lockfile_changes_affect_every_node_project_with_a_root_project() {
-        for lockfile in SHARED_LOCKFILES {
-            let temp = tempdir().unwrap();
-            write(
-                &temp.path().join(PACKAGE_JSON),
-                r#"{"name":"root","workspaces":["packages/*"]}"#,
-            );
-            write(
-                &temp.path().join("packages/app/package.json"),
-                r#"{"name":"app"}"#,
-            );
-            let graph =
-                WorkspaceProjectGraph::discover(&NodeWorkspaceProvider, temp.path()).unwrap();
+    fn shared_lockfiles_select_every_node_project_only_with_a_root_project() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"name":"root","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+        let graph = WorkspaceProjectGraph::discover(&NodeWorkspaceProvider, temp.path()).unwrap();
 
+        for lockfile in SHARED_LOCKFILES {
             assert_eq!(
-                graph
-                    .affected_projects_for_lockfile(
-                        &[&NodeWorkspaceProvider],
-                        Path::new(lockfile),
-                        None,
-                        None,
-                    )
-                    .unwrap(),
+                shared_lockfile_projects(Path::new(lockfile), &graph),
                 Some(node_project_ids(&graph)),
                 "{lockfile}"
             );
         }
+        assert_eq!(
+            shared_lockfile_projects(Path::new("packages/app/yarn.lock"), &graph),
+            None
+        );
+
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":["packages/*"]}"#,
+        );
+        let graph = WorkspaceProjectGraph::discover(&NodeWorkspaceProvider, temp.path()).unwrap();
+        assert_eq!(
+            shared_lockfile_projects(Path::new("yarn.lock"), &graph),
+            None
+        );
     }
 
     #[test]
