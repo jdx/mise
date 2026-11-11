@@ -709,8 +709,12 @@ A `copy`, `template`, or inline `content` entry overwrites the target's
 content without `--force`, and replaces a symlink at the target with a file.
 A directory where a copied, templated, or inline file should go, or a file
 where a directory copy should go, is still a conflict and needs `--force`.
-When `apply` is about to overwrite a `template` target that you edited since mise
-last wrote it, it warns first, so you can move the edit into the source.
+When `apply` is about to overwrite a `template` or `copy` target that you edited
+since mise last wrote it, it warns first, so you can move the edit into the
+source. For a `copy` target, `--dry-run` and the confirmation list mark it too. A file
+mise has no record of, such as one that predates the entry, is not warned about.
+A directory `copy` outside a [dotfile group](/dotfiles/groups.html) has no
+per-file record, so its files are not checked.
 Check `mise dot diff` before you change which source a target uses.
 
 Without a terminal (a script, `ssh` without `-t`, an agent shell), `apply` cannot
