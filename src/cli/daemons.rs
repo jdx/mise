@@ -319,9 +319,13 @@ impl Daemons {
         let all = take_all_flag(action, &requested_names, &groups, &mut flags)?;
         // `-q` and `--silent` are mise's own flags and never reach pitchfork, so
         // carry them over: the supervisor's startup log lines are output too.
+        // The trailing flags may also hold them unconsumed, and pitchfork has no
+        // `--silent`, so rewrite that one rather than forward it.
         if action == "start" {
             let settings = Settings::get();
-            if (settings.quiet || settings.silent)
+            let given = flags.iter().any(|f| f == "--silent");
+            flags.retain(|f| f != "--silent");
+            if (settings.quiet || settings.silent || given)
                 && !flags.iter().any(|f| f == "-q" || f == "--quiet")
             {
                 flags.push("--quiet".into());
