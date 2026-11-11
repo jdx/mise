@@ -4348,7 +4348,13 @@ fn edited_copy_targets(req: &FileRequest) -> Vec<(PathBuf, PathBuf)> {
     pairs
         .into_iter()
         .filter(|(source, target)| {
-            let Some(digest) = recorded.get(target) else {
+            let Some(digest) = recorded.get(target).or_else(|| {
+                // a record keeps the spelling of an earlier apply, and Windows ignores case
+                recorded
+                    .iter()
+                    .find(|(path, _)| same_path_any_case(path, target))
+                    .map(|(_, digest)| digest)
+            }) else {
                 return false;
             };
             if target.is_symlink() || !target.is_file() {
