@@ -292,7 +292,14 @@ pub async fn start(
     // `--quiet` and `--silent` hide mise's own messages; the supervisor's
     // startup log lines belong with them.
     let settings = Settings::get();
-    let hush = quiet || settings.quiet || settings.silent;
+    let hush = quiet
+        || settings.quiet
+        || settings.silent
+        || settings.task.quiet
+        || settings
+            .task
+            .output
+            .is_some_and(|o| o.is_quiet() || o.is_silent());
     for (rt, root, ids, checked, ports, _project_lock) in pending {
         let mut args = vec!["start".to_string()];
         if hush {
