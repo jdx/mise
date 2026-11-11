@@ -1030,6 +1030,16 @@ impl ToolVersion {
                     return build(v);
                 }
             }
+            // A backend with no release list to resolve `latest` from (a
+            // github git source with no releases) installs under the literal
+            // `latest` directory, which the installed-version lookup skips.
+            // Offline, that install is the answer.
+            if is_offline
+                && let Some(unresolved) = backend.unresolved_latest_version()
+                && backend.list_installed_versions().contains(&unresolved)
+            {
+                return Ok(Self::from_installed(request, unresolved));
+            }
             // Prune-style offline (opts.offline) wants a non-erroring no-op
             // when nothing is installed — the literal "latest" can't match
             // any installed pathname so it's safe. Global MISE_OFFLINE keeps
