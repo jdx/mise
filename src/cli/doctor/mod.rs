@@ -1399,6 +1399,13 @@ impl Doctor {
                 continue;
             };
 
+            // A `packageManager` checksum forces the backend that publishes the
+            // checksummed artifact for one request. Every install from that file
+            // records it again, so switching would never stick.
+            if crate::args::recorded_by_checksum_backend(short, Some(stored_full)) {
+                continue;
+            }
+
             // Get registry entry, skip if not in registry
             let Some(rt) = REGISTRY.get(short.as_str()) else {
                 continue;
@@ -1904,6 +1911,28 @@ mod tests {
             false
         ));
         assert!(!backend_matches_registry(&neovim, "cargo:neovim", true));
+    }
+
+    /// A `packageManager` checksum records the backend it forces, which the
+    /// registry does not recommend; doctor must not suggest a switch that the
+    /// next install from that file undoes.
+    #[test]
+    fn checksum_forced_backends_are_not_mismatches() {
+        use crate::args::recorded_by_checksum_backend;
+        for (short, full) in [
+            ("yarn", "http:yarn"),
+            ("yarn", "npm:yarn"),
+            ("npm", "npm:npm"),
+            ("pnpm", "npm:pnpm"),
+            ("bun", "npm:bun"),
+        ] {
+            assert!(recorded_by_checksum_backend(short, Some(&full.to_string())));
+        }
+        assert!(!recorded_by_checksum_backend(
+            "yarn",
+            Some(&"vfox:jdx/vfox-yarn".to_string())
+        ));
+        assert!(!recorded_by_checksum_backend("neovim", None));
     }
 
     use crate::system::history::sync::run::SyncStatus;
