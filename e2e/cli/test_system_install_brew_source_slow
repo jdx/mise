@@ -19,6 +19,9 @@ export MISE_SYSTEM_BREW_FORCE_SOURCE=hello
 # availability; the Homebrew-provided sha256 still verifies the download.
 export MISE_URL_REPLACEMENTS='{"https://ftpmirror.gnu.org/gnu":"https://ftp.gnu.org/gnu"}'
 
+# provision ruby first so a compiled ruby doesn't see the bad CC below
+mise install ruby
+
 # toolchain variables from the caller's shell must not leak into the build
 export CC=/nonexistent/cc
 

@@ -499,6 +499,7 @@ mod tests {
             kept,
             [
                 "HOME",
+                "MISE_DEBUG",
                 "HTTPS_PROXY",
                 "no_proxy",
                 "LC_ALL",
