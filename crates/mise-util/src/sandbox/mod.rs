@@ -339,6 +339,18 @@ impl SandboxConfig {
                 if p.is_relative() {
                     *p = cwd.join(&*p);
                 }
+                // `Path` equality ignores `.` components, so `./dist` would
+                // reach the profile as `<cwd>/./dist`, which Seatbelt never
+                // matches against the canonical path it checks. Drop them.
+                // A trailing `/` still demands a directory, so keep it when
+                // the path exists and is not one (`./config/` naming a file stays
+                // refused). A missing path loses it, so it matches once created.
+                let bytes = p.as_os_str().as_encoded_bytes();
+                let wants_dir = bytes.ends_with(b"/") || bytes.ends_with(b"/.");
+                *p = p.components().collect();
+                if wants_dir && p.exists() && !p.is_dir() {
+                    p.push("");
+                }
                 #[cfg(unix)]
                 check_symlinks_stay_in_roots(p, &roots)?;
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
@@ -878,6 +890,66 @@ mod tests {
         assert_eq!(config.allow_read, vec![target]);
         assert_eq!(config.allow_write, vec![plain]);
         assert_eq!(config.symlinked_allow_paths, vec![through_link]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_paths_drops_current_dir_components() {
+        // `Path` equality ignores `.`, so a `./` spelling survives
+        // canonicalization and reaches the macOS profile, where it never matches.
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = root_dir.path().canonicalize().unwrap();
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let mut config = SandboxConfig {
+            allow_read: vec![root.join("./sub"), root.join("./")],
+            ..Default::default()
+        };
+        config.resolve_paths(&[]).unwrap();
+
+        let rendered: Vec<_> = config
+            .allow_read
+            .iter()
+            .map(|p| p.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![sub.to_str().unwrap(), root.to_str().unwrap()]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_paths_keeps_a_trailing_slash_on_a_file() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = root_dir.path().canonicalize().unwrap();
+        let file = root.join("config");
+        std::fs::write(&file, "").unwrap();
+        for spelling in ["./config/", "config/."] {
+            let mut config = SandboxConfig {
+                allow_read: vec![root.join(spelling)],
+                ..Default::default()
+            };
+            config.resolve_paths(&[]).unwrap();
+
+            assert_eq!(
+                config.allow_read[0].as_os_str().as_encoded_bytes().last(),
+                Some(&b'/'),
+                "{spelling}"
+            );
+        }
+
+        // A directory that does not exist yet must match once it is created.
+        let mut config = SandboxConfig {
+            allow_write: vec![root.join("./new/")],
+            ..Default::default()
+        };
+        config.resolve_paths(&[]).unwrap();
+        assert_eq!(
+            config.allow_write[0].as_os_str(),
+            root.join("new").as_os_str()
+        );
     }
 
     /// The project holds the code being confined, so whoever wrote that code
