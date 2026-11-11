@@ -15,6 +15,9 @@ pub struct Metadata {
     pub license: Option<String>,
     pub homepage: Option<String>,
     pub system_dependencies: Vec<SystemDependency>,
+    /// `PLUGIN.downloads`: `false` declares that the plugin installs without
+    /// downloading anything, so `PreInstall` returns no `url`. Absent means true.
+    pub downloads: bool,
     pub hooks: BTreeSet<&'static str>,
 }
 
@@ -111,6 +114,7 @@ impl TryFrom<Table> for Metadata {
             license: t.get("license")?,
             homepage: t.get("homepage")?,
             system_dependencies,
+            downloads: t.get::<Option<bool>>("downloads")?.unwrap_or(true),
             hooks: Default::default(),
         })
     }
