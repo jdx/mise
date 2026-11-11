@@ -344,7 +344,8 @@ impl SandboxConfig {
                 // matches against the canonical path it checks. Drop them.
                 // A trailing `/` still demands a directory, so keep it when
                 // the path is not one (`./config/` naming a file stays refused).
-                let wants_dir = p.as_os_str().as_encoded_bytes().ends_with(b"/");
+                let bytes = p.as_os_str().as_encoded_bytes();
+                let wants_dir = bytes.ends_with(b"/") || bytes.ends_with(b"/.");
                 *p = p.components().collect();
                 if wants_dir && !p.is_dir() {
                     p.push("");
@@ -924,18 +925,19 @@ mod tests {
         let root = root_dir.path().canonicalize().unwrap();
         let file = root.join("config");
         std::fs::write(&file, "").unwrap();
-        let with_slash = root.join("./config/");
+        for spelling in ["./config/", "config/."] {
+            let mut config = SandboxConfig {
+                allow_read: vec![root.join(spelling)],
+                ..Default::default()
+            };
+            config.resolve_paths(&[]).unwrap();
 
-        let mut config = SandboxConfig {
-            allow_read: vec![with_slash],
-            ..Default::default()
-        };
-        config.resolve_paths(&[]).unwrap();
-
-        assert_eq!(
-            config.allow_read[0].as_os_str().as_encoded_bytes().last(),
-            Some(&b'/')
-        );
+            assert_eq!(
+                config.allow_read[0].as_os_str().as_encoded_bytes().last(),
+                Some(&b'/'),
+                "{spelling}"
+            );
+        }
     }
 
     /// The project holds the code being confined, so whoever wrote that code
