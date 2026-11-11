@@ -323,14 +323,20 @@ pub(super) fn remove_legacy_rack_locks() {
 /// creating that rack at the same moment is not left without it. Returns
 /// whether every leftover lock file was removed.
 fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathBuf) -> bool {
-    let Ok(racks) = cellar.read_dir() else {
-        return true;
+    let racks = match cellar.read_dir() {
+        Ok(racks) => racks,
+        Err(err) => return err.kind() == ErrorKind::NotFound,
     };
     let mut complete = true;
     for rack in racks.flatten() {
         let path = rack.path();
         let legacy = path.join(".mise-staging.lock");
-        if legacy.symlink_metadata().is_err() {
+        // An empty rack is the state a previous sweep leaves when it removed
+        // the lock file but could not remove the rack.
+        let empty = path
+            .read_dir()
+            .is_ok_and(|mut entries| entries.next().is_none());
+        if legacy.symlink_metadata().is_err() && !empty {
             continue;
         }
         let Ok(_lock) = mise_util::lock_file::LockFile::at(&lock_path(&path)).lock() else {
@@ -338,10 +344,21 @@ fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathB
             continue;
         };
         match std::fs::remove_file(&legacy) {
-            Ok(()) => {
-                let _ = std::fs::remove_dir(&path);
-            }
+            Ok(()) => {}
             Err(err) if err.kind() == ErrorKind::NotFound => {}
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        }
+        // A rack that still holds a keg is kept; any other failure is retried.
+        match std::fs::remove_dir(&path) {
+            Ok(()) => {}
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty
+                ) => {}
             Err(_) => complete = false,
         }
     }
