@@ -824,21 +824,34 @@ impl SourceTally<'_> {
         follow: bool,
     ) -> Result<bool> {
         let base = name.map_or(source, |_| root);
+        let archived = |path: &Path| {
+            let relative = path.strip_prefix(base).unwrap_or(path);
+            match name {
+                Some(name) => Path::new(name).join(relative),
+                None => relative.to_path_buf(),
+            }
+        };
+        let globs = self.globs;
         let walker = walkdir::WalkDir::new(root)
             .min_depth(1)
             .follow_links(follow)
             .into_iter()
-            .filter_entry(|entry| {
-                let relative = entry.path().strip_prefix(base).unwrap_or(entry.path());
-                let relative = match name {
-                    Some(name) => Path::new(name).join(relative),
-                    None => relative.to_path_buf(),
-                };
-                !excluded(self.globs, &relative)
-            });
+            .filter_entry(|entry| !excluded(globs, &archived(entry.path())));
         for entry in walker {
-            // tar fails on what it cannot read, so the preflight must too
-            let entry = entry.wrap_err("cannot read the remote source")?;
+            let entry = match entry {
+                Ok(entry) => entry,
+                // walkdir resolves a link before the exclude filter sees it, so
+                // an excluded broken link surfaces here; tar skips it
+                Err(error)
+                    if error
+                        .path()
+                        .is_some_and(|path| excluded(globs, &archived(path))) =>
+                {
+                    continue;
+                }
+                // tar fails on what it cannot read, so the preflight must too
+                Err(error) => return Err(error).wrap_err("cannot read the remote source"),
+            };
             let metadata = entry
                 .metadata()
                 .wrap_err_with(|| format!("cannot read {}", entry.path().display()))?;
@@ -2636,6 +2649,15 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(message.contains("big"), "{message}");
+
+        // an excluded broken link is not an error
+        symlink(temp.path().join("missing"), source.join("dead"))?;
+        let mut host = source_host(&source, &["shared", "big", "dead"])?;
+        host.copy_links = true;
+        check_source(&host, &home, 1 << 20, 100)?;
+        let mut host = source_host(&source, &["shared", "big"])?;
+        host.copy_links = true;
+        assert!(check_source(&host, &home, 1 << 20, 100).is_err());
         Ok(())
     }
 
