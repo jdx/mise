@@ -115,6 +115,8 @@ fn complete_spec(
     spec: &usage::Spec,
     request: &usage_rs::complete::CompletionRequest,
 ) -> Result<String> {
+    let restarted = restart_after_task_separator(spec, request);
+    let request = restarted.as_ref().unwrap_or(request);
     let answer = usage_cli::complete_answer(
         spec,
         &request.split.words,
@@ -147,6 +149,42 @@ fn complete_spec(
         files: answer.files.then_some(usage_rs::complete::Files::Any),
     };
     Ok(usage_rs::complete::render_request(&answer, request))
+}
+
+/// Treat the words after the last `:::` of a `mise run` line as a fresh `mise run` line.
+///
+/// `:::` starts the next task, but tasks are subcommands mounted under `run`, and usage checks
+/// a `restart_token` only on the innermost command it has parsed, which by then is the first
+/// task. Left alone, `mise run a f1 ::: <Tab>` completes more arguments of `a`.
+fn restart_after_task_separator(
+    spec: &usage::Spec,
+    request: &usage_rs::complete::CompletionRequest,
+) -> Option<usage_rs::complete::CompletionRequest> {
+    let split = &request.split;
+    let sep = split
+        .words
+        .get(..split.cword)?
+        .iter()
+        .rposition(|w| w == ":::")?;
+    if sep == 0 {
+        return None;
+    }
+    let mut before = split.words[1..sep].iter().filter(|w| !w.starts_with('-'));
+    let is_run = |w: &str| spec.cmd.find_subcommand(w).is_some_and(|c| c.name == "run");
+    let runs_tasks = match before.next() {
+        Some(first) if first == "tasks" => before.next().is_some_and(|w| is_run(w)),
+        Some(first) => is_run(first) || spec.cmd.find_subcommand(first).is_none(),
+        None => false,
+    };
+    if !runs_tasks {
+        return None;
+    }
+    let mut restarted = request.clone();
+    let mut words = vec![split.words[0].clone(), "run".to_string()];
+    words.extend(split.words[sep + 1..].iter().cloned());
+    restarted.split.cword = split.cword - sep + 1;
+    restarted.split.words = words;
+    Some(restarted)
 }
 
 /// Whether `value` can be offered to a shell as a candidate.
