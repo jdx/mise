@@ -1388,7 +1388,17 @@ impl Doctor {
     }
 
     fn analyze_backend_mismatches(&mut self) {
-        for (short, ist) in install_state::list_tools().iter() {
+        self.warnings
+            .extend(backend_mismatch_warnings(&install_state::list_tools()));
+    }
+}
+
+fn backend_mismatch_warnings(
+    tools: &std::collections::BTreeMap<String, install_state::InstallStateTool>,
+) -> Vec<String> {
+    let mut warnings = vec![];
+    {
+        for (short, ist) in tools.iter() {
             // Skip plugin-based tools (they use the plugin as backend)
             if install_state::get_plugin_type(short).is_some() {
                 continue;
@@ -1398,6 +1408,13 @@ impl Doctor {
             let Some(stored_full) = &ist.full else {
                 continue;
             };
+
+            // A `packageManager` checksum forces the backend that publishes the
+            // checksummed artifact for one request. Every install from that file
+            // records it again, so switching would never stick.
+            if crate::args::recorded_by_checksum_backend(short, Some(stored_full)) {
+                continue;
+            }
 
             // Get registry entry, skip if not in registry
             let Some(rt) = REGISTRY.get(short.as_str()) else {
@@ -1442,10 +1459,13 @@ impl Doctor {
                        If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
                 )
             };
-            self.warnings.push(msg);
+            warnings.push(msg);
         }
     }
+    warnings
+}
 
+impl Doctor {
     async fn paths(&mut self, ts: &Toolset) -> eyre::Result<Vec<PathBuf>> {
         let config = Config::get().await?;
         let env = ts.full_env(&config).await?;
@@ -1904,6 +1924,43 @@ mod tests {
             false
         ));
         assert!(!backend_matches_registry(&neovim, "cargo:neovim", true));
+    }
+
+    /// A `packageManager` checksum records the backend it forces, which the
+    /// registry does not recommend; doctor must not suggest a switch that the
+    /// next install from that file undoes. An unrelated mismatch still warns.
+    #[test]
+    fn checksum_forced_backends_are_not_mismatches() {
+        use crate::toolset::install_state::InstallStateTool;
+        let record = |short: &str, full: &str| {
+            (
+                short.to_string(),
+                InstallStateTool {
+                    short: short.to_string(),
+                    full: Some(full.to_string()),
+                    versions: vec![],
+                    explicit_backend: false,
+                    opts: Default::default(),
+                    installs_path: None,
+                },
+            )
+        };
+        let forced: std::collections::BTreeMap<_, _> = [
+            record("yarn", "http:yarn"),
+            record("npm", "npm:npm"),
+            record("pnpm", "npm:pnpm"),
+            record("bun", "npm:bun"),
+        ]
+        .into();
+        assert_eq!(
+            super::backend_mismatch_warnings(&forced),
+            Vec::<String>::new()
+        );
+
+        let unrelated: std::collections::BTreeMap<_, _> = [record("yarn", "cargo:yarn")].into();
+        let warnings = super::backend_mismatch_warnings(&unrelated);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("tool 'yarn' installed with backend 'cargo:yarn'"));
     }
 
     use crate::system::history::sync::run::SyncStatus;
