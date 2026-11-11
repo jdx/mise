@@ -46,6 +46,12 @@ impl Vfox {
         trace!("{pre_install:?}");
         let mut verified_attestation = None;
         let mut checksum_verified = false;
+        if pre_install.url.is_some() && !sdk.get_metadata()?.downloads {
+            return Err(crate::VfoxError::Error(format!(
+                "plugin {} declares `downloads = false` in metadata.lua but PreInstall returned a url",
+                sdk.get_metadata()?.name
+            )));
+        }
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
             let file = self
                 .download(

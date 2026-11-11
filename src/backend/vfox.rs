@@ -131,6 +131,13 @@ struct VfoxMetadataSnapshot {
     legacy_filenames: Vec<String>,
     depends: Vec<String>,
     system_dependencies: Vec<vfox::SystemDependency>,
+    /// `PLUGIN.downloads`; false means the plugin installs without a download.
+    #[serde(default = "default_downloads")]
+    downloads: bool,
+}
+
+fn default_downloads() -> bool {
+    true
 }
 
 /// Fingerprint of every Lua source under a plugin, used as the metadata cache
@@ -396,7 +403,15 @@ impl Backend for VfoxBackend {
     fn supports_lockfile_url(&self) -> bool {
         // TODO: expose a plugin hook (e.g. BackendLockInfo) so custom Lua backends
         // can surface a download URL + checksum, and flip this back on for them.
-        !self.is_backend_plugin()
+        if self.is_backend_plugin() {
+            return false;
+        }
+        // A tool plugin that declares `downloads = false` has no URL to lock.
+        // When its metadata cannot be read, keep requiring one.
+        self.plugin_metadata_snapshot()
+            .ok()
+            .flatten()
+            .is_none_or(|m| m.downloads)
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
@@ -1053,6 +1068,7 @@ impl VfoxBackend {
                 legacy_filenames: metadata.legacy_filenames,
                 depends: metadata.depends,
                 system_dependencies: metadata.system_dependencies,
+                downloads: metadata.downloads,
             })
         };
         if !installed {
