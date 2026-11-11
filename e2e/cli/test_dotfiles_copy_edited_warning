@@ -51,3 +51,32 @@ echo b >"$DOTS/etc/a.conf"
 assert_contains "mise dot apply --dry-run 2>&1" "1 edited since mise last wrote them"
 assert_contains "mise dot apply --yes 2>&1" "a.conf was edited since mise last wrote it"
 assert "cat $HOME/etc-copy/a.conf" "b"
+
+# A copy keeps its record when it moves between groups, so an edit back to an
+# older value is still caught.
+mkdir -p "$DOTS/g1" "$DOTS/g2"
+echo A >srcx
+cat <<EOT2 >mise.toml
+[dotfiles]
+"~/gx.conf" = { source = "srcx", mode = "copy" }
+EOT2
+assert_succeed "mise dot apply --yes"
+echo B >"$DOTS/g1/gx.conf"
+cat <<EOT2 >mise.toml
+[dotfile_groups.g1]
+root = "g1"
+mode = "copy"
+entries."~/gx.conf" = { source = "gx.conf" }
+EOT2
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/gx.conf" "B"
+echo B >"$DOTS/g2/gx.conf"
+cat <<EOT2 >mise.toml
+[dotfile_groups.g2]
+root = "g2"
+mode = "copy"
+entries."~/gx.conf" = { source = "gx.conf" }
+EOT2
+echo A >"$HOME/gx.conf"
+assert_contains "mise dot apply --yes 2>&1" "gx.conf was edited since mise last wrote it"
+assert "cat $HOME/gx.conf" "B"
