@@ -93,7 +93,7 @@ jobs:
               subject: "❌ mise: cargo-deny found new security advisories",
               html: (
                 "<p><strong>cargo deny check advisories</strong> failed on main.</p>"
-                + "<p><a href=\"\($run_url | @html)\">View workflow run</a> | <a href=\"https://github.com/\($repo | @uri)/issues\">Tracking issue</a></p>"
+                + "<p><a href=\"\($run_url | @html)\">View workflow run</a> | <a href=\"https://github.com/\($repo | @html)/issues\">Tracking issue</a></p>"
               )
             }')
           curl --fail-with-body -sS \
