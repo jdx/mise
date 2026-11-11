@@ -20,6 +20,8 @@ mise uninstall -a dummy
 assert_not_contains "mise ls dummy" "1.1.0"
 assert_not_contains "mise ls dummy" "2.0.1"
 assert_not_contains "mise ls dummy" "2.1.0"
+# the alias links and the tool folder go with the last version
+assert_fail "test -e $MISE_DATA_DIR/installs/dummy || test -L $MISE_DATA_DIR/installs/dummy/latest"
 
 # Test: --dry-run-code should exit non-zero when there are tools to uninstall
 mise i dummy@1.0.0

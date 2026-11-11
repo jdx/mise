@@ -138,9 +138,13 @@ pub(super) async fn build(
     }
 
     pr.set_message("build from source".to_string());
+    // Like `brew`, start from a clean environment: toolchain variables from the
+    // caller's shell (GOROOT, CC, GOFLAGS, CARGO_HOME, ...) must not reach the build.
     let cmd = CmdLineRunner::new(&ruby)
         .arg(&shim_path)
         .current_dir(&buildpath)
+        .env_clear()
+        .envs(allowed_inherited_env(std::env::vars_os()))
         .envs(build_env(
             rf,
             closure,
@@ -305,6 +309,45 @@ fn stage_source(archive: &Path, build_root: &Path, basename: &str) -> Result<Pat
     }
 }
 
+/// Variables a formula build still inherits from the caller, mirroring the
+/// allowlist `brew` keeps when it re-execs under `env -i`.
+fn is_inherited_var(name: &str) -> bool {
+    const EXACT: &[&str] = &[
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "LANG",
+        "SSH_AUTH_SOCK",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "CURL_CA_BUNDLE",
+        "REQUESTS_CA_BUNDLE",
+        "SOURCE_DATE_EPOCH",
+        // selects the Xcode / Command Line Tools install on macOS
+        "DEVELOPER_DIR",
+        // the shim prints Ruby backtraces on failure only when this is set
+        "MISE_DEBUG",
+    ];
+    EXACT.contains(&name)
+        || name.starts_with("LC_")
+        || name.starts_with("HOMEBREW_")
+        || matches!(
+            name.to_ascii_lowercase().as_str(),
+            "http_proxy" | "https_proxy" | "all_proxy" | "ftp_proxy" | "no_proxy"
+        )
+}
+
+fn allowed_inherited_env(
+    vars: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    vars.into_iter()
+        .filter(|(k, _)| k.to_str().is_some_and(is_inherited_var))
+        .collect()
+}
+
 /// The environment the formula builds in: dependency kegs first on PATH,
 /// pkg-config/include/lib flags pointing into the prefix, and the shim's
 /// own variables. Mirrors the spirit of brew's superenv without the
@@ -434,6 +477,38 @@ fn build_env(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+
+    #[test]
+    fn build_env_drops_toolchain_vars_but_keeps_essentials() {
+        let vars = [
+            ("GOROOT", "/mise/go"),
+            ("CC", "/nonexistent/cc"),
+            ("GOFLAGS", "-x"),
+            ("PYTHONPATH", "/x"),
+            ("HOME", "/home/u"),
+            ("MISE_DEBUG", "1"),
+            ("HTTPS_PROXY", "http://p"),
+            ("no_proxy", "localhost"),
+            ("LC_ALL", "C"),
+            ("HOMEBREW_NO_ANALYTICS", "1"),
+        ]
+        .map(|(k, v)| (k.into(), v.into()));
+        let kept: Vec<String> = allowed_inherited_env(vars)
+            .into_iter()
+            .map(|(k, _)| k.into_string().unwrap())
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                "HOME",
+                "MISE_DEBUG",
+                "HTTPS_PROXY",
+                "no_proxy",
+                "LC_ALL",
+                "HOMEBREW_NO_ANALYTICS"
+            ]
+        );
+    }
 
     use super::super::api::{BottleFile, BottleSpec, RubySourceChecksum, SourceUrl, Versions};
     use super::*;

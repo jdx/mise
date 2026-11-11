@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       full-ci: ${{ steps.classify.outputs.full-ci }}
+      deps-changed: ${{ steps.deps.outputs.deps-changed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: github.event_name == 'pull_request'
@@ -67,6 +68,27 @@ jobs:
           if [ "$changed" -eq 1 ]; then
             echo "full-ci=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # The RustSec advisory DB changes on its own, so `cargo deny check
+      # advisories` only blocks a PR that changes the dependency graph. The
+      # daily deny-advisories workflow reports new advisories otherwise.
+      - name: Detect dependency changes
+        id: deps
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          deps_changed=true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            deps_changed=false
+            # Capture first so a failed diff fails the step instead of reading
+            # as "no dependency changes".
+            changed_paths=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+            if grep -qE '(^|/)(Cargo\.lock|Cargo\.toml|deny\.toml)$' <<<"$changed_paths"; then
+              deps_changed=true
+            fi
+          fi
+          echo "deps-changed=$deps_changed" >> "$GITHUB_OUTPUT"
 
   build-ubuntu:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
@@ -242,7 +264,7 @@ jobs:
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
     timeout-minutes: 80
-    needs: [build-ubuntu]
+    needs: [classify-changes, build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -254,7 +276,7 @@ jobs:
       - parallel:
           - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
             with:
-              tool: cargo-deny,cargo-msrv,cargo-machete
+              tool: cargo-msrv,cargo-machete
           - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
             with:
               name: mise-ubuntu-latest
@@ -288,7 +310,16 @@ jobs:
       # cargo-check, so CI can skip that redundant compilation while retaining it
       # for local lint runs.
       - parallel:
-          - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
+          # cargo-deny is a lazy tool in mise.toml: the cargo-deny shim installs it on
+          # first use. Call the binary directly; `cargo deny` goes through the cargo
+          # wrapper, which does not trigger the lazy install.
+          - run: mise x -- cargo-deny check bans licenses sources
+          - env:
+              DEPS_CHANGED: ${{ needs.classify-changes.outputs.deps-changed }}
+            run: |
+              if [ "$DEPS_CHANGED" = "true" ]; then
+                rm -rf ~/.cargo/advisory-dbs && mise x -- cargo-deny check advisories
+              fi
           - run: cargo machete --with-metadata
           - run: ./scripts/test-standalone.sh
           - run: ./scripts/test-check-glibc.sh

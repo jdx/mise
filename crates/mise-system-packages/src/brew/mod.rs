@@ -156,6 +156,11 @@ impl BrewManager {
                 to_pour.push(rf.clone());
             }
         }
+        if !opts.dry_run {
+            // also on a no-op install, so racks an older mise left behind
+            // disappear without waiting for a bottle to be poured
+            pour::remove_legacy_rack_locks();
+        }
         if to_pour.is_empty() {
             info!("brew: all formulae already poured");
             return Ok(());

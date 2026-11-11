@@ -6100,6 +6100,11 @@ pub trait Backend: Debug + Send + Sync {
     fn cleanup_empty_installs_dir(&self) {
         let installs_path = &self.ba().installs_path();
         if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
+            // `dir_subdirs` skips links whose target is gone, so the alias links of the
+            // version just removed (`latest`, `5`, `global`) leave the directory looking
+            // empty. Drop them here: once the backend metadata below is gone, nothing
+            // would visit this directory again, and they would stay forever.
+            let _ = crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_path);
             let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
             if installs_path
                 .read_dir()

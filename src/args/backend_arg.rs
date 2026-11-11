@@ -160,7 +160,7 @@ impl<A: AsRef<str>> From<A> for BackendArg {
 // such manifests have aged out, they are read as the registry's choice again.
 crate::remove_by!("2027.10.0", "forced-checksum-backend-records");
 
-fn recorded_by_checksum_backend(short: &str, full: Option<&String>) -> bool {
+pub fn recorded_by_checksum_backend(short: &str, full: Option<&String>) -> bool {
     matches!(
         (short, full.map(String::as_str)),
         ("bun", Some("npm:bun"))

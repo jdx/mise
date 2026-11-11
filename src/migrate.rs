@@ -33,6 +33,13 @@ fn migrate_trusted_configs() -> Result<()> {
 
 remove_by!("2027.1.0", "legacy-incomplete-markers");
 
+// Guards `remove_legacy_rack_locks` in
+// crates/mise-system-packages/src/brew/pour.rs, which deletes the
+// `.mise-staging.lock` files that mise 2026.11.6 and earlier left in Cellar
+// racks. That crate's version is not mise's, so the guard lives here. Remove
+// both, and every other remove_by! with this id.
+remove_by!("2027.11.0", "legacy-brew-rack-locks");
+
 /// mise 2026.10.3 and earlier kept incomplete-install markers in the cache,
 /// where `mise cache clear` and pruning delete them. Moves any left there to
 /// the state dir, once.
