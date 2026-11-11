@@ -276,13 +276,15 @@ fn create_staging_dir(
     // Sweep before creating the rack: the sweep removes racks that only hold
     // an old lock file, and must not delete the one we are about to use.
     remove_legacy_rack_locks();
-    mise_util::file::create_dir_all(rack)?;
     // Serialize the short cleanup/create handshake within a formula rack. The
     // per-directory lock then protects active extraction after this lock is
     // released, including work owned by another mise process. The lock lives
     // outside the Cellar: Homebrew treats every rack directory as an installed
     // formula, so a leftover file there would outlive `brew uninstall`.
     let _rack_lock = mise_util::lock_file::LockFile::at(&rack_lock_path(rack)).lock()?;
+    // Created under the lock, which the legacy sweep also takes before it
+    // removes a rack, so the sweep cannot delete this rack in between.
+    mise_util::file::create_dir_all(rack)?;
     remove_abandoned_staging_dirs(rack)?;
     let staging = tempfile::Builder::new()
         .prefix(&format!(".mise-extract-{pkg_version}-"))
@@ -309,16 +311,25 @@ fn rack_lock_path(rack: &Path) -> PathBuf {
 /// `legacy-brew-rack-locks` in src/migrate.rs.
 pub(super) fn remove_legacy_rack_locks() {
     static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| remove_legacy_rack_locks_in(&prefix::cellar()));
+    ONCE.call_once(|| remove_legacy_rack_locks_in(&prefix::cellar(), rack_lock_path));
 }
 
-fn remove_legacy_rack_locks_in(cellar: &Path) {
+/// Takes each rack's staging lock around the removal, so a process that is
+/// creating that rack at the same moment is not left without it.
+fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathBuf) {
     let Ok(racks) = cellar.read_dir() else {
         return;
     };
     for rack in racks.flatten() {
         let path = rack.path();
-        if std::fs::remove_file(path.join(".mise-staging.lock")).is_ok() {
+        let legacy = path.join(".mise-staging.lock");
+        if legacy.symlink_metadata().is_err() {
+            continue;
+        }
+        let Ok(_lock) = mise_util::lock_file::LockFile::at(&lock_path(&path)).lock() else {
+            continue;
+        };
+        if std::fs::remove_file(&legacy).is_ok() {
             let _ = std::fs::remove_dir(&path);
         }
     }
@@ -955,6 +966,7 @@ mod tests {
     #[test]
     fn removes_legacy_rack_locks_and_empty_racks() {
         let cellar = tempfile::tempdir().unwrap();
+        let locks = tempfile::tempdir().unwrap();
         let empty = cellar.path().join("qpdf");
         let installed = cellar.path().join("git");
         mise_util::file::create_dir_all(&empty).unwrap();
@@ -962,7 +974,9 @@ mod tests {
         mise_util::file::write(empty.join(".mise-staging.lock"), "").unwrap();
         mise_util::file::write(installed.join(".mise-staging.lock"), "").unwrap();
 
-        remove_legacy_rack_locks_in(cellar.path());
+        remove_legacy_rack_locks_in(cellar.path(), |rack| {
+            locks.path().join(rack.file_name().unwrap())
+        });
 
         assert!(!empty.exists());
         assert!(!installed.join(".mise-staging.lock").exists());
