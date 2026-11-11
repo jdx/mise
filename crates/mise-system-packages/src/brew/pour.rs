@@ -273,11 +273,18 @@ fn create_staging_dir(
     rack: &Path,
     pkg_version: &str,
 ) -> Result<(tempfile::TempDir, fslock::LockFile)> {
-    mise_util::file::create_dir_all(rack)?;
+    // Sweep before creating the rack: the sweep removes racks that only hold
+    // an old lock file, and must not delete the one we are about to use.
+    remove_legacy_rack_locks();
     // Serialize the short cleanup/create handshake within a formula rack. The
     // per-directory lock then protects active extraction after this lock is
-    // released, including work owned by another mise process.
-    let _rack_lock = mise_util::lock_file::LockFile::at(&rack.join(".mise-staging.lock")).lock()?;
+    // released, including work owned by another mise process. The lock lives
+    // outside the Cellar: Homebrew treats every rack directory as an installed
+    // formula, so a leftover file there would outlive `brew uninstall`.
+    let _rack_lock = mise_util::lock_file::LockFile::at(&rack_lock_path(rack)).lock()?;
+    // Created under the lock, which the legacy sweep also takes before it
+    // removes a rack, so the sweep cannot delete this rack in between.
+    mise_util::file::create_dir_all(rack)?;
     remove_abandoned_staging_dirs(rack)?;
     let staging = tempfile::Builder::new()
         .prefix(&format!(".mise-extract-{pkg_version}-"))
@@ -285,6 +292,84 @@ fn create_staging_dir(
     let staging_lock =
         mise_util::lock_file::LockFile::at(&staging.path().join(".mise-lock")).lock()?;
     Ok((staging, staging_lock))
+}
+
+fn rack_lock_path(rack: &Path) -> PathBuf {
+    let name = rack
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    prefix::prefix()
+        .join("var/homebrew/locks")
+        .join(format!("mise-staging-{name}.lock"))
+}
+
+/// Older mise versions kept the rack lock at `<rack>/.mise-staging.lock`,
+/// which made `brew list` report uninstalled formulae. Delete those files and
+/// the racks they left empty. Runs once per process; `remove_dir` skips racks
+/// that still hold a keg. Temporary: guarded by `remove_by!` id
+/// `legacy-brew-rack-locks` in src/migrate.rs.
+pub(super) fn remove_legacy_rack_locks() {
+    // Only a complete sweep counts: one that could not write to a root-owned
+    // prefix yet is retried after the prefix has been set up.
+    static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    use std::sync::atomic::Ordering::Relaxed;
+    if !DONE.load(Relaxed) && remove_legacy_rack_locks_in(&prefix::cellar(), rack_lock_path) {
+        DONE.store(true, Relaxed);
+    }
+}
+
+/// Takes each rack's staging lock around the removal, so a process that is
+/// creating that rack at the same moment is not left without it. Returns
+/// whether every leftover lock file was removed.
+fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathBuf) -> bool {
+    let racks = match cellar.read_dir() {
+        Ok(racks) => racks,
+        Err(err) => return err.kind() == ErrorKind::NotFound,
+    };
+    let mut complete = true;
+    for rack in racks.flatten() {
+        let path = rack.path();
+        let legacy = path.join(".mise-staging.lock");
+        // Only racks holding a legacy lock file are ours to touch: an empty
+        // rack may belong to a source build, which writes into the Cellar
+        // without this lock. Anything but NotFound means the check could not
+        // be made, so the sweep stays retryable.
+        match legacy.symlink_metadata() {
+            Ok(_) => {}
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        }
+        let Ok(_lock) = mise_util::lock_file::LockFile::at(&lock_path(&path)).lock() else {
+            complete = false;
+            continue;
+        };
+        match std::fs::remove_file(&legacy) {
+            Ok(()) => {}
+            Err(err) if err.kind() == ErrorKind::NotFound => {}
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        }
+        // A rack that still holds a keg is kept. Any other failure leaves an
+        // empty rack that a later sweep no longer finds (its lock file is
+        // gone); that needs a writable rack inside an unwritable Cellar, and
+        // the rack is then removable by hand.
+        match std::fs::remove_dir(&path) {
+            Ok(()) => {}
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty
+                ) => {}
+            Err(_) => complete = false,
+        }
+    }
+    complete
 }
 
 fn remove_abandoned_staging_dirs(rack: &Path) -> Result<()> {
@@ -913,6 +998,34 @@ mod tests {
         remove_abandoned_staging_dirs(rack.path()).unwrap();
 
         assert!(!extract.exists());
+    }
+
+    #[test]
+    fn removes_legacy_rack_locks_and_empty_racks() {
+        let cellar = tempfile::tempdir().unwrap();
+        let locks = tempfile::tempdir().unwrap();
+        let empty = cellar.path().join("qpdf");
+        let installed = cellar.path().join("git");
+        mise_util::file::create_dir_all(&empty).unwrap();
+        mise_util::file::create_dir_all(installed.join("2.56.0")).unwrap();
+        mise_util::file::write(empty.join(".mise-staging.lock"), "").unwrap();
+        mise_util::file::write(installed.join(".mise-staging.lock"), "").unwrap();
+
+        assert!(remove_legacy_rack_locks_in(cellar.path(), |rack| {
+            locks.path().join(rack.file_name().unwrap())
+        }));
+
+        assert!(!empty.exists());
+        assert!(!installed.join(".mise-staging.lock").exists());
+        assert!(installed.join("2.56.0").exists());
+    }
+
+    #[test]
+    fn rack_lock_lives_outside_the_rack() {
+        let rack = Path::new("/opt/homebrew/Cellar/git");
+        let lock = rack_lock_path(rack);
+        assert!(!lock.starts_with(rack));
+        assert!(lock.ends_with("var/homebrew/locks/mise-staging-git.lock"));
     }
 
     #[test]
