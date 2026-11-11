@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+echo one >src
+cat <<EOT >mise.toml
+[dotfiles]
+"~/.copied" = { source = "src", mode = "copy" }
+EOT
+
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+
+# A new source over an untouched copy is the normal case.
+echo two >src
+assert_not_contains "mise dot apply --dry-run 2>&1" "edited since"
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+assert "cat $HOME/.copied" "two"
+
+# An edited copy is marked by --dry-run, then warned about and overwritten.
+echo extra >>"$HOME/.copied"
+echo three >src
+assert_contains "mise dot apply --dry-run 2>&1" "(edited since mise last wrote it)"
+assert_contains "mise dot apply --yes 2>&1" ".copied was edited since mise last wrote it"
+assert "cat $HOME/.copied" "three"
+
+# A copy that already matches its source loses nothing.
+echo four >src
+echo four >"$HOME/.copied"
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+
+# A target that predates mise has no record, so there is nothing to compare.
+echo other >src2
+echo "hand written" >"$HOME/.preexisting"
+cat <<EOT >>mise.toml
+"~/.preexisting" = { source = "src2", mode = "copy" }
+EOT
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+assert "cat $HOME/.preexisting" "other"
+
+# Files a copy group deployed are compared with what the group recorded.
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/etc"
+echo a >"$DOTS/etc/a.conf"
+cat <<EOT >mise.toml
+[dotfile_groups.etc]
+root = "etc"
+mode = "copy"
+entries."~/etc-copy" = { source = "." }
+EOT
+assert_succeed "mise dot apply --yes"
+echo local >>"$HOME/etc-copy/a.conf"
+echo b >"$DOTS/etc/a.conf"
+assert_contains "mise dot apply --dry-run 2>&1" "1 edited since mise last wrote them"
+assert_contains "mise dot apply --yes 2>&1" "a.conf was edited since mise last wrote it"
+assert "cat $HOME/etc-copy/a.conf" "b"

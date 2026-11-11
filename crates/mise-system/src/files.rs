@@ -4289,6 +4289,84 @@ fn warn_if_template_target_edited(req: &FileRequest) {
     }
 }
 
+/// Record the digest of the file a single-file copy just wrote, so a later
+/// apply can tell an edit of the copy from what mise wrote. A record that
+/// cannot be written only costs the warning, so it warns.
+fn save_copy_state(req: &FileRequest) {
+    if let Ok(digest) = mise_util::hash::file_hash_sha256(&req.target, None) {
+        update_target_state(req, |state| state.content_digest = Some(digest));
+    }
+}
+
+/// What mise last wrote to the files of a copy entry, by target: the entry's
+/// own record for a single file, and what its dotfile group deployed.
+fn recorded_copy_digests(req: &FileRequest) -> HashMap<PathBuf, String> {
+    let mut digests = HashMap::new();
+    if let Some(record) = req
+        .group
+        .as_deref()
+        .and_then(crate::dotfile_groups::load_record)
+    {
+        for path in record.paths {
+            if let Some(digest) = path.digest {
+                digests.insert(path.target, digest);
+            }
+        }
+    }
+    if !req.source.is_dir()
+        && let Some(digest) = load_target_state(req).and_then(|state| state.content_digest)
+    {
+        digests.insert(req.target.clone(), digest);
+    }
+    digests
+}
+
+/// The files of a copy entry that an apply would overwrite although they no
+/// longer hold what mise last wrote there, as (source, target). A file mise
+/// has no record of is not one of them, and neither is one that already
+/// matches its source, which loses nothing.
+fn edited_copy_targets(req: &FileRequest) -> Vec<(PathBuf, PathBuf)> {
+    if req.mode != FileMode::Copy || !req.source.exists() {
+        return vec![];
+    }
+    let recorded = recorded_copy_digests(req);
+    if recorded.is_empty() {
+        return vec![];
+    }
+    let pairs = if req.source.is_dir() {
+        walk_source_files(req).unwrap_or_default()
+    } else {
+        vec![(req.source.clone(), req.target.clone())]
+    };
+    let hash = |path: &Path| mise_util::hash::file_hash_sha256(path, None).ok();
+    pairs
+        .into_iter()
+        .filter(|(source, target)| {
+            let Some(digest) = recorded.get(target) else {
+                return false;
+            };
+            if target.is_symlink() || !target.is_file() {
+                return false;
+            }
+            match hash(target) {
+                Some(current) => &current != digest && hash(source) != Some(current),
+                None => false,
+            }
+        })
+        .collect()
+}
+
+/// Warn before an apply replaces copies that were edited since mise wrote them.
+fn warn_if_copy_targets_edited(req: &FileRequest) {
+    for (source, target) in edited_copy_targets(req) {
+        warn!(
+            "files: {} was edited since mise last wrote it; applying overwrites the edit. Move it into {} to keep it",
+            target.display_user(),
+            source.display_user()
+        );
+    }
+}
+
 /// Whether the record already holds `rendered` as the target's content.
 fn target_state_matches(req: &FileRequest, rendered: &str) -> bool {
     load_target_state(req)
@@ -5319,8 +5397,17 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
         return Ok(vec![format!("rm {}", req.target.display_user())]);
     }
     if req.mode != FileMode::Copy || !req.source.is_dir() {
-        return Ok(vec![describe(req)?]);
+        let edited = if edited_copy_targets(req).is_empty() {
+            ""
+        } else {
+            " (edited since mise last wrote it)"
+        };
+        return Ok(vec![format!("{}{edited}", describe(req)?)]);
     }
+    let edited = edited_copy_targets(req)
+        .into_iter()
+        .map(|(_, target)| target)
+        .collect::<HashSet<_>>();
     let root = &req.target;
     let mut lines = vec![];
     match std::fs::symlink_metadata(root) {
@@ -5380,7 +5467,12 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
             // apply cannot copy a file over a directory and stops with an error
             Ok(_) => "conflict (not a file):",
         };
-        lines.push(format!("{verb} {}", tgt.display_user()));
+        let note = if edited.contains(&tgt) {
+            " (edited since mise last wrote it)"
+        } else {
+            ""
+        };
+        lines.push(format!("{verb} {}{note}", tgt.display_user()));
     }
     Ok(lines)
 }
@@ -5593,7 +5685,12 @@ fn execute_layer(
             // the entry may already be converged
             let conditional = req.mode == FileMode::Template && rendered.is_none();
             let suffix = if conditional { " (if changed)" } else { "" };
-            miseprintln!("{}{suffix}", describe(req)?);
+            let edited = match edited_copy_targets(req).len() {
+                0 => String::new(),
+                1 if !req.source.is_dir() => " (edited since mise last wrote it)".to_string(),
+                n => format!(" ({n} edited since mise last wrote them)"),
+            };
+            miseprintln!("{}{suffix}{edited}", describe(req)?);
             // a source an earlier round writes is not there to compare yet
             let deferred = req.mode.has_source() && !req.source.exists() && !keeps_existing(req);
             if opts.verbose && !conditional && !deferred {
@@ -5606,6 +5703,7 @@ fn execute_layer(
         if req.mode == FileMode::Template && rendered.is_some() {
             warn_if_template_target_edited(req);
         }
+        warn_if_copy_targets_edited(req);
     }
     if !opts.yes && !Settings::get().yes && !console::user_attended_stderr() {
         refuse_unattended_overwrite(config, &plan)?;
@@ -7121,6 +7219,8 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
                 }
             } else {
                 paths.insert(req.target.clone(), Capture::Full);
+                // the record of what mise wrote changes with the target
+                paths.insert(target_state_path(req), Capture::Full);
             }
         }
         FileMode::SymlinkEach => {
@@ -7420,6 +7520,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 replace_recorded(&req.target, written, || {
                     file::copy(&req.source, &req.target)
                 })?;
+                save_copy_state(req);
                 // the copy took the source's permissions; an explicit
                 // `permissions` overrides them
                 #[cfg(unix)]
