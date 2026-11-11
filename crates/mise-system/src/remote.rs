@@ -772,7 +772,13 @@ impl SourceTally<'_> {
     /// Count what `tar` would archive below `root`, following links when
     /// `follow` is set. `name` is the entry of the source `root` is reported
     /// under, or `None` to name each entry by its own first component.
-    fn walk(&mut self, root: &Path, source: &Path, name: Option<&str>, follow: bool) -> bool {
+    fn walk(
+        &mut self,
+        root: &Path,
+        source: &Path,
+        name: Option<&str>,
+        follow: bool,
+    ) -> Result<bool> {
         let base = name.map_or(source, |_| root);
         let walker = walkdir::WalkDir::new(root)
             .min_depth(1)
@@ -786,10 +792,12 @@ impl SourceTally<'_> {
                 };
                 !excluded(self.globs, &relative)
             });
-        for entry in walker.filter_map(|entry| entry.ok()) {
-            let Ok(metadata) = entry.metadata() else {
-                continue;
-            };
+        for entry in walker {
+            // tar fails on what it cannot read, so the preflight must too
+            let entry = entry.wrap_err("cannot read the remote source")?;
+            let metadata = entry
+                .metadata()
+                .wrap_err_with(|| format!("cannot read {}", entry.path().display()))?;
             if metadata.is_dir() {
                 continue;
             }
@@ -803,10 +811,10 @@ impl SourceTally<'_> {
                     .map(|part| part.as_os_str().to_string_lossy().into_owned()),
             };
             if self.count(top, metadata.len()) {
-                return true;
+                return Ok(true);
             }
         }
-        false
+        Ok(false)
     }
 
     /// Count one file; true once a limit is passed.
@@ -837,7 +845,10 @@ fn check_source(host: &RemoteHost, home: &Path, max_bytes: u64, max_files: u64) 
     }
     let mut globs = globset::GlobSetBuilder::new();
     for exclude in &host.exclude {
-        if let Ok(glob) = globset::Glob::new(exclude) {
+        // tar wildcards are `*`, `?` and `[..]`; globset also reads braces as
+        // alternation, which would skip files tar archives
+        let pattern = exclude.replace('{', "[{]").replace('}', "[}]");
+        if let Ok(glob) = globset::Glob::new(&pattern) {
             globs.add(glob);
         }
     }
@@ -850,7 +861,7 @@ fn check_source(host: &RemoteHost, home: &Path, max_bytes: u64, max_files: u64) 
         max_files,
         globs: &globs,
     };
-    let mut exceeded = tally.walk(source, source, None, host.copy_links);
+    let mut exceeded = tally.walk(source, source, None, host.copy_links)?;
     if !exceeded && !host.copy_links {
         for link in &host.copy_link {
             // tar skips the link when it, or a directory above it, is excluded
@@ -868,7 +879,7 @@ fn check_source(host: &RemoteHost, home: &Path, max_bytes: u64, max_files: u64) 
             let name = link.to_string_lossy();
             let name = name.trim_start_matches("./");
             exceeded = if target.is_dir() {
-                tally.walk(&target, source, Some(name), false)
+                tally.walk(&target, source, Some(name), false)?
             } else {
                 let len = fs::metadata(&target).map_or(0, |metadata| metadata.len());
                 tally.count(Some(name.to_string()), len)
@@ -2506,6 +2517,9 @@ mod tests {
             check_source(&host, &home, 1024, 100)
                 .map_err(|err| eyre!("exclude {excludes:?} was not honored: {err}"))?;
         }
+        // braces are literal for tar, so this excludes nothing
+        let host = source_host(&source, &["{cache,vendor}"])?;
+        assert!(check_source(&host, &home, 1024, 100).is_err());
         // `./cache` is anchored at the source, so the nested copy still counts
         let host = source_host(&source, &["./cache"])?;
         assert!(check_source(&host, &home, 1024, 100).is_err());
