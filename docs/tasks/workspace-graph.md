@@ -168,8 +168,9 @@ mise finds npm, pnpm, Yarn, and Bun workspace packages from:
 - the single-pattern string form of `workspaces`
 - the Yarn Classic object form, `workspaces.packages`
 
-When both files exist, `pnpm-workspace.yaml` defines membership. For pnpm and
-Yarn workspaces, a root `package.json` that has a `name` is also a project.
+When both files exist, `pnpm-workspace.yaml` defines membership. A root
+`package.json` that has a `name` is also a project for every package manager, so
+its `scripts` can be run like any other package's.
 Positive and negative patterns, recursive `**` globs, and brace patterns such as
 `packages/{web,api}` are supported. Discovery skips `.git` and `node_modules`
 but does not read `.gitignore` or `.ignore` files.

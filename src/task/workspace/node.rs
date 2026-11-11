@@ -23,7 +23,6 @@ pub struct NodeWorkspaceProvider;
 struct WorkspaceDefinition {
     source: &'static str,
     package_manager: Option<String>,
-    include_named_root: bool,
     root_manifest: Option<PackageJson>,
 }
 
@@ -114,7 +113,7 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         })
         .collect::<Result<BTreeSet<_>>>()?;
         let mut root_manifest = definition.root_manifest.clone();
-        if definition.include_named_root && root_manifest.is_none() {
+        if root_manifest.is_none() {
             let root_manifest_path = workspace_root.join(PACKAGE_JSON);
             root_manifest = context
                 .is_file(&root_manifest_path)
@@ -122,11 +121,10 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                 .transpose()?
                 .flatten();
         }
-        if definition.include_named_root
-            && root_manifest
-                .as_ref()
-                .and_then(|manifest| manifest.name.as_ref())
-                .is_some()
+        if root_manifest
+            .as_ref()
+            .and_then(|manifest| manifest.name.as_ref())
+            .is_some()
         {
             roots.insert(PathBuf::from("."));
         }
@@ -561,7 +559,6 @@ fn workspace_definition(
         return Ok(Some(WorkspaceDefinition {
             source: PNPM_WORKSPACE,
             package_manager: Some("pnpm".to_string()),
-            include_named_root: true,
             root_manifest: None,
         }));
     }
@@ -590,11 +587,9 @@ fn workspace_definition(
             .map(str::to_string),
         context,
     );
-    let include_named_root = package_manager.as_deref() == Some("yarn");
     Ok(Some(WorkspaceDefinition {
         source: PACKAGE_JSON,
         package_manager,
-        include_named_root,
         root_manifest: Some(root_manifest),
     }))
 }
@@ -1238,26 +1233,34 @@ snapshots:
     }
 
     #[test]
-    fn yarn_includes_a_named_root_package() {
-        let temp = tempdir().unwrap();
-        write(
-            &temp.path().join(PACKAGE_JSON),
-            r#"{"name":"root","packageManager":"yarn@4.0.0","workspaces":["packages/*"]}"#,
-        );
-        write(
-            &temp.path().join("packages/app/package.json"),
-            r#"{"name":"app"}"#,
-        );
+    fn includes_a_named_root_package_for_every_package_manager() {
+        for manager in ["npm", "yarn", "bun"] {
+            let temp = tempdir().unwrap();
+            write(
+                &temp.path().join(PACKAGE_JSON),
+                &format!(
+                    r#"{{"name":"root","packageManager":"{manager}@1.0.0","workspaces":["packages/*"],"scripts":{{"build":"tsc"}}}}"#
+                ),
+            );
+            write(
+                &temp.path().join("packages/app/package.json"),
+                r#"{"name":"app"}"#,
+            );
 
-        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+            let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
 
-        assert_eq!(
-            project_summary(&projects),
-            vec![
-                ("node:root", Path::new("."), Some("yarn")),
-                ("node:app", Path::new("packages/app"), Some("yarn")),
-            ]
-        );
+            assert_eq!(
+                project_summary(&projects),
+                vec![
+                    ("node:root", Path::new("."), Some(manager)),
+                    ("node:app", Path::new("packages/app"), Some(manager)),
+                ]
+            );
+            assert_eq!(
+                projects[0].tasks["build"].command,
+                format!("{manager} run build --")
+            );
+        }
     }
 
     #[test]
