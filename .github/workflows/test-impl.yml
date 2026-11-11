@@ -81,7 +81,10 @@ jobs:
           deps_changed=true
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             deps_changed=false
-            if git diff --name-only "$BASE_SHA...$HEAD_SHA" | grep -qE '(^|/)(Cargo\.lock|Cargo\.toml|deny\.toml)$'; then
+            # Capture first so a failed diff fails the step instead of reading
+            # as "no dependency changes".
+            changed_paths=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+            if grep -qE '(^|/)(Cargo\.lock|Cargo\.toml|deny\.toml)$' <<<"$changed_paths"; then
               deps_changed=true
             fi
           fi
