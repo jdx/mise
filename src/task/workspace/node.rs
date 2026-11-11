@@ -14,6 +14,13 @@ use super::{
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
+const SHARED_LOCKFILES: [&str; 5] = [
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+];
 const TURBO_JSON: &str = "turbo.json";
 
 /// Discovers Node projects from npm, pnpm, Yarn, and Bun workspace definitions.
@@ -254,10 +261,22 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         after: Option<&str>,
         graph: &WorkspaceProjectGraph,
     ) -> Result<Option<BTreeSet<ProjectId>>> {
-        if lockfile_path != Path::new(PNPM_LOCKFILE) {
-            return Ok(None);
+        if lockfile_path == Path::new(PNPM_LOCKFILE) {
+            return Ok(Some(pnpm_affected_projects(before, after, graph)?));
         }
-        Ok(Some(pnpm_affected_projects(before, after, graph)?))
+        // Other lockfiles cannot be attributed to a package. A root project owns
+        // every file outside the packages, so without this a lockfile change
+        // would select only the root and skip the packages that depend on it.
+        if SHARED_LOCKFILES
+            .iter()
+            .any(|lockfile| lockfile_path == Path::new(lockfile))
+            && graph.projects().any(|project| {
+                project.root == Path::new(".") && project.id.as_str().starts_with("node:")
+            })
+        {
+            return Ok(Some(node_project_ids(graph)));
+        }
+        Ok(None)
     }
 }
 
@@ -888,6 +907,36 @@ snapshots:
             affected_from_pnpm_lockfile(&graph, before, &after),
             graph.projects().map(|project| project.id.clone()).collect()
         );
+    }
+
+    #[test]
+    fn shared_lockfile_changes_affect_every_node_project_with_a_root_project() {
+        for lockfile in SHARED_LOCKFILES {
+            let temp = tempdir().unwrap();
+            write(
+                &temp.path().join(PACKAGE_JSON),
+                r#"{"name":"root","workspaces":["packages/*"]}"#,
+            );
+            write(
+                &temp.path().join("packages/app/package.json"),
+                r#"{"name":"app"}"#,
+            );
+            let graph =
+                WorkspaceProjectGraph::discover(&NodeWorkspaceProvider, temp.path()).unwrap();
+
+            assert_eq!(
+                graph
+                    .affected_projects_for_lockfile(
+                        &[&NodeWorkspaceProvider],
+                        Path::new(lockfile),
+                        None,
+                        None,
+                    )
+                    .unwrap(),
+                Some(node_project_ids(&graph)),
+                "{lockfile}"
+            );
+        }
     }
 
     #[test]
