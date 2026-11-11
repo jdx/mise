@@ -9,6 +9,9 @@ Describe 'exec_detached_pipe' {
         $script:workdir = Join-Path -Path $env:TEMP -ChildPath "mise-15582-$PID"
         New-Item -ItemType Directory -Force -Path $script:workdir | Out-Null
         Push-Location $script:workdir
+        # A private data dir, so reshimming never touches the developer's shims.
+        $script:savedDataDir = $env:MISE_DATA_DIR
+        $env:MISE_DATA_DIR = Join-Path -Path $script:workdir -ChildPath 'data'
         # A local config, so the shim case does not change the global node.
         Set-Content -Path 'mise.toml' -Value "[tools]`nnode = '22'"
         mise trust | Out-Null
@@ -21,7 +24,7 @@ Describe 'exec_detached_pipe' {
 
     AfterAll {
         $env:MISE_WINDOWS_SHIM_MODE = $script:savedShimMode
-        mise reshim | Out-Null
+        $env:MISE_DATA_DIR = $script:savedDataDir
         # The detached children run in the workdir and would lock it.
         Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
             Where-Object { $_.CommandLine -like "*15582-$PID*" } |
