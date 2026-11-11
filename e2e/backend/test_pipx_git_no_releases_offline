@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# A github git source with no releases has no version list to resolve `latest`
+# from, so it installs under a literal `latest` directory. That install must
+# still run with no network.
+require_cmd python3
+
+tool="pipx:git+https://github.com/1208nn/NetKeeper4srun.git"
+
+cat >mise.toml <<EOF
+[tools]
+uv = "0.12.10"
+"$tool" = "latest"
+EOF
+
+mise install
+
+assert_contains "MISE_OFFLINE=1 mise x -- which srun-refresh" "srun-refresh"
+assert_contains "MISE_OFFLINE=1 mise ls --current" "latest"
