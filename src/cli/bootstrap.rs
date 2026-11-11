@@ -4494,7 +4494,16 @@ impl BootstrapRemote {
         };
         let mut configuration_errors = vec![];
         for host in selected.values_mut() {
-            if let Err(error) = host.apply_overrides(&overrides) {
+            let checked = host.apply_overrides(&overrides).and_then(|()| {
+                // before the first connection, so one bad source cannot leave
+                // other hosts half bootstrapped
+                if overrides.from_git || self.yes {
+                    Ok(())
+                } else {
+                    host.check_source()
+                }
+            });
+            if let Err(error) = checked {
                 configuration_errors.push(format!("{}: {error:#}", host.name));
             }
         }
