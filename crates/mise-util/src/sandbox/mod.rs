@@ -343,11 +343,12 @@ impl SandboxConfig {
                 // reach the profile as `<cwd>/./dist`, which Seatbelt never
                 // matches against the canonical path it checks. Drop them.
                 // A trailing `/` still demands a directory, so keep it when
-                // the path is not one (`./config/` naming a file stays refused).
+                // the path exists and is not one (`./config/` naming a file stays
+                // refused). A missing path loses it, so it matches once created.
                 let bytes = p.as_os_str().as_encoded_bytes();
                 let wants_dir = bytes.ends_with(b"/") || bytes.ends_with(b"/.");
                 *p = p.components().collect();
-                if wants_dir && !p.is_dir() {
+                if wants_dir && p.exists() && !p.is_dir() {
                     p.push("");
                 }
                 #[cfg(unix)]
@@ -938,6 +939,14 @@ mod tests {
                 "{spelling}"
             );
         }
+
+        // A directory that does not exist yet must match once it is created.
+        let mut config = SandboxConfig {
+            allow_write: vec![root.join("./new/")],
+            ..Default::default()
+        };
+        config.resolve_paths(&[]).unwrap();
+        assert_eq!(config.allow_write, vec![root.join("new")]);
     }
 
     /// The project holds the code being confined, so whoever wrote that code
