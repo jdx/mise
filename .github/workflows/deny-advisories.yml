@@ -97,7 +97,7 @@ jobs:
               )
             }')
           curl --fail-with-body -sS \
-            --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            --max-time 20 --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
             -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
             -H 'Content-Type: application/json' \
