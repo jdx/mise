@@ -67,6 +67,10 @@ mkdir lock-case
   cd lock-case
   make_plugin "$PWD/plugin"
   write_project
+  # install-case left the plugin installed; lock must start without it
+  rm -f "$MISE_DATA_DIR/plugins/idiomatic-first"
+  [[ ! -e "$MISE_DATA_DIR/plugins/idiomatic-first" ]]
   mise lock
+  [[ -L "$MISE_DATA_DIR/plugins/idiomatic-first" ]]
   assert_contains "cat mise.lock" "idiomatic-first"
 )

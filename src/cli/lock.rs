@@ -623,8 +623,11 @@ impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
         // Plugins decide which idiomatic version files map to their tool, so a
         // missing one must be installed before the tools to lock are known.
-        let config =
-            Toolset::install_config_plugins_and_reload(Config::get().await?, self.dry_run).await?;
+        // Listing sidecars is read-only, so it never installs anything.
+        let mut config = Config::get().await?;
+        if !self.sidecars {
+            config = Toolset::install_config_plugins_and_reload(config, self.dry_run).await?;
+        }
         self.run_with_installed(None, config).await
     }
 
