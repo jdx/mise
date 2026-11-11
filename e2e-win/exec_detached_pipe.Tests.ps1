@@ -15,15 +15,16 @@ Describe 'exec_detached_pipe' {
         mise install | Out-Null
         # The detached child lives long enough to show a leak and prints a marker so a failed
         # launch cannot pass as a fast return.
-        $script:js = "require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: 'ignore', detached: true }).unref(); console.log('started')"
+        $script:js = "require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)', '15582-$PID'], { stdio: 'ignore', detached: true }).unref(); console.log('started')"
         $script:savedShimMode = $env:MISE_WINDOWS_SHIM_MODE
     }
 
     AfterAll {
         $env:MISE_WINDOWS_SHIM_MODE = $script:savedShimMode
+        mise reshim | Out-Null
         # The detached children run in the workdir and would lock it.
         Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
-            Where-Object { $_.CommandLine -like '*setTimeout(() => {}, 20000)*' } |
+            Where-Object { $_.CommandLine -like "*15582-$PID*" } |
             ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction Ignore }
         Pop-Location
         Remove-Item -Recurse -Force $script:workdir -ErrorAction Ignore

@@ -1144,6 +1144,7 @@ where
             .collect();
         let body = last.to_string_lossy();
         if let Some(mut c) = crate::path::cmd_verbatim_command(prog, &flags, &body) {
+            mise_util::windows_process::disinherit_std_handles();
             match c.status()?.code() {
                 Some(code) => return Err(crate::request_exit(code)),
                 None => return Err(eyre!("command failed: terminated by signal")),
@@ -1161,6 +1162,7 @@ where
         && let Some((switches, command)) = crate::path::positional_cmd_command(&args)
         && let Some(mut c) = crate::path::cmd_verbatim_command(prog, switches, command)
     {
+        mise_util::windows_process::disinherit_std_handles();
         match c.status()?.code() {
             Some(code) => return Err(crate::request_exit(code)),
             None => return Err(eyre!("command failed: terminated by signal")),
