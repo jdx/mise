@@ -307,7 +307,7 @@ fn rack_lock_path(rack: &Path) -> PathBuf {
 /// the racks they left empty. Runs once per process; `remove_dir` skips racks
 /// that still hold a keg. Temporary: guarded by `remove_by!` id
 /// `legacy-brew-rack-locks` in src/migrate.rs.
-fn remove_legacy_rack_locks() {
+pub(super) fn remove_legacy_rack_locks() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| remove_legacy_rack_locks_in(&prefix::cellar()));
 }
