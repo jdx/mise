@@ -305,7 +305,8 @@ fn rack_lock_path(rack: &Path) -> PathBuf {
 /// Older mise versions kept the rack lock at `<rack>/.mise-staging.lock`,
 /// which made `brew list` report uninstalled formulae. Delete those files and
 /// the racks they left empty. Runs once per process; `remove_dir` skips racks
-/// that still hold a keg.
+/// that still hold a keg. Temporary: guarded by `remove_by!` id
+/// `legacy-brew-rack-locks` in src/migrate.rs.
 fn remove_legacy_rack_locks() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| remove_legacy_rack_locks_in(&prefix::cellar()));
