@@ -11664,7 +11664,7 @@ source = "oldrc""#,
         assert!(
             touched_paths(&req)?
                 .iter()
-                .all(|(path, _)| path != &target_state_path(&req))
+                .any(|(path, _)| path == &target_state_path(&req))
         );
 
         // a symlink-each entry shares its target with unmanaged files
