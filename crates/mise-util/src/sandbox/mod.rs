@@ -342,7 +342,13 @@ impl SandboxConfig {
                 // `Path` equality ignores `.` components, so `./dist` would
                 // reach the profile as `<cwd>/./dist`, which Seatbelt never
                 // matches against the canonical path it checks. Drop them.
+                // A trailing `/` still demands a directory, so keep it when
+                // the path is not one (`./config/` naming a file stays refused).
+                let wants_dir = p.as_os_str().as_encoded_bytes().ends_with(b"/");
                 *p = p.components().collect();
+                if wants_dir && !p.is_dir() {
+                    p.push("");
+                }
                 #[cfg(unix)]
                 check_symlinks_stay_in_roots(p, &roots)?;
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
@@ -908,6 +914,27 @@ mod tests {
         assert_eq!(
             rendered,
             vec![sub.to_str().unwrap(), root.to_str().unwrap()]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_paths_keeps_a_trailing_slash_on_a_file() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = root_dir.path().canonicalize().unwrap();
+        let file = root.join("config");
+        std::fs::write(&file, "").unwrap();
+        let with_slash = root.join("./config/");
+
+        let mut config = SandboxConfig {
+            allow_read: vec![with_slash],
+            ..Default::default()
+        };
+        config.resolve_paths(&[]).unwrap();
+
+        assert_eq!(
+            config.allow_read[0].as_os_str().as_encoded_bytes().last(),
+            Some(&b'/')
         );
     }
 
