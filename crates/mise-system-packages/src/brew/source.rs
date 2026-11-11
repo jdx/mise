@@ -326,6 +326,8 @@ fn is_inherited_var(name: &str) -> bool {
         "CURL_CA_BUNDLE",
         "REQUESTS_CA_BUNDLE",
         "SOURCE_DATE_EPOCH",
+        // selects the Xcode / Command Line Tools install on macOS
+        "DEVELOPER_DIR",
         // the shim prints Ruby backtraces on failure only when this is set
         "MISE_DEBUG",
     ];
