@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       full-ci: ${{ steps.classify.outputs.full-ci }}
+      deps-changed: ${{ steps.deps.outputs.deps-changed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: github.event_name == 'pull_request'
@@ -67,6 +68,24 @@ jobs:
           if [ "$changed" -eq 1 ]; then
             echo "full-ci=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # The RustSec advisory DB changes on its own, so `cargo deny check
+      # advisories` only blocks a PR that changes the dependency graph. The
+      # daily deny-advisories workflow reports new advisories otherwise.
+      - name: Detect dependency changes
+        id: deps
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          deps_changed=true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            deps_changed=false
+            if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qE '(^|/)(Cargo\.lock|Cargo\.toml|deny\.toml)$'; then
+              deps_changed=true
+            fi
+          fi
+          echo "deps-changed=$deps_changed" >> "$GITHUB_OUTPUT"
 
   build-ubuntu:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
@@ -242,7 +261,7 @@ jobs:
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
     timeout-minutes: 80
-    needs: [build-ubuntu]
+    needs: [classify-changes, build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -288,7 +307,13 @@ jobs:
       # cargo-check, so CI can skip that redundant compilation while retaining it
       # for local lint runs.
       - parallel:
-          - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
+          - run: cargo deny check bans licenses sources
+          - env:
+              DEPS_CHANGED: ${{ needs.classify-changes.outputs.deps-changed }}
+            run: |
+              if [ "$DEPS_CHANGED" = "true" ]; then
+                rm -rf ~/.cargo/advisory-dbs && cargo deny check advisories
+              fi
           - run: cargo machete --with-metadata
           - run: ./scripts/test-standalone.sh
           - run: ./scripts/test-check-glibc.sh

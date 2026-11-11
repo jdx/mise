@@ -601,7 +601,7 @@ not install. See
 for the exact flags.
 
 ```sh
-cargo deny check               # advisories, licenses, and allowed sources
+cargo deny check               # advisories, bans, licenses, and allowed sources
 cargo machete --with-metadata  # unused dependencies
 cargo msrv verify              # the minimum supported Rust version
 ```

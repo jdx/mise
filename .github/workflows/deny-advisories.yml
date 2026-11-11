@@ -1,0 +1,106 @@
+name: deny-advisories
+
+# The RustSec advisory DB changes independently of this repo, so PRs only run
+# `cargo deny check advisories` when they change the dependency graph (see
+# test-impl.yml). This daily run catches new advisories against main instead,
+# files or updates one tracking issue, and emails on failure.
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  advisories:
+    if: ${{ github.repository == 'jdx/mise' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
+        with:
+          tool: cargo-deny
+      - name: Check advisories
+        id: deny
+        run: |
+          set +e
+          rm -rf ~/.cargo/advisory-dbs
+          cargo deny check advisories > "$RUNNER_TEMP/deny.txt" 2>&1
+          status=$?
+          cat "$RUNNER_TEMP/deny.txt"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Open or update tracking issue
+        if: steps.deny.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="cargo-deny: new security advisories"
+          # Cap the output so the body stays under GitHub's size limit.
+          {
+            echo "\`cargo deny check advisories\` failed on \`main\` ([run]($RUN_URL))."
+            echo
+            echo "Fix by updating the affected crate, or ignore the advisory in \`deny.toml\` with a reason."
+            echo
+            echo '```'
+            head -c 50000 "$RUNNER_TEMP/deny.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi
+      - name: Send failure email via Resend
+        if: steps.deny.outputs.status != '0'
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${NOTIFY_EMAIL:-}" ]; then
+            echo "::warning::RESEND_API_KEY or NOTIFY_EMAIL is unset; skipping notification"
+            exit 0
+          fi
+          payload=$(jq -n \
+            --arg to "$NOTIFY_EMAIL" \
+            --arg run_url "$RUN_URL" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            '{
+              from: "mise CI <mise@en.dev>",
+              to: [$to],
+              subject: "❌ mise: cargo-deny found new security advisories",
+              html: (
+                "<p><strong>cargo deny check advisories</strong> failed on main.</p>"
+                + "<p><a href=\"\($run_url | @html)\">View workflow run</a> | <a href=\"https://github.com/\($repo | @uri)/issues\">Tracking issue</a></p>"
+              )
+            }')
+          curl --fail-with-body -sS \
+            --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            -X POST 'https://api.resend.com/emails' \
+            -H "Authorization: Bearer ${RESEND_API_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d "$payload"
+      - name: Fail run
+        if: steps.deny.outputs.status != '0'
+        run: exit 1
