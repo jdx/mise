@@ -184,18 +184,30 @@ fn restart_after_task_separator(
 /// named in place of a command (`mise <task>`, or `mise -- <task>` for a task named like one).
 fn runs_tasks(spec: &usage::Spec, words: &[String]) -> bool {
     let takes_value = |word: &str| {
-        let flag = |f: &&usage::SpecFlag| match word.strip_prefix("--") {
-            Some(long) => f.long.iter().any(|l| l == long),
-            None => word.chars().nth(1).is_some_and(|c| f.short.contains(&c)),
-        };
-        !word.contains('=')
-            && (word.starts_with("--") || word.chars().count() == 2)
-            && spec
+        if word.contains('=') {
+            return false;
+        }
+        if let Some(long) = word.strip_prefix("--") {
+            return spec
                 .cmd
                 .flags
                 .iter()
-                .find(flag)
-                .is_some_and(|f| f.arg.is_some())
+                .any(|f| f.arg.is_some() && f.long.iter().any(|l| l == long));
+        }
+        // A short cluster takes a value only when its first value-taking flag ends the word.
+        let Some(cluster) = word.strip_prefix('-') else {
+            return false;
+        };
+        let mut chars = cluster.chars();
+        while let Some(c) = chars.next() {
+            let Some(flag) = spec.cmd.flags.iter().find(|f| f.short.contains(&c)) else {
+                return false;
+            };
+            if flag.arg.is_some() {
+                return chars.as_str().is_empty();
+            }
+        }
+        false
     };
     // The next command word, past flags and the values they take, and whether a `--` ended
     // the flags first.

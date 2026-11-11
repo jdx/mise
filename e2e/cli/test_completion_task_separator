@@ -32,7 +32,7 @@ assert_contains_text "$out" "--help"
 assert_not_contains_text "$out" "--fast"
 assert_not_contains_text "$out" "--slow"
 
-for line in 'mise t run a f1 ::: ' 'mise tasks run a f1 ::: ' 'mise -C . run a ::: ' 'mise -- exec ::: '; do
+for line in 'mise t run a f1 ::: ' 'mise tasks run a f1 ::: ' 'mise -C . run a ::: ' 'mise -- exec ::: ' 'mise -qC . run a ::: '; do
   out="$(mise __complete_word__ --shell bash --line "$line")"
   assert_contains_text "$out" "b"
   assert_contains_text "$out" "c"
