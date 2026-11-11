@@ -504,9 +504,18 @@ fn bare_names(current_root: Option<&str>, task: &Task) -> Vec<String> {
     let Some(root) = current_root else {
         return vec![];
     };
-    // A task of another root (`//apps/api:x`) may carry an alias qualified with this root, but
-    // running that spelling loads only this root's scope and would not find it.
-    let own_aliases = task.display_name.starts_with(root) || !task.display_name.starts_with("//");
+    // A task of a sibling root (`//apps/api:x`) may carry an alias qualified with this root, but
+    // running that spelling loads only this root's scope and its parents, so it is not found.
+    let own_aliases = match task.display_name.strip_prefix("//") {
+        None => true,
+        Some(rest) => {
+            let task_root = rest.split_once(':').map_or(rest, |(path, _)| path);
+            let root_path = root.trim_start_matches("//").trim_end_matches(':');
+            task_root.is_empty()
+                || root_path == task_root
+                || root_path.starts_with(&format!("{task_root}/"))
+        }
+    };
     let aliases: &[String] = if own_aliases { &task.aliases } else { &[] };
     let mut names: Vec<String> = std::iter::once(&task.display_name)
         .chain(aliases)

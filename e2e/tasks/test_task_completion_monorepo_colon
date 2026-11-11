@@ -95,8 +95,15 @@ assert_contains_text "$(mise __complete_word__ --shell zsh --line 'mise run prec
 assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
 cd apps/web || exit 1
 assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
+# An alias of a parent root's task qualified with this root still resolves, so it completes
+assert "mise -q collision" "precedence"
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run coll')" 'collision'
 # A task of another root is not reached through an alias qualified with this one
 assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run dep')" 'deploy'
 # A workspace identity is not expanded by the resolver, so it gets no bare spelling
 cd ../.. || exit 1
-assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run node:')" $'\nnode:web#build'
+ws="$(
+  printf '\n'
+  mise __complete_word__ --shell fish --line 'mise run node:'
+)"
+assert_not_contains_text "$ws" $'\nnode:web#build'
