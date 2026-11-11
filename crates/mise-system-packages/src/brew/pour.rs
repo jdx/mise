@@ -331,13 +331,17 @@ fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathB
     for rack in racks.flatten() {
         let path = rack.path();
         let legacy = path.join(".mise-staging.lock");
-        // An empty rack is the state a previous sweep leaves when it removed
-        // the lock file but could not remove the rack.
-        let empty = path
-            .read_dir()
-            .is_ok_and(|mut entries| entries.next().is_none());
-        if legacy.symlink_metadata().is_err() && !empty {
-            continue;
+        // Only racks holding a legacy lock file are ours to touch: an empty
+        // rack may belong to a source build, which writes into the Cellar
+        // without this lock. Anything but NotFound means the check could not
+        // be made, so the sweep stays retryable.
+        match legacy.symlink_metadata() {
+            Ok(_) => {}
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
         }
         let Ok(_lock) = mise_util::lock_file::LockFile::at(&lock_path(&path)).lock() else {
             complete = false;
@@ -351,7 +355,10 @@ fn remove_legacy_rack_locks_in(cellar: &Path, lock_path: impl Fn(&Path) -> PathB
                 continue;
             }
         }
-        // A rack that still holds a keg is kept; any other failure is retried.
+        // A rack that still holds a keg is kept. Any other failure leaves an
+        // empty rack that a later sweep no longer finds (its lock file is
+        // gone); that needs a writable rack inside an unwritable Cellar, and
+        // the rack is then removable by hand.
         match std::fs::remove_dir(&path) {
             Ok(()) => {}
             Err(err)
