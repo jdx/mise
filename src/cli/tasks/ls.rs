@@ -257,8 +257,13 @@ impl TasksLs {
                 .map(|c| if c.is_control() { ' ' } else { c })
                 .collect();
             let description = description.replace(":", "\\:");
-            let shorthand = shorthand_name(current_root.as_deref(), &t);
-            for name in std::iter::once(t.display_name.clone()).chain(shorthand) {
+            let spellings = [
+                shorthand_name(current_root.as_deref(), &t),
+                bare_name(current_root.as_deref(), &t),
+            ];
+            for name in
+                std::iter::once(t.display_name.clone()).chain(spellings.into_iter().flatten())
+            {
                 if name.chars().any(char::is_control) {
                     continue;
                 }
@@ -331,6 +336,9 @@ impl TasksLs {
             // Aliases get no `:` form: they exist to save typing, and listing every spelling
             // of every alias crowds the candidates. `mise tasks ls` shows them.
             if let Some(name) = shorthand_name(current_root.as_deref(), &task) {
+                task_spec.cmd.aliases.push(name);
+            }
+            if let Some(name) = bare_name(current_root.as_deref(), &task) {
                 task_spec.cmd.aliases.push(name);
             }
             usage
@@ -486,6 +494,15 @@ fn current_root_prefix(config: &Config) -> Option<String> {
 fn shorthand_name(current_root: Option<&str>, task: &Task) -> Option<String> {
     let name = task.display_name.strip_prefix(current_root?)?;
     Some(format!(":{name}"))
+}
+
+/// The bare name of a task of the current config root.
+///
+/// `mise run test` resolves to `//:test`, so `mise run te<TAB>` has to offer `test`: a shell
+/// only offers candidates that extend the word being completed.
+fn bare_name(current_root: Option<&str>, task: &Task) -> Option<String> {
+    let name = task.display_name.strip_prefix(current_root?)?;
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 // TODO: fill this out

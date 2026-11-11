@@ -74,3 +74,14 @@ assert_not_contains_text "$web" ':env:update'
 mode="$(mise __complete_word__ --shell fish --line 'mise run :build --mode ')"
 assert_contains_text "$mode" 'dev'
 assert_contains_text "$mode" 'prod'
+
+# Bare names resolve to the current root's tasks, so they complete too
+cd ../.. || exit 1
+assert "mise -q env:update" "updated"
+bare="$(mise __complete_word__ --shell fish --line 'mise run env:')"
+assert_contains_text "$bare" 'env:update'
+assert_contains_text "$bare" 'env:clear'
+assert_contains_text "$(mise __complete_word__ --shell zsh --line 'mise run prec')" 'precedence'
+assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
+cd apps/web || exit 1
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
