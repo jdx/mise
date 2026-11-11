@@ -793,8 +793,6 @@ impl SourceTally<'_> {
             if metadata.is_dir() {
                 continue;
             }
-            self.files += 1;
-            self.bytes += metadata.len();
             let top = match name {
                 Some(name) => Some(name.to_string()),
                 None => entry
@@ -804,14 +802,21 @@ impl SourceTally<'_> {
                     .and_then(|relative| relative.components().next())
                     .map(|part| part.as_os_str().to_string_lossy().into_owned()),
             };
-            if let Some(top) = top {
-                *self.top_level.entry(top).or_default() += metadata.len();
-            }
-            if self.bytes > self.max_bytes || self.files > self.max_files {
+            if self.count(top, metadata.len()) {
                 return true;
             }
         }
         false
+    }
+
+    /// Count one file; true once a limit is passed.
+    fn count(&mut self, top: Option<String>, len: u64) -> bool {
+        self.files += 1;
+        self.bytes += len;
+        if let Some(top) = top {
+            *self.top_level.entry(top).or_default() += len;
+        }
+        self.bytes > self.max_bytes || self.files > self.max_files
     }
 }
 
@@ -848,12 +853,27 @@ fn check_source(host: &RemoteHost, home: &Path, max_bytes: u64, max_files: u64) 
     let mut exceeded = tally.walk(source, source, None, host.copy_links);
     if !exceeded && !host.copy_links {
         for link in &host.copy_link {
+            // tar skips the link when it, or a directory above it, is excluded
+            let mut prefix = PathBuf::new();
+            let skipped = link.components().any(|part| {
+                prefix.push(part);
+                excluded(&globs, &prefix)
+            });
             let Ok(target) = fs::canonicalize(source.join(link)) else {
                 continue;
             };
+            if skipped {
+                continue;
+            }
             let name = link.to_string_lossy();
-            if tally.walk(&target, source, Some(name.trim_start_matches("./")), false) {
-                exceeded = true;
+            let name = name.trim_start_matches("./");
+            exceeded = if target.is_dir() {
+                tally.walk(&target, source, Some(name), false)
+            } else {
+                let len = fs::metadata(&target).map_or(0, |metadata| metadata.len());
+                tally.count(Some(name.to_string()), len)
+            };
+            if exceeded {
                 break;
             }
         }
@@ -2522,10 +2542,25 @@ mod tests {
         host.copy_links = true;
         assert!(check_source(&host, &home, 1024, 100).is_err());
 
+        // an exclude of the selected link itself skips it
+        let mut host = source_host(&source, &["shared"])?;
+        host.copy_link = vec![PathBuf::from("shared")];
+        check_source(&host, &home, 1024, 100)?;
+
         // an exclude still applies to the copied directory
         let mut host = source_host(&source, &["shared"])?;
         host.copy_links = true;
         check_source(&host, &home, 1024, 100)?;
+
+        // a linked file counts too
+        fs::write(temp.path().join("big.bin"), vec![0u8; 4096])?;
+        symlink(temp.path().join("big.bin"), source.join("big"))?;
+        let mut host = source_host(&source, &["shared"])?;
+        host.copy_link = vec![PathBuf::from("big")];
+        let message = check_source(&host, &home, 1024, 100)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("big"), "{message}");
         Ok(())
     }
 
