@@ -257,13 +257,10 @@ impl TasksLs {
                 .map(|c| if c.is_control() { ' ' } else { c })
                 .collect();
             let description = description.replace(":", "\\:");
-            let spellings = [
-                shorthand_name(current_root.as_deref(), &t),
-                bare_name(current_root.as_deref(), &t),
-            ];
-            for name in
-                std::iter::once(t.display_name.clone()).chain(spellings.into_iter().flatten())
-            {
+            let spellings = shorthand_name(current_root.as_deref(), &t)
+                .into_iter()
+                .chain(bare_names(current_root.as_deref(), &t));
+            for name in std::iter::once(t.display_name.clone()).chain(spellings) {
                 if name.chars().any(char::is_control) {
                     continue;
                 }
@@ -338,9 +335,10 @@ impl TasksLs {
             if let Some(name) = shorthand_name(current_root.as_deref(), &task) {
                 task_spec.cmd.aliases.push(name);
             }
-            if let Some(name) = bare_name(current_root.as_deref(), &task) {
-                task_spec.cmd.aliases.push(name);
-            }
+            task_spec
+                .cmd
+                .aliases
+                .extend(bare_names(current_root.as_deref(), &task));
             usage
                 .cmd
                 .subcommands
@@ -496,13 +494,24 @@ fn shorthand_name(current_root: Option<&str>, task: &Task) -> Option<String> {
     Some(format!(":{name}"))
 }
 
-/// The bare name of a task of the current config root.
+/// The bare names of a task of the current config root.
 ///
 /// `mise run test` resolves to `//:test`, so `mise run te<TAB>` has to offer `test`: a shell
-/// only offers candidates that extend the word being completed.
-fn bare_name(current_root: Option<&str>, task: &Task) -> Option<String> {
-    let name = task.display_name.strip_prefix(current_root?)?;
-    (!name.is_empty()).then(|| name.to_string())
+/// only offers candidates that extend the word being completed. A task whose display name is
+/// not under the root (an inferred `node:web#build`) is still reached through a root-qualified
+/// alias (`//apps/web:build`), so those give a bare name too.
+fn bare_names(current_root: Option<&str>, task: &Task) -> Vec<String> {
+    let Some(root) = current_root else {
+        return vec![];
+    };
+    let mut names: Vec<String> = std::iter::once(&task.display_name)
+        .chain(&task.aliases)
+        .filter_map(|n| n.strip_prefix(root))
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .collect();
+    names.dedup();
+    names
 }
 
 // TODO: fill this out
