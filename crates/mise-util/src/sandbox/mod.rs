@@ -339,6 +339,10 @@ impl SandboxConfig {
                 if p.is_relative() {
                     *p = cwd.join(&*p);
                 }
+                // `Path` equality ignores `.` components, so `./dist` would
+                // reach the profile as `<cwd>/./dist`, which Seatbelt never
+                // matches against the canonical path it checks. Drop them.
+                *p = p.components().collect();
                 #[cfg(unix)]
                 check_symlinks_stay_in_roots(p, &roots)?;
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
@@ -878,6 +882,33 @@ mod tests {
         assert_eq!(config.allow_read, vec![target]);
         assert_eq!(config.allow_write, vec![plain]);
         assert_eq!(config.symlinked_allow_paths, vec![through_link]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_paths_drops_current_dir_components() {
+        // `Path` equality ignores `.`, so a `./` spelling survives
+        // canonicalization and reaches the macOS profile, where it never matches.
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = root_dir.path().canonicalize().unwrap();
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let mut config = SandboxConfig {
+            allow_read: vec![root.join("./sub"), root.join("./")],
+            ..Default::default()
+        };
+        config.resolve_paths(&[]).unwrap();
+
+        let rendered: Vec<_> = config
+            .allow_read
+            .iter()
+            .map(|p| p.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![sub.to_str().unwrap(), root.to_str().unwrap()]
+        );
     }
 
     /// The project holds the code being confined, so whoever wrote that code
