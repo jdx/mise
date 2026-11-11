@@ -48,7 +48,8 @@ assert_contains "mise ls --installed nodl" "1.0.0"
 
 # Without the flag, the same plugin is refused in locked mode.
 rm -rf "$MISE_DATA_DIR/installs/nodl"
-sed -i '/downloads = false/d' "$PLUGIN_DIR/metadata.lua"
+grep -v 'downloads = false' "$PLUGIN_DIR/metadata.lua" >"$PLUGIN_DIR/metadata.lua.new"
+mv "$PLUGIN_DIR/metadata.lua.new" "$PLUGIN_DIR/metadata.lua"
 assert_contains "mise install --locked 2>&1 || true" "No lockfile URL found"
 
 # A plugin that declares downloads = false must not return a url.
