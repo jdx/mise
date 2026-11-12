@@ -205,13 +205,24 @@ impl BootstrapMerge for BootstrapTomlConfig {
         fill(&mut self.apt.sources, lower.apt.sources);
         fill(&mut self.dnf.repos, lower.dnf.repos);
         fill(&mut self.mise_shell_activate, lower.mise_shell_activate);
-        // settings tables merge key by key, this file's own values winning
+        // settings tables merge key by key, this file's own values winning, and every spelling
+        // of a plugin's name is the same section
         for (plugin, shared) in lower.settings {
-            let own = self.settings.shift_remove(&plugin).unwrap_or_default();
+            let id = plugin_identity(&plugin);
             let mut merged = toml::Table::new();
             merge_settings_table(&mut merged, shared);
-            merge_settings_table(&mut merged, own);
-            self.settings.insert(plugin, merged);
+            let own: Vec<String> = self
+                .settings
+                .keys()
+                .filter(|name| plugin_identity(name) == id)
+                .cloned()
+                .collect();
+            for name in own {
+                if let Some(own) = self.settings.shift_remove(&name) {
+                    merge_settings_table(&mut merged, own);
+                }
+            }
+            self.settings.insert(id, merged);
         }
         // hooks add up across files, the shared commands running first
         for (phase, shared) in lower.hooks {
@@ -2732,6 +2743,12 @@ fn all_manager_names() -> Vec<String> {
         .collect()
 }
 
+/// The identity of a plugin name: `foo_bar`, `foo-bar` and `FooBar` are the same plugin, which
+/// mise installs under the kebab-case name.
+pub fn plugin_identity(name: &str) -> String {
+    heck::ToKebabCase::to_kebab_case(name)
+}
+
 /// `mgr` as the installed manager spells it: a plugin installed as `foo-bar` answers to `foo_bar`
 /// too, since mise installs plugins under the kebab-case name.
 fn canonical_manager_name(mgr: String, known: &[String]) -> String {
@@ -2843,6 +2860,23 @@ mod tests {
         let merged = own.macos.login_items.unwrap();
         assert_eq!(merged.apps, ["/Applications/A.app", "/Applications/B.app"]);
         assert_eq!(merged.exclusive, Some(true));
+    }
+
+    #[test]
+    fn merge_below_merges_every_spelling_of_a_settings_plugin() {
+        let table = |s: &str| -> toml::Table { s.parse().unwrap() };
+        let mut own = BootstrapTomlConfig::default();
+        own.settings.insert("desk_plugin".into(), table("size = 4"));
+        let mut lower = BootstrapTomlConfig::default();
+        lower
+            .settings
+            .insert("Desk-Plugin".into(), table("size = 2\nblur = true"));
+        own.merge_below(lower);
+        assert_eq!(own.settings.len(), 1);
+        let merged = &own.settings["desk-plugin"];
+        // this file's value wins over the include's, whichever spelling each uses
+        assert_eq!(merged["size"], toml::Value::Integer(4));
+        assert_eq!(merged["blur"], toml::Value::Boolean(true));
     }
 
     #[cfg(unix)]
