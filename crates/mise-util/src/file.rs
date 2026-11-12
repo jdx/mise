@@ -2123,10 +2123,12 @@ pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
 /// (a 9p mount where every path component costs a round trip to Windows), and
 /// resolving each of them added roughly half a second to every `mise activate`
 /// and `hook-env`. Those folders are never symlinks to a mise-managed directory,
-/// so they are compared by their literal path instead of being resolved.
+/// so their literal path is returned as the comparison key instead of resolving
+/// them. The literal path still matches a mise directory that itself lives on a
+/// drive mount (e.g. an install root symlinked to `/mnt/c`).
 pub fn canonicalize_path_entry(path: &Path) -> Option<PathBuf> {
     if in_wsl() && is_windows_drive_mount(path) {
-        return None;
+        return Some(path.to_path_buf());
     }
     canonicalize_cached(path)
 }
