@@ -240,10 +240,19 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
         return false;
     }
 
+    let config = crate::config::Config::maybe_get();
     let mut full = None;
     let mut backend_wildcard = None;
     excludes.iter().any(|exclude| {
-        let exclude = crate::backend::canonical_backend_full(exclude.trim());
+        let exclude = exclude.trim();
+        // An exclude can name a `[tool_alias]`; match the backend it stands for too.
+        let aliased = config
+            .as_ref()
+            .and_then(|config| config.all_aliases.get(exclude))
+            .and_then(|alias| alias.backend.as_deref())
+            .map(|backend| split_bracketed_opts(backend).map_or(backend, |(name, _)| name))
+            .map(|backend| crate::backend::canonical_backend_full(backend).into_owned());
+        let exclude = crate::backend::canonical_backend_full(exclude);
         let exclude = exclude.as_ref();
         if exclude.is_empty() {
             return false;
@@ -263,6 +272,12 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
             }
         });
         if exclude == full {
+            return true;
+        }
+        if let Some(aliased) = &aliased
+            && (aliased == full
+                || *aliased == crate::backend::canonical_backend_full(&backend_arg.short))
+        {
             return true;
         }
         let backend_wildcard =
