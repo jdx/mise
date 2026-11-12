@@ -38,6 +38,46 @@ impl TomlDocument {
         }
     }
 
+    /// Set `field` on the `_` entry of an env section, as in `_.file = ".env"`.
+    ///
+    /// An `_` entry already in the section (loaded from `_.path` or
+    /// `_.source`) is an inline table and `to_toml` cannot nest a dotted key
+    /// under it, so the field goes into that table. Without one, a dotted
+    /// `_.<field>` entry is added. The result says what changed, for undo.
+    pub(crate) fn add_env_underscore_field(
+        &mut self,
+        section_idx: usize,
+        field: &str,
+        value: String,
+    ) -> EnvFieldChange {
+        let existing = self.sections.get_mut(section_idx).and_then(|section| {
+            section
+                .entries
+                .iter_mut()
+                .enumerate()
+                .find_map(|(idx, entry)| match &mut entry.value {
+                    EntryValue::InlineTable(pairs) if entry.key == "_" => Some((idx, pairs)),
+                    _ => None,
+                })
+        });
+        let Some((entry_idx, pairs)) = existing else {
+            self.add_entry(section_idx, format!("_.{field}"), value);
+            return EnvFieldChange::NewEntry(self.sections[section_idx].entries.len() - 1);
+        };
+        let change = match pairs.iter().position(|(k, _)| k == field) {
+            Some(field_idx) => {
+                let old = std::mem::replace(&mut pairs[field_idx].1, value);
+                EnvFieldChange::ReplacedField(entry_idx, field_idx, old)
+            }
+            None => {
+                pairs.push((field.to_string(), value));
+                EnvFieldChange::NewField(entry_idx, pairs.len() - 1)
+            }
+        };
+        self.modified = true;
+        change
+    }
+
     /// Delete an entry from a section
     pub(crate) fn delete_entry(&mut self, section_idx: usize, entry_idx: usize) {
         if let Some(section) = self.sections.get_mut(section_idx)
@@ -161,4 +201,14 @@ impl TomlDocument {
             self.modified = true;
         }
     }
+}
+
+/// What [`TomlDocument::add_env_underscore_field`] changed.
+pub(crate) enum EnvFieldChange {
+    /// Added a new `_.<field>` entry (entry_idx)
+    NewEntry(usize),
+    /// Added a field to the existing `_` inline table (entry_idx, field_idx)
+    NewField(usize, usize),
+    /// Replaced a field's value in the existing `_` table (entry_idx, field_idx, old_value)
+    ReplacedField(usize, usize, String),
 }

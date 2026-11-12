@@ -46,6 +46,7 @@ pub(crate) enum EntryValue {
 }
 
 mod mutate;
+pub(crate) use mutate::EnvFieldChange;
 mod parse;
 mod serialize;
 

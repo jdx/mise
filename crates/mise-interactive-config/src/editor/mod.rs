@@ -7,6 +7,9 @@ mod actions;
 mod handlers;
 mod undo;
 
+#[cfg(test)]
+mod tests;
+
 use std::io;
 use std::path::PathBuf;
 
