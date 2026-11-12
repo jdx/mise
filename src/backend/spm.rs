@@ -198,6 +198,14 @@ impl Backend for SPMBackend {
     fn requires_lockfile_url(&self, tv: &ToolVersion) -> bool {
         let raw_opts = tv.request.options();
         let opts = SpmOptions::new(&raw_opts);
+        // A platform that opts out of bundles builds from source and has no URL to lock
+        let current = PlatformTarget::new(crate::platform::Platform::current());
+        if matches!(
+            opts.artifactbundle_mode(Some(&current)),
+            Ok(ArtifactBundleMode::SourceOnly)
+        ) {
+            return false;
+        }
         asks_for_bundle(&opts, package_revision(tv).as_ref())
             || tv
                 .lock_platforms
@@ -1738,6 +1746,33 @@ mod tests {
             },
         );
         assert!(backend.requires_lockfile_url(&tv));
+
+        // A platform that opts out of bundles has no URL to lock, even when another does
+        let current = crate::platform::Platform::current();
+        let mut tv = tool_version("1.2.3");
+        let mut own = toml::Table::new();
+        own.insert("artifactbundle".to_string(), toml::Value::Boolean(false));
+        let mut platforms = toml::Table::new();
+        platforms.insert(current.to_key(), toml::Value::Table(own));
+        let mut options = ToolVersionOptions::default();
+        options
+            .opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+        tv.request = ToolRequest::new_with_options(
+            Arc::new(tv.ba().clone()),
+            "1.2.3",
+            options,
+            ToolSource::Argument,
+        )
+        .unwrap();
+        tv.lock_platforms.insert(
+            "other-platform".to_string(),
+            PlatformInfo {
+                url: Some("https://example.com/tool.artifactbundle.zip".to_string()),
+                ..Default::default()
+            },
+        );
+        assert!(!backend.requires_lockfile_url(&tv));
 
         // A request for a bundle has one to lock, even before any entry exists
         let required = opts_with("artifactbundle", toml::Value::Boolean(true));
