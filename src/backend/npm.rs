@@ -1262,6 +1262,42 @@ impl Backend for NPMBackend {
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        // Every installed version of a tarball URL is a digest of that URL, and
+        // digests have no order, so the latest is the one installed last. This
+        // lets `hook-env`, which resolves offline, find it instead of reporting
+        // the literal `latest` as missing.
+        if is_tarball_spec(&self.tool_name()) {
+            // Install state records the directory that supplied the tool, which
+            // is a shared or system one when nothing is installed for the user.
+            let installs = crate::toolset::install_state::get_tool(&self.ba().short)
+                .and_then(|tool| tool.installs_path)
+                .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
+            return crate::file::dir_subdirs(&installs)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|v| !v.starts_with('.') && v != "latest")
+                .filter(|v| !crate::runtime_symlinks::is_runtime_symlink(&installs.join(v)))
+                .filter(|v| {
+                    // An identity-layout version is a link, and its marker is
+                    // keyed by the installation the link names.
+                    let key = crate::install_layout::resolver::link_target(&installs.join(v))
+                        .and_then(|install| {
+                            install.file_name().map(|n| n.to_string_lossy().to_string())
+                        })
+                        .unwrap_or_else(|| v.clone());
+                    !crate::toolset::install_state::is_incomplete(self.ba(), &key)
+                })
+                .filter_map(|v| {
+                    let modified = installs
+                        .join(&v)
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .ok()?;
+                    Some((modified, v))
+                })
+                .max()
+                .map(|(_, v)| v);
+        }
         // Installed commits do not record whether they came from a rolling HEAD.
         None
     }
