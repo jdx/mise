@@ -1053,9 +1053,13 @@ impl HttpBackend {
             // resolved — the install looks fine and the binary will not run.
             // `make_symlink_or_copy` is what the rest of the codebase uses for a
             // file that has to be executable at the link path (swift, github,
-            // conda and aqua all do). The cost is that Windows keeps a copy
-            // rather than sharing the cached one, which is the right way round:
-            // a duplicate that works beats a link that does not.
+            // conda and aqua all do). On Windows it copies, which would store
+            // the file twice, so hard link there and copy only when the two
+            // paths are on different volumes or the filesystem has no hard
+            // links. Elsewhere it symlinks.
+            #[cfg(windows)]
+            file::hard_link_or_copy(&cached_file, &install_file)?;
+            #[cfg(not(windows))]
             file::make_symlink_or_copy(&cached_file, &install_file)?;
             return Ok(());
         }
