@@ -304,30 +304,80 @@ pub async fn plan(
 /// Add the `[bootstrap.repos]` repositories and, when `hooks_enabled`, the
 /// `[bootstrap.hooks]` commands, which `plan` leaves out because they read
 /// the network or run arbitrary commands rather than inspect local state.
+///
+/// Hooks are ordered as a bootstrap run executes them: by phase, then in
+/// declaration order, with packages between the `packages` hooks and
+/// repositories between the `repos` hooks.
 pub async fn add_repos_and_hooks(
     plan: &mut BootstrapPlan,
     config: &Config,
     hooks_enabled: bool,
 ) -> Result<()> {
+    use super::hooks::BootstrapHookPhase;
+    use strum::IntoEnumIterator;
+
+    let packages = plan
+        .ids()
+        .filter(|id| id.kind == "package")
+        .cloned()
+        .collect::<Vec<_>>();
     let requests = super::repos_from_config(config);
+    let mut repos = vec![];
     for status in super::repos::status(&requests).await? {
-        plan.insert(repo_plan(&status))?;
+        let resource = repo_plan(&status);
+        repos.push(resource.id.clone());
+        plan.insert(resource)?;
     }
-    if hooks_enabled {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for hook in super::hooks_from_config(config) {
-            let phase = hook.phase.to_string();
-            let index = counts.entry(phase.clone()).or_default();
-            *index += 1;
+    for repo in &repos {
+        for package in &packages {
+            plan.add_ordering(repo, package.clone())?;
+        }
+    }
+    if !hooks_enabled {
+        return Ok(());
+    }
+    let hooks = super::hooks_from_config(config);
+    let mut previous: Option<ResourceId> = None;
+    for phase in BootstrapHookPhase::iter() {
+        let before_phase = previous.clone();
+        // the first hook of a `post-` phase runs after the resources it follows
+        let anchors: &[ResourceId] = match phase {
+            BootstrapHookPhase::PostPackages => &packages,
+            BootstrapHookPhase::PostRepos => &repos,
+            _ => &[],
+        };
+        let mut index = 0;
+        for hook in hooks.iter().filter(|hook| hook.phase == phase) {
+            index += 1;
+            let name = phase.to_string();
+            let id = ResourceId::new("hook", format!("{name}:{index}"));
             plan.insert(
-                ResourcePlan::new(
-                    ResourceId::new("hook", format!("{phase}:{index}")),
-                    "not run",
-                    hook.run,
-                    ResourceAction::Run,
-                )
-                .with_hook_phase(phase),
+                ResourcePlan::new(id.clone(), "not run", hook.run.clone(), ResourceAction::Run)
+                    .with_hook_phase(name),
             )?;
+            if let Some(previous) = previous.take() {
+                plan.add_ordering(&id, previous)?;
+            }
+            if index == 1 {
+                for anchor in anchors {
+                    plan.add_ordering(&id, anchor.clone())?;
+                }
+            }
+            previous = Some(id);
+        }
+        // packages and repos run after the hooks of their `pre-` phase
+        let targets: &[ResourceId] = match phase {
+            BootstrapHookPhase::PrePackages => &packages,
+            BootstrapHookPhase::PreRepos => &repos,
+            _ => &[],
+        };
+        if let Some(last) = previous
+            .as_ref()
+            .filter(|last| Some(*last) != before_phase.as_ref())
+        {
+            for target in targets {
+                plan.add_ordering(target, last.clone())?;
+            }
         }
     }
     Ok(())
