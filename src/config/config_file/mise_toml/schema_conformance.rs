@@ -334,7 +334,11 @@ fn check(validator: &jsonschema::Validator, body: &str) -> Option<Outcome> {
         &path,
         false,
         &mut |field| unknown.push(field.to_string()),
-        &mut |m| moved = Some(m),
+        &mut |m| {
+            let rejected = MiseToml::reject_unreadable_macos_settings(&m, &path);
+            moved = Some(m);
+            rejected
+        },
     )
     .err()
     .map(|e| format!("{e:#}"));

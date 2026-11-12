@@ -737,6 +737,10 @@ impl MiseToml {
     /// value; normal loading still goes through `from_str` and its trust gate.
     pub(crate) fn for_history_preflight(body: &str, path: &Path) -> eyre::Result<Self> {
         let mut parsed: Self = toml::from_str(body)?;
+        // read `[bootstrap.settings.macos]` as normal loading does, rejecting what it would
+        if let Some(bootstrap) = parsed.bootstrap.as_mut() {
+            Self::reject_unreadable_macos_settings(&bootstrap.move_macos_settings(), path)?;
+        }
         parsed.path = path.to_path_buf();
         Ok(parsed)
     }
@@ -766,7 +770,13 @@ impl MiseToml {
         check_trust: bool,
     ) -> eyre::Result<Self> {
         let Some(source) = source else {
-            return Self::parse_body_reporting(body, path, check_trust, &mut |_| {}, &mut |_| {});
+            return Self::parse_body_reporting(
+                body,
+                path,
+                check_trust,
+                &mut |_| {},
+                &mut |moved| Self::reject_unreadable_macos_settings(&moved, path),
+            );
         };
         let unknown = super::unknown_key::UnknownKeys::new(source, Some(body));
         Self::parse_body_reporting(
@@ -781,7 +791,26 @@ impl MiseToml {
         )
     }
 
-    fn report_macos_settings_move(moved: mise_config::bootstrap::MacosSettingsMove, path: &Path) {
+    /// Fail like a malformed `[bootstrap.macos]` does: applying the rest of the config without
+    /// this section could undo what it declares, such as exclusive login items.
+    fn reject_unreadable_macos_settings(
+        moved: &mise_config::bootstrap::MacosSettingsMove,
+        path: &Path,
+    ) -> eyre::Result<()> {
+        match &moved.error {
+            Some(err) => Err(eyre!(
+                "invalid [bootstrap.settings.macos] in {}: {err}",
+                display_path(path)
+            )),
+            None => Ok(()),
+        }
+    }
+
+    fn report_macos_settings_move(
+        moved: mise_config::bootstrap::MacosSettingsMove,
+        path: &Path,
+    ) -> eyre::Result<()> {
+        Self::reject_unreadable_macos_settings(&moved, path)?;
         if moved.legacy {
             // The new spelling is ignored by mise versions before it, so warn only once
             // releases that read it have been out for six months.
@@ -799,6 +828,7 @@ impl MiseToml {
                 display_path(path)
             );
         }
+        Ok(())
     }
 
     /// [`Self::parse_body`], handing each field the deserializer skipped to
@@ -809,7 +839,9 @@ impl MiseToml {
         path: &Path,
         check_trust: bool,
         on_unknown: &mut dyn FnMut(&serde_ignored::Path),
-        on_macos_move: &mut dyn FnMut(mise_config::bootstrap::MacosSettingsMove),
+        on_macos_move: &mut dyn FnMut(
+            mise_config::bootstrap::MacosSettingsMove,
+        ) -> eyre::Result<()>,
     ) -> eyre::Result<Self> {
         if check_trust && !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
@@ -835,17 +867,8 @@ impl MiseToml {
             rf.monorepo_root.get_or_insert(legacy_monorepo_root);
         }
         if let Some(bootstrap) = rf.bootstrap.as_mut() {
-            let moved = bootstrap.move_macos_settings();
-            let error = moved.error.clone();
-            on_macos_move(moved);
-            // Fail like a malformed `[bootstrap.macos]` does: applying the rest of the config
-            // without this section could undo what it declares, such as exclusive login items.
-            if let Some(err) = error {
-                return Err(eyre!(
-                    "invalid [bootstrap.settings.macos] in {}: {err}",
-                    display_path(path)
-                ));
-            }
+            // the callback rejects a section it cannot read, naming the file it is in
+            on_macos_move(bootstrap.move_macos_settings())?;
         }
         rf.loaded_hash = crate::install_layout::snapshots::bytes_hash_of(body.as_bytes());
         rf.context = BASE_CONTEXT.clone();
@@ -2924,6 +2947,19 @@ mod schema_conformance;
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    #[test]
+    fn history_preflight_rejects_an_unreadable_macos_settings_section() {
+        let path = std::path::Path::new("/tmp/mise.toml");
+        let bad = "[bootstrap.settings.macos]\n\
+                   defaults_entries = [{ domain = \"com.apple.dock\", key = \"autohide\" }]\n";
+        let err = super::MiseToml::for_history_preflight(bad, path).unwrap_err();
+        assert!(format!("{err:#}").contains("invalid [bootstrap.settings.macos]"));
+        let good = "[bootstrap.settings.macos.dock]\nautohide = true\n";
+        let parsed = super::MiseToml::for_history_preflight(good, path).unwrap();
+        let bootstrap = parsed.bootstrap.unwrap();
+        assert_eq!(bootstrap.macos.dock["autohide"], toml::Value::Boolean(true));
+    }
+
     #[test]
     fn tasks_that_list_secrets_are_not_safe_config() {
         assert!(is_safe_config_body("[tasks.x]\nrun = 'echo'\n"));
