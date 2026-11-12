@@ -568,7 +568,7 @@ models/user_test.rb`, and plain `rails` runs `fnox --profile=development exec --
 
 ```toml [mise.toml]
 [wrappers.myserver]
-command = "myserver"
+command = "myserver-real"
 env = { RUST_LOG = "{{ 'debug' if '--verbose' in argv else 'info' }}" }
 ```
 
