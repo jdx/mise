@@ -208,7 +208,8 @@ impl BootstrapMerge for BootstrapTomlConfig {
         // settings tables merge key by key, this file's own values winning
         for (plugin, shared) in lower.settings {
             let own = self.settings.shift_remove(&plugin).unwrap_or_default();
-            let mut merged = shared;
+            let mut merged = toml::Table::new();
+            merge_settings_table(&mut merged, shared);
             merge_settings_table(&mut merged, own);
             self.settings.insert(plugin, merged);
         }
