@@ -252,7 +252,7 @@ With `--detailed-exitcode`, the exit code reports what the plan found:
 A resource is `unknown` when mise cannot reach its declared state on its own,
 for example a package whose manager is unavailable on this platform or cannot
 install the requested version, or a repository with local changes, which
-bootstrap refuses to touch unless `--skip-dirty` is set. mise reports it
+bootstrap refuses to touch (`--skip-dirty` leaves it unchanged and moves on). mise reports it
 instead of skipping it, so you can resolve it by hand.
 
 ### Check state {#inspecting-state}

@@ -316,13 +316,34 @@ pub async fn add_repos_and_hooks(
     use super::hooks::BootstrapHookPhase;
     use strum::IntoEnumIterator;
 
+    // plugin packages run after tools, so they neither precede repos nor the
+    // `post-packages` hook
+    let builtin_packages = super::packages_from_config(config)?
+        .into_iter()
+        .filter(|packages| !packages.manager.is_plugin())
+        .flat_map(|packages| {
+            let manager = packages.manager.name().to_string();
+            packages.requests.into_iter().map(move |request| {
+                ResourceId::new("package", format!("{manager}:{}", request.name))
+            })
+        })
+        .collect::<std::collections::HashSet<_>>();
     let packages = plan
         .ids()
-        .filter(|id| id.kind == "package")
+        .filter(|id| builtin_packages.contains(id))
         .cloned()
         .collect::<Vec<_>>();
     // accounts, files, services, the firewall, and Compose all run before repos
-    let earlier = plan.ids().cloned().collect::<Vec<_>>();
+    let earlier = plan
+        .ids()
+        .filter(|id| id.kind != "package" || builtin_packages.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let services = plan
+        .ids()
+        .filter(|id| id.kind == "service")
+        .cloned()
+        .collect::<Vec<_>>();
     let requests = super::repos_from_config(config);
     let mut repos = vec![];
     for status in super::repos::status(&requests).await? {
@@ -379,6 +400,11 @@ pub async fn add_repos_and_hooks(
         {
             for target in targets {
                 plan.add_ordering(target, last.clone())?;
+            }
+            if phase == BootstrapHookPhase::PostPackages {
+                for service in &services {
+                    plan.add_ordering(service, last.clone())?;
+                }
             }
         }
     }
