@@ -3,7 +3,7 @@ use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
 use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap, env_value_matches};
-use crate::file::{self, canonicalize_cached, display_path, display_rel_path};
+use crate::file::{self, canonicalize_path_entry, display_path, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
@@ -478,13 +478,15 @@ impl HookEnv {
         //
         // Use canonicalized paths for comparison to handle symlinks, relative paths,
         // and other path variants that refer to the same filesystem location.
-        let post_canonical: HashSet<PathBuf> =
-            post.iter().filter_map(|p| canonicalize_cached(p)).collect();
+        let post_canonical: HashSet<PathBuf> = post
+            .iter()
+            .filter_map(|p| canonicalize_path_entry(p))
+            .collect();
         let user_additions_set: HashSet<_> = pre.iter().chain(post_user.iter()).collect();
         let user_additions_canonical: HashSet<PathBuf> = pre
             .iter()
             .chain(post_user.iter())
-            .filter_map(|p| canonicalize_cached(p))
+            .filter_map(|p| canonicalize_path_entry(p))
             .collect();
 
         let tool_paths_filtered: Vec<PathBuf> = tool_paths
@@ -498,7 +500,7 @@ impl HookEnv {
                 if post.contains(p) {
                     return false;
                 }
-                if let Some(canonical) = canonicalize_cached(p)
+                if let Some(canonical) = canonicalize_path_entry(p)
                     && post_canonical.contains(&canonical)
                 {
                     return false;
@@ -508,7 +510,7 @@ impl HookEnv {
                 if user_additions_set.contains(p) {
                     return false;
                 }
-                if let Some(canonical) = canonicalize_cached(p)
+                if let Some(canonical) = canonicalize_path_entry(p)
                     && user_additions_canonical.contains(&canonical)
                 {
                     return false;
@@ -530,7 +532,7 @@ impl HookEnv {
                 if user_additions_set.contains(p) {
                     return false;
                 }
-                if let Some(canonical) = canonicalize_cached(p)
+                if let Some(canonical) = canonicalize_path_entry(p)
                     && user_additions_canonical.contains(&canonical)
                 {
                     return false;

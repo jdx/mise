@@ -2117,6 +2117,49 @@ pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
     Some(canonicalized)
 }
 
+/// Canonicalize a PATH entry for comparison against mise-managed directories.
+///
+/// Under WSL the default Windows PATH interop appends folders on `/mnt/<drive>`
+/// (a 9p mount where every path component costs a round trip to Windows), and
+/// resolving each of them added roughly half a second to every `mise activate`
+/// and `hook-env`. Those folders are never symlinks to a mise-managed directory,
+/// so they are compared by their literal path instead of being resolved.
+pub fn canonicalize_path_entry(path: &Path) -> Option<PathBuf> {
+    if in_wsl() && is_windows_drive_mount(path) {
+        return None;
+    }
+    canonicalize_cached(path)
+}
+
+/// Like [`canonicalize_path_entry`], falling back to the original path.
+pub fn canonicalize_path_entry_or_self(path: &Path) -> PathBuf {
+    canonicalize_path_entry(path).unwrap_or_else(|| path.to_path_buf())
+}
+
+fn in_wsl() -> bool {
+    static WSL: Lazy<bool> = Lazy::new(|| {
+        std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
+    });
+    *WSL
+}
+
+/// True for `/mnt/<drive letter>/...`.
+fn is_windows_drive_mount(path: &Path) -> bool {
+    use std::path::Component;
+    let mut components = path.components();
+    if components.next() != Some(Component::RootDir) {
+        return false;
+    }
+    if components.next() != Some(Component::Normal("mnt".as_ref())) {
+        return false;
+    }
+    matches!(
+        components.next(),
+        Some(Component::Normal(drive))
+            if drive.len() == 1 && drive.as_encoded_bytes()[0].is_ascii_alphabetic()
+    )
+}
+
 /// Canonicalize a path using the process cache, falling back to the original
 /// path when canonicalization fails.
 pub fn canonicalize_or_self(path: &Path) -> PathBuf {
