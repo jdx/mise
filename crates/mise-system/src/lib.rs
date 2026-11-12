@@ -122,18 +122,47 @@ pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
 
 pub use mise_config::dotfiles::DotfilesTomlConfig;
 
-/// Put `higher`'s values over `base`, merging nested tables key by key.
+/// Put `higher`'s values over `base`, merging nested tables key by key. A quoted dotted key such as
+/// `"appearance.blur"` means the same setting as `appearance = { blur = .. }`, so it is nested
+/// first, and a higher file's value wins however either file spells it.
 pub fn merge_settings_table(base: &mut toml::Table, higher: toml::Table) {
+    merge_nested_tables(base, nest_dotted_keys(higher));
+}
+
+fn merge_nested_tables(base: &mut toml::Table, higher: toml::Table) {
     for (key, value) in higher {
         match (base.get_mut(&key), value) {
             (Some(toml::Value::Table(lower)), toml::Value::Table(higher)) => {
-                merge_settings_table(lower, higher)
+                merge_nested_tables(lower, higher)
             }
             (_, value) => {
                 base.insert(key, value);
             }
         }
     }
+}
+
+/// `table` with each quoted dotted key turned into nested tables, merged with the tables the
+/// same file already spells out.
+fn nest_dotted_keys(table: toml::Table) -> toml::Table {
+    let mut out = toml::Table::new();
+    for (key, value) in table {
+        let value = match value {
+            toml::Value::Table(table) => toml::Value::Table(nest_dotted_keys(table)),
+            value => value,
+        };
+        let mut parts = key.split('.').rev();
+        let last = parts.next().unwrap_or_default().to_string();
+        let mut nested = toml::Table::new();
+        nested.insert(last, value);
+        for part in parts {
+            let mut outer = toml::Table::new();
+            outer.insert(part.to_string(), toml::Value::Table(nested));
+            nested = outer;
+        }
+        merge_nested_tables(&mut out, nested);
+    }
+    out
 }
 
 /// Combining a file's `[bootstrap]` with the one it includes; it applies mise's macOS-defaults

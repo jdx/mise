@@ -2090,7 +2090,15 @@ impl Bootstrap {
             }
             return self.run_from().await;
         }
-        if let Some(command) = self.command.take() {
+        if let Some(mut command) = self.command.take() {
+            // `mise bootstrap --dry-run settings apply` must not write settings.
+            if self.dry_run
+                && let Commands::Settings(BootstrapSettings {
+                    command: BootstrapSettingsCommands::Apply(apply),
+                }) = &mut command
+            {
+                apply.dry_run = true;
+            }
             return command.run().await;
         }
         if self.save_env {
@@ -2644,14 +2652,6 @@ impl Bootstrap {
                 .await?;
         }
 
-        if skip.contains(&BootstrapPart::Settings) {
-            debug!("bootstrap: settings plugins skipped");
-        } else {
-            for item in apply_bootstrap_settings(&config, &[], self.dry_run).await? {
-                follow_up.add_skipped(item);
-            }
-        }
-
         if skip.contains(&BootstrapPart::Launchd) {
             debug!("bootstrap: launchd agents skipped");
         } else {
@@ -2762,6 +2762,16 @@ impl Bootstrap {
             if !post_packages_ran {
                 self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
                     .await?;
+            }
+        }
+
+        // Settings plugins run after tools, like package plugins: a plugin's `requires` may be a
+        // tool this run just installed.
+        if skip.contains(&BootstrapPart::Settings) {
+            debug!("bootstrap: settings plugins skipped");
+        } else {
+            for item in apply_bootstrap_settings(&config, &[], self.dry_run).await? {
+                follow_up.add_skipped(item);
             }
         }
 
@@ -5969,7 +5979,7 @@ fn selected_settings_sections(
     config: &Config,
     plugins: &[String],
 ) -> Result<Vec<system::bootstrap_settings::SettingsSection>> {
-    let sections = system::bootstrap_settings::sections_from_config(config);
+    let sections = system::bootstrap_settings::sections_from_config(config)?;
     for name in plugins {
         if !sections.iter().any(|section| &section.plugin == name) {
             bail!("no [bootstrap.settings.{name}] section is configured");
@@ -5997,7 +6007,7 @@ async fn apply_bootstrap_settings(
     info!("bootstrap: settings");
     let mut follow_up = vec![];
     for section in sections {
-        match system::bootstrap_settings::BootstrapSettingsPlugin::load(&section.plugin) {
+        match system::bootstrap_settings::BootstrapSettingsPlugin::load(&section.plugin).await {
             Ok(plugin) => {
                 let report = plugin.apply(&section, dry_run).await?;
                 follow_up.extend(
@@ -6050,7 +6060,7 @@ impl BootstrapSettingsStatus {
         let mut rows = vec![];
         let mut entries = vec![];
         for section in &sections {
-            match system::bootstrap_settings::BootstrapSettingsPlugin::load(&section.plugin) {
+            match system::bootstrap_settings::BootstrapSettingsPlugin::load(&section.plugin).await {
                 Ok(plugin) => {
                     for status in plugin.status(section).await? {
                         let differs = status.differs();

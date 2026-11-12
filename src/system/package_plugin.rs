@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
-use heck::ToKebabCase;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
@@ -102,9 +101,16 @@ pub(crate) async fn bootstrap_plugin_env() -> Result<IndexMap<String, String>> {
     Ok(env)
 }
 
-/// The first of `requires` not found on `PATH` or among mise's shims.
-pub(crate) fn missing_binary(requires: &[String]) -> Option<&str> {
-    missing_in(requires, &PackagePluginManager::sync_lookup_path())
+/// The first of `requires` not found on the `PATH` of `env`, the environment plugin hooks get.
+pub(crate) fn missing_in_env<'a>(
+    requires: &'a [String],
+    env: &IndexMap<String, String>,
+) -> Option<&'a str> {
+    let paths: Vec<PathBuf> = env
+        .get("PATH")
+        .map(|path| std::env::split_paths(path).collect())
+        .unwrap_or_default();
+    missing_in(requires, &paths)
 }
 
 fn missing_in<'a>(requires: &'a [String], paths: &[PathBuf]) -> Option<&'a str> {
@@ -126,13 +132,15 @@ pub struct PackagePluginManager {
 
 impl PackagePluginManager {
     pub fn new(name: String) -> Result<Self> {
-        let plugin_path = crate::plugins::system_plugins::resolve(
-            &name.to_kebab_case(),
-            &mise_util::dirs::PLUGINS,
-        );
+        let plugin_path = crate::plugins::system_plugins::resolve(&name, &mise_util::dirs::PLUGINS);
         let config =
             MisePluginToml::from_file(&plugin_path.join("mise.plugin.toml"))?.package_manager;
-        let plugin = Arc::new(VfoxPlugin::new(name.clone(), plugin_path));
+        // vfox loads a plugin by the name of its directory, which can differ from `name` in case
+        // style (`foo_bar` in config, `foo-bar` on disk).
+        let dir_name = plugin_path
+            .file_name()
+            .map_or_else(|| name.clone(), |n| n.to_string_lossy().into_owned());
+        let plugin = Arc::new(VfoxPlugin::new(dir_name, plugin_path));
         Ok(Self {
             name,
             plugin,
@@ -291,9 +299,9 @@ impl PackagePluginManager {
                 .join("hooks/package_upgrade.lua")
                 .exists()
         {
-            vfox.package_upgrade(&self.name, ctx).await?;
+            vfox.package_upgrade(&self.plugin.name, ctx).await?;
         } else {
-            vfox.package_install(&self.name, ctx).await?;
+            vfox.package_install(&self.plugin.name, ctx).await?;
         }
         Ok(())
     }
@@ -303,7 +311,9 @@ impl PackagePluginManager {
         let ctx = PackageUninstallContext {
             packages: Self::requests(pkgs),
         };
-        self.vfox(env)?.package_uninstall(&self.name, ctx).await?;
+        self.vfox(env)?
+            .package_uninstall(&self.plugin.name, ctx)
+            .await?;
         Ok(())
     }
 
@@ -552,7 +562,7 @@ impl SystemPackageManager for PackagePluginManager {
         let response = self
             .vfox(env)?
             .package_installed(
-                &self.name,
+                &self.plugin.name,
                 PackageInstalledContext {
                     packages: Self::requests(pkgs),
                 },

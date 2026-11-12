@@ -26,26 +26,43 @@ pub struct SettingsSection {
 }
 
 /// Every plugin's section, merged across config files: a more local file's value for a key
-/// replaces the others, and tables merge key by key.
-pub fn sections_from_config(config: &Config) -> Vec<SettingsSection> {
-    let mut merged: IndexMap<String, toml::Table> = IndexMap::new();
-    for cf in config.config_files.values().rev() {
-        let Some(bootstrap) = cf.bootstrap_config() else {
-            continue;
-        };
-        for (plugin, table) in bootstrap.settings {
-            mise_system::merge_settings_table(merged.entry(plugin).or_default(), table);
+/// replaces the others, and tables merge key by key. Independent `[bootstrap].config_roots` must
+/// not set the same key to different values.
+pub fn sections_from_config(config: &Config) -> Result<Vec<SettingsSection>> {
+    let mut sections: IndexMap<String, IndexMap<String, Json>> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        let mut merged: IndexMap<String, toml::Table> = IndexMap::new();
+        for cf in config_files.values().rev() {
+            let Some(bootstrap) = cf.bootstrap_config() else {
+                continue;
+            };
+            for (plugin, table) in bootstrap.settings {
+                mise_system::merge_settings_table(merged.entry(plugin).or_default(), table);
+            }
         }
-    }
-    merged
-        .into_iter()
-        .map(|(plugin, table)| {
+        for (plugin, table) in merged {
             let mut values = IndexMap::new();
             flatten("", table, &mut values);
-            SettingsSection { plugin, values }
-        })
-        .filter(|section| !section.values.is_empty())
-        .collect()
+            let section = sections.entry(plugin.clone()).or_default();
+            for (key, value) in values {
+                match section.get(&key) {
+                    Some(existing) if !same_value(existing, &value) => bail!(
+                        "[bootstrap.settings.{plugin}]: {key} is {existing} in one bootstrap \
+                         config root and {value} in another",
+                    ),
+                    Some(_) => {}
+                    None => {
+                        section.insert(key, value);
+                    }
+                }
+            }
+        }
+    }
+    Ok(sections
+        .into_iter()
+        .filter(|(_, values)| !values.is_empty())
+        .map(|(plugin, values)| SettingsSection { plugin, values })
+        .collect())
 }
 
 fn flatten(prefix: &str, table: toml::Table, out: &mut IndexMap<String, Json>) {
@@ -85,7 +102,7 @@ fn toml_to_json(value: toml::Value) -> Json {
 /// TOML `4`. Otherwise types must match, so `4` and `"4"` differ.
 fn same_value(a: &Json, b: &Json) -> bool {
     match (a, b) {
-        (Json::Number(a), Json::Number(b)) => a.as_f64() == b.as_f64(),
+        (Json::Number(a), Json::Number(b)) => same_number(a, b),
         (Json::Array(a), Json::Array(b)) => {
             a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_value(a, b))
         }
@@ -95,6 +112,26 @@ fn same_value(a: &Json, b: &Json) -> bool {
                     .all(|(key, a)| b.get(key).is_some_and(|b| same_value(a, b)))
         }
         (a, b) => a == b,
+    }
+}
+
+/// Integers compare exactly, so two integers too large for an `f64` stay distinct. An integer and
+/// a float are equal only when the float is that integer exactly.
+fn same_number(a: &serde_json::Number, b: &serde_json::Number) -> bool {
+    fn int(n: &serde_json::Number) -> Option<i128> {
+        n.as_i64()
+            .map(i128::from)
+            .or_else(|| n.as_u64().map(i128::from))
+    }
+    fn float_as_int(f: f64) -> Option<i128> {
+        // 2^127 bounds i128; beyond it no integer from JSON can match.
+        (f.fract() == 0.0 && f.abs() < 1.7e38).then_some(f as i128)
+    }
+    match (int(a), int(b)) {
+        (Some(a), Some(b)) => a == b,
+        (Some(i), None) => b.as_f64().and_then(float_as_int) == Some(i),
+        (None, Some(i)) => a.as_f64().and_then(float_as_int) == Some(i),
+        (None, None) => a.as_f64() == b.as_f64(),
     }
 }
 
@@ -134,11 +171,13 @@ pub struct ApplyReport {
 pub struct BootstrapSettingsPlugin {
     name: String,
     plugin: Arc<VfoxPlugin>,
+    /// The environment its hooks run with, including the `PATH` its `requires` were found on.
+    env: IndexMap<String, String>,
 }
 
 impl BootstrapSettingsPlugin {
     /// The plugin named `name`, or why it cannot run here.
-    pub fn load(name: &str) -> std::result::Result<Self, String> {
+    pub async fn load(name: &str) -> std::result::Result<Self, String> {
         let path = system_plugins::resolve(name, &mise_util::dirs::PLUGINS);
         match PluginType::from_plugin_path(&path) {
             Some(PluginType::BootstrapSettings) => {}
@@ -158,34 +197,43 @@ impl BootstrapSettingsPlugin {
         {
             return Err(format!("{name} is not available on {os}"));
         }
-        if let Some(binary) = crate::system::package_plugin::missing_binary(&config.requires) {
+        // Look for `requires` on the PATH the hooks will get, which includes global [tools].
+        let env = crate::system::package_plugin::bootstrap_plugin_env()
+            .await
+            .map_err(|err| format!("{err:#}"))?;
+        if let Some(binary) = crate::system::package_plugin::missing_in_env(&config.requires, &env)
+        {
             return Err(format!(
                 "{name} needs '{binary}', which was not found; add it to [tools] or install it"
             ));
         }
+        // vfox loads a plugin by the name of its directory, which can differ from `name` in case
+        // style (`foo_bar` in config, `foo-bar` on disk).
+        let dir_name = path
+            .file_name()
+            .map_or_else(|| name.to_string(), |n| n.to_string_lossy().into_owned());
         Ok(Self {
             name: name.to_string(),
-            plugin: Arc::new(VfoxPlugin::new(name.to_string(), path)),
+            plugin: Arc::new(VfoxPlugin::new(dir_name, path)),
+            env,
         })
     }
 
-    async fn vfox(&self) -> Result<vfox::Vfox> {
-        let env = crate::system::package_plugin::bootstrap_plugin_env().await?;
+    fn vfox(&self) -> Result<vfox::Vfox> {
         let (mut vfox, _) = self.plugin.vfox()?;
         // A system plugin lives outside the user's plugins directory, and vfox finds a plugin by
         // name inside `plugin_dir`.
         if let Some(dir) = self.plugin.plugin_path.parent() {
             vfox.plugin_dir = dir.to_path_buf();
         }
-        vfox.cmd_env = Some(env);
+        vfox.cmd_env = Some(self.env.clone());
         Ok(vfox)
     }
 
     async fn read(&self, keys: Vec<String>) -> Result<IndexMap<String, Json>> {
         let response = self
-            .vfox()
-            .await?
-            .settings_read(&self.name, SettingsReadContext { keys })
+            .vfox()?
+            .settings_read(&self.plugin.name, SettingsReadContext { keys })
             .await?;
         Ok(response.values)
     }
@@ -229,10 +277,9 @@ impl BootstrapSettingsPlugin {
             });
         }
         let response = self
-            .vfox()
-            .await?
+            .vfox()?
             .settings_write(
-                &self.name,
+                &self.plugin.name,
                 SettingsWriteContext {
                     changes: changed
                         .iter()
@@ -251,8 +298,14 @@ impl BootstrapSettingsPlugin {
         for status in &changed {
             let current = after.get(&status.key);
             if !current.is_some_and(|current| same_value(current, &status.declared)) {
+                // Some changes show only after a step such as logging out; keep those steps.
+                let follow_up = response
+                    .follow_up
+                    .iter()
+                    .map(|item| format!("\n  follow-up: {item}"))
+                    .collect::<String>();
                 bail!(
-                    "{}: {} is {} after writing {}",
+                    "{}: {} is {} after writing {}{follow_up}",
                     self.name,
                     status.key,
                     display(current),
@@ -299,6 +352,38 @@ mod tests {
         assert_eq!(values["appearance.blur"], json!(true));
         assert_eq!(values["appearance.size"], json!(2));
         assert_eq!(values["monitors.list"], json!(["b", "c"]));
+    }
+
+    #[test]
+    fn a_higher_nested_value_beats_a_lower_dotted_key() {
+        let mut base = toml::Table::new();
+        let lower: toml::Table = toml::from_str(
+            r#"
+            appearance = { size = 2 }
+            "appearance.blur" = false
+            "#,
+        )
+        .unwrap();
+        let higher: toml::Table = toml::from_str("appearance = { blur = true }").unwrap();
+        mise_system::merge_settings_table(&mut base, lower);
+        mise_system::merge_settings_table(&mut base, higher);
+        let mut values = IndexMap::new();
+        flatten("", base, &mut values);
+        assert_eq!(values["appearance.blur"], json!(true));
+        assert_eq!(values["appearance.size"], json!(2));
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn large_integers_compare_exactly() {
+        let a = json!(9_007_199_254_740_992_i64);
+        let b = json!(9_007_199_254_740_993_i64);
+        assert!(!same_value(&a, &b));
+        assert!(same_value(&b, &b));
+        assert!(same_value(&json!(9_007_199_254_740_992.0_f64), &a));
+        assert!(!same_value(&json!(9_007_199_254_740_992.0_f64), &b));
+        assert!(!same_value(&json!(4.5), &json!(4)));
+        assert!(same_value(&json!(u64::MAX), &json!(u64::MAX)));
     }
 
     #[test]

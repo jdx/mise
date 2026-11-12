@@ -173,4 +173,10 @@ system plugin.
 
 mise uses a system plugins directory and each plugin in it only when root or
 the current user owns it and neither its group nor other users can write to it.
-It warns about and skips a directory that fails that check.
+That check covers every file and directory inside the plugin, and where each
+symbolic link in it points, along with the directory holding the link's target.
+mise warns about and skips a directory or plugin that fails the check. It cannot
+make this check on Windows, so it ignores system plugin directories there.
+
+A plugin named `foo_bar` in config also finds a system plugin directory named
+`foo-bar`, and the other way around.

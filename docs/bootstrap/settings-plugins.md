@@ -51,10 +51,16 @@ own settings.
 `macos-defaults` part applies. No plugin can be named `macos`.
 
 Sections merge across config files key by key, and a more local file's value
-wins, as for the rest of `[bootstrap]`. A section for a plugin that is not
-installed, or that cannot run on this machine, is skipped and listed in the
-`bootstrap: follow-up` output, so one config can hold sections for several
-platforms.
+wins, as for the rest of `[bootstrap]`. `appearance = { blur = true }` and
+`"appearance.blur" = true` set the same key. When `mise bootstrap` reads several
+independent config roots, they must not set a key to different values; mise
+refuses to apply settings when they do.
+
+A section for a plugin that is not installed, or that cannot run on this
+machine, is skipped and listed in the `bootstrap: follow-up` output, so one
+config can hold sections for several platforms. `mise bootstrap` applies
+settings after it installs `[tools]`, so a program the plugin `requires` can be
+one of your global tools.
 
 ## Where plugins come from
 
@@ -124,8 +130,9 @@ end
 ```
 
 After `SettingsWrite`, mise calls `SettingsRead` again and fails if a key still
-differs. mise compares numbers by value, so `4` and `4.0` match; other values
-must have the same type, so `4` and `"4"` differ.
+differs, listing the `follow_up` steps in the error. mise compares numbers by
+value, so `4` and `4.0` match; other values must have the same type, so `4` and
+`"4"` differ.
 
 ### Rules {#rules}
 
