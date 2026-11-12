@@ -635,12 +635,9 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
     if let Some(cwd) = &*dirs::CWD
         && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
     {
-        // Lockfiles sit beside a top-level config and `Config::watch_files` only
-        // lists the ones that exist, so a new one is noticed here.
         let config_paths = DEFAULT_CONFIG_FILENAMES
             .iter()
             .map(String::as_str)
-            .chain(["mise*.lock"])
             .unique()
             .collect::<Vec<_>>();
         let config_subdirs = config_paths
@@ -649,6 +646,14 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
             .unique()
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
+            // `Config::watch_files` only lists lockfiles that exist, so a new one
+            // is noticed here. The names for the active environments are finite,
+            // so stat them rather than scanning the directory.
+            for path in crate::lockfile::active_lockfile_paths_in_dir(&dir) {
+                if let Ok(Ok(modified)) = path.metadata().map(|m| m.modified()) {
+                    mtimes.push(modified);
+                }
+            }
             for name in &config_paths {
                 if !Path::new(name)
                     .parent()
