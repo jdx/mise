@@ -121,3 +121,16 @@ enabled = false
 post-packages = "true"
 TOML
 assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"early-svc\", \"order-test:vendor\", \"post-packages:1\", \"late-svc\"]'"
+
+# plugin packages follow the hooks of every earlier phase, up to post-tools
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.hooks]
+pre-tools = "true"
+post-tools = "true"
+post-packages = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"pre-tools:1\", \"post-tools:1\", \"order-test:vendor\", \"post-packages:1\"]'"

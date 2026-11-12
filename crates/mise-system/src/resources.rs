@@ -430,6 +430,12 @@ pub async fn add_repos_and_hooks(
         let before_phase = previous.clone();
         match phase {
             BootstrapHookPhase::PostPackages if defer_post_packages => {
+                // plugin packages install after every hook of the earlier phases
+                if let Some(last) = &previous {
+                    for package in &plugin_packages {
+                        order_after(plan, package, last)?;
+                    }
+                }
                 pending.extend(
                     plan.ids()
                         .filter(|id| id.kind != "hook" && !late_names.contains(id))
