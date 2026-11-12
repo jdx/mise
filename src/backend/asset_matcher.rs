@@ -23,7 +23,6 @@ use super::platform_target::PlatformTarget;
 use super::platform_tokens::is_platform_or_version_token;
 use super::static_helpers::get_filename_from_url;
 use crate::file::ExtractionFormat;
-use crate::http::HTTP;
 
 // ========== Platform Detection Types (from asset_detector) ==========
 
@@ -1153,6 +1152,9 @@ pub(crate) struct Asset {
     pub name: String,
     /// The download URL for the asset
     pub url: String,
+    /// The forge API endpoint that serves the asset, or empty when there is none.
+    /// A private repository serves the file only from here, with a token.
+    pub url_api: String,
 }
 
 impl Asset {
@@ -1160,7 +1162,13 @@ impl Asset {
         Self {
             name: name.into(),
             url: url.into(),
+            url_api: String::new(),
         }
+    }
+
+    pub(crate) fn with_api_url(mut self, url_api: impl Into<String>) -> Self {
+        self.url_api = url_api.into();
+        self
     }
 }
 
@@ -1182,6 +1190,13 @@ impl ChecksumResult {
     }
 }
 
+/// Where a [`ChecksumFetcher`] downloads checksum files from. The caller decides
+/// which URL to request and which credentials to send, since a private repository
+/// serves its release files only from an authenticated API endpoint.
+pub(crate) trait ChecksumSource {
+    async fn fetch_text(&self, file: &Asset) -> Result<String>;
+}
+
 /// Checksum file fetcher that finds and parses checksums from release assets
 pub(crate) struct ChecksumFetcher<'a> {
     assets: &'a [Asset],
@@ -1200,8 +1215,14 @@ impl<'a> ChecksumFetcher<'a> {
     /// 2. Fetches the checksum file
     /// 3. Parses it to extract the checksum for the target file
     ///
+    /// `source` downloads each checksum file's text.
+    ///
     /// Returns None if no checksum file is found or parsing fails.
-    pub(crate) async fn fetch_checksum_for(&self, asset_name: &str) -> Option<ChecksumResult> {
+    pub(crate) async fn fetch_checksum_for(
+        &self,
+        asset_name: &str,
+        source: &impl ChecksumSource,
+    ) -> Option<ChecksumResult> {
         let asset_names: Vec<String> = self.assets.iter().map(|a| a.name.clone()).collect();
         let matcher = AssetMatcher::new();
 
@@ -1209,7 +1230,7 @@ impl<'a> ChecksumFetcher<'a> {
         if let Some(checksum_filename) = matcher.find_checksum_for(asset_name, &asset_names)
             && let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename)
             && let Some(result) = self
-                .fetch_and_parse_checksum(&checksum_asset.url, &checksum_filename, asset_name)
+                .fetch_and_parse_checksum(checksum_asset, &checksum_filename, asset_name, source)
                 .await
         {
             return Some(result);
@@ -1228,7 +1249,12 @@ impl<'a> ChecksumFetcher<'a> {
                 .iter()
                 .find(|a| a.name.eq_ignore_ascii_case(pattern))
                 && let Some(result) = self
-                    .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
+                    .fetch_and_parse_checksum(
+                        checksum_asset,
+                        &checksum_asset.name,
+                        asset_name,
+                        source,
+                    )
                     .await
             {
                 return Some(result);
@@ -1241,7 +1267,7 @@ impl<'a> ChecksumFetcher<'a> {
             .iter()
             .find(|a| a.name.to_lowercase().contains("checksum"))
             && let Some(result) = self
-                .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
+                .fetch_and_parse_checksum(checksum_asset, &checksum_asset.name, asset_name, source)
                 .await
         {
             return Some(result);
@@ -1253,14 +1279,18 @@ impl<'a> ChecksumFetcher<'a> {
     /// Fetch a checksum file and parse it for the target asset
     async fn fetch_and_parse_checksum(
         &self,
-        url: &str,
+        checksum_asset: &Asset,
         checksum_filename: &str,
         target_asset: &str,
+        source: &impl ChecksumSource,
     ) -> Option<ChecksumResult> {
-        let content = match HTTP.get_text(url).await {
+        let content = match source.fetch_text(checksum_asset).await {
             Ok(c) => c,
             Err(e) => {
-                debug!("Failed to fetch checksum file {}: {}", url, e);
+                debug!(
+                    "Failed to fetch checksum file {}: {}",
+                    checksum_asset.url, e
+                );
                 return None;
             }
         };
