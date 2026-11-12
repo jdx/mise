@@ -82,16 +82,17 @@ jobs:
             echo "send=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Runs of this workflow since then, oldest first. If one of them
-          # sent an email about this docs workflow, in any attempt, this
-          # failure belongs to a streak already reported. Runs whose job was
-          # skipped were not failures of the docs on this branch.
+          # Runs of this workflow since then, oldest first, and earlier
+          # attempts of this run. If one of them sent an email about this docs
+          # workflow, this failure belongs to a streak already reported. Runs
+          # whose job was skipped were not failures of the docs on this branch.
           self=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .workflow_id)
           list="repos/${GITHUB_REPOSITORY}/actions/workflows/${self}/runs?status=completed&per_page=100"
           if [ -n "$since" ]; then
             list="${list}&created=$(jq -rn --arg s ">${since}" '$s|@uri')"
           fi
           runs=$(gh api --paginate "$list" --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID} and .conclusion != \"skipped\") | .id" | sort -n)
+          runs="${runs} ${GITHUB_RUN_ID}"
           for id in $runs; do
             sent=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?filter=all&per_page=100" |
               jq -s --arg job "notify (${WORKFLOW})" \
@@ -102,6 +103,7 @@ jobs:
               exit 0
             fi
           done
+          echo "since=${since:-never}" >> "$GITHUB_OUTPUT"
           echo "send=true" >> "$GITHUB_OUTPUT"
       # Keep this step's name: the check above looks for it to tell whether
       # an email went out.
@@ -116,6 +118,7 @@ jobs:
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SINCE: ${{ steps.check.outputs.since }}
         run: |
           set -euo pipefail
           # Build the payload with jq: --arg keeps a branch or workflow name
@@ -140,11 +143,13 @@ jobs:
               )
             }')
           # The idempotency key makes a retry after a lost response deliver
-          # one email, not two, and covers a rerun of the same docs run too.
+          # one email, not two. It names the docs run and the pass that began
+          # this failure streak, so a rerun of the run after the docs recovered
+          # starts a new streak with a new key.
           curl --fail-with-body -sS --max-time 20 \
             --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
             -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
-            -H "Idempotency-Key: docs-failure/${GITHUB_REPOSITORY}/${RUN_ID}" \
+            -H "Idempotency-Key: docs-failure/${GITHUB_REPOSITORY}/${RUN_ID}/${SINCE}" \
             -H 'Content-Type: application/json' \
             -d "$payload"
