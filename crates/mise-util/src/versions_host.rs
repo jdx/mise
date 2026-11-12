@@ -917,7 +917,26 @@ pub fn enabled_for_github_metadata() -> bool {
 /// [`enabled_for_github_metadata`] for one repository (`owner/repo`), which
 /// also catches `url_replacements` rules that only match its paths.
 pub fn enabled_for_github_repo(repo: &str) -> bool {
-    enabled_for_github_metadata() && !github_is_url_replaced(Some(repo))
+    enabled_for_github_metadata()
+        && !github_is_url_replaced(Some(repo))
+        && !github_repo_excluded(repo)
+}
+
+/// Whether `versions_host_exclude` names `repo` (`owner/repo`), which then
+/// goes to GitHub directly so the host never learns its name.
+pub fn github_repo_excluded(repo: &str) -> bool {
+    let settings = Settings::get();
+    github_repo_matches_any(&settings.versions_host_exclude, repo)
+}
+
+fn github_repo_matches_any(patterns: &[String], repo: &str) -> bool {
+    patterns.iter().any(|pattern| {
+        globset::GlobBuilder::new(pattern.trim())
+            .case_insensitive(true)
+            .literal_separator(true)
+            .build()
+            .is_ok_and(|glob| glob.compile_matcher().is_match(repo))
+    })
 }
 
 /// Whether `url_replacements` sends GitHub's API, or this repository's
@@ -1184,6 +1203,19 @@ fn path_segments_match(segments: &[&str], expected: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_versions_host_exclude_patterns() {
+        let patterns = vec!["My-Org/*".to_string(), "other/internal-cli".to_string()];
+        assert!(super::github_repo_matches_any(&patterns, "my-org/tool"));
+        assert!(super::github_repo_matches_any(
+            &patterns,
+            "other/internal-cli"
+        ));
+        assert!(!super::github_repo_matches_any(&patterns, "other/public"));
+        assert!(!super::github_repo_matches_any(&patterns, "my-org/a/b"));
+        assert!(!super::github_repo_matches_any(&[], "my-org/tool"));
+    }
+
     use super::*;
 
     #[test]

@@ -5001,6 +5001,29 @@ of precompiled builds from this host; see
 env = "MISE_USE_VERSIONS_HOST"
 type = "Bool"
 
+[versions_host_exclude]
+default = []
+description = "GitHub repositories that never use mise-versions, such as `my-org/*`."
+docs = """
+Glob patterns matched against `owner/repo`, case-insensitively. A repository that
+matches is looked up on GitHub directly, with your GitHub token, so mise-versions
+never sees its name: use this for internal or private repositories while keeping
+[`use_versions_host`](#use_versions_host) on for everything else.
+
+```toml
+[settings]
+versions_host_exclude = ["my-org/*", "other-org/internal-cli"]
+```
+
+Covers release, tag, contents and attestation lookups of the `github:` backend and
+mise's own releases. A listing already cached while the repository was not excluded
+is not reused.
+"""
+env = "MISE_VERSIONS_HOST_EXCLUDE"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [use_versions_host_track]
 default = true
 description = "Send download statistics to mise-versions after installing a tool."

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# versions_host_exclude keeps selected repositories off mise-versions, so an
+# internal repository's name is never sent to it. Everything else still asks.
+
+HEADERS_LOG_DIR="$TMPDIR/versions_host_exclude_logs"
+mkdir -p "$HEADERS_LOG_DIR"
+start_http_server --headers-log "$HEADERS_LOG_DIR"
+
+cat <<EOF >mise.toml
+[settings]
+url_replacements = { "https://mise-versions.jdx.dev" = "http://127.0.0.1:$HTTP_PORT" }
+versions_host_exclude = ["Example-Org/*"]
+EOF
+
+# The stand-in server has no data, so listing may fail; what matters is where
+# the requests went. A repository that matches the pattern, in any case:
+export MISE_CACHE_DIR="$PWD/cache-excluded"
+output="$(MISE_DEBUG=1 mise ls-remote github:example-org/internal-cli 2>&1 || true)"
+if [[ $output == *"mise-versions.jdx.dev"* ]] || compgen -G "$HEADERS_LOG_DIR/request_*.json" >/dev/null; then
+  echo "$output"
+  fail "mise-versions was asked about an excluded repository"
+fi
+
+# Control: a repository outside the pattern does reach the versions host, so
+# the check above cannot pass for lack of requests.
+export MISE_CACHE_DIR="$PWD/cache-other"
+output="$(MISE_DEBUG=1 mise ls-remote github:other-org/tool 2>&1 || true)"
+if ! compgen -G "$HEADERS_LOG_DIR/request_*.json" >/dev/null; then
+  echo "$output"
+  fail "mise-versions was not asked about a repository outside versions_host_exclude"
+fi
