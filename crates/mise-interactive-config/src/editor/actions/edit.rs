@@ -186,9 +186,9 @@ impl InteractiveConfig {
             Some(CursorTarget::AddButton(AddButtonKind::EnvDotenv(section_idx)))
                 if !key_name.is_empty() =>
             {
-                // key_name is the filename, add as mise.file = "<filename>"
+                // key_name is the filename, add as _.file = "<filename>"
                 self.doc
-                    .add_entry(section_idx, "mise.file".to_string(), key_name);
+                    .add_entry(section_idx, "_.file".to_string(), key_name);
                 // Track undo for added entry
                 let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
                 self.undo_stack

@@ -172,6 +172,23 @@ fn test_env_dotted_key_serialization() {
 }
 
 #[test]
+fn test_env_dotenv_file_serializes_under_underscore() {
+    let mut doc = TomlDocument::new();
+    let env_idx = doc.sections.iter().position(|s| s.name == "env").unwrap();
+    doc.add_entry(env_idx, "_.file".to_string(), ".env".to_string());
+
+    let output = doc.to_toml();
+    assert!(
+        output.contains("_.file") || output.contains("[env._]"),
+        "Output should use the `_` key: {output}"
+    );
+    assert!(
+        !output.contains("mise"),
+        "Output should not use the deprecated env.mise table: {output}"
+    );
+}
+
+#[test]
 fn test_save_creates_missing_directories() {
     // `mise generate config --global` on a fresh install points here at
     // ~/.config/mise/config.toml, and neither the file nor its directory exists yet.
