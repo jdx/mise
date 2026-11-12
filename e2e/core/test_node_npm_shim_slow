@@ -14,6 +14,11 @@ assert_succeed "grep -q 'mise reshim' '$node_path/bin/npm'"
 assert_succeed "test ! -L '$node_path/bin/npm'"
 assert_contains "mise x node@$node_version -- npm --version" "."
 
+# The wrapper still finds its install when reached through a symlink elsewhere.
+mkdir -p "$HOME/linked-bin"
+ln -s "$node_path/bin/npm" "$HOME/linked-bin/npm"
+assert_contains "$HOME/linked-bin/npm --version" "."
+
 # Opt out: bin/npm is node's own npm (a symlink), not the mise wrapper.
 export MISE_NODE_NPM_SHIM=0
 mise i -f "node@$node_version"
