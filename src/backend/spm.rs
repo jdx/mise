@@ -223,9 +223,9 @@ impl Backend for SPMBackend {
             return Ok(PlatformInfo::default());
         };
         ensure_plain_asset_name(&asset.name)?;
-        // `mise lock` downloads the bundle to hash it when the release has no digest;
-        // the API asset endpoint of a private repository needs the install token.
-        let download_headers = match (&asset.url_api, provider.kind) {
+        // A bundle with no binary for this target is not what gets installed there, and
+        // a locked checksum would stop install from building it from source instead.
+        let download_headers = match (&asset.url_api, &provider.kind) {
             (None, _) => None,
             (Some(url_api), GitProviderKind::GitLab) => {
                 Some(gitlab::get_headers(url_api, &provider.api_url)?)
@@ -234,6 +234,22 @@ impl Backend for SPMBackend {
                 Some(github::get_headers(url_api, &provider.api_url)?)
             }
         };
+        let bundle_headers = match provider.kind {
+            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url)?,
+            GitProviderKind::GitHub => github::get_headers(&asset.url, &provider.api_url)?,
+        };
+        let tmp = tempfile::tempdir()?;
+        let download_path = tmp.path().join(&asset.name);
+        HTTP.download_file_with_headers(&asset.url, &download_path, &bundle_headers, None)
+            .await?;
+        let extract_dir = tmp.path().join("bundle");
+        file::create_dir_all(&extract_dir)?;
+        file::unzip(&download_path, &extract_dir, &Default::default())?;
+        if !artifactbundle_supports_target(&extract_dir, target)? {
+            return Ok(PlatformInfo::default());
+        }
+        // `mise lock` downloads the bundle to hash it when the release has no digest;
+        // the API asset endpoint of a private repository needs the install token.
         // A digest mise-versions served is compared after a real download, not trusted.
         let checksum_source = (asset.digest.is_some()
             && asset
@@ -1256,6 +1272,48 @@ fn artifactbundle_binaries(
     Ok(binaries)
 }
 
+/// Whether an extracted bundle has an executable for `target`'s OS and architecture.
+/// The Swift triples of a platform other than the host are not known, so a variant's
+/// triples are matched by OS and architecture name.
+fn artifactbundle_supports_target(
+    extract_dir: &Path,
+    target: &PlatformTarget,
+) -> eyre::Result<bool> {
+    let (os_names, arch_names): (&[&str], &[&str]) = (
+        match target.os_name() {
+            "macos" => &["macos", "darwin"],
+            "linux" => &["linux"],
+            "windows" => &["windows"],
+            _ => return Ok(false),
+        },
+        match target.arch_name() {
+            "x64" => &["x86_64", "amd64"],
+            "arm64" => &["arm64", "aarch64"],
+            _ => return Ok(false),
+        },
+    );
+    for bundle in artifactbundle_dirs(extract_dir)? {
+        let info = file::read_to_string(bundle.join("info.json"))?;
+        let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
+            .wrap_err("Failed to parse artifact bundle info.json")?;
+        let supported = manifest
+            .artifacts
+            .values()
+            .filter(|artifact| artifact.r#type == "executable")
+            .flat_map(|artifact| &artifact.variants)
+            .flat_map(|variant| &variant.supported_triples)
+            .any(|triple| {
+                let triple = triple.to_lowercase();
+                os_names.iter().any(|os| triple.contains(os))
+                    && arch_names.iter().any(|arch| triple.starts_with(arch))
+            });
+        if supported {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn artifactbundle_dirs(extract_dir: &Path) -> eyre::Result<Vec<PathBuf>> {
     let mut bundles = vec![];
     if extract_dir.join("info.json").is_file() {
@@ -2275,6 +2333,31 @@ mod tests {
             }
         })
         .to_string()
+    }
+
+    #[test]
+    fn artifactbundle_supports_target_matches_os_and_arch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("tool.artifactbundle");
+        file::create_dir_all(&bundle).unwrap();
+        file::write(
+            bundle.join("info.json"),
+            serde_json::json!({
+                "schemaVersion": "1.0",
+                "artifacts": {"tool": {"type": "executable", "version": "1", "variants": [
+                    {"path": "bin/tool", "supportedTriples": ["x86_64-unknown-linux-gnu", "arm64-apple-macosx"]}
+                ]}}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        assert!(artifactbundle_supports_target(tmp.path(), &target("linux-x64")).unwrap());
+        assert!(artifactbundle_supports_target(tmp.path(), &target("macos-arm64")).unwrap());
+        assert!(!artifactbundle_supports_target(tmp.path(), &target("linux-arm64")).unwrap());
+        assert!(!artifactbundle_supports_target(tmp.path(), &target("macos-x64")).unwrap());
+        assert!(!artifactbundle_supports_target(tmp.path(), &target("windows-x64")).unwrap());
     }
 
     #[test]
