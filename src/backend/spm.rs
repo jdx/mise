@@ -10,7 +10,7 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{ChecksumSource, PlatformInfo};
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
@@ -193,10 +193,12 @@ impl Backend for SPMBackend {
 
     /// Only a release with an artifact bundle has a URL to lock. Whether it has one
     /// is not known offline, so locked mode asks for a URL only once the lockfile
-    /// holds one for another platform; a lockfile without any belongs to a package
+    /// holds a URL or checksum for another platform; a lockfile without any belongs to a package
     /// built from source.
     fn requires_lockfile_url(&self, tv: &ToolVersion) -> bool {
-        tv.lock_platforms.values().any(|p| p.url.is_some())
+        tv.lock_platforms
+            .values()
+            .any(|p| p.url.is_some() || p.checksum.is_some())
     }
 
     async fn resolve_lock_info(
@@ -212,7 +214,7 @@ impl Backend for SPMBackend {
         if revision.is_git_revision() || mode == ArtifactBundleMode::SourceOnly {
             return Ok(PlatformInfo::default());
         }
-        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
+        let provider = GitProvider::from_ba_with_opts_for_target(&self.ba, &opts, Some(target))?;
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let Some(asset) =
             resolve_artifactbundle_asset(&provider, &repo, revision.as_str(), &opts, Some(target))
@@ -221,15 +223,30 @@ impl Backend for SPMBackend {
             return Ok(PlatformInfo::default());
         };
         ensure_plain_asset_name(&asset.name)?;
-        let download_headers = match provider.kind {
-            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url)?,
-            GitProviderKind::GitHub => github::get_headers(&asset.url, &provider.api_url)?,
+        // `mise lock` downloads the bundle to hash it when the release has no digest;
+        // the API asset endpoint of a private repository needs the install token.
+        let download_headers = match (&asset.url_api, provider.kind) {
+            (None, _) => None,
+            (Some(url_api), GitProviderKind::GitLab) => {
+                Some(gitlab::get_headers(url_api, &provider.api_url)?)
+            }
+            (Some(url_api), GitProviderKind::GitHub) => {
+                Some(github::get_headers(url_api, &provider.api_url)?)
+            }
         };
+        // A digest mise-versions served is compared after a real download, not trusted.
+        let checksum_source = (asset.digest.is_some()
+            && asset
+                .url_api
+                .as_deref()
+                .is_some_and(crate::versions_host::is_mirrored_asset_api_url))
+        .then_some(ChecksumSource::VersionsHost);
         Ok(PlatformInfo {
+            checksum_source,
             checksum: asset.digest,
             url: Some(asset.url),
             url_api: asset.url_api,
-            download_headers: Some(download_headers),
+            download_headers,
             ..Default::default()
         })
     }
@@ -846,15 +863,30 @@ impl GitProvider {
     fn from_ba(ba: &BackendArg) -> Self {
         let raw_opts = ba.opts();
         let opts = SpmOptions::new(&raw_opts);
-        Self::for_mode(ba, &opts, false).unwrap()
+        Self::for_mode(ba, &opts, false, None).unwrap()
     }
 
     fn from_ba_with_opts(ba: &BackendArg, opts: &SpmOptions<'_>) -> Result<Self> {
-        Self::for_mode(ba, opts, Settings::safe_mode())
+        Self::from_ba_with_opts_for_target(ba, opts, None)
     }
 
-    fn for_mode(ba: &BackendArg, opts: &SpmOptions<'_>, safe_mode: bool) -> Result<Self> {
-        let provider = opts.provider(None);
+    /// The provider for a lockfile `target`, whose platform tables may name another
+    /// forge than the host's; `None` is the host, as at install time.
+    fn from_ba_with_opts_for_target(
+        ba: &BackendArg,
+        opts: &SpmOptions<'_>,
+        target: Option<&PlatformTarget>,
+    ) -> Result<Self> {
+        Self::for_mode(ba, opts, Settings::safe_mode(), target)
+    }
+
+    fn for_mode(
+        ba: &BackendArg,
+        opts: &SpmOptions<'_>,
+        safe_mode: bool,
+        target: Option<&PlatformTarget>,
+    ) -> Result<Self> {
+        let provider = opts.provider(target);
         let kind = if ba.tool_name.contains("gitlab.com") {
             GitProviderKind::GitLab
         } else {
@@ -864,7 +896,7 @@ impl GitProvider {
             }
         };
 
-        let api_url = match opts.api_url(None) {
+        let api_url = match opts.api_url(target) {
             Some(api_url) => api_url,
             None => match Self::derive_api_url_from_tool_name(&ba.tool_name, &kind) {
                 // The derived host gets the user's forge token. A config naming one
@@ -1305,7 +1337,7 @@ mod tests {
         };
         let provider = |ba: &BackendArg| {
             let raw_opts = ba.opts();
-            GitProvider::for_mode(ba, &SpmOptions::new(&raw_opts), true)
+            GitProvider::for_mode(ba, &SpmOptions::new(&raw_opts), true, None)
         };
         let err = provider(&ba("https://github.acme.com/org/Tool.git", None)).unwrap_err();
         assert!(err.to_string().contains("api_url"), "{err}");
@@ -1621,6 +1653,17 @@ mod tests {
             "linux-x64".to_string(),
             PlatformInfo {
                 url: Some("https://example.com/tool.artifactbundle.zip".to_string()),
+                ..Default::default()
+            },
+        );
+        assert!(backend.requires_lockfile_url(&tv));
+
+        // Safe mode drops lockfile URLs but keeps checksums, which also mark a bundle
+        let mut tv = tool_version("1.2.3");
+        tv.lock_platforms.insert(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                checksum: Some("sha256:abc".to_string()),
                 ..Default::default()
             },
         );
