@@ -859,6 +859,12 @@ fn package_requests_from_config_files(
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
     let available_managers = std::cell::LazyCell::new(available_manager_names);
+    let manager_names = std::cell::LazyCell::new(|| {
+        packages::all_managers()
+            .into_iter()
+            .map(|manager| manager.name().to_string())
+            .collect::<Vec<_>>()
+    });
     // (manager, package) pairs an unprefixed key declared
     let mut bare_origin: std::collections::HashSet<(String, String)> =
         std::collections::HashSet::new();
@@ -887,6 +893,9 @@ fn package_requests_from_config_files(
         };
         match parsed {
             Ok((mgr, name)) => {
+                // Key every request by the manager's own spelling, so status, apply and prune
+                // all find `foo_bar:pkg` under a plugin named `foo-bar`.
+                let mgr = canonical_manager_name(mgr, &manager_names);
                 let version = package.version();
                 let version = (version != "latest").then(|| version.to_string());
                 // Validated before any conflict handling can drop an earlier request
@@ -2711,6 +2720,20 @@ struct ResolveOpts {
     applies_together: bool,
 }
 
+/// `mgr` as the installed manager spells it: a plugin installed as `foo-bar` answers to `foo_bar`
+/// too, since mise installs plugins under the kebab-case name.
+fn canonical_manager_name(mgr: String, known: &[String]) -> String {
+    if known.contains(&mgr) {
+        return mgr;
+    }
+    let id = mgr.replace('_', "-");
+    known
+        .iter()
+        .find(|name| name.replace('_', "-") == id)
+        .cloned()
+        .unwrap_or(mgr)
+}
+
 fn resolve_managers(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
     mut manager_options: IndexMap<String, ManagerPackageOptions>,
@@ -2738,16 +2761,7 @@ fn resolve_managers(
                 enabled.as_deref().unwrap_or_default().join(", ")
             );
         }
-        // A plugin manager installed as `foo-bar` answers to `foo_bar` too, as mise installs
-        // plugins under the kebab-case name.
-        let manager = managers.get(&name).or_else(|| {
-            let id = name.replace('_', "-");
-            managers
-                .iter()
-                .find(|(other, _)| other.replace('_', "-") == id)
-                .map(|(_, manager)| manager)
-        });
-        match manager {
+        match managers.get(&name) {
             Some(manager) => {
                 // Two spellings of one package that disagree resolve by
                 // machine state rather than by config, so reject the pair
@@ -3792,6 +3806,19 @@ mod tests {
     /// the same time land in one list. They are not in conflict, and an
     /// unrelated manager's entries must not block a brew prune.
     #[cfg(unix)]
+    #[test]
+    fn a_manager_answers_to_either_spelling() {
+        let known = vec![
+            "apt".to_string(),
+            "foo-bar".to_string(),
+            "baz_qux".to_string(),
+        ];
+        assert_eq!(canonical_manager_name("foo_bar".into(), &known), "foo-bar");
+        assert_eq!(canonical_manager_name("baz-qux".into(), &known), "baz_qux");
+        assert_eq!(canonical_manager_name("apt".into(), &known), "apt");
+        assert_eq!(canonical_manager_name("other".into(), &known), "other");
+    }
+
     #[test]
     fn the_prune_union_is_not_checked_for_folded_names() -> Result<()> {
         let (_current_dir, current) = config_map_from_toml(&[(
