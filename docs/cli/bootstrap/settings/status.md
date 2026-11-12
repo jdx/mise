@@ -6,6 +6,7 @@ description: "Show each setting in `[bootstrap.settings]` and its current value"
 # `mise bootstrap settings status`
 
 - **Usage:** `mise bootstrap settings status [--missing] [-J --json] [PLUGIN]…`
+- **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Show each setting in `[bootstrap.settings]` and its current value

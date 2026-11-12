@@ -2314,7 +2314,7 @@ also removes one that [bootstrap.linux.systemd.units] or
         example "mise bootstrap services apply --dry-run" help="Show what would change"
         example "mise bootstrap services remove mise-history" help="Uninstall a user service"
     }
-    cmd settings subcommand_required=#true help="[experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins" {
+    cmd settings subcommand_required=#true help="[experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins" effect=read {
         long_help #"""
 [experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins
 
@@ -2325,7 +2325,7 @@ and asks it to write only the ones that differ.
 See https://mise.jdx.dev/bootstrap/settings-plugins.html
 """#
         flag "-h --help" help="Print help" action=help builtin=#true
-        cmd apply help="Write the settings that differ from `[bootstrap.settings]`" {
+        cmd apply help="Write the settings that differ from `[bootstrap.settings]`" effect=write {
             long_help #"""
 Write the settings that differ from `[bootstrap.settings]`
 
@@ -2335,7 +2335,7 @@ It does not ask for confirmation.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PLUGIN]…" help="Plugins whose sections to apply; all of them by default" required=#false var=#true
         }
-        cmd status help="Show each setting in `[bootstrap.settings]` and its current value" {
+        cmd status help="Show each setting in `[bootstrap.settings]` and its current value" effect=read {
             flag --missing help="Exit with status 1 if a setting differs from the config or its plugin cannot run"
             flag "-J --json" help="Output in JSON format"
             flag "-h --help" help="Print help" action=help builtin=#true

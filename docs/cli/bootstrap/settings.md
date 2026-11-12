@@ -6,6 +6,7 @@ description: "[experimental] Apply `[bootstrap.settings]` through bootstrap sett
 # `mise bootstrap settings`
 
 - **Usage:** `mise bootstrap settings <SUBCOMMAND>`
+- **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 [experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins
