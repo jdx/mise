@@ -234,13 +234,20 @@ impl Backend for SPMBackend {
                 Some(github::get_headers(url_api, &provider.api_url)?)
             }
         };
+        // A private GitHub repository serves its assets only from the API endpoint.
+        let bundle_url = match (&asset.url_api, &provider.kind) {
+            (Some(url_api), GitProviderKind::GitHub) => {
+                github::pick_reachable_asset_url(&asset.url, url_api).await
+            }
+            _ => asset.url.clone(),
+        };
         let bundle_headers = match provider.kind {
-            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url)?,
-            GitProviderKind::GitHub => github::get_headers(&asset.url, &provider.api_url)?,
+            GitProviderKind::GitLab => gitlab::get_headers(&bundle_url, &provider.api_url)?,
+            GitProviderKind::GitHub => github::get_headers(&bundle_url, &provider.api_url)?,
         };
         let tmp = tempfile::tempdir()?;
         let download_path = tmp.path().join(&asset.name);
-        HTTP.download_file_with_headers(&asset.url, &download_path, &bundle_headers, None)
+        HTTP.download_file_with_headers(&bundle_url, &download_path, &bundle_headers, None)
             .await?;
         let extract_dir = tmp.path().join("bundle");
         file::create_dir_all(&extract_dir)?;
