@@ -214,11 +214,7 @@ impl Backend for GemBackend {
         .arg("install")
         .arg(self.tool_name())
         .arg("--version")
-        .arg(&tv.version)
-        // `--conservative` keeps a dependency the Ruby already provides
-        // (bundled or default gems such as erb) instead of upgrading it to a
-        // newer release that may need a compiler.
-        .arg("--conservative");
+        .arg(&tv.version);
         if let Some(source) = &source {
             // `--source` rather than `--clear-sources --source`: the latter
             // would also cut off the registry holding this gem's dependencies,
