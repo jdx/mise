@@ -635,22 +635,41 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
     if let Some(cwd) = &*dirs::CWD
         && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
     {
+        // Lockfiles sit beside a top-level config and `Config::watch_files` only
+        // lists the ones that exist, so a new one is noticed here.
         let config_paths = DEFAULT_CONFIG_FILENAMES
             .iter()
-            .map(Path::new)
+            .map(String::as_str)
+            .chain(["mise*.lock"])
             .unique()
             .collect::<Vec<_>>();
         let config_subdirs = config_paths
             .iter()
-            .map(|p| p.parent().and_then(|p| p.to_str()).unwrap_or(""))
+            .map(|p| Path::new(p).parent().and_then(|p| p.to_str()).unwrap_or(""))
             .unique()
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
-            for path in &config_paths {
-                if path.parent().is_none_or(|p| p.as_os_str().is_empty())
-                    && let Ok(Ok(modified)) = dir.join(path).metadata().map(|m| m.modified())
+            for name in &config_paths {
+                if !Path::new(name)
+                    .parent()
+                    .is_none_or(|p| p.as_os_str().is_empty())
                 {
-                    mtimes.push(modified);
+                    continue;
+                }
+                // The names are glob patterns (literal names are glob-escaped),
+                // so a name with metacharacters is matched, not statted.
+                let matches: Vec<PathBuf> = if name.contains(['*', '?', '[']) {
+                    let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
+                    glob::glob(&Path::new(&escaped_dir).join(name).to_string_lossy())
+                        .map(|paths| paths.flatten().collect())
+                        .unwrap_or_default()
+                } else {
+                    vec![dir.join(name)]
+                };
+                for path in matches {
+                    if let Ok(Ok(modified)) = path.metadata().map(|m| m.modified()) {
+                        mtimes.push(modified);
+                    }
                 }
             }
             for subdir in &config_subdirs {

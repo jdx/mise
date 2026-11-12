@@ -61,3 +61,16 @@ LOCAL_VAR = "yes"
 EOF
 output=$(mise hook-env -s bash 2>/dev/null)
 assert_contains "echo '$output'" "LOCAL_VAR"
+
+# A new lockfile beside an unchanged config is still noticed.
+eval "$(mise hook-env -s bash 2>/dev/null)"
+before_lock=$(wc -l <"$COUNTER_FILE")
+sleep 1
+touch mise.lock
+eval "$(mise hook-env -s bash 2>/dev/null)"
+after_lock=$(wc -l <"$COUNTER_FILE")
+if [[ $after_lock -gt $before_lock ]]; then
+  ok "a new mise.lock forces a full run"
+else
+  fail "a new mise.lock did not force a full run"
+fi
