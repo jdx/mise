@@ -30,3 +30,6 @@ if ! compgen -G "$HEADERS_LOG_DIR/request_*.json" >/dev/null; then
   echo "$output"
   fail "mise-versions was not asked about a repository outside versions_host_exclude"
 fi
+
+# A malformed pattern is an error, not a silent non-match.
+assert_fail "MISE_VERSIONS_HOST_EXCLUDE='my-org/[abc' mise ls-remote github:my-org/tool" "invalid pattern"

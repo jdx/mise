@@ -929,6 +929,26 @@ pub fn github_repo_excluded(repo: &str) -> bool {
     github_repo_matches_any(&settings.versions_host_exclude, repo)
 }
 
+/// The first `versions_host_exclude` pattern that is not a valid glob, so a
+/// typo is reported instead of quietly sending the repository to the host.
+pub fn invalid_exclude_pattern(patterns: &[String]) -> Option<(&str, String)> {
+    patterns.iter().find_map(|pattern| {
+        globset::Glob::new(pattern.trim())
+            .err()
+            .map(|err| (pattern.as_str(), err.to_string()))
+    })
+}
+
+/// [`github_repo_excluded`] for a backend's full name, such as
+/// `github:owner/repo[opts]@1.0`. Other backends are never excluded.
+pub fn backend_excluded(full: &str) -> bool {
+    let Some(rest) = full.strip_prefix("github:") else {
+        return false;
+    };
+    let repo = rest.split(['[', '@']).next().unwrap_or(rest);
+    github_repo_excluded(repo)
+}
+
 fn github_repo_matches_any(patterns: &[String], repo: &str) -> bool {
     patterns.iter().any(|pattern| {
         globset::GlobBuilder::new(pattern.trim())
@@ -1214,6 +1234,8 @@ mod tests {
         assert!(!super::github_repo_matches_any(&patterns, "other/public"));
         assert!(!super::github_repo_matches_any(&patterns, "my-org/a/b"));
         assert!(!super::github_repo_matches_any(&[], "my-org/tool"));
+        assert!(super::invalid_exclude_pattern(&["my-org/[abc".to_string()]).is_some());
+        assert!(super::invalid_exclude_pattern(&patterns).is_none());
     }
 
     use super::*;
