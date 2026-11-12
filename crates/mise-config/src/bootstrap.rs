@@ -217,6 +217,18 @@ impl BootstrapTomlConfig {
         macos.keyboard.extend(new.keyboard);
         macos.trackpad.extend(new.trackpad);
         for (domain, value) in new.defaults {
+            // `-g` and `NSGlobalDomain` are one domain, read in order with the later value
+            // winning, so a key the new spelling sets must not survive under another alias.
+            if let toml::Value::Table(keys) = &value {
+                for (other, old) in macos.defaults.iter_mut() {
+                    if *other != domain
+                        && defaults_domain_identity(other) == defaults_domain_identity(&domain)
+                        && let toml::Value::Table(old) = old
+                    {
+                        old.retain(|key, _| !keys.contains_key(key));
+                    }
+                }
+            }
             match (macos.defaults.get_mut(&domain), value) {
                 (Some(toml::Value::Table(old)), toml::Value::Table(new)) => old.extend(new),
                 (_, value) => {
@@ -237,6 +249,14 @@ impl BootstrapTomlConfig {
             }
         }
         outcome
+    }
+}
+
+/// The domain `defaults` reads for `domain`: `-g` and `-globalDomain` name `NSGlobalDomain`.
+fn defaults_domain_identity(domain: &str) -> &str {
+    match domain {
+        "-g" | "-globalDomain" => "NSGlobalDomain",
+        domain => domain,
     }
 }
 
@@ -537,6 +557,26 @@ mod macos_settings_tests {
         );
         assert!(!config.settings.contains_key("macos"));
         assert!(config.settings.contains_key("other"));
+    }
+
+    #[test]
+    fn new_spelling_wins_over_every_alias_of_a_domain() {
+        let mut config = bootstrap(
+            r#"
+            [macos.defaults.-g]
+            SomeKey = false
+            Other = 1
+            [macos.defaults.NSGlobalDomain]
+            SomeKey = false
+            [settings.macos.defaults.-g]
+            SomeKey = true
+            "#,
+        );
+        config.move_macos_settings();
+        let defaults = &config.macos.defaults;
+        assert_eq!(defaults["-g"]["SomeKey"], toml::Value::Boolean(true));
+        assert_eq!(defaults["-g"]["Other"], toml::Value::Integer(1));
+        assert!(defaults["NSGlobalDomain"].get("SomeKey").is_none());
     }
 
     #[test]
