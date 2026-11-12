@@ -343,6 +343,18 @@ fs.appendFileSync(usage_output_file, `Hello, ${user}\n`);
 console.log(`Greeting written to ${usage_output_file}`);
 ```
 
+### A Lua task with arguments
+
+Lua comments start with `--`, so `--MISE` and `--USAGE` lines work the same way:
+
+```lua [mise-tasks/hello]
+#!/usr/bin/env lua
+--MISE description="Say hello"
+--USAGE arg "<name>"
+
+print("Hello, " .. os.getenv("usage_name") .. "!")
+```
+
 ```sh
 mise run greet greeting.txt --user Alice
 # Greeting written to greeting.txt
