@@ -1,8 +1,4 @@
-backends = [
-  "github:crystal-lang/crystal",
-  "asdf:mise-plugins/mise-crystal",
-  "vfox:jdx/vfox-crystal",
-]
+backends = ["github:crystal-lang/crystal", "vfox:jdx/vfox-crystal"]
 bins = ["crystal", "shards"]
 description = "Crystal: A language for humans and computers"
 idiomatic_files = [".crystal-version"]

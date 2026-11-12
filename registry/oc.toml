@@ -32,6 +32,3 @@ url = "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ version }}/o
 
 [[backends]]
 full = "conda:openshift-cli"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-oc"

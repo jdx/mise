@@ -34,9 +34,5 @@ url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/maco
 [backends.options.platforms.windows-x64]
 checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json"
 url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{{ version | trim_end(pat='-stable') }}-stable.zip"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-flutter"
-
 [[backends]]
 full = "vfox:jdx/vfox-flutter"

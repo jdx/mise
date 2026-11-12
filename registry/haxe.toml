@@ -1,4 +1,4 @@
-backends = ["github:HaxeFoundation/haxe", "asdf:mise-plugins/mise-haxe"]
+backends = ["github:HaxeFoundation/haxe"]
 bins = ["haxe", "haxelib"]
 description = "Haxe - The Cross-Platform Toolkit"
 test = { cmd = "haxe --version", expected = "{{version}}" }

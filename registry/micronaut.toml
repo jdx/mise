@@ -5,6 +5,3 @@ version_order = "semver"
 bins = ["mn"]
 [[backends]]
 full = "github:micronaut-projects/micronaut-starter"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-micronaut"

@@ -23,9 +23,5 @@ version_date_next_expr = 'fromJSON(body).nextPageToken != nil ? split(url, "&pag
 version_date_url = "https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&matchGlob=**/VERSION&fields=items(name,timeCreated),nextPageToken"
 version_expr = 'fromJSON(body).prefixes | filter({ # matches "^channels/stable/release/(\\d+\\.\\d+\\.\\d+)/$" }) | map({split(#, "/")[3]}) | sortVersions()'
 version_list_url = "https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-dart"
-
 [[backends]]
 full = "vfox:jdx/vfox-dart"

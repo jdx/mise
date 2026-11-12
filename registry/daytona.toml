@@ -15,6 +15,3 @@ bin = "daytona.exe"
 
 [backends.options.platforms.windows-arm64]
 bin = "daytona.exe"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-daytona"

@@ -1,7 +1,4 @@
-backends = [
-  "vfox:jdx/vfox-elasticsearch",
-  "asdf:mise-plugins/mise-elasticsearch",
-]
+backends = ["vfox:jdx/vfox-elasticsearch"]
 bins = [
   "elasticsearch",
   "elasticsearch-certgen",

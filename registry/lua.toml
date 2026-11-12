@@ -1,4 +1,4 @@
-backends = ["vfox:jdx/vfox-lua", "asdf:mise-plugins/mise-lua"]
+backends = ["vfox:jdx/vfox-lua"]
 bins = ["lua", "luac", "luarocks", "luarocks-admin"]
 description = "Lua language"
 version_order = "source"
