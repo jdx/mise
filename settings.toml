@@ -1527,6 +1527,11 @@ When unset, mise reads `config.toml`, `conf.d/*.toml` and the other config
 files in `~/.config/mise` (or `MISE_CONFIG_DIR`), and global writes such as
 `mise use -g` go to `config.toml` there. When set, mise reads and writes only
 this file.
+
+It replaces the global config only. A project under your home directory still
+loads `~/.config/mise/config.toml` as a project config, because the walk up from
+the project finds it like any other `.config/mise/config.toml`. To keep it out,
+add `~/.config/mise/config.toml` to [`ignored_config_paths`](#ignored_config_paths).
 """
 env = "MISE_GLOBAL_CONFIG_FILE"
 env_only = true
