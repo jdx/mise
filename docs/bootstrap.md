@@ -243,9 +243,9 @@ With `--detailed-exitcode`, the exit code reports what the plan found:
 
 | Exit code | Meaning                                     |
 | --------- | ------------------------------------------- |
-| 22        | Nothing would change                        |
-| 23        | The plan has changes                        |
-| 24        | Planning failed, or a resource is `unknown` |
+| 0         | Nothing would change                        |
+| 2         | The plan has changes                        |
+| 1         | Planning failed, or a resource is `unknown` |
 
 A resource is `unknown` when mise cannot reach its declared state on its own,
 for example a package whose manager is unavailable on this platform or cannot

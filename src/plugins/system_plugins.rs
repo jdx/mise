@@ -38,7 +38,7 @@ pub fn find(name: &str) -> Option<&'static SystemPlugin> {
 }
 
 /// The identity of a plugin name: `foo_bar`, `foo-bar` and `FooBar` are the same plugin.
-fn identity(name: &str) -> String {
+pub(crate) fn identity(name: &str) -> String {
     name.to_kebab_case()
 }
 

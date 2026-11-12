@@ -35,6 +35,11 @@ mise bootstrap settings status
 mise bootstrap settings apply
 ```
 
+These commands do not install plugins. Run `mise bootstrap plugins apply` first,
+or include `plugins` with `--only`, so a plugin declared in
+[`[bootstrap.plugins]`](/bootstrap/packages/plugins.html) is there to apply its
+section.
+
 A dry run prints each value that would change, with its current value:
 
 ```text
@@ -44,14 +49,16 @@ mise would set desk: appearance.blur_strength 2 -> 4
 
 `mise bootstrap settings status --missing` exits with status 1 when a value
 differs from the config, for example after someone changes it in the program's
-own settings.
+own settings. `mise bootstrap status` and `mise bootstrap plan` do not check
+settings yet, so use this command to detect that drift.
 
 `[bootstrap.settings.macos]` is built in rather than a plugin: it holds
 [macOS preferences](/bootstrap/macos-defaults.html), which the
 `macos-defaults` part applies. No plugin can be named `macos`.
 
 Sections merge across config files key by key, and a more local file's value
-wins, as for the rest of `[bootstrap]`. `appearance = { blur = true }` and
+wins, as for the rest of `[bootstrap]`. `desk_plugin` and `desk-plugin` name
+the same plugin, so their sections merge too. `appearance = { blur = true }` and
 `"appearance.blur" = true` set the same key. When `mise bootstrap` reads several
 independent config roots, they must not set a key to different values; mise
 refuses to apply settings when they do.
@@ -102,8 +109,10 @@ list stays one value.
 
 ### SettingsRead
 
-`ctx.keys` holds every declared key. Return the current value of each one you
-know, in `values`. Leave a key out when it is unset.
+`ctx.keys` holds the keys mise asks about: every declared key, except after a
+write, when it holds only the keys that were written. Return the current value
+of each one in `ctx.keys` you know, in `values`. Leave a key out when it is
+unset.
 
 ```lua [hooks/settings_read.lua]
 function PLUGIN:SettingsRead(ctx)
@@ -132,7 +141,8 @@ end
 After `SettingsWrite`, mise calls `SettingsRead` again and fails if a key still
 differs, listing the `follow_up` steps in the error. mise compares numbers by
 value, so `4` and `4.0` match; other values must have the same type, so `4` and
-`"4"` differ.
+`"4"` differ. Lua holds integers exactly only up to 2^53, so mise refuses to
+write a larger one.
 
 ### Rules {#rules}
 

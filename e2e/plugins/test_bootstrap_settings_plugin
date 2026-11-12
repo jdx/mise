@@ -111,3 +111,20 @@ cat >mise.toml <<'TOML'
 appearance = { blur_strength = 8 }
 TOML
 assert_succeed "mise bootstrap settings status --missing"
+
+# Another spelling of the plugin's name is the same section, so the more local value wins.
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<'TOML'
+[bootstrap.settings.Desk.appearance]
+blur_strength = 4
+TOML
+assert_succeed "mise bootstrap settings status --missing"
+rm "$HOME/.config/mise/config.toml"
+
+# An integer Lua would round is refused before the plugin sees it.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur_strength = 9007199254740993
+TOML
+assert_fail_contains "mise bootstrap settings apply" "an integer Lua cannot hold exactly"
+assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
