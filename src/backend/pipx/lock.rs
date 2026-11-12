@@ -620,8 +620,8 @@ impl PIPXBackend {
             Some(path) => LockPython::Installed(path.into()),
             None => LockPython::Unspecified,
         };
+        // `replay` may be a Python found on PATH, which is the very thing to avoid here.
         if configured.is_none()
-            && replay.is_none()
             && let Some(request) = self.configured_python_request(config).await
         {
             // The project asks for a Python that is not installed. Guessing from PATH
