@@ -173,8 +173,10 @@ system plugin.
 
 mise uses a system plugins directory and each plugin in it only when root or
 the current user owns it and neither its group nor other users can write to it.
-That check covers every file and directory inside the plugin, and where each
-symbolic link in it points, along with the directory holding the link's target.
+That check covers every file and directory inside the plugin, every directory
+on the way to it, and every symbolic link followed along the way, including
+links in the middle of a link's target. A sticky directory such as `/tmp` is
+fine when root or the current user owns the entry in it.
 mise warns about and skips a directory or plugin that fails the check. It cannot
 make this check on Windows, so it ignores system plugin directories there.
 
