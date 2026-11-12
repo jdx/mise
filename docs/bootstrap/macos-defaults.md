@@ -10,31 +10,44 @@ Declare macOS preferences in `mise.toml`, and
 [`mise bootstrap macos defaults apply`](/cli/bootstrap/macos/defaults/apply.html),
 writes them the way the `defaults` command does. Common Dock, Finder, keyboard,
 and trackpad settings have named keys; anything else goes in
-`[bootstrap.macos.defaults]` by domain and key.
+`[bootstrap.settings.macos.defaults]` by domain and key.
+
+::: warning Moved from `[bootstrap.macos]`
+These keys used to live under `[bootstrap.macos]`: `[bootstrap.macos.dock]`,
+`finder`, `keyboard`, `trackpad`, `defaults`, `defaults_entries`, and
+`login_items`. That spelling still works and is deprecated. mise starts warning
+about it in 2027.5.0 and stops reading it in 2028.5.0. Move each table under
+`[bootstrap.settings.macos]`, keeping its keys as they are. When a key is set in
+both places, the new spelling wins.
+
+mise versions older than this one ignore `[bootstrap.settings.macos]`, so keep
+the old spelling until every machine that reads the config has updated.
+[`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html) stays where it is.
+:::
 
 ## Example
 
 ```toml
-[bootstrap.macos.dock]
+[bootstrap.settings.macos.dock]
 autohide = true
 orientation = "left"
 tilesize = 48
 show_recents = false
 
-[bootstrap.macos.finder]
+[bootstrap.settings.macos.finder]
 show_all_files = true
 show_pathbar = true
 preferred_view_style = "list"
 
-[bootstrap.macos.keyboard]
+[bootstrap.settings.macos.keyboard]
 key_repeat = 2
 initial_key_repeat = 15
 press_and_hold = false
 
-[bootstrap.macos.trackpad]
+[bootstrap.settings.macos.trackpad]
 tap_to_click = true
 
-[bootstrap.macos.defaults]
+[bootstrap.settings.macos.defaults]
 "com.apple.screencapture" = { type = "png", "disable-shadow" = true }
 ```
 
@@ -55,7 +68,7 @@ Each named key writes one preference, or two for the trackpad keys. An unknown
 key, a value of the wrong type, or a value outside the listed choices is
 ignored with a warning.
 
-`[bootstrap.macos.dock]` writes to the `com.apple.dock` domain:
+`[bootstrap.settings.macos.dock]` writes to the `com.apple.dock` domain:
 
 | Key                      | Preference key           | Value                                                                      |
 | ------------------------ | ------------------------ | -------------------------------------------------------------------------- |
@@ -70,7 +83,7 @@ ignored with a warning.
 | `mru_spaces`             | `mru-spaces`             | Boolean: rearrange Spaces by most recent use                               |
 | `apps`                   | `persistent-apps`        | List of application paths; see [Pin Dock applications](#dock-applications) |
 
-`[bootstrap.macos.finder]` writes to `com.apple.finder`, except one key:
+`[bootstrap.settings.macos.finder]` writes to `com.apple.finder`, except one key:
 
 | Key                           | Domain             | Preference key                      | Value                                                          |
 | ----------------------------- | ------------------ | ----------------------------------- | -------------------------------------------------------------- |
@@ -82,7 +95,7 @@ ignored with a warning.
 | `preferred_view_style`        | `com.apple.finder` | `FXPreferredViewStyle`              | `"icon"`, `"list"`, `"column"`, or `"gallery"`                 |
 | `save_new_documents_to_cloud` | `NSGlobalDomain`   | `NSDocumentSaveNewDocumentsToCloud` | Boolean: save new documents to iCloud by default, in every app |
 
-`[bootstrap.macos.keyboard]` writes to `NSGlobalDomain`:
+`[bootstrap.settings.macos.keyboard]` writes to `NSGlobalDomain`:
 
 | Key                             | Preference key                         | Value                                                           |
 | ------------------------------- | -------------------------------------- | --------------------------------------------------------------- |
@@ -93,7 +106,7 @@ ignored with a warning.
 | `automatic_spelling_correction` | `NSAutomaticSpellingCorrectionEnabled` | Boolean                                                         |
 | `fn_state`                      | `com.apple.keyboard.fnState`           | Boolean: `true` makes F1 to F12 act as standard function keys   |
 
-`[bootstrap.macos.trackpad]` writes each key to both
+`[bootstrap.settings.macos.trackpad]` writes each key to both
 `com.apple.AppleMultitouchTrackpad` and
 `com.apple.driver.AppleBluetoothMultitouch.trackpad`, for built-in and
 Bluetooth trackpads:
@@ -108,7 +121,7 @@ Bluetooth trackpads:
 `apps` declares the applications pinned in the Dock, in order:
 
 ```toml
-[bootstrap.macos.dock]
+[bootstrap.settings.macos.dock]
 apps = [
   "/System/Applications/Utilities/Terminal.app",
   "/Applications/Firefox.app",
@@ -137,12 +150,12 @@ config.
 
 ## Open apps at login {#login-items}
 
-`[bootstrap.macos.login_items]` declares the applications that open when you
+`[bootstrap.settings.macos.login_items]` declares the applications that open when you
 log in, the list under System Settings → General → Login Items & Extensions →
 Open at Login:
 
 ```toml
-[bootstrap.macos.login_items]
+[bootstrap.settings.macos.login_items]
 apps = [
   "/Applications/Bitwarden.app",
   "/Applications/Ghostty.app",
@@ -160,7 +173,7 @@ alone, because apps such as Rectangle register themselves. Set
 removes undeclared entries:
 
 ```toml
-[bootstrap.macos.login_items]
+[bootstrap.settings.macos.login_items]
 apps = ["/Applications/Ghostty.app"]
 exclusive = true
 ```
@@ -175,7 +188,7 @@ apply` applies login items together with defaults.
 
 ## Raw defaults
 
-Each key under `[bootstrap.macos.defaults]` is a preferences domain, and each
+Each key under `[bootstrap.settings.macos.defaults]` is a preferences domain, and each
 key inside it a preference. Quote a domain that contains dots. TOML values map
 to property list types:
 
@@ -192,7 +205,7 @@ Arrays and tables are converted recursively, so nested values keep their types.
 For example, a Dock entry can be an array of dictionaries:
 
 ```toml
-[bootstrap.macos.defaults."com.apple.dock"]
+[bootstrap.settings.macos.defaults."com.apple.dock"]
 "persistent-apps" = [
   { "tile-type" = "file-tile", "tile-data" = { "file-label" = "Terminal" } },
 ]
@@ -216,7 +229,7 @@ defaults read-type com.apple.dock tilesize
 
 ## Explicit entries
 
-Use `[[bootstrap.macos.defaults_entries]]` when a preference needs a host scope
+Use `[[bootstrap.settings.macos.defaults_entries]]` when a preference needs a host scope
 or a path inside a dictionary. Each entry takes:
 
 | Field    | Value                                                                                  |
@@ -233,7 +246,7 @@ Preferences you would write with `defaults -currentHost` need
 `host = "current"`:
 
 ```toml
-[[bootstrap.macos.defaults_entries]]
+[[bootstrap.settings.macos.defaults_entries]]
 domain = "NSGlobalDomain"
 key = "com.apple.mouse.tapBehavior"
 host = "current"
@@ -252,7 +265,7 @@ values around it. This turns off one keyboard shortcut and keeps its other
 settings and every other shortcut:
 
 ```toml
-[[bootstrap.macos.defaults_entries]]
+[[bootstrap.settings.macos.defaults_entries]]
 domain = "com.apple.symbolichotkeys"
 key = "AppleSymbolicHotKeys"
 path = ["64", "enabled"]
@@ -296,8 +309,8 @@ config can change a value that a less local one declared, but it cannot remove
 it, and mise never deletes a preference.
 
 Named settings and raw defaults write the same preferences. Within one config
-file, a `[bootstrap.macos.defaults]` value wins over a named setting for the
-same domain and key, and a `[[bootstrap.macos.defaults_entries]]` entry wins
+file, a `[bootstrap.settings.macos.defaults]` value wins over a named setting for the
+same domain and key, and a `[[bootstrap.settings.macos.defaults_entries]]` entry wins
 over both. A raw `persistent-apps` value therefore replaces `apps` in the same
 file and is compared as a whole value. Across files, the more local config wins
 as usual, so a project's named setting overrides a raw default from your global

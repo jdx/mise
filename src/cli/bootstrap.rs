@@ -1737,11 +1737,10 @@ enum BootstrapLinuxCommands {
 
 /// Manage macOS preferences such as Dock, Finder, and keyboard settings
 ///
-/// Applies `[bootstrap.macos.defaults]`, `[[bootstrap.macos.defaults_entries]]`,
-/// and the `[bootstrap.macos.dock]`, `finder`, `keyboard`, and `trackpad`
-/// sections. Preferences are written the way `defaults write` writes them.
-/// mise does not restart apps: Dock, Finder, and some others show a change
-/// only after they relaunch.
+/// Applies `[bootstrap.settings.macos]`: its `defaults`, `defaults_entries`,
+/// `dock`, `finder`, `keyboard`, and `trackpad` tables. Preferences are
+/// written the way `defaults write` writes them. mise does not restart apps:
+/// Dock, Finder, and some others show a change only after they relaunch.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapMacosDefaults {
@@ -2613,7 +2612,7 @@ impl Bootstrap {
                 .await?;
             let defaults = system::defaults_from_config(&config);
             if defaults.is_empty() {
-                debug!("bootstrap: no [bootstrap.macos.defaults] configured, skipping");
+                debug!("bootstrap: no [bootstrap.settings.macos] preferences configured, skipping");
             } else {
                 info!("bootstrap: system defaults");
                 let requested = defaults.len();
@@ -6699,7 +6698,7 @@ impl BootstrapMacosDefaultsStatus {
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
         } else if rows.is_empty() {
-            info!("nothing configured in [bootstrap.macos.defaults]");
+            info!("nothing configured in [bootstrap.settings.macos]");
         } else {
             let mut table = MiseTable::new(false, &["Domain", "Key", "Value", "Current", "State"]);
             for row in rows {

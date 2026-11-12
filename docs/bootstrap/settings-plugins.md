@@ -46,6 +46,10 @@ mise would set desk: appearance.blur_strength 2 -> 4
 differs from the config, for example after someone changes it in the program's
 own settings.
 
+`[bootstrap.settings.macos]` is built in rather than a plugin: it holds
+[macOS preferences](/bootstrap/macos-defaults.html), which the
+`macos-defaults` part applies. No plugin can be named `macos`.
+
 Sections merge across config files key by key, and a more local file's value
 wins, as for the rest of `[bootstrap]`. A section for a plugin that is not
 installed, or that cannot run on this machine, is skipped and listed in the

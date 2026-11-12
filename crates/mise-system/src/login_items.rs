@@ -68,7 +68,7 @@ pub fn app_path(value: &str) -> Result<PathBuf> {
     let path = if let Some(rest) = value.strip_prefix("~/") {
         eyre::ensure!(
             !Path::new(rest).has_root(),
-            "[bootstrap.macos.login_items].apps: expected a path relative to home: {value}"
+            "[bootstrap.settings.macos.login_items].apps: expected a path relative to home: {value}"
         );
         mise_util::env::HOME.join(rest)
     } else {
@@ -81,7 +81,7 @@ pub fn app_path(value: &str) -> Result<PathBuf> {
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
             && !path.components().any(|c| matches!(c, Component::ParentDir))
             && !value.contains('\0'),
-        "[bootstrap.macos.login_items].apps: expected an absolute or ~/ application path: {value}"
+        "[bootstrap.settings.macos.login_items].apps: expected an absolute or ~/ application path: {value}"
     );
     Ok(path.components().collect())
 }

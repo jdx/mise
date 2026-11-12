@@ -9282,23 +9282,28 @@
           "description": "macOS-specific bootstrap config",
           "properties": {
             "dock": {
-              "$ref": "#/$defs/bootstrap_macos_dock"
+              "$ref": "#/$defs/bootstrap_macos_dock",
+              "deprecated": true
             },
             "finder": {
-              "$ref": "#/$defs/bootstrap_macos_finder"
+              "$ref": "#/$defs/bootstrap_macos_finder",
+              "deprecated": true
             },
             "keyboard": {
-              "$ref": "#/$defs/bootstrap_macos_keyboard"
+              "$ref": "#/$defs/bootstrap_macos_keyboard",
+              "deprecated": true
             },
             "trackpad": {
-              "$ref": "#/$defs/bootstrap_macos_trackpad"
+              "$ref": "#/$defs/bootstrap_macos_trackpad",
+              "deprecated": true
             },
             "defaults": {
-              "$ref": "#/$defs/bootstrap_macos_defaults"
+              "$ref": "#/$defs/bootstrap_macos_defaults",
+              "deprecated": true
             },
             "defaults_entries": {
               "type": "array",
-              "description": "Explicit macOS preferences with a selectable host scope",
+              "description": "deprecated: use [[bootstrap.settings.macos.defaults_entries]]",
               "items": {
                 "type": "object",
                 "properties": {
@@ -9347,7 +9352,8 @@
                 },
                 "additionalProperties": false,
                 "required": ["domain", "key", "value"]
-              }
+              },
+              "deprecated": true
             },
             "launchd": {
               "type": "object",
@@ -9508,7 +9514,7 @@
             },
             "login_items": {
               "type": "object",
-              "description": "applications to open at login (System Settings > General > Login Items & Extensions)",
+              "description": "deprecated: use [bootstrap.settings.macos.login_items]",
               "properties": {
                 "apps": {
                   "type": "array",
@@ -9522,6 +9528,7 @@
                   "description": "also remove login items that are not declared (default: false, so apps that register themselves are left alone)"
                 }
               },
+              "deprecated": true,
               "additionalProperties": false
             }
           },
@@ -10358,6 +10365,106 @@
           "description": "[experimental] settings that bootstrap settings plugins apply, keyed by plugin name; which keys a plugin accepts is up to the plugin",
           "propertyNames": {
             "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "properties": {
+            "macos": {
+              "type": "object",
+              "description": "macOS preferences, written the way `defaults write` writes them; `macos` is built in, not a plugin",
+              "properties": {
+                "dock": {
+                  "description": "Dock preferences (com.apple.dock)",
+                  "$ref": "#/$defs/bootstrap_macos_dock"
+                },
+                "finder": {
+                  "description": "Finder preferences (com.apple.finder)",
+                  "$ref": "#/$defs/bootstrap_macos_finder"
+                },
+                "keyboard": {
+                  "description": "keyboard preferences",
+                  "$ref": "#/$defs/bootstrap_macos_keyboard"
+                },
+                "trackpad": {
+                  "description": "trackpad preferences",
+                  "$ref": "#/$defs/bootstrap_macos_trackpad"
+                },
+                "defaults": {
+                  "description": "any preference, by domain and key",
+                  "$ref": "#/$defs/bootstrap_macos_defaults"
+                },
+                "defaults_entries": {
+                  "type": "array",
+                  "description": "Explicit macOS preferences with a selectable host scope",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "domain": {
+                        "type": "string",
+                        "description": "preferences domain, such as \"com.apple.dock\" or \"NSGlobalDomain\"; -g and -globalDomain mean NSGlobalDomain"
+                      },
+                      "key": {
+                        "type": "string",
+                        "description": "preference key within the domain"
+                      },
+                      "host": {
+                        "type": "string",
+                        "description": "any writes the preference for every host; current writes it for this machine only, like defaults -currentHost",
+                        "enum": ["any", "current"],
+                        "default": "any"
+                      },
+                      "path": {
+                        "type": "array",
+                        "description": "Dictionary keys below the preference key; omitted to replace the whole value",
+                        "items": {
+                          "type": "string"
+                        },
+                        "minItems": 1
+                      },
+                      "value": {
+                        "description": "desired value, written with the matching property list type; replaces the selected value in full",
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array"
+                          },
+                          {
+                            "type": "object"
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": ["domain", "key", "value"]
+                  }
+                },
+                "login_items": {
+                  "type": "object",
+                  "description": "applications to open at login (System Settings > General > Login Items & Extensions)",
+                  "properties": {
+                    "apps": {
+                      "type": "array",
+                      "description": "application bundles to open at login: absolute or `~/` paths ending in `.app`",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "exclusive": {
+                      "type": "boolean",
+                      "description": "also remove login items that are not declared (default: false, so apps that register themselves are left alone)"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": {
             "type": "object",

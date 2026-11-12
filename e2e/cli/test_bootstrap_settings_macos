@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# [bootstrap.settings.macos] holds macOS preferences. It applies on any
+# platform's status, wins over the deprecated [bootstrap.macos] tables, and is
+# never treated as a plugin's section.
+
+cat >mise.toml <<'TOML'
+[bootstrap.macos.dock]
+autohide = false
+tilesize = 48
+
+[bootstrap.settings.macos.dock]
+autohide = true
+
+[bootstrap.settings.macos.finder]
+show_all_files = true
+
+[bootstrap.settings.macos.defaults]
+"com.apple.screencapture" = { type = "png" }
+TOML
+
+output=$(mise bootstrap macos defaults status --json)
+assert_contains "echo '$output'" '"com.apple.screencapture"'
+assert_contains "echo '$output'" '"AppleShowAllFiles"'
+assert_contains "echo '$output'" '"tilesize"'
+# the new spelling's autohide = true wins over the deprecated autohide = false
+assert "echo '$output' | jq -c '[.macos_defaults.entries[] | select(.key == \"autohide\") | .value]'" '[true]'
+
+# macos is built in, so settings plugins never see it
+assert "MISE_EXPERIMENTAL=1 mise bootstrap settings status" ""
+
+# a key mise does not know is reported
+# schema: invalid
+cat >mise.toml <<'TOML'
+[bootstrap.settings.macos.dokc]
+autohide = true
+TOML
+assert_contains "mise bootstrap macos defaults status 2>&1" "unknown key in"

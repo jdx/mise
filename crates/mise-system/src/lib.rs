@@ -1093,7 +1093,7 @@ pub fn defaults_from_config_files(config_files: &ConfigMap) -> Vec<DefaultsReque
                         }
                     }
                     _ => warn!(
-                        "[bootstrap.macos.defaults]: expected a table of key/value pairs for domain '{domain}'"
+                        "[bootstrap.settings.macos.defaults]: expected a table of key/value pairs for domain '{domain}'"
                     ),
                 }
             }
@@ -1133,7 +1133,7 @@ pub fn defaults_from_config_files(config_files: &ConfigMap) -> Vec<DefaultsReque
             }),
             None => {
                 warn!(
-                    "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
+                    "[bootstrap.settings.macos.defaults]: unsupported value type for {domain} {key} \
                      (expected bool, integer, float, string, array, or table)"
                 );
             }
@@ -1184,7 +1184,9 @@ pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsReques
     }
     if invalid && exclusive {
         // an incomplete declaration must not decide which items are undeclared
-        warn!("[bootstrap.macos.login_items]: ignoring exclusive because an entry is invalid");
+        warn!(
+            "[bootstrap.settings.macos.login_items]: ignoring exclusive because an entry is invalid"
+        );
         exclusive = false;
     }
     login_items::LoginItemsRequest {
@@ -1506,11 +1508,11 @@ fn merge_dock_defaults(
                     );
                 }
                 toml::Value::String(_) => warn!(
-                    "[bootstrap.macos.dock].orientation: invalid value \
+                    "[bootstrap.settings.macos.dock].orientation: invalid value \
                      (expected bottom, left, or right)"
                 ),
                 _ => warn!(
-                    "[bootstrap.macos.dock].orientation: unsupported value type (expected string)"
+                    "[bootstrap.settings.macos.dock].orientation: unsupported value type (expected string)"
                 ),
             },
             "tilesize" => insert_friendly_default(
@@ -1573,7 +1575,7 @@ fn merge_dock_defaults(
                 },
                 value.clone(),
             ),
-            _ => warn!("[bootstrap.macos.dock].{key}: unknown key, ignoring entry"),
+            _ => warn!("[bootstrap.settings.macos.dock].{key}: unknown key, ignoring entry"),
         }
     }
 }
@@ -1675,17 +1677,17 @@ fn merge_finder_defaults(
                         );
                     } else {
                         warn!(
-                            "[bootstrap.macos.finder].preferred_view_style: invalid value \
+                            "[bootstrap.settings.macos.finder].preferred_view_style: invalid value \
                              (expected icon, list, column, or gallery)"
                         );
                     }
                 }
                 _ => warn!(
-                    "[bootstrap.macos.finder].preferred_view_style: unsupported value type \
+                    "[bootstrap.settings.macos.finder].preferred_view_style: unsupported value type \
                      (expected string)"
                 ),
             },
-            _ => warn!("[bootstrap.macos.finder].{key}: unknown key, ignoring entry"),
+            _ => warn!("[bootstrap.settings.macos.finder].{key}: unknown key, ignoring entry"),
         }
     }
 }
@@ -1768,7 +1770,7 @@ fn merge_keyboard_defaults(
                 },
                 value.clone(),
             ),
-            _ => warn!("[bootstrap.macos.keyboard].{key}: unknown key, ignoring entry"),
+            _ => warn!("[bootstrap.settings.macos.keyboard].{key}: unknown key, ignoring entry"),
         }
     }
 }
@@ -1809,7 +1811,7 @@ fn merge_trackpad_defaults(
                 },
                 value.clone(),
             ),
-            _ => warn!("[bootstrap.macos.trackpad].{key}: unknown key, ignoring entry"),
+            _ => warn!("[bootstrap.settings.macos.trackpad].{key}: unknown key, ignoring entry"),
         }
     }
 }

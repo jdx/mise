@@ -6,18 +6,20 @@ use eyre::Result;
 
 pub(super) fn paths(value: &DefaultsValue) -> Result<Vec<PathBuf>> {
     let DefaultsValue::Array(values) = value else {
-        eyre::bail!("[bootstrap.macos.dock].apps: expected an array of application paths");
+        eyre::bail!("[bootstrap.settings.macos.dock].apps: expected an array of application paths");
     };
     let mut paths = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for value in values {
         let DefaultsValue::Str(value) = value else {
-            eyre::bail!("[bootstrap.macos.dock].apps: expected an array of application paths");
+            eyre::bail!(
+                "[bootstrap.settings.macos.dock].apps: expected an array of application paths"
+            );
         };
         let path = if let Some(rest) = value.strip_prefix("~/") {
             eyre::ensure!(
                 !Path::new(rest).has_root(),
-                "[bootstrap.macos.dock].apps: expected a path relative to home: {value}"
+                "[bootstrap.settings.macos.dock].apps: expected a path relative to home: {value}"
             );
             mise_util::env::HOME.join(rest)
         } else {
@@ -30,7 +32,7 @@ pub(super) fn paths(value: &DefaultsValue) -> Result<Vec<PathBuf>> {
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
                 && !path.components().any(|c| matches!(c, Component::ParentDir))
                 && !value.contains('\0'),
-            "[bootstrap.macos.dock].apps: expected an absolute or ~/ application path: {value}"
+            "[bootstrap.settings.macos.dock].apps: expected an absolute or ~/ application path: {value}"
         );
         let path: PathBuf = path.components().collect();
         eyre::ensure!(

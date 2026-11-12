@@ -805,6 +805,32 @@ impl MiseToml {
             );
             rf.monorepo_root.get_or_insert(legacy_monorepo_root);
         }
+        if let Some(bootstrap) = rf.bootstrap.as_mut() {
+            let moved = bootstrap.move_macos_settings();
+            if moved.legacy {
+                // The new spelling is ignored by mise versions before it, so warn only once
+                // releases that read it have been out for six months.
+                deprecated_at!(
+                    "2027.5.0",
+                    "2028.5.0",
+                    "bootstrap.macos.preferences",
+                    "macOS preferences under [bootstrap.macos] in {} are deprecated. Move dock, finder, keyboard, trackpad, defaults, defaults_entries, and login_items to [bootstrap.settings.macos].",
+                    display_path(path)
+                );
+            }
+            for key in moved.unknown {
+                warn!(
+                    "unknown key in {}: bootstrap.settings.macos.{key}",
+                    display_path(path)
+                );
+            }
+            if let Some(err) = moved.error {
+                warn!(
+                    "ignoring [bootstrap.settings.macos] in {}: {err}",
+                    display_path(path)
+                );
+            }
+        }
         rf.loaded_hash = crate::install_layout::snapshots::bytes_hash_of(body.as_bytes());
         rf.context = BASE_CONTEXT.clone();
         rf.context.insert(
