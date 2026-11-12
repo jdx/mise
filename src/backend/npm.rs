@@ -1262,6 +1262,13 @@ impl Backend for NPMBackend {
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        // Every installed version of a tarball URL is a digest of that URL, so
+        // the latest install is the one `latest` last resolved to. This lets
+        // `hook-env`, which resolves offline, find it instead of reporting the
+        // literal `latest` as missing.
+        if is_tarball_spec(&self.tool_name()) {
+            return self.latest_installed_version(None).ok().flatten();
+        }
         // Installed commits do not record whether they came from a rolling HEAD.
         None
     }

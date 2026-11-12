@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# npm: `latest` for a tarball URL resolves to the installed digest offline, so
+# `hook-env` activates it instead of reporting `latest` as missing.
+tool="npm:https://example.invalid/pkg.tgz"
+cat >mise.toml <<TOML
+[tools."$tool"]
+version = "latest"
+TOML
+
+# Stand in for an install of the digest the URL served, with a `latest` link.
+dir="$MISE_DATA_DIR/installs/npm-https-example-invalid-pkg-tgz"
+mkdir -p "$dir/51bb34b657ef65ec/bin"
+touch "$dir/51bb34b657ef65ec/bin/pkgbin"
+ln -s ./51bb34b657ef65ec "$dir/latest"
+
+assert_contains "mise hook-env -s bash --force" "installs/npm-https-example-invalid-pkg-tgz/"
+assert_not_contains "mise hook-env -s bash --force 2>&1" "missing"
