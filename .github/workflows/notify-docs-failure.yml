@@ -14,11 +14,6 @@ on:
     workflows: [docs]
     types: [completed]
 
-# One at a time, so a run sees whether the one before it sent an email.
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
-
 permissions:
   actions: read
 
@@ -26,6 +21,13 @@ jobs:
   notify:
     name: notify
     if: ${{ github.repository == 'jdx/mise' && github.event.workflow_run.head_branch == github.event.repository.default_branch && contains(fromJSON('["push", "workflow_dispatch", "schedule"]'), github.event.workflow_run.event) && contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion) }}
+    # One at a time, so a run sees whether the one before it sent an email.
+    # The group is on the job, not the workflow: GitHub keeps one pending
+    # run per group, and a completion whose job is skipped must not replace
+    # a failure still waiting to notify.
+    concurrency:
+      group: ${{ github.workflow }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -60,15 +62,12 @@ jobs:
           done
           # Runs of this workflow since then, oldest first. If one of them
           # sent an email, this failure belongs to a streak already reported.
-          # If the docs have never passed, the newest 100 runs are enough.
           self=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .workflow_id)
           list="repos/${GITHUB_REPOSITORY}/actions/workflows/${self}/runs?status=success&per_page=100"
           if [ -n "$since" ]; then
             list="${list}&created=$(jq -rn --arg s ">${since}" '$s|@uri')"
-            runs=$(gh api --paginate "$list" --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | .id" | sort -n)
-          else
-            runs=$(gh api "$list" --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | .id" | sort -n)
           fi
+          runs=$(gh api --paginate "$list" --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | .id" | sort -n)
           for id in $runs; do
             sent=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
               --jq '[.jobs[].steps[]? | select(.name == "Send failure email via Resend" and .conclusion == "success")] | length')
@@ -118,7 +117,7 @@ jobs:
             }')
           # The idempotency key makes a retry after a lost response deliver
           # one email, not two.
-          curl --fail-with-body -sS \
+          curl --fail-with-body -sS --max-time 20 \
             --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
             -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
