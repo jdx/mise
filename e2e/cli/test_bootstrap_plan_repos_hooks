@@ -147,3 +147,11 @@ enabled = false
 post-tools = "true"
 TOML
 assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"post-tools:1\", \"late-svc\"]'"
+
+# URL credentials never reach the plan output
+cat >mise.toml <<TOML
+[bootstrap.repos]
+"~/src/secret" = { url = "https://user:s3cret@example.invalid/private.git" }
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[0].desired | contains(\"example.invalid\") and (contains(\"s3cret\") | not)'"
+assert_not_contains "mise bootstrap plan" "s3cret"

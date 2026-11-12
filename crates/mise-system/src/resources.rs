@@ -371,9 +371,13 @@ pub async fn add_repos_and_hooks(
         .cloned()
         .collect::<Vec<_>>();
     // bootstrap defers the `post-packages` hook until plugin packages finish
-    let defer_post_packages = plan
-        .ids()
-        .any(|id| id.kind == "package" && !builtin_packages.contains(id));
+    // only for plugin managers that are enabled by `system_packages.managers`
+    let mut enabled_plugin_packages = super::packages_from_config(config)?
+        .into_iter()
+        .filter(|packages| packages.manager.is_plugin() && !packages.disabled)
+        .any(|packages| !packages.requests.is_empty());
+    enabled_plugin_packages |= !super::pending_plugin_packages_from_config(config).is_empty();
+    let defer_post_packages = enabled_plugin_packages;
     let requests = super::repos_from_config(config);
     let mut repos = vec![];
     for status in super::repos::status(&requests).await? {
@@ -518,9 +522,11 @@ fn repo_plan(status: &super::repos::RepoStatus) -> ResourcePlan {
     use super::repos::RepoState;
 
     let request = &status.request;
+    // the plan is printed, so keep URL credentials out of it
+    let url = mise_util::redactions::redact_url_userinfo_in_arg(&request.url);
     let desired = match &request.git_ref {
-        Some(git_ref) => format!("{} at {git_ref}", request.url),
-        None => request.url.clone(),
+        Some(git_ref) => format!("{url} at {git_ref}"),
+        None => url.into_owned(),
     };
     let (current, action) = match &status.state {
         RepoState::Current => ("current".to_string(), ResourceAction::Noop),
