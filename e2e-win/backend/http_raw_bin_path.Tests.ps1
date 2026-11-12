@@ -55,6 +55,16 @@ Describe 'backend_http_raw_bin_path' {
         $item.PSIsContainer | Should -BeFalse
         ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) | Should -Be 0
 
+        # Shared installs hard link to the cached file instead of holding a
+        # second copy; independent installs own their file. PowerShell reports
+        # a file with more than one hard link as `HardLink`.
+        if ($Mode -eq 'shared') {
+            $item.LinkType | Should -Be 'HardLink'
+        }
+        else {
+            $item.LinkType | Should -BeNullOrEmpty
+        }
+
         # Docker ships on the CI images. Confirm the executable resolves from
         # this installation before checking that it actually runs.
         $resolved = (mise exec $tool -- where.exe docker-compose | Select-Object -First 1)
