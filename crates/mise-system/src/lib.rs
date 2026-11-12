@@ -459,6 +459,15 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
 pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
+    let known = all_manager_names();
+    let mut canonical: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    for (mgr, requests) in by_mgr {
+        canonical
+            .entry(canonical_manager_name(mgr, &known))
+            .or_default()
+            .extend(requests);
+    }
+    let by_mgr = canonical;
     resolve_managers(
         by_mgr,
         IndexMap::new(),
@@ -859,12 +868,7 @@ fn package_requests_from_config_files(
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
     let available_managers = std::cell::LazyCell::new(available_manager_names);
-    let manager_names = std::cell::LazyCell::new(|| {
-        packages::all_managers()
-            .into_iter()
-            .map(|manager| manager.name().to_string())
-            .collect::<Vec<_>>()
-    });
+    let manager_names = std::cell::LazyCell::new(all_manager_names);
     // (manager, package) pairs an unprefixed key declared
     let mut bare_origin: std::collections::HashSet<(String, String)> =
         std::collections::HashSet::new();
@@ -2275,8 +2279,10 @@ fn packages_from_specs_with_config_files(
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    let manager_names = std::cell::LazyCell::new(all_manager_names);
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
+        let mgr = canonical_manager_name(mgr, &manager_names);
         validate_package_name(&mgr, &name)?;
         // An explicit `snap:<name>` installs from the channel the config
         // declares, the same as a full `mise bootstrap` would.
@@ -2716,6 +2722,14 @@ struct ResolveOpts {
     /// manager's entries must not block a prune, so that union is not checked
     /// for one package declared under two spellings.
     applies_together: bool,
+}
+
+/// The name of every package manager, built in or from a plugin.
+fn all_manager_names() -> Vec<String> {
+    packages::all_managers()
+        .into_iter()
+        .map(|manager| manager.name().to_string())
+        .collect()
 }
 
 /// `mgr` as the installed manager spells it: a plugin installed as `foo-bar` answers to `foo_bar`

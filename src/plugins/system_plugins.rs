@@ -47,11 +47,20 @@ fn find_in<'a>(plugins: &'a [SystemPlugin], name: &str) -> Option<&'a SystemPlug
     plugins.iter().find(|plugin| identity(&plugin.name) == id)
 }
 
-/// The user's own plugin that `name` refers to, if one is installed.
+/// The user's own plugin that `name` refers to, if one is installed, under any spelling of it.
 fn user_plugin(user_dir: &Path, name: &str) -> Option<PathBuf> {
-    [user_dir.join(identity(name)), user_dir.join(name)]
+    let exact = [user_dir.join(identity(name)), user_dir.join(name)]
         .into_iter()
-        .find(|path| path.exists())
+        .find(|path| path.exists());
+    exact.or_else(|| {
+        let id = identity(name);
+        crate::file::dir_subdirs(user_dir)
+            .ok()?
+            .into_iter()
+            .filter(|dir| !dir.starts_with('.'))
+            .find(|dir| identity(dir) == id)
+            .map(|dir| user_dir.join(dir))
+    })
 }
 
 /// Where the plugin named `name` lives: the user's plugins directory when it holds one, then a
@@ -426,6 +435,12 @@ mod tests {
 
         // a user plugin under the kebab-case name overrides the snake_case system plugin
         package_plugin(&user, "foo-bar");
-        assert!(scan(&[vendor, admin], &user).is_empty());
+        assert!(scan(&[vendor.clone(), admin.clone()], &user).is_empty());
+
+        // and one linked under the snake_case name overrides the kebab-case system plugin
+        std::fs::remove_dir_all(&user).unwrap();
+        let mine = package_plugin(&user, "foo_bar");
+        assert!(scan(&[admin, vendor], &user).is_empty());
+        assert_eq!(user_plugin(&user, "foo-bar"), Some(mine));
     }
 }
