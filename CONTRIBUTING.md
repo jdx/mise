@@ -1,8 +1,10 @@
 # Contributing
 
-Read the [contributing guide](https://mise.jdx.dev/contributing.html) before you
-open a pull request. For documentation changes, also read
-[Working on the mise docs](docs/README.md).
+mise is not accepting pull requests from external contributors, and GitHub does
+not let them be created. Open an [Issue](https://github.com/jdx/mise/issues) or a
+[Discussion](https://github.com/jdx/mise/discussions) instead. See the
+[contributing guide](https://mise.jdx.dev/contributing.html). For documentation
+work, also read [Working on the mise docs](docs/README.md).
 
 ## mbx build cache
 

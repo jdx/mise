@@ -74,7 +74,7 @@ fn starts_with_shebang(path: &Path) -> bool {
 /// Artifacts don't carry file modes (`oras` and `podman artifact` store bare
 /// bytes), so treat any non-TOML file that starts with a shebang as an
 /// executable task script.
-fn prepare_unpacked_artifact(root: &Path) -> Result<()> {
+pub(super) fn prepare_unpacked_artifact(root: &Path) -> Result<()> {
     for entry in WalkDir::new(root).follow_links(false) {
         let entry = entry?;
         let path = entry.path();

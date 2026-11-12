@@ -52,6 +52,15 @@ mise run build arg1 arg2 ::: test arg3 arg4
 
 The tasks run in parallel unless one depends on another.
 
+To pick the tasks from a menu instead of typing them, use `--multi`. It opens
+the task selector as a checklist: Space checks a task, `/` filters, and Enter
+runs the checked tasks as if they were named with `:::`. It needs an interactive
+terminal.
+
+```sh
+mise run --multi
+```
+
 ## Select tasks by name
 
 Name related tasks with `:`-separated groups, such as `test:unit` and
@@ -478,6 +487,16 @@ scripts:
 
 ```sh
 mise tasks history --summary --json | jq -r '.[] | "\(.task) \(.median_ms)"'
+```
+
+The same summary is in the `history` field of
+[`mise tasks info <task> --json`](/cli/tasks/info.html) and of each task in
+[`mise tasks ls --json`](/cli/tasks/ls.html), so a tool that already reads a
+task's definition learns how long it takes without a second command. It is
+`null` for a task that has not run:
+
+```sh
+mise tasks info test --json | jq '.history | {median_ms, last_status}'
 ```
 
 A duration is the wall time from when the task was ready to start until it

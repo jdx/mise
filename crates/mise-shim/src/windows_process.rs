@@ -70,6 +70,10 @@ unsafe extern "system" {
         startup_info: *const StartupInfoW,
         process_information: *mut ProcessInformation,
     ) -> i32;
+    #[link_name = "GetStdHandle"]
+    fn get_std_handle(std_handle: u32) -> Handle;
+    #[link_name = "SetHandleInformation"]
+    fn set_handle_information(object: Handle, mask: u32, flags: u32) -> i32;
     #[link_name = "GetExitCodeProcess"]
     fn get_exit_code_process(process: Handle, exit_code: *mut u32) -> i32;
     #[link_name = "GetStartupInfoW"]
@@ -95,6 +99,22 @@ const CSTR_EQUAL: i32 = 2;
 const CSTR_GREATER_THAN: i32 = 3;
 const CRT_FOPEN: u8 = 0x01;
 const CRT_FPIPE: u8 = 0x08;
+
+/// Stop this process's own standard handles from being inherited by the child it starts next, so
+/// the tool does not receive the caller's pipe a second time and pass it to a process it detaches
+/// (#15582). `Command` duplicates the standard streams for the child, so the child keeps them.
+pub(super) fn disinherit_std_handles() {
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+    // STD_INPUT_HANDLE, STD_OUTPUT_HANDLE and STD_ERROR_HANDLE: -10, -11, -12 as a DWORD.
+    for id in [-10_i32, -11, -12] {
+        unsafe {
+            let handle = get_std_handle(id as u32);
+            if !handle.is_null() && handle as isize != -1 {
+                set_handle_information(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
+}
 
 struct InheritedNodeIpc {
     fd: i32,

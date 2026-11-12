@@ -322,7 +322,7 @@ impl ToolRequest {
         }
     }
 
-    pub(crate) fn tool_config_locked(&self, config: &Config, use_locked_version: bool) -> bool {
+    pub fn tool_config_locked(&self, config: &Config, use_locked_version: bool) -> bool {
         // A lockfile bypass must not inherit an additional owner's policy.
         // Invocation-wide locked policy still uses the original source separately.
         let source = if use_locked_version {
@@ -459,7 +459,7 @@ impl ToolRequest {
     /// This request without the registry's defaults, for a lock entry bound to
     /// another backend than the one the registry chose: those defaults belong
     /// to the registry's backend, which may read them as its own settings.
-    pub(crate) fn without_registry_options(&self) -> Self {
+    pub fn without_registry_options(&self) -> Self {
         let mut request = self.clone();
         let mut options = ResolvedToolOptions::default();
         self.resolved_options()

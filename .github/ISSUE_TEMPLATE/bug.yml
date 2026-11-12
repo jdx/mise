@@ -1,0 +1,29 @@
+name: Bug report
+description: "A problem you ran into while using mise."
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What were you trying to do when you hit this?
+      description: "Bug reports are only for problems you ran into while using mise. Reports found by reading the source or by having an agent search the code will be closed."
+    validations:
+      required: true
+  - type: textarea
+    id: ran
+    attributes:
+      label: What you ran
+      description: "The commands, plus the relevant config."
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The output you got, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`mise --version`"

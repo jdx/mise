@@ -1,5 +1,4 @@
 use crate::semver::{chunkify_version, semver_precedence_cmp, split_version_prefix};
-use crate::toolset;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, backend::ABackend, config::Config};
 use serde::Serialize;
@@ -114,7 +113,14 @@ impl OutdatedInfo {
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+        //
+        // A `prefix:` request is split on the version the user wrote, not on its
+        // `prefix:`-marked display form, which would be split again at the first dot.
+        let request_text = match &tv.request {
+            ToolRequest::Prefix { prefix, .. } => prefix.clone(),
+            request => request.version(),
+        };
+        let (prefix, prefix_version) = split_version_prefix(&request_text);
         let use_backend_latest =
             bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
 
@@ -122,7 +128,13 @@ impl OutdatedInfo {
         // the backend's stable-latest shortcut (see `resolved_release_url`).
         let latest_query;
         let latest_result = if use_backend_latest {
-            let prefix = prefixed_latest_query(&prefix, &prefix_version);
+            // A `prefix:` request names the versions it follows, so the bump looks past
+            // them (to the next major, say) instead of narrowing the query to them.
+            let prefix = if matches!(tv.request, ToolRequest::Prefix { .. }) {
+                None
+            } else {
+                prefixed_latest_query(&prefix, &prefix_version)
+            };
             latest_query = prefix.clone().unwrap_or_else(|| "latest".to_string());
             // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
             t.latest_version(config, prefix, opts.before_date).await
@@ -149,10 +161,11 @@ impl OutdatedInfo {
             oi.tool_request = ToolRequest::new_with_options(backend, &oi.latest, options, source)?;
             oi.tool_request.set_lockfile_scope(lockfile_scope);
         }
+        let unordered = t.versions_are_unordered(&oi.tool_version.request.version());
         if oi
             .current
             .as_ref()
-            .is_some_and(|c| !toolset::is_outdated_version(c, &oi.latest))
+            .is_some_and(|c| is_up_to_date(unordered, c, &oi.latest))
         {
             // Check if this is a rolling version (like "nightly") with a new checksum
             let rolling_outdated = t
@@ -184,13 +197,13 @@ impl OutdatedInfo {
                 .await;
         }
         if bump {
-            let old = oi.tool_version.request.version();
-            let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
+            let old = request_text.as_str();
+            let old = old.strip_prefix(&prefix).unwrap_or(old);
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
             let bumped_version =
                 bumped_request_version(old, new, || oi.tool_version.request_pinned_this_version());
             if let Some(bumped_version) = bumped_version
-                && bumped_version != oi.tool_version.request.version()
+                && bumped_version != request_text
             {
                 oi.bump = match oi.tool_request.clone() {
                     ToolRequest::Version {
@@ -513,6 +526,16 @@ fn numeric_components(v: &str) -> Option<Vec<u64>> {
     v.split('.').map(|c| c.parse().ok()).collect()
 }
 
+/// Whether `current` needs no update to reach `latest`. Versions with no order
+/// (see `Backend::versions_are_unordered`) are up to date only when equal.
+fn is_up_to_date(unordered: bool, current: &str, latest: &str) -> bool {
+    if unordered {
+        current == latest
+    } else {
+        !is_outdated_version(current, latest)
+    }
+}
+
 /// Checks whether the current version is older than a backend-selected candidate.
 /// Uses SemVer precedence when possible, then the general version comparison;
 /// versions that cannot be ordered are considered outdated when they differ.
@@ -537,7 +560,7 @@ mod tests {
 
     use super::{
         OutdatedInfo, bumped_request_version, check_semver_bump, cli_config_bump,
-        is_outdated_version, prefixed_latest_query, request_names_a_version,
+        is_outdated_version, is_up_to_date, prefixed_latest_query, request_names_a_version,
     };
     use crate::args::{BackendArg, BackendResolution};
     use crate::config::Config;
@@ -568,6 +591,19 @@ mod tests {
 
     /// Guards against offering a downgrade when installed versions and backend
     /// candidates use different prefixes, while retaining non-SemVer comparisons.
+    #[test]
+    fn test_is_up_to_date_compares_unordered_versions_for_equality() {
+        // digests sort as versions, so ordering alone misses a change that
+        // lands below the installed one
+        assert!(is_up_to_date(false, "9999999999999999", "1234567890123456"));
+        assert!(!is_up_to_date(true, "9999999999999999", "1234567890123456"));
+        assert!(!is_up_to_date(true, "ffffffffffffffff", "547cf8fe234025d6"));
+        assert!(is_up_to_date(true, "547cf8fe234025d6", "547cf8fe234025d6"));
+        // ordered versions keep their ordering
+        assert!(is_up_to_date(false, "1.2.3", "1.2.3"));
+        assert!(!is_up_to_date(false, "1.2.3", "1.2.4"));
+    }
+
     #[test]
     fn test_is_outdated_version() {
         assert_eq!(is_outdated_version("2026.08.19", "2026.10.21"), true);

@@ -417,6 +417,23 @@ runs them by name, so a shim for one affects everything. Install them with your
 system package manager, which [`mise bootstrap`](/bootstrap.html) can manage.
 :::
 
+## Run an installed version when none is configured {#fallback-to-installed}
+
+A shim run in a directory where no config file selects its tool fails with
+`No version is set for shim`, and names the `mise use -g` and `mise x` commands
+that fix it, using an installed version. Set
+[`shims.fallback_to_installed`](/configuration/settings.html#shims.fallback_to_installed)
+to run the latest installed version instead:
+
+```sh
+mise settings shims.fallback_to_installed=true
+```
+
+It is off by default because the version it runs is one nobody chose. It never
+replaces a tool a config file does select: a pinned version that is missing
+still fails, as does a command named like a configured tool. It applies to Unix
+shims; Windows `.exe` shims still fail with the one-line error.
+
 ## Keep shims out of mise activate {#activate-shims}
 
 PATH activation puts real tool directories first. While
@@ -545,6 +562,10 @@ everything it starts, so `mbx` finds the real Cargo: mise-managed Rust when
 configured, otherwise rustup or the system installation. For mise-managed Rust,
 the [Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this
 up with the `mr_boxington` tool option and the `mr-boxington` tool.
+
+The `cargo`, `npm` and `pipx` backends run their install commands without command
+wrappers on `PATH`, so a `cargo` wrapper does not take over the `cargo install` that
+a `cargo:` tool runs.
 
 Other wrappers still apply. If `pnpm` and `node` are both wrapped, a script that
 `pnpm` runs gets the `node` wrapper, with its `args` and `env`, while `pnpm`'s own

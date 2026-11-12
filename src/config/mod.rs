@@ -32,7 +32,8 @@ use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::{
-    OCI_INCLUDE_PREFIX, TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
+    OCI_INCLUDE_PREFIX, TaskFileArtifact, TaskFileProvidersBuilder, ZIP_INCLUDE_PREFIX,
+    validate_remote_git_path,
 };
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
@@ -5927,6 +5928,12 @@ async fn load_local_tasks_with_context(
                     let configs = configs_at_root(&subdir, &hierarchy_configs);
                     let cascaded_task_config =
                         cascaded_task_config_for_dir(&subdir, &hierarchy_configs)?;
+                    let templates = with_project_templates(
+                        &templates,
+                        &subdir,
+                        &hierarchy_configs,
+                        &config.config_files,
+                    );
 
                     if found_config {
                         if configs.is_empty() {
@@ -5975,6 +5982,43 @@ async fn load_local_tasks_with_context(
     }
 
     Ok(tasks)
+}
+
+/// Layer the templates a monorepo project's own config files define over `base`.
+///
+/// `base` holds the templates of the configs loaded for the current directory, which may
+/// not include a sibling project's. Without this, a task in `/foo` that extends a template
+/// defined in `/foo/mise.toml` fails to resolve when mise runs from `/bar`.
+fn with_project_templates(
+    base: &TaskDefinitions,
+    project_dir: &Path,
+    project_configs: &ConfigMap,
+    loaded_configs: &ConfigMap,
+) -> TaskDefinitions {
+    // Highest precedence first, as `collect_task_definitions` expects: the project's own
+    // directory, then each ancestor up to the monorepo root.
+    let mut ordered = ConfigMap::new();
+    for dir in project_dir.ancestors() {
+        for cf in configs_at_root(dir, project_configs) {
+            ordered
+                .entry(cf.get_path().to_path_buf())
+                .or_insert_with(|| cf.clone());
+        }
+    }
+    let mut definitions = base.clone();
+    definitions
+        .templates
+        .extend(collect_task_definitions(&ordered, None).templates);
+    // Global override files outrank all project config, so they keep the final say.
+    let overrides = loaded_configs
+        .iter()
+        .filter(|(path, _)| is_override_config(path))
+        .map(|(path, cf)| (path.clone(), cf.clone()))
+        .collect::<ConfigMap>();
+    definitions
+        .templates
+        .extend(collect_task_definitions(&overrides, None).templates);
+    definitions
 }
 
 /// Expand [monorepo].config_roots patterns to actual directories.
@@ -7172,7 +7216,9 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
 
 /// Includes that are fetched from a remote source instead of read from disk.
 fn is_remote_task_include(include: &str) -> bool {
-    include.starts_with("git::") || include.starts_with(OCI_INCLUDE_PREFIX)
+    include.starts_with("git::")
+        || include.starts_with(OCI_INCLUDE_PREFIX)
+        || include.starts_with(ZIP_INCLUDE_PREFIX)
 }
 
 async fn resolve_oci_url_to_path(oci_url: &str) -> Result<TaskFileArtifact> {
@@ -7555,11 +7601,24 @@ fn cascaded_task_config_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Result<Option<CascadedTaskConfig>> {
+    // This runs once per directory and checks every config file's root, so with many
+    // configs (e.g. `mise prune`/`upgrade` scanning every tracked project) it is
+    // quadratic in `realpath` calls unless the resolutions are cached.
+    let dir_resolved = file::desymlink_path_cached(dir);
     let mut roots = config_files
         .values()
-        .filter(|cf| !is_global_config(cf.get_path()))
-        .map(|cf| cf.config_root())
-        .filter(|root| !file::same_file(root, dir) && file::path_starts_with_resolved(dir, root))
+        .map(|cf| (cf, cf.config_root()))
+        .filter(|(_, root)| {
+            if root == dir {
+                return false;
+            }
+            let root_resolved = file::desymlink_path_cached(root);
+            root_resolved != dir_resolved
+                && (dir.starts_with(root) || dir_resolved.starts_with(&root_resolved))
+        })
+        // Last, because it is the costliest check and few roots get this far.
+        .filter(|(cf, _)| !is_global_config(cf.get_path()))
+        .map(|(_, root)| root)
         .unique()
         .collect::<Vec<_>>();
     roots.sort_by_key(|root| root.components().count());
@@ -7971,6 +8030,8 @@ async fn load_task_sources_from_configs(
             Some("a `git::` source")
         } else if include.starts_with(OCI_INCLUDE_PREFIX) {
             Some("an `oci::` source")
+        } else if include.starts_with(ZIP_INCLUDE_PREFIX) {
+            Some("a `zip::` source")
         } else {
             None
         };
@@ -7984,7 +8045,8 @@ async fn load_task_sources_from_configs(
         }
         let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
-        } else if include.starts_with(OCI_INCLUDE_PREFIX) {
+        } else if include.starts_with(OCI_INCLUDE_PREFIX) || include.starts_with(ZIP_INCLUDE_PREFIX)
+        {
             vec![resolve_oci_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)
@@ -8349,24 +8411,14 @@ mod write_target_tests {
     }
 }
 
-/// The tools that the tasks of one config file scope to themselves: concrete requests, plus the
-/// tools whose version is a template. A template can only be rendered in the context of the
-/// project, which a prune run from elsewhere does not have.
-///
-/// The tasks are the config's inline ones and those its project's task includes add (see
-/// [`included_task_definitions`]). Each task is resolved the way `mise run` resolves it, with
-/// `extends` templates merged in. A tool that fails to parse is skipped without hiding the
-/// others.
-pub(crate) fn task_tool_requests(
-    config: &Arc<Config>,
-    tracked: &ConfigMap,
-    cf: &Arc<dyn ConfigFile>,
-    workspace_graphs: &mut WorkspaceGraphCache,
-) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
-    // Templates come from this project: the tracked configs under the same roots and the
-    // directories above it, plus the global configs, never from the directory prune happens to
-    // run in. A nearer root wins. Configs that share a root have a precedence that only a full
-    // load knows, so every one of them counts and the versions of all candidates are kept.
+/// The configs a project's templates and aliases come from, nearest root last: the global
+/// configs as one layer, then the tracked configs under the same roots and the directories above
+/// `cf`, never those of the directory prune happens to run in.
+fn project_config_layers<'a>(
+    config: &'a Arc<Config>,
+    tracked: &'a ConfigMap,
+    cf: &'a Arc<dyn ConfigFile>,
+) -> BTreeMap<(bool, usize), Vec<&'a Arc<dyn ConfigFile>>> {
     let dir = config_file::config_root::config_root(cf.get_path());
     let globals = config
         .config_files
@@ -8397,6 +8449,71 @@ pub(crate) fn task_tool_requests(
         };
         layers.entry(key).or_default().push(other);
     }
+    layers
+}
+
+/// The backends each `[tool_alias]` of a project stands for, by alias name.
+fn project_tool_aliases(
+    config: &Arc<Config>,
+    layers: &BTreeMap<(bool, usize), Vec<&Arc<dyn ConfigFile>>>,
+) -> HashMap<String, Vec<String>> {
+    // A task tool can name a `[tool_alias]` of its project, which the config of the directory
+    // prune runs from does not have. The aliases come from the same layers as the templates,
+    // the project's own config last, and only the backend an alias stands for matters here.
+    // Configs that share a root have a precedence only a full load knows, so every backend one
+    // of them gives an alias counts, and a nearer layer replaces the candidates of a farther one.
+    // In safe mode a project cannot alias a tool that global config declares, as in
+    // `load_aliases`.
+    let global_tools: BTreeSet<String> = if Settings::safe_mode() {
+        config
+            .config_files
+            .values()
+            .filter(|other| is_global_config(other.get_path()))
+            .flat_map(|other| other.tool_backends())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    let mut tool_aliases: HashMap<String, Vec<String>> = HashMap::new();
+    for layer in layers.values() {
+        let mut named: HashMap<String, Vec<String>> = HashMap::new();
+        for other in layer {
+            let project = !global_tools.is_empty() && !is_global_config(other.get_path());
+            for (name, backend) in other.backend_aliases() {
+                if project && global_tools.contains(&name) {
+                    continue;
+                }
+                let candidates = named.entry(name).or_default();
+                if !candidates.contains(&backend) {
+                    candidates.push(backend);
+                }
+            }
+        }
+        tool_aliases.extend(named);
+    }
+    tool_aliases
+}
+
+/// The tools that the tasks of one config file scope to themselves: concrete requests, plus the
+/// tools whose version is a template. A template can only be rendered in the context of the
+/// project, which a prune run from elsewhere does not have.
+///
+/// The tasks are the config's inline ones and those its project's task includes add (see
+/// [`included_task_definitions`]). Each task is resolved the way `mise run` resolves it, with
+/// `extends` templates merged in. A tool that fails to parse is skipped without hiding the
+/// others.
+pub(crate) fn task_tool_requests(
+    config: &Arc<Config>,
+    tracked: &ConfigMap,
+    cf: &Arc<dyn ConfigFile>,
+    workspace_graphs: &mut WorkspaceGraphCache,
+) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
+    // Templates come from this project: the tracked configs under the same roots and the
+    // directories above it, plus the global configs, never from the directory prune happens to
+    // run in. A nearer root wins. Configs that share a root have a precedence that only a full
+    // load knows, so every one of them counts and the versions of all candidates are kept.
+    let dir = config_file::config_root::config_root(cf.get_path());
+    let layers = project_config_layers(config, tracked, cf);
     let tasks = cf
         .tasks()
         .into_iter()
@@ -8421,6 +8538,7 @@ pub(crate) fn task_tool_requests(
     };
     let mut requests = vec![];
     let mut templated = vec![];
+    let tool_aliases = project_tool_aliases(config, &layers);
     for (mut task, source) in tasks {
         if task.config_root.is_none() {
             task.config_root = Some(dir.clone());
@@ -8467,8 +8585,31 @@ pub(crate) fn task_tool_requests(
                     templated.push(tool.clone());
                     continue;
                 }
-                match value.to_tool_arg(tool) {
-                    Ok(arg) => requests.extend(arg.tvr),
+                let request = value.to_tool_arg(tool).and_then(|arg| {
+                    // The request keeps the name the task uses, which names its install
+                    // directory, and takes the backend and options of the alias.
+                    match tool_aliases.get(tool) {
+                        Some(candidates) => candidates
+                            .iter()
+                            .map(|full| {
+                                let version = arg
+                                    .tvr
+                                    .as_ref()
+                                    .map_or_else(String::new, |tvr| tvr.version());
+                                aliased_tool_request(
+                                    tool,
+                                    full,
+                                    arg.ba.explicit_opts(),
+                                    &version,
+                                    ToolSource::Argument,
+                                )
+                            })
+                            .collect::<Result<Vec<_>>>(),
+                        None => Ok(arg.tvr.into_iter().collect()),
+                    }
+                });
+                match request {
+                    Ok(tvrs) => requests.extend(tvrs),
                     Err(err) => warn!(
                         "error loading tool {tool} of task {} in {}: {err:#}",
                         task.name,
@@ -8479,6 +8620,109 @@ pub(crate) fn task_tool_requests(
         }
     }
     (requests, templated)
+}
+
+/// The request for the tool `tool` at `version`, routed to the `full` backend that a
+/// `[tool_alias]` gives it. The `written` options, those on the task or in `[tools]`, win over
+/// those of the alias.
+fn aliased_tool_request(
+    tool: &str,
+    full: &str,
+    written: Option<&crate::toolset::ToolVersionOptions>,
+    version: &str,
+    source: ToolSource,
+) -> Result<crate::toolset::ToolRequest> {
+    // A bare registry name (`llama.cpp`) stands for the backend the registry gives it.
+    // It is looked up in the registry itself: `BackendArg::full` would first consult the aliases
+    // of the directory prune runs from.
+    let (name, inline) = split_bracketed_opts(full).map_or((full, None), |(n, o)| (n, Some(o)));
+    let name = backend::unalias_backend(name);
+    let target = if name.contains(':') {
+        None
+    } else {
+        crate::registry::REGISTRY.get(name.as_ref()).and_then(|rt| {
+            // The backend the registry serves this version with, as for any other request.
+            let for_version = (!version.is_empty())
+                .then(|| rt.backends_for_version(Some(version)))
+                .and_then(|backends| backends.first().cloned());
+            for_version.or_else(|| rt.backends_for_version(None).first().cloned())
+        })
+    };
+    let mut backend = BackendArg::new(
+        tool.to_string(),
+        Some(target.map_or_else(|| name.to_string(), |t| t.to_string())),
+    );
+    let mut options = backend.explicit_opts().cloned().unwrap_or_default();
+    if let Some(inline) = inline {
+        options.apply_overrides(&crate::toolset::parse_tool_options(inline));
+    }
+    if let Some(written) = written {
+        options.apply_overrides(written);
+    }
+    if !options.is_empty() {
+        backend.set_opts(Some(options));
+    }
+    crate::toolset::ToolRequest::new(Arc::new(backend), version, source)
+}
+
+/// `requests`, the `[tools]` of the tracked config `cf`, with each tool its project names through
+/// a `[tool_alias]` routed to the backend the alias stands for. The config of the directory prune
+/// runs from does not have the project's aliases, so it could not resolve them. A request keeps
+/// the name the project uses, which names its install directory. One that fails to route is
+/// kept as it is.
+pub(crate) fn route_project_tool_aliases(
+    config: &Arc<Config>,
+    tracked: &ConfigMap,
+    cf: &Arc<dyn ConfigFile>,
+    requests: crate::toolset::ToolRequestSet,
+) -> crate::toolset::ToolRequestSet {
+    let layers = project_config_layers(config, tracked, cf);
+    let tool_aliases = project_tool_aliases(config, &layers);
+    if tool_aliases.is_empty() {
+        return requests;
+    }
+    let mut routed = crate::toolset::ToolRequestSet::new();
+    for (ba, list) in &requests.tools {
+        let source = requests
+            .sources
+            .get(ba)
+            .cloned()
+            .unwrap_or_else(|| cf.source());
+        for tvr in list {
+            let aliased = tool_aliases.get(&ba.short).map(|candidates| {
+                candidates
+                    .iter()
+                    .map(|full| {
+                        aliased_tool_request(
+                            &ba.short,
+                            full,
+                            tvr.ba().explicit_opts(),
+                            &tvr.version(),
+                            tvr.source().clone(),
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()
+            });
+            match aliased {
+                Some(Ok(tvrs)) => {
+                    for tvr in tvrs {
+                        routed.add_version(tvr, &source);
+                    }
+                }
+                Some(Err(err)) => {
+                    warn!(
+                        "error routing alias {} of {}: {err:#}",
+                        ba.short,
+                        display_path(cf.get_path())
+                    );
+                    routed.add_version(tvr.clone(), &source);
+                }
+                None => routed.add_version(tvr.clone(), &source),
+            }
+        }
+    }
+    routed.unknown_tools = requests.unknown_tools;
+    routed
 }
 
 /// Workspace project graphs by monorepo root, discovered once per prune run and shared by the

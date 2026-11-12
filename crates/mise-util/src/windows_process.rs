@@ -12,7 +12,12 @@ use std::process::ExitStatus;
 use std::ptr;
 use std::slice;
 
-use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation, WAIT_OBJECT_0,
+};
+use windows_sys::Win32::System::Console::{
+    GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+};
 use windows_sys::Win32::System::Threading::{
     CreateProcessW, GetExitCodeProcess, GetStartupInfoW, INFINITE, PROCESS_INFORMATION,
     STARTUPINFOW, WaitForSingleObject,
@@ -21,6 +26,30 @@ use windows_sys::Win32::System::Threading::{
 unsafe extern "C" {
     #[link_name = "_close"]
     fn crt_close(fd: i32) -> i32;
+}
+
+/// Stop this process's own standard handles from being inherited by the children it starts next.
+///
+/// `std::process::Command` always passes `bInheritHandles = TRUE`, and the standard handles of a
+/// process that was started with redirected output are inheritable. A child therefore receives
+/// the real pipe twice: once in its standard slot (a duplicate `Command` makes) and once as the
+/// stray original. The child knows its slot and can keep it to itself, but nothing tells it about
+/// the stray, so a process the child starts detached with `stdio: 'ignore'` inherits it and holds
+/// the caller's pipe open until it exits (#15582). `Command` still hands the child its standard
+/// streams after this, since it duplicates them for the child instead of reusing these handles.
+/// Call this just before launching the command mise exists to run, never before a launch that
+/// forwards the parent's handles itself.
+pub fn disinherit_std_handles() {
+    for id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: `GetStdHandle` has no preconditions, and clearing the flag on a handle we may
+        // not own at worst fails, which is ignored.
+        unsafe {
+            let handle = GetStdHandle(id);
+            if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
 }
 
 const CRT_FOPEN: u8 = 0x01;

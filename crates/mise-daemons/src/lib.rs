@@ -921,7 +921,7 @@ fn build(
         None => None,
     };
     let mut data_dir = None;
-    let mut container_ports = IndexMap::new();
+    let container_ports;
     if let Some(container) = container {
         let namespace = runtime::resolve_namespace(&root, Some(settings))?;
         let env = table
@@ -954,6 +954,16 @@ fn build(
             .or_insert_with(container::stop_signal);
         data_dir = built.data_dir;
         container_ports = built.ports;
+    } else {
+        // A `run` or `task` daemon declares extra ports by name, like a container.
+        container_ports = take_named_ports(name, &mut table, &root, claim)?;
+        // pitchfork's own `port` table is forwarded untouched; the expected
+        // ports below would replace it, dropping its other listeners and options.
+        if !container_ports.is_empty() && claim.is_none() && table.contains_key("port") {
+            bail!(
+                "[daemons.{name}].ports cannot be combined with pitchfork's structured port; use an integer or {{ auto = true, base = <port> }} for port"
+            );
+        }
     }
     // Every published port is reserved, so a taken one fails the start by name.
     let expect: Vec<u16> = claim
@@ -1049,6 +1059,105 @@ fn build(
         named_ports: container_ports,
         host,
     })
+}
+
+/// The ports a linked worktree's slot moves onto the number the primary
+/// checkout uses for another of the daemon's ports, as (port, resolved number,
+/// the other port). The slots come from the path, so this is a property of one
+/// worktree: its app would bind the primary checkout's database port, and
+/// starting both fails. It is only a warning, since the project still loads and
+/// one worktree can override the daemon, but it is known before anything starts.
+fn primary_collisions(
+    slot: u16,
+    primary: Option<PortClaim>,
+    named: &IndexMap<String, PortClaim>,
+) -> Vec<(String, u16, String)> {
+    if slot == 0 {
+        return Vec::new();
+    }
+    let ports: Vec<(String, PortClaim)> = primary
+        .map(|claim| ("port".to_string(), claim))
+        .into_iter()
+        .chain(
+            named
+                .iter()
+                .map(|(key, claim)| (format!("ports.{key}"), *claim)),
+        )
+        .filter(|(_, claim)| claim.is_auto())
+        .collect();
+    let mut found = Vec::new();
+    for (what, claim) in &ports {
+        if let Some((other, _)) = ports
+            .iter()
+            .find(|(other, other_claim)| other != what && other_claim.base == claim.port)
+        {
+            found.push((what.clone(), claim.port, other.clone()));
+        }
+    }
+    found
+}
+
+/// The named `ports` of a `run` or `task` daemon. Unlike a preset there is no
+/// default to fall back on, so an allocated port needs its own `base`. It moves
+/// with the same slot as the primary port, so a worktree's ports never collide
+/// with the primary checkout's.
+fn take_named_ports(
+    name: &str,
+    table: &mut toml::Table,
+    root: &Path,
+    claim: Option<PortClaim>,
+) -> Result<IndexMap<String, PortClaim>> {
+    let mut named: IndexMap<String, PortClaim> = IndexMap::new();
+    let Some(value) = table.remove("ports") else {
+        return Ok(named);
+    };
+    let Some(declared) = value.as_table() else {
+        bail!("[daemons.{name}].ports must be a table");
+    };
+    let slot = match claim {
+        Some(claim) if claim.is_auto() => (claim.port - claim.base) / claim.stride,
+        _ => ports::slot(root),
+    };
+    let mut seen: Vec<(&str, u16)> = claim.iter().map(|c| ("port", c.port)).collect();
+    for (key, value) in declared {
+        container::validate_port_name(name, key)?;
+        // `http` and `http_port` are exported as the same variable.
+        let var = presets::named_port_var("DAEMON", key);
+        if let Some(other) = named
+            .keys()
+            .find(|other| presets::named_port_var("DAEMON", other) == var)
+        {
+            bail!(
+                "[daemons.{name}].ports.{key} and ports.{other} are exported as the same variable; rename one of them"
+            );
+        }
+        let resolved = match ports::parse_named(name, key, value)? {
+            ports::NamedPortRequest::Fixed(port) => PortClaim::fixed(port),
+            ports::NamedPortRequest::Auto { base, stride } => {
+                let base = base.ok_or_else(|| {
+                    eyre::eyre!(
+                        "[daemons.{name}].ports.{key} needs base, the port the primary checkout uses"
+                    )
+                })?;
+                ports::resolve_named(name, key, slot, Some(base), stride, base)?
+            }
+        };
+        if let Some((other, _)) = seen.iter().find(|(_, port)| *port == resolved.port) {
+            bail!(
+                "[daemons.{name}].ports.{key} and {other} both resolve to port {}; give them different ports",
+                resolved.port
+            );
+        }
+        seen.push((key, resolved.port));
+        named.insert(key.clone(), resolved);
+    }
+    for (what, port, other) in primary_collisions(slot, claim, &named) {
+        warn_once!(
+            "[daemons.{name}].{what} resolves to {port} in this worktree, the port the primary checkout uses for {other}; both cannot run at once. \
+             Give them bases at least 512 ports apart (more with a larger stride), or move this worktree's ports in a gitignored mise.local.toml"
+        );
+    }
+    Ok(named)
 }
 
 /// The `[daemons_settings]` that apply to a project root.
@@ -2250,6 +2359,38 @@ mod tests {
     }
 
     #[test]
+    fn a_worktree_slot_that_lands_on_the_primarys_other_port_is_found() {
+        let named = |app: u16, db: u16| {
+            IndexMap::from([
+                (
+                    "app".to_string(),
+                    PortClaim {
+                        port: app,
+                        base: 5173,
+                        stride: 1,
+                    },
+                ),
+                (
+                    "db".to_string(),
+                    PortClaim {
+                        port: db,
+                        base: 5432,
+                        stride: 1,
+                    },
+                ),
+            ])
+        };
+        // Slot 259: the app moves from 5173 to 5432, the primary's database port.
+        assert_eq!(
+            primary_collisions(259, None, &named(5432, 5691)),
+            vec![("ports.app".to_string(), 5432, "ports.db".to_string())]
+        );
+        // Another slot is clear, and so is the primary checkout itself.
+        assert!(primary_collisions(116, None, &named(5289, 5548)).is_empty());
+        assert!(primary_collisions(0, None, &named(5173, 5432)).is_empty());
+    }
+
+    #[test]
     fn container_named_ports_take_part_in_collision_checks() {
         let two = |second: &str| {
             format!(
@@ -2984,6 +3125,47 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("define the daemon in the referenced project")
+        );
+    }
+
+    #[test]
+    fn custom_daemons_export_named_ports() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mise.toml");
+        let load_body = |body: &str| load(&files(&[(path.to_str().unwrap(), body)]));
+        let set = load_body(
+            "[daemons.stack]\nrun = 'docker compose up'\nports.app = { auto = true, base = 8080 }\nports.db = 5432\n",
+        )
+        .unwrap();
+        let stack = &set.daemons["stack"];
+        assert_eq!(stack.exports["STACK_APP_PORT"], "8080");
+        assert_eq!(stack.exports["STACK_DB_PORT"], "5432");
+        assert!(!stack.table.contains_key("ports"));
+        assert_eq!(stack.table["port"]["expect"][0].as_integer(), Some(8080));
+
+        let err = |body: &str| load_body(body).unwrap_err().to_string();
+        assert!(err("[daemons.s]\nrun = 'x'\nports.app = { auto = true }").contains("needs base"));
+        assert!(
+            err("[daemons.s]\nrun = 'x'\nport = { expect = [3000] }\nports.admin = 9000")
+                .contains("structured port")
+        );
+        assert!(
+            err("[daemons.s]\nrun = 'x'\nport = 3000\nports.app = 3000")
+                .contains("both resolve to port 3000")
+        );
+        assert!(
+            err("[daemons.s]\nrun = 'x'\nports.app = 3000\nports.db = 3000")
+                .contains("both resolve to port 3000")
+        );
+        assert!(
+            err(
+                "[daemons.s]\nrun = 'x'\nports.app = { auto = true, base = 3000 }\nports.db = 3000"
+            )
+            .contains("both resolve to port 3000")
+        );
+        assert!(
+            err("[daemons.s]\nrun = 'x'\nports.app = 1\nports.app_port = 2")
+                .contains("same variable")
         );
     }
 

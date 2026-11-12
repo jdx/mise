@@ -171,7 +171,12 @@ impl Install {
             set_cli_minimum_release_age_cutoff(cutoff);
         }
         super::lock::skip_lockfile_updates_when_tasks_fail();
-        let config = Config::get().await?;
+        let mut config = Config::get().await?;
+        if self.tool.is_none() && !self.monorepo {
+            // Plugins decide which idiomatic version files map to their tool, so
+            // install them before the tool requests are built.
+            config = Toolset::install_config_plugins_and_reload(config, self.is_dry_run()).await?;
+        }
         if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }

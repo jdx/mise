@@ -902,26 +902,24 @@ impl ToolVersion {
         }
 
         // An explicit release-age cutoff in the past pins a moving channel to the release it
-        // pointed at then (it may need the network, so offline, and prefer-offline for a config entry, leave it be). The built-in default and a cutoff in the future (how
-        // `--minimum-release-age 0s` turns the cooldown off) leave the channel alone.
+        // pointed at then. Offline mode skips the network lookup but still maps a channel the
+        // backend can map without it (`rust@stable` to `latest`), so an offline resolve, such as an
+        // install dependency check, finds the dated install a cutoff made. The built-in default
+        // and a cutoff in the future (how `--minimum-release-age 0s` turns the cooldown off)
+        // leave the channel alone.
         let v = match opts.before_date {
-            Some(before)
-                if !opts.before_date_from_default
-                    && before < Timestamp::now()
-                    && !Settings::get().offline()
-                    && !opts.offline =>
-            {
-                backend
-                    .channel_for_cutoff(
-                        config,
-                        &v,
-                        before,
-                        Settings::get().prefer_offline()
-                            && !matches!(request.source(), ToolSource::Argument),
-                    )
-                    .await?
-                    .unwrap_or(v)
-            }
+            Some(before) if !opts.before_date_from_default && before < Timestamp::now() => backend
+                .channel_for_cutoff(
+                    config,
+                    &v,
+                    before,
+                    opts.offline
+                        || Settings::get().offline()
+                        || (Settings::get().prefer_offline()
+                            && !matches!(request.source(), ToolSource::Argument)),
+                )
+                .await?
+                .unwrap_or(v),
             _ => v,
         };
 
@@ -1031,6 +1029,16 @@ impl ToolVersion {
                 {
                     return build(v);
                 }
+            }
+            // A backend with no release list to resolve `latest` from (a
+            // github git source with no releases) installs under the literal
+            // `latest` directory, which the installed-version lookup skips.
+            // Offline, that install is the answer.
+            if is_offline
+                && let Some(unresolved) = backend.unresolved_latest_version()
+                && backend.list_installed_versions().contains(&unresolved)
+            {
+                return Ok(Self::from_installed(request, unresolved));
             }
             // Prune-style offline (opts.offline) wants a non-erroring no-op
             // when nothing is installed — the literal "latest" can't match

@@ -63,6 +63,7 @@ mise dot history
 - [`mise dotfiles diff [--prompt-secrets] [TARGET]…`](/cli/dotfiles/diff.html)
 - [`mise dotfiles edit [FLAGS] <TARGET>`](/cli/dotfiles/edit.html)
 - [`mise dotfiles exclude <GLOB>`](/cli/dotfiles/exclude.html)
+- [`mise dotfiles files [FLAGS] [PATH]`](/cli/dotfiles/files.html)
 - [`mise dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/dotfiles/history.html)
 - [`mise dotfiles include <GLOB>`](/cli/dotfiles/include.html)
 - [`mise dotfiles notify`](/cli/dotfiles/notify.html)

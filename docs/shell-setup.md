@@ -107,6 +107,11 @@ Restart Nushell after saving both files. If `mise` is not on `PATH`, use its
 absolute path in `env.nu`. `env.nu` regenerates the module at every startup, so
 it follows mise upgrades.
 
+The `mise` command this module defines completes subcommands and arguments by
+itself, so activation alone gives you tab completion. Before Nushell 0.116, a
+wrapped command offers no flags; `^mise --<Tab>` completes them through the
+[completion script](#autocompletion).
+
 ## Xonsh {#xonsh}
 
 Add this to `~/.xonshrc`, or to the Xonsh config file you use:
@@ -233,6 +238,11 @@ mise completion powershell --install
 
 Bash loads the script through the bash-completion package, which must be
 installed and enabled in your shell.
+
+fish 4.9.3 ships a built-in loader that runs `mise completion fish | source`,
+so there you can skip `mise completion fish --install`. Earlier fish versions
+may not have it, and other shells or distributions may provide their own loader.
+If completions already work for you, you do not need to install them yourself.
 
 To choose the location yourself, print the script with
 `mise completion <shell>` and save it. For zsh, for example:

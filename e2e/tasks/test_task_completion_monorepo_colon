@@ -19,6 +19,9 @@ run = 'echo updated'
 [tasks."env:clear"]
 run = 'echo cleared'
 
+[tasks."node:web#build"]
+run = 'echo ws'
+
 [tasks.precedence]
 alias = ["//apps/web:collision", "pc"]
 run = 'echo precedence'
@@ -34,6 +37,13 @@ flag "--mode <mode>" {
 }
 '''
 run = 'echo built'
+EOF
+
+mkdir -p apps/api
+cat <<'EOF' >apps/api/mise.toml
+[tasks.serve]
+alias = ["//apps/web:deploy"]
+run = 'echo serve'
 EOF
 
 assert "mise -q :env:update" "updated"
@@ -74,3 +84,26 @@ assert_not_contains_text "$web" ':env:update'
 mode="$(mise __complete_word__ --shell fish --line 'mise run :build --mode ')"
 assert_contains_text "$mode" 'dev'
 assert_contains_text "$mode" 'prod'
+
+# Bare names resolve to the current root's tasks, so they complete too
+cd ../.. || exit 1
+assert "mise -q env:update" "updated"
+bare="$(mise __complete_word__ --shell fish --line 'mise run env:')"
+assert_contains_text "$bare" 'env:update'
+assert_contains_text "$bare" 'env:clear'
+assert_contains_text "$(mise __complete_word__ --shell zsh --line 'mise run prec')" 'precedence'
+assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
+cd apps/web || exit 1
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run bui')" 'build'
+# An alias of a parent root's task qualified with this root still resolves, so it completes
+assert "mise -q collision" "precedence"
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run coll')" 'collision'
+# A task of another root is not reached through an alias qualified with this one
+assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run dep')" 'deploy'
+# A workspace identity is not expanded by the resolver, so it gets no bare spelling
+cd ../.. || exit 1
+ws="$(
+  printf '\n'
+  mise __complete_word__ --shell fish --line 'mise run node:'
+)"
+assert_not_contains_text "$ws" $'\nnode:web#build'

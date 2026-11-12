@@ -152,6 +152,11 @@ mise archives the source directory and sends it to each host, leaving out
 flags for local secrets and generated files. `--keep-staging` keeps the staging
 directory on the host for debugging and prints its path.
 
+mise refuses a source that is your home directory or `/`, and stops when the
+source holds more than 512 MiB or 100,000 files after the excludes apply, naming
+the largest entries so you can exclude them or pick a narrower `--source`. Pass
+`--yes` to send such a directory anyway.
+
 Symbolic links are sent as links. To send a link's target instead, list the
 link, relative to the source, in `copy_link` or pass `--copy-link <PATH>`. A
 directory link becomes a real directory while links inside it stay links, so

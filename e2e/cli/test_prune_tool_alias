@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# `mise prune` run from outside a project must resolve the project's own [tool_alias] for its
+# [tools], installed or not. https://github.com/jdx/mise/issues/15432
+
+mkdir -p proj other
+cat >proj/mise.toml <<'TOML'
+[tool_alias]
+aliased = "tiny"
+missing = "tiny"
+
+[tools]
+aliased = "1.1.0"
+missing = "2.0.1"
+TOML
+assert "mise trust proj/mise.toml"
+# only one of the two aliased tools is installed
+assert "mise install -C proj aliased"
+assert "test -d '$MISE_DATA_DIR/installs/aliased/1.1.0'"
+# an unreferenced version of the aliased tool is the control: prune must list it
+assert "mise install aliased@1.0.0"
+assert "mise ls -C proj"
+
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "Failed to resolve"
+assert_not_contains "mise prune --dry-run 2>&1" "aliased@1.1.0"
+assert_contains "mise prune --dry-run 2>&1" "aliased@1.0.0"
+
+# every version of an aliased tool keeps its own options, not those of the first entry
+cd .. || exit 1
+mkdir -p proj2
+cat >proj2/mise.toml <<'TOML'
+[tool_alias]
+multi = "tiny"
+
+[tools]
+multi = [
+  { version = "2.0.1", os = ["plan9"] },
+  { version = "3.1.0" },
+]
+TOML
+assert "mise trust proj2/mise.toml"
+assert "mise install -C proj2 multi@3.1.0"
+assert "mise ls -C proj2"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "multi@3.1.0"

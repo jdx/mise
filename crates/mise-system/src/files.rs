@@ -2367,6 +2367,43 @@ pub fn resolve_target_arg(target: &str) -> PathBuf {
     lexical_normalize(&file::replace_path(target))
 }
 
+/// Spell a target path given on the command line the way a declaration
+/// would: a relative path starts from the current directory, as in a shell,
+/// and one under the home directory is written `~/…`. Absolute and
+/// `~/`-rooted arguments are returned unchanged.
+///
+/// Only for arguments that name one path. A glob or exclude rule such as
+/// `sessions/**` is relative on purpose and must not go through this.
+///
+/// `..` follows the real parent of a symlinked directory, as a shell does,
+/// so `link/../file` names the file beside the link's destination; a final
+/// symlink is kept, not resolved.
+pub fn target_arg_from_cwd(target: &str) -> Result<String> {
+    if target.is_empty() || resolve_target_arg(target).is_absolute() {
+        return Ok(target.to_string());
+    }
+    let absolute = resolve_source_arg(Path::new(target))?;
+    // the current directory is the resolved one, so a symlinked home is
+    // matched by its destination too
+    let home: &Path = &dirs::HOME;
+    let resolved_home = dunce::canonicalize(home).ok();
+    let under_home = absolute.strip_prefix(home).or_else(|err| {
+        resolved_home
+            .as_deref()
+            .map_or(Err(err), |resolved| absolute.strip_prefix(resolved))
+    });
+    Ok(match under_home {
+        Ok(rest) if !rest.as_os_str().is_empty() => {
+            let rest = rest
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .join("/");
+            format!("~/{rest}")
+        }
+        _ => absolute.to_string_lossy().into_owned(),
+    })
+}
+
 /// Resolve a source path given on the command line: `~/` expands and a
 /// relative path starts from the current directory, as in a shell.
 pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
@@ -4252,6 +4289,100 @@ fn warn_if_template_target_edited(req: &FileRequest) {
     }
 }
 
+/// Record the digest of the file a single-file copy just wrote, so a later
+/// apply can tell an edit of the copy from what mise wrote. A record that
+/// cannot be written only costs the warning, so it warns.
+fn save_copy_state(req: &FileRequest) {
+    // a grouped file is recorded by its group too, which takes precedence;
+    // this record follows every apply, so it stays current if the copy later
+    // joins a group that has no record of it
+    if let Ok(digest) = mise_util::hash::file_hash_sha256(&req.target, None) {
+        update_target_state(req, |state| state.content_digest = Some(digest));
+    }
+}
+
+/// What mise last wrote to the files of a copy entry, by target: the entry's
+/// own record for a single file, and what its dotfile group deployed.
+fn recorded_copy_digests(req: &FileRequest) -> HashMap<PathBuf, String> {
+    let mut digests = HashMap::new();
+    if let Some(record) = req
+        .group
+        .as_deref()
+        .and_then(crate::dotfile_groups::load_record)
+    {
+        for path in record.paths {
+            if let Some(digest) = path.digest {
+                digests.insert(path.target, digest);
+            }
+        }
+    }
+    // a single file's own record follows every apply, grouped or not, so it is
+    // the latest write; a group's record can be older when the copy spent time
+    // in another group, so it only covers what has no record of its own
+    if !req.source.is_dir()
+        && let Some(digest) = load_target_state(req).and_then(|state| state.content_digest)
+    {
+        digests.insert(req.target.clone(), digest);
+    }
+    digests
+}
+
+/// The files of a copy entry that an apply would overwrite although they no
+/// longer hold what mise last wrote there, as (source, target). A file mise
+/// has no record of is not one of them, and neither is one that already
+/// matches its source, which loses nothing.
+fn edited_copy_targets(req: &FileRequest) -> Vec<(PathBuf, PathBuf)> {
+    if req.mode != FileMode::Copy || !req.source.exists() {
+        return vec![];
+    }
+    let recorded = recorded_copy_digests(req);
+    if recorded.is_empty() {
+        return vec![];
+    }
+    let pairs = if req.source.is_dir() {
+        walk_source_files(req).unwrap_or_default()
+    } else {
+        vec![(req.source.clone(), req.target.clone())]
+    };
+    let hash = |path: &Path| mise_util::hash::file_hash_sha256(path, None).ok();
+    pairs
+        .into_iter()
+        .filter(|(source, target)| {
+            // only an existing file can hold an edit
+            if target.is_symlink() || !target.is_file() {
+                return false;
+            }
+            let Some(digest) = recorded.get(target).or_else(|| {
+                // a record keeps the spelling of an earlier apply, and Windows ignores case
+                if !cfg!(windows) {
+                    return None;
+                }
+                recorded
+                    .iter()
+                    .find(|(path, _)| same_path_any_case(path, target))
+                    .map(|(_, digest)| digest)
+            }) else {
+                return false;
+            };
+            match hash(target) {
+                Some(current) => &current != digest && hash(source) != Some(current),
+                None => false,
+            }
+        })
+        .collect()
+}
+
+/// Warn before an apply replaces copies that were edited since mise wrote them.
+fn warn_if_copy_targets_edited(req: &FileRequest) {
+    for (source, target) in edited_copy_targets(req) {
+        warn!(
+            "files: {} was edited since mise last wrote it; applying overwrites the edit. Move it into {} to keep it",
+            target.display_user(),
+            source.display_user()
+        );
+    }
+}
+
 /// Whether the record already holds `rendered` as the target's content.
 fn target_state_matches(req: &FileRequest, rendered: &str) -> bool {
     load_target_state(req)
@@ -5282,8 +5413,17 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
         return Ok(vec![format!("rm {}", req.target.display_user())]);
     }
     if req.mode != FileMode::Copy || !req.source.is_dir() {
-        return Ok(vec![describe(req)?]);
+        let edited = if edited_copy_targets(req).is_empty() {
+            ""
+        } else {
+            " (edited since mise last wrote it)"
+        };
+        return Ok(vec![format!("{}{edited}", describe(req)?)]);
     }
+    let edited = edited_copy_targets(req)
+        .into_iter()
+        .map(|(_, target)| target)
+        .collect::<HashSet<_>>();
     let root = &req.target;
     let mut lines = vec![];
     match std::fs::symlink_metadata(root) {
@@ -5343,9 +5483,148 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
             // apply cannot copy a file over a directory and stops with an error
             Ok(_) => "conflict (not a file):",
         };
-        lines.push(format!("{verb} {}", tgt.display_user()));
+        let note = if edited.contains(&tgt) {
+            " (edited since mise last wrote it)"
+        } else {
+            ""
+        };
+        lines.push(format!("{verb} {}{note}", tgt.display_user()));
     }
     Ok(lines)
+}
+
+/// The copy targets an apply would overwrite with different content that no
+/// history tracks, so neither `mise dot undo` nor a rollback can bring the
+/// edit back. A file mise has no record of counts: it may be the user's.
+fn unrecoverable_overwrites(config: &Config, plan: &ApplyPlan<'_>) -> Result<Vec<String>> {
+    // loaded when a path needs classifying, so a tracking error surfaces then
+    // and not for an apply that overwrites nothing
+    let mut tracked: Option<crate::history::tracked::TrackedSet> = None;
+    // history keeps the path: covered by an entry and not left out by an
+    // exclude rule, and history is on
+    let mut is_tracked = |path: &Path| -> Result<bool> {
+        if !Settings::get().history.enabled {
+            return Ok(false);
+        }
+        if tracked.is_none() {
+            tracked = Some(crate::history::tracked::TrackedSet::from_config(config)?);
+        }
+        let Some(set) = tracked.as_ref() else {
+            return Ok(false);
+        };
+        if !set.would_capture(path)? {
+            return Ok(false);
+        }
+        // history saves a symlinked directory as the link alone, so a file
+        // reached through one below the tracked path is not kept
+        let Some(owner) = set.entry_for(path) else {
+            return Ok(false);
+        };
+        let through_link = path
+            .ancestors()
+            .skip(1)
+            .take_while(|dir| dir.starts_with(&owner.path) && *dir != owner.path.as_path())
+            .any(file::is_symlink_or_junction);
+        Ok(!through_link)
+    };
+    let mut out = vec![];
+    for (req, _) in &plan.todo {
+        if req.mode != FileMode::Copy || keeps_existing(req) {
+            continue;
+        }
+        let mut pairs = vec![];
+        if req.source.is_dir() {
+            // a file or link where the directory belongs is replaced by it
+            // under `--force`, whatever the source holds
+            // (a link to a directory stays and the files go through it)
+            if req.target.exists() && !req.target.is_dir() && !is_tracked(&req.target)? {
+                out.push(req.target.display_user().to_string());
+            }
+            // an unreadable source stops the apply before anything is written
+            pairs.extend(walk_source_files(req)?);
+        } else {
+            pairs.push((req.source.clone(), req.target.clone()));
+        }
+        for (src, tgt) in pairs {
+            let Ok(meta) = std::fs::symlink_metadata(&tgt) else {
+                continue;
+            };
+            // a link is replaced by a file, which history cannot bring back
+            let replaced = if meta.file_type().is_symlink() {
+                true
+            } else if meta.is_file() {
+                // a mode-only difference is a repair, not a lost edit
+                !matches!((std::fs::read(&tgt), std::fs::read(&src)), (Ok(a), Ok(b)) if a == b)
+            } else {
+                // `--force` removes a directory where a file copy belongs,
+                // with everything in it; inside a directory copy it is a
+                // conflict that stops the apply instead
+                meta.is_dir() && !req.source.is_dir()
+            };
+            let kept = if !replaced {
+                true
+            } else if meta.is_dir() {
+                // every file the removal takes must be kept by history
+                // and the directory itself, which an undo must recreate
+                let mut all = is_tracked(&tgt)?;
+                if all {
+                    for file in files_under(&tgt)? {
+                        if !is_tracked(&file)? {
+                            all = false;
+                            break;
+                        }
+                    }
+                }
+                all
+            } else {
+                is_tracked(&tgt)?
+            };
+            if !kept {
+                out.push(tgt.display_user().to_string());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The files and links below `dir`, none followed. A directory that cannot be
+/// listed is an error, so the apply stops before removing what it cannot see.
+fn files_under(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = vec![];
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let entries = std::fs::read_dir(&next)
+            .wrap_err_with(|| format!("cannot list {}", next.display_user()))?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Without a terminal nobody can confirm replacing a copy target that holds
+/// content history cannot restore, so apply fails and names `--yes` instead of
+/// discarding it silently.
+fn refuse_unattended_overwrite(config: &Config, plan: &ApplyPlan<'_>) -> Result<()> {
+    let targets = unrecoverable_overwrites(config, plan)?;
+    if targets.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "files: applying would overwrite {} and nothing keeps the current content, but there was nobody to ask; run `mise dot diff` to review it, then pass --yes to proceed non-interactively",
+        targets.iter().take(5).join(", ")
+            + &if targets.len() > 5 {
+                format!(" and {} more", targets.len() - 5)
+            } else {
+                String::new()
+            }
+    )
 }
 
 /// Something sits at `dir` that is not a directory, a dangling symlink
@@ -5422,7 +5701,12 @@ fn execute_layer(
             // the entry may already be converged
             let conditional = req.mode == FileMode::Template && rendered.is_none();
             let suffix = if conditional { " (if changed)" } else { "" };
-            miseprintln!("{}{suffix}", describe(req)?);
+            let edited = match edited_copy_targets(req).len() {
+                0 => String::new(),
+                1 if !req.source.is_dir() => " (edited since mise last wrote it)".to_string(),
+                n => format!(" ({n} edited since mise last wrote them)"),
+            };
+            miseprintln!("{}{suffix}{edited}", describe(req)?);
             // a source an earlier round writes is not there to compare yet
             let deferred = req.mode.has_source() && !req.source.exists() && !keeps_existing(req);
             if opts.verbose && !conditional && !deferred {
@@ -5435,6 +5719,10 @@ fn execute_layer(
         if req.mode == FileMode::Template && rendered.is_some() {
             warn_if_template_target_edited(req);
         }
+        warn_if_copy_targets_edited(req);
+    }
+    if !opts.yes && !Settings::get().yes && !console::user_attended_stderr() {
+        refuse_unattended_overwrite(config, &plan)?;
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = plan
@@ -6947,6 +7235,8 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
                 }
             } else {
                 paths.insert(req.target.clone(), Capture::Full);
+                // the record of what mise wrote changes with the target
+                paths.insert(target_state_path(req), Capture::Full);
             }
         }
         FileMode::SymlinkEach => {
@@ -7214,6 +7504,15 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                             .wrap_err_with(copy_failure(&source, &target))?;
                         from.copy_into(to)?;
                     } else if target.is_file() {
+                        // a file that already matches in content and mode is
+                        // left alone, as the plan shows: rewriting it would
+                        // bump its mtime and count it as written, firing
+                        // `[history.reload]` for a file that did not change
+                        if let Ok(meta) = std::fs::metadata(&target)
+                            && file_matches(&source, &target, &meta)
+                        {
+                            continue;
+                        }
                         overwrite_recorded(&source, &target, written)?;
                     } else {
                         match std::fs::symlink_metadata(&target) {
@@ -7237,6 +7536,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 replace_recorded(&req.target, written, || {
                     file::copy(&req.source, &req.target)
                 })?;
+                save_copy_state(req);
                 // the copy took the source's permissions; an explicit
                 // `permissions` overrides them
                 #[cfg(unix)]
@@ -7712,6 +8012,19 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_arg_from_cwd_starts_a_relative_path_at_the_current_directory() {
+        assert_eq!(target_arg_from_cwd("~/.zshrc").unwrap(), "~/.zshrc");
+        // an absolute path on every platform (`/etc/hosts` is not one on Windows)
+        let absolute = dirs::CWD.as_ref().unwrap().join("hosts");
+        let absolute = absolute.to_string_lossy();
+        assert_eq!(target_arg_from_cwd(&absolute).unwrap(), absolute);
+        let resolved = target_arg_from_cwd("./config.toml").unwrap();
+        let expected = dirs::CWD.as_ref().unwrap().join("config.toml");
+        assert_eq!(resolve_target_arg(&resolved), expected);
+        assert!(!resolved.starts_with('.'));
+    }
 
     /// A group's entries are whole-file entries or edits, so they read the `FileTomlTable` and
     /// `EditTomlTable` keys; `group` is set by the group itself.
@@ -11349,7 +11662,7 @@ source = "oldrc""#,
         assert!(
             touched_paths(&req)?
                 .iter()
-                .all(|(path, _)| path != &target_state_path(&req))
+                .any(|(path, _)| path == &target_state_path(&req))
         );
 
         // a symlink-each entry shares its target with unmanaged files

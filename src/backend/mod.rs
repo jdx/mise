@@ -3924,6 +3924,13 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Whether the concrete versions of the `request` version have no order, such
+    /// as content digests: a candidate is newer exactly when it differs from the
+    /// installed one, however the two would sort as version strings.
+    fn versions_are_unordered(&self, _request: &str) -> bool {
+        false
+    }
+
     /// Whether a rolling channel must be resolved to a concrete version before it
     /// can be used. Backends that opt in fail in offline mode when neither a lock
     /// entry nor a concrete installed channel build is available.
@@ -6063,6 +6070,10 @@ pub trait Backend: Debug + Send + Sync {
                 );
             if install_removed {
                 install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                // The per-version cache dir is wiped at the start of every install
+                // attempt, so nothing can resume from it. Like the marker, it stays
+                // while the install dir could not be removed.
+                let _ = remove_all_with_warning(tv.cache_path());
             }
             // Remove parent installs dir if it's now empty (no other versions present)
             let installs_path = &self.ba().installs_path();
@@ -6089,6 +6100,11 @@ pub trait Backend: Debug + Send + Sync {
     fn cleanup_empty_installs_dir(&self) {
         let installs_path = &self.ba().installs_path();
         if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
+            // `dir_subdirs` skips links whose target is gone, so the alias links of the
+            // version just removed (`latest`, `5`, `global`) leave the directory looking
+            // empty. Drop them here: once the backend metadata below is gone, nothing
+            // would visit this directory again, and they would stay forever.
+            let _ = crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_path);
             let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
             if installs_path
                 .read_dir()

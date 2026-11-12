@@ -1313,7 +1313,20 @@ impl Backend for UnifiedGitBackend {
                     });
                 }
 
+                // `mise lock` downloads the asset to hash it when the release has no
+                // digest. A private repository's API asset endpoint needs the same
+                // token the install download sends.
+                let download_headers = if asset.url_api.is_empty() {
+                    None
+                } else if self.is_gitlab() {
+                    gitlab::get_headers(&asset.url_api, &opts.api_url())?.into()
+                } else if self.is_forgejo() {
+                    forgejo::get_headers(&asset.url_api, &opts.api_url())?.into()
+                } else {
+                    github::get_headers(&asset.url_api, &opts.api_url())?.into()
+                };
                 Ok(PlatformInfo {
+                    download_headers,
                     checksum_source: locked_digest_source(&asset, primary_downloaded),
                     url: Some(asset.url),
                     url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
@@ -2429,8 +2442,15 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        // `matching_regex` narrows the primary asset only, so
+                        // do not suggest it for an additional asset pattern.
+                        if asset_pattern.is_none() {
+                            asset_matcher::asset_pattern_hint(&templated_pattern)
+                        } else {
+                            ""
+                        },
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;
@@ -2530,8 +2550,15 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets.links, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        // `matching_regex` narrows the primary asset only, so
+                        // do not suggest it for an additional asset pattern.
+                        if asset_pattern.is_none() {
+                            asset_matcher::asset_pattern_hint(&templated_pattern)
+                        } else {
+                            ""
+                        },
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;
@@ -2628,8 +2655,15 @@ impl UnifiedGitBackend {
                 .pick_by_pattern(release.assets, &templated_pattern, |a| &a.name)
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        "No matching asset found for pattern: {}{}\nAvailable assets: {}",
                         templated_pattern,
+                        // `matching_regex` narrows the primary asset only, so
+                        // do not suggest it for an additional asset pattern.
+                        if asset_pattern.is_none() {
+                            asset_matcher::asset_pattern_hint(&templated_pattern)
+                        } else {
+                            ""
+                        },
                         Self::format_asset_list(available_assets.iter())
                     )
                 })?;

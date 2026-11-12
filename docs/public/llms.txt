@@ -11,6 +11,7 @@
 - [Editors and IDEs](https://mise.jdx.dev/ide-integration.html): An editor's integrated terminal, language servers, debugger and extensions can each run with a different environment. Find out which process needs the tool or variable, then pick an integration.
 - [Continuous integration](https://mise.jdx.dev/continuous-integration.html): Use the same mise.toml in CI and development so both environments select the same tools. Run commands with mise exec or mise run to load those tools and the project's environment variables.
 - [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Run mise in a container in one of two ways: build on the -debian image, which has mise, curl and git ready for CI jobs and development containers, or copy the static binary from the scratch image into…
+- [Coding agents](https://mise.jdx.dev/agents.html): A coding agent such as Claude Code or Codex runs each command in a non-interactive shell. mise activate in your .zshrc or .bashrc never runs there, so the agent does not get the project's tools or…
 - [AI assistants (MCP)](https://mise.jdx.dev/mcp.html): mise mcp runs a Model Context Protocol server that lets an AI assistant read a project's tools, tasks, environment variables and config files, and run its tasks.
 
 ## Dev tools
@@ -222,7 +223,7 @@
 
 ## Contributing
 
-- [Contributing](https://mise.jdx.dev/contributing.html): mise welcomes bug fixes, documentation improvements, and registry entries for widely used tools. Agree on the direction of anything larger before you write code.
+- [Contributing](https://mise.jdx.dev/contributing.html): mise does not accept external pull requests, and GitHub does not let anyone outside the maintainer team create one.
 - [Adding tools to the registry](https://mise.jdx.dev/contributing/registry.html): A registry entry gives a widely used tool a short name, so mise use ripgrep works without a backend identifier.
 - [Codebase architecture](https://mise.jdx.dev/architecture.html): Use this map to find the code that owns a behavior before you change it. For setup, checks, and how to submit a change, see Contributing.
 - [Packaging mise](https://mise.jdx.dev/packaging.html): A package manager that installs mise should own its updates, so turn off mise self-update in your package and tell users how to update instead.
@@ -338,6 +339,7 @@
 - [mise dotfiles diff](https://mise.jdx.dev/cli/dotfiles/diff.html): Show what mise dot apply would change
 - [mise dotfiles edit](https://mise.jdx.dev/cli/dotfiles/edit.html): Open a dotfile's source in your editor
 - [mise dotfiles exclude](https://mise.jdx.dev/cli/dotfiles/exclude.html): Never save paths matching a glob
+- [mise dotfiles files](https://mise.jdx.dev/cli/dotfiles/files.html): List a directory's files and whether each one is tracked
 - [mise dotfiles history](https://mise.jdx.dev/cli/dotfiles/history.html): Browse saved versions of your tracked files
 - [mise dotfiles history describe](https://mise.jdx.dev/cli/dotfiles/history/describe.html): Set the description of a checkpoint
 - [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or your files against one

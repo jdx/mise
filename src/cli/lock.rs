@@ -621,7 +621,14 @@ pub(crate) fn skip_lockfile_updates_when_tasks_fail() {
 
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
-        self.run_with_installed(None, Config::get().await?).await
+        // Plugins decide which idiomatic version files map to their tool, so a
+        // missing one must be installed before the tools to lock are known.
+        // Listing sidecars is read-only, so it never installs anything.
+        let mut config = Config::get().await?;
+        if !self.sidecars {
+            config = Toolset::install_config_plugins_and_reload(config, self.dry_run).await?;
+        }
+        self.run_with_installed(None, config).await
     }
 
     pub(crate) async fn generate_after_install(
@@ -1168,6 +1175,46 @@ impl Lock {
         Ok(())
     }
 
+    /// After an install, drop the tools whose config sets `tool_config.locked`
+    /// and that locked resolution rejects as not in the lockfile. Installing
+    /// another tool must not author that entry; only an explicit `mise lock`
+    /// does. Returns the tools to lock and the shorts that were withheld.
+    async fn without_unrecorded_locked_pins(
+        run: &LockRun<'_>,
+        tools: &[LockTool],
+    ) -> (Vec<LockTool>, BTreeSet<String>) {
+        if run.setup.installed.is_none() {
+            return (tools.to_vec(), BTreeSet::new());
+        }
+        let options = ResolveOptions {
+            use_locked_version: true,
+            ..Default::default()
+        };
+        let mut withheld = BTreeSet::new();
+        let mut kept = Vec::new();
+        for tool in tools {
+            let (ba, tv) = tool;
+            if tv.request.tool_config_locked(run.setup.config, true)
+                && tv
+                    .request
+                    .resolve(run.setup.config, &options)
+                    .await
+                    .as_ref()
+                    .err()
+                    .is_some_and(crate::errors::Error::is_not_in_lockfile)
+            {
+                debug!(
+                    "not locking {}@{}: tool_config.locked requires `mise lock`",
+                    ba.short, tv.version
+                );
+                withheld.insert(ba.short.clone());
+            } else {
+                kept.push(tool.clone());
+            }
+        }
+        (kept, withheld)
+    }
+
     /// Resolve a target's tools into its lockfile, then bind and write it.
     async fn generate_target(
         &self,
@@ -1186,6 +1233,9 @@ impl Lock {
         let _lock = Self::lock_unless_held(run, lockfile_path)?;
         let original_content = read_optional_file(lockfile_path)?;
         let mut lockfile = self.read_lockfile(run, lockfile_path)?;
+        let previous = lockfile.clone();
+        let (tools, withheld) = Self::without_unrecorded_locked_pins(run, tools).await;
+        let tools = &tools;
         if !self.upgrade {
             self.report_lockfile_format(lockfile_path, &lockfile, false)?;
         }
@@ -1237,6 +1287,9 @@ impl Lock {
                 run.setup.installed.unwrap_or_default(),
             )
             .await?;
+            for short in &withheld {
+                lockfile.restore_missing_versions(&previous, short);
+            }
             (Vec::new(), Vec::new())
         } else {
             self.process_tools(&run.settings, tools, target_platforms, &mut lockfile)
@@ -1256,6 +1309,7 @@ impl Lock {
             run,
             outcome,
             target,
+            tools,
             target_platforms,
             ResolvedTarget {
                 lockfile,
@@ -1276,14 +1330,11 @@ impl Lock {
         run: &LockRun<'_>,
         outcome: &mut LockOutcome,
         target: &PreparedTarget,
+        tools: &[LockTool],
         target_platforms: &[Platform],
         resolved: ResolvedTarget,
     ) -> Result<()> {
-        let PreparedTarget {
-            lockfile_path,
-            tools,
-            ..
-        } = target;
+        let PreparedTarget { lockfile_path, .. } = target;
         let ResolvedTarget {
             mut lockfile,
             original_content,

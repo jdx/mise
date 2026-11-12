@@ -153,12 +153,18 @@ existing configuration is unaffected.
 
 When mise loads the config it rejects an allocated named port that resolves to
 a port another daemon in the same project uses, or that runs past 65535 in a
-worktree. That check covers one project in one checkout. mise does not compare
-ports across worktrees or projects, so ranges that overlap can still collide
-there: slots run up to 511 times the `stride`, so one daemon's `27000` in a
-worktree can equal another daemon's `27000 + n` in a different checkout. Give
-each daemon, and each named port, a `base` at least 512 ports (more with a larger
-`stride`) away from the others.
+worktree. That check covers one project in one checkout. Ranges that overlap can still
+collide across checkouts: slots run up to 511 times the `stride`, so one
+daemon's `27000` in a worktree can equal another daemon's `27000 + n` in a
+different checkout. Give each daemon, and each named port, a `base` at least 512
+ports (more with a larger `stride`) away from the others.
+
+mise warns when a worktree's slot moves one of a custom daemon's ports onto the
+number the primary checkout uses for another of its ports, for example `app`
+at `5173` and `db` at `5432` in a worktree on slot 259, because both cannot run
+at once. When you start a daemon, mise also checks its named ports against the
+daemons other checkouts are running, as it does for `port`; the error names the
+daemon, the port and the checkout holding it.
 
 mise exports each named port as `<NAME>_<PORT_NAME>`, with the daemon's name
 folded as for [port variables](#port-variables): a `crdb` daemon from the
@@ -175,6 +181,32 @@ port = "auto"
 [env]
 COCKROACH_CONSOLE = "http://127.0.0.1:{{ env.CRDB_HTTP_PORT }}"
 ```
+
+### Named ports on custom daemons
+
+A `run` or `task` daemon can declare several ports of its own, for example a
+Docker Compose stack that publishes more than one. Each gets a name, and an
+allocated one needs a `base` because there is no preset default to start from:
+
+```toml
+[daemons.stack]
+run = "docker compose up"
+ports.app = { auto = true, base = 8080 }
+ports.db = { auto = true, base = 5432 }
+```
+
+The primary checkout uses `8080` and `5432`, and each linked worktree adds the
+same slot to both. mise exports them as `STACK_APP_PORT` and `STACK_DB_PORT`
+before the daemon starts, so `mise env` and `mise exec` see them, and you can map
+them to the names the stack reads:
+
+```toml
+[env]
+APP_PORT = "{{ env.STACK_APP_PORT }}"
+DB_PORT = "{{ env.STACK_DB_PORT }}"
+```
+
+Named ports take part in the same collision checks as on a preset.
 
 ### Automatic ports
 

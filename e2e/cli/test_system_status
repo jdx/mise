@@ -66,14 +66,21 @@ EOF
 assert_succeed "mise bootstrap packages status"
 assert_contains "mise bootstrap packages status 2>&1" "unknown bootstrap package manager"
 
-# the manager prefix is required; entries without one warn but don't fail
-# schema: invalid
+# a key without a prefix picks a manager; with none available it warns but doesn't fail
 cat <<EOF >mise.toml
 [bootstrap.packages]
 "noprefix" = "latest"
 EOF
-assert_succeed "mise bootstrap packages status"
-assert_contains "mise bootstrap packages status 2>&1" "invalid system package spec"
+assert_succeed "MISE_SYSTEM_PACKAGES_PREFER=winget mise bootstrap packages status"
+assert_contains "MISE_SYSTEM_PACKAGES_PREFER=winget mise bootstrap packages status 2>&1" "no package manager is available for 'noprefix'"
+
+# a key with whitespace around a colon-less name is still not a manager:package spec
+# schema: invalid
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"has space" = "latest"
+EOF
+assert_succeed "MISE_SYSTEM_PACKAGES_PREFER=winget mise bootstrap packages status"
 
 # package-level OS selectors are applied before manager resolution
 case "$(uname)" in

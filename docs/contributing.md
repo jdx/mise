@@ -1,19 +1,25 @@
 ---
-description: "Propose, build, test, and submit changes to mise, from a first checkout to CLI help, settings, and docs."
+description: "mise does not accept external pull requests. Where to report bugs and request changes, plus the maintainer reference for building, testing, and documenting mise."
 outline: [2, 3]
 ---
 
 # Contributing
 
-mise welcomes bug fixes, documentation improvements, and registry entries for
-widely used tools. Agree on the direction of anything larger before you write
-code. Report bugs in [Issues](https://github.com/jdx/mise/issues), and bring
-questions and ideas to [Discussions](https://github.com/jdx/mise/discussions).
+mise does not accept external pull requests, and GitHub does not let anyone
+outside the maintainer team create one. Report bugs in
+[Issues](https://github.com/jdx/mise/issues), and bring questions, ideas, and
+feature requests to [Discussions](https://github.com/jdx/mise/discussions).
 
-## Community participation {#community-participation}
+Bug reports, in Issues or Discussions, are only for problems you ran into while
+using mise. Say what you were trying to do, what you ran, the relevant config,
+and what happened. Reports found by reading the source or by having an agent
+search the code will be closed.
 
-Using AI to help write a Discussion, Issue, reply, or pull request is fine.
-Review it before you post it, and end it with a disclosure line in this form:
+The rest of this page is the maintainer's reference for building, testing, and
+documenting mise. It is also useful if you want to build from source.
+
+Using AI to help write a Discussion, Issue, or reply is fine. Review it before
+you post it, and end it with a disclosure line in this form:
 
 ```text
 *AI-assisted — Tool: <tool>; model: <provider>/<model>; version: <version-or-unavailable>.*
@@ -21,32 +27,16 @@ Review it before you post it, and end it with a disclosure line in this form:
 
 ## Before you open a pull request {#before-you-open-a-pull-request}
 
-mise has a specific scope and design taste. Unless a change is obvious, propose
-it in a [Discussion](https://github.com/jdx/mise/discussions) or on
-[Discord](https://discord.gg/mABnUDvP57) before you write it. PRs that skip this
-step are often rejected or need to change significantly.
+For the maintainer's PRs, and agents that open them:
 
-If I am on the fence about a contribution, I will probably reject it for that
-reason alone; otherwise mise would suffer from feature bloat. I may also reject
-a PR if its quality does not give me confidence that the contributor can get it
-across the finish line. I do not have time to coach contributors, and I get
-hundreds of PRs a week across my projects, so a rejection may be brief.
-
-Check these before you ask for a review:
-
-1. The direction was agreed in a Discussion or on Discord, unless the change is
-   obvious.
-2. CI passes, including [Clippy](#clippy), which `mise run lint` does not run.
-3. The title follows the [title format](#pull-request-titles-and-descriptions).
-4. The description explains the user-visible change. It feeds the release
+1. CI passes, including [Clippy](#clippy), which `mise run lint` does not run.
+2. The title follows the [title format](#pull-request-titles-and-descriptions),
+   and the description explains the user-visible change. Both feed the release
    notes.
-5. Every automated AI review comment is addressed.
-6. Generated files and snapshots are committed with the change that produced
+3. Every automated AI review comment is addressed.
+4. Generated files and snapshots are committed with the change that produced
    them. See [generated files](/architecture.html#generated-files).
-7. User-facing changes include documentation.
-
-If CI is failing, the title is wrong, or an AI review comment is still open,
-assume I will wait before I look at the PR.
+5. User-facing changes include documentation.
 
 ## Set up a checkout {#set-up-a-checkout}
 
@@ -615,7 +605,7 @@ not install. See
 for the exact flags.
 
 ```sh
-cargo deny check               # advisories, licenses, and allowed sources
+mise x -- cargo-deny check       # advisories, bans, licenses, and allowed sources
 cargo machete --with-metadata  # unused dependencies
 cargo msrv verify              # the minimum supported Rust version
 ```
@@ -625,15 +615,15 @@ cargo msrv verify              # the minimum supported Rust version
 ## Adding tools to the registry {#adding-tools}
 
 New shorthands are for tools that are already widely used, normally with
-thousands of GitHub stars, and most proposals are declined. Read
-[Adding tools to the registry](/contributing/registry.html) before you open a
-PR. It covers the popularity bar, the
+thousands of GitHub stars, and most proposals are declined. Request a
+new tool in a [Discussion](https://github.com/jdx/mise/discussions); do not
+send a PR. [Adding tools to the registry](/contributing/registry.html) covers the popularity bar, the
 [backend acceptance tiers](/contributing/registry.html#backend-acceptance-tiers),
 the entry format, and [tool tests](/contributing/registry.html#tool-testing).
 
 ## Adding a backend {#adding-backends}
 
-Most contributors want to [add a tool](/contributing/registry.html), not a
+Most requests are for a [new tool](/contributing/registry.html), not a
 backend. New backends are rarely accepted into core, because each one is
 permanent maintenance; one might be accepted for a major package manager that
 would add a lot to mise. Check first whether an existing backend, such as

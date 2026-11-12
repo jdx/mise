@@ -990,6 +990,22 @@ Use exclusions for logs, caches, databases, and session state. For files you wan
             arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
             example "mise dot exclude '~/.codex/sessions/**'" help="Never save Codex session logs"
         }
+        cmd files help="List a directory's files and whether each one is tracked" effect=read {
+            long_help #"""
+List a directory's files and whether each one is tracked
+
+Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself, or is excluded, but holds tracked files. A path kept in local-only history is one `local` row, listed in full by `mise dot --local files PATH`. `--tracked` and `--untracked` split the rows: `partial` and `local` rows are listed by `--tracked`. Relative paths are read from the current directory.
+"""#
+            flag "-r --recursive" help="List files in subdirectories too, instead of one row per subdirectory"
+            flag --tracked help="Only show what is tracked"
+            flag --untracked help="Only show what holds nothing tracked"
+            flag "-J --json" help="Output in JSON format"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PATH]" help="The directory or file to list; defaults to the current directory" required=#false
+            example "mise dot files" help="Show what is tracked in the current directory"
+            example "mise dot files ~/.config/hypr" help="Show what is tracked in ~/.config/hypr"
+            example "mise dot files -r --untracked ~/.config/nvim" help="List every file under ~/.config/nvim that history does not save"
+        }
         cmd history help="Browse saved versions of your tracked files" effect=read {
             long_help #"""
 Browse saved versions of your tracked files
@@ -1376,7 +1392,7 @@ See https://mise.jdx.dev/dotfiles/history.html
             flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
             flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+            arg <PATH>… help="Paths to track (a relative path starts from the current directory)" var=#true
             example "mise dot track ~/.zshrc ~/.config/hypr" help="Track a file and a directory"
             example "mise dot track --dry-run ~/.codex" help="Show what tracking a directory would save"
             example "mise dot track ~/.zshrc --os macos" help="Keep a separate version for macOS machines"
@@ -3155,6 +3171,22 @@ Use exclusions for logs, caches, databases, and session state. For files you wan
         arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
         example "mise dot exclude '~/.codex/sessions/**'" help="Never save Codex session logs"
     }
+    cmd files help="List a directory's files and whether each one is tracked" effect=read {
+        long_help #"""
+List a directory's files and whether each one is tracked
+
+Shows each file and subdirectory with its tracking state: `tracked` (with the entry that covers it), `excluded` (with the rule that leaves it out), `omitted` (covered, but a capture skips it, such as a credential-like file), or `untracked`. A subdirectory shows how many tracked files it holds, and is `partial` when it is not tracked itself, or is excluded, but holds tracked files. A path kept in local-only history is one `local` row, listed in full by `mise dot --local files PATH`. `--tracked` and `--untracked` split the rows: `partial` and `local` rows are listed by `--tracked`. Relative paths are read from the current directory.
+"""#
+        flag "-r --recursive" help="List files in subdirectories too, instead of one row per subdirectory"
+        flag --tracked help="Only show what is tracked"
+        flag --untracked help="Only show what holds nothing tracked"
+        flag "-J --json" help="Output in JSON format"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[PATH]" help="The directory or file to list; defaults to the current directory" required=#false
+        example "mise dot files" help="Show what is tracked in the current directory"
+        example "mise dot files ~/.config/hypr" help="Show what is tracked in ~/.config/hypr"
+        example "mise dot files -r --untracked ~/.config/nvim" help="List every file under ~/.config/nvim that history does not save"
+    }
     cmd history help="Browse saved versions of your tracked files" effect=read {
         long_help #"""
 Browse saved versions of your tracked files
@@ -3541,7 +3573,7 @@ See https://mise.jdx.dev/dotfiles/history.html
         flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
         flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+        arg <PATH>… help="Paths to track (a relative path starts from the current directory)" var=#true
         example "mise dot track ~/.zshrc ~/.config/hypr" help="Track a file and a directory"
         example "mise dot track --dry-run ~/.codex" help="Show what tracking a directory would save"
         example "mise dot track ~/.zshrc --os macos" help="Keep a separate version for macOS machines"
@@ -3711,7 +3743,13 @@ JSON, dotenv, and shell output contain actual variable values, including secrets
 Tools you pass as TOOL@VERSION arguments are installed first if they are missing;
 missing tools from the config are reported, not installed.
 """#
-    flag "-D --dotenv" help="Output in dotenv format" overrides=--shell
+    flag "-D --dotenv" help="Output in dotenv format" overrides=--shell {
+        long_help #"""
+Output in dotenv format
+
+Values are quoted and escaped where needed so mise reads them back unchanged. Tools that do not interpret quotes, such as Docker `--env-file`, receive them literally.
+"""#
+    }
     flag "-J --json" help="Output in JSON format" overrides=--shell
     flag "-s --shell" help="Shell type to generate environment variables for" overrides=--json {
         arg <SHELL> {
@@ -5970,6 +6008,14 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
         arg <CMD>
     }
     flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+    flag --multi help="Open the task picker as a checklist and run every task you check" {
+        long_help #"""
+Open the task picker as a checklist and run every task you check
+
+Space checks a task, `/` filters, and Enter runs the checked tasks as if they were named with `:::`. Needs an interactive terminal. Combine with `--all` to list the tasks from every project in the monorepo.
+"""#
+        conflicts "--affected" "--tag"
+    }
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before running the tasks" {
         arg <DIR>
@@ -7245,6 +7291,14 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
             arg <CMD>
         }
         flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+        flag --multi help="Open the task picker as a checklist and run every task you check" {
+            long_help #"""
+Open the task picker as a checklist and run every task you check
+
+Space checks a task, `/` filters, and Enter runs the checked tasks as if they were named with `:::`. Needs an interactive terminal. Combine with `--all` to list the tasks from every project in the monorepo.
+"""#
+            conflicts "--affected" "--tag"
+        }
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before running the tasks" {
             arg <DIR>

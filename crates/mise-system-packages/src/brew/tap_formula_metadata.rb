@@ -301,7 +301,9 @@ def inferred_version(url)
   version_from_url_path(url) || version_from_basename(url)
 end
 
-eval(STDIN.read.force_encoding("UTF-8"), TOPLEVEL_BINDING, FORMULA_FILE, 1)
+# A formula that reads files from its tap is evaluated under its absolute path
+# in a tap checkout, so `require_relative` resolves next to it.
+eval(STDIN.read.force_encoding("UTF-8"), TOPLEVEL_BINDING, ENV.fetch("MISE_BREW_SOURCE_FILE", FORMULA_FILE), 1)
 klass = Formula.instance_variable_get(:@subclass)
 raise "no Formula subclass found" unless klass
 raise "formula has no stable URL" if klass.source_url.to_s.empty?

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# A [plugins] plugin that is not installed yet decides, once installed, which
+# idiomatic version files map to its tool. A single `mise install` or
+# `mise lock` must read that file instead of waiting for a second run.
+
+make_plugin() {
+  local dir=$1
+  mkdir -p "$dir/hooks"
+  cat >"$dir/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "idiomatic-first"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/idiomatic-first"
+PLUGIN.license = "MIT"
+PLUGIN.description = "idiomatic first install test plugin"
+PLUGIN.legacyFilenames = { ".idiomatic-first-version" }
+LUA
+  cat >"$dir/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return { { version = "1.0.0" } }
+end
+LUA
+  cat >"$dir/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return { version = ctx.version }
+end
+LUA
+  cat >"$dir/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {}
+end
+LUA
+  cat >"$dir/hooks/parse_legacy_file.lua" <<'LUA'
+function PLUGIN:ParseLegacyFile(ctx)
+	local file = io.open(ctx.filepath, "r")
+	local version = file:read("*l")
+	file:close()
+	return { version = version }
+end
+LUA
+}
+
+write_project() {
+  cat >mise.toml <<EOF
+[plugins]
+idiomatic-first = "$PWD/plugin"
+
+[settings]
+idiomatic_version_file_enable_tools = ["idiomatic-first"]
+EOF
+  echo 1.0.0 >.idiomatic-first-version
+}
+
+mkdir install-case
+(
+  cd install-case
+  make_plugin "$PWD/plugin"
+  write_project
+  mise install
+  [[ -L "$MISE_DATA_DIR/plugins/idiomatic-first" ]]
+  assert_contains "mise ls idiomatic-first --installed" "1.0.0"
+)
+
+mkdir lock-case
+(
+  cd lock-case
+  make_plugin "$PWD/plugin"
+  write_project
+  # install-case left the plugin installed; lock must start without it
+  rm -f "$MISE_DATA_DIR/plugins/idiomatic-first"
+  [[ ! -e "$MISE_DATA_DIR/plugins/idiomatic-first" ]]
+  mise lock
+  [[ -L "$MISE_DATA_DIR/plugins/idiomatic-first" ]]
+  assert_contains "cat mise.lock" "idiomatic-first"
+)

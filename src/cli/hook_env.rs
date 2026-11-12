@@ -315,6 +315,33 @@ impl HookEnv {
                     .filter(|k| !cur_env.contains_key(*k))
                     .map(|k| EnvDiffOperation::Remove(k.clone())),
             );
+            let ignore = &Settings::get().status.show_env_ignore;
+            if !ignore.is_empty() {
+                let patterns = ignore
+                    .iter()
+                    .map(|p| p.trim())
+                    .filter(|p| !p.is_empty())
+                    .filter_map(|p| match glob::Pattern::new(p) {
+                        Ok(pat) => Some(pat),
+                        Err(err) => {
+                            warn!("invalid pattern {p:?} in status.show_env_ignore: {err}");
+                            None
+                        }
+                    })
+                    .collect_vec();
+                let opts = glob::MatchOptions {
+                    case_sensitive: !cfg!(windows),
+                    ..Default::default()
+                };
+                env_diff.retain(|op| {
+                    let key = match op {
+                        EnvDiffOperation::Add(k, _)
+                        | EnvDiffOperation::Change(k, _)
+                        | EnvDiffOperation::Remove(k) => k,
+                    };
+                    !patterns.iter().any(|p| p.matches_with(key, opts))
+                });
+            }
             if !env_diff.is_empty() {
                 let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
                 info!("{}", format_status(&env_diff));

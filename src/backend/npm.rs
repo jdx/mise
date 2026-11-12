@@ -229,6 +229,142 @@ fn validate_git_alias(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether the tool name is a tarball URL (`https://pkg.pr.new/…`) rather than
+/// a registry package. `http://` is recognised only to be refused.
+pub(crate) fn is_tarball_spec(name: &str) -> bool {
+    name.starts_with("https://") || name.starts_with("http://")
+}
+
+/// Whether a source has no version list and `latest` follows whatever it
+/// serves now: a git source without a pinned `#ref`, or a tarball URL.
+fn tracks_source_head(name: &str) -> bool {
+    git_tracks_head(name) || is_tarball_spec(name)
+}
+
+/// An alias to install a tarball under: the last path segment of the URL,
+/// without a `@ref` suffix or archive extension (`…/actionlint@343` is
+/// `actionlint`).
+fn tarball_alias(name: &str) -> String {
+    let url = name.split(['?', '#']).next().unwrap_or(name);
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    // The host is not part of the path.
+    let path = rest.split_once('/').map_or("", |(_, path)| path);
+    let segment = path.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    let segment = segment.split('@').next().unwrap_or(segment);
+    let segment = [".tar.gz", ".tgz"]
+        .iter()
+        .find_map(|ext| segment.strip_suffix(ext))
+        .unwrap_or(segment);
+    segment.to_string()
+}
+
+/// Reject a tarball URL that is not `https://` or has no usable alias.
+fn validate_tarball_spec(name: &str) -> Result<()> {
+    if !name.starts_with("https://") {
+        eyre::bail!(
+            "npm tarball sources must use https://: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    let alias = tarball_alias(name);
+    let valid = !alias.is_empty()
+        && alias != "."
+        && alias != ".."
+        && alias
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if !valid {
+        eyre::bail!(
+            "cannot determine a package name from tarball source: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    Ok(())
+}
+
+/// Download a tarball source to `dest` and return its version: a prefix of the
+/// SHA-256 of what the URL serves now. The URL is mutable (`…@343` follows the
+/// newest push), so the content is its only stable identity.
+async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
+    validate_tarball_spec(url)?;
+    let display = redact_credentials(url);
+    debug!("GET {display}");
+    // The HTTP client bounds the transfer with `http_download_timeout`; a
+    // version-lookup timeout would cut off a large tarball.
+    crate::http::HTTP
+        .download_file(url, dest, None)
+        .await
+        .map_err(|err| {
+            // The error text can quote the URL, which may carry a token.
+            eyre::eyre!(
+                "failed to fetch {display}: {}",
+                redact_credentials(&format!("{err:#}"))
+            )
+        })?;
+    let digest = crate::hash::file_hash_sha256(dest, None)?;
+    Ok(digest[..16].to_string())
+}
+
+/// The version of a tarball source as it is served now. One run asks several
+/// times (the latest version, then whether the installed one is outdated), so
+/// the digest is fetched once per URL per process. An install never uses it: it
+/// downloads again.
+async fn tarball_digest(url: &str) -> eyre::Result<String> {
+    // A long-lived process (a watcher, an MCP server) must still see a new push,
+    // so an entry lasts as long as a cached version list does.
+    static SEEN: LazyLock<Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>> =
+        LazyLock::new(Default::default);
+    // `None` is prefer-offline: a cached list never expires there.
+    let ttl = Settings::get().fetch_remote_versions_cache();
+    if let Some((fetched, digest)) = SEEN.lock().unwrap().get(url)
+        && ttl.is_none_or(|ttl| fetched.elapsed() < ttl)
+    {
+        return Ok(digest.clone());
+    }
+    let dir = tempfile::tempdir()?;
+    let digest = fetch_tarball(url, &dir.path().join("package.tgz")).await?;
+    SEEN.lock()
+        .unwrap()
+        .insert(url.to_string(), (std::time::Instant::now(), digest.clone()));
+    Ok(digest)
+}
+
+/// Download a tarball source for install and check that it is the content
+/// `version` names. The returned archive is what gets installed, so a push
+/// after the check cannot change it.
+async fn tarball_package_install_spec(
+    name: &str,
+    version: &str,
+    has_checksum: bool,
+    archive: &Path,
+) -> Result<String> {
+    validate_tarball_spec(name)?;
+    if has_checksum {
+        eyre::bail!(
+            "the checksum option is not supported for tarball sources: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    if let Some(dir) = archive.parent() {
+        // Start clean: a finished resumable partial left here is reused without
+        // asking the server, which would verify old bytes instead of the URL.
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+        crate::file::create_dir_all(dir)?;
+    }
+    let current = fetch_tarball(name, archive).await?;
+    if version != "latest" && current != version {
+        eyre::bail!(
+            "npm:{} now serves {current}, not {version}; run `mise up` to update it",
+            redact_credentials(name)
+        );
+    }
+    Ok(archive.to_string_lossy().into_owned())
+}
+
 /// Reject a registry package version that is not a version, range or dist-tag.
 ///
 /// The version reaches the package manager as `<name>@<version>` or as the
@@ -613,6 +749,25 @@ fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
     health
 }
 
+/// Whether `dir` is an installed package: it has a manifest, and it is not a
+/// Windows file symlink. An empty dir left where a link was lost does not count.
+/// A tar restore with native symlinks can turn a directory link into a file
+/// symlink that points at the right directory: Win32 opens through it, so the
+/// manifest looks present, but node does not follow it as a directory.
+fn dependency_is_present(dir: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        if dir
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink_file())
+        {
+            return false;
+        }
+    }
+    dir.join("package.json").try_exists().unwrap_or(false)
+}
+
 /// Whether every runtime dependency of the package in a virtual-store entry
 /// (`<entry>/node_modules/<name>`) is linked beside it or bundled inside it.
 /// The package is the one real directory there; its dependencies are links.
@@ -657,19 +812,9 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
             if optional.is_some_and(|o| o.contains_key(dep)) {
                 continue;
             }
-            // An empty dir left where a link was lost does not count.
-            let present = modules
-                .join(dep)
-                .join("package.json")
-                .try_exists()
-                .unwrap_or(false)
-                || package
-                    .join("node_modules")
-                    .join(dep)
-                    .join("package.json")
-                    .try_exists()
-                    .unwrap_or(false);
-            if !present {
+            if !dependency_is_present(&modules.join(dep))
+                && !dependency_is_present(&package.join("node_modules").join(dep))
+            {
                 return false;
             }
         }
@@ -987,6 +1132,10 @@ impl Backend for NPMBackend {
     /// directly. Its cache is keyed by what `npm` reads there, so one
     /// registry's list is not reused for another.
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        // A tarball URL is not a package name, and no registry lists it.
+        if is_tarball_spec(&self.tool_name()) {
+            return Ok(None);
+        }
         if Settings::get().npm.shell_out {
             let env = self.dependency_env(config).await?;
             // `npm view` resolves its registry from the whole environment, since
@@ -1075,6 +1224,19 @@ impl Backend for NPMBackend {
                 }
             });
         }
+        if is_tarball_spec(&name) {
+            // A tarball has no version list; its one version is its content.
+            return Ok(match tarball_digest(&name).await {
+                Ok(version) => vec![VersionInfo {
+                    version,
+                    ..Default::default()
+                }],
+                Err(err) => {
+                    debug!("could not fetch {}: {err:#}", redact_credentials(&name));
+                    vec![]
+                }
+            });
+        }
         if Settings::get().npm.shell_out {
             return self.list_remote_versions_npm_view(config).await;
         }
@@ -1089,7 +1251,14 @@ impl Backend for NPMBackend {
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
-        version == "latest" && git_tracks_head(&self.tool_name())
+        version == "latest" && tracks_source_head(&self.tool_name())
+    }
+
+    /// A tarball's versions are digests, which an ordering would use to miss an
+    /// installed digest that sorts above the new one. They are only ever equal
+    /// or different.
+    fn versions_are_unordered(&self, _request: &str) -> bool {
+        is_tarball_spec(&self.tool_name())
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
@@ -1105,7 +1274,11 @@ impl Backend for NPMBackend {
         if !self.is_rolling_channel(version) {
             return Ok(None);
         }
-        git_head(&git_remote(&self.tool_name())).await.map(Some)
+        let name = self.tool_name();
+        if is_tarball_spec(&name) {
+            return tarball_digest(&name).await.map(Some);
+        }
+        git_head(&git_remote(&name)).await.map(Some)
     }
 
     fn requires_concrete_channel_version(&self, version: &str) -> bool {
@@ -1114,6 +1287,9 @@ impl Backend for NPMBackend {
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let name = self.tool_name();
+        if is_tarball_spec(&name) {
+            return tarball_digest(&name).await.map(Some);
+        }
         if is_git_spec(&name) {
             if !git_tracks_head(&name) {
                 return Ok(Some("latest".to_string()));
@@ -1182,7 +1358,11 @@ impl Backend for NPMBackend {
                 package_manager
             );
         }
+        // A tarball URL has no dependency graph (see `resolve_aube_lock`); its
+        // version, the digest, is all the lockfile holds.
+        let graph_wanted = !is_tarball_spec(&self.tool_name());
         if package_manager == NpmPackageManager::Aube
+            && graph_wanted
             && tv.resolved_from_lockfile()
             && tv.aube_lock.is_none()
             && ctx.locked
@@ -1194,6 +1374,7 @@ impl Backend for NPMBackend {
             );
         }
         if package_manager == NpmPackageManager::Aube
+            && graph_wanted
             && tv.aube_lock.is_none()
             && (source_lockfile_version.is_some_and(|v| v >= 2)
                 || Self::aube_lock_creation_enabled(&tv))
@@ -1221,7 +1402,10 @@ impl Backend for NPMBackend {
         if tv.aube_lock.is_some() && !Self::uses_embedded_aube() {
             return Ok(false);
         }
-        if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
+        if Self::uses_embedded_aube()
+            && tv.aube_lock.is_none()
+            && !is_tarball_spec(&self.tool_name())
+        {
             let source_lockfile_version = self.aube_lockfile_version(config, tv)?;
             if source_lockfile_version.is_some_and(|version| version >= 2)
                 || Self::aube_lock_creation_enabled(tv)
@@ -1649,6 +1833,15 @@ impl NPMBackend {
         if is_git_spec(&tool_name) {
             return git_package_install_spec(&tool_name, &tv.version, options.checksum().is_some());
         }
+        if is_tarball_spec(&tool_name) {
+            return tarball_package_install_spec(
+                &tool_name,
+                &tv.version,
+                options.checksum().is_some(),
+                &tv.download_path().join("package.tgz"),
+            )
+            .await;
+        }
         validate_registry_version(&tool_name, &tv.version)?;
         let Some(checksum) = options.checksum() else {
             return Ok(format!("{tool_name}@{}", tv.version));
@@ -1736,6 +1929,8 @@ impl NPMBackend {
         let name = self.tool_name();
         if is_git_spec(&name) {
             git_alias(&name)
+        } else if is_tarball_spec(&name) {
+            tarball_alias(&name)
         } else {
             name
         }
@@ -1746,6 +1941,9 @@ impl NPMBackend {
         let name = self.tool_name();
         if is_git_spec(&name) {
             Ok(git_requirement(&name, &tv.version))
+        } else if is_tarball_spec(&name) {
+            validate_tarball_spec(&name)?;
+            Ok(name)
         } else {
             validate_registry_version(&name, &tv.version)?;
             Ok(tv.version.clone())
@@ -2251,7 +2449,13 @@ impl NPMBackend {
             &allow_builds,
             tv.resolved_from_lockfile(),
         )?;
-        self.write_aube_root_dependency(&install_path, tv)?;
+        if is_tarball_spec(&self.tool_name()) && tv.aube_lock.is_none() {
+            // The archive in `package` is installed instead of the mutable URL,
+            // and aube names it after its own package.json.
+            self.write_aube_empty_dependencies(&install_path)?;
+        } else {
+            self.write_aube_root_dependency(&install_path, tv)?;
+        }
 
         if let Some(lock) = &tv.aube_lock {
             crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
@@ -2522,6 +2726,18 @@ impl NPMBackend {
         Ok(())
     }
 
+    fn write_aube_empty_dependencies(&self, install_path: &Path) -> Result<()> {
+        let path = install_path.join("package.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+        manifest["dependencies"] = serde_json::json!({});
+        crate::file::write(
+            path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+        Ok(())
+    }
+
     fn write_aube_root_dependency(&self, install_path: &Path, tv: &ToolVersion) -> Result<()> {
         let path = install_path.join("package.json");
         let mut manifest: serde_json::Value =
@@ -2561,6 +2777,7 @@ impl NPMBackend {
         // A dist-tag such as `next` is not a version yet: aube records the release
         // it picked, so there is nothing to compare until the tag is resolved.
         let resolves_locked_version = is_git_spec(&self.tool_name())
+            || is_tarball_spec(&self.tool_name())
             || versions::SemVer::new(&tv.version).is_none()
             || resolved.is_some_and(|v| v.split('(').next() == Some(tv.version.as_str()));
         if requirement != Some(self.package_requirement(tv)?.as_str()) || !resolves_locked_version {
@@ -2577,6 +2794,16 @@ impl NPMBackend {
         &self,
         tv: &ToolVersion,
     ) -> Result<crate::lockfile::GraphRef<crate::lockfile::AubeLock>> {
+        if is_tarball_spec(&self.tool_name()) {
+            // aube resolves a URL root without reading the tarball's
+            // `optionalDependencies`, so a graph for it would silently lack
+            // packages such as the per-platform binary. An install resolves
+            // the downloaded archive instead, which does read them.
+            eyre::bail!(
+                "npm:{} is a tarball URL, which has no dependency graph in the lockfile",
+                self.display_tool_name()
+            );
+        }
         crate::backend::aube_host::init();
         let temp = tempfile::tempdir()?;
         let request_options = tv.request.options();
@@ -2743,9 +2970,14 @@ impl NPMBackend {
     }
 
     fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
-        let tool_name = self.package_key();
-        let Some((package_json_path, hooks)) =
-            Self::installed_package_lifecycle_scripts(&tv.install_path(), &tool_name)
+        let names = if is_tarball_spec(&self.tool_name()) {
+            Self::tarball_package_names(&tv.install_path())
+        } else {
+            vec![self.package_key()]
+        };
+        let Some((package_json_path, hooks)) = names
+            .iter()
+            .find_map(|name| Self::installed_package_lifecycle_scripts(&tv.install_path(), name))
         else {
             return;
         };
@@ -2758,6 +2990,49 @@ impl NPMBackend {
             NPM_IGNORE_SCRIPTS_ARG,
             Self::npm_lifecycle_script_remediation()
         );
+    }
+
+    /// The name a tarball was installed under: the one that is in its own
+    /// package.json, not the URL. Embedded aube records it as the root
+    /// dependency in the prefix's package.json. npm writes no such file, but a
+    /// global install puts only the root package at the top of
+    /// `lib/node_modules` (its dependencies nest inside it), so that is the
+    /// fallback. The hoisted `node_modules` of an aube install is never
+    /// scanned, since it holds dependencies.
+    fn tarball_package_names(install_path: &Path) -> Vec<String> {
+        let recorded = std::fs::read_to_string(install_path.join("package.json"))
+            .ok()
+            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .and_then(|manifest| {
+                manifest
+                    .get("dependencies")
+                    .and_then(serde_json::Value::as_object)
+                    .map(|dependencies| dependencies.keys().cloned().collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
+        if !recorded.is_empty() {
+            return recorded;
+        }
+        let top = install_path.join("lib").join("node_modules");
+        let mut names = vec![];
+        for entry in std::fs::read_dir(&top).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            if name.starts_with('@') {
+                for child in std::fs::read_dir(entry.path())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
+                    names.push(format!("{name}/{}", child.file_name().to_string_lossy()));
+                }
+            } else {
+                names.push(name);
+            }
+        }
+        names
     }
 
     fn npm_lifecycle_script_remediation() -> String {
@@ -3436,6 +3711,22 @@ mod tests {
     }
 
     #[test]
+    fn tarball_specs_are_detected_and_aliased() {
+        let url = "https://pkg.pr.new/kjanat/actionlint/@kjanat/actionlint@343";
+        assert!(is_tarball_spec(url));
+        assert!(!is_tarball_spec("prettier"));
+        assert!(!is_tarball_spec("github:o/r"));
+        assert!(tracks_source_head(url));
+        assert_eq!(tarball_alias(url), "actionlint");
+        assert_eq!(tarball_alias("https://h/p/tool-1.2.3.tgz"), "tool-1.2.3");
+        assert_eq!(tarball_alias("https://h/p/tool.tar.gz?x=1#y"), "tool");
+        assert!(validate_tarball_spec(url).is_ok());
+        assert!(validate_tarball_spec("http://h/p/tool.tgz").is_err());
+        assert!(validate_tarball_spec("https://h/").is_err());
+        assert!(validate_tarball_spec("https://h/a b").is_err());
+    }
+
+    #[test]
     fn git_specs_are_detected_and_aliased() {
         for name in [
             "git+https://github.com/o/r",
@@ -3720,6 +4011,72 @@ mod tests {
     }
     use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn tarball_package_is_found_without_a_recorded_dependency() {
+        let write = |dir: &Path, body: &str| {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("package.json"), body).unwrap();
+        };
+        // npm: no package.json in the prefix; the root package is at the top
+        // of lib/node_modules and its dependency nests inside it
+        let npm = tempfile::tempdir().unwrap();
+        let root = npm.path().join("lib/node_modules/@acme/hooky");
+        write(
+            &root,
+            r#"{"name":"@acme/hooky","scripts":{"postinstall":"x"}}"#,
+        );
+        write(
+            &root.join("node_modules/dep"),
+            r#"{"name":"dep","scripts":{"postinstall":"y"}}"#,
+        );
+        let names = NPMBackend::tarball_package_names(npm.path());
+        assert_eq!(names, vec!["@acme/hooky".to_string()]);
+        let (path, hooks) =
+            NPMBackend::installed_package_lifecycle_scripts(npm.path(), &names[0]).unwrap();
+        assert_eq!(path, root.join("package.json"));
+        assert_eq!(hooks, vec!["postinstall"]);
+
+        // aube: the root dependency is recorded, and hoisted dependencies
+        // under node_modules are not candidates
+        let aube = tempfile::tempdir().unwrap();
+        write(
+            aube.path(),
+            r#"{"dependencies":{"@acme/hooky":"file:/x/package.tgz"}}"#,
+        );
+        write(
+            &aube.path().join("node_modules/dep"),
+            r#"{"name":"dep","scripts":{"postinstall":"y"}}"#,
+        );
+        let names = NPMBackend::tarball_package_names(aube.path());
+        assert_eq!(names, vec!["@acme/hooky".to_string()]);
+        assert!(NPMBackend::installed_package_lifecycle_scripts(aube.path(), &names[0]).is_none());
+    }
+
+    #[tokio::test]
+    async fn tarball_install_refuses_a_checksum() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = tarball_package_install_spec(
+            "https://h/p/tool.tgz",
+            "latest",
+            true,
+            &tmp.path().join("package.tgz"),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("checksum option is not supported"), "{err}");
+        let err = tarball_package_install_spec(
+            "http://h/p/tool.tgz",
+            "latest",
+            false,
+            &tmp.path().join("package.tgz"),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("must use https://"), "{err}");
+    }
 
     #[test]
     fn aube_lock_must_install_the_checksum_verified_archive() {
@@ -5053,6 +5410,30 @@ pkg@1.2.0 '1.2.0'
 
         // A tar round trip drops the junction.
         std::fs::remove_dir(pkg.join("dep")).unwrap();
+        assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Broken);
+    }
+
+    /// A tar restore with native symlinks recreates a directory link as a file
+    /// symlink. Win32 opens through it, but node cannot resolve the package.
+    #[cfg(windows)]
+    #[test]
+    fn dependency_file_symlink_makes_aube_tree_broken() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("node_modules/.mise");
+        let pkg = store.join("pkg@1.0.0/node_modules");
+        let dep = store.join("dep@1.0.0/node_modules/dep");
+        std::fs::create_dir_all(pkg.join("pkg")).unwrap();
+        std::fs::create_dir_all(&dep).unwrap();
+        std::fs::write(dep.join("package.json"), "{}").unwrap();
+        std::fs::write(
+            pkg.join("pkg/package.json"),
+            r#"{"dependencies":{"dep":"1"}}"#,
+        )
+        .unwrap();
+        // Creating a symlink needs a privilege some runners lack.
+        if std::os::windows::fs::symlink_file(&dep, pkg.join("dep")).is_err() {
+            return;
+        }
         assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Broken);
     }
 

@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 // The doc comments on these types are their descriptions in schema/mise.json, which editors show
 // to users. Notes for Rust readers go in plain comments.
@@ -61,6 +62,10 @@ pub struct PackageOptionsTomlConfig {
     /// desired package state; pacman, scoop, snap, and zypper support absent
     #[serde(default)]
     pub state: PackageDesiredStateTomlConfig,
+    /// package names per manager for a key without a manager prefix, e.g. { apt = "libssl-dev", dnf = "openssl-devel" }; a manager not listed uses the key as the name
+    #[serde(default)]
+    #[schemars(length(min = 1))]
+    pub names: BTreeMap<String, String>,
 }
 
 fn package_os(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -111,6 +116,15 @@ impl PackageTomlConfig {
     pub fn appdir(&self) -> Option<&str> {
         match self {
             Self::Options(options) => options.appdir.as_deref(),
+            Self::Version(_) => None,
+        }
+    }
+
+    /// The package name for `manager` on an entry without a manager prefix, if the entry
+    /// overrides it.
+    pub fn name_for(&self, manager: &str) -> Option<&str> {
+        match self {
+            Self::Options(options) => options.names.get(manager).map(String::as_str),
             Self::Version(_) => None,
         }
     }

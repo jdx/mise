@@ -360,10 +360,10 @@ pub struct TaskWatchDecl {
     pub no_vcs_ignore: Option<bool>,
 }
 
-/// files/directories to include searching for tasks. Can be local paths, git repository URLs using git:: prefix (e.g., git::https://github.com/org/repo.git//path?ref=branch), or OCI artifacts using oci:: prefix (e.g., oci::ghcr.io/org/tasks:1.0.0)
+/// files/directories to include searching for tasks. Can be local paths, git repository URLs using git:: prefix (e.g., git::https://github.com/org/repo.git//path?ref=branch), OCI artifacts using oci:: prefix (e.g., oci::ghcr.io/org/tasks:1.0.0), or zip archives using zip:: prefix (e.g., zip::https://example.com/tasks.zip)
 #[derive(JsonSchema)]
 pub struct TaskIncludes(pub Vec<TaskInclude>);
 
-/// file/directory root to include in task execution. Supports local paths, git URLs (git::https://github.com/org/repo.git//path?ref=branch), and OCI artifacts (oci::ghcr.io/org/tasks:1.0.0)
+/// file/directory root to include in task execution. Supports local paths, git URLs (git::https://github.com/org/repo.git//path?ref=branch), OCI artifacts (oci::ghcr.io/org/tasks:1.0.0), and zip archives (zip::https://example.com/tasks.zip)
 #[derive(JsonSchema)]
 pub struct TaskInclude(pub String);

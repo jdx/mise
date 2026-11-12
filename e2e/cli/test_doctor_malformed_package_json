@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
+
+cat >package.json <<'JSON'
+{"devEngines": {"runtime": {"name": "node", "version": "22.0.0"},}}
+JSON
+assert_contains "mise doctor 2>&1 || true" "package.json is not valid, so mise ignores the versions it declares"
+assert_contains "mise doctor -J 2>&1 || true" "package.json is not valid, so mise ignores the versions it declares"
+
+cat >package.json <<'JSON'
+{"devEngines": {"runtime": {"name": "node", "version": "22.0.0"}}}
+JSON
+assert_not_contains "mise doctor 2>&1 || true" "package.json is not valid"
+assert_not_contains "mise doctor -J 2>&1 || true" "package.json is not valid"

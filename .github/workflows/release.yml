@@ -160,7 +160,7 @@ jobs:
     needs: [gate]
     if: needs.gate.outputs.build == 'true'
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'macos-14' || 'namespace-profile-endev-macos-arm64' }}
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'macos-latest' || 'namespace-profile-endev-macos-arm64' }}
     timeout-minutes: 300
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -177,7 +177,7 @@ jobs:
             target: aarch64-apple-darwin
             pgo: 1
     steps:
-      - uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
+      - uses: apple-actions/import-codesign-certs@288b8ec97b82c66b6f2a6baaf7acc8dfbcbe331c # v7.2.0
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
@@ -401,7 +401,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:fecd2e10fe4d61b8ea49a9245e6fabfbf2aea64f95f6449ea1c57c30b182c67e
+    container: ghcr.io/jdx/mise:rpm@sha256:c72401f209065266836ee568237ff87d327516ee28be9afa674069ed40ca2a05
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -427,7 +427,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:71273134a1d3f23c225e8b303356cbcc2c2448d293db4c9f275cc62d93623698
+    container: ghcr.io/jdx/mise:deb@sha256:adc5907ac962280220fe9c7bdb178f58fd033d45cba62645d14ada3e6d39211e
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -732,7 +732,7 @@ jobs:
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@b934a22ba187f1d3928441170b9413c5119360bf # v1.11.2
+      - uses: jdx/packslip@44e50e5f64551234b4a382d991bd7f7f7d021d06 # v1.11.3
         with:
           artifacts: release-assets/mise-*
           bin: mise
@@ -907,7 +907,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
-      - uses: jdx/packslip@b934a22ba187f1d3928441170b9413c5119360bf # v1.11.2
+      - uses: jdx/packslip@44e50e5f64551234b4a382d991bd7f7f7d021d06 # v1.11.3
         with:
           artifacts: release-assets/mise-*
           bin: mise

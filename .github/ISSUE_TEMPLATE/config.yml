@@ -1,4 +1,4 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
   - name: Questions and Ideas
     url: https://github.com/jdx/mise/discussions/new/choose

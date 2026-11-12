@@ -76,7 +76,8 @@ TOML
 MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy" "project dummy"
 MISE_EXEC_AUTO_INSTALL=0 assert_not_contains "mise x -- dummy 2>&1" "$warning"
 
-# An entry the inherited PATH already has is searched after tool paths, so it does not.
+# An entry the inherited PATH already has still ranks ahead of tool paths, so its copy runs
+# and there is no fallback to warn about.
 cat >mise.toml <<TOML
 [tools]
 dummy = "2.0.0"
@@ -84,7 +85,8 @@ dummy = "2.0.0"
 [env]
 _.path = ["$HOME/fallback-bin"]
 TOML
-MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "dummy@2.0.0 is $warning"
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "dummy from PATH"
+MISE_EXEC_AUTO_INSTALL=0 assert_not_contains "mise x -- dummy 2>&1" "$warning"
 
 # A command wrapper configured for the command runs, even before its shim exists.
 cat >mise.toml <<'TOML'

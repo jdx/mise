@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# A template defined in one monorepo project's mise.toml resolves for that project's tasks
+# even when mise runs from a sibling project.
+export MISE_EXPERIMENTAL=1
+
+mkdir -p foo bar
+
+cat <<'EOT' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo", "bar"]
+EOT
+
+cat <<'EOT' >foo/mise.toml
+[task_templates.example]
+env = { GREETING = "hello" }
+
+[tasks.foo_task]
+extends = "example"
+run = "echo foo $GREETING"
+EOT
+
+cat <<'EOT' >bar/mise.toml
+[tasks.bar_task]
+run = "echo bar"
+EOT
+
+assert "mise run //foo:foo_task" "foo hello"
+cd bar || exit 1
+assert "mise run :bar_task" "bar"
+assert "mise run //foo:foo_task" "foo hello"
+assert_contains "mise tasks ls --all" "//foo:foo_task"
+
+# A global override file outranks the project's own template.
+mkdir -p "$HOME/.config/mise"
+export MISE_CONFIG_DIR="$HOME/.config/mise"
+cat <<'EOT' >"$MISE_CONFIG_DIR/config.override.toml"
+[task_templates.example]
+env = { GREETING = "override" }
+EOT
+assert "mise run //foo:foo_task" "foo override"

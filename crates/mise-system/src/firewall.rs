@@ -1675,7 +1675,17 @@ fn ufw_rule_matches(tokens: &[String], rule: &FirewallRule) -> bool {
     {
         return false;
     }
-    let compound = tokens.iter().find_map(|token| token.split_once('/'));
+    // A `from`/`to` value can be a CIDR (`10.42.0.0/16`), which is not a port/proto.
+    let compound = tokens
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            !matches!(
+                index.checked_sub(1).map(|prev| tokens[prev].as_str()),
+                Some("from" | "to")
+            )
+        })
+        .find_map(|(_, token)| token.split_once('/'));
     let actual_protocol =
         value_after(tokens, "proto").or_else(|| compound.map(|(_, protocol)| protocol));
     if actual_protocol != rule.protocol.map(FirewallProtocol::as_str) {
@@ -1841,8 +1851,15 @@ fn command_output(program: &str, args: &[&str]) -> Result<Output> {
     command_output_path(&path, args)
 }
 
+/// A command that prints English: `LANGUAGE` outranks `LC_ALL` for gettext.
+fn c_locale_command(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    command.env("LC_ALL", "C").env_remove("LANGUAGE");
+    command
+}
+
 fn command_output_path(program: &Path, args: &[&str]) -> Result<Output> {
-    Ok(Command::new(program).args(args).output()?)
+    Ok(c_locale_command(program).args(args).output()?)
 }
 
 fn run(program: &Path, args: &[&str]) -> Result<()> {
@@ -1862,7 +1879,7 @@ fn run_owned(program: &Path, args: &[String]) -> Result<()> {
 fn run_with_stdin(program: &Path, args: &[&str], input: &[u8]) -> Result<()> {
     use std::io::Write;
     use std::process::Stdio;
-    let mut child = Command::new(program)
+    let mut child = c_locale_command(program)
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -2325,6 +2342,67 @@ mod tests {
             shell_words::split("allow out to 1.1.1.1 port 53 proto udp comment 'mise:dns'")
                 .unwrap();
         assert!(ufw_rule_matches(&expanded, &outgoing));
+    }
+
+    #[test]
+    fn matches_ufw_rule_with_cidr_endpoints() {
+        let mut rule = request_with_ssh(None).rules[0].clone();
+        rule.name = "k3s-pods".to_string();
+        rule.protocol = None;
+        rule.port = None;
+        rule.interface = Some("cni0".to_string());
+        rule.source = Some("10.42.0.0/16".parse().unwrap());
+        let tokens =
+            shell_words::split("allow in on cni0 from 10.42.0.0/16 comment 'mise:k3s-pods'")
+                .unwrap();
+        assert!(ufw_rule_matches(&tokens, &rule));
+
+        rule.source = None;
+        rule.interface = None;
+        rule.destination = Some("10.43.0.0/16".parse().unwrap());
+        rule.protocol = Some(FirewallProtocol::Tcp);
+        rule.port = Some(FirewallPort {
+            start: 443,
+            end: 443,
+        });
+        let tokens =
+            shell_words::split("allow to 10.43.0.0/16 443/tcp comment 'mise:k3s-pods'").unwrap();
+        assert!(ufw_rule_matches(&tokens, &rule));
+
+        rule.source = Some("10.42.0.0/16".parse().unwrap());
+        let tokens = shell_words::split(
+            "allow from 10.42.0.0/16 to 10.43.0.0/16 443/tcp comment 'mise:k3s-pods'",
+        )
+        .unwrap();
+        assert!(ufw_rule_matches(&tokens, &rule));
+
+        rule.protocol = None;
+        rule.port = None;
+        let tokens =
+            shell_words::split("allow from 10.42.0.0/16 to 10.43.0.0/16 comment 'mise:k3s-pods'")
+                .unwrap();
+        assert!(ufw_rule_matches(&tokens, &rule));
+
+        let tokens = shell_words::split(
+            "allow from 10.42.0.0/16 to 10.43.0.0/16 443/tcp comment 'mise:k3s-pods'",
+        )
+        .unwrap();
+        assert!(!ufw_rule_matches(&tokens, &rule));
+    }
+
+    #[test]
+    fn commands_run_with_a_c_locale() {
+        let command = c_locale_command(Path::new("ufw"));
+        let envs = command
+            .get_envs()
+            .map(|(key, value)| (key.to_owned(), value.map(ToOwned::to_owned)))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            envs[std::ffi::OsStr::new("LC_ALL")].as_deref(),
+            Some("C".as_ref())
+        );
+        // `None` means the variable is removed from the child's environment.
+        assert_eq!(envs[std::ffi::OsStr::new("LANGUAGE")], None);
     }
 
     #[test]

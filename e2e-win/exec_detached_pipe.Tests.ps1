@@ -1,0 +1,62 @@
+Describe 'exec_detached_pipe' {
+    # Regression test for #15582: a process a tool starts detached with
+    # `stdio: 'ignore'` must not keep the caller's stdout pipe open. PowerShell
+    # reads `$out = ...` until every holder of the pipe's write end has closed
+    # it, so a leaked handle made the capture wait for the detached process.
+
+    BeforeAll {
+        $script:miseExe = (Get-Command mise).Source
+        $script:workdir = Join-Path -Path $env:TEMP -ChildPath "mise-15582-$PID"
+        New-Item -ItemType Directory -Force -Path $script:workdir | Out-Null
+        Push-Location $script:workdir
+        # A private data dir, so reshimming never touches the developer's shims.
+        $script:savedDataDir = $env:MISE_DATA_DIR
+        $script:savedShimsDir = $env:MISE_SHIMS_DIR
+        $script:savedExecAutoInstall = $env:MISE_EXEC_AUTO_INSTALL
+        $env:MISE_DATA_DIR = Join-Path -Path $script:workdir -ChildPath 'data'
+        $env:MISE_SHIMS_DIR = Join-Path -Path $script:workdir -ChildPath 'shims'
+        # A local config, so the shim case does not change the global node.
+        Set-Content -Path 'mise.toml' -Value "[tools]`nnode = '22'"
+        mise trust | Out-Null
+        mise install node | Out-Null
+        # Node is installed; the timed runs must not install unrelated global tools.
+        $env:MISE_EXEC_AUTO_INSTALL = 'false'
+        # The detached child lives long enough to show a leak and prints a marker so a failed
+        # launch cannot pass as a fast return.
+        $script:js = "require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)', '15582-$PID'], { stdio: 'ignore', detached: true }).unref(); console.log('started')"
+        $script:savedShimMode = $env:MISE_WINDOWS_SHIM_MODE
+    }
+
+    AfterAll {
+        $env:MISE_WINDOWS_SHIM_MODE = $script:savedShimMode
+        $env:MISE_DATA_DIR = $script:savedDataDir
+        $env:MISE_SHIMS_DIR = $script:savedShimsDir
+        $env:MISE_EXEC_AUTO_INSTALL = $script:savedExecAutoInstall
+        # The detached children run in the workdir and would lock it.
+        Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+            Where-Object { $_.CommandLine -like "*15582-$PID*" } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction Ignore }
+        Pop-Location
+        Remove-Item -Recurse -Force $script:workdir -ErrorAction Ignore
+    }
+
+    It 'returns without waiting for a detached process under mise exec' {
+        $out = $null
+        $seconds = (Measure-Command { $out = & $script:miseExe exec -- node -e $script:js }).TotalSeconds
+        $LASTEXITCODE | Should -Be 0
+        "$out".Trim() | Should -Be 'started'
+        $seconds | Should -BeLessThan 10
+    }
+
+    It 'returns without waiting for a detached process under a shim' {
+        $env:MISE_WINDOWS_SHIM_MODE = 'exe'
+        mise reshim
+        $shim = Join-Path -Path $env:MISE_SHIMS_DIR -ChildPath 'node.exe'
+        $shim | Should -Exist
+        $out = $null
+        $seconds = (Measure-Command { $out = & $shim -e $script:js }).TotalSeconds
+        $LASTEXITCODE | Should -Be 0
+        "$out".Trim() | Should -Be 'started'
+        $seconds | Should -BeLessThan 10
+    }
+}

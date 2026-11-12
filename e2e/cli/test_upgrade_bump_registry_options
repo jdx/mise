@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# `mise upgrade --bump` and `mise use` must not write a registry entry's own
+# options (packslip's `workflow` for jactionlint) into mise.toml.
+cat >mise.toml <<'EOF'
+[tools]
+jactionlint = "2.4.0"
+EOF
+
+mise use --pin jactionlint@2.5.0 >/dev/null 2>&1
+assert_not_contains "cat mise.toml" "workflow"
+assert_contains "cat mise.toml" 'jactionlint = "2.5.0"'
+
+mise use --pin jactionlint@2.4.0 >/dev/null 2>&1
+mise upgrade --bump jactionlint >/dev/null 2>&1
+assert_not_contains "cat mise.toml" '"2.4.0"'
+assert_contains "cat mise.toml" "jactionlint = "
+assert_not_contains "cat mise.toml" "workflow"
+
+# an option the file spells out itself is kept
+cat >mise.toml <<'EOF'
+[tools]
+jactionlint = { version = "2.4.0", workflow = "release.yaml" }
+EOF
+mise use --pin jactionlint@2.5.0 >/dev/null 2>&1
+assert_contains "cat mise.toml" 'workflow = "release.yaml"'
+
+# an option passed explicitly is kept even when it matches the registry default
+cat >mise.toml <<'EOF'
+[tools]
+jactionlint = "2.4.0"
+EOF
+mise use --pin --tool-option workflow=release.yaml jactionlint@2.5.0 >/dev/null 2>&1
+assert_contains "cat mise.toml" 'workflow = "release.yaml"'
+
+# an alias of a registry tool does not save the registry's defaults either
+cat >mise.toml <<'EOF'
+[tool_alias.myactionlint]
+backend = "jactionlint"
+EOF
+mise use --pin myactionlint@2.5.0 >/dev/null 2>&1
+assert_contains "cat mise.toml" "myactionlint"
+assert_not_contains "cat mise.toml" "workflow"

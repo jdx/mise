@@ -685,6 +685,7 @@ include = [
   "./config/tools.toml",
   "git::https://github.com/myorg/platform.git//mise.toml?ref=main",
   "oci::ghcr.io/myorg/platform-config@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "zip::https://example.com/platform-config.zip",
 ]
 
 [tools]
@@ -693,7 +694,10 @@ node = "24" # this file's own entries override the included ones
 
 A local include is a path to a `.toml` file, relative to the including file or
 absolute. A `git::` include points at a `.toml` file. An `oci::` include points
-at an artifact with a `mise.toml` at its root.
+at an artifact with a `mise.toml` at its root. A `zip::` include downloads a zip
+archive over http(s) and reads the `mise.toml` at its root. A URL names no
+content, so a zip is refreshed like a branch, and [paranoid mode](/paranoid)
+rejects it.
 
 An included file ranks directly below the file that includes it, and a later entry
 in `include` overrides an earlier one. Its relative paths, such as `_.file`,

@@ -749,6 +749,18 @@ impl TrackedSet {
         asked: Asked,
         kind: Kind,
     ) -> bool {
+        Self::drop_reason(exclude, owner, path, asked, kind).is_some()
+    }
+
+    /// Why the selection lists leave `path` out of `owner`, as a listing
+    /// shows it: [`Self::dropped`] with the rule that decided named.
+    fn drop_reason(
+        exclude: &ExcludeSet,
+        owner: &TrackedEntry,
+        path: &Path,
+        asked: Asked,
+        kind: Kind,
+    ) -> Option<DropReason> {
         // **A tracked directory's own root is not something the global
         // list judges.** The walk never tests it: it steps past the root
         // and filters what is inside. A bare pattern that happens to
@@ -764,23 +776,42 @@ impl TrackedSet {
         // swallowing that event would leave its files in history after
         // they are gone.
         if inside_nested_repository(owner, path) {
-            return true;
+            return Some(DropReason::NestedRepository);
         }
         let judged = path != owner.path || kind == Kind::File;
         if judged && exclude.is_match(path, &owner.path) {
-            return true;
+            return Some(DropReason::GlobalExclude);
         }
         if owner.is_excluded(path) {
-            return true;
+            return Some(DropReason::EntryExclude);
         }
-        match kind {
+        let unselected = match kind {
             Kind::File => !owner.is_included(path),
             Kind::Directory => owner.include_prunes(path),
             Kind::Unknown => match asked {
                 Asked::Exactly => !owner.is_included(path),
                 Asked::Possibly => !owner.is_included(path) && owner.include_prunes(path),
             },
-        }
+        };
+        unselected.then_some(DropReason::NotIncluded)
+    }
+
+    /// What says why a capture of this set leaves out a path an entry
+    /// covers ([`ExclusionReasons::of`]).
+    ///
+    /// The selection lists are asked through [`Self::drop_reason`], the
+    /// predicate every other reader uses, so a listing cannot call a path
+    /// excluded that a capture would save. The filesystem rules
+    /// [`Self::would_retain`] adds are asked first.
+    ///
+    /// The rules are compiled once here, so a listing can ask about every
+    /// row without building the matcher again for each one.
+    pub fn exclusion_reasons(&self) -> Result<ExclusionReasons<'_>> {
+        Ok(ExclusionReasons {
+            set: self,
+            exclude: self.exclude_set()?,
+            hard: hard_exclusions(),
+        })
     }
 
     pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
@@ -2202,6 +2233,53 @@ pub(crate) enum Kind {
 /// there has no kind — which is the case [`TrackedSet::dropped`] hands
 /// to the reader, because that is the one case where a file's answer
 /// and a directory's answer differ and neither is available.
+/// Answers [`TrackedSet::exclusion_reasons`]'s question for one path at a
+/// time, with the rules compiled once.
+pub struct ExclusionReasons<'a> {
+    set: &'a TrackedSet,
+    exclude: ExcludeSet,
+    hard: Vec<PathBuf>,
+}
+
+impl ExclusionReasons<'_> {
+    /// Why a capture leaves out `path`, which an entry covers, or `None`
+    /// when it is selected or no entry covers it.
+    pub fn of(&self, path: &Path) -> Option<&'static str> {
+        let owner = self.set.entry_for(path)?;
+        if self.hard.iter().any(|dir| path.starts_with(dir)) {
+            return Some("mise internal directory");
+        }
+        if path
+            .components()
+            .any(|component| component.as_os_str() == ".git")
+        {
+            return Some("inside a .git directory");
+        }
+        TrackedSet::drop_reason(&self.exclude, owner, path, Asked::Exactly, kind_of(path))
+            .map(DropReason::as_str)
+    }
+}
+
+/// The rule [`TrackedSet::drop_reason`] found leaving a path out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DropReason {
+    NestedRepository,
+    GlobalExclude,
+    EntryExclude,
+    NotIncluded,
+}
+
+impl DropReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::NestedRepository => "inside a nested repository",
+            Self::GlobalExclude => "excluded by [history] exclude",
+            Self::EntryExclude => "excluded by the entry's exclude list",
+            Self::NotIncluded => "not selected by the entry's include list",
+        }
+    }
+}
+
 fn kind_of(path: &Path) -> Kind {
     match std::fs::symlink_metadata(path) {
         Ok(meta) if meta.is_dir() => Kind::Directory,

@@ -6,7 +6,7 @@ set -euo pipefail
 PACKAGE_NAME="${PACKAGE_NAME:-mise}"
 # TODO(epel-9): drop centos-stream+epel-next-9-* and switch back to epel-9-*
 # once RHEL 9 AppStream ships rust >= mise's MSRV (currently EL9 = 1.88).
-DEFAULT_CHROOTS="fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 epel-10-aarch64 epel-10-x86_64 centos-stream+epel-next-9-aarch64 centos-stream+epel-next-9-x86_64"
+DEFAULT_CHROOTS="fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-45-aarch64 fedora-45-x86_64 fedora-44-aarch64 fedora-44-x86_64 fedora-43-aarch64 fedora-43-x86_64 epel-10-aarch64 epel-10-x86_64 centos-stream+epel-next-9-aarch64 centos-stream+epel-next-9-x86_64"
 CHROOTS="${CHROOTS:-$DEFAULT_CHROOTS}"
 BUILD_PROFILE="${BUILD_PROFILE:-release}"
 MAINTAINER_NAME="${MAINTAINER_NAME:-mise Release Bot}"

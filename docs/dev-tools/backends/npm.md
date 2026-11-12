@@ -58,6 +58,35 @@ mise use 'npm:git+https://github.com/owner/repo'
 mise use 'npm:github:owner/repo@v1.2.0'
 ```
 
+### Install from a tarball URL
+
+An `https://` tarball URL is also a source, such as a preview build from
+[pkg.pr.new](https://pkg.pr.new). A tarball has no version list, so `latest` is
+what the URL serves now: mise uses a prefix of the tarball's SHA-256 as the
+version. `mise outdated` and `mise up` fetch the URL again and compare the
+digest for equality, so they update when it differs from the installed one.
+
+```toml
+[tools."npm:https://pkg.pr.new/owner/repo/@scope/pkg@343"]
+version = "latest"
+allow_exotic_deps = ["@scope/pkg-linux-x64"]
+```
+
+The whole URL is the tool name, including any `@` in its path, so
+`mise use 'npm:https://…/pkg@343'` does not read `343` as a version. Installing
+downloads the tarball once, compares its digest prefix with the version (it
+fails if they differ, until `mise up`), and installs that file, so a push between
+the check and the install cannot change what is installed. The package keeps
+the name in its own `package.json`.
+
+`http://` URLs and the `checksum` option are not supported. `mise.lock` records
+the version but no dependency graph for a tarball URL, because aube would
+resolve it without the tarball's `optionalDependencies`. With embedded aube or `aube_cli`, a tarball's own
+dependencies on other URLs, such as per-platform `optionalDependencies`, need
+[`allow_exotic_deps`](#allow-exotic-deps). Name the ones you need, as above,
+rather than `true`, which exempts the whole graph; npm, pnpm and Bun do not
+enforce that check.
+
 ## Private registries {#registry-configuration}
 
 mise reads package metadata from the registry over HTTP, and embedded aube

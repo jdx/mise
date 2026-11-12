@@ -19,7 +19,9 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
     }
 
     let spec = super::usage::completion_spec();
-    complete_spec(&spec, &request)
+    let restarted = restart_after_task_separator(&spec, &request);
+    let request = restarted.as_ref().unwrap_or(&request);
+    complete_spec(&spec, request)
         .ok()
         .or_else(|| Cli::completion_request(argv))
 }
@@ -147,6 +149,101 @@ fn complete_spec(
         files: answer.files.then_some(usage_rs::complete::Files::Any),
     };
     Ok(usage_rs::complete::render_request(&answer, request))
+}
+
+/// Treat the words after the last `:::` of a `mise run` line as a fresh `mise run` line.
+///
+/// `:::` starts the next task, but tasks are subcommands mounted under `run`, and usage checks
+/// a `restart_token` only on the innermost command it has parsed, which by then is the first
+/// task. Left alone, `mise run a f1 ::: <Tab>` completes more arguments of `a`.
+fn restart_after_task_separator(
+    spec: &usage::Spec,
+    request: &usage_rs::complete::CompletionRequest,
+) -> Option<usage_rs::complete::CompletionRequest> {
+    let split = &request.split;
+    let sep = split
+        .words
+        .get(..split.cword)?
+        .iter()
+        .rposition(|w| w == ":::")?;
+    if sep == 0 {
+        return None;
+    }
+    if !runs_tasks(spec, &split.words[1..sep]) {
+        return None;
+    }
+    let mut restarted = request.clone();
+    let mut words = vec![split.words[0].clone(), "run".to_string()];
+    words.extend(split.words[sep + 1..].iter().cloned());
+    restarted.split.cword = split.cword - sep + 1;
+    restarted.split.words = words;
+    Some(restarted)
+}
+
+/// Whether the words before a `:::` make a `mise run` line: `run`, `tasks run`, or a task
+/// named in place of a command (`mise <task>`, or `mise -- <task>` for a task named like one).
+fn runs_tasks(spec: &usage::Spec, words: &[String]) -> bool {
+    let takes_value = |word: &str| {
+        if word.contains('=') {
+            return false;
+        }
+        if let Some(long) = word.strip_prefix("--") {
+            return spec
+                .cmd
+                .flags
+                .iter()
+                .any(|f| f.arg.is_some() && f.long.iter().any(|l| l == long));
+        }
+        // A short cluster takes a value only when its first value-taking flag ends the word.
+        let Some(cluster) = word.strip_prefix('-') else {
+            return false;
+        };
+        let mut chars = cluster.chars();
+        while let Some(c) = chars.next() {
+            let Some(flag) = spec.cmd.flags.iter().find(|f| f.short.contains(&c)) else {
+                return false;
+            };
+            if flag.arg.is_some() {
+                return chars.as_str().is_empty();
+            }
+        }
+        false
+    };
+    // The next command word, past flags and the values they take, and whether a `--` ended
+    // the flags first.
+    fn next_word<'a>(
+        rest: &mut std::slice::Iter<'a, String>,
+        takes_value: &dyn Fn(&str) -> bool,
+    ) -> Option<(&'a String, bool)> {
+        while let Some(word) = rest.next() {
+            if word == "--" {
+                return rest.next().map(|w| (w, true));
+            }
+            if !word.starts_with('-') {
+                return Some((word, false));
+            }
+            if takes_value(word) {
+                rest.next();
+            }
+        }
+        None
+    }
+    let mut rest = words.iter();
+    let Some((first, after_dashes)) = next_word(&mut rest, &takes_value) else {
+        return false;
+    };
+    let Some(cmd) = spec.cmd.find_subcommand(first) else {
+        return true;
+    };
+    if after_dashes {
+        return true;
+    }
+    match cmd.name.as_str() {
+        "run" => true,
+        "tasks" => next_word(&mut rest, &takes_value)
+            .is_some_and(|(w, _)| cmd.find_subcommand(w).is_some_and(|c| c.name == "run")),
+        _ => false,
+    }
 }
 
 /// Whether `value` can be offered to a shell as a candidate.

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# A shim for a tool that no config selects names one fix on one line, using an installed
+# version. shims.fallback_to_installed opts in to running the latest installed version.
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+export MISE_NOT_FOUND_AUTO_INSTALL=0
+export MISE_NOT_FOUND_SYSTEM_FALLBACK=0
+
+mise install tiny@1.0.1 tiny@3.1.0
+mise reshim
+
+mkdir empty project && cd empty || exit 1
+
+# default: one-line error that names an installed version
+output="$(rtx-tiny 2>&1 || true)"
+assert_contains_text "$output" "No version is set for shim: rtx-tiny. Run "
+assert_contains_text "$output" "mise use -g tiny@3.1.0"
+assert_contains_text "$output" "mise x tiny@3.1.0 -- rtx-tiny"
+assert_contains_text "$output" " to run it once."
+assert_not_contains "echo '$output'" "Set a global default version"
+assert_not_contains "echo '$output'" "tiny@1.0.1"
+
+# --verbose keeps the detail
+output="$(MISE_VERBOSE=1 rtx-tiny 2>&1 || true)"
+assert_contains "echo '$output'" "tiny@1.0.1"
+assert_contains "echo '$output'" "shims.fallback_to_installed"
+
+# opt-in: runs the latest installed version
+assert "MISE_SHIMS_FALLBACK_TO_INSTALLED=1 rtx-tiny" "rtx-tiny: v3.1.0 args:"
+
+# a configured tool is never substituted, even with the opt-in
+cd ../project || exit 1
+printf '[tools]\ntiny = "2.0.0"\n' >mise.toml
+mise trust
+output="$(MISE_SHIMS_FALLBACK_TO_INSTALLED=1 rtx-tiny 2>&1 || true)"
+assert_contains "echo '$output'" "Tool not installed for shim: rtx-tiny"

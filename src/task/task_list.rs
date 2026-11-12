@@ -8,7 +8,7 @@ use crate::ui::ctrlc;
 use crate::ui::{prompt, style};
 use crate::{dirs, file};
 use console::Term;
-use demand::{DemandOption, Select};
+use demand::{DemandOption, MultiSelect, Select};
 use eyre::{Result, bail, ensure, eyre};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
@@ -388,6 +388,60 @@ async fn err_no_task(
     bail!(err_msg);
 }
 
+/// Prompt the user to check several tasks to run, for `mise run --multi`
+async fn prompt_for_tasks(config: &Arc<Config>, load_all: bool) -> Result<Vec<Task>> {
+    ensure!(
+        console::user_attended_stderr() && std::io::IsTerminal::is_terminal(&std::io::stdin()),
+        "--multi requires an interactive terminal"
+    );
+    let ctx = load_all.then(TaskLoadContext::all);
+    let tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    ensure!(
+        !tasks.is_empty(),
+        "no tasks defined. see {url}",
+        url = style::eunderline("https://mise.jdx.dev/tasks/")
+    );
+    let theme = crate::ui::theme::get_theme();
+    let visible = tasks.values().filter(|t| !t.hide).collect_vec();
+    ensure!(
+        !visible.is_empty(),
+        "no tasks to pick from; every task is hidden"
+    );
+    let mut s = MultiSelect::new("Tasks")
+        .description("Select the tasks to run")
+        .min(1)
+        .filtering(true)
+        .filterable(true)
+        .theme(&theme);
+    // Two tasks can share a display name (`hello.sh` and `hello.js`); the checklist shows their
+    // full names then, so what you check is what runs.
+    let display_counts = visible.iter().map(|t| &t.display_name).counts();
+    for t in visible {
+        // Truncate description to first line only, like tasks ls does
+        let desc = t.description.lines().next().unwrap_or_default();
+        let label = if display_counts[&t.display_name] > 1 {
+            &t.name
+        } else {
+            &t.display_name
+        };
+        s = s.option(DemandOption::new(&t.name).label(label).description(desc));
+    }
+    ctrlc::show_cursor_after_ctrl_c();
+    match s.run() {
+        Ok(names) => names
+            .into_iter()
+            .map(|name| match tasks.get(name) {
+                Some(task) => Ok(task.clone()),
+                None => bail!("no tasks {} found", style::ered(name)),
+            })
+            .collect(),
+        Err(err) => {
+            Term::stderr().show_cursor()?;
+            Err(eyre!(err))
+        }
+    }
+}
+
 /// Prompt the user to select a task interactively
 async fn prompt_for_task(config: &Arc<Config>, load_all: bool) -> Result<Task> {
     let ctx = load_all.then(TaskLoadContext::all);
@@ -455,15 +509,22 @@ pub async fn get_task_lists(
     prompt: bool,
     only: bool,
     prompt_all: bool,
+    multi: bool,
 ) -> Result<Vec<Task>> {
-    if prompt_all {
-        let mut task = prompt_for_task(config, true).await?;
+    if prompt_all || multi {
+        let mut tasks = if multi {
+            prompt_for_tasks(config, prompt_all).await?
+        } else {
+            vec![prompt_for_task(config, true).await?]
+        };
         if only {
-            task.depends.clear();
-            task.depends_post.clear();
-            task.wait_for.clear();
+            for task in &mut tasks {
+                task.depends.clear();
+                task.depends_post.clear();
+                task.wait_for.clear();
+            }
         }
-        return Ok(vec![task]);
+        return Ok(tasks);
     }
 
     let args = args
@@ -699,9 +760,16 @@ mod tests {
     #[tokio::test]
     async fn a_missing_task_is_an_error() {
         let config = Config::get().await.unwrap();
-        let err = get_task_lists(&config, &["no-such-task".to_string()], false, false, false)
-            .await
-            .unwrap_err();
+        let err = get_task_lists(
+            &config,
+            &["no-such-task".to_string()],
+            false,
+            false,
+            false,
+            false,
+        )
+        .await
+        .unwrap_err();
         assert!(err.to_string().contains("no-such-task"), "{err}");
     }
 }

@@ -107,6 +107,9 @@ export const commands: { [key: string]: Command } = {
           exclude: {
             hide: false,
           },
+          files: {
+            hide: false,
+          },
           history: {
             hide: false,
             subcommands: {
@@ -568,6 +571,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       exclude: {
+        hide: false,
+      },
+      files: {
         hide: false,
       },
       history: {

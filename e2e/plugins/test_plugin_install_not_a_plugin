@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# A repo that is not a plugin (a plain tool repo, no bin/list-all or
+# metadata.lua) must not stay cloned in the plugins dir after the install fails.
+
+repo="$TMPDIR/not-a-plugin"
+mkdir -p "$repo/src"
+echo 'fn main() {}' >"$repo/src/main.rs"
+git -C "$repo" -c init.defaultBranch=main init -q
+git -C "$repo" add .
+git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m init
+
+assert_fail_contains "mise plugin install not-a-plugin file://$repo" "is not an asdf or vfox plugin"
+assert_directory_not_exists "$MISE_DATA_DIR/plugins/not-a-plugin"

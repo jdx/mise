@@ -10,7 +10,7 @@ use std::process::Stdio;
 use eyre::{Result, bail};
 use indexmap::IndexMap;
 pub use mise_config::launchd::{
-    LaunchdCalendarInterval, LaunchdCalendarIntervals, LaunchdTomlConfig,
+    LaunchdCalendarInterval, LaunchdCalendarIntervals, LaunchdResourceLimits, LaunchdTomlConfig,
 };
 use plist::{Dictionary, Value};
 
@@ -36,6 +36,8 @@ pub struct LaunchdRequest {
     pub working_directory: Option<String>,
     pub stdout_path: Option<String>,
     pub stderr_path: Option<String>,
+    pub soft_resource_limits: Option<LaunchdResourceLimits>,
+    pub hard_resource_limits: Option<LaunchdResourceLimits>,
     pub kickstart: bool,
 }
 
@@ -82,6 +84,29 @@ impl LaunchdRequest {
             .transpose()?;
         if let Some(interval) = &config.start_calendar_interval {
             interval.validate(&name)?;
+        }
+        if let Some(limits) = &config.soft_resource_limits {
+            limits.validate(&name, "soft_resource_limits")?;
+        }
+        if let Some(limits) = &config.hard_resource_limits {
+            limits.validate(&name, "hard_resource_limits")?;
+        }
+        // setrlimit(2) refuses a soft limit above the hard limit, and launchd
+        // only logs that refusal, so the job would start with its default
+        // limits while the config claims otherwise.
+        if let (Some(soft), Some(hard)) =
+            (&config.soft_resource_limits, &config.hard_resource_limits)
+        {
+            for (key, soft_value) in soft.entries() {
+                if let Some((_, hard_value)) = hard.entries().into_iter().find(|(k, _)| *k == key)
+                    && soft_value > hard_value
+                {
+                    bail!(
+                        "agent '{name}' `soft_resource_limits` {key} ({soft_value}) must not exceed \
+                         `hard_resource_limits` {key} ({hard_value})"
+                    );
+                }
+            }
         }
         for dir in &config.queue_directories {
             if dir.trim().is_empty() {
@@ -132,6 +157,8 @@ impl LaunchdRequest {
             working_directory: config.working_directory,
             stdout_path: config.stdout_path,
             stderr_path: config.stderr_path,
+            soft_resource_limits: config.soft_resource_limits,
+            hard_resource_limits: config.hard_resource_limits,
             kickstart: config.kickstart,
         })
     }
@@ -405,7 +432,27 @@ fn plist_value(request: &LaunchdRequest) -> Value {
             Value::String(expand_path_string(path)),
         );
     }
+    if let Some(limits) = &request.soft_resource_limits {
+        dict.insert(
+            "SoftResourceLimits".into(),
+            Value::Dictionary(resource_limits_value(limits)),
+        );
+    }
+    if let Some(limits) = &request.hard_resource_limits {
+        dict.insert(
+            "HardResourceLimits".into(),
+            Value::Dictionary(resource_limits_value(limits)),
+        );
+    }
     Value::Dictionary(dict)
+}
+
+fn resource_limits_value(limits: &LaunchdResourceLimits) -> Dictionary {
+    limits
+        .entries()
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), Value::Integer(value.into())))
+        .collect()
 }
 
 fn calendar_intervals_value(intervals: &LaunchdCalendarIntervals) -> Value {
@@ -684,6 +731,146 @@ mod tests {
         assert!(!rendered.contains("ProcessType"));
     }
 
+    fn request_with_limits(
+        soft: Option<LaunchdResourceLimits>,
+        hard: Option<LaunchdResourceLimits>,
+    ) -> Result<LaunchdRequest> {
+        LaunchdRequest::from_toml(
+            "proxy".into(),
+            LaunchdTomlConfig {
+                program: Some("/bin/echo".into()),
+                soft_resource_limits: soft,
+                hard_resource_limits: hard,
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Each limit lands under launchd's own key, and only the ones that were
+    /// set: launchd reads a missing key as "leave the inherited limit alone",
+    /// which a zero would not mean.
+    #[test]
+    fn resource_limits_reach_the_plist_under_launchds_keys() {
+        let request = request_with_limits(
+            Some(LaunchdResourceLimits {
+                number_of_files: Some(10240),
+                stack: Some(8_388_608),
+                ..Default::default()
+            }),
+            Some(LaunchdResourceLimits {
+                number_of_files: Some(65536),
+                core: Some(0),
+                cpu: Some(3600),
+                data: Some(1),
+                file_size: Some(2),
+                memory_lock: Some(3),
+                number_of_processes: Some(4),
+                resident_set_size: Some(5),
+                stack: Some(8_388_608),
+            }),
+        )
+        .unwrap();
+        let plist = render_plist(&request).unwrap();
+        let dict = match Value::from_reader_xml(Cursor::new(plist.as_slice())).unwrap() {
+            Value::Dictionary(dict) => dict,
+            value => panic!("expected dictionary, got {value:?}"),
+        };
+        let soft = match dict.get("SoftResourceLimits") {
+            Some(Value::Dictionary(soft)) => soft,
+            value => panic!("expected SoftResourceLimits dictionary, got {value:?}"),
+        };
+        assert_eq!(soft.len(), 2);
+        assert_eq!(
+            soft.get("NumberOfFiles"),
+            Some(&Value::Integer(10240.into()))
+        );
+        assert_eq!(soft.get("Stack"), Some(&Value::Integer(8_388_608.into())));
+        let hard = match dict.get("HardResourceLimits") {
+            Some(Value::Dictionary(hard)) => hard,
+            value => panic!("expected HardResourceLimits dictionary, got {value:?}"),
+        };
+        let mut keys: Vec<_> = hard.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "CPU",
+                "Core",
+                "Data",
+                "FileSize",
+                "MemoryLock",
+                "NumberOfFiles",
+                "NumberOfProcesses",
+                "ResidentSetSize",
+                "Stack",
+            ]
+        );
+        for (key, value) in [
+            ("Core", 0),
+            ("CPU", 3600),
+            ("Data", 1),
+            ("FileSize", 2),
+            ("MemoryLock", 3),
+            ("NumberOfFiles", 65536),
+            ("NumberOfProcesses", 4),
+            ("ResidentSetSize", 5),
+            ("Stack", 8_388_608),
+        ] {
+            assert_eq!(hard.get(key), Some(&Value::Integer(value.into())), "{key}");
+        }
+        assert!(plist_matches(&plist, &request));
+
+        let without = request_with_limits(None, None).unwrap();
+        let rendered = String::from_utf8(render_plist(&without).unwrap()).unwrap();
+        assert!(!rendered.contains("ResourceLimits"));
+    }
+
+    /// An empty table is almost certainly a mistake, and a soft limit above its
+    /// hard limit is one setrlimit(2) refuses at launch while launchd only logs
+    /// it, so both are errors here rather than plists that do nothing.
+    #[test]
+    fn resource_limits_are_validated() {
+        let err = request_with_limits(Some(LaunchdResourceLimits::default()), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`soft_resource_limits`"), "{err}");
+        let err = request_with_limits(None, Some(LaunchdResourceLimits::default()))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`hard_resource_limits`"), "{err}");
+
+        let err = request_with_limits(
+            Some(LaunchdResourceLimits {
+                number_of_files: Some(65536),
+                ..Default::default()
+            }),
+            Some(LaunchdResourceLimits {
+                number_of_files: Some(10240),
+                ..Default::default()
+            }),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("NumberOfFiles"), "{err}");
+        assert!(err.contains("65536"), "{err}");
+        assert!(err.contains("10240"), "{err}");
+
+        // Equal is fine, and a key only one side sets is not compared.
+        request_with_limits(
+            Some(LaunchdResourceLimits {
+                number_of_files: Some(10240),
+                stack: Some(1),
+                ..Default::default()
+            }),
+            Some(LaunchdResourceLimits {
+                number_of_files: Some(10240),
+                core: Some(0),
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+    }
+
     #[test]
     fn test_launchd_request_validation() {
         for nice in [-21, -20, 20, 21] {
@@ -778,6 +965,8 @@ mod tests {
             working_directory: Some("~".to_string()),
             stdout_path: Some("~/Library/Logs/sync.log".to_string()),
             stderr_path: Some("~/Library/Logs/sync.err.log".to_string()),
+            soft_resource_limits: None,
+            hard_resource_limits: None,
             kickstart: false,
         };
         let plist = render_plist(&request).unwrap();
@@ -897,6 +1086,8 @@ mod tests {
             working_directory: None,
             stdout_path: None,
             stderr_path: None,
+            soft_resource_limits: None,
+            hard_resource_limits: None,
             kickstart: false,
         };
         let plist = render_plist(&request).unwrap();

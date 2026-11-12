@@ -458,7 +458,7 @@ env = "MISE_COLOR"
 type = "Bool"
 
 [color_theme]
-default = "default"
+default = "base16"
 description = "Color theme for interactive prompts, such as the task picker in `mise run`."
 docs = """
 With colors off (`color = false`, `NO_COLOR` or `CLICOLOR=0`), prompts are
@@ -466,9 +466,9 @@ unstyled whatever this is set to.
 """
 enum = [
   { value = "auto", description = "`base16` on light terminals (detected from `COLORFGBG`), `charm` otherwise" },
-  { value = "default", description = "same as `auto`" },
-  { value = "charm", description = "suits dark terminals" },
-  { value = "base16", description = "suits light terminals" },
+  { value = "default", description = "the default theme, same as `base16`" },
+  { value = "charm", description = "fixed 256-color greys; suits dark terminals" },
+  { value = "base16", description = "the terminal's own named colors, so it follows its palette" },
   { value = "catppuccin" },
   { value = "dracula" },
 ]
@@ -566,6 +566,9 @@ default = false
 description = "Suppress warnings when a newer mise version is available."
 docs = """
 Hides the update notice in `mise version`, `mise --version` and `mise doctor`.
+It is also hidden from the output of `mise version` and `mise doctor` when mise
+detects a coding agent, which cannot act on it. `mise doctor` still lists the
+new version among its warnings.
 Other warnings are unaffected. It does not turn off `mise self-update` or
 automatic updates with [`self_update.auto`](#self_update.auto).
 """
@@ -1718,6 +1721,35 @@ Values below one second count as one second. To stop automatic fetching, set
 [`history.sync`](#history.sync) to `manual`.
 """
 env = "MISE_HISTORY_FETCH_INTERVAL"
+type = "Duration"
+
+[history.lock_wait]
+default = "30s"
+description = "How long a command waits for another history operation before failing."
+docs = """
+Operations that record history take a lock on the history store, so only one
+runs at a time. A command that finds the lock held waits this long for it, then
+fails with `another history operation is running`. `0` fails at once. Values
+above `1h` count as `1h`.
+
+A script that needs its own checkpoint can set it for one run:
+
+```sh
+MISE_HISTORY_LOCK_WAIT=5m mise dot save --description "before upgrade"
+```
+
+`mise dot watch` and `mise dot recover` never wait, whatever this is set to.
+A `mise dot` command the watcher starts, such as a `history.reload` command that
+runs `mise dot save`, inherits the watcher's environment and waits as
+configured, so set `MISE_HISTORY_LOCK_WAIT` on the commands that need it rather
+than in the watcher's environment.
+
+A `mise bootstrap` that starts with nothing to record tries to take the lock at
+its first write without waiting. If the lock is held, it warns and continues
+without a recovery journal instead of failing. If the run starts tracking before
+it ends, its end-of-run lock attempt uses this setting.
+"""
+env = "MISE_HISTORY_LOCK_WAIT"
 type = "Duration"
 
 [history.notify]
@@ -3697,6 +3729,27 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[shims.fallback_to_installed]
+default = false
+description = "Let a shim run the latest installed version of a tool that no config file selects."
+docs = """
+By default, running a shim in a directory where no config file selects a version
+of its tool fails with `No version is set for shim`, naming the `mise use -g` and
+`mise x` commands that fix it. When this is `true`, the shim runs the latest
+installed version of that tool instead, as the backend defines "latest".
+
+This applies only to a tool that no config file mentions. A tool a config does
+select, whose version is missing or lacks the executable, still fails, so a pinned
+version is never swapped for another. That includes a command named like a
+configured tool, such as a pinned `npm` whose version is not installed: Node's
+bundled `npm` is not substituted. The fallback covers the shims `mise reshim`
+creates on Unix; Windows `.exe` shims, which dispatch through `mise x`, still
+fail with the one-line error. Running a version nobody chose can differ
+from the one a project expects, which is why this is off by default.
+"""
+env = "MISE_SHIMS_FALLBACK_TO_INSTALLED"
+type = "Bool"
+
 [shims_dir]
 default_docs = "`$MISE_DATA_DIR/shims`"
 description = "Directory where mise writes user shims."
@@ -3759,7 +3812,8 @@ type = "Bool"
 description = "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`."
 docs = """
 Set it to the directory the agents you use read, such as `.claude/skills`. An
-absolute path is used as written, and `--dir` overrides it for one run.
+absolute path is used as written, a leading `~` means the home directory, and
+`--dir` overrides it for one run.
 
 Left unset, mise uses `.agents/skills` if it exists, then `.claude/skills` if it
 exists. When neither exists it creates `.agents/skills` and a `.claude/skills`
@@ -3768,7 +3822,7 @@ symlink to it, so agents that read either path find the skills. See
 """
 env = "MISE_SKILLS_DIR"
 optional = true
-type = "String"
+type = "Path"
 
 [skills.fetch]
 default = true
@@ -3904,6 +3958,19 @@ stop applying are listed the same way.
 """
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
 type = "Bool"
+
+[status.show_env_ignore]
+default = []
+description = "Environment variable names (or glob patterns) that `status.show_env` leaves out."
+docs = """
+Use this to silence variables that mise sets in every shell, such as `GOROOT`.
+Patterns use shell globs, so `GO*` matches `GOBIN` and `GOROOT`. Config files
+that start or stop applying are still listed.
+"""
+env = "MISE_STATUS_MESSAGE_SHOW_ENV_IGNORE"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
 
 [status.show_tools]
 description = "When you change directories in an activated shell, list the tool versions that become active or inactive."
@@ -4061,6 +4128,32 @@ enum = [
 env = "MISE_SYSTEM_PACKAGES_OSTREE"
 rust_type = "SystemPackagesOstree"
 type = "String"
+
+[system_packages.prefer]
+description = "Package managers, in order, that an unprefixed `[bootstrap.packages]` key may use."
+docs = """
+A key without a `manager:` prefix, such as `git = "latest"`, installs through
+exactly one manager: the first in this list that is available and not excluded
+by [`system_packages.managers`](#system_packages.managers). When unset, mise
+tries the distribution's own manager first (`apt`, `dnf`, `pacman`, `zypper`,
+`apk`), then `brew`, `winget`, `scoop` and `choco`. A list replaces that default
+order and names the only candidates. A package manager plugin in the list counts
+as a candidate even when it cannot run; `status` and `apply` then report it as
+unavailable instead of choosing the next manager:
+
+```toml
+[settings]
+system_packages.prefer = ["apt", "dnf", "pacman", "brew"]
+```
+
+Prefixed keys such as `"apt:git"` ignore this setting. See
+[Unprefixed packages](/bootstrap/packages/#unprefixed-packages).
+"""
+env = "MISE_SYSTEM_PACKAGES_PREFER"
+optional = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
 
 [system_packages.sudo]
 default = true

@@ -127,7 +127,8 @@ less often because they change constantly. It includes the command to start a
 stopped watcher.
 
 `mise dot status` gives more detail: whether the watcher is running, declared
-but stopped, or not declared, and whether its saves are failing; the latest
+but stopped, or not declared (shown as manual: edits are saved when you run
+`mise dot save`), and whether its saves are failing; the latest
 save and full scan; the last failure; and each busy file's save interval, last
 save, and pending edits. It also lists tracked files that changed since the
 latest checkpoint, which `mise dot save` would record:
@@ -598,6 +599,15 @@ matching files at any depth; and `/cache` excludes only `~/.codex/cache`.
 The entry's list and the global `[history] exclude` list both apply, and a
 global `!glob` cannot bring back a file the entry excludes. `mise dot paths`
 and `mise dot track --dry-run` show the lists in effect.
+
+To check a directory file by file, run
+[`mise dot files`](/cli/dotfiles/files.html). It marks each file as tracked,
+excluded (naming the rule), omitted, or untracked:
+
+```sh
+mise dot files ~/.codex
+mise dot files -r --untracked ~/.config/nvim
+```
 
 ### Exclude files across tracked entries {#exclude-files-across-tracked-entries}
 

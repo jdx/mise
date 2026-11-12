@@ -340,7 +340,7 @@ impl Backend for AsdfBackend {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let env_results = config.env_results().await?;
         let sm = self.script_man_for_version_listing(env_results)?;
-        let versions = self.plugin.fetch_remote_versions(&sm)?;
+        let versions = self.plugin.fetch_remote_versions(&sm).await?;
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {

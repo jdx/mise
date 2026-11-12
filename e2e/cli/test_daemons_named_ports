@@ -80,3 +80,39 @@ port = 26301
 ports.http_port = { auto = true, base = 27000 }
 TOML
 assert_fail_contains "mise daemons ls 2>&1" 'both use port'
+
+# A custom daemon names its own ports, so one stack owns all of them and a
+# worktree moves them by the same slot.
+cd "$HOME/named-primary"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.stack]
+run = "sleep 3600"
+ports.app = { auto = true, base = 8080 }
+ports.db = { auto = true, base = 5432 }
+ports.admin = 9000
+TOML
+assert_contains "mise env -s bash" "STACK_APP_PORT=8080"
+assert_contains "mise env -s bash" "STACK_DB_PORT=5432"
+assert_contains "mise env -s bash" "STACK_ADMIN_PORT=9000"
+
+cd "$HOME/named-wt"
+cp "$HOME/named-primary/mise.toml" mise.toml
+wt_env=$(mise env -s bash)
+wt_app=$(env_value STACK_APP_PORT)
+wt_db=$(env_value STACK_DB_PORT)
+assert "test '$wt_app' -gt 8080"
+assert "test '$((wt_app - 8080))' = '$((wt_db - 5432))'"
+assert_contains "mise env -s bash" "STACK_ADMIN_PORT=9000"
+
+# An allocated port has no preset default to start from.
+# schema: invalid
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.stack]
+run = "sleep 3600"
+ports.app = { auto = true }
+TOML
+assert_fail_contains "mise daemons ls 2>&1" "needs base"

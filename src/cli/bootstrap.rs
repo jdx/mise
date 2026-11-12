@@ -2735,6 +2735,7 @@ impl Bootstrap {
                     false,
                     skip_deps,
                     false,
+                    false,
                 )
                 .await?;
                 // Tasks-only config and template-free task files load without trust because
@@ -3099,6 +3100,7 @@ impl Bootstrap {
             args: vec![],
             args_last: vec![],
             all: false,
+            multi: false,
             at: None,
             at_setup: None,
             affected: false,
@@ -4492,7 +4494,16 @@ impl BootstrapRemote {
         };
         let mut configuration_errors = vec![];
         for host in selected.values_mut() {
-            if let Err(error) = host.apply_overrides(&overrides) {
+            let checked = host.apply_overrides(&overrides).and_then(|()| {
+                // before the first connection, so one bad source cannot leave
+                // other hosts half bootstrapped
+                if overrides.from_git || self.yes {
+                    Ok(())
+                } else {
+                    host.check_source()
+                }
+            });
+            if let Err(error) = checked {
                 configuration_errors.push(format!("{}: {error:#}", host.name));
             }
         }

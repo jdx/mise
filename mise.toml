@@ -10,6 +10,7 @@ tak = { version = "latest", minimum_release_age = "0s" }
 age = "latest"
 aube = { version = "latest", minimum_release_age = "0s" }
 cargo-binstall = "latest"
+cargo-deny = { version = "latest", lazy = true }
 communique = { version = "latest", minimum_release_age = "0s" }
 cargo-insta = "latest"
 "aqua:nextest-rs/nextest/cargo-nextest" = "latest"

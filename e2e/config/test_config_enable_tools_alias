@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[tool_alias]
+myjq = "aqua:jqlang/jq"
+
+[tools]
+"aqua:jqlang/jq" = "1.0.0"
+tiny = "1.0.0"
+EOF
+
+# An allowlist entry can use the configured short alias even when [tools] uses
+# the backend's fully-qualified native identifier. It remains an allowlist:
+# unrelated tools are excluded.
+export MISE_ENABLE_TOOLS=myjq
+assert_contains "mise ls" "aqua:jqlang/jq"
+assert_not_contains "mise ls" "tiny"
+
+# The existing exact full-ID and explicit-empty allowlist behavior is unchanged.
+export MISE_ENABLE_TOOLS="aqua:jqlang/jq"
+assert_contains "mise ls" "aqua:jqlang/jq"
+assert_not_contains "mise ls" "tiny"
+
+export MISE_ENABLE_TOOLS=""
+assert_not_contains "mise ls" "aqua:jqlang/jq"
+assert_not_contains "mise ls" "tiny"
+
+# A disable alias hides its full-ID target without hiding unrelated tools.
+unset MISE_ENABLE_TOOLS
+export MISE_DISABLE_TOOLS=myjq
+assert_not_contains "mise ls" "aqua:jqlang/jq"
+assert_contains "mise ls" "tiny"
+
+# The allowlist remains authoritative even when the alias is also disabled.
+export MISE_ENABLE_TOOLS=myjq
+assert_contains "mise ls" "aqua:jqlang/jq"
+assert_not_contains "mise ls" "tiny"
+
+# Aliases that carry options still match the tool they point at.
+unset MISE_ENABLE_TOOLS MISE_DISABLE_TOOLS
+cat >mise.toml <<'EOT'
+[tool_alias]
+myjq = "aqua:jqlang/jq[bin=jq]"
+otherjq = "aqua:jqlang/jq[bin=jq]"
+
+[tools]
+otherjq = "1.0.0"
+tiny = "1.0.0"
+EOT
+export MISE_DISABLE_TOOLS=myjq
+assert_not_contains "mise ls" "jq"
+assert_contains "mise ls" "tiny"
+
+# The python venv directive follows the same alias-aware filter.
+mkdir -p .venv
+cat >mise.toml <<'EOT'
+[tool_alias]
+mypython = "python"
+
+[env]
+_.python.venv = { path = ".venv" }
+EOT
+unset MISE_DISABLE_TOOLS
+assert_contains "mise env" "VIRTUAL_ENV"
+export MISE_DISABLE_TOOLS=mypython
+assert_not_contains "mise env" "VIRTUAL_ENV"

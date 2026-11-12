@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# `--bump` on a two-part `prefix:` request split the `prefix:`-marked display form
+# at its first dot and wrote `prefix:prefix:1.1`, which no version matches.
+# Regression test for https://github.com/jdx/mise/issues/15419
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/prefixbump"
+mkdir -p "$PLUGIN_DIR/bin"
+
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "1.23.0 1.26.2"
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+printf '#!/usr/bin/env bash\necho "prefixbump %s"\n' "$ASDF_INSTALL_VERSION" \
+  >"$ASDF_INSTALL_PATH/bin/prefixbump"
+chmod +x "$ASDF_INSTALL_PATH/bin/prefixbump"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+
+# two-part prefix
+cat <<'CONFIG' >mise.toml
+[tools]
+prefixbump = { prefix = "1.23" }
+CONFIG
+mise install
+assert_contains "mise upgrade --bump --dry-run" "Would bump prefixbump@prefix:1.26"
+assert_not_contains "mise upgrade --bump --dry-run" "prefix:prefix:"
+mise upgrade --bump
+assert_contains "cat mise.toml" 'prefixbump = "prefix:1.26"'
+assert_not_contains "cat mise.toml" "prefix:prefix:"
+
+# a vendor prefix still sees newer majors
+cat <<'PLUGINLIST' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "vend-17.0.1 vend-21.0.2"
+PLUGINLIST
+cat <<'CONFIG' >mise.toml
+[tools]
+prefixbump = "prefix:vend-17"
+CONFIG
+assert_contains "mise upgrade --bump --dry-run" "Would bump prefixbump@prefix:vend-21"

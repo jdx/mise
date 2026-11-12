@@ -45,7 +45,7 @@ use super::Config;
 
 pub mod config_root;
 pub mod diagnostic;
-pub(crate) mod idiomatic_version;
+pub mod idiomatic_version;
 pub(crate) mod min_version;
 pub mod mise_toml;
 pub(crate) mod tool_versions;
@@ -208,6 +208,15 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
     fn aliases(&self) -> eyre::Result<AliasMap> {
         Ok(Default::default())
+    }
+    /// The backend each `[tool_alias]` stands for, by alias name. Unlike [`Self::aliases`]
+    /// it does not render version aliases, so one that fails does not hide these.
+    fn backend_aliases(&self) -> IndexMap<String, String> {
+        self.aliases()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(name, alias)| Some((name, alias.backend?)))
+            .collect()
     }
 
     fn settings(&self) -> Option<&settings::SettingsPartial> {
