@@ -1262,12 +1262,28 @@ impl Backend for NPMBackend {
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
-        // Every installed version of a tarball URL is a digest of that URL, so
-        // the latest install is the one `latest` last resolved to. This lets
-        // `hook-env`, which resolves offline, find it instead of reporting the
-        // literal `latest` as missing.
+        // Every installed version of a tarball URL is a digest of that URL, and
+        // digests have no order, so the latest is the one installed last. This
+        // lets `hook-env`, which resolves offline, find it instead of reporting
+        // the literal `latest` as missing.
         if is_tarball_spec(&self.tool_name()) {
-            return self.latest_installed_version(None).ok().flatten();
+            let installs = self.ba().installs_path();
+            return crate::file::dir_subdirs(installs)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|v| !v.starts_with('.') && v != "latest")
+                .filter(|v| !crate::runtime_symlinks::is_runtime_symlink(&installs.join(v)))
+                .filter(|v| !crate::toolset::install_state::is_incomplete(self.ba(), v))
+                .filter_map(|v| {
+                    let modified = installs
+                        .join(&v)
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .ok()?;
+                    Some((modified, v))
+                })
+                .max()
+                .map(|(_, v)| v);
         }
         // Installed commits do not record whether they came from a rolling HEAD.
         None
