@@ -119,6 +119,7 @@ cat >"$HOME/.config/mise/config.toml" <<'TOML'
 blur_strength = 4
 TOML
 assert_succeed "mise bootstrap settings status --missing"
+assert_contains "mise bootstrap settings status Desk" "appearance.blur_strength"
 rm "$HOME/.config/mise/config.toml"
 
 # An integer Lua would round is refused before the plugin sees it.

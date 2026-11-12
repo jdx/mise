@@ -5981,14 +5981,19 @@ fn selected_settings_sections(
     plugins: &[String],
 ) -> Result<Vec<system::bootstrap_settings::SettingsSection>> {
     let sections = system::bootstrap_settings::sections_from_config(config)?;
-    for name in plugins {
-        if !sections.iter().any(|section| &section.plugin == name) {
+    // sections are keyed by the plugin's kebab-case name, so any spelling selects one
+    let ids: Vec<String> = plugins
+        .iter()
+        .map(|name| mise_system::plugin_identity(name))
+        .collect();
+    for (name, id) in plugins.iter().zip(&ids) {
+        if !sections.iter().any(|section| &section.plugin == id) {
             bail!("no [bootstrap.settings.{name}] section is configured");
         }
     }
     Ok(sections
         .into_iter()
-        .filter(|section| plugins.is_empty() || plugins.contains(&section.plugin))
+        .filter(|section| ids.is_empty() || ids.contains(&section.plugin))
         .collect())
 }
 
