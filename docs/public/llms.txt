@@ -292,6 +292,9 @@
 - [mise bootstrap services apply](https://mise.jdx.dev/cli/bootstrap/services/apply.html): Apply the service state declared in [bootstrap.services]
 - [mise bootstrap services remove](https://mise.jdx.dev/cli/bootstrap/services/remove.html): Uninstall a user-scope service
 - [mise bootstrap services status](https://mise.jdx.dev/cli/bootstrap/services/status.html): Show the state of services from [bootstrap.services]
+- [mise bootstrap settings](https://mise.jdx.dev/cli/bootstrap/settings.html): [experimental] Apply [bootstrap.settings] through bootstrap settings plugins
+- [mise bootstrap settings apply](https://mise.jdx.dev/cli/bootstrap/settings/apply.html): Write the settings that differ from [bootstrap.settings]
+- [mise bootstrap settings status](https://mise.jdx.dev/cli/bootstrap/settings/status.html): Show each setting in [bootstrap.settings] and its current value
 - [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the state of every configured bootstrap part
 - [mise bootstrap unapply](https://mise.jdx.dev/cli/bootstrap/unapply.html): Remove what a config environment's bootstrap sections created
 - [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage your login shell from [bootstrap.user]
