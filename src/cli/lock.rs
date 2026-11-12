@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mise_util::redactions::{redact_json, redact_output, redact_url_userinfo};
+use mise_util::redactions::{redact_json, redact_output, redact_url_userinfo_in_arg};
 
 use crate::config::config_file::trust_check;
 use crate::config::{Config, ConfigMap, SettingsExt};
@@ -1002,7 +1002,7 @@ impl Lock {
                         || arg.ba.full() == ba.full()
                 })
             })
-            .map(|arg| redact_url_userinfo(&arg.ba.to_string()).into_owned())
+            .map(|arg| redact_url_userinfo_in_arg(&arg.ba.to_string()).into_owned())
             .collect();
         if missing.is_empty() {
             return Ok(());
