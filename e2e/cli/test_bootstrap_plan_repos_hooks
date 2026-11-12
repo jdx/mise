@@ -53,3 +53,16 @@ assert_fail "mise bootstrap plan --detailed-exitcode" "unknown state"
 
 # --no-hooks leaves the hooks out of the plan
 assert "mise --no-hooks bootstrap plan --json | jq '.summary.run'" "0"
+
+# post-packages files wait for the post-packages hook
+cat >mise.toml <<TOML
+[bootstrap.packages]
+"apt:mise-plan-order-nonexistent" = "latest"
+[bootstrap.files."$PWD/late.txt"]
+content = "x"
+[bootstrap.hooks]
+post-packages = "true"
+TOML
+if [[ "$(uname -s)" == "Linux" ]] && command -v apt-get >/dev/null; then
+  assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"package\", \"hook\", \"file\"]'"
+fi

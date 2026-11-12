@@ -339,9 +339,18 @@ pub async fn add_repos_and_hooks(
         .filter(|id| id.kind != "package" || builtin_packages.contains(id))
         .cloned()
         .collect::<Vec<_>>();
-    let services = plan
+    // post-package files, services, the firewall, and Compose follow the
+    // `post-packages` hook
+    let after_packages_hook = plan
         .ids()
-        .filter(|id| id.kind == "service")
+        .filter(|id| {
+            matches!(
+                id.kind.as_str(),
+                "service" | "firewall" | "firewall-rule" | "compose"
+            ) || plan
+                .get(id)
+                .is_some_and(|r| r.phase == Some(mise_bootstrap::ManagedFilePhase::PostPackages))
+        })
         .cloned()
         .collect::<Vec<_>>();
     let requests = super::repos_from_config(config);
@@ -402,8 +411,8 @@ pub async fn add_repos_and_hooks(
                 plan.add_ordering(target, last.clone())?;
             }
             if phase == BootstrapHookPhase::PostPackages {
-                for service in &services {
-                    plan.add_ordering(service, last.clone())?;
+                for target in &after_packages_hook {
+                    plan.add_ordering(target, last.clone())?;
                 }
             }
         }
