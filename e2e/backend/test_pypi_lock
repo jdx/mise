@@ -202,7 +202,7 @@ source_path=$(mise where pipx:mise-source-cli)
 assert_not_contains "echo '$source_path'" '~uv~'
 assert_contains 'mise install 2>&1' 'already installed'
 assert "mise where pipx:mise-source-cli" "$source_path"
-assert_contains 'mise lock --bump pipx:mise-source-cli 2>&1' 'keeping a version-only lock entry'
+assert_contains 'mise lock --bump pipx:mise-source-cli 2>&1' 'leaving the lock entry as it is'
 
 cp original.toml mise.toml
 cp first.lock mise.lock

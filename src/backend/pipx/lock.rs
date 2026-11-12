@@ -35,6 +35,14 @@ impl LockPython {
         }
     }
 }
+/// Whether a Python version is a release number uv can be asked for, as opposed to
+/// `system`, a path or a ref.
+fn is_plain_python_release(version: &str) -> bool {
+    let mut parts = version.split('.');
+    parts.clone().count() <= 3
+        && parts.all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+}
+
 const DISCOVER_SCRIPTS: &str = r#"
 import importlib.metadata
 import json
@@ -198,6 +206,20 @@ impl PIPXBackend {
             bail!("Python dependency locks require uv >= {MIN_UV_VERSION}");
         }
         Ok(uv)
+    }
+
+    /// The version of the project's own `python` as uv can request it, when the
+    /// configuration names one that is a plain release number (`3.12`, `3.12.4`).
+    async fn configured_python_request(&self, config: &Arc<Config>) -> Option<String> {
+        let ts = self
+            .dependency_toolset_of(config, Some("python"))
+            .await
+            .ok()?;
+        let (_, python) = ts
+            .list_current_versions()
+            .into_iter()
+            .find(|(_, tv)| tv.ba().short == "python")?;
+        is_plain_python_release(&python.version).then_some(python.version)
     }
 
     async fn configured_python_identity(&self, config: &Arc<Config>) -> Option<String> {
@@ -598,6 +620,19 @@ impl PIPXBackend {
             Some(path) => LockPython::Installed(path.into()),
             None => LockPython::Unspecified,
         };
+        if configured.is_none()
+            && replay.is_none()
+            && let Some(request) = self.configured_python_request(config).await
+        {
+            // The project asks for a Python that is not installed. Guessing from PATH
+            // would lock a graph for an unrelated interpreter, so let uv fetch the
+            // requested one for the resolution, as it does for a per-tool selector.
+            let python = LockPython::Version {
+                request: request.into(),
+                download: !Settings::get().offline(),
+            };
+            return Ok((python.clone(), python));
+        }
         Ok((installed(configured), installed(replay)))
     }
 
@@ -1459,6 +1494,24 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
             GraphRef::from(lock).identity(),
             GraphRef::from(changed).identity()
         );
+    }
+
+    #[test]
+    fn plain_python_releases() {
+        for version in ["3", "3.12", "3.12.4"] {
+            assert!(is_plain_python_release(version), "{version}");
+        }
+        for version in [
+            "",
+            "system",
+            "3.12.4.1",
+            "3.13t",
+            "3..2",
+            "ref:main",
+            "/usr/bin/python",
+        ] {
+            assert!(!is_plain_python_release(version), "{version}");
+        }
     }
 
     #[test]

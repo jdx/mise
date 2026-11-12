@@ -348,7 +348,7 @@ Choose how dependency locking uses this tool's [`registry_url`](#registry-url).
 - `default` (the default): the registry replaces PyPI, so the tool and all of its
   dependencies must come from it. This is right for full PyPI mirrors and for
   air-gapped setups. A dependency the registry lacks is never fetched from
-  elsewhere: mise warns and keeps a version-only lock entry for the tool.
+  elsewhere: mise warns and leaves the tool's lock entry as it is, including any graph it already has.
 - `priority`: the registry is searched first and PyPI second, which suits a registry
   that hosts only its own packages (Gitea, Forgejo, pypiserver, a static index).
 
