@@ -285,6 +285,17 @@ impl Vfox {
         file: &Path,
     ) -> Result<Option<VerifiedAttestation>> {
         self.log_emit(format!("Verifying {file:?} checksum"));
+        if let Some(locked) = &self.locked_checksum {
+            match locked.split_once(':') {
+                Some(("sha256", hex)) => xx::hash::ensure_checksum_sha256(file, hex)?,
+                Some(("sha512", hex)) => xx::hash::ensure_checksum_sha512(file, hex)?,
+                _ => {
+                    return Err(crate::VfoxError::Error(format!(
+                        "cannot verify {file:?} against the locked checksum {locked}: only sha256 and sha512 are supported"
+                    )));
+                }
+            }
+        }
         if let Some(sha256) = &pre_install.sha256 {
             xx::hash::ensure_checksum_sha256(file, sha256)?;
         }
