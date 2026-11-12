@@ -46,6 +46,7 @@ end
 LUA
 }
 
+skip_unless_system_plugin_path_is_trusted
 export MISE_SYSTEM_PLUGINS_DIRS="$PWD/system-plugins"
 make_plugin system-plugins/fake system
 chmod -R go-w system-plugins
