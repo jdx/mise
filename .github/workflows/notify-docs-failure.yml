@@ -42,6 +42,8 @@ jobs:
           WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           FAILED_AT: ${{ github.event.workflow_run.updated_at }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
           if [ "$HAS_KEY" != "true" ]; then
@@ -62,6 +64,16 @@ jobs:
               break
             fi
             page=$((page + 1))
+          done
+          # That list sees only each run's latest attempt. If this failure is
+          # a rerun, an earlier attempt of it may have passed, which also
+          # ended the streak.
+          for ((n = 1; n < ATTEMPT; n++)); do
+            passed=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${n}" \
+              --jq 'select(.conclusion == "success") | .updated_at')
+            if [[ "$passed" > "$since" ]]; then
+              since=$passed
+            fi
           done
           # A pass that finished after this failure means the docs already
           # recovered, so there is nothing to report.
