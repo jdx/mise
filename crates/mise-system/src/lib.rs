@@ -451,29 +451,22 @@ pub struct UnresolvedPackage {
     pub absent: bool,
 }
 
-/// Unprefixed `[bootstrap.packages]` keys that no manager can take on this
-/// machine, with why, for `status` to list as skipped. Keys the platform or
-/// config environment disables are not listed.
-pub fn unresolved_unprefixed_from_config(config: &Config) -> Vec<UnresolvedPackage> {
-    let available = available_manager_names();
-    package_configs_from_config_files(&config.config_files())
-        .into_iter()
-        .filter(|(spec, package)| {
-            !spec.contains(':')
-                && package.is_os_supported()
-                && package.is_env_supported(crate::host::mise_env_with_auto())
-        })
-        .filter_map(|(spec, package)| {
-            resolve_unprefixed(&spec, &package, &available)
-                .err()
-                .map(|err| UnresolvedPackage {
-                    key: spec,
-                    reason: err.to_string(),
-                    version: package.version().to_string(),
-                    absent: package.desired() == mise_system_packages::PackageDesiredState::Absent,
-                })
-        })
-        .collect()
+/// Like [`packages_from_config`], and also the unprefixed keys that no manager
+/// can take on this machine, with why, for `status` to list as skipped. Keys
+/// the platform or config environment disables are not listed. One resolution
+/// pass yields both, so they cannot disagree.
+pub fn packages_and_unresolved_from_config(
+    config: &Config,
+) -> Result<(Vec<ManagerPackages>, Vec<UnresolvedPackage>)> {
+    let brew_taps = brew_taps_from_config(config);
+    let mut unresolved = vec![];
+    let packages = packages_from_config_files_collecting(
+        &config.config_files(),
+        &brew_taps,
+        true,
+        &mut unresolved,
+    )?;
+    Ok((packages, unresolved))
 }
 
 /// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
@@ -769,8 +762,17 @@ fn packages_from_config_files_with_brew_taps(
     brew_taps: &IndexMap<String, String>,
     filter_env: bool,
 ) -> Result<Vec<ManagerPackages>> {
+    packages_from_config_files_collecting(config_files, brew_taps, filter_env, &mut vec![])
+}
+
+fn packages_from_config_files_collecting(
+    config_files: &ConfigMap,
+    brew_taps: &IndexMap<String, String>,
+    filter_env: bool,
+    unresolved: &mut Vec<UnresolvedPackage>,
+) -> Result<Vec<ManagerPackages>> {
     let (requests, options) =
-        package_requests_from_config_files(config_files, brew_taps, filter_env);
+        package_requests_collecting(config_files, brew_taps, filter_env, unresolved);
     resolve_managers(
         requests,
         options,
@@ -786,6 +788,20 @@ fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
     filter_env: bool,
+) -> (
+    IndexMap<String, Vec<PackageRequest>>,
+    IndexMap<String, ManagerPackageOptions>,
+) {
+    package_requests_collecting(config_files, brew_taps, filter_env, &mut vec![])
+}
+
+/// Resolve the declared packages, also pushing each unprefixed key that no
+/// manager can take onto `unresolved`.
+fn package_requests_collecting(
+    config_files: &ConfigMap,
+    brew_taps: &IndexMap<String, String>,
+    filter_env: bool,
+    unresolved: &mut Vec<UnresolvedPackage>,
 ) -> (
     IndexMap<String, Vec<PackageRequest>>,
     IndexMap<String, ManagerPackageOptions>,
@@ -973,7 +989,18 @@ fn package_requests_from_config_files(
                     desired: package.desired(),
                 });
             }
-            Err(err) => warn!("[bootstrap.packages]: {err}"),
+            Err(err) => {
+                warn!("[bootstrap.packages]: {err}");
+                if !spec.contains(':') {
+                    unresolved.push(UnresolvedPackage {
+                        version: package.version().to_string(),
+                        absent: package.desired()
+                            == mise_system_packages::PackageDesiredState::Absent,
+                        key: spec,
+                        reason: err.to_string(),
+                    });
+                }
+            }
         }
     }
     #[cfg(unix)]
