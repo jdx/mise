@@ -3703,6 +3703,7 @@ mod tests {
                 check_parent_symlinks: true,
                 directory: false,
                 recursive: false,
+                block: None,
             })
             .unwrap(),
         );
@@ -3846,6 +3847,7 @@ mod tests {
                 check_parent_symlinks: true,
                 directory: false,
                 recursive: false,
+                block: None,
             })
             .unwrap()
         };
@@ -3946,6 +3948,7 @@ mod tests {
             check_parent_symlinks: true,
             directory: false,
             recursive: false,
+            block: None,
         })
         .unwrap_err();
         assert!(is_permission_denied(&error), "{error:#}");
@@ -4023,6 +4026,7 @@ mod tests {
                 check_parent_symlinks: true,
                 directory: false,
                 recursive: false,
+                block: None,
             },
             &through_link,
         )
@@ -4062,6 +4066,7 @@ mod tests {
                     check_parent_symlinks: true,
                     directory: false,
                     recursive: false,
+                    block: None,
                 },
                 &path,
             )
@@ -4080,6 +4085,7 @@ mod tests {
                     check_parent_symlinks: true,
                     directory: false,
                     recursive: false,
+                    block: None,
                 },
                 &temp.path().join("missing/config"),
             )
@@ -4199,6 +4205,7 @@ mod tests {
             check_parent_symlinks: true,
             directory: true,
             recursive,
+            block: None,
         }
     }
 
