@@ -1,0 +1,84 @@
+name: notify-docs-failure
+
+# The docs deploy from the default branch after a change has already merged,
+# so a failed build has no PR check to show it: the site quietly stops
+# updating. Email when a docs run on the default branch fails after one that
+# passed. Later failures in the same streak send nothing, so a broken build
+# alerts once instead of on every push.
+# read-only token, no checkout, and it only fires for default-branch runs
+# jactionlint ignore=dangerous-triggers
+on:
+  workflow_run:
+    workflows: [docs]
+    types: [completed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+
+jobs:
+  notify:
+    name: notify
+    if: ${{ github.repository == 'jdx/mise' && github.event.workflow_run.head_branch == github.event.repository.default_branch && contains(fromJSON('["push", "workflow_dispatch", "schedule"]'), github.event.workflow_run.event) && contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send failure email via Resend
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${NOTIFY_EMAIL:-}" ]; then
+            echo "::warning::RESEND_API_KEY or NOTIFY_EMAIL is unset; skipping notification for ${WORKFLOW} on ${BRANCH}"
+            exit 0
+          fi
+          # The newest earlier run on this branch that reached a verdict. A
+          # cancelled or skipped run says nothing about the docs, so it is
+          # passed over. With no earlier run, this failure is the first.
+          previous=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_ID}/runs?branch=$(jq -rn --arg b "$BRANCH" '$b|@uri')&status=completed&per_page=50" \
+            --jq "[.workflow_runs[] | select(.id < ${RUN_ID} and .event != \"pull_request\" and (.conclusion == \"success\" or .conclusion == \"failure\" or .conclusion == \"timed_out\" or .conclusion == \"startup_failure\"))] | sort_by(.id) | last | .conclusion // \"none\"")
+          if [ "$previous" != "success" ] && [ "$previous" != "none" ]; then
+            echo "The previous ${WORKFLOW} run on ${BRANCH} also ended in ${previous}; already reported"
+            exit 0
+          fi
+          # Build the payload with jq: --arg keeps a branch or workflow name
+          # from breaking out of the JSON string, and @html keeps it from
+          # becoming markup once the mail client renders the body.
+          payload=$(jq -n \
+            --arg to "$NOTIFY_EMAIL" \
+            --arg workflow "$WORKFLOW" \
+            --arg conclusion "$CONCLUSION" \
+            --arg branch "$BRANCH" \
+            --arg sha "${SHA:0:7}" \
+            --arg run_url "$RUN_URL" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            '{
+              from: "mise Docs <mise@en.dev>",
+              to: [$to],
+              subject: "❌ mise docs: \($workflow) \($conclusion) on \($branch)",
+              html: (
+                "<p>The <strong>\($workflow | @html)</strong> workflow in \($repo | @html) finished with <strong>\($conclusion | @html)</strong> on <strong>\($branch | @html)</strong> at \($sha | @html).</p>"
+                + "<p>The docs site is not updating. Further failures will not send another email until a run passes.</p>"
+                + "<p><a href=\"\($run_url | @html)\">View workflow run</a></p>"
+              )
+            }')
+          # A retry can duplicate an alert whose response was lost; two
+          # alerts beat none.
+          curl --fail-with-body -sS \
+            --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            -X POST 'https://api.resend.com/emails' \
+            -H "Authorization: Bearer ${RESEND_API_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d "$payload"
