@@ -172,7 +172,7 @@ pub fn is_mise_install_path(path: &std::path::Path, install_dirs: &[PathBuf]) ->
     {
         return true;
     }
-    let Some(path) = crate::file::canonicalize_cached(path) else {
+    let Some(path) = crate::file::canonicalize_path_entry(path) else {
         return false;
     };
     install_dirs.iter().any(|d| {

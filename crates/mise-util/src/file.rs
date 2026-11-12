@@ -2184,7 +2184,7 @@ pub fn is_mise_shims_dir(path: &Path) -> bool {
     if paths_eq(&resolved, &user_shims) || paths_eq(&resolved, &sys_shims) {
         return true;
     }
-    let canon_input = canonicalize_or_self(&resolved);
+    let canon_input = canonicalize_path_entry_or_self(&resolved);
     let canon_user = canonicalize_or_self(&user_shims);
     let canon_sys = canonicalize_or_self(&sys_shims);
     paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
@@ -2256,7 +2256,7 @@ pub fn is_command_wrapper_dir(path: &Path) -> bool {
     let resolved = replace_path(path);
     paths_eq(&resolved, &dirs::COMMAND_WRAPPERS)
         || paths_eq(
-            &canonicalize_or_self(&resolved),
+            &canonicalize_path_entry_or_self(&resolved),
             &canonicalize_or_self(&dirs::COMMAND_WRAPPERS),
         )
 }
