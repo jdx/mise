@@ -29,7 +29,7 @@ mise trust
 
 # By default the registry replaces the global index, so its missing dependencies
 # leave a version-only entry.
-assert_contains 'mise lock 2>&1' 'keeping a version-only lock entry'
+assert_contains 'mise lock 2>&1' 'leaving the lock entry as it is'
 assert_not_contains 'cat mise.lock' 'uv ='
 
 # With `priority` the dependencies come from the global index.
@@ -43,12 +43,18 @@ assert_contains "grep -A3 '^name = \"mise-lock-cli\"' $graph" "registry = \"http
 assert_contains "grep -A3 '^name = \"mise-lock-dep\"' $graph" "registry = \"http://127.0.0.1:$port/simple/\""
 assert_contains 'mise x --locked -- lock-cli' 'dependency=1.0.0'
 
+# A graph that cannot be re-resolved is kept, not deleted.
+write_config ', registry_index = "default"'
+assert_contains 'mise lock --bump 2>&1' 'leaving the lock entry as it is'
+assert_contains 'cat mise.lock' 'path = ".mise/locks/pypi-mise-lock-cli/1.0.0"'
+assert_contains "test -f $graph && echo kept" 'kept'
+
 # An unknown value is rejected, and an explicit `default` keeps the replacing behavior.
 write_config ', registry_index = "sideways"'
 assert_fail 'mise lock' 'registry_index must be default or priority'
 rm -rf mise.lock .mise
 write_config ', registry_index = "default"'
-assert_contains 'mise lock 2>&1' 'keeping a version-only lock entry'
+assert_contains 'mise lock 2>&1' 'leaving the lock entry as it is'
 
 # `install_env` cannot loosen the strategy: with `unsafe-best-match` uv would take the
 # newest dependency from either index, but the registry hosts the dependency (at 1.0.0

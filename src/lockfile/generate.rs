@@ -945,17 +945,11 @@ pub async fn populate_uv_locks(
             }
             Err(error) => {
                 warn!(
-                    "{} dependency graph unavailable; keeping a version-only lock entry: {error:#}",
+                    "{} dependency graph unavailable; leaving the lock entry as it is: {error:#}",
                     ba.short
                 );
-                if let Some(entries) = lockfile.tools_for_mut(&ba.short) {
-                    for entry in entries
-                        .iter_mut()
-                        .filter(|entry| entry.version == tv.version && entry.options == options)
-                    {
-                        entry.uv = None;
-                    }
-                }
+                // Keep whatever graph the lockfile already has: a failure to resolve
+                // here may only reflect this machine, not that the graph is stale.
                 continue;
             }
         };
