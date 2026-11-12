@@ -26,7 +26,8 @@ pub struct SettingsSection {
 }
 
 /// Every plugin's section, merged across config files: a more local file's value for a key
-/// replaces the others, and tables merge key by key. Independent `[bootstrap].config_roots` must
+/// replaces the others, and tables merge key by key. `desk_plugin` and `desk-plugin` are one
+/// plugin, so their sections merge under the kebab-case name. Independent `[bootstrap].config_roots` must
 /// not set the same key to different values.
 pub fn sections_from_config(config: &Config) -> Result<Vec<SettingsSection>> {
     let mut sections: IndexMap<String, IndexMap<String, Json>> = IndexMap::new();
@@ -37,6 +38,7 @@ pub fn sections_from_config(config: &Config) -> Result<Vec<SettingsSection>> {
                 continue;
             };
             for (plugin, table) in bootstrap.settings {
+                let plugin = system_plugins::identity(&plugin);
                 mise_system::merge_settings_table(merged.entry(plugin).or_default(), table);
             }
         }
@@ -132,6 +134,22 @@ fn same_number(a: &serde_json::Number, b: &serde_json::Number) -> bool {
         (Some(i), None) => b.as_f64().and_then(float_as_int) == Some(i),
         (None, Some(i)) => a.as_f64().and_then(float_as_int) == Some(i),
         (None, None) => a.as_f64() == b.as_f64(),
+    }
+}
+
+/// Whether a plugin's Lua sees `value` exactly: Lua 5.1 numbers are doubles, so integers beyond
+/// 2^53 would reach the hook rounded.
+fn fits_in_lua(value: &Json) -> bool {
+    const MAX: u64 = 1 << 53;
+    match value {
+        Json::Number(n) => match (n.as_i64(), n.as_u64()) {
+            (Some(i), _) => i.unsigned_abs() <= MAX,
+            (None, Some(u)) => u <= MAX,
+            _ => true,
+        },
+        Json::Array(values) => values.iter().all(fits_in_lua),
+        Json::Object(values) => values.values().all(fits_in_lua),
+        _ => true,
     }
 }
 
@@ -270,6 +288,15 @@ impl BootstrapSettingsPlugin {
                 status.declared
             );
         }
+        if let Some(status) = changed.iter().find(|status| !fits_in_lua(&status.declared)) {
+            bail!(
+                "{}: {} is {}, an integer Lua cannot hold exactly; settings plugins see numbers \
+                 only up to 2^53",
+                self.name,
+                status.key,
+                status.declared
+            );
+        }
         if dry_run || changed.is_empty() {
             return Ok(ApplyReport {
                 changed,
@@ -384,6 +411,16 @@ mod tests {
         assert!(!same_value(&json!(9_007_199_254_740_992.0_f64), &b));
         assert!(!same_value(&json!(4.5), &json!(4)));
         assert!(same_value(&json!(u64::MAX), &json!(u64::MAX)));
+    }
+
+    #[test]
+    fn integers_beyond_2_53_do_not_fit_in_lua() {
+        assert!(fits_in_lua(&json!(9_007_199_254_740_992_i64)));
+        assert!(fits_in_lua(&json!(-9_007_199_254_740_992_i64)));
+        assert!(!fits_in_lua(&json!(9_007_199_254_740_993_i64)));
+        assert!(!fits_in_lua(&json!([1, 9_007_199_254_740_993_i64])));
+        assert!(!fits_in_lua(&json!(u64::MAX)));
+        assert!(fits_in_lua(&json!(1e300)));
     }
 
     #[test]

@@ -6007,7 +6007,18 @@ async fn apply_bootstrap_settings(
     for section in sections {
         match system::bootstrap_settings::BootstrapSettingsPlugin::load(&section.plugin).await {
             Ok(plugin) => {
-                let report = plugin.apply(&section, dry_run).await?;
+                let report = match plugin.apply(&section, dry_run).await {
+                    Ok(report) => report,
+                    // Earlier plugins already wrote their changes, which will match next time,
+                    // so this is the only chance to report the steps they asked for.
+                    Err(err) if !follow_up.is_empty() => {
+                        return Err(err.wrap_err(format!(
+                            "bootstrap settings failed; follow-up from the plugins before it:\n  {}",
+                            follow_up.join("\n  ")
+                        )));
+                    }
+                    Err(err) => return Err(err),
+                };
                 follow_up.extend(
                     report
                         .follow_up
