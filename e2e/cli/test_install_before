@@ -195,3 +195,23 @@ assert_fail "mise install jq@prefix:1.8 --minimum-release-age 1990-01-01" "the n
 # from 1.8.2 rather than selecting the release below it.
 assert_fail "mise install jq@sub-1:latest --minimum-release-age 1990-01-01" "Lower minimum_release_age to make them eligible"
 assert_not_contains_text "$(mise install jq@sub-1:latest --minimum-release-age 1990-01-01 2>&1 || true)" "Install that one now"
+
+# Test: minimum_release_age_excludes accepts a [tool_alias] name for the backend it stands for
+rm -f mise.toml
+cat <<EOF2 >mise.toml
+[tool_alias]
+myjq = "aqua:jqlang/jq"
+
+[settings]
+minimum_release_age = "1990-01-01"
+minimum_release_age_excludes = ["myjq"]
+EOF2
+assert_not_empty "mise latest aqua:jqlang/jq"
+
+# Same, when the alias points at a registry shorthand
+sed -i.bak 's|"aqua:jqlang/jq"|"jq"|' mise.toml
+assert_not_empty "mise latest aqua:jqlang/jq"
+
+# Without the exclusion the 1990 cutoff hides every release
+sed -i.bak 's|\["myjq"\]|[]|' mise.toml
+assert_empty "mise latest aqua:jqlang/jq"
