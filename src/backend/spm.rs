@@ -10,7 +10,7 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{ChecksumSource, PlatformInfo};
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
@@ -196,9 +196,13 @@ impl Backend for SPMBackend {
     /// holds a URL or checksum for another platform; a lockfile without any belongs to a package
     /// built from source.
     fn requires_lockfile_url(&self, tv: &ToolVersion) -> bool {
-        tv.lock_platforms
-            .values()
-            .any(|p| p.url.is_some() || p.checksum.is_some())
+        let raw_opts = tv.request.options();
+        let opts = SpmOptions::new(&raw_opts);
+        asks_for_bundle(&opts, package_revision(tv).as_ref())
+            || tv
+                .lock_platforms
+                .values()
+                .any(|p| p.url.is_some() || p.checksum.is_some())
     }
 
     async fn resolve_lock_info(
@@ -225,26 +229,7 @@ impl Backend for SPMBackend {
         ensure_plain_asset_name(&asset.name)?;
         // A bundle with no binary for this target is not what gets installed there, and
         // a locked checksum would stop install from building it from source instead.
-        let download_headers = match (&asset.url_api, &provider.kind) {
-            (None, _) => None,
-            (Some(url_api), GitProviderKind::GitLab) => {
-                Some(gitlab::get_headers(url_api, &provider.api_url)?)
-            }
-            (Some(url_api), GitProviderKind::GitHub) => {
-                Some(github::get_headers(url_api, &provider.api_url)?)
-            }
-        };
-        // A private GitHub repository serves its assets only from the API endpoint.
-        let bundle_url = match (&asset.url_api, &provider.kind) {
-            (Some(url_api), GitProviderKind::GitHub) => {
-                github::pick_reachable_asset_url(&asset.url, url_api).await
-            }
-            _ => asset.url.clone(),
-        };
-        let bundle_headers = match provider.kind {
-            GitProviderKind::GitLab => gitlab::get_headers(&bundle_url, &provider.api_url)?,
-            GitProviderKind::GitHub => github::get_headers(&bundle_url, &provider.api_url)?,
-        };
+        let (bundle_url, bundle_headers) = artifactbundle_download(&provider, &asset).await?;
         let tmp = tempfile::tempdir()?;
         let download_path = tmp.path().join(&asset.name);
         HTTP.download_file_with_headers(&bundle_url, &download_path, &bundle_headers, None)
@@ -255,21 +240,24 @@ impl Backend for SPMBackend {
         if !artifactbundle_supports_target(&extract_dir, target)? {
             return Ok(PlatformInfo::default());
         }
-        // `mise lock` downloads the bundle to hash it when the release has no digest;
-        // the API asset endpoint of a private repository needs the install token.
-        // A digest mise-versions served is compared after a real download, not trusted.
-        let checksum_source = (asset.digest.is_some()
-            && asset
-                .url_api
-                .as_deref()
-                .is_some_and(crate::versions_host::is_mirrored_asset_api_url))
-        .then_some(ChecksumSource::VersionsHost);
+        // The downloaded file is what install is checked against, so its hash is the
+        // checksum; a digest the release served must agree with it.
+        let checksum = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&download_path, None)?
+        );
+        if let Some(digest) = &asset.digest
+            && digest != &checksum
+        {
+            bail!(
+                "checksum mismatch for {}: the release lists {digest}, but the download is {checksum}",
+                asset.name
+            );
+        }
         Ok(PlatformInfo {
-            checksum_source,
-            checksum: asset.digest,
+            checksum: Some(checksum),
             url: Some(asset.url),
             url_api: asset.url_api,
-            download_headers,
             ..Default::default()
         })
     }
@@ -696,13 +684,10 @@ impl SPMBackend {
         file::remove_all(&bundle_dir)?;
         file::create_dir_all(&bundle_dir)?;
         let download_path = tv.download_path().join(&asset.name);
-        let headers = match provider.kind {
-            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url)?,
-            GitProviderKind::GitHub => github::get_headers(&asset.url, &provider.api_url)?,
-        };
+        let (download_url, headers) = artifactbundle_download(provider, &asset).await?;
         ctx.pr.set_message(format!("download {}", asset.name));
         HTTP.download_file_with_headers(
-            &asset.url,
+            &download_url,
             &download_path,
             &headers,
             Some(ctx.pr.as_ref()),
@@ -1104,6 +1089,33 @@ struct ArtifactBundleReleaseAsset {
     digest: Option<String>,
 }
 
+/// Whether the request itself requires an artifact bundle, which a Git revision never has.
+fn asks_for_bundle(opts: &SpmOptions<'_>, revision: Option<&PackageRevision>) -> bool {
+    !revision.is_some_and(PackageRevision::is_git_revision)
+        && opts
+            .artifactbundle_mode(None)
+            .is_ok_and(|mode| opts.requires_artifactbundle(mode))
+}
+
+/// Where to download a bundle from, and the headers that URL needs. A private GitHub
+/// repository serves its assets only from the API endpoint.
+async fn artifactbundle_download(
+    provider: &GitProvider,
+    asset: &ArtifactBundleReleaseAsset,
+) -> eyre::Result<(String, reqwest::header::HeaderMap)> {
+    let url = match (&asset.url_api, &provider.kind) {
+        (Some(url_api), GitProviderKind::GitHub) => {
+            github::pick_reachable_asset_url(&asset.url, url_api).await
+        }
+        _ => asset.url.clone(),
+    };
+    let headers = match provider.kind {
+        GitProviderKind::GitLab => gitlab::get_headers(&url, &provider.api_url)?,
+        GitProviderKind::GitHub => github::get_headers(&url, &provider.api_url)?,
+    };
+    Ok((url, headers))
+}
+
 async fn resolve_artifactbundle_asset(
     provider: &GitProvider,
     repo: &SwiftPackageRepo,
@@ -1313,7 +1325,8 @@ fn artifactbundle_supports_target(
             .any(|triple| {
                 let triple = triple.to_lowercase();
                 // A musl target needs a musl variant, and a glibc one must not take it.
-                (target.os_name() != "linux" || triple.contains("musl") == musl)
+                (target.os_name() != "linux"
+                    || (triple.contains("musl") == musl && !triple.contains("android")))
                     && os_names.iter().any(|os| triple.contains(os))
                     && arch_names.iter().any(|arch| triple.starts_with(arch))
             });
@@ -1725,6 +1738,23 @@ mod tests {
             },
         );
         assert!(backend.requires_lockfile_url(&tv));
+
+        // A request for a bundle has one to lock, even before any entry exists
+        let required = opts_with("artifactbundle", toml::Value::Boolean(true));
+        assert!(asks_for_bundle(&SpmOptions::new(&required), None));
+        let asset = opts_with(
+            "artifactbundle_asset",
+            toml::Value::String("tool.artifactbundle.zip".to_string()),
+        );
+        assert!(asks_for_bundle(&SpmOptions::new(&asset), None));
+        let git = PackageRevision::Git("0123456789abcdef".to_string());
+        assert!(!asks_for_bundle(&SpmOptions::new(&required), Some(&git)));
+        let source_only = opts_with("artifactbundle", toml::Value::Boolean(false));
+        assert!(!asks_for_bundle(&SpmOptions::new(&source_only), None));
+        assert!(!asks_for_bundle(
+            &SpmOptions::new(&ToolVersionOptions::default()),
+            None
+        ));
 
         // Safe mode drops lockfile URLs but keeps checksums, which also mark a bundle
         let mut tv = tool_version("1.2.3");
@@ -2368,7 +2398,23 @@ mod tests {
         assert!(!artifactbundle_supports_target(tmp.path(), &target("linux-arm64")).unwrap());
         assert!(!artifactbundle_supports_target(tmp.path(), &target("macos-x64")).unwrap());
         assert!(!artifactbundle_supports_target(tmp.path(), &target("windows-x64")).unwrap());
-        // The bundle is glibc-only
+        // Android is not Linux for Swift's purposes
+        let android = tempfile::tempdir().unwrap();
+        let bundle = android.path().join("tool.artifactbundle");
+        file::create_dir_all(&bundle).unwrap();
+        file::write(
+            bundle.join("info.json"),
+            serde_json::json!({
+                "schemaVersion": "1.0",
+                "artifacts": {"tool": {"type": "executable", "version": "1", "variants": [
+                    {"path": "bin/tool", "supportedTriples": ["x86_64-unknown-linux-android"]}
+                ]}}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(!artifactbundle_supports_target(android.path(), &target("linux-x64")).unwrap());
+        // The first bundle is glibc-only
         assert!(!artifactbundle_supports_target(tmp.path(), &target("linux-x64-musl")).unwrap());
     }
 
