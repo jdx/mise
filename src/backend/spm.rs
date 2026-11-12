@@ -199,9 +199,9 @@ impl Backend for SPMBackend {
         let raw_opts = tv.request.options();
         let opts = SpmOptions::new(&raw_opts);
         // A platform that opts out of bundles builds from source and has no URL to lock
-        let current = PlatformTarget::new(crate::platform::Platform::current());
+        // Install reads the options of the host it runs on, so this does too
         if matches!(
-            opts.artifactbundle_mode(Some(&current)),
+            opts.artifactbundle_mode(None),
             Ok(ArtifactBundleMode::SourceOnly)
         ) {
             return false;
