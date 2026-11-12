@@ -269,7 +269,7 @@ Global config differs from project config in a few ways:
   (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file. It
   also turns off the [override files](#override-file). It does not hide
   `~/.config/mise/config.toml` from projects under your home directory, which
-  still load it as a project config; add `~/.config/mise` to
+  still load it as a project config; add `~/.config/mise/config.toml` to
   [`ignored_config_paths`](/configuration/settings.html#ignored_config_paths)
   to skip it.
 
