@@ -175,12 +175,29 @@ fn test_env_dotted_key_serialization() {
 fn test_env_dotenv_file_serializes_under_underscore() {
     let mut doc = TomlDocument::new();
     let env_idx = doc.sections.iter().position(|s| s.name == "env").unwrap();
-    doc.add_entry(env_idx, "_.file".to_string(), ".env".to_string());
+    doc.add_env_underscore_field(env_idx, "file", ".env".to_string());
 
     let output = doc.to_toml();
     assert!(
         output.contains("_.file") || output.contains("[env._]"),
         "Output should use the `_` key: {output}"
+    );
+    assert!(
+        !output.contains("mise"),
+        "Output should not use the deprecated env.mise table: {output}"
+    );
+}
+
+#[test]
+fn test_env_dotenv_file_keeps_existing_underscore_entry() {
+    let mut doc = TomlDocument::parse("[env]\n_.source = \"a.sh\"\n").unwrap();
+    let env_idx = doc.sections.iter().position(|s| s.name == "env").unwrap();
+    doc.add_env_underscore_field(env_idx, "file", ".env".to_string());
+
+    let output = doc.to_toml();
+    assert!(
+        output.contains(".env") && output.contains("a.sh"),
+        "Output should keep both the existing source and the new file: {output}"
     );
     assert!(
         !output.contains("mise"),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::document::EnvFieldChange;
 
 impl InteractiveConfig {
     pub(in crate::editor) fn apply_edit(&mut self, value: String) {
@@ -187,12 +188,20 @@ impl InteractiveConfig {
                 if !key_name.is_empty() =>
             {
                 // key_name is the filename, add as _.file = "<filename>"
-                self.doc
-                    .add_entry(section_idx, "_.file".to_string(), key_name);
-                // Track undo for added entry
-                let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
-                self.undo_stack
-                    .push(UndoAction::AddEntry(section_idx, new_entry_idx));
+                let change = self
+                    .doc
+                    .add_env_underscore_field(section_idx, "file", key_name);
+                self.undo_stack.push(match change {
+                    EnvFieldChange::NewEntry(entry_idx) => {
+                        UndoAction::AddEntry(section_idx, entry_idx)
+                    }
+                    EnvFieldChange::NewField(entry_idx, field_idx) => {
+                        UndoAction::AddInlineTableField(section_idx, entry_idx, field_idx)
+                    }
+                    EnvFieldChange::ReplacedField(entry_idx, field_idx, old) => {
+                        UndoAction::EditInlineTableField(section_idx, entry_idx, field_idx, old)
+                    }
+                });
             }
             Some(CursorTarget::AddButton(AddButtonKind::EnvSource(section_idx)))
                 if !key_name.is_empty() =>
