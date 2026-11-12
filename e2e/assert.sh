@@ -447,3 +447,27 @@ detect_platform() {
   MISE_PLATFORM="${MISE_PLATFORM_OS}-${MISE_PLATFORM_ARCH}"
   export MISE_PLATFORM MISE_PLATFORM_OS MISE_PLATFORM_ARCH
 }
+
+# Skip the test unless every directory from / down to the current one is one mise trusts to hold
+# system plugins: owned by root or the current user, and writable by others only when sticky. Some
+# CI runners own /tmp, where tests run, by another user.
+skip_unless_system_plugin_path_is_trusted() {
+  local dir uid owner mode
+  dir="$(pwd -P)"
+  uid="$(id -u)"
+  while :; do
+    if owner="$(stat -c %u "$dir" 2>/dev/null)"; then
+      mode="$(stat -c %a "$dir")"
+    else
+      owner="$(stat -f %u "$dir")"
+      mode="$(stat -f %p "$dir")"
+      mode="${mode: -4}"
+    fi
+    if [[ $owner != 0 && $owner != "$uid" ]] || { ((8#$mode & 8#022)) && ! ((8#$mode & 8#1000)); }; then
+      echo "skipping: mise does not trust $dir to hold system plugins"
+      exit 0
+    fi
+    [[ $dir == / ]] && return 0
+    dir="$(dirname "$dir")"
+  done
+}
