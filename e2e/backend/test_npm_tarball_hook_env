@@ -19,5 +19,5 @@ assert_not_contains "mise hook-env -s bash --force 2>&1" "missing"
 
 # The newest install wins, even when its digest sorts below an older one.
 mkdir -p "$dir/0000000000000000/bin"
-touch -d '2 days ago' "$dir/51bb34b657ef65ec"
+touch -t 202001010000 "$dir/51bb34b657ef65ec"
 assert_contains "MISE_OFFLINE=1 mise ls --json" '"version": "0000000000000000"'

@@ -1273,7 +1273,16 @@ impl Backend for NPMBackend {
                 .into_iter()
                 .filter(|v| !v.starts_with('.') && v != "latest")
                 .filter(|v| !crate::runtime_symlinks::is_runtime_symlink(&installs.join(v)))
-                .filter(|v| !crate::toolset::install_state::is_incomplete(self.ba(), v))
+                .filter(|v| {
+                    // An identity-layout version is a link, and its marker is
+                    // keyed by the installation the link names.
+                    let key = crate::install_layout::resolver::link_target(&installs.join(v))
+                        .and_then(|install| {
+                            install.file_name().map(|n| n.to_string_lossy().to_string())
+                        })
+                        .unwrap_or_else(|| v.clone());
+                    !crate::toolset::install_state::is_incomplete(self.ba(), &key)
+                })
                 .filter_map(|v| {
                     let modified = installs
                         .join(&v)
