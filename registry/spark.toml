@@ -1,4 +1,4 @@
-backends = ["aqua:apache/spark"]
+backends = ["aqua:apache/spark", "asdf:mise-plugins/mise-spark"]
 bins = [
   "beeline",
   "docker-image-tool.sh",
