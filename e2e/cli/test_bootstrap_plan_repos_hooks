@@ -66,3 +66,24 @@ TOML
 if [[ "$(uname -s)" == "Linux" ]] && command -v apt-get >/dev/null; then
   assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"package\", \"hook\", \"file\"]'"
 fi
+
+# with a plugin package, repos and services stay before it and the
+# post-packages hook runs after it
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.files."$PWD/svc.conf"]
+content = "x"
+[bootstrap.services.mise-plan-order-nonexistent]
+state = "stopped"
+enabled = false
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "file://$SRC", ref = "main" }
+[bootstrap.hooks]
+post-packages = "true"
+final = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] | index(\"repo\") < index(\"package\") and index(\"service\") < index(\"package\") and index(\"package\") < index(\"hook\")'"
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[] | select(.id.kind == \"hook\") | .id.name] == [\"post-packages:1\", \"final:1\"]'"

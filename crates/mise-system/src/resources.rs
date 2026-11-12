@@ -206,7 +206,12 @@ pub async fn plan(
     plan.add_file_phase_ordering(&builtin_packages)?;
     let service_dependencies = plan
         .ids()
-        .filter(|id| matches!(id.kind.as_str(), "package" | "file" | "directory"))
+        .filter(|id| match id.kind.as_str() {
+            // plugin packages run after services, so services never wait for them
+            "package" => builtin_packages.contains(id),
+            "file" | "directory" => true,
+            _ => false,
+        })
         .cloned()
         .collect::<Vec<_>>();
     for resource in super::services::plans_with_notifications(&services, &notified_services) {
@@ -229,11 +234,10 @@ pub async fn plan(
         super::firewall::inspect_request(&mut firewall)?;
         let dependencies = plan
             .ids()
-            .filter(|id| {
-                matches!(
-                    id.kind.as_str(),
-                    "package" | "file" | "directory" | "service"
-                )
+            .filter(|id| match id.kind.as_str() {
+                "package" => builtin_packages.contains(id),
+                "file" | "directory" | "service" => true,
+                _ => false,
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -353,6 +357,10 @@ pub async fn add_repos_and_hooks(
         })
         .cloned()
         .collect::<Vec<_>>();
+    // bootstrap defers the `post-packages` hook until plugin packages finish
+    let defer_post_packages = plan
+        .ids()
+        .any(|id| id.kind == "package" && !builtin_packages.contains(id));
     let requests = super::repos_from_config(config);
     let mut repos = vec![];
     for status in super::repos::status(&requests).await? {
@@ -365,6 +373,17 @@ pub async fn add_repos_and_hooks(
             plan.add_ordering(repo, resource.clone())?;
         }
     }
+    // plugin packages run after tools, so after everything planned here
+    let plugin_packages = plan
+        .ids()
+        .filter(|id| id.kind == "package" && !builtin_packages.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+    for package in &plugin_packages {
+        for resource in earlier.iter().chain(&repos) {
+            plan.add_ordering(package, resource.clone())?;
+        }
+    }
     if !hooks_enabled {
         return Ok(());
     }
@@ -372,9 +391,23 @@ pub async fn add_repos_and_hooks(
     let mut previous: Option<ResourceId> = None;
     // resources the next hook to run must follow
     let mut pending: Vec<ResourceId> = vec![];
-    for phase in BootstrapHookPhase::iter() {
+    let mut phases = BootstrapHookPhase::iter()
+        .filter(|phase| !(defer_post_packages && *phase == BootstrapHookPhase::PostPackages))
+        .collect::<Vec<_>>();
+    if defer_post_packages {
+        // it runs after plugin packages, just before the `final` hook
+        let at = phases
+            .iter()
+            .position(|phase| *phase == BootstrapHookPhase::Final)
+            .unwrap_or(phases.len());
+        phases.insert(at, BootstrapHookPhase::PostPackages);
+    }
+    for phase in phases {
         let before_phase = previous.clone();
         match phase {
+            BootstrapHookPhase::PostPackages if defer_post_packages => {
+                pending.extend(plan.ids().filter(|id| id.kind != "hook").cloned());
+            }
             BootstrapHookPhase::PostPackages => pending.extend(packages.iter().cloned()),
             BootstrapHookPhase::PreRepos => pending.extend(earlier.iter().cloned()),
             BootstrapHookPhase::PostRepos => pending.extend(repos.iter().cloned()),
@@ -410,7 +443,7 @@ pub async fn add_repos_and_hooks(
             for target in targets {
                 plan.add_ordering(target, last.clone())?;
             }
-            if phase == BootstrapHookPhase::PostPackages {
+            if phase == BootstrapHookPhase::PostPackages && !defer_post_packages {
                 for target in &after_packages_hook {
                     plan.add_ordering(target, last.clone())?;
                 }
