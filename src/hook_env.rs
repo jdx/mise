@@ -621,20 +621,42 @@ pub(crate) fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result
     Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
-/// Collect mtimes for config-search ancestor directories.
+/// Collect mtimes for the places a config file could appear or change.
 /// Used by both `should_exit_early_fast` and `build_session` to avoid divergence.
+///
+/// For an ancestor directory itself this is the mtime of each candidate config
+/// file that exists there, not the directory's mtime: unrelated files come and
+/// go in directories like `~` (zsh's `.zsh_history.LOCK` with `share_history`,
+/// editor swap files), and each one would otherwise force a full run at every
+/// prompt. Config subdirectories such as `.config/mise` are still compared by
+/// directory mtime, since a file added to one changes that directory's mtime.
 fn config_search_dir_mtimes() -> Vec<SystemTime> {
     let mut mtimes = Vec::new();
     if let Some(cwd) = &*dirs::CWD
         && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
     {
-        let config_subdirs = DEFAULT_CONFIG_FILENAMES
+        let config_paths = DEFAULT_CONFIG_FILENAMES
             .iter()
-            .map(|f| Path::new(f).parent().and_then(|p| p.to_str()).unwrap_or(""))
+            .map(Path::new)
+            .unique()
+            .collect::<Vec<_>>();
+        let config_subdirs = config_paths
+            .iter()
+            .map(|p| p.parent().and_then(|p| p.to_str()).unwrap_or(""))
             .unique()
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
+            for path in &config_paths {
+                if path.parent().is_none_or(|p| p.as_os_str().is_empty())
+                    && let Ok(Ok(modified)) = dir.join(path).metadata().map(|m| m.modified())
+                {
+                    mtimes.push(modified);
+                }
+            }
             for subdir in &config_subdirs {
+                if subdir.is_empty() {
+                    continue;
+                }
                 // `conf.d/*` names the folder fragments: a file added to one
                 // changes that folder's mtime, not conf.d's.
                 let check_dirs = if subdir.contains(['*', '?', '[']) {
@@ -643,8 +665,6 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
                     glob::glob(&Path::new(&escaped_dir).join(subdir).to_string_lossy())
                         .map(|paths| paths.flatten().collect())
                         .unwrap_or_default()
-                } else if subdir.is_empty() {
-                    vec![dir.clone()]
                 } else {
                     vec![dir.join(subdir)]
                 };
