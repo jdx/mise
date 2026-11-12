@@ -285,6 +285,7 @@ impl ServiceRequest {
             ResourceAction::Create | ResourceAction::Remove => {
                 unreachable!("service lifecycle requests do not create or remove units")
             }
+            ResourceAction::Run => unreachable!("services are never `run` resources"),
         }
     }
 

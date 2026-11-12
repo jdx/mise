@@ -109,6 +109,8 @@ pub enum ResourceAction {
     Update,
     Remove,
     Noop,
+    /// A command that runs on every bootstrap and cannot be diffed, such as a hook.
+    Run,
     Unknown,
 }
 
@@ -119,6 +121,7 @@ impl fmt::Display for ResourceAction {
             Self::Update => "update",
             Self::Remove => "remove",
             Self::Noop => "unchanged",
+            Self::Run => "run",
             Self::Unknown => "unknown",
         })
     }
@@ -140,6 +143,9 @@ pub struct ResourcePlan {
     pub order_after: Vec<ResourceId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase: Option<ManagedFilePhase>,
+    /// The `[bootstrap.hooks]` phase a `hook` resource runs in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hook_phase: Option<String>,
 }
 
 impl ResourcePlan {
@@ -158,11 +164,17 @@ impl ResourcePlan {
             depends_on: vec![],
             order_after: vec![],
             phase: None,
+            hook_phase: None,
         }
     }
 
     pub fn with_origin(mut self, origin: ResourceOrigin) -> Self {
         self.origin = Some(origin);
+        self
+    }
+
+    pub fn with_hook_phase(mut self, phase: impl Into<String>) -> Self {
+        self.hook_phase = Some(phase.into());
         self
     }
 

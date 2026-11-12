@@ -584,6 +584,7 @@ fn bootstrap_resource_is_skipped(resource: &ResourceId, skip: &HashSet<Bootstrap
         "service" => BootstrapPart::Services,
         "firewall" | "firewall-rule" => BootstrapPart::Firewall,
         "user" | "group" => BootstrapPart::Accounts,
+        "repo" => BootstrapPart::Repos,
         _ => return false,
     };
     skip.contains(&part)
@@ -722,10 +723,12 @@ struct BootstrapStatus {
 /// Show what applying bootstrap resources would change
 ///
 /// Covers accounts, packages, files and directories, system and user services,
-/// the firewall, and Compose projects, in dependency order. Repositories,
-/// dotfiles, shell activation, macOS defaults, LaunchAgents, systemd user
-/// units, the login shell, tools, hooks, and the `bootstrap` task are not
-/// planned; preview the whole run with `mise bootstrap --dry-run`.
+/// the firewall, Compose projects, and Git repositories, in dependency order.
+/// Hooks are listed with the action `run`, since a command cannot be diffed;
+/// they do not count as changes for `--detailed-exitcode`. Dotfiles, shell
+/// activation, macOS defaults, LaunchAgents, systemd user units, the login
+/// shell, tools, and the `bootstrap` task are not planned; preview the whole
+/// run with `mise bootstrap --dry-run`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -3691,7 +3694,9 @@ impl BootstrapPlan {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
-        let plan = system::resources::plan(&config, &secrets, true).await?;
+        let mut plan = system::resources::plan(&config, &secrets, true).await?;
+        system::resources::add_repos_and_hooks(&mut plan, &config, bootstrap_hooks_enabled())
+            .await?;
         let output = plan.output()?;
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&output)?);
@@ -3724,11 +3729,12 @@ impl BootstrapPlan {
             }
             table.print()?;
             miseprintln!(
-                "Plan: {} create, {} update, {} unchanged, {} remove, {} unknown",
+                "Plan: {} create, {} update, {} unchanged, {} remove, {} run, {} unknown",
                 output.summary.create,
                 output.summary.update,
                 output.summary.unchanged,
                 output.summary.remove,
+                output.summary.run,
                 output.summary.unknown,
             );
         }

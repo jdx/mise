@@ -179,6 +179,7 @@ pub fn apply_with_dry_run_actions(
                 request.name
             ),
             ResourceAction::Noop => {}
+            ResourceAction::Run => unreachable!("compose projects are never `run` resources"),
             ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove => {
                 changes.push(request)
             }

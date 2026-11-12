@@ -287,6 +287,7 @@ impl GroupRequest {
             ResourceAction::Remove => Ok(Some(AccountAction::RemoveGroup {
                 name: self.name.clone(),
             })),
+            ResourceAction::Run => unreachable!("accounts are never `run` resources"),
         }
     }
 }
@@ -551,6 +552,7 @@ impl UserRequest {
                 name: self.name.clone(),
                 remove_home: self.remove_home,
             })),
+            ResourceAction::Run => unreachable!("accounts are never `run` resources"),
         }
     }
 }

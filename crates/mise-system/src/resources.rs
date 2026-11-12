@@ -301,6 +301,70 @@ pub async fn plan(
     Ok(plan)
 }
 
+/// Add the `[bootstrap.repos]` repositories and, when `hooks_enabled`, the
+/// `[bootstrap.hooks]` commands, which `plan` leaves out because they read
+/// the network or run arbitrary commands rather than inspect local state.
+pub async fn add_repos_and_hooks(
+    plan: &mut BootstrapPlan,
+    config: &Config,
+    hooks_enabled: bool,
+) -> Result<()> {
+    let requests = super::repos_from_config(config);
+    for status in super::repos::status(&requests).await? {
+        plan.insert(repo_plan(&status))?;
+    }
+    if hooks_enabled {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for hook in super::hooks_from_config(config) {
+            let phase = hook.phase.to_string();
+            let index = counts.entry(phase.clone()).or_default();
+            *index += 1;
+            plan.insert(
+                ResourcePlan::new(
+                    ResourceId::new("hook", format!("{phase}:{index}")),
+                    "not run",
+                    hook.run,
+                    ResourceAction::Run,
+                )
+                .with_hook_phase(phase),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn repo_plan(status: &super::repos::RepoStatus) -> ResourcePlan {
+    use super::repos::RepoState;
+
+    let request = &status.request;
+    let desired = match &request.git_ref {
+        Some(git_ref) => format!("{} at {git_ref}", request.url),
+        None => request.url.clone(),
+    };
+    let (current, action) = match &status.state {
+        RepoState::Current => ("current".to_string(), ResourceAction::Noop),
+        RepoState::Missing => ("missing".to_string(), ResourceAction::Create),
+        RepoState::Differs => {
+            let current = match (&status.current_ref, &status.current_sha) {
+                (Some(git_ref), _) => git_ref.clone(),
+                (None, Some(sha)) => sha.chars().take(12).collect(),
+                (None, None) => "differs".to_string(),
+            };
+            (current, ResourceAction::Update)
+        }
+        // Bootstrap refuses these unless `--skip-dirty` leaves the repo alone,
+        // so the plan cannot say what a run would do.
+        RepoState::Dirty => ("dirty (local changes)".to_string(), ResourceAction::Unknown),
+        RepoState::Conflict(reason) => (format!("conflict ({reason})"), ResourceAction::Unknown),
+    };
+    ResourcePlan::new(
+        ResourceId::new("repo", request.path.to_string_lossy()),
+        current,
+        desired,
+        action,
+    )
+}
+
 fn desired_package(request: &super::packages::PackageRequest) -> String {
     if request.desired == super::packages::PackageDesiredState::Absent {
         return "absent".to_string();

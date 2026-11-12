@@ -228,9 +228,12 @@ as it does for `mise bootstrap plan` and `mise bootstrap status`. See
 `mise bootstrap plan` lists the changes to declarative resources in dependency
 order: accounts, packages (including packages from plugins), system files and
 directories, system and user services, firewall policy and rules, and Compose
-projects. It does not cover dotfiles, repositories, shell activation, macOS
-defaults, LaunchAgents, systemd user units, the login shell, tools, hooks, or
-the `bootstrap` task. Use `mise bootstrap --dry-run` for those.
+projects, and Git repositories (`create` to clone, `update` to pull). Commands
+in `[bootstrap.hooks]` are listed with the action `run` and a `hook_phase`,
+since a command cannot be diffed; they run on every bootstrap, so they do not
+count as changes. The plan does not cover dotfiles, shell activation, macOS
+defaults, LaunchAgents, systemd user units, the login shell, tools, or the
+`bootstrap` task. Use `mise bootstrap --dry-run` for those.
 
 ```sh
 mise bootstrap plan
@@ -248,8 +251,9 @@ With `--detailed-exitcode`, the exit code reports what the plan found:
 
 A resource is `unknown` when mise cannot reach its declared state on its own,
 for example a package whose manager is unavailable on this platform or cannot
-install the requested version. mise reports it instead of skipping it, so you
-can resolve it by hand.
+install the requested version, or a repository with local changes, which
+bootstrap refuses to touch unless `--skip-dirty` is set. mise reports it
+instead of skipping it, so you can resolve it by hand.
 
 ### Check state {#inspecting-state}
 

@@ -14,6 +14,7 @@ pub struct PlanSummary {
     pub update: usize,
     pub remove: usize,
     pub unchanged: usize,
+    pub run: usize,
     pub unknown: usize,
 }
 
@@ -24,6 +25,7 @@ impl PlanSummary {
             ResourceAction::Update => self.update += 1,
             ResourceAction::Remove => self.remove += 1,
             ResourceAction::Noop => self.unchanged += 1,
+            ResourceAction::Run => self.run += 1,
             ResourceAction::Unknown => self.unknown += 1,
         }
     }
@@ -259,6 +261,7 @@ mod tests {
                 update: 1,
                 remove: 1,
                 unchanged: 1,
+                run: 0,
                 unknown: 1,
             }
         );
