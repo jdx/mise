@@ -608,6 +608,9 @@ shared_extraction = true
 
 Sharing saves disk space and extraction time when several tools or versions use
 the same artifact; mise still downloads the artifact to identify its content.
+On Windows, a raw file (not an archive) is hard linked to the shared copy when
+both are on the same volume and the filesystem supports hard links. Otherwise it
+is copied, so the file is stored twice and sharing saves no space for it.
 Changes to shared files, including changes made by a `postinstall` hook, affect
 every install that uses them. `mise install --system`, `mise install --shared`
 and `mise install-into` destinations always get their own copy.
@@ -631,6 +634,17 @@ check that nothing links into the directory, then delete it:
 find ~/.local/share/mise/installs -lname '*http-tarballs*' # should print nothing
 rm -rf ~/.local/share/mise/http-tarballs
 ```
+
+On Windows, use PowerShell. Directory links show up as junctions or symlinks:
+
+```powershell
+Get-ChildItem -Recurse -Force "$env:LOCALAPPDATA\mise\i" |
+  Where-Object { $_.LinkType -and ($_.Target -like '*http-tarballs*') } # should print nothing
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\mise\http-tarballs"
+```
+
+Hard-linked raw files don't show up in that check. They keep working after the
+directory is deleted, because each install file is a link to the same data.
 
 Use your [data directory](/directories.html) if it is not the default.
 
