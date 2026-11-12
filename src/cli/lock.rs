@@ -760,7 +760,7 @@ impl Lock {
         // earlier environment/local/monorepo lockfiles partially updated.
         let prepared_targets = self.prepare_targets(&run).await?;
         if generate && installed.is_none() {
-            self.reject_unconfigured_tool_args(&prepared_targets)?;
+            self.reject_unconfigured_tool_args(&run, &prepared_targets)?;
         }
         for target in prepared_targets {
             self.lock_target(&run, &mut outcome, target).await?;
@@ -992,7 +992,11 @@ impl Lock {
     /// Generate mode locks what configuration declares, so a tool argument is a
     /// selector over those tools. One that selects nothing would otherwise be
     /// dropped without a word, leaving a missing or empty lockfile.
-    fn reject_unconfigured_tool_args(&self, targets: &[PreparedTarget]) -> Result<()> {
+    fn reject_unconfigured_tool_args(
+        &self,
+        run: &LockRun<'_>,
+        targets: &[PreparedTarget],
+    ) -> Result<()> {
         let missing: Vec<String> = self
             .tool
             .iter()
@@ -1007,9 +1011,15 @@ impl Lock {
         if missing.is_empty() {
             return Ok(());
         }
+        // --local has no global equivalent, so it is not sent to global scope.
+        let hint = if !self.global && !self.local && self.global_config_declares_tools(run.toolset)
+        {
+            "Run `mise lock --global` for tools in global config, or add it with `mise use`"
+        } else {
+            "Add it with `mise use`, or remove it from the arguments"
+        };
         bail!(
-            "cannot lock {}: not configured in this project. Add with `mise use`, \
-             or remove it from the arguments",
+            "cannot lock {}: not configured in this project. {hint}",
             missing.join(", ")
         );
     }
