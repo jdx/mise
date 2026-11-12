@@ -1299,6 +1299,7 @@ fn artifactbundle_supports_target(
             _ => return Ok(false),
         },
     );
+    let musl = target.libc() == Some("musl");
     for bundle in artifactbundle_dirs(extract_dir)? {
         let info = file::read_to_string(bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
@@ -1311,7 +1312,9 @@ fn artifactbundle_supports_target(
             .flat_map(|variant| &variant.supported_triples)
             .any(|triple| {
                 let triple = triple.to_lowercase();
-                os_names.iter().any(|os| triple.contains(os))
+                // A musl target needs a musl variant, and a glibc one must not take it.
+                (target.os_name() != "linux" || triple.contains("musl") == musl)
+                    && os_names.iter().any(|os| triple.contains(os))
                     && arch_names.iter().any(|arch| triple.starts_with(arch))
             });
         if supported {
@@ -2365,6 +2368,8 @@ mod tests {
         assert!(!artifactbundle_supports_target(tmp.path(), &target("linux-arm64")).unwrap());
         assert!(!artifactbundle_supports_target(tmp.path(), &target("macos-x64")).unwrap());
         assert!(!artifactbundle_supports_target(tmp.path(), &target("windows-x64")).unwrap());
+        // The bundle is glibc-only
+        assert!(!artifactbundle_supports_target(tmp.path(), &target("linux-x64-musl")).unwrap());
     }
 
     #[test]
