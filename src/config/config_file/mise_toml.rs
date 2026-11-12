@@ -799,12 +799,6 @@ impl MiseToml {
                 display_path(path)
             );
         }
-        if let Some(err) = moved.error {
-            warn!(
-                "ignoring [bootstrap.settings.macos] in {}: {err}",
-                display_path(path)
-            );
-        }
     }
 
     /// [`Self::parse_body`], handing each field the deserializer skipped to
@@ -841,7 +835,17 @@ impl MiseToml {
             rf.monorepo_root.get_or_insert(legacy_monorepo_root);
         }
         if let Some(bootstrap) = rf.bootstrap.as_mut() {
-            on_macos_move(bootstrap.move_macos_settings());
+            let moved = bootstrap.move_macos_settings();
+            let error = moved.error.clone();
+            on_macos_move(moved);
+            // Fail like a malformed `[bootstrap.macos]` does: applying the rest of the config
+            // without this section could undo what it declares, such as exclusive login items.
+            if let Some(err) = error {
+                return Err(eyre!(
+                    "invalid [bootstrap.settings.macos] in {}: {err}",
+                    display_path(path)
+                ));
+            }
         }
         rf.loaded_hash = crate::install_layout::snapshots::bytes_hash_of(body.as_bytes());
         rf.context = BASE_CONTEXT.clone();

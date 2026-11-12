@@ -36,3 +36,12 @@ cat >mise.toml <<'TOML'
 autohide = true
 TOML
 assert_contains "mise bootstrap macos defaults status 2>&1" "unknown key in"
+
+# a section mise cannot read rejects the config rather than being skipped, so the
+# rest of it, such as exclusive login items, never applies without it
+# schema: invalid
+cat >mise.toml <<'TOML'
+[bootstrap.settings.macos]
+defaults_entries = [{ domain = "com.apple.dock", key = "autohide" }]
+TOML
+assert_fail_contains "mise bootstrap macos defaults status" "invalid [bootstrap.settings.macos]"

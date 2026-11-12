@@ -179,7 +179,7 @@ pub struct MacosSettingsMove {
     pub legacy: bool,
     /// Keys under `[bootstrap.settings.macos]` that mean nothing, as dotted paths.
     pub unknown: Vec<String>,
-    /// `[bootstrap.settings.macos]` could not be read, so it was ignored.
+    /// `[bootstrap.settings.macos]` could not be read; the config must be rejected.
     pub error: Option<String>,
 }
 
