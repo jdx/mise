@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# A project's [tool_alias] must win over a global one for the same alias.
+
+mkdir -p "$HOME/.config/mise"
+cat <<EOF >"$HOME/.config/mise/config.toml"
+[tool_alias]
+example = "github:sharkdp/bat"
+EOF
+
+mkdir -p proj
+cat <<EOF >proj/mise.toml
+[tools]
+example = "1.0.0"
+
+[tool_alias]
+example = "github:BurntSushi/ripgrep"
+EOF
+
+cd proj || exit 1
+mise trust
+assert_contains "mise tool example" "github:BurntSushi/ripgrep"
+assert_not_contains "mise tool example" "sharkdp/bat"
