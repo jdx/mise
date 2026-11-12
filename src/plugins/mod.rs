@@ -28,6 +28,7 @@ pub mod core;
 pub(crate) mod mise_plugin_toml;
 pub(crate) mod packslip;
 pub(crate) mod script_manager;
+pub mod system_plugins;
 pub(crate) mod vfox_plugin;
 
 #[derive(Clone, Debug)]

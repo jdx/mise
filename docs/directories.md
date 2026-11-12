@@ -93,6 +93,9 @@ checkout:
 mise plugins link my-tool ~/src/mise-my-tool
 ```
 
+A plugin here overrides a [system plugin](#system-plugins) of the same name,
+and mise warns once per run that it does.
+
 ### `installs` {#local-share-mise-installs}
 
 Holds installed versions: `mise install node@24.0.0` installs into
@@ -149,3 +152,25 @@ lowest precedence; see
 (`MISE_SYSTEM_SHIMS_DIR`) move each one. On Unix, mise runs `sudo` to write
 there when the directories are not writable. See
 [System installs](/dev-tools/system-installs.html).
+
+## System plugins {#system-plugins}
+
+Bootstrap plugins, such as
+[package manager plugins](/bootstrap/packages/plugins.html), can also be
+installed for every user on the machine. mise searches these directories, in
+order, after your own plugins directory:
+
+1. `/usr/share/mise/plugins`, for plugins a distro or app package installs
+2. `plugins` under `MISE_SYSTEM_DATA_DIR` (default
+   `/usr/local/share/mise/plugins`), for plugins the machine's admin installs
+
+`MISE_SYSTEM_PLUGINS_DIRS` replaces the list, as paths separated like `PATH`.
+A plugin is found by its directory name, such as
+`/usr/share/mise/plugins/vscode` for the `vscode` manager, and needs no entry in
+`[bootstrap.plugins]`. When two directories hold the same name, the first one
+wins. A plugin of the same name in your own plugins directory always overrides a
+system plugin.
+
+mise uses a system plugins directory and each plugin in it only when root or
+the current user owns it and neither its group nor other users can write to it.
+It warns about and skips a directory that fails that check.

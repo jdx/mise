@@ -96,7 +96,10 @@ pub struct PackagePluginManager {
 
 impl PackagePluginManager {
     pub fn new(name: String) -> Result<Self> {
-        let plugin_path = mise_util::dirs::PLUGINS.join(name.to_kebab_case());
+        let plugin_path = crate::plugins::system_plugins::resolve(
+            &name.to_kebab_case(),
+            &mise_util::dirs::PLUGINS,
+        );
         let config =
             MisePluginToml::from_file(&plugin_path.join("mise.plugin.toml"))?.package_manager;
         let plugin = Arc::new(VfoxPlugin::new(name.clone(), plugin_path));
@@ -250,6 +253,11 @@ impl PackagePluginManager {
 
     fn vfox(&self, env: &IndexMap<String, String>) -> Result<vfox::Vfox> {
         let (mut vfox, _) = self.plugin.vfox()?;
+        // A system plugin lives outside the user's plugins directory, and vfox finds a plugin
+        // by name inside `plugin_dir`.
+        if let Some(dir) = self.plugin.plugin_path.parent() {
+            vfox.plugin_dir = dir.to_path_buf();
+        }
         vfox.cmd_env = Some(env.clone());
         Ok(vfox)
     }

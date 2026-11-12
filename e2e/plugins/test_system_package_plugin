@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# A package manager plugin in a system plugins directory works without
+# installing it, and a user plugin of the same name overrides it.
+
+make_plugin() {
+  local dir="$1" marker="$2"
+  mkdir -p "$dir/hooks"
+  cat >"$dir/metadata.lua" <<'LUA'
+PLUGIN = {
+  name = "fake",
+  version = "0.1.0",
+  homepage = "",
+  license = "MIT",
+  description = "fake package manager",
+  minRuntimeVersion = "0.3.0",
+  notes = {},
+  legacyFilenames = {},
+}
+LUA
+  printf '[package-manager]\n' >"$dir/mise.plugin.toml"
+  cat >"$dir/hooks/package_installed.lua" <<'LUA'
+function PLUGIN:PackageInstalled(ctx)
+  local packages = {}
+  for _, package in ipairs(ctx.packages) do
+    local f = io.open(os.getenv("HOME") .. "/.fake-packages/" .. package.name, "r")
+    if f then
+      f:close()
+      table.insert(packages, { name = package.name, state = "installed", version = "1" })
+    else
+      table.insert(packages, { name = package.name, state = "missing" })
+    end
+  end
+  return { packages = packages }
+end
+LUA
+  cat >"$dir/hooks/package_install.lua" <<LUA
+function PLUGIN:PackageInstall(ctx)
+  local cmd = require("cmd")
+  cmd.exec("mkdir -p " .. os.getenv("HOME") .. "/.fake-packages")
+  for _, package in ipairs(ctx.packages) do
+    cmd.exec("printf $marker > " .. os.getenv("HOME") .. "/.fake-packages/" .. package.name)
+  end
+  return {}
+end
+LUA
+}
+
+export MISE_SYSTEM_PLUGINS_DIRS="$PWD/system-plugins"
+make_plugin system-plugins/fake system
+chmod -R go-w system-plugins
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"fake:one" = "latest"
+TOML
+
+assert_contains "mise bootstrap packages status" "missing"
+assert "mise bootstrap packages apply --yes" ""
+assert "cat $HOME/.fake-packages/one" "system"
+
+# A user plugin of the same name wins, with a warning.
+make_plugin user-plugin user
+assert "mise plugin link -f fake $PWD/user-plugin" ""
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"fake:two" = "latest"
+TOML
+assert_contains "mise bootstrap packages apply --yes 2>&1" "overrides the system plugin"
+assert "cat $HOME/.fake-packages/two" "user"
+
+# A system plugins directory that other users can write is ignored.
+assert_succeed "mise plugins uninstall fake"
+chmod o+w system-plugins
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"fake:three" = "latest"
+TOML
+assert_contains "mise bootstrap packages status 2>&1" "writable by its group or by other users"
