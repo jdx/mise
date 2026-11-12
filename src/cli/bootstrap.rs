@@ -1737,8 +1737,9 @@ enum BootstrapLinuxCommands {
 
 /// Manage macOS preferences such as Dock, Finder, and keyboard settings
 ///
-/// Applies `[bootstrap.settings.macos]`: its `defaults`, `defaults_entries`,
-/// `dock`, `finder`, `keyboard`, and `trackpad` tables, and its `login_items`.
+/// Applies `[bootstrap.settings.macos]`: its `defaults`, `dock`, `finder`,
+/// `keyboard`, `trackpad`, and `login_items` tables, and its
+/// `[[bootstrap.settings.macos.defaults_entries]]` array of tables.
 /// Preferences are written the way `defaults write` writes them. mise does not
 /// restart apps: Dock, Finder, and some others show a change only after they
 /// relaunch. Other `[bootstrap.settings.<plugin>]` sections are applied by
