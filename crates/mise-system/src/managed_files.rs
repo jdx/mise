@@ -783,6 +783,12 @@ impl ManagedFileRequest {
                         self.path.display()
                     )
                 }
+                if self.block.is_some() {
+                    bail!(
+                        "refusing to edit non-file path {}; a block needs a regular file",
+                        self.path.display()
+                    )
+                }
                 bail!(
                     "refusing to replace non-file path {}; set replace = true to allow replacement",
                     self.path.display()
@@ -2209,7 +2215,10 @@ fn content_matches_declared(
         return Ok(content == expected.as_bytes());
     };
     let Ok(text) = std::str::from_utf8(content) else {
-        return Ok(false);
+        bail!(
+            "{} is not valid UTF-8; mise cannot keep a block in it",
+            request.path.display()
+        );
     };
     let updated = crate::edits::splice_block(
         text,
