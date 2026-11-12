@@ -630,7 +630,7 @@ fn scan_mise_header_entries(body: &str) -> Vec<MiseHeaderEntry> {
     // only that function accepted `# MISE`, a spaced `# MISE tools."x".version`
     // was suppressed from the usage text *and* never became config: it set
     // nothing and said nothing.
-    let header_regex = regex!(r"^(?:#|//|::)\s*(?:MISE|\[MISE\]) (.*)$");
+    let header_regex = regex!(r"^(?:#|//|::|--)\s*(?:MISE|\[MISE\]) (.*)$");
     // A TOML key path: bare segments, quoted segments, or a dotted mix. The old
     // `[a-z0-9_.-]+` matched neither a quoted segment nor an uppercase one, so
     // `tools."http:ruff".version = …` and `env.FOO = "bar"` were not recognised
@@ -983,8 +983,8 @@ fn parse_task_usage_raw(
 }
 
 fn extract_usage_from_comments(full: &str) -> String {
-    let usage_regex = regex!(r"^(?:#|//|::)\s*(?:(USAGE|MISE)|\[(USAGE|MISE)\])(.*)$");
-    let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
+    let usage_regex = regex!(r"^(?:#|//|::|--)\s*(?:(USAGE|MISE)|\[(USAGE|MISE)\])(.*)$");
+    let blank_comment_regex = regex!(r"^(?:#|//|::|--)\s*$");
     // The same key path `scan_mise_header_entries` looks for. Both markers now
     // allow whitespace after the comment character, so the entry ranges below
     // already cover the ordinary shapes; this stays as the backstop for lines
@@ -5099,6 +5099,16 @@ exec shapeme "$@"
         assert_eq!(spec.cmd.mounts.len(), 2);
         assert_eq!(spec.cmd.mounts[0].run, "first --usage-spec");
         assert_eq!(spec.cmd.mounts[1].run, "second --usage-spec");
+    }
+
+    #[test]
+    fn test_task_usage_comment_extraction_accepts_lua_comments() {
+        let script = "#!/usr/bin/env lua\n--MISE description=\"Say hello\"\n--USAGE arg \"<name>\"\n--USAGE flag \"--loud\"\n\nprint(\"hi\")\n";
+        let raw = super::extract_usage_from_comments(script);
+        assert_eq!(raw, "arg \"<name>\"\nflag \"--loud\"");
+        let entries = super::scan_mise_header_entries(script);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].toml, "description=\"Say hello\"");
     }
 
     #[test]

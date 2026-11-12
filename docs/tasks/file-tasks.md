@@ -362,6 +362,18 @@ mise ERROR Invalid choice for arg output_file: invalid.txt, expected one of gree
 With completions enabled, `mise run greet <Tab>` offers `greeting.txt` and
 `file.txt`.
 
+### A Lua task with arguments
+
+Lua comments start with `--`, so `--MISE` and `--USAGE` lines work the same way:
+
+```lua [mise-tasks/hello]
+#!/usr/bin/env lua
+--MISE description="Say hello"
+--USAGE arg "<name>"
+
+print("Hello, " .. os.getenv("usage_name") .. "!")
+```
+
 ## Working directory
 
 File tasks run from the [config root](/configuration.html#config-root), the
