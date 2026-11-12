@@ -376,6 +376,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      settings: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       status: {
         hide: false,
       },
