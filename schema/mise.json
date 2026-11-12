@@ -8591,6 +8591,14 @@
                 "type": "string",
                 "description": "inline file content; cannot be combined with source"
               },
+              "block": {
+                "type": "string",
+                "description": "block content kept between marker comments named by id, in a file mise does not own; the rest of the file is left alone, a missing file is created with just the block, and the block is appended when its markers are absent. Cannot be combined with source or content, and needs id"
+              },
+              "id": {
+                "type": "string",
+                "description": "names the block's marker comments, as in \"# >>> mise:<id> >>>\"; required with block"
+              },
               "owner": {
                 "type": "string",
                 "description": "user that should own the file; left as it is when unset"
@@ -8601,7 +8609,7 @@
               },
               "mode": {
                 "type": "string",
-                "description": "octal permissions such as \"0640\"; defaults to \"0644\" for a file with source or content, otherwise left as it is"
+                "description": "octal permissions such as \"0640\"; defaults to \"0644\" for a file with source or content, or one a block creates, otherwise left as it is"
               },
               "template": {
                 "type": "boolean",
@@ -8658,7 +8666,45 @@
                 }
               },
               {
-                "$comment": "A present file without source or content manages only its permissions: it must declare some, and cannot be templated or replaced.",
+                "$comment": "A block edits one marked region of a file mise does not own: it needs an id, takes its body from block alone, and is never removed or replaced.",
+                "if": {
+                  "required": ["block"]
+                },
+                "then": {
+                  "required": ["id"],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      }
+                    ]
+                  },
+                  "properties": {
+                    "state": {
+                      "const": "present"
+                    },
+                    "replace": {
+                      "const": false
+                    },
+                    "remove_empty": {
+                      "const": false
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": ["id"]
+                },
+                "then": {
+                  "required": ["block"]
+                }
+              },
+              {
+                "$comment": "A present file without source, content or block manages only its permissions: it must declare some, and cannot be templated or replaced.",
                 "if": {
                   "properties": {
                     "state": {
@@ -8672,6 +8718,9 @@
                       },
                       {
                         "required": ["content"]
+                      },
+                      {
+                        "required": ["block"]
                       }
                     ]
                   }

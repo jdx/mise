@@ -1344,6 +1344,16 @@ owner = "root"
 group = "root"
 mode = "0644"
 `,
+  "bootstrap.files.<key>.block": toml`
+[bootstrap.files."/etc/hosts"]
+block = "127.0.0.1 dev.local"
+id = "dev"
+`,
+  "bootstrap.files.<key>.id": toml`
+[bootstrap.files."/etc/hosts"]
+block = "127.0.0.1 dev.local"
+id = "dev"
+`,
   "bootstrap.directories": toml`
 [bootstrap.directories."/srv/app"]
 owner = "deploy"

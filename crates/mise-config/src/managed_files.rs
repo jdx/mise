@@ -18,10 +18,27 @@ use crate::schema::refs;
         }
     },
     {
-        "$comment": "A present file without source or content manages only its permissions: it must declare some, and cannot be templated or replaced.",
+        "$comment": "A block edits one marked region of a file mise does not own: it needs an id, takes its body from block alone, and is never removed or replaced.",
+        "if": {"required": ["block"]},
+        "then": {
+            "required": ["id"],
+            "not": {"anyOf": [{"required": ["source"]}, {"required": ["content"]}]},
+            "properties": {
+                "state": {"const": "present"},
+                "replace": {"const": false},
+                "remove_empty": {"const": false}
+            }
+        }
+    },
+    {
+        "if": {"required": ["id"]},
+        "then": {"required": ["block"]}
+    },
+    {
+        "$comment": "A present file without source, content or block manages only its permissions: it must declare some, and cannot be templated or replaced.",
         "if": {
             "properties": {"state": {"const": "present"}},
-            "not": {"anyOf": [{"required": ["source"]}, {"required": ["content"]}]}
+            "not": {"anyOf": [{"required": ["source"]}, {"required": ["content"]}, {"required": ["block"]}]}
         },
         "then": {
             "anyOf": [{"required": ["mode"]}, {"required": ["owner"]}, {"required": ["group"]}],
@@ -37,11 +54,15 @@ pub struct ManagedFileTomlConfig {
     pub source: Option<String>,
     /// inline file content; cannot be combined with source
     pub content: Option<String>,
+    /// block content kept between marker comments named by id, in a file mise does not own; the rest of the file is left alone, a missing file is created with just the block, and the block is appended when its markers are absent. Cannot be combined with source or content, and needs id
+    pub block: Option<String>,
+    /// names the block's marker comments, as in "# >>> mise:<id> >>>"; required with block
+    pub id: Option<String>,
     /// user that should own the file; left as it is when unset
     pub owner: Option<String>,
     /// group that should own the file; left as it is when unset
     pub group: Option<String>,
-    /// octal permissions such as "0640"; defaults to "0644" for a file with source or content, otherwise left as it is
+    /// octal permissions such as "0640"; defaults to "0644" for a file with source or content, or one a block creates, otherwise left as it is
     pub mode: Option<String>,
     /// render source or content with mise's template engine; without it, template syntax is written unchanged
     #[serde(default)]
