@@ -134,3 +134,16 @@ post-tools = "true"
 post-packages = "true"
 TOML
 assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"pre-tools:1\", \"post-tools:1\", \"order-test:vendor\", \"post-packages:1\"]'"
+
+# late user services follow the hooks of every earlier phase
+cat >mise.toml <<TOML
+[bootstrap.services.late-svc]
+scope = "user"
+command = "true"
+requires_tools = true
+state = "stopped"
+enabled = false
+[bootstrap.hooks]
+post-tools = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"post-tools:1\", \"late-svc\"]'"

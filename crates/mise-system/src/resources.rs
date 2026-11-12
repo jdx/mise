@@ -445,7 +445,15 @@ pub async fn add_repos_and_hooks(
             BootstrapHookPhase::PostPackages => pending.extend(packages.iter().cloned()),
             BootstrapHookPhase::PreRepos => pending.extend(earlier.iter().cloned()),
             BootstrapHookPhase::PostRepos => pending.extend(repos.iter().cloned()),
-            BootstrapHookPhase::Final => pending.extend(late.iter().cloned()),
+            BootstrapHookPhase::Final => {
+                // late user services run after every earlier hook
+                if let Some(last) = &previous {
+                    for service in &late {
+                        order_after(plan, service, last)?;
+                    }
+                }
+                pending.extend(late.iter().cloned());
+            }
             _ => {}
         }
         let mut index = 0;
