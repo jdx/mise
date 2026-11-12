@@ -6,9 +6,7 @@
 mkdir -p srv
 echo "hello" >srv/tool.tar.gz
 tar -C srv -czf srv/tool-1.0.0.tar.gz tool.tar.gz
-(cd srv && python3 -m http.server 18732 --bind 127.0.0.1 >/dev/null 2>&1) &
-SERVER_PID=$!
-sleep 1
+start_http_server --dir srv
 
 PLUGIN_DIR="$PWD/vfox-lockck"
 mkdir -p "$PLUGIN_DIR/hooks"
@@ -28,9 +26,9 @@ function PLUGIN:Available(ctx)
 end
 LUA
 
-cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<LUA
 function PLUGIN:PreInstall(ctx)
-	return { version = ctx.version, url = "http://127.0.0.1:18732/tool-1.0.0.tar.gz" }
+	return { version = ctx.version, url = "http://127.0.0.1:$HTTP_PORT/tool-1.0.0.tar.gz" }
 end
 LUA
 
@@ -53,6 +51,6 @@ assert_succeed "mise install --locked"
 
 # A checksum that differs from the download fails the locked install.
 rm -rf "$MISE_DATA_DIR/installs/lockck"
-sed -i -E 's/checksum = "sha256:[0-9a-f]+"/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/' mise.lock
-assert_contains "mise install --locked 2>&1 || true" "Checksum mismatch"
-kill $SERVER_PID 2>/dev/null || true
+sed -E 's/checksum = "sha256:[0-9a-f]+"/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/' mise.lock >mise.lock.new
+mv mise.lock.new mise.lock
+assert_fail_contains "mise install --locked" "Checksum mismatch"
