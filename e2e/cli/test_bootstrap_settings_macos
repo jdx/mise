@@ -27,7 +27,7 @@ assert_contains "echo '$output'" '"tilesize"'
 assert "echo '$output' | jq -c '[.macos_defaults.entries[] | select(.key == \"autohide\") | .value]'" '[true]'
 
 # macos is built in, so settings plugins never see it
-assert "MISE_EXPERIMENTAL=1 mise bootstrap settings status" ""
+assert_empty "MISE_EXPERIMENTAL=1 mise bootstrap settings status"
 
 # a key mise does not know is reported
 # schema: invalid

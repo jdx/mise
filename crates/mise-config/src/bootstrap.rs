@@ -214,8 +214,16 @@ impl BootstrapTomlConfig {
             }
         }
         macos.defaults_entries.extend(new.defaults_entries);
-        if new.login_items.is_some() {
-            macos.login_items = new.login_items;
+        // Merge field by field, so `exclusive = true` alone in the new spelling keeps the apps
+        // the old spelling declares.
+        if let Some(new) = new.login_items {
+            let merged = macos.login_items.get_or_insert_with(Default::default);
+            if !new.apps.is_empty() {
+                merged.apps = new.apps;
+            }
+            if new.exclusive.is_some() {
+                merged.exclusive = new.exclusive;
+            }
         }
         outcome
     }
@@ -546,5 +554,21 @@ mod macos_settings_tests {
         let shots = &config.macos.defaults["com.apple.screencapture"];
         assert_eq!(shots["type"], toml::Value::String("png".into()));
         assert_eq!(shots["disable-shadow"], toml::Value::Boolean(true));
+    }
+
+    #[test]
+    fn login_items_merge_field_by_field() {
+        let mut config = bootstrap(
+            r#"
+            [macos.login_items]
+            apps = ["/Applications/Rectangle.app"]
+            [settings.macos.login_items]
+            exclusive = true
+            "#,
+        );
+        config.move_macos_settings();
+        let items = config.macos.login_items.unwrap();
+        assert_eq!(items.apps, vec!["/Applications/Rectangle.app".to_string()]);
+        assert_eq!(items.exclusive, Some(true));
     }
 }

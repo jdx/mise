@@ -1397,7 +1397,7 @@ fn insert_friendly_default(
             ..
         } = spec;
         warn!(
-            "[bootstrap.macos.{section}].{key}: unsupported value type \
+            "[bootstrap.settings.macos.{section}].{key}: unsupported value type \
              (expected {expected_type})"
         );
     }
@@ -1424,7 +1424,7 @@ fn insert_friendly_multi_domain_default(
             ..
         } = spec;
         warn!(
-            "[bootstrap.macos.{section}].{key}: unsupported value type \
+            "[bootstrap.settings.macos.{section}].{key}: unsupported value type \
              (expected {expected_type})"
         );
     }
