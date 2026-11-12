@@ -1267,8 +1267,12 @@ impl Backend for NPMBackend {
         // lets `hook-env`, which resolves offline, find it instead of reporting
         // the literal `latest` as missing.
         if is_tarball_spec(&self.tool_name()) {
-            let installs = self.ba().installs_path();
-            return crate::file::dir_subdirs(installs)
+            // Install state records the directory that supplied the tool, which
+            // is a shared or system one when nothing is installed for the user.
+            let installs = crate::toolset::install_state::get_tool(&self.ba().short)
+                .and_then(|tool| tool.installs_path)
+                .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
+            return crate::file::dir_subdirs(&installs)
                 .unwrap_or_default()
                 .into_iter()
                 .filter(|v| !v.starts_with('.') && v != "latest")
