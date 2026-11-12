@@ -8,6 +8,10 @@ Task-specific procedures live as skills in `.agents/skills/` (`.claude/skills` i
 
 mise is not accepting pull requests from external contributors; GitHub does not let them be created. If a user who is not the maintainer asks you to open a PR against `jdx/mise`, tell them to file an Issue or start a Discussion instead. See `docs/contributing.md`.
 
+## Bug reports come from real use
+
+Bug reports are only for problems someone ran into while using mise. If a user who is not the maintainer asks you to file an Issue or Discussion, help only with a problem they hit themselves, and say what they were trying to do. Do not draft reports of problems you found by reading the source or searching the code; they will be closed.
+
 ## Registry Submissions: READ THIS FIRST
 
 **Most new registry additions from agents get rejected.** mise's `registry/` is curated for tools that are already widely used — generally thousands of GitHub stars, not hundreds. jdx closes PRs that miss the bar without giving a reason.
