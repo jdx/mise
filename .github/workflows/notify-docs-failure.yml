@@ -19,14 +19,16 @@ permissions:
 
 jobs:
   notify:
-    name: notify
+    # The docs workflow's name is part of the job name, so the check below
+    # can tell which workflow an earlier email was about.
+    name: notify (${{ github.event.workflow_run.name }})
     if: ${{ github.repository == 'jdx/mise' && github.event.workflow_run.head_branch == github.event.repository.default_branch && contains(fromJSON('["push", "workflow_dispatch", "schedule"]'), github.event.workflow_run.event) && contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion) }}
-    # One at a time, so a run sees whether the one before it sent an email.
-    # The group is on the job, not the workflow: GitHub keeps one pending
-    # run per group, and a completion whose job is skipped must not replace
-    # a failure still waiting to notify.
+    # One at a time for each docs workflow, so a run sees whether the one
+    # before it sent an email. The group is on the job, not the workflow:
+    # GitHub keeps one pending run per group, and a completion whose job is
+    # skipped must not replace a failure still waiting to notify.
     concurrency:
-      group: ${{ github.workflow }}
+      group: ${{ github.workflow }}-${{ github.event.workflow_run.workflow_id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -39,6 +41,7 @@ jobs:
           WORKFLOW: ${{ github.event.workflow_run.name }}
           WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
+          FAILED_AT: ${{ github.event.workflow_run.updated_at }}
         run: |
           set -euo pipefail
           if [ "$HAS_KEY" != "true" ]; then
@@ -60,17 +63,27 @@ jobs:
             fi
             page=$((page + 1))
           done
+          # A pass that finished after this failure means the docs already
+          # recovered, so there is nothing to report.
+          if [ -n "$since" ] && [[ "$since" > "$FAILED_AT" ]]; then
+            echo "${WORKFLOW} passed on ${BRANCH} at ${since}, after this failure"
+            echo "send=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # Runs of this workflow since then, oldest first. If one of them
-          # sent an email, this failure belongs to a streak already reported.
+          # sent an email about this docs workflow, in any attempt, this
+          # failure belongs to a streak already reported. Runs whose job was
+          # skipped were not failures of the docs on this branch.
           self=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .workflow_id)
-          list="repos/${GITHUB_REPOSITORY}/actions/workflows/${self}/runs?status=success&per_page=100"
+          list="repos/${GITHUB_REPOSITORY}/actions/workflows/${self}/runs?status=completed&per_page=100"
           if [ -n "$since" ]; then
             list="${list}&created=$(jq -rn --arg s ">${since}" '$s|@uri')"
           fi
-          runs=$(gh api --paginate "$list" --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | .id" | sort -n)
+          runs=$(gh api --paginate "$list" --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID} and .conclusion != \"skipped\") | .id" | sort -n)
           for id in $runs; do
-            sent=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
-              --jq '[.jobs[].steps[]? | select(.name == "Send failure email via Resend" and .conclusion == "success")] | length')
+            sent=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?filter=all&per_page=100" |
+              jq -s --arg job "notify (${WORKFLOW})" \
+                '[.[].jobs[] | select(.name == $job) | .steps[]? | select(.name == "Send failure email via Resend" and .conclusion == "success")] | length')
             if [ "$sent" != 0 ]; then
               echo "Run ${id} already emailed about this ${WORKFLOW} failure streak on ${BRANCH}"
               echo "send=false" >> "$GITHUB_OUTPUT"
@@ -87,7 +100,6 @@ jobs:
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
           WORKFLOW: ${{ github.event.workflow_run.name }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
@@ -116,11 +128,11 @@ jobs:
               )
             }')
           # The idempotency key makes a retry after a lost response deliver
-          # one email, not two.
+          # one email, not two, and covers a rerun of the same docs run too.
           curl --fail-with-body -sS --max-time 20 \
             --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
             -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
-            -H "Idempotency-Key: docs-failure/${GITHUB_REPOSITORY}/${RUN_ID}/${ATTEMPT}" \
+            -H "Idempotency-Key: docs-failure/${GITHUB_REPOSITORY}/${RUN_ID}" \
             -H 'Content-Type: application/json' \
             -d "$payload"
