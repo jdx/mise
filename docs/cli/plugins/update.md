@@ -14,7 +14,9 @@ Update installed plugins
 
 With no names, updates every installed plugin. This updates the plugin code,
 not the tool versions it manages. Linked local plugins are skipped; plugins
-installed from an archive cannot be updated with Git.
+installed from an archive cannot be updated with Git. A system plugin, such
+as one in `/usr/share/mise/plugins`, is skipped with a warning: update it
+with the package or admin that installed it.
 
 ## Arguments
 - **`[PLUGIN]…`** — Plugins to update; append #ref to switch to a branch, tag, or commit
