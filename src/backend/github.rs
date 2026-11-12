@@ -404,16 +404,43 @@ fn ensure_registry_provenance(
 /// (a private repository). A custom API (GitHub Enterprise, a self-hosted
 /// GitLab or Forgejo) is used directly.
 async fn asset_download_url(asset: &ReleaseAsset) -> String {
-    if asset.url_api.is_empty() {
-        asset.url.clone()
-    } else if is_public_forge_api_url(&asset.url_api) {
-        github::pick_reachable_asset_url(&asset.url, &asset.url_api).await
+    release_file_url(&asset.url, &asset.url_api).await
+}
+
+/// Downloads a release's checksum files from where the install download would get
+/// them, with the same forge token. A private repository serves a checksum file
+/// only from its API endpoint, as it does the asset itself.
+struct ForgeChecksumSource<'a> {
+    backend: &'a UnifiedGitBackend,
+    api_url: String,
+}
+
+impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
+    async fn fetch_text(&self, file: &Asset) -> Result<String> {
+        let url = release_file_url(&file.url, &file.url_api).await;
+        let headers = if self.backend.is_gitlab() {
+            gitlab::get_headers(&url, &self.api_url)?
+        } else if self.backend.is_forgejo() {
+            forgejo::get_headers(&url, &self.api_url)?
+        } else {
+            github::get_headers(&url, &self.api_url)?
+        };
+        HTTP.get_text_request(url).headers(&headers).send().await
+    }
+}
+
+/// [`asset_download_url`] for any file in a release, such as a checksum file.
+async fn release_file_url(url: &str, url_api: &str) -> String {
+    if url_api.is_empty() {
+        url.to_string()
+    } else if is_public_forge_api_url(url_api) {
+        github::pick_reachable_asset_url(url, url_api).await
     } else {
         debug!(
             "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
-            asset.url_api
+            url_api
         );
-        asset.url_api.clone()
+        url_api.to_string()
     }
 }
 
@@ -2424,7 +2451,7 @@ impl UnifiedGitBackend {
         let assets_with_urls: Vec<Asset> = release
             .assets
             .iter()
-            .map(|a| Asset::new(&a.name, &a.browser_download_url))
+            .map(|a| Asset::new(&a.name, &a.browser_download_url).with_api_url(&a.url))
             .collect();
 
         // Try explicit pattern first. `asset_pattern` replaces autodetection
@@ -2459,7 +2486,7 @@ impl UnifiedGitBackend {
             let digest = if asset.digest.is_some() {
                 asset.digest
             } else {
-                self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
                     .await
             };
 
@@ -2495,7 +2522,7 @@ impl UnifiedGitBackend {
         let digest = if asset.digest.is_some() {
             asset.digest.clone()
         } else {
-            self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+            self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
                 .await
         };
 
@@ -2532,7 +2559,7 @@ impl UnifiedGitBackend {
             .assets
             .links
             .iter()
-            .map(|a| Asset::new(&a.name, &a.direct_asset_url))
+            .map(|a| Asset::new(&a.name, &a.direct_asset_url).with_api_url(&a.url))
             .collect();
 
         // Try explicit pattern first. `asset_pattern` replaces autodetection
@@ -2565,7 +2592,7 @@ impl UnifiedGitBackend {
 
             // GitLab doesn't provide digests, so try fetching from release assets
             let digest = self
-                .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
                 .await;
 
             return Ok(ReleaseAsset {
@@ -2598,7 +2625,7 @@ impl UnifiedGitBackend {
 
         // GitLab doesn't provide digests, so try fetching from release assets
         let digest = self
-            .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+            .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
             .await;
 
         Ok(ReleaseAsset {
@@ -2624,13 +2651,6 @@ impl UnifiedGitBackend {
         let release = forgejo::get_release_for_url(&api_url, repo, version).await?;
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
-        // Build asset list with URLs for checksum fetching
-        let assets_with_urls: Vec<Asset> = release
-            .assets
-            .iter()
-            .map(|a| Asset::new(&a.name, &a.browser_download_url))
-            .collect();
-
         // Helper to build API attachment URL
         let asset_url_api = |asset_uuid: &str| {
             format!(
@@ -2639,6 +2659,15 @@ impl UnifiedGitBackend {
                 asset_uuid
             )
         };
+
+        // Build asset list with URLs for checksum fetching
+        let assets_with_urls: Vec<Asset> = release
+            .assets
+            .iter()
+            .map(|a| {
+                Asset::new(&a.name, &a.browser_download_url).with_api_url(asset_url_api(&a.uuid))
+            })
+            .collect();
 
         // Try explicit pattern first. `asset_pattern` replaces autodetection
         // entirely, so it intentionally takes precedence over and ignores
@@ -2670,7 +2699,7 @@ impl UnifiedGitBackend {
 
             // Try to get checksum from API digest or fetch from release assets
             let digest = self
-                .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
                 .await;
 
             return Ok(ReleaseAsset {
@@ -2703,7 +2732,7 @@ impl UnifiedGitBackend {
 
         // Try to get checksum from API digest or fetch from release assets
         let digest = self
-            .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+            .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
             .await;
 
         Ok(ReleaseAsset {
@@ -2830,11 +2859,16 @@ impl UnifiedGitBackend {
     /// Returns the checksum in "sha256:hash" format if found, None otherwise.
     async fn try_fetch_checksum_from_assets(
         &self,
+        opts: &GitBackendOptions<'_>,
         assets: &[Asset],
         asset_name: &str,
     ) -> Option<String> {
         let fetcher = ChecksumFetcher::new(assets);
-        match fetcher.fetch_checksum_for(asset_name).await {
+        let source = ForgeChecksumSource {
+            backend: self,
+            api_url: opts.api_url(),
+        };
+        match fetcher.fetch_checksum_for(asset_name, &source).await {
             Some(result) => {
                 debug!(
                     "Found checksum for {} from {}: {}",
@@ -5311,5 +5345,100 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         assert!(!attestations_supported("https://ghe.example.com/api/v3"));
         assert!(!attestations_supported("https://gitlab.com/api/v4"));
         assert!(!attestations_supported("https://codeberg.org/api/v1"));
+    }
+
+    /// Seeds a GitLab token for 127.0.0.1 for the lifetime of the guard.
+    struct GitlabTokenGuard;
+
+    impl GitlabTokenGuard {
+        fn set(token: &str) -> Self {
+            let tokens = std::collections::HashMap::from([("127.0.0.1".to_string(), token.into())]);
+            *gitlab::test_support::TOKENS_FILE_OVERRIDE.write().unwrap() = Some(tokens);
+            Self
+        }
+    }
+
+    impl Drop for GitlabTokenGuard {
+        fn drop(&mut self) {
+            *gitlab::test_support::TOKENS_FILE_OVERRIDE.write().unwrap() = None;
+        }
+    }
+
+    /// A private GitLab project answers its browser URL with a login page, so
+    /// the checksum file must come from the API URL with the token. Otherwise
+    /// `mise lock` gets a 401 and downloads every archive just to hash it.
+    #[tokio::test]
+    async fn test_checksum_file_is_fetched_from_the_api_url_with_the_token() {
+        let _token = GitlabTokenGuard::set("glpat_checksum_test");
+        let mut server = mockito::Server::new_async().await;
+        let browser = server
+            .mock("GET", "/browser/SHA256SUMS")
+            .with_status(401)
+            .expect(0)
+            .create_async()
+            .await;
+        let api = server
+            .mock("GET", "/api/v4/files/SHA256SUMS")
+            .match_header("authorization", "Bearer glpat_checksum_test")
+            .with_body(format!("{} tool-linux.tar.gz\n", "a".repeat(64)))
+            .expect(1)
+            .create_async()
+            .await;
+        let assets = vec![
+            Asset::new(
+                "tool-linux.tar.gz",
+                format!("{}/browser/tool", server.url()),
+            )
+            .with_api_url(format!("{}/api/v4/files/tool", server.url())),
+            Asset::new("SHA256SUMS", format!("{}/browser/SHA256SUMS", server.url()))
+                .with_api_url(format!("{}/api/v4/files/SHA256SUMS", server.url())),
+        ];
+        let source = ForgeChecksumSource {
+            backend: &create_test_gitlab_backend(),
+            api_url: format!("{}/api/v4", server.url()),
+        };
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &source)
+            .await
+            .expect("checksum is found");
+        assert_eq!(
+            result.to_string_formatted(),
+            format!("sha256:{}", "a".repeat(64))
+        );
+        api.assert_async().await;
+        browser.assert_async().await;
+    }
+
+    /// An asset with no API URL, such as one on a public project's release
+    /// page, is fetched from its browser URL as before.
+    #[tokio::test]
+    async fn test_checksum_file_without_an_api_url_uses_the_browser_url() {
+        let mut server = mockito::Server::new_async().await;
+        let browser = server
+            .mock("GET", "/browser/SHA256SUMS")
+            .with_body(format!("{} tool-linux.tar.gz\n", "b".repeat(64)))
+            .expect(1)
+            .create_async()
+            .await;
+        let assets = vec![
+            Asset::new(
+                "tool-linux.tar.gz",
+                format!("{}/browser/tool", server.url()),
+            ),
+            Asset::new("SHA256SUMS", format!("{}/browser/SHA256SUMS", server.url())),
+        ];
+        let source = ForgeChecksumSource {
+            backend: &create_test_gitlab_backend(),
+            api_url: format!("{}/api/v4", server.url()),
+        };
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &source)
+            .await
+            .expect("checksum is found");
+        assert_eq!(
+            result.to_string_formatted(),
+            format!("sha256:{}", "b".repeat(64))
+        );
+        browser.assert_async().await;
     }
 }
