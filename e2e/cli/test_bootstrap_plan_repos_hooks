@@ -11,6 +11,9 @@ cat <<EOF2 >mise.toml
 [bootstrap.repos]
 "~/src/dotfiles" = { url = "file://$SRC", ref = "main" }
 
+[bootstrap.files."$PWD/early.txt"]
+content = "x"
+
 [bootstrap.hooks]
 pre-repos = "echo before"
 post-repos = ["echo one", "echo two"]
@@ -21,16 +24,20 @@ assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.ki
 assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.name == \"pre-repos:1\" and .action == \"run\" and .hook_phase == \"pre-repos\" and .desired == \"echo before\")' >/dev/null"
 assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.name == \"post-repos:2\" and .desired == \"echo two\")' >/dev/null"
 assert "mise bootstrap plan --json | jq '.summary.run'" "3"
-assert "mise bootstrap plan --json | jq '.summary.create'" "1"
-assert_contains "mise bootstrap plan" "Plan: 1 create"
+assert "mise bootstrap plan --json | jq '.summary.create'" "2"
+assert_contains "mise bootstrap plan" "Plan: 2 create"
 assert 'mise bootstrap plan --detailed-exitcode >/dev/null 2>&1; echo $?' "2"
+
+# files run before repos and their hooks
+assert "mise bootstrap plan --json | jq -r '[.resources[] | .id.name | select(startswith(\"pre-repos\") or endswith(\"early.txt\"))] | map(split(\"/\")[-1]) | join(\" \")'" "early.txt pre-repos:1"
 
 # the plan lists them in the order a run executes them
 assert "mise bootstrap plan --json | jq -r '[.resources[] | .id.name | select(startswith(\"pre-\") or startswith(\"post-\") or endswith(\"dotfiles\"))] | join(\" \")'" "pre-repos:1 $HOME/src/dotfiles post-repos:1 post-repos:2"
 
 # a converged repo leaves only the hooks, which do not count as changes
 assert_succeed "mise bootstrap repos apply --yes"
-assert "mise bootstrap plan --json | jq '.summary.unchanged'" "1"
+assert_succeed "mise bootstrap files apply --yes"
+assert "mise bootstrap plan --json | jq '.summary.unchanged'" "2"
 assert_succeed "mise bootstrap plan --detailed-exitcode"
 
 # a repo behind its ref is an update

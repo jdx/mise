@@ -321,6 +321,8 @@ pub async fn add_repos_and_hooks(
         .filter(|id| id.kind == "package")
         .cloned()
         .collect::<Vec<_>>();
+    // accounts, files, services, the firewall, and Compose all run before repos
+    let earlier = plan.ids().cloned().collect::<Vec<_>>();
     let requests = super::repos_from_config(config);
     let mut repos = vec![];
     for status in super::repos::status(&requests).await? {
@@ -329,8 +331,8 @@ pub async fn add_repos_and_hooks(
         plan.insert(resource)?;
     }
     for repo in &repos {
-        for package in &packages {
-            plan.add_ordering(repo, package.clone())?;
+        for resource in &earlier {
+            plan.add_ordering(repo, resource.clone())?;
         }
     }
     if !hooks_enabled {
@@ -338,14 +340,16 @@ pub async fn add_repos_and_hooks(
     }
     let hooks = super::hooks_from_config(config);
     let mut previous: Option<ResourceId> = None;
+    // resources the next hook to run must follow
+    let mut pending: Vec<ResourceId> = vec![];
     for phase in BootstrapHookPhase::iter() {
         let before_phase = previous.clone();
-        // the first hook of a `post-` phase runs after the resources it follows
-        let anchors: &[ResourceId] = match phase {
-            BootstrapHookPhase::PostPackages => &packages,
-            BootstrapHookPhase::PostRepos => &repos,
-            _ => &[],
-        };
+        match phase {
+            BootstrapHookPhase::PostPackages => pending.extend(packages.iter().cloned()),
+            BootstrapHookPhase::PreRepos => pending.extend(earlier.iter().cloned()),
+            BootstrapHookPhase::PostRepos => pending.extend(repos.iter().cloned()),
+            _ => {}
+        }
         let mut index = 0;
         for hook in hooks.iter().filter(|hook| hook.phase == phase) {
             index += 1;
@@ -358,10 +362,8 @@ pub async fn add_repos_and_hooks(
             if let Some(previous) = previous.take() {
                 plan.add_ordering(&id, previous)?;
             }
-            if index == 1 {
-                for anchor in anchors {
-                    plan.add_ordering(&id, anchor.clone())?;
-                }
+            for anchor in pending.drain(..) {
+                plan.add_ordering(&id, anchor)?;
             }
             previous = Some(id);
         }
