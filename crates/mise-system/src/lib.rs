@@ -2736,7 +2736,16 @@ fn resolve_managers(
                 enabled.as_deref().unwrap_or_default().join(", ")
             );
         }
-        match managers.get(&name) {
+        // A plugin manager installed as `foo-bar` answers to `foo_bar` too, as mise installs
+        // plugins under the kebab-case name.
+        let manager = managers.get(&name).or_else(|| {
+            let id = name.replace('_', "-");
+            managers
+                .iter()
+                .find(|(other, _)| other.replace('_', "-") == id)
+                .map(|(_, manager)| manager)
+        });
+        match manager {
             Some(manager) => {
                 // Two spellings of one package that disagree resolve by
                 // machine state rather than by config, so reject the pair
