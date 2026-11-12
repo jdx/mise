@@ -386,6 +386,8 @@ export const values: Record<string, string> = {
     "files.<key>.phase": '"pre-packages"',
     "files.<key>.source": '"files/sshd_config"',
     "files.<key>.content": '"PermitRootLogin no\\n"',
+    "files.<key>.block": '"127.0.0.1 dev.local\\n"',
+    "files.<key>.id": '"dev"',
     "files.<key>.owner": '"root"',
     "files.<key>.group": '"root"',
     "files.<key>.mode": '"0640"',
