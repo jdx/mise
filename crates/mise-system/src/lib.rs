@@ -3801,11 +3801,6 @@ mod tests {
         Ok(())
     }
 
-    /// Prune unions declarations across environments so it can protect whatever
-    /// any environment declares, which means entries that are never active at
-    /// the same time land in one list. They are not in conflict, and an
-    /// unrelated manager's entries must not block a brew prune.
-    #[cfg(unix)]
     #[test]
     fn a_manager_answers_to_either_spelling() {
         let known = vec![
@@ -3819,6 +3814,11 @@ mod tests {
         assert_eq!(canonical_manager_name("other".into(), &known), "other");
     }
 
+    /// Prune unions declarations across environments so it can protect whatever
+    /// any environment declares, which means entries that are never active at
+    /// the same time land in one list. They are not in conflict, and an
+    /// unrelated manager's entries must not block a brew prune.
+    #[cfg(unix)]
     #[test]
     fn the_prune_union_is_not_checked_for_folded_names() -> Result<()> {
         let (_current_dir, current) = config_map_from_toml(&[(
