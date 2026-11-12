@@ -182,3 +182,8 @@ make this check on Windows, so it ignores system plugin directories there.
 
 A plugin named `foo_bar` in config also finds a system plugin directory named
 `foo-bar`, and the other way around.
+
+`mise plugins ls` lists system plugins after your own, marked `(system)`, and
+marks one that your own plugin overrides. `mise plugins ls --urls` shows where
+each one lives. A package manager or the machine's admin owns these plugins, so
+`mise plugins update` and `mise plugins uninstall` skip them with a warning.

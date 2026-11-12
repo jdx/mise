@@ -12,6 +12,12 @@ description: "List installed plugins"
 
 List installed plugins
 
+Plugins installed for every user in a system plugins directory, such as
+`/usr/share/mise/plugins`, are listed after your own and marked `(system)`.
+A package manager or the machine's admin owns them, so `--outdated` skips
+them and `mise plugins update`/`uninstall` leave them alone. A system plugin
+that one of your plugins overrides is marked as overridden.
+
 Use `--core` to list the core tools built into mise instead, or
 `--core --user` for both. `--outdated` checks each plugin's Git remote for
 newer plugin code; it does not compare tool versions. Use `mise ls` for

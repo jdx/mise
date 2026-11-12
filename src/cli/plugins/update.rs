@@ -15,7 +15,9 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 ///
 /// With no names, updates every installed plugin. This updates the plugin code,
 /// not the tool versions it manages. Linked local plugins are skipped; plugins
-/// installed from an archive cannot be updated with Git.
+/// installed from an archive cannot be updated with Git. A system plugin, such
+/// as one in `/usr/share/mise/plugins`, is skipped with a warning: update it
+/// with the package or admin that installed it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -59,6 +61,13 @@ impl Update {
         let jobs = crate::jobs::resolve(settings.jobs, self.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
         for (short, ref_) in plugins {
+            if let Some(system) = plugins::system_plugins::find(&short) {
+                warn!(
+                    "{short} is a system plugin in {}; update it with the package or admin that installed it",
+                    crate::file::display_path(&system.path)
+                );
+                continue;
+            }
             let semaphore = semaphore.clone();
             let plugin_name = short.clone();
             spawn_plugin_task(&mut jset, &mut task_names, plugin_name, async move {
