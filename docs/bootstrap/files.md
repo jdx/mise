@@ -131,6 +131,44 @@ the template is empty, so status reports the file as `unknown` (not inspected),
 mise leaves the file in place, and apply fails. The entry is still validated as
 a present file, so its parent cannot be a directory declared absent.
 
+## Keep a block in a file something else owns {#blocks}
+
+To manage one part of a file and leave the rest alone, such as a line group in
+`/etc/hosts` or a setting block in `/etc/ssh/sshd_config`, set `block` and an
+`id` instead of `source` or `content`:
+
+```toml
+[bootstrap.files."/etc/hosts"]
+id = "dev"
+block = """
+127.0.0.1 dev.local
+127.0.0.1 api.local
+"""
+```
+
+mise keeps the block between two marker comments named by the `id`:
+
+```text
+# >>> mise:dev >>> managed by mise — do not edit between markers
+127.0.0.1 dev.local
+127.0.0.1 api.local
+# <<< mise:dev <<<
+```
+
+Apply replaces what is between the markers, appends the block when the markers
+are missing, and creates the file with only the block when it does not exist.
+Everything outside the markers stays as it is, and an existing file keeps its
+owner and mode unless the entry declares them. Like other system files, the
+change runs through `sudo` only when the current user cannot make it. The
+marker comment is `#` unless the file's extension calls for another, such as
+`//` for `.js` or `--` for `.lua`. Dotfile blocks use the same markers; see
+[block edits](/dotfiles/edits.html#blocks) for the details.
+
+A `block` can use `template = true`, `os`, `notify`, `owner`, `group`, and
+`mode`. It cannot be combined with `source`, `content`, `replace`,
+`remove_empty`, or `state = "absent"`. An entry holds one block, so a file takes
+one block. To remove a block, delete its lines and the markers by hand.
+
 ## Create directories
 
 A declared directory is created with any missing parents, like `mkdir -p`. The

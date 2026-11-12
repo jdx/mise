@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "skipping: managed system files require Linux"
+  exit 0
+fi
+
+dir="$PWD/user-managed-system"
+mkdir "$dir"
+target="$dir/hosts"
+printf '127.0.0.1 localhost\n' >"$target"
+chmod 0640 "$target"
+
+cat <<EOT >mise.toml
+[vars]
+host = "dev.local"
+
+[bootstrap.files."$target"]
+id = "dev"
+template = true
+block = "127.0.0.1 {{ vars.host }}"
+EOT
+
+# The plan changes the file, and a dry run leaves it alone.
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run" "would write block dev in file $target"
+assert "cat '$target'" "127.0.0.1 localhost"
+
+# Apply appends the block, keeps the rest of the file and its mode.
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert_contains "cat '$target'" "127.0.0.1 localhost"
+assert_contains "cat '$target'" "# >>> mise:dev >>>"
+assert_contains "cat '$target'" "127.0.0.1 dev.local"
+assert "stat -c %a '$target'" "640"
+
+# A second apply has nothing to do.
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "already converged"
+
+# Changing the body rewrites only the block.
+sed -i 's/dev.local/other.local/' mise.toml
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert_contains "cat '$target'" "127.0.0.1 other.local"
+assert_contains "cat '$target'" "127.0.0.1 localhost"
+assert_fail "grep dev.local '$target'"
+assert "stat -c %a '$target'" "640"
+
+# A declared mode is enforced, and a missing file is created with the block.
+missing="$dir/missing.conf"
+cat <<EOT >mise.toml
+[bootstrap.files."$missing"]
+id = "x"
+block = "key = value"
+mode = "0600"
+EOT
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert_contains "cat '$missing'" "key = value"
+assert "stat -c %a '$missing'" "600"
+
+# Invalid combinations are refused.
+# schema: invalid
+cat <<EOT >mise.toml
+[bootstrap.files."$missing"]
+block = "key = value"
+EOT
+assert_fail "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "block requires id"
+# schema: invalid
+cat <<EOT >mise.toml
+[bootstrap.files."$missing"]
+id = "x"
+block = "key = value"
+content = "whole file"
+EOT
+assert_fail "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "cannot be combined"

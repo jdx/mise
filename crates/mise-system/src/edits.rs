@@ -702,7 +702,7 @@ fn merge_op(
 
 /// comment prefix for marker lines, by file extension; `#` covers most
 /// config and shell files (and extensionless files like `.zshrc`, `hosts`)
-fn infer_comment(path: &Path) -> &'static str {
+pub(crate) fn infer_comment(path: &Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
         "lua" => "--",
         "vim" | "vimrc" => "\"",
@@ -2152,6 +2152,41 @@ fn permission_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> V
     problems
 }
 
+/// Put `body` between the marker comments for `id` in `text`: replace the
+/// block when its markers are there, append it when they are not. `label`
+/// names the file in the error for corrupted markers.
+pub(crate) fn splice_block(
+    text: &str,
+    comment: &str,
+    id: &str,
+    body: &str,
+    label: &str,
+) -> Result<String> {
+    let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+    let mut block = vec![begin_marker(comment, id)];
+    // a body of "" means an empty block, not a blank line
+    if !body.is_empty() {
+        block.extend(body.lines().map(|l| l.to_string()));
+    }
+    block.push(end_marker(comment, id));
+    match find_block(
+        &lines.iter().map(|l| l.as_str()).collect::<Vec<_>>(),
+        id,
+        comment,
+    ) {
+        // markers are rewritten too, so a changed comment style or
+        // marker wording converges on reapply
+        Ok(Some((begin, end))) => {
+            lines.splice(begin..=end, block);
+        }
+        Ok(None) => lines.extend(block),
+        Err(reason) => bail!("edits: \"{label}\": {reason}, fix the file manually"),
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    Ok(out)
+}
+
 fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
     match &req.op {
         EditOp::Merge {
@@ -2168,34 +2203,8 @@ fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Resu
             merged.wrap_err_with(|| format!("merge into \"{}\" failed", req.path.display_user()))
         }
         EditOp::Block { comment, .. } => {
-            let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
-            let id = &req.id;
             let desired = desired.expect("resolved block content");
-            let mut block = vec![begin_marker(comment, id)];
-            // a desired of "" means an empty block, not a blank line
-            if !desired.is_empty() {
-                block.extend(desired.lines().map(|l| l.to_string()));
-            }
-            block.push(end_marker(comment, id));
-            match find_block(
-                &lines.iter().map(|l| l.as_str()).collect::<Vec<_>>(),
-                id,
-                comment,
-            ) {
-                // markers are rewritten too, so a changed comment style or
-                // marker wording converges on reapply
-                Ok(Some((begin, end))) => {
-                    lines.splice(begin..=end, block);
-                }
-                Ok(None) => lines.extend(block),
-                Err(reason) => bail!(
-                    "edits: \"{}\": {reason}, fix the file manually",
-                    req.path_raw
-                ),
-            }
-            let mut out = lines.join("\n");
-            out.push('\n');
-            Ok(out)
+            splice_block(text, comment, &req.id, desired, &req.path_raw)
         }
         EditOp::Line { line, position } => {
             // an earlier entry in the same batch may have just written an

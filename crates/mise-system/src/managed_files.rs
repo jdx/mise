@@ -34,7 +34,17 @@ pub struct ManagedFileRequest {
     /// A `remove_empty` template rendered to whitespace only, so the declared
     /// present file is removed instead.
     rendered_empty: bool,
+    /// Set when `content` is the body of a marked block inside the file
+    /// rather than the whole file.
+    block: Option<BlockEdit>,
     inspection: Option<PathInspection>,
+}
+
+/// The marker comments of a `block` entry, which `content` fills.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct BlockEdit {
+    id: String,
+    comment: String,
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +72,17 @@ pub(crate) enum PrivilegedAction {
         group: Option<String>,
         mode: u32,
         replace: bool,
+    },
+    /// Put a marked block in a file mise does not own: read the file, splice
+    /// the block in, and write it back, keeping the owner and mode it has
+    /// unless they are declared. A missing file is created.
+    EditBlock {
+        path: PathBuf,
+        block: BlockEdit,
+        body: String,
+        owner: Option<String>,
+        group: Option<String>,
+        mode: Option<u32>,
     },
     RemoveFile {
         path: PathBuf,
@@ -130,6 +151,10 @@ struct PrivilegedInspectionPlan {
 struct PrivilegedPathInspection {
     path: PathBuf,
     expected_content: Option<String>,
+    /// When set, `expected_content` is the body of this block, and the file
+    /// matches when splicing it in changes nothing.
+    #[serde(default)]
+    block: Option<BlockEdit>,
     owner: Option<String>,
     group: Option<String>,
     mode: Option<u32>,
@@ -579,12 +604,14 @@ impl ManagedFileRequest {
     fn from_toml(
         root_config: &Config,
         path: PathBuf,
-        config: ManagedFileTomlConfig,
+        mut config: ManagedFileTomlConfig,
         base: &Path,
         origin: ResourceOrigin,
         secrets: &super::secrets::SecretValues,
     ) -> Result<Self> {
-        let metadata_only = config.state == ManagedState::Present
+        let block = block_edit(&path, &mut config)?;
+        let metadata_only = block.is_none()
+            && config.state == ManagedState::Present
             && config.source.is_none()
             && config.content.is_none();
         if metadata_only {
@@ -592,7 +619,9 @@ impl ManagedFileRequest {
         }
         let owner = nonempty("owner", config.owner)?;
         let group = nonempty("group", config.group)?;
-        let mode = if metadata_only {
+        let mode = if metadata_only || block.is_some() {
+            // A block leaves the mode of an existing file alone unless one
+            // is declared; a file it creates gets the default at apply.
             config
                 .mode
                 .as_deref()
@@ -672,6 +701,7 @@ impl ManagedFileRequest {
             notify: config.notify,
             origin,
             rendered_empty,
+            block,
             inspection: None,
         })
     }
@@ -755,8 +785,16 @@ impl ManagedFileRequest {
             }
             _ => {}
         }
-        Ok(Some(match (self.state, &self.content) {
-            (ManagedState::Present, Some(content)) => PrivilegedAction::WriteFile {
+        Ok(Some(match (self.state, &self.content, &self.block) {
+            (ManagedState::Present, Some(body), Some(block)) => PrivilegedAction::EditBlock {
+                path: self.path.clone(),
+                block: block.clone(),
+                body: body.clone(),
+                owner: self.owner.clone(),
+                group: self.group.clone(),
+                mode: self.mode,
+            },
+            (ManagedState::Present, Some(content), None) => PrivilegedAction::WriteFile {
                 path: self.path.clone(),
                 content: content.clone(),
                 owner: self.owner.clone(),
@@ -764,13 +802,13 @@ impl ManagedFileRequest {
                 mode: self.mode.unwrap_or(DEFAULT_FILE_MODE),
                 replace: self.replace,
             },
-            (ManagedState::Present, None) => PrivilegedAction::SetFileMetadata {
+            (ManagedState::Present, None, _) => PrivilegedAction::SetFileMetadata {
                 path: self.path.clone(),
                 owner: self.owner.clone(),
                 group: self.group.clone(),
                 mode: self.mode,
             },
-            (ManagedState::Absent, _) => PrivilegedAction::RemoveFile {
+            (ManagedState::Absent, _, _) => PrivilegedAction::RemoveFile {
                 path: self.path.clone(),
             },
         }))
@@ -778,6 +816,38 @@ impl ManagedFileRequest {
 }
 
 const DEFAULT_FILE_MODE: u32 = 0o644;
+
+/// Check a `block` entry and turn its body into the entry's content, so the
+/// rest of the file pipeline sees a file with content to compare and write.
+fn block_edit(path: &Path, config: &mut ManagedFileTomlConfig) -> Result<Option<BlockEdit>> {
+    let label = format!("[bootstrap.files].\"{}\"", path.display());
+    let Some(body) = config.block.take() else {
+        if config.id.is_some() {
+            bail!("{label}: id requires block");
+        }
+        return Ok(None);
+    };
+    let Some(id) = config.id.take() else {
+        bail!("{label}: block requires id");
+    };
+    if id.is_empty() || id.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        bail!("{label}: id must be a non-empty name without whitespace");
+    }
+    if config.source.is_some() || config.content.is_some() {
+        bail!("{label}: block cannot be combined with source or content");
+    }
+    if config.state == ManagedState::Absent {
+        bail!("{label}: block cannot be used with state = \"absent\"");
+    }
+    if config.replace || config.remove_empty {
+        bail!("{label}: block cannot be combined with replace or remove_empty");
+    }
+    config.content = Some(body);
+    Ok(Some(BlockEdit {
+        id,
+        comment: crate::edits::infer_comment(path).to_string(),
+    }))
+}
 
 /// A present entry without `source` or `content` manages only the metadata it
 /// declares, so it must declare some, and must not ask for anything that
@@ -1153,7 +1223,9 @@ impl PrivilegedAction {
             } => Ok(owner.is_some()
                 || group.is_some()
                 || (*replace && replacement_is_not(path, ManagedPathKind::File)?)),
-            Self::SetFileMetadata { owner, group, .. } => Ok(owner.is_some() || group.is_some()),
+            Self::EditBlock { owner, group, .. } | Self::SetFileMetadata { owner, group, .. } => {
+                Ok(owner.is_some() || group.is_some())
+            }
             Self::CreateDirectory {
                 path,
                 owner,
@@ -1175,6 +1247,9 @@ impl PrivilegedAction {
     fn description(&self) -> String {
         match self {
             Self::WriteFile { path, .. } => format!("write file {}", path.display()),
+            Self::EditBlock { path, block, .. } => {
+                format!("write block {} in file {}", block.id, path.display())
+            }
             Self::RemoveFile { path } => format!("remove file {}", path.display()),
             Self::SetFileMetadata { path, .. } => {
                 format!("set permissions on file {}", path.display())
@@ -1234,6 +1309,21 @@ impl PrivilegedAction {
                 group.as_deref(),
                 *mode,
                 *replace,
+            ),
+            Self::EditBlock {
+                path,
+                block,
+                body,
+                owner,
+                group,
+                mode,
+            } => edit_block(
+                &validate_privileged_target(path)?,
+                block,
+                body,
+                owner.as_deref(),
+                group.as_deref(),
+                *mode,
             ),
             Self::RemoveFile { path } => remove_file(&validate_privileged_target(path)?),
             Self::SetFileMetadata {
@@ -1383,6 +1473,7 @@ fn inspect_paths(
             path: file.path.clone(),
             // Absent and metadata-only files have no content to compare.
             expected_content: file.content.clone(),
+            block: file.block.clone(),
             owner: file.owner.clone(),
             group: file.group.clone(),
             mode: file.mode,
@@ -1404,6 +1495,7 @@ fn inspect_paths(
         let request = PrivilegedPathInspection {
             path: directory.path.clone(),
             expected_content: None,
+            block: None,
             owner: directory.owner.clone(),
             group: directory.group.clone(),
             mode: Some(directory.mode),
@@ -1532,7 +1624,7 @@ fn inspect_path(request: PrivilegedPathInspection) -> Result<PathInspection> {
             let entry = EntryMetadata::from_metadata(&metadata);
             let content_matches = match (&request.expected_content, entry.kind) {
                 (Some(expected), ManagedPathKind::File) => match fs::read(&path) {
-                    Ok(content) => Some(content == expected.as_bytes()),
+                    Ok(content) => Some(content_matches_declared(&request, expected, &content)?),
                     // Root would compare it only by refusing the symlink, so
                     // leave the content unknown and let the user rewrite it.
                     Err(error)
@@ -1613,7 +1705,7 @@ fn inspect_path_strictly(
             ensure_regular_file(&file, path)?;
             let mut content = vec![];
             fs::File::from(file).read_to_end(&mut content)?;
-            Some(content == expected.as_bytes())
+            Some(content_matches_declared(request, expected, &content)?)
         }
         _ => None,
     };
@@ -2101,6 +2193,160 @@ fn write_file(
     Ok(())
 }
 
+/// Whether a file's `content` already is what a request declares: the whole
+/// content, or a file that already holds the block's body as it would write it.
+fn content_matches_declared(
+    request: &PrivilegedPathInspection,
+    expected: &str,
+    content: &[u8],
+) -> Result<bool> {
+    let Some(block) = &request.block else {
+        return Ok(content == expected.as_bytes());
+    };
+    let Ok(text) = std::str::from_utf8(content) else {
+        return Ok(false);
+    };
+    let updated = crate::edits::splice_block(
+        text,
+        &block.comment,
+        &block.id,
+        expected,
+        &request.path.display().to_string(),
+    )?;
+    Ok(updated == text)
+}
+
+/// Put a marked block into a file, creating the file when it is missing. An
+/// existing file keeps its owner and mode unless they are declared.
+#[cfg(unix)]
+fn edit_block(
+    path: &Path,
+    block: &BlockEdit,
+    body: &str,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: Option<u32>,
+) -> Result<()> {
+    let existing = read_file_for_edit(path)?;
+    let text = existing.as_ref().map_or("", |(text, _)| text.as_str());
+    let updated = crate::edits::splice_block(
+        text,
+        &block.comment,
+        &block.id,
+        body,
+        &path.display().to_string(),
+    )?;
+    let Some((_, entry)) = existing else {
+        return write_file(
+            path,
+            updated.as_bytes(),
+            owner,
+            group,
+            mode.unwrap_or(DEFAULT_FILE_MODE),
+            false,
+        );
+    };
+    // Writing replaces the file, so a root that does not declare an owner
+    // keeps the existing one by naming it; a user cannot give files away.
+    let (current_owner, current_group) = if runs_as_root() {
+        (
+            nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(entry.uid))?
+                .map(|user| user.name),
+            nix::unistd::Group::from_gid(nix::unistd::Gid::from_raw(entry.gid))?
+                .map(|group| group.name),
+        )
+    } else {
+        (None, None)
+    };
+    if runs_as_root()
+        && ((owner.is_none() && current_owner.is_none())
+            || (group.is_none() && current_group.is_none()))
+    {
+        bail!(
+            "{} is owned by an unnamed user or group; declare owner and group to edit it",
+            path.display()
+        );
+    }
+    write_file(
+        path,
+        updated.as_bytes(),
+        owner.or(current_owner.as_deref()),
+        group.or(current_group.as_deref()),
+        mode.unwrap_or(entry.mode),
+        false,
+    )
+}
+
+#[cfg(not(unix))]
+fn edit_block(
+    _path: &Path,
+    _block: &BlockEdit,
+    _body: &str,
+    _owner: Option<&str>,
+    _group: Option<&str>,
+    _mode: Option<u32>,
+) -> Result<()> {
+    bail!("managed system files are only supported on Unix")
+}
+
+/// The text and metadata of the regular file at `path`, or `None` when it is
+/// missing. As root, the parent is resolved without following untrusted
+/// symlinks and the file is opened without following one.
+#[cfg(unix)]
+fn read_file_for_edit(path: &Path) -> Result<Option<(String, EntryMetadata)>> {
+    use nix::fcntl::{AtFlags, OFlag, openat};
+    use nix::sys::stat::{Mode, fstatat};
+    use std::io::Read;
+
+    if !runs_as_root() {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        if !metadata.file_type().is_file() {
+            bail!("refusing to edit non-file path: {}", path.display());
+        }
+        let text = fs::read_to_string(path)
+            .wrap_err_with(|| format!("failed to read {}", path.display()))?;
+        return Ok(Some((text, EntryMetadata::from_metadata(&metadata))));
+    }
+    let (parent, name) = open_parent_strictly(path)?;
+    let entry = match fstatat(&parent, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => EntryMetadata::from_stat(&stat),
+        Err(nix::errno::Errno::ENOENT) => return Ok(None),
+        Err(error) => {
+            return Err(error).wrap_err_with(|| format!("failed to inspect {}", path.display()));
+        }
+    };
+    if entry.kind != ManagedPathKind::File {
+        bail!("refusing to edit non-file path: {}", path.display());
+    }
+    // O_NONBLOCK keeps a FIFO swapped in since the fstatat from blocking the
+    // open; it is refused below.
+    let file = openat(
+        &parent,
+        name,
+        OFlag::O_RDONLY
+            | OFlag::O_NOFOLLOW
+            | OFlag::O_NONBLOCK
+            | OFlag::O_NOCTTY
+            | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .wrap_err_with(|| {
+        format!(
+            "failed to open file {} without following symlinks",
+            path.display()
+        )
+    })?;
+    ensure_regular_file(&file, path)?;
+    let mut text = String::new();
+    fs::File::from(file)
+        .read_to_string(&mut text)
+        .wrap_err_with(|| format!("failed to read {}", path.display()))?;
+    Ok(Some((text, entry)))
+}
 fn remove_file(path: &Path) -> Result<()> {
     #[cfg(unix)]
     if runs_as_root() {
@@ -2969,6 +3215,7 @@ mod tests {
                 source: None,
             },
             rendered_empty: false,
+            block: None,
             inspection: None,
         }
     }
