@@ -12,6 +12,8 @@ fn windows_drive_mounts_are_recognized() {
         "/usr/bin",
         "mnt/c/x",
         "/home/mnt/c",
+        "/mnt/c/mise/../custom-bin",
+        "/mnt/c/..",
     ] {
         assert!(!is_windows_drive_mount(Path::new(p)), "{p}");
     }

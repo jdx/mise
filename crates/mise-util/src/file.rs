@@ -2145,7 +2145,8 @@ fn in_wsl() -> bool {
     *WSL
 }
 
-/// True for `/mnt/<drive letter>/...`.
+/// True for `/mnt/<drive letter>/...` without `..` components, which could
+/// lead out of the mount and so still need resolving.
 fn is_windows_drive_mount(path: &Path) -> bool {
     use std::path::Component;
     let mut components = path.components();
@@ -2159,7 +2160,7 @@ fn is_windows_drive_mount(path: &Path) -> bool {
         components.next(),
         Some(Component::Normal(drive))
             if drive.len() == 1 && drive.as_encoded_bytes()[0].is_ascii_alphabetic()
-    )
+    ) && components.all(|c| c != Component::ParentDir)
 }
 
 /// Canonicalize a path using the process cache, falling back to the original
