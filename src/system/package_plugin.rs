@@ -101,9 +101,16 @@ pub(crate) async fn bootstrap_plugin_env() -> Result<IndexMap<String, String>> {
     Ok(env)
 }
 
-/// The first of `requires` not found on `PATH` or among mise's shims.
-pub(crate) fn missing_binary(requires: &[String]) -> Option<&str> {
-    missing_in(requires, &PackagePluginManager::sync_lookup_path())
+/// The first of `requires` not found on the `PATH` of `env`, the environment plugin hooks get.
+pub(crate) fn missing_in_env<'a>(
+    requires: &'a [String],
+    env: &IndexMap<String, String>,
+) -> Option<&'a str> {
+    let paths: Vec<PathBuf> = env
+        .get("PATH")
+        .map(|path| std::env::split_paths(path).collect())
+        .unwrap_or_default();
+    missing_in(requires, &paths)
 }
 
 fn missing_in<'a>(requires: &'a [String], paths: &[PathBuf]) -> Option<&'a str> {

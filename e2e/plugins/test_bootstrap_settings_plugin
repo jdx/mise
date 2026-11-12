@@ -93,3 +93,20 @@ cat >mise.toml <<'TOML'
 key = 1
 TOML
 assert_contains "mise bootstrap --only settings --yes 2>&1" "no bootstrap settings plugin named missing"
+
+# The parent's --dry-run reaches `settings apply`.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 16
+TOML
+assert_contains "mise bootstrap --dry-run settings apply 2>&1" "would set desk: appearance.blur_strength 8 -> 16"
+assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
+
+# A quoted dotted key is the same setting as the nested one.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk]
+"appearance.blur" = true
+appearance = { blur_strength = 8 }
+TOML
+assert_succeed "mise bootstrap settings status --missing"

@@ -147,12 +147,12 @@ warning. They will be removed in mise 2027.10.4.
 | 10   | `dotfiles`                         | [`[dotfiles]`](/dotfiles.html)                                                                                                                        | `pre-dotfiles`, `post-dotfiles` |
 | 11   | `mise-shell-activate` (`shell`)    | [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)                                                                                            |                                 |
 | 12   | `macos-defaults` (`defaults`)      | [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html) and the other `[bootstrap.macos.*]` keys                                               | `pre-defaults`, `post-defaults` |
-| 13   | `settings`                         | [`[bootstrap.settings]`](/bootstrap/settings-plugins.html) through [bootstrap settings plugins](/bootstrap/settings-plugins.html)                     |                                 |
-| 14   | `macos-launchd-agents` (`launchd`) | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)                                                                                         |                                 |
-| 15   | `linux-systemd-units` (`systemd`)  | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)                                                                                          |                                 |
-| 16   | `user`                             | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)                                                                                      | `pre-user`, `post-user`         |
-| 17   | `tools`                            | `[tools]`, as `mise install` would                                                                                                                    | `pre-tools`, `post-tools`       |
-| 18   | `packages`                         | Packages from [package manager plugins](/bootstrap/packages/plugins.html)                                                                             |                                 |
+| 13   | `macos-launchd-agents` (`launchd`) | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)                                                                                         |                                 |
+| 14   | `linux-systemd-units` (`systemd`)  | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)                                                                                          |                                 |
+| 15   | `user`                             | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)                                                                                      | `pre-user`, `post-user`         |
+| 16   | `tools`                            | `[tools]`, as `mise install` would                                                                                                                    | `pre-tools`, `post-tools`       |
+| 17   | `packages`                         | Packages from [package manager plugins](/bootstrap/packages/plugins.html)                                                                             |                                 |
+| 18   | `settings`                         | [`[bootstrap.settings]`](/bootstrap/settings-plugins.html) through [bootstrap settings plugins](/bootstrap/settings-plugins.html)                     |                                 |
 | 19   | `services`                         | User services with `requires_tools = true`                                                                                                            |                                 |
 | 20   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                                                                            |                                 |
 | 21   | `final-hook`                       |                                                                                                                                                       | `final`                         |
@@ -161,7 +161,7 @@ In step 4, the `pre-packages` hook runs before mise adds apt sources.
 
 The `post-packages` hook runs right after step 4, unless a package in
 `[bootstrap.packages]` comes from a package manager plugin. Then it runs after
-step 18 instead, once those packages are installed. Step 19 runs even with
+step 17 instead, once those packages are installed. Step 19 runs even with
 `--skip tools`.
 
 The declarative parts compare the configuration with the machine and change only
@@ -244,9 +244,9 @@ With `--detailed-exitcode`, the exit code reports what the plan found:
 
 | Exit code | Meaning                                     |
 | --------- | ------------------------------------------- |
-| 0         | Nothing would change                        |
-| 2         | The plan has changes                        |
-| 1         | Planning failed, or a resource is `unknown` |
+| 22        | Nothing would change                        |
+| 23        | The plan has changes                        |
+| 24        | Planning failed, or a resource is `unknown` |
 
 A resource is `unknown` when mise cannot reach its declared state on its own,
 for example a package whose manager is unavailable on this platform or cannot
