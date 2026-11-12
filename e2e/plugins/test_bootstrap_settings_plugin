@@ -4,6 +4,7 @@
 # the current values, writes only the keys that differ, and checks them again.
 
 export MISE_EXPERIMENTAL=1
+skip_unless_system_plugin_path_is_trusted
 export MISE_SYSTEM_PLUGINS_DIRS="$PWD/system-plugins"
 plugin=system-plugins/desk
 mkdir -p "$plugin/hooks"
