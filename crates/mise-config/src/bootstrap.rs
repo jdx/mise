@@ -158,7 +158,18 @@ pub struct MacosSettingsTomlConfig {
     pub defaults_entries: Vec<BootstrapMacosDefaultsEntry>,
     /// applications to open at login (System Settings > General > Login Items & Extensions)
     #[serde(default)]
-    pub login_items: Option<login_items::LoginItemsTomlConfig>,
+    #[schemars(with = "Option<login_items::LoginItemsTomlConfig>")]
+    pub login_items: Option<MacosLoginItemsSettings>,
+}
+
+/// `[bootstrap.settings.macos.login_items]` as written, so the move can tell an omitted `apps`
+/// from an explicitly empty one.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MacosLoginItemsSettings {
+    #[serde(default)]
+    pub apps: Option<Vec<String>>,
+    #[serde(default)]
+    pub exclusive: Option<bool>,
 }
 
 /// What [`BootstrapTomlConfig::move_macos_settings`] found.
@@ -215,11 +226,11 @@ impl BootstrapTomlConfig {
         }
         macos.defaults_entries.extend(new.defaults_entries);
         // Merge field by field, so `exclusive = true` alone in the new spelling keeps the apps
-        // the old spelling declares.
+        // the old spelling declares, while an explicit `apps = []` clears them.
         if let Some(new) = new.login_items {
             let merged = macos.login_items.get_or_insert_with(Default::default);
-            if !new.apps.is_empty() {
-                merged.apps = new.apps;
+            if let Some(apps) = new.apps {
+                merged.apps = apps;
             }
             if new.exclusive.is_some() {
                 merged.exclusive = new.exclusive;
@@ -570,5 +581,16 @@ mod macos_settings_tests {
         let items = config.macos.login_items.unwrap();
         assert_eq!(items.apps, vec!["/Applications/Rectangle.app".to_string()]);
         assert_eq!(items.exclusive, Some(true));
+
+        let mut config = bootstrap(
+            r#"
+            [macos.login_items]
+            apps = ["/Applications/Rectangle.app"]
+            [settings.macos.login_items]
+            apps = []
+            "#,
+        );
+        config.move_macos_settings();
+        assert!(config.macos.login_items.unwrap().apps.is_empty());
     }
 }
