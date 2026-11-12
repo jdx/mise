@@ -12,9 +12,11 @@ description: "Manage macOS preferences such as Dock, Finder, and keyboard settin
 Manage macOS preferences such as Dock, Finder, and keyboard settings
 
 Applies `[bootstrap.settings.macos]`: its `defaults`, `defaults_entries`,
-`dock`, `finder`, `keyboard`, and `trackpad` tables. Preferences are
-written the way `defaults write` writes them. mise does not restart apps:
-Dock, Finder, and some others show a change only after they relaunch.
+`dock`, `finder`, `keyboard`, and `trackpad` tables, and its `login_items`.
+Preferences are written the way `defaults write` writes them. mise does not
+restart apps: Dock, Finder, and some others show a change only after they
+relaunch. Other `[bootstrap.settings.<plugin>]` sections are applied by
+bootstrap settings plugins through `mise bootstrap settings`.
 
 ## Flags
 - **`-h --help`** — Print help

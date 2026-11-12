@@ -766,20 +766,49 @@ impl MiseToml {
         check_trust: bool,
     ) -> eyre::Result<Self> {
         let Some(source) = source else {
-            return Self::parse_body_reporting(body, path, check_trust, &mut |_| {});
+            return Self::parse_body_reporting(body, path, check_trust, false, &mut |_| {});
         };
         let unknown = super::unknown_key::UnknownKeys::new(source, Some(body));
-        Self::parse_body_reporting(body, path, check_trust, &mut |field| {
+        Self::parse_body_reporting(body, path, check_trust, true, &mut |field| {
             warn!("{}", unknown.message(&super::unknown_key::segments(field)));
         })
     }
 
+    fn report_macos_settings_move(moved: mise_config::bootstrap::MacosSettingsMove, path: &Path) {
+        if moved.legacy {
+            // The new spelling is ignored by mise versions before it, so warn only once
+            // releases that read it have been out for six months.
+            deprecated_at!(
+                "2027.5.0",
+                "2028.5.0",
+                "bootstrap.macos.preferences",
+                "macOS preferences under [bootstrap.macos] in {} are deprecated. Move dock, finder, keyboard, trackpad, defaults, defaults_entries, and login_items to [bootstrap.settings.macos].",
+                display_path(path)
+            );
+        }
+        for key in moved.unknown {
+            warn!(
+                "unknown key in {}: bootstrap.settings.macos.{key}",
+                display_path(path)
+            );
+        }
+        if let Some(err) = moved.error {
+            warn!(
+                "ignoring [bootstrap.settings.macos] in {}: {err}",
+                display_path(path)
+            );
+        }
+    }
+
     /// [`Self::parse_body`], handing each field the deserializer skipped to
-    /// `on_unknown` instead of warning about it.
+    /// `on_unknown` instead of warning about it. Warnings about moved config sections are
+    /// logged only when `report_migrations` is set, so a body checked before it is loaded with its
+    /// source does not warn twice.
     fn parse_body_reporting(
         body: &str,
         path: &Path,
         check_trust: bool,
+        report_migrations: bool,
         on_unknown: &mut dyn FnMut(&serde_ignored::Path),
     ) -> eyre::Result<Self> {
         if check_trust && !Self::is_trust_exempt(body, path) {
@@ -807,28 +836,8 @@ impl MiseToml {
         }
         if let Some(bootstrap) = rf.bootstrap.as_mut() {
             let moved = bootstrap.move_macos_settings();
-            if moved.legacy {
-                // The new spelling is ignored by mise versions before it, so warn only once
-                // releases that read it have been out for six months.
-                deprecated_at!(
-                    "2027.5.0",
-                    "2028.5.0",
-                    "bootstrap.macos.preferences",
-                    "macOS preferences under [bootstrap.macos] in {} are deprecated. Move dock, finder, keyboard, trackpad, defaults, defaults_entries, and login_items to [bootstrap.settings.macos].",
-                    display_path(path)
-                );
-            }
-            for key in moved.unknown {
-                warn!(
-                    "unknown key in {}: bootstrap.settings.macos.{key}",
-                    display_path(path)
-                );
-            }
-            if let Some(err) = moved.error {
-                warn!(
-                    "ignoring [bootstrap.settings.macos] in {}: {err}",
-                    display_path(path)
-                );
+            if report_migrations {
+                Self::report_macos_settings_move(moved, path);
             }
         }
         rf.loaded_hash = crate::install_layout::snapshots::bytes_hash_of(body.as_bytes());

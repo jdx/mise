@@ -1583,16 +1583,21 @@ on macOS and Windows, use `[bootstrap.services]`.
             }
         }
     }
-    cmd macos subcommand_required=#true help="Manage macOS preferences and LaunchAgents from `[bootstrap.macos]`" effect=read {
+    cmd macos subcommand_required=#true help=#"""
+Manage macOS preferences from `[bootstrap.settings.macos]` and LaunchAgents from
+`[bootstrap.macos.launchd.agents]`
+"""# effect=read {
         flag "-h --help" help="Print help" action=help builtin=#true
         cmd defaults subcommand_required=#true help="Manage macOS preferences such as Dock, Finder, and keyboard settings" effect=read {
             long_help #"""
 Manage macOS preferences such as Dock, Finder, and keyboard settings
 
 Applies `[bootstrap.settings.macos]`: its `defaults`, `defaults_entries`,
-`dock`, `finder`, `keyboard`, and `trackpad` tables. Preferences are
-written the way `defaults write` writes them. mise does not restart apps:
-Dock, Finder, and some others show a change only after they relaunch.
+`dock`, `finder`, `keyboard`, and `trackpad` tables, and its `login_items`.
+Preferences are written the way `defaults write` writes them. mise does not
+restart apps: Dock, Finder, and some others show a change only after they
+relaunch. Other `[bootstrap.settings.<plugin>]` sections are applied by
+bootstrap settings plugins through `mise bootstrap settings`.
 """#
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd apply help="Write the configured macOS preferences" effect=write {

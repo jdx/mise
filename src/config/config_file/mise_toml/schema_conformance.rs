@@ -328,7 +328,7 @@ fn check(validator: &jsonschema::Validator, body: &str) -> Option<Outcome> {
     let mut unknown = vec![];
     // never read: the path only places the config for templates and roots
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml");
-    let parser_error = MiseToml::parse_body_reporting(body, &path, false, &mut |field| {
+    let parser_error = MiseToml::parse_body_reporting(body, &path, false, false, &mut |field| {
         unknown.push(field.to_string());
     })
     .err()

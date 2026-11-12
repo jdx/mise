@@ -254,7 +254,7 @@
 - [mise bootstrap linux systemd-units](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units.html): Manage systemd user units from [bootstrap.linux.systemd.units]
 - [mise bootstrap linux systemd-units apply](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units/apply.html): Install and start the configured systemd user units
 - [mise bootstrap linux systemd-units status](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units/status.html): Show the state of the configured systemd user units
-- [mise bootstrap macos](https://mise.jdx.dev/cli/bootstrap/macos.html): Manage macOS preferences and LaunchAgents from [bootstrap.macos]
+- [mise bootstrap macos](https://mise.jdx.dev/cli/bootstrap/macos.html): Manage macOS preferences from [bootstrap.settings.macos] and LaunchAgents from [bootstrap.macos.launchd.agents]
 - [mise bootstrap macos defaults](https://mise.jdx.dev/cli/bootstrap/macos/defaults.html): Manage macOS preferences such as Dock, Finder, and keyboard settings
 - [mise bootstrap macos defaults apply](https://mise.jdx.dev/cli/bootstrap/macos/defaults/apply.html): Write the configured macOS preferences
 - [mise bootstrap macos defaults status](https://mise.jdx.dev/cli/bootstrap/macos/defaults/status.html): Show the state of the configured macOS preferences
