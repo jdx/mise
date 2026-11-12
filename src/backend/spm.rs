@@ -1092,9 +1092,9 @@ struct ArtifactBundleReleaseAsset {
 /// Whether the request itself requires an artifact bundle, which a Git revision never has.
 fn asks_for_bundle(opts: &SpmOptions<'_>, revision: Option<&PackageRevision>) -> bool {
     !revision.is_some_and(PackageRevision::is_git_revision)
-        && opts
-            .artifactbundle_mode(None)
-            .is_ok_and(|mode| opts.requires_artifactbundle(mode))
+        && opts.artifactbundle_mode(None).is_ok_and(|mode| {
+            mode != ArtifactBundleMode::SourceOnly && opts.requires_artifactbundle(mode)
+        })
 }
 
 /// Where to download a bundle from, and the headers that URL needs. A private GitHub
@@ -1751,6 +1751,16 @@ mod tests {
         assert!(!asks_for_bundle(&SpmOptions::new(&required), Some(&git)));
         let source_only = opts_with("artifactbundle", toml::Value::Boolean(false));
         assert!(!asks_for_bundle(&SpmOptions::new(&source_only), None));
+        // A named asset does not override an explicit source-only request
+        let source_only_asset = ToolVersionOptions {
+            opts: indexmap![
+                "artifactbundle".to_string() => toml::Value::Boolean(false),
+                "artifactbundle_asset".to_string() => toml::Value::String("tool.artifactbundle.zip".to_string()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        assert!(!asks_for_bundle(&SpmOptions::new(&source_only_asset), None));
         assert!(!asks_for_bundle(
             &SpmOptions::new(&ToolVersionOptions::default()),
             None
