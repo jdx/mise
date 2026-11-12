@@ -4,7 +4,17 @@ set -euo pipefail
 # This script wraps npm so to run `mise reshim` after global installs and uninstalls
 # Any other cases are passed-through to npm
 
-this_dir=$(dirname "${BASH_SOURCE[0]}")
+# Resolve symlinks on the script itself (no `readlink -f` on macOS) so the
+# install is found when bin/npm is reached through a link in another directory
+this_file=${BASH_SOURCE[0]}
+while [ -L "$this_file" ]; do
+  target=$(readlink "$this_file")
+  case $target in
+  /*) this_file=$target ;;
+  *) this_file=$(dirname "$this_file")/$target ;;
+  esac
+done
+this_dir=$(dirname "$this_file")
 plugin_name=$(basename "$(dirname "$this_dir")")
 
 this_dir=$(cd "$this_dir" && pwd -P) # Normalizes the directory
