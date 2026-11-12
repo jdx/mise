@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mise_util::redactions::{redact_json, redact_output};
+use mise_util::redactions::{redact_json, redact_output, redact_url_userinfo};
 
 use crate::config::config_file::trust_check;
 use crate::config::{Config, ConfigMap, SettingsExt};
@@ -759,6 +759,9 @@ impl Lock {
         // resolve just like a config-level tool, and a later failure must not leave
         // earlier environment/local/monorepo lockfiles partially updated.
         let prepared_targets = self.prepare_targets(&run).await?;
+        if generate && installed.is_none() {
+            self.reject_unconfigured_tool_args(&prepared_targets)?;
+        }
         for target in prepared_targets {
             self.lock_target(&run, &mut outcome, target).await?;
         }
@@ -984,6 +987,31 @@ impl Lock {
                 )
             },
         )
+    }
+
+    /// Generate mode locks what configuration declares, so a tool argument is a
+    /// selector over those tools. One that selects nothing would otherwise be
+    /// dropped without a word, leaving a missing or empty lockfile.
+    fn reject_unconfigured_tool_args(&self, targets: &[PreparedTarget]) -> Result<()> {
+        let missing: Vec<String> = self
+            .tool
+            .iter()
+            .filter(|arg| {
+                !targets.iter().flat_map(|t| &t.tools).any(|(ba, _)| {
+                    (!arg.ba.short.contains(':') && arg.ba.short == ba.short)
+                        || arg.ba.full() == ba.full()
+                })
+            })
+            .map(|arg| redact_url_userinfo(&arg.ba.to_string()).into_owned())
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        bail!(
+            "cannot lock {}: not configured in this project. Add with `mise use`, \
+             or remove it from the arguments",
+            missing.join(", ")
+        );
     }
 
     /// Handle one prepared target, dispatching on what there is to do for it.
