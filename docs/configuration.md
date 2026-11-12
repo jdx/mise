@@ -267,7 +267,11 @@ Global config differs from project config in a few ways:
   `[daemon_providers]` is allowed only there.
 - [`global_config_file`](/configuration/settings.html#global_config_file)
   (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file. It
-  also turns off the [override files](#override-file).
+  also turns off the [override files](#override-file). It does not hide
+  `~/.config/mise/config.toml` from projects under your home directory, which
+  still load it as a project config; add `~/.config/mise` to
+  [`ignored_config_paths`](/configuration/settings.html#ignored_config_paths)
+  to skip it.
 
 System config applies to every user on the machine and has the lowest
 precedence. It lives in `/etc/mise`
