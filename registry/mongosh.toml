@@ -1,4 +1,4 @@
-backends = ["github:mongodb-js/mongosh", "asdf:itspngu/asdf-mongosh"]
+backends = ["github:mongodb-js/mongosh"]
 bins = ["mongosh"]
 description = "The MongoDB Shell"
 version_order = "semver"

@@ -1,7 +1,4 @@
-backends = [
-  { full = "github:uber/mockolo", attestations_since = "2.6.1" },
-  "asdf:mise-plugins/mise-mockolo",
-]
+backends = [{ full = "github:uber/mockolo", attestations_since = "2.6.1" }]
 bins = ["mockolo"]
 description = "Efficient Mock Generator for Swift"
 version_order = "semver"

@@ -1,4 +1,4 @@
-backends = ["vfox:jdx/vfox-leiningen", "asdf:mise-plugins/mise-lein"]
+backends = ["vfox:jdx/vfox-leiningen"]
 bins = ["lein"]
 description = "for automating Clojure projects without setting your hair on fire"
 version_order = "semver"

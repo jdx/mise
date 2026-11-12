@@ -24,6 +24,3 @@ bin_path = "flyway-{{ version }}"
 [backends.options.platforms.windows-x64]
 asset_pattern = "flyway-commandline-{{ version }}-windows-x64.zip"
 bin_path = "flyway-{{ version }}"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-flyway"

@@ -1,4 +1,4 @@
-backends = ["aqua:apache/tomcat", "asdf:mise-plugins/mise-tomcat"]
+backends = ["aqua:apache/tomcat"]
 bins = [
   "catalina.sh",
   "ciphers.sh",

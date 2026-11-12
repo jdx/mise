@@ -1,4 +1,4 @@
-backends = ["vfox:jdx/vfox-tinytex", "asdf:mise-plugins/mise-tinytex"]
+backends = ["vfox:jdx/vfox-tinytex"]
 bins = [
   "afm2tfm",
   "allcm",

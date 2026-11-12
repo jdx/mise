@@ -1,4 +1,4 @@
-backends = ["aqua:superfly/flyctl", "asdf:chessmango/asdf-flyctl"]
+backends = ["aqua:superfly/flyctl"]
 bins = ["flyctl"]
 description = "Command line tools for fly.io services"
 version_order = "semver"

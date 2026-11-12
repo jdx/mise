@@ -1,4 +1,4 @@
-backends = ["github:sbt/sbt", "conda:sbt", "asdf:mise-plugins/mise-sbt"]
+backends = ["github:sbt/sbt", "conda:sbt"]
 description = "sbt, the interactive build tool"
 # The upstream `sbt` script looks for a JVM before it will answer `--version`,
 # where the conda wrapper reports its runner version without one. `tools` is how

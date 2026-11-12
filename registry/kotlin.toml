@@ -15,9 +15,5 @@ full = "github:JetBrains/kotlin"
 [backends.options]
 asset_pattern = "kotlin-compiler-*.zip"
 bin_path = "kotlinc/bin"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-kotlin"
-
 [[backends]]
 full = "vfox:jdx/vfox-kotlin"

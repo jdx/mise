@@ -1,4 +1,4 @@
-backends = ["github:jckuester/awsrm", "asdf:chessmango/asdf-awsrm"]
+backends = ["github:jckuester/awsrm"]
 bins = ["awsrm"]
 description = "A remove command for AWS resources"
 test = { cmd = "awsrm --version", expected = "version: {{version}}" }

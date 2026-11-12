@@ -11,6 +11,3 @@ bin = "mdbook-linkcheck"
 
 [[backends]]
 full = "cargo:mdbook-linkcheck"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-mdbook-linkcheck"

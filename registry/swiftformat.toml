@@ -9,6 +9,3 @@ full = "github:nicklockwood/SwiftFormat"
 [backends.options]
 no_app = true
 rename_exe = "swiftformat"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-swiftformat"

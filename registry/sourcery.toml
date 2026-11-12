@@ -9,6 +9,3 @@ full = "github:krzysztofzablocki/Sourcery"
 
 [backends.options.platforms.linux-x64]
 format = "tar.gz"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-sourcery"

@@ -1,4 +1,4 @@
-backends = ["aqua:hashicorp/vault", "asdf:mise-plugins/mise-hashicorp"]
+backends = ["aqua:hashicorp/vault"]
 description = "A tool for secrets management, encryption as a service, and privileged access management"
 test = { cmd = "vault version", expected = "Vault v{{version}}" }
 version_order = "semver"

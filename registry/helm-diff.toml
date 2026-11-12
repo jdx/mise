@@ -10,6 +10,3 @@ full = "github:databus23/helm-diff"
 bin = "diff"
 bin_path = "diff/bin"
 rename_exe = "helm-diff"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-helm-diff"

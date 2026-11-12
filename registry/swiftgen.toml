@@ -4,6 +4,3 @@ version_order = "semver"
 bins = ["swiftgen"]
 [[backends]]
 full = "github:SwiftGen/SwiftGen"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-swiftgen"

@@ -1,4 +1,4 @@
-backends = ["vfox:jdx/vfox-groovy", "asdf:mise-plugins/mise-groovy"]
+backends = ["vfox:jdx/vfox-groovy"]
 bins = [
   "grape",
   "groovy",

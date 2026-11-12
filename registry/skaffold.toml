@@ -1,6 +1,3 @@
-backends = [
-  "aqua:GoogleContainerTools/skaffold",
-  "asdf:nklmilojevic/asdf-skaffold",
-]
+backends = ["aqua:GoogleContainerTools/skaffold"]
 description = "Easy and Repeatable Kubernetes Development"
 version_order = "semver"

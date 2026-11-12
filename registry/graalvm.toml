@@ -1,4 +1,4 @@
-backends = ["vfox:jdx/vfox-graalvm", "asdf:mise-plugins/mise-graalvm"]
+backends = ["vfox:jdx/vfox-graalvm"]
 bins = [
   "jar",
   "jarsigner",

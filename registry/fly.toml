@@ -1,6 +1,3 @@
-backends = [
-  "aqua:concourse/concourse/fly",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
-]
+backends = ["aqua:concourse/concourse/fly"]
 description = "fly cli for concourse ci"
 version_order = "semver"

@@ -3,7 +3,6 @@ backends = [
     "windows-x64",
   ] },
   "conda:imagemagick",
-  "asdf:mise-plugins/mise-imagemagick",
 ]
 bins = [
   "Magick++-config",

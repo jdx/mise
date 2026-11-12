@@ -1,3 +1,3 @@
-backends = ["aqua:charmbracelet/skate", "asdf:chessmango/asdf-skate"]
+backends = ["aqua:charmbracelet/skate"]
 description = "A personal key value store"
 version_order = "semver"

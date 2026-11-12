@@ -1,4 +1,4 @@
-backends = ["aqua:commercialhaskell/stack", "asdf:mise-plugins/mise-ghcup"]
+backends = ["aqua:commercialhaskell/stack"]
 description = "The Haskell Tool Stack"
 test = { cmd = "stack --version", expected = "Version {{version}}" }
 version_order = "source"

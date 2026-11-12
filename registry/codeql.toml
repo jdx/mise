@@ -21,6 +21,3 @@ asset_pattern = "codeql-linux64.zip"
 
 [backends.options.platforms.windows-x64]
 asset_pattern = "codeql-win64.zip"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-codeql"

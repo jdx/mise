@@ -1,3 +1,3 @@
-backends = ["aqua:vektra/mockery", "asdf:cabify/asdf-mockery"]
+backends = ["aqua:vektra/mockery"]
 description = "A mock code autogenerator for Go"
 version_order = "semver"

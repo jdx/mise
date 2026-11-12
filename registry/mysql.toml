@@ -1,4 +1,4 @@
-backends = ["vfox:jdx/vfox-mysql", "asdf:mise-plugins/mise-mysql"]
+backends = ["vfox:jdx/vfox-mysql"]
 bins = [
   "ibd2sdi",
   "innochecksum",
