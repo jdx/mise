@@ -620,6 +620,16 @@ async fn get_affected_task_list(
     let mut lockfile_projects = BTreeMap::<PathBuf, BTreeSet<_>>::new();
 
     for path in changes.paths.iter().cloned() {
+        if let Some(projects) =
+            crate::task::workspace::node::shared_lockfile_projects(&path, &graph)
+        {
+            lockfile_projects
+                .entry(path.clone())
+                .or_default()
+                .extend(projects);
+            regular_paths.insert(path);
+            continue;
+        }
         let Some(lockfile_candidates) =
             graph.affected_projects_for_lockfile(&providers, &path, None, None)?
         else {

@@ -14,6 +14,13 @@ use super::{
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
+const SHARED_LOCKFILES: [&str; 5] = [
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+];
 const TURBO_JSON: &str = "turbo.json";
 
 /// Discovers Node projects from npm, pnpm, Yarn, and Bun workspace definitions.
@@ -23,7 +30,6 @@ pub struct NodeWorkspaceProvider;
 struct WorkspaceDefinition {
     source: &'static str,
     package_manager: Option<String>,
-    include_named_root: bool,
     root_manifest: Option<PackageJson>,
 }
 
@@ -114,7 +120,7 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         })
         .collect::<Result<BTreeSet<_>>>()?;
         let mut root_manifest = definition.root_manifest.clone();
-        if definition.include_named_root && root_manifest.is_none() {
+        if root_manifest.is_none() {
             let root_manifest_path = workspace_root.join(PACKAGE_JSON);
             root_manifest = context
                 .is_file(&root_manifest_path)
@@ -122,11 +128,10 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                 .transpose()?
                 .flatten();
         }
-        if definition.include_named_root
-            && root_manifest
-                .as_ref()
-                .and_then(|manifest| manifest.name.as_ref())
-                .is_some()
+        if root_manifest
+            .as_ref()
+            .and_then(|manifest| manifest.name.as_ref())
+            .is_some()
         {
             roots.insert(PathBuf::from("."));
         }
@@ -256,11 +261,31 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         after: Option<&str>,
         graph: &WorkspaceProjectGraph,
     ) -> Result<Option<BTreeSet<ProjectId>>> {
-        if lockfile_path != Path::new(PNPM_LOCKFILE) {
-            return Ok(None);
+        if lockfile_path == Path::new(PNPM_LOCKFILE) {
+            return Ok(Some(pnpm_affected_projects(before, after, graph)?));
         }
-        Ok(Some(pnpm_affected_projects(before, after, graph)?))
+        Ok(None)
     }
+}
+
+/// Node projects selected by a change to a lockfile that cannot be attributed
+/// to a single package. A named root project owns every file outside the
+/// packages, so without this a change would select only the root and skip the
+/// packages that depend on it. This never reads the lockfile, so binary
+/// lockfiles such as `bun.lockb` are fine. Callers should still treat the path
+/// as an ordinary changed path so `global_inputs` keeps applying to it.
+pub fn shared_lockfile_projects(
+    lockfile_path: &Path,
+    graph: &WorkspaceProjectGraph,
+) -> Option<BTreeSet<ProjectId>> {
+    let has_root_project = graph
+        .projects()
+        .any(|project| project.root == Path::new(".") && project.id.as_str().starts_with("node:"));
+    (has_root_project
+        && SHARED_LOCKFILES
+            .iter()
+            .any(|lockfile| lockfile_path == Path::new(lockfile)))
+    .then(|| node_project_ids(graph))
 }
 
 fn pnpm_affected_projects(
@@ -561,7 +586,6 @@ fn workspace_definition(
         return Ok(Some(WorkspaceDefinition {
             source: PNPM_WORKSPACE,
             package_manager: Some("pnpm".to_string()),
-            include_named_root: true,
             root_manifest: None,
         }));
     }
@@ -590,11 +614,9 @@ fn workspace_definition(
             .map(str::to_string),
         context,
     );
-    let include_named_root = package_manager.as_deref() == Some("yarn");
     Ok(Some(WorkspaceDefinition {
         source: PACKAGE_JSON,
         package_manager,
-        include_named_root,
         root_manifest: Some(root_manifest),
     }))
 }
@@ -892,6 +914,42 @@ snapshots:
         assert_eq!(
             affected_from_pnpm_lockfile(&graph, before, &after),
             graph.projects().map(|project| project.id.clone()).collect()
+        );
+    }
+
+    #[test]
+    fn shared_lockfiles_select_every_node_project_only_with_a_root_project() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"name":"root","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+        let graph = WorkspaceProjectGraph::discover(&NodeWorkspaceProvider, temp.path()).unwrap();
+
+        for lockfile in SHARED_LOCKFILES {
+            assert_eq!(
+                shared_lockfile_projects(Path::new(lockfile), &graph),
+                Some(node_project_ids(&graph)),
+                "{lockfile}"
+            );
+        }
+        assert_eq!(
+            shared_lockfile_projects(Path::new("packages/app/yarn.lock"), &graph),
+            None
+        );
+
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":["packages/*"]}"#,
+        );
+        let graph = WorkspaceProjectGraph::discover(&NodeWorkspaceProvider, temp.path()).unwrap();
+        assert_eq!(
+            shared_lockfile_projects(Path::new("yarn.lock"), &graph),
+            None
         );
     }
 
@@ -1238,26 +1296,34 @@ snapshots:
     }
 
     #[test]
-    fn yarn_includes_a_named_root_package() {
-        let temp = tempdir().unwrap();
-        write(
-            &temp.path().join(PACKAGE_JSON),
-            r#"{"name":"root","packageManager":"yarn@4.0.0","workspaces":["packages/*"]}"#,
-        );
-        write(
-            &temp.path().join("packages/app/package.json"),
-            r#"{"name":"app"}"#,
-        );
+    fn includes_a_named_root_package_for_every_package_manager() {
+        for manager in ["npm", "yarn", "bun"] {
+            let temp = tempdir().unwrap();
+            write(
+                &temp.path().join(PACKAGE_JSON),
+                &format!(
+                    r#"{{"name":"root","packageManager":"{manager}@1.0.0","workspaces":["packages/*"],"scripts":{{"build":"tsc"}}}}"#
+                ),
+            );
+            write(
+                &temp.path().join("packages/app/package.json"),
+                r#"{"name":"app"}"#,
+            );
 
-        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+            let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
 
-        assert_eq!(
-            project_summary(&projects),
-            vec![
-                ("node:root", Path::new("."), Some("yarn")),
-                ("node:app", Path::new("packages/app"), Some("yarn")),
-            ]
-        );
+            assert_eq!(
+                project_summary(&projects),
+                vec![
+                    ("node:root", Path::new("."), Some(manager)),
+                    ("node:app", Path::new("packages/app"), Some(manager)),
+                ]
+            );
+            assert_eq!(
+                projects[0].tasks["build"].command,
+                format!("{manager} run build --")
+            );
+        }
     }
 
     #[test]
