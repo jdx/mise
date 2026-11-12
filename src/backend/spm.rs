@@ -10,6 +10,7 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
@@ -183,10 +184,54 @@ impl Backend for SPMBackend {
         true
     }
 
-    /// Packages are usually built from source, so `mise lock` has no download
-    /// URL to record. Return false so --locked mode doesn't error for spm tools.
+    /// A release's artifact bundle is a single download for every platform, so
+    /// `mise lock` records its URL and checksum. A package built from source has
+    /// none; see [`Backend::requires_lockfile_url`].
     fn supports_lockfile_url(&self) -> bool {
-        false
+        true
+    }
+
+    /// Only a release with an artifact bundle has a URL to lock. Whether it has one
+    /// is not known offline, so locked mode asks for a URL only once the lockfile
+    /// holds one for another platform; a lockfile without any belongs to a package
+    /// built from source.
+    fn requires_lockfile_url(&self, tv: &ToolVersion) -> bool {
+        tv.lock_platforms.values().any(|p| p.url.is_some())
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let raw_opts = tv.request.options();
+        let opts = SpmOptions::new(&raw_opts);
+        let mode = opts.artifactbundle_mode(Some(target))?;
+        let revision =
+            package_revision(tv).unwrap_or_else(|| PackageRevision::Release(tv.version.clone()));
+        if revision.is_git_revision() || mode == ArtifactBundleMode::SourceOnly {
+            return Ok(PlatformInfo::default());
+        }
+        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
+        let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
+        let Some(asset) =
+            resolve_artifactbundle_asset(&provider, &repo, revision.as_str(), &opts, Some(target))
+                .await?
+        else {
+            return Ok(PlatformInfo::default());
+        };
+        ensure_plain_asset_name(&asset.name)?;
+        let download_headers = match provider.kind {
+            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url)?,
+            GitProviderKind::GitHub => github::get_headers(&asset.url, &provider.api_url)?,
+        };
+        Ok(PlatformInfo {
+            checksum: asset.digest,
+            url: Some(asset.url),
+            url_api: asset.url_api,
+            download_headers: Some(download_headers),
+            ..Default::default()
+        })
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
@@ -593,7 +638,8 @@ impl SPMBackend {
         revision: &str,
         opts: &SpmOptions<'_>,
     ) -> eyre::Result<bool> {
-        let Some(asset) = resolve_artifactbundle_asset(provider, repo, revision, opts).await?
+        let Some(asset) =
+            resolve_artifactbundle_asset(provider, repo, revision, opts, None).await?
         else {
             if let Some(checksum) = self.locked_artifactbundle_checksum(tv) {
                 bail!(
@@ -1008,6 +1054,7 @@ async fn resolve_artifactbundle_asset(
     repo: &SwiftPackageRepo,
     revision: &str,
     opts: &SpmOptions<'_>,
+    target: Option<&PlatformTarget>,
 ) -> eyre::Result<Option<ArtifactBundleReleaseAsset>> {
     let assets = match provider.kind {
         GitProviderKind::GitLab => {
@@ -1049,14 +1096,15 @@ async fn resolve_artifactbundle_asset(
     let Some(assets) = assets else {
         return Ok(None);
     };
-    select_artifactbundle_asset(assets, opts)
+    select_artifactbundle_asset(assets, opts, target)
 }
 
 fn select_artifactbundle_asset(
     assets: Vec<ArtifactBundleReleaseAsset>,
     opts: &SpmOptions<'_>,
+    target: Option<&PlatformTarget>,
 ) -> eyre::Result<Option<ArtifactBundleReleaseAsset>> {
-    let artifactbundle_asset = opts.artifactbundle_asset(None);
+    let artifactbundle_asset = opts.artifactbundle_asset(target);
     if let Some(name) = artifactbundle_asset {
         if !is_artifactbundle_zip(&name) {
             bail!("artifactbundle_asset must end with .artifactbundle.zip, got {name}");
@@ -1557,7 +1605,7 @@ mod tests {
     }
 
     #[test]
-    fn test_spm_does_not_require_lockfile_urls() {
+    fn test_spm_requires_lockfile_urls_only_for_bundled_releases() {
         let backend = SPMBackend::from_arg(BackendArg::new_raw(
             "spm".to_string(),
             Some("spm:acme/SwiftTool".to_string()),
@@ -1565,7 +1613,18 @@ mod tests {
             None,
             BackendResolution::new(true),
         ));
-        assert!(!backend.supports_lockfile_url());
+        assert!(backend.supports_lockfile_url());
+
+        let mut tv = tool_version("1.2.3");
+        assert!(!backend.requires_lockfile_url(&tv));
+        tv.lock_platforms.insert(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some("https://example.com/tool.artifactbundle.zip".to_string()),
+                ..Default::default()
+            },
+        );
+        assert!(backend.requires_lockfile_url(&tv));
     }
 
     fn opts_with_filter_bins(value: toml::Value) -> ToolVersionOptions {
@@ -2002,10 +2061,13 @@ mod tests {
     fn test_select_artifactbundle_asset() {
         let default_opts = ToolVersionOptions::default();
         let opts = SpmOptions::new(&default_opts);
-        let selected =
-            select_artifactbundle_asset(vec![release_asset("tool.artifactbundle.zip")], &opts)
-                .unwrap()
-                .unwrap();
+        let selected = select_artifactbundle_asset(
+            vec![release_asset("tool.artifactbundle.zip")],
+            &opts,
+            None,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(selected.name, "tool.artifactbundle.zip");
 
         let selected_opts = opts_with(
@@ -2019,6 +2081,7 @@ mod tests {
                 release_asset("tool.tar.gz"),
             ],
             &opts,
+            None,
         )
         .unwrap()
         .unwrap();
@@ -2029,15 +2092,21 @@ mod tests {
             toml::Value::String("tool.tar.gz".to_string()),
         );
         let opts = SpmOptions::new(&non_bundle_opts);
-        assert!(select_artifactbundle_asset(vec![release_asset("tool.tar.gz")], &opts).is_err());
+        assert!(
+            select_artifactbundle_asset(vec![release_asset("tool.tar.gz")], &opts, None).is_err()
+        );
         let missing_opts = opts_with(
             "artifactbundle_asset",
             toml::Value::String("missing.artifactbundle.zip".to_string()),
         );
         let opts = SpmOptions::new(&missing_opts);
         assert!(
-            select_artifactbundle_asset(vec![release_asset("tool.artifactbundle.zip")], &opts,)
-                .is_err()
+            select_artifactbundle_asset(
+                vec![release_asset("tool.artifactbundle.zip")],
+                &opts,
+                None
+            )
+            .is_err()
         );
         let opts = SpmOptions::new(&default_opts);
         assert!(
@@ -2047,11 +2116,12 @@ mod tests {
                     release_asset("b.artifactbundle.zip"),
                 ],
                 &opts,
+                None,
             )
             .is_err()
         );
         assert!(
-            select_artifactbundle_asset(vec![release_asset("tool.tar.gz")], &opts,)
+            select_artifactbundle_asset(vec![release_asset("tool.tar.gz")], &opts, None)
                 .unwrap()
                 .is_none()
         );
