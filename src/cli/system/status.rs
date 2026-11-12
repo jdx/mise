@@ -37,7 +37,7 @@ pub(crate) struct SystemStatus {
 impl SystemStatus {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let mgrs = system::packages_from_config(&config)?;
+        let (mgrs, unresolved) = system::packages_and_unresolved_from_config(&config)?;
         let mut any_missing = false;
         let mut rows: Vec<Vec<String>> = vec![];
         let mut json_out = serde_json::Map::new();
@@ -172,7 +172,6 @@ impl SystemStatus {
         }
         // unprefixed keys that no manager can take are listed like those of an
         // unavailable manager
-        let unresolved = system::unresolved_unprefixed_from_config(&config);
         if self.json {
             if !unresolved.is_empty() {
                 json_out.insert(
