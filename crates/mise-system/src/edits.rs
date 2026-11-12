@@ -2182,8 +2182,10 @@ pub(crate) fn splice_block(
         Ok(None) => lines.extend(block),
         Err(reason) => bail!("edits: \"{label}\": {reason}, fix the file manually"),
     }
-    let mut out = lines.join("\n");
-    out.push('\n');
+    // a CRLF file stays CRLF, so lines outside the block are not rewritten
+    let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut out = lines.join(eol);
+    out.push_str(eol);
     Ok(out)
 }
 

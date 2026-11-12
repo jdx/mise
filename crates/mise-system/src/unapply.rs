@@ -129,6 +129,15 @@ pub async fn plan(
             });
             continue;
         }
+        // Removing the block would take the whole file, which something else owns.
+        if file.is_block() {
+            unapply.skipped.push(Skip {
+                kind: "file",
+                name: file.path.to_string_lossy().into_owned(),
+                reason: "a block in a file mise does not own is removed by hand".into(),
+            });
+            continue;
+        }
         let Some(removal) = classify(&file.plan()?.action, "file", &file.path, opts, &mut unapply)
         else {
             continue;

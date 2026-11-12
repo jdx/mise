@@ -712,6 +712,11 @@ impl ManagedFileRequest {
         self.state == ManagedState::Present && self.content.is_none()
     }
 
+    /// Whether this entry keeps a marked block in a file something else owns.
+    pub(crate) fn is_block(&self) -> bool {
+        self.block.is_some()
+    }
+
     /// Why apply cannot make this change, if it cannot. Status, dry-run, and
     /// apply all use this, so they agree on what apply will do.
     fn refusal(&self) -> Option<String> {
@@ -2246,22 +2251,24 @@ fn edit_block(
             false,
         );
     };
-    // Writing replaces the file, so a root that does not declare an owner
-    // keeps the existing one by naming it; a user cannot give files away.
-    let (current_owner, current_group) = if runs_as_root() {
-        (
-            nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(entry.uid))?
-                .map(|user| user.name),
-            nix::unistd::Group::from_gid(nix::unistd::Gid::from_raw(entry.gid))?
-                .map(|group| group.name),
-        )
+    // Writing replaces the file, so an owner or group the entry does not
+    // declare is kept by naming the existing one, unless the replacement
+    // already has it: a user cannot give files away, and keeps its own.
+    let keep_owner =
+        owner.is_none() && (runs_as_root() || entry.uid != nix::unistd::geteuid().as_raw());
+    let keep_group =
+        group.is_none() && (runs_as_root() || entry.gid != nix::unistd::getegid().as_raw());
+    let current_owner = if keep_owner {
+        nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(entry.uid))?.map(|user| user.name)
     } else {
-        (None, None)
+        None
     };
-    if runs_as_root()
-        && ((owner.is_none() && current_owner.is_none())
-            || (group.is_none() && current_group.is_none()))
-    {
+    let current_group = if keep_group {
+        nix::unistd::Group::from_gid(nix::unistd::Gid::from_raw(entry.gid))?.map(|group| group.name)
+    } else {
+        None
+    };
+    if (keep_owner && current_owner.is_none()) || (keep_group && current_group.is_none()) {
         bail!(
             "{} is owned by an unnamed user or group; declare owner and group to edit it",
             path.display()
