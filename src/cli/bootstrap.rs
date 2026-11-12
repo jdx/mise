@@ -1703,8 +1703,7 @@ struct BootstrapReposStatus {
     missing: bool,
 }
 
-/// Manage macOS preferences from `[bootstrap.settings.macos]` and LaunchAgents from
-/// `[bootstrap.macos.launchd.agents]`
+/// Manage macOS preferences and LaunchAgents from `[bootstrap.settings.macos]` and `[bootstrap.macos.launchd]`
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapMacos {

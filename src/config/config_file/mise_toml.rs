@@ -766,12 +766,19 @@ impl MiseToml {
         check_trust: bool,
     ) -> eyre::Result<Self> {
         let Some(source) = source else {
-            return Self::parse_body_reporting(body, path, check_trust, false, &mut |_| {});
+            return Self::parse_body_reporting(body, path, check_trust, &mut |_| {}, &mut |_| {});
         };
         let unknown = super::unknown_key::UnknownKeys::new(source, Some(body));
-        Self::parse_body_reporting(body, path, check_trust, true, &mut |field| {
-            warn!("{}", unknown.message(&super::unknown_key::segments(field)));
-        })
+        Self::parse_body_reporting(
+            body,
+            path,
+            check_trust,
+            &mut |field| {
+                warn!("{}", unknown.message(&super::unknown_key::segments(field)));
+            },
+            // name the file the section is in, which for an include is not `path`
+            &mut |moved| Self::report_macos_settings_move(moved, source),
+        )
     }
 
     fn report_macos_settings_move(moved: mise_config::bootstrap::MacosSettingsMove, path: &Path) {
@@ -801,15 +808,14 @@ impl MiseToml {
     }
 
     /// [`Self::parse_body`], handing each field the deserializer skipped to
-    /// `on_unknown` instead of warning about it. Warnings about moved config sections are
-    /// logged only when `report_migrations` is set, so a body checked before it is loaded with its
-    /// source does not warn twice.
+    /// `on_unknown` instead of warning about it, and what moving `[bootstrap.settings.macos]`
+    /// found to `on_macos_move`.
     fn parse_body_reporting(
         body: &str,
         path: &Path,
         check_trust: bool,
-        report_migrations: bool,
         on_unknown: &mut dyn FnMut(&serde_ignored::Path),
+        on_macos_move: &mut dyn FnMut(mise_config::bootstrap::MacosSettingsMove),
     ) -> eyre::Result<Self> {
         if check_trust && !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
@@ -835,10 +841,7 @@ impl MiseToml {
             rf.monorepo_root.get_or_insert(legacy_monorepo_root);
         }
         if let Some(bootstrap) = rf.bootstrap.as_mut() {
-            let moved = bootstrap.move_macos_settings();
-            if report_migrations {
-                Self::report_macos_settings_move(moved, path);
-            }
+            on_macos_move(bootstrap.move_macos_settings());
         }
         rf.loaded_hash = crate::install_layout::snapshots::bytes_hash_of(body.as_bytes());
         rf.context = BASE_CONTEXT.clone();

@@ -1583,10 +1583,7 @@ on macOS and Windows, use `[bootstrap.services]`.
             }
         }
     }
-    cmd macos subcommand_required=#true help=#"""
-Manage macOS preferences from `[bootstrap.settings.macos]` and LaunchAgents from
-`[bootstrap.macos.launchd.agents]`
-"""# effect=read {
+    cmd macos subcommand_required=#true help="Manage macOS preferences and LaunchAgents from `[bootstrap.settings.macos]` and `[bootstrap.macos.launchd]`" effect=read {
         flag "-h --help" help="Print help" action=help builtin=#true
         cmd defaults subcommand_required=#true help="Manage macOS preferences such as Dock, Finder, and keyboard settings" effect=read {
             long_help #"""
