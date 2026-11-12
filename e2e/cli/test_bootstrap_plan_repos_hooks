@@ -98,3 +98,26 @@ order-test = "https://example.invalid/order-test.git"
 pre-packages = "true"
 TOML
 assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"hook\", \"package\"]'"
+
+# user services with requires_tools follow plugin packages and the
+# post-packages hook, and a user service without it precedes the hook
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.services.early-svc]
+scope = "user"
+command = "true"
+state = "stopped"
+enabled = false
+[bootstrap.services.late-svc]
+scope = "user"
+command = "true"
+requires_tools = true
+state = "stopped"
+enabled = false
+[bootstrap.hooks]
+post-packages = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"early-svc\", \"order-test:vendor\", \"post-packages:1\", \"late-svc\"]'"

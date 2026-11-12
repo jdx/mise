@@ -108,6 +108,27 @@ impl BootstrapPlan {
         Ok(())
     }
 
+    /// Whether `resource` waits, directly or through other resources, on
+    /// `target`. Adding the opposite ordering edge would create a cycle.
+    pub fn waits_on(&self, resource: &ResourceId, target: &ResourceId) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![resource];
+        while let Some(id) = stack.pop() {
+            let Some(found) = self.resources.get(id) else {
+                continue;
+            };
+            for next in found.depends_on.iter().chain(&found.order_after) {
+                if next == target {
+                    return true;
+                }
+                if seen.insert(next) {
+                    stack.push(next);
+                }
+            }
+        }
+        false
+    }
+
     fn ordered(&self) -> Result<Vec<&ResourcePlan>> {
         let mut incoming = self
             .resources
@@ -203,6 +224,19 @@ mod tests {
         let output = plan.output().unwrap();
         assert_eq!(output.resources[0].id.name, "file");
         assert_eq!(output.resources[1].id.name, "service");
+    }
+
+    #[test]
+    fn waits_on_follows_transitive_edges() {
+        let mut plan = BootstrapPlan::default();
+        for name in ["a", "b", "c"] {
+            plan.insert(resource(name)).unwrap();
+        }
+        let id = |name: &str| ResourceId::new("test", name);
+        plan.add_dependency(&id("b"), id("a")).unwrap();
+        plan.add_ordering(&id("c"), id("b")).unwrap();
+        assert!(plan.waits_on(&id("c"), &id("a")));
+        assert!(!plan.waits_on(&id("a"), &id("c")));
     }
 
     #[test]

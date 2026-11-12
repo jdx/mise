@@ -337,10 +337,22 @@ pub async fn add_repos_and_hooks(
         .filter(|id| builtin_packages.contains(id))
         .cloned()
         .collect::<Vec<_>>();
+    // user services with `requires_tools` run after tools and plugin packages
+    let late_names = super::user_services::requests_from_config(config)?
+        .into_iter()
+        .filter(|request| request.requires_tools)
+        .map(|request| ResourceId::new("user-service", request.name))
+        .collect::<std::collections::HashSet<_>>();
+    let late = plan
+        .ids()
+        .filter(|id| late_names.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
     // accounts, files, services, the firewall, and Compose all run before repos
     let earlier = plan
         .ids()
         .filter(|id| id.kind != "package" || builtin_packages.contains(id))
+        .filter(|id| !late_names.contains(id))
         .cloned()
         .collect::<Vec<_>>();
     // post-package files, services, the firewall, and Compose follow the
@@ -351,9 +363,10 @@ pub async fn add_repos_and_hooks(
             matches!(
                 id.kind.as_str(),
                 "service" | "user-service" | "firewall" | "firewall-rule" | "compose"
-            ) || plan
-                .get(id)
-                .is_some_and(|r| r.phase == Some(mise_bootstrap::ManagedFilePhase::PostPackages))
+            ) && !late_names.contains(id)
+                || plan.get(id).is_some_and(|r| {
+                    r.phase == Some(mise_bootstrap::ManagedFilePhase::PostPackages)
+                })
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -370,7 +383,7 @@ pub async fn add_repos_and_hooks(
     }
     for repo in &repos {
         for resource in &earlier {
-            plan.add_ordering(repo, resource.clone())?;
+            order_after(plan, repo, resource)?;
         }
     }
     // plugin packages run after tools, so after everything planned here
@@ -381,7 +394,12 @@ pub async fn add_repos_and_hooks(
         .collect::<Vec<_>>();
     for package in &plugin_packages {
         for resource in earlier.iter().chain(&repos) {
-            plan.add_ordering(package, resource.clone())?;
+            order_after(plan, package, resource)?;
+        }
+    }
+    for service in &late {
+        for resource in earlier.iter().chain(&repos).chain(&plugin_packages) {
+            order_after(plan, service, resource)?;
         }
     }
     if !hooks_enabled {
@@ -412,11 +430,16 @@ pub async fn add_repos_and_hooks(
         let before_phase = previous.clone();
         match phase {
             BootstrapHookPhase::PostPackages if defer_post_packages => {
-                pending.extend(plan.ids().filter(|id| id.kind != "hook").cloned());
+                pending.extend(
+                    plan.ids()
+                        .filter(|id| id.kind != "hook" && !late_names.contains(id))
+                        .cloned(),
+                );
             }
             BootstrapHookPhase::PostPackages => pending.extend(packages.iter().cloned()),
             BootstrapHookPhase::PreRepos => pending.extend(earlier.iter().cloned()),
             BootstrapHookPhase::PostRepos => pending.extend(repos.iter().cloned()),
+            BootstrapHookPhase::Final => pending.extend(late.iter().cloned()),
             _ => {}
         }
         let mut index = 0;
@@ -449,14 +472,32 @@ pub async fn add_repos_and_hooks(
             for target in targets {
                 plan.add_ordering(target, last.clone())?;
             }
-            if phase == BootstrapHookPhase::PostPackages && !defer_post_packages {
-                for target in &after_packages_hook {
-                    plan.add_ordering(target, last.clone())?;
+            if phase == BootstrapHookPhase::PostPackages {
+                if !defer_post_packages {
+                    for target in &after_packages_hook {
+                        order_after(plan, target, last)?;
+                    }
+                }
+                for service in &late {
+                    order_after(plan, service, last)?;
                 }
             }
         }
     }
     Ok(())
+}
+
+/// Order `resource` after `predecessor` unless `predecessor` already waits on
+/// `resource`, which an explicit dependency may declare.
+fn order_after(
+    plan: &mut BootstrapPlan,
+    resource: &ResourceId,
+    predecessor: &ResourceId,
+) -> Result<()> {
+    if plan.waits_on(predecessor, resource) {
+        return Ok(());
+    }
+    plan.add_ordering(resource, predecessor.clone())
 }
 
 fn repo_plan(status: &super::repos::RepoStatus) -> ResourcePlan {
