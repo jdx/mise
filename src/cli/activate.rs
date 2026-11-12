@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::config::Settings;
 use crate::env::PATH_KEY;
 use crate::file;
-use crate::file::{canonicalize_or_self, touch_dir};
+use crate::file::{canonicalize_or_self, canonicalize_path_entry_or_self, touch_dir};
 use crate::shell::{
     ActivateOptions, ActivatePrelude, EXAMPLE_SHELL, Shell, ShellType, require_shell,
 };
@@ -335,7 +335,7 @@ fn is_dir_in_path(dir: &Path) -> bool {
     env::PATH
         .clone()
         .into_iter()
-        .any(|p| canonicalize_or_self(&p) == dir)
+        .any(|p| canonicalize_path_entry_or_self(&p) == dir)
 }
 
 fn should_prepend_shims(paths: &[PathBuf], dir: &Path, path_changed_before: bool) -> bool {
@@ -346,7 +346,7 @@ fn is_dir_first_in_paths(paths: &[PathBuf], dir: &Path) -> bool {
     let dir = canonicalize_or_self(dir);
     paths
         .first()
-        .is_some_and(|p| canonicalize_or_self(p) == dir)
+        .is_some_and(|p| canonicalize_path_entry_or_self(p) == dir)
 }
 
 fn are_dirs_first_in_paths(paths: &[PathBuf], dirs: &[&Path]) -> bool {
@@ -354,7 +354,7 @@ fn are_dirs_first_in_paths(paths: &[PathBuf], dirs: &[&Path]) -> bool {
         && paths
             .iter()
             .zip(dirs)
-            .all(|(path, dir)| canonicalize_or_self(path) == canonicalize_or_self(dir))
+            .all(|(path, dir)| canonicalize_path_entry_or_self(path) == canonicalize_or_self(dir))
 }
 
 fn is_dir_not_in_nix(dir: &Path) -> bool {

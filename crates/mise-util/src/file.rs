@@ -2117,6 +2117,52 @@ pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
     Some(canonicalized)
 }
 
+/// Canonicalize a PATH entry for comparison against mise-managed directories.
+///
+/// Under WSL the default Windows PATH interop appends folders on `/mnt/<drive>`
+/// (a 9p mount where every path component costs a round trip to Windows), and
+/// resolving each of them added roughly half a second to every `mise activate`
+/// and `hook-env`. Those folders are never symlinks to a mise-managed directory,
+/// so their literal path is returned as the comparison key instead of resolving
+/// them. The literal path still matches a mise directory that itself lives on a
+/// drive mount (e.g. an install root symlinked to `/mnt/c`).
+pub fn canonicalize_path_entry(path: &Path) -> Option<PathBuf> {
+    if in_wsl() && is_windows_drive_mount(path) {
+        return Some(path.to_path_buf());
+    }
+    canonicalize_cached(path)
+}
+
+/// Like [`canonicalize_path_entry`], falling back to the original path.
+pub fn canonicalize_path_entry_or_self(path: &Path) -> PathBuf {
+    canonicalize_path_entry(path).unwrap_or_else(|| path.to_path_buf())
+}
+
+fn in_wsl() -> bool {
+    static WSL: Lazy<bool> = Lazy::new(|| {
+        std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
+    });
+    *WSL
+}
+
+/// True for `/mnt/<drive letter>/...` without `..` components, which could
+/// lead out of the mount and so still need resolving.
+fn is_windows_drive_mount(path: &Path) -> bool {
+    use std::path::Component;
+    let mut components = path.components();
+    if components.next() != Some(Component::RootDir) {
+        return false;
+    }
+    if components.next() != Some(Component::Normal("mnt".as_ref())) {
+        return false;
+    }
+    matches!(
+        components.next(),
+        Some(Component::Normal(drive))
+            if drive.len() == 1 && drive.as_encoded_bytes()[0].is_ascii_alphabetic()
+    ) && components.all(|c| c != Component::ParentDir)
+}
+
 /// Canonicalize a path using the process cache, falling back to the original
 /// path when canonicalization fails.
 pub fn canonicalize_or_self(path: &Path) -> PathBuf {
@@ -2141,7 +2187,7 @@ pub fn is_mise_shims_dir(path: &Path) -> bool {
     if paths_eq(&resolved, &user_shims) || paths_eq(&resolved, &sys_shims) {
         return true;
     }
-    let canon_input = canonicalize_or_self(&resolved);
+    let canon_input = canonicalize_path_entry_or_self(&resolved);
     let canon_user = canonicalize_or_self(&user_shims);
     let canon_sys = canonicalize_or_self(&sys_shims);
     paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
@@ -2213,7 +2259,7 @@ pub fn is_command_wrapper_dir(path: &Path) -> bool {
     let resolved = replace_path(path);
     paths_eq(&resolved, &dirs::COMMAND_WRAPPERS)
         || paths_eq(
-            &canonicalize_or_self(&resolved),
+            &canonicalize_path_entry_or_self(&resolved),
             &canonicalize_or_self(&dirs::COMMAND_WRAPPERS),
         )
 }
