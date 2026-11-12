@@ -77,3 +77,22 @@ cat >mise.toml <<'TOML'
 "fake:three" = "latest"
 TOML
 assert_contains "mise bootstrap packages status 2>&1" "writable by its group or by other users"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "unknown bootstrap package manager 'fake'"
+assert_fail "test -f $HOME/.fake-packages/three"
+
+# A world-writable hook inside an otherwise protected plugin is ignored too.
+chmod o-w system-plugins
+chmod o+w system-plugins/fake/hooks/package_install.lua
+assert_contains "mise bootstrap packages status 2>&1" "package_install.lua"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "unknown bootstrap package manager 'fake'"
+assert_fail "test -f $HOME/.fake-packages/three"
+
+# config can spell the plugin snake_case while its directory is kebab-case.
+chmod o-w system-plugins/fake/hooks/package_install.lua
+mv system-plugins/fake system-plugins/fake-pm
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"fake_pm:four" = "latest"
+TOML
+assert "mise bootstrap packages apply --yes" ""
+assert "cat $HOME/.fake-packages/four" "system"
