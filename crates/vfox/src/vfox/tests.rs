@@ -31,6 +31,7 @@ impl Vfox {
             download_dir: PathBuf::from("test/downloads"),
             install_dir: PathBuf::from("test/installs"),
             skip_verification: false,
+            locked_checksum: None,
             cmd_env: None,
             hook_dependencies: None,
             default_inline_shell: None,

@@ -547,6 +547,13 @@ impl Backend for VfoxBackend {
             .and_then(|pi| pi.provenance.as_ref())
             .is_some_and(ProvenanceType::is_slsa);
         vfox.skip_verification = has_lockfile_provenance && !locked_slsa;
+        // In locked mode the download must be the artifact the lockfile pinned.
+        if ctx.locked {
+            vfox.locked_checksum = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.checksum.clone());
+        }
 
         // Save expected provenance before take() so we can detect type changes afterward,
         // then clear it so we can detect whether install re-sets it.
