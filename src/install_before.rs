@@ -250,10 +250,9 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
             .as_ref()
             .and_then(|config| config.all_aliases.get(exclude))
             .and_then(|alias| alias.backend.as_deref())
-            .map(|backend| split_bracketed_opts(backend).map_or(backend, |(name, _)| name))
-            .map(|backend| {
-                // Resolve registry shorthands (`jq`) to the backend they stand for.
-                let target = BackendArg::new(backend.to_string(), None);
+            .map(|_| {
+                // Resolve the excluded alias name the way a request for it resolves.
+                let target = BackendArg::new(exclude.to_string(), None);
                 crate::backend::canonical_backend_full(&target.full_without_opts()).into_owned()
             });
         let exclude = crate::backend::canonical_backend_full(exclude);
