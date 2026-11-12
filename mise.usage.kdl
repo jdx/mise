@@ -647,6 +647,7 @@ Repeat the flag or separate parts with commas. Cannot be combined with `--skip`.
                 choice macos-defaults {
                     alias defaults hide=#true
                 }
+                choice settings
                 choice macos-launchd-agents {
                     alias launchd hide=#true
                 }
@@ -698,6 +699,7 @@ Repeat the flag or separate parts with commas. Cannot be combined with `--only`.
                 choice macos-defaults {
                     alias defaults hide=#true
                 }
+                choice settings
                 choice macos-launchd-agents {
                     alias launchd hide=#true
                 }
@@ -2090,6 +2092,7 @@ Repeat the flag or separate parts with commas. Cannot be combined with `--skip`.
                     choice macos-defaults {
                         alias defaults hide=#true
                     }
+                    choice settings
                     choice macos-launchd-agents {
                         alias launchd hide=#true
                     }
@@ -2137,6 +2140,7 @@ Repeat the flag or separate parts with commas. Cannot be combined with `--only`.
                     choice macos-defaults {
                         alias defaults hide=#true
                     }
+                    choice settings
                     choice macos-launchd-agents {
                         alias launchd hide=#true
                     }
@@ -2309,6 +2313,34 @@ also removes one that [bootstrap.linux.systemd.units] or
         example "mise bootstrap services status" help="Show the state of every declared service"
         example "mise bootstrap services apply --dry-run" help="Show what would change"
         example "mise bootstrap services remove mise-history" help="Uninstall a user service"
+    }
+    cmd settings subcommand_required=#true help="[experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins" {
+        long_help #"""
+[experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins
+
+A bootstrap settings plugin reads and writes the settings of one program or
+desktop, such as a Linux distro's appearance settings. mise compares the
+values in `[bootstrap.settings.<plugin>]` with the values the plugin reports
+and asks it to write only the ones that differ.
+See https://mise.jdx.dev/bootstrap/settings-plugins.html
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        cmd apply help="Write the settings that differ from `[bootstrap.settings]`" {
+            long_help #"""
+Write the settings that differ from `[bootstrap.settings]`
+
+It does not ask for confirmation.
+"""#
+            flag "-n --dry-run" help="Show which settings would change without changing them"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PLUGIN]…" help="Plugins whose sections to apply; all of them by default" required=#false var=#true
+        }
+        cmd status help="Show each setting in `[bootstrap.settings]` and its current value" {
+            flag --missing help="Exit with status 1 if a setting differs from the config or its plugin cannot run"
+            flag "-J --json" help="Output in JSON format"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PLUGIN]…" help="Plugins whose sections to show; all of them by default" required=#false var=#true
+        }
     }
     cmd status help="Show the state of every configured bootstrap part" effect=read {
         alias ls

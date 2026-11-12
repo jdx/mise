@@ -1789,6 +1789,7 @@ fn plugin_type_name(plugin_type: PluginType) -> &'static str {
         PluginType::Vfox => "vfox",
         PluginType::VfoxBackend => "vfox_backend",
         PluginType::Package => "package",
+        PluginType::BootstrapSettings => "bootstrap-settings",
     }
 }
 

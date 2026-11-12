@@ -91,6 +91,7 @@ subcommands.
 | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)          | Your login shell                                                                            |
 | [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html)            | macOS user preferences, written with `defaults write`                                       |
 | [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)                   | Common macOS preferences for the Dock, Finder, keyboard, and trackpad                       |
+| [`[bootstrap.settings]`](/bootstrap/settings-plugins.html)                | Settings that bootstrap settings plugins apply, such as a Linux desktop's appearance        |
 | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)             | macOS LaunchAgents, written and loaded with `launchctl`                                     |
 | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)              | systemd user units, managed with `systemctl --user`                                         |
 | [`[tools]`](/dev-tools/)                                                  | Tools that mise installs and manages                                                        |
@@ -146,20 +147,21 @@ warning. They will be removed in mise 2027.10.4.
 | 10   | `dotfiles`                         | [`[dotfiles]`](/dotfiles.html)                                                                                                                        | `pre-dotfiles`, `post-dotfiles` |
 | 11   | `mise-shell-activate` (`shell`)    | [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)                                                                                            |                                 |
 | 12   | `macos-defaults` (`defaults`)      | [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html) and the other `[bootstrap.macos.*]` keys                                               | `pre-defaults`, `post-defaults` |
-| 13   | `macos-launchd-agents` (`launchd`) | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)                                                                                         |                                 |
-| 14   | `linux-systemd-units` (`systemd`)  | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)                                                                                          |                                 |
-| 15   | `user`                             | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)                                                                                      | `pre-user`, `post-user`         |
-| 16   | `tools`                            | `[tools]`, as `mise install` would                                                                                                                    | `pre-tools`, `post-tools`       |
-| 17   | `packages`                         | Packages from [package manager plugins](/bootstrap/packages/plugins.html)                                                                             |                                 |
-| 18   | `services`                         | User services with `requires_tools = true`                                                                                                            |                                 |
-| 19   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                                                                            |                                 |
-| 20   | `final-hook`                       |                                                                                                                                                       | `final`                         |
+| 13   | `settings`                         | [`[bootstrap.settings]`](/bootstrap/settings-plugins.html) through [bootstrap settings plugins](/bootstrap/settings-plugins.html)                     |                                 |
+| 14   | `macos-launchd-agents` (`launchd`) | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)                                                                                         |                                 |
+| 15   | `linux-systemd-units` (`systemd`)  | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)                                                                                          |                                 |
+| 16   | `user`                             | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)                                                                                      | `pre-user`, `post-user`         |
+| 17   | `tools`                            | `[tools]`, as `mise install` would                                                                                                                    | `pre-tools`, `post-tools`       |
+| 18   | `packages`                         | Packages from [package manager plugins](/bootstrap/packages/plugins.html)                                                                             |                                 |
+| 19   | `services`                         | User services with `requires_tools = true`                                                                                                            |                                 |
+| 20   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                                                                            |                                 |
+| 21   | `final-hook`                       |                                                                                                                                                       | `final`                         |
 
 In step 4, the `pre-packages` hook runs before mise adds apt sources.
 
 The `post-packages` hook runs right after step 4, unless a package in
 `[bootstrap.packages]` comes from a package manager plugin. Then it runs after
-step 17 instead, once those packages are installed. Step 18 runs even with
+step 18 instead, once those packages are installed. Step 19 runs even with
 `--skip tools`.
 
 The declarative parts compare the configuration with the machine and change only

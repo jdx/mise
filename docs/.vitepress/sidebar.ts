@@ -274,6 +274,10 @@ export const sidebar: SidebarItem[] = [
           { text: "macOS defaults", link: "/bootstrap/macos-defaults" },
           { text: "macOS LaunchAgents", link: "/bootstrap/launchd" },
           { text: "systemd user units", link: "/bootstrap/systemd" },
+          {
+            text: "Bootstrap settings plugins",
+            link: "/bootstrap/settings-plugins",
+          },
         ],
       },
     ],

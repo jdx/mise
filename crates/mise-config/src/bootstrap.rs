@@ -108,6 +108,22 @@ pub struct BootstrapTomlConfig {
         "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'"
     }))]
     pub users: IndexMap<String, accounts::UserTomlConfig>,
+    /// [experimental] settings that bootstrap settings plugins apply, keyed by plugin name; which keys a plugin accepts is up to the plugin
+    // Raw tables: the plugin, not mise, knows their keys. mise flattens them to dotted keys.
+    #[serde(default)]
+    #[schemars(schema_with = "plugin_settings")]
+    pub settings: IndexMap<String, toml::Table>,
+}
+
+fn plugin_settings(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "object",
+        "propertyNames": {"pattern": "^[A-Za-z0-9_.-]+$"},
+        "additionalProperties": {
+            "type": "object",
+            "description": "settings for the bootstrap settings plugin of this name"
+        }
+    })
 }
 
 fn plugin_urls(_: &mut schemars::SchemaGenerator) -> schemars::Schema {

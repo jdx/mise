@@ -147,6 +147,7 @@
 - [macOS defaults](https://mise.jdx.dev/bootstrap/macos-defaults.html): Declare macOS preferences in mise.toml, and mise bootstrap, or mise bootstrap macos defaults apply, writes them the way the defaults command does.
 - [macOS LaunchAgents](https://mise.jdx.dev/bootstrap/launchd.html): Declare LaunchAgents for your macOS user in [bootstrap.macos.launchd.agents]. mise bootstrap, or mise bootstrap macos launchd-agents apply, writes each agent to…
 - [systemd user units](https://mise.jdx.dev/bootstrap/systemd.html): Declare systemd user services and timers in [bootstrap.linux.systemd.units]. mise bootstrap, or mise bootstrap linux systemd-units apply, writes each to ~/.config/systemd/user/dev.mise.<name>.service…
+- [Bootstrap settings plugins](https://mise.jdx.dev/bootstrap/settings-plugins.html): A bootstrap settings plugin applies the settings of one program or desktop, such as a Linux distro's appearance settings, from a [bootstrap.settings.<plugin>] section.
 
 ## Dotfiles
 

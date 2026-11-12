@@ -86,6 +86,36 @@ impl PackagePluginState {
     }
 }
 
+/// The environment bootstrap plugin hooks run with: the process environment, with mise's shims
+/// and the tools of the global config on `PATH`, so a hook can use a host program from `[tools]`.
+pub(crate) async fn bootstrap_plugin_env() -> Result<IndexMap<String, String>> {
+    let config = Config::get().await?;
+    let toolset = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .build(&config)
+        .await?;
+    let mut paths = PackagePluginManager::sync_lookup_path();
+    paths.extend(toolset.list_paths(&config).await);
+    let path = join_paths(&paths).wrap_err("failed to construct bootstrap plugin PATH")?;
+    let mut env: IndexMap<String, String> = mise_util::env::vars_safe().collect();
+    env.insert("PATH".into(), path.to_string_lossy().into_owned());
+    Ok(env)
+}
+
+/// The first of `requires` not found on `PATH` or among mise's shims.
+pub(crate) fn missing_binary(requires: &[String]) -> Option<&str> {
+    missing_in(requires, &PackagePluginManager::sync_lookup_path())
+}
+
+fn missing_in<'a>(requires: &'a [String], paths: &[PathBuf]) -> Option<&'a str> {
+    let path = join_paths(paths).ok()?;
+    let cwd = std::env::current_dir().ok()?;
+    requires
+        .iter()
+        .find(|binary| which::which_in(binary, Some(&path), &cwd).is_err())
+        .map(String::as_str)
+}
+
 #[derive(Debug)]
 pub struct PackagePluginManager {
     name: String,
@@ -187,7 +217,7 @@ impl PackagePluginManager {
             .exists()
     }
 
-    fn sync_lookup_path() -> Vec<PathBuf> {
+    pub(crate) fn sync_lookup_path() -> Vec<PathBuf> {
         let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
             .map(|path| split_paths(&path).collect())
             .unwrap_or_default();
@@ -199,32 +229,11 @@ impl PackagePluginManager {
     }
 
     fn missing_from_path(&self, paths: &[PathBuf]) -> Option<&str> {
-        let path = join_paths(paths).ok()?;
-        let cwd = std::env::current_dir().ok()?;
-        self.config
-            .requires
-            .iter()
-            .find(|binary| which::which_in(binary, Some(&path), &cwd).is_err())
-            .map(String::as_str)
+        missing_in(&self.config.requires, paths)
     }
 
     async fn hook_env(&self) -> Result<&IndexMap<String, String>> {
-        self.hook_env
-            .get_or_try_init(|| async {
-                let config = Config::get().await?;
-                let toolset = ToolsetBuilder::new()
-                    .with_scope(ConfigScope::GlobalOnly)
-                    .build(&config)
-                    .await?;
-                let mut paths = Self::sync_lookup_path();
-                paths.extend(toolset.list_paths(&config).await);
-                let path =
-                    join_paths(&paths).wrap_err("failed to construct package plugin PATH")?;
-                let mut env: IndexMap<String, String> = mise_util::env::vars_safe().collect();
-                env.insert("PATH".into(), path.to_string_lossy().into_owned());
-                Ok(env)
-            })
-            .await
+        self.hook_env.get_or_try_init(bootstrap_plugin_env).await
     }
 
     async fn checked_hook_env(&self) -> Result<&IndexMap<String, String>> {

@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+# A bootstrap settings plugin applies [bootstrap.settings.<plugin>]: mise reads
+# the current values, writes only the keys that differ, and checks them again.
+
+export MISE_EXPERIMENTAL=1
+export MISE_SYSTEM_PLUGINS_DIRS="$PWD/system-plugins"
+plugin=system-plugins/desk
+mkdir -p "$plugin/hooks"
+
+cat >"$plugin/metadata.lua" <<'LUA'
+PLUGIN = {
+  name = "desk",
+  version = "0.1.0",
+  homepage = "",
+  license = "MIT",
+  description = "fake desktop settings",
+  minRuntimeVersion = "0.3.0",
+  notes = {},
+  legacyFilenames = {},
+}
+LUA
+
+printf '[bootstrap-settings]\n' >"$plugin/mise.plugin.toml"
+
+# Values are stored as one JSON file, so the hooks only need the json module.
+cat >"$plugin/hooks/settings_read.lua" <<'LUA'
+function PLUGIN:SettingsRead(ctx)
+  local json = require("json")
+  local f = io.open(os.getenv("HOME") .. "/desk.json", "r")
+  if not f then return { values = {} } end
+  local values = json.decode(f:read("*a"))
+  f:close()
+  return { values = values }
+end
+LUA
+
+cat >"$plugin/hooks/settings_write.lua" <<'LUA'
+function PLUGIN:SettingsWrite(ctx)
+  local json = require("json")
+  local path = os.getenv("HOME") .. "/desk.json"
+  local values = {}
+  local f = io.open(path, "r")
+  if f then
+    values = json.decode(f:read("*a"))
+    f:close()
+  end
+  local log = io.open(os.getenv("HOME") .. "/desk.log", "a")
+  for _, change in ipairs(ctx.changes) do
+    values[change.key] = change.to
+    log:write(change.key .. "\n")
+  end
+  log:close()
+  f = io.open(path, "w")
+  f:write(json.encode(values))
+  f:close()
+  return { follow_up = { "reload the desk" } }
+end
+LUA
+chmod -R go-w system-plugins
+
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 4
+TOML
+
+assert_contains "mise bootstrap settings status" "appearance.blur_strength"
+assert_fail "mise bootstrap settings status --missing"
+
+# A dry run changes nothing.
+assert_contains "mise bootstrap settings apply --dry-run 2>&1" "would set desk: appearance.blur (unset) -> true"
+assert_fail "test -f $HOME/desk.json"
+
+assert_contains "mise bootstrap --only settings --yes 2>&1" "reload the desk"
+assert "cat $HOME/desk.log" "appearance.blur
+appearance.blur_strength"
+assert_succeed "mise bootstrap settings status --missing"
+
+# Only the key that changed is written.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 8
+TOML
+assert_succeed "mise bootstrap settings apply"
+assert "tail -n 1 $HOME/desk.log" "appearance.blur_strength"
+assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
+
+# A section for a plugin that is not installed is skipped with a follow-up.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.missing]
+key = 1
+TOML
+assert_contains "mise bootstrap --only settings --yes 2>&1" "no bootstrap settings plugin named missing"

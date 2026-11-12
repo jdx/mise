@@ -163,4 +163,20 @@ impl Vfox {
     ) -> Result<PackageActionResponse> {
         self.get_sdk_with_env(sdk)?.package_uninstall(ctx).await
     }
+
+    pub async fn settings_read(
+        &self,
+        sdk: &str,
+        ctx: SettingsReadContext,
+    ) -> Result<SettingsReadResponse> {
+        self.get_sdk_with_env(sdk)?.settings_read(ctx).await
+    }
+
+    pub async fn settings_write(
+        &self,
+        sdk: &str,
+        ctx: SettingsWriteContext,
+    ) -> Result<SettingsWriteResponse> {
+        self.get_sdk_with_env(sdk)?.settings_write(ctx).await
+    }
 }

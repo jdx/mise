@@ -359,6 +359,15 @@ Uninstall a user\-scope service
 \fBbootstrap services status\fR
 Show the state of services from `[bootstrap.services]`
 .TP
+\fBbootstrap settings\fR
+[experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins
+.TP
+\fBbootstrap settings apply\fR
+Write the settings that differ from `[bootstrap.settings]`
+.TP
+\fBbootstrap settings status\fR
+Show each setting in `[bootstrap.settings]` and its current value
+.TP
 \fBbootstrap status\fR
 Show the state of every configured bootstrap part
 .RS
@@ -3159,6 +3168,63 @@ Exit with status 1 if any service differs from the config (all are still listed)
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE BOOTSTRAP SETTINGS"
+[experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins
+
+A bootstrap settings plugin reads and writes the settings of one program or
+desktop, such as a Linux distro's appearance settings. mise compares the
+values in `[bootstrap.settings.<plugin>]` with the values the plugin reports
+and asks it to write only the ones that differ.
+See https://mise.jdx.dev/bootstrap/settings\-plugins.html
+.PP
+\fBUsage:\fR mise bootstrap settings [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP SETTINGS APPLY"
+Write the settings that differ from `[bootstrap.settings]`
+
+It does not ask for confirmation.
+.PP
+\fBUsage:\fR mise bootstrap settings apply [OPTIONS] [<PLUGIN>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show which settings would change without changing them
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PLUGIN>\fR
+Plugins whose sections to apply; all of them by default
+.SH "MISE BOOTSTRAP SETTINGS STATUS"
+Show each setting in `[bootstrap.settings]` and its current value
+.PP
+\fBUsage:\fR mise bootstrap settings status [OPTIONS] [<PLUGIN>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-missing\fR
+Exit with status 1 if a setting differs from the config or its plugin cannot run
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PLUGIN>\fR
+Plugins whose sections to show; all of them by default
 .SH "MISE BOOTSTRAP STATUS"
 Show the state of every configured bootstrap part
 

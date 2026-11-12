@@ -21,6 +21,9 @@ use crate::hooks::backend_list_versions::{
 use crate::hooks::backend_search_tools::BackendSearchToolsContext;
 use crate::hooks::backend_tools::BackendTool;
 use crate::hooks::backend_uninstall::BackendUninstallContext;
+use crate::hooks::bootstrap_settings::{
+    SettingsReadContext, SettingsReadResponse, SettingsWriteContext, SettingsWriteResponse,
+};
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_install_satisfied::{

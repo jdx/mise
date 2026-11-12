@@ -68,7 +68,7 @@ resource-level changes.
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--skip`.
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `settings`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`--prompt-vars`** — Ask for `[vars]` entries that declare a `prompt` and have no saved answer
 
@@ -80,7 +80,7 @@ resource-level changes.
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--only`.
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `settings`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
 - **`--update`** — Refresh package metadata and update repositories before applying
 
   Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without either, fast-forwards the global config when it is a Git checkout with an upstream, as `--adopt` makes, or links into one, as `--config-dir` makes, then bootstraps from the new commit. Without `--update`, a checkout stays at its current commit.
@@ -173,6 +173,7 @@ mise bootstrap --update
 - [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.html)
 - [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.html)
 - [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html)
+- [`mise bootstrap settings <SUBCOMMAND>`](/cli/bootstrap/settings.html)
 - [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.html)
 - [`mise bootstrap unapply [FLAGS] <ENV>…`](/cli/bootstrap/unapply.html)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.html)

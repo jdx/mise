@@ -122,6 +122,20 @@ pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
 
 pub use mise_config::dotfiles::DotfilesTomlConfig;
 
+/// Put `higher`'s values over `base`, merging nested tables key by key.
+pub fn merge_settings_table(base: &mut toml::Table, higher: toml::Table) {
+    for (key, value) in higher {
+        match (base.get_mut(&key), value) {
+            (Some(toml::Value::Table(lower)), toml::Value::Table(higher)) => {
+                merge_settings_table(lower, higher)
+            }
+            (_, value) => {
+                base.insert(key, value);
+            }
+        }
+    }
+}
+
 /// Combining a file's `[bootstrap]` with the one it includes; it applies mise's macOS-defaults
 /// normalization, so it lives here rather than with the type.
 pub trait BootstrapMerge {
@@ -162,6 +176,13 @@ impl BootstrapMerge for BootstrapTomlConfig {
         fill(&mut self.apt.sources, lower.apt.sources);
         fill(&mut self.dnf.repos, lower.dnf.repos);
         fill(&mut self.mise_shell_activate, lower.mise_shell_activate);
+        // settings tables merge key by key, this file's own values winning
+        for (plugin, shared) in lower.settings {
+            let own = self.settings.shift_remove(&plugin).unwrap_or_default();
+            let mut merged = shared;
+            merge_settings_table(&mut merged, own);
+            self.settings.insert(plugin, merged);
+        }
         // hooks add up across files, the shared commands running first
         for (phase, shared) in lower.hooks {
             match self.hooks.entry(phase) {

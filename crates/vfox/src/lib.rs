@@ -13,6 +13,10 @@ pub use error::VfoxError;
 pub use hook_dependencies::{HookDependencies, HookDependencyRecorder};
 pub use hooks::backend_list_versions::{BackendListVersionsResponse, BackendVersion};
 pub use hooks::backend_tools::BackendTool;
+pub use hooks::bootstrap_settings::{
+    SettingChange, SettingsReadContext, SettingsReadResponse, SettingsWriteContext,
+    SettingsWriteResponse,
+};
 pub use hooks::mise_install_satisfied::MiseInstallSatisfiedResult;
 pub use hooks::package::{
     PackageActionContext, PackageActionResponse, PackageInstalledContext, PackageInstalledResponse,
