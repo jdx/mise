@@ -3229,6 +3229,13 @@ pub trait Backend: Debug + Send + Sync {
         true
     }
 
+    /// Whether `--locked` requires a lockfile URL for this tool version.
+    /// Defaults to [`Backend::supports_lockfile_url`]; a backend whose releases
+    /// may or may not have a downloadable artifact overrides it.
+    fn requires_lockfile_url(&self, _tv: &ToolVersion) -> bool {
+        self.supports_lockfile_url()
+    }
+
     /// Whether locked mode may resolve the download URL itself when the
     /// lockfile pins only a checksum (see
     /// [`PlatformInfo::is_pinned_without_url`](crate::lockfile::PlatformInfo::is_pinned_without_url)).
@@ -5266,7 +5273,7 @@ pub trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && self.supports_lockfile_url() {
+        if ctx.locked && self.requires_lockfile_url(&tv) {
             let platform_key = self.get_platform_key_for(&tv);
             let locked_platform = tv.lock_platforms.get(&platform_key);
             let has_lockfile_url = locked_platform.is_some_and(|p| {
