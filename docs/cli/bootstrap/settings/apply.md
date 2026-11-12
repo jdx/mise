@@ -6,6 +6,7 @@ description: "Write the settings that differ from `[bootstrap.settings]`"
 # `mise bootstrap settings apply`
 
 - **Usage:** `mise bootstrap settings apply [-n --dry-run] [PLUGIN]…`
+- **Effect:** modifies state
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Write the settings that differ from `[bootstrap.settings]`

@@ -156,6 +156,10 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap repos update", Write),
     ("bootstrap secrets", Read),
     ("bootstrap secrets status", Read),
+    ("bootstrap settings", Read),
+    // Runs bootstrap settings plugins' SettingsWrite hooks.
+    ("bootstrap settings apply", Write),
+    ("bootstrap settings status", Read),
     ("bootstrap status", Read),
     ("bootstrap unapply", Destructive),
     // Changes the current user's login shell.
