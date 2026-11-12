@@ -206,7 +206,12 @@ pub async fn plan(
     plan.add_file_phase_ordering(&builtin_packages)?;
     let service_dependencies = plan
         .ids()
-        .filter(|id| matches!(id.kind.as_str(), "package" | "file" | "directory"))
+        .filter(|id| match id.kind.as_str() {
+            // plugin packages run after services, so services never wait for them
+            "package" => builtin_packages.contains(id),
+            "file" | "directory" => true,
+            _ => false,
+        })
         .cloned()
         .collect::<Vec<_>>();
     for resource in super::services::plans_with_notifications(&services, &notified_services) {
@@ -229,11 +234,10 @@ pub async fn plan(
         super::firewall::inspect_request(&mut firewall)?;
         let dependencies = plan
             .ids()
-            .filter(|id| {
-                matches!(
-                    id.kind.as_str(),
-                    "package" | "file" | "directory" | "service"
-                )
+            .filter(|id| match id.kind.as_str() {
+                "package" => builtin_packages.contains(id),
+                "file" | "directory" | "service" => true,
+                _ => false,
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -299,6 +303,253 @@ pub async fn plan(
     // Validate dependency references and cycles even when callers only need JSON.
     plan.output()?;
     Ok(plan)
+}
+
+/// Add the `[bootstrap.repos]` repositories and, when `hooks_enabled`, the
+/// `[bootstrap.hooks]` commands, which `plan` leaves out because they read
+/// the network or run arbitrary commands rather than inspect local state.
+///
+/// Hooks are ordered as a bootstrap run executes them: by phase, then in
+/// declaration order, with packages between the `packages` hooks and
+/// repositories between the `repos` hooks.
+pub async fn add_repos_and_hooks(
+    plan: &mut BootstrapPlan,
+    config: &Config,
+    hooks_enabled: bool,
+) -> Result<()> {
+    use super::hooks::BootstrapHookPhase;
+    use strum::IntoEnumIterator;
+
+    // plugin packages run after tools, so they neither precede repos nor the
+    // `post-packages` hook
+    let builtin_packages = super::packages_from_config(config)?
+        .into_iter()
+        .filter(|packages| !packages.manager.is_plugin())
+        .flat_map(|packages| {
+            let manager = packages.manager.name().to_string();
+            packages.requests.into_iter().map(move |request| {
+                ResourceId::new("package", format!("{manager}:{}", request.name))
+            })
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let packages = plan
+        .ids()
+        .filter(|id| builtin_packages.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+    // user services with `requires_tools` run after tools and plugin packages
+    let late_names = super::user_services::requests_from_config(config)?
+        .into_iter()
+        .filter(|request| request.requires_tools)
+        .map(|request| ResourceId::new("user-service", request.name))
+        .collect::<std::collections::HashSet<_>>();
+    let late = plan
+        .ids()
+        .filter(|id| late_names.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+    // accounts, files, services, the firewall, and Compose all run before repos
+    let earlier = plan
+        .ids()
+        .filter(|id| id.kind != "package" || builtin_packages.contains(id))
+        .filter(|id| !late_names.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+    // post-package files, services, the firewall, and Compose follow the
+    // `post-packages` hook
+    let after_packages_hook = plan
+        .ids()
+        .filter(|id| {
+            matches!(
+                id.kind.as_str(),
+                "service" | "user-service" | "firewall" | "firewall-rule" | "compose"
+            ) && !late_names.contains(id)
+                || plan.get(id).is_some_and(|r| {
+                    r.phase == Some(mise_bootstrap::ManagedFilePhase::PostPackages)
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    // bootstrap defers the `post-packages` hook until plugin packages finish
+    // only for plugin managers that are enabled by `system_packages.managers`
+    let mut enabled_plugin_packages = super::packages_from_config(config)?
+        .into_iter()
+        .filter(|packages| packages.manager.is_plugin() && !packages.disabled)
+        .any(|packages| !packages.requests.is_empty());
+    enabled_plugin_packages |= !super::pending_plugin_packages_from_config(config).is_empty();
+    let defer_post_packages = enabled_plugin_packages;
+    let requests = super::repos_from_config(config);
+    let mut repos = vec![];
+    for status in super::repos::status(&requests).await? {
+        let resource = repo_plan(&status);
+        repos.push(resource.id.clone());
+        plan.insert(resource)?;
+    }
+    for repo in &repos {
+        for resource in &earlier {
+            order_after(plan, repo, resource)?;
+        }
+    }
+    // plugin packages run after tools, so after everything planned here
+    let plugin_packages = plan
+        .ids()
+        .filter(|id| id.kind == "package" && !builtin_packages.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+    for package in &plugin_packages {
+        for resource in earlier.iter().chain(&repos) {
+            order_after(plan, package, resource)?;
+        }
+    }
+    for service in &late {
+        for resource in earlier.iter().chain(&repos).chain(&plugin_packages) {
+            order_after(plan, service, resource)?;
+        }
+    }
+    if !hooks_enabled {
+        return Ok(());
+    }
+    // every package, plugin ones included, follows the `pre-packages` hooks
+    let all_packages = packages
+        .iter()
+        .chain(&plugin_packages)
+        .cloned()
+        .collect::<Vec<_>>();
+    let hooks = super::hooks_from_config(config);
+    let mut previous: Option<ResourceId> = None;
+    // resources the next hook to run must follow
+    let mut pending: Vec<ResourceId> = vec![];
+    let mut phases = BootstrapHookPhase::iter()
+        .filter(|phase| !(defer_post_packages && *phase == BootstrapHookPhase::PostPackages))
+        .collect::<Vec<_>>();
+    if defer_post_packages {
+        // it runs after plugin packages, just before the `final` hook
+        let at = phases
+            .iter()
+            .position(|phase| *phase == BootstrapHookPhase::Final)
+            .unwrap_or(phases.len());
+        phases.insert(at, BootstrapHookPhase::PostPackages);
+    }
+    for phase in phases {
+        let before_phase = previous.clone();
+        match phase {
+            BootstrapHookPhase::PostPackages if defer_post_packages => {
+                // plugin packages install after every hook of the earlier phases
+                if let Some(last) = &previous {
+                    for package in &plugin_packages {
+                        order_after(plan, package, last)?;
+                    }
+                }
+                pending.extend(
+                    plan.ids()
+                        .filter(|id| id.kind != "hook" && !late_names.contains(id))
+                        .cloned(),
+                );
+            }
+            BootstrapHookPhase::PostPackages => pending.extend(packages.iter().cloned()),
+            BootstrapHookPhase::PreRepos => pending.extend(earlier.iter().cloned()),
+            BootstrapHookPhase::PostRepos => pending.extend(repos.iter().cloned()),
+            BootstrapHookPhase::Final => {
+                // late user services run after every earlier hook
+                if let Some(last) = &previous {
+                    for service in &late {
+                        order_after(plan, service, last)?;
+                    }
+                }
+                pending.extend(late.iter().cloned());
+            }
+            _ => {}
+        }
+        let mut index = 0;
+        for hook in hooks.iter().filter(|hook| hook.phase == phase) {
+            index += 1;
+            let name = phase.to_string();
+            let id = ResourceId::new("hook", format!("{name}:{index}"));
+            plan.insert(
+                ResourcePlan::new(id.clone(), "not run", hook.run.clone(), ResourceAction::Run)
+                    .with_hook_phase(name),
+            )?;
+            if let Some(previous) = previous.take() {
+                plan.add_ordering(&id, previous)?;
+            }
+            for anchor in pending.drain(..) {
+                plan.add_ordering(&id, anchor)?;
+            }
+            previous = Some(id);
+        }
+        // packages and repos run after the hooks of their `pre-` phase
+        let targets: &[ResourceId] = match phase {
+            BootstrapHookPhase::PrePackages => &all_packages,
+            BootstrapHookPhase::PreRepos => &repos,
+            _ => &[],
+        };
+        if let Some(last) = previous
+            .as_ref()
+            .filter(|last| Some(*last) != before_phase.as_ref())
+        {
+            for target in targets {
+                plan.add_ordering(target, last.clone())?;
+            }
+            if phase == BootstrapHookPhase::PostPackages {
+                if !defer_post_packages {
+                    for target in &after_packages_hook {
+                        order_after(plan, target, last)?;
+                    }
+                }
+                for service in &late {
+                    order_after(plan, service, last)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Order `resource` after `predecessor` unless `predecessor` already waits on
+/// `resource`, which an explicit dependency may declare.
+fn order_after(
+    plan: &mut BootstrapPlan,
+    resource: &ResourceId,
+    predecessor: &ResourceId,
+) -> Result<()> {
+    if plan.waits_on(predecessor, resource) {
+        return Ok(());
+    }
+    plan.add_ordering(resource, predecessor.clone())
+}
+
+fn repo_plan(status: &super::repos::RepoStatus) -> ResourcePlan {
+    use super::repos::RepoState;
+
+    let request = &status.request;
+    // the plan is printed, so keep URL credentials out of it
+    let url = mise_util::redactions::redact_url_userinfo_in_arg(&request.url);
+    let desired = match &request.git_ref {
+        Some(git_ref) => format!("{url} at {git_ref}"),
+        None => url.into_owned(),
+    };
+    let (current, action) = match &status.state {
+        RepoState::Current => ("current".to_string(), ResourceAction::Noop),
+        RepoState::Missing => ("missing".to_string(), ResourceAction::Create),
+        RepoState::Differs => {
+            let current = match (&status.current_ref, &status.current_sha) {
+                (Some(git_ref), _) => git_ref.clone(),
+                (None, Some(sha)) => sha.chars().take(12).collect(),
+                (None, None) => "differs".to_string(),
+            };
+            (current, ResourceAction::Update)
+        }
+        // Bootstrap refuses these unless `--skip-dirty` leaves the repo alone,
+        // so the plan cannot say what a run would do.
+        RepoState::Dirty => ("dirty (local changes)".to_string(), ResourceAction::Unknown),
+        RepoState::Conflict(reason) => (format!("conflict ({reason})"), ResourceAction::Unknown),
+    };
+    ResourcePlan::new(
+        ResourceId::new("repo", request.path.to_string_lossy()),
+        current,
+        desired,
+        action,
+    )
 }
 
 fn desired_package(request: &super::packages::PackageRequest) -> String {

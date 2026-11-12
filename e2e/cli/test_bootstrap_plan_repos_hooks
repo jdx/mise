@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+
+SRC="$PWD/source-repo"
+mkdir -p "$SRC"
+git -C "$SRC" init -q -b main
+echo "v1" >"$SRC/version.txt"
+git -C "$SRC" add .
+git -C "$SRC" -c user.email=test@example.com -c user.name="Test User" commit -q -m v1
+
+cat <<EOF2 >mise.toml
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "file://$SRC", ref = "main" }
+
+[bootstrap.files."$PWD/early.txt"]
+content = "x"
+
+[bootstrap.hooks]
+pre-repos = "echo before"
+post-repos = ["echo one", "echo two"]
+EOF2
+
+# a missing repo is planned as a create, and hooks are listed as runs
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.kind == \"repo\" and .action == \"create\")' >/dev/null"
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.name == \"pre-repos:1\" and .action == \"run\" and .hook_phase == \"pre-repos\" and .desired == \"echo before\")' >/dev/null"
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.name == \"post-repos:2\" and .desired == \"echo two\")' >/dev/null"
+assert "mise bootstrap plan --json | jq '.summary.run'" "3"
+assert "mise bootstrap plan --json | jq '.summary.create'" "2"
+assert_contains "mise bootstrap plan" "Plan: 2 create"
+assert 'mise bootstrap plan --detailed-exitcode >/dev/null 2>&1; echo $?' "2"
+
+# files run before repos and their hooks
+assert "mise bootstrap plan --json | jq -r '[.resources[] | .id.name | select(startswith(\"pre-repos\") or endswith(\"early.txt\"))] | map(split(\"/\")[-1]) | join(\" \")'" "early.txt pre-repos:1"
+
+# the plan lists them in the order a run executes them
+assert "mise bootstrap plan --json | jq -r '[.resources[] | .id.name | select(startswith(\"pre-\") or startswith(\"post-\") or endswith(\"dotfiles\"))] | join(\" \")'" "pre-repos:1 $HOME/src/dotfiles post-repos:1 post-repos:2"
+
+# a converged repo leaves only the hooks, which do not count as changes
+assert_succeed "mise bootstrap repos apply --yes"
+assert_succeed "mise bootstrap files apply --yes"
+assert "mise bootstrap plan --json | jq '.summary.unchanged'" "2"
+assert_succeed "mise bootstrap plan --detailed-exitcode"
+
+# a repo behind its ref is an update
+echo "v2" >"$SRC/version.txt"
+git -C "$SRC" add .
+git -C "$SRC" -c user.email=test@example.com -c user.name="Test User" commit -q -m v2
+assert "mise bootstrap plan --json | jq '.summary.update'" "1"
+
+# a dirty repo is unknown, so --detailed-exitcode fails
+echo local >"$HOME/src/dotfiles/local.txt"
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.kind == \"repo\" and .action == \"unknown\")' >/dev/null"
+assert_fail "mise bootstrap plan --detailed-exitcode" "unknown state"
+
+# --no-hooks leaves the hooks out of the plan
+assert "mise --no-hooks bootstrap plan --json | jq '.summary.run'" "0"
+
+# post-packages files wait for the post-packages hook
+cat >mise.toml <<TOML
+[bootstrap.packages]
+"apt:mise-plan-order-nonexistent" = "latest"
+[bootstrap.files."$PWD/late.txt"]
+content = "x"
+[bootstrap.hooks]
+post-packages = "true"
+TOML
+if [[ "$(uname -s)" == "Linux" ]] && command -v apt-get >/dev/null; then
+  assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"package\", \"hook\", \"file\"]'"
+fi
+
+# with a plugin package, repos and services stay before it and the
+# post-packages hook runs after it
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.files."$PWD/svc.conf"]
+content = "x"
+[bootstrap.services.mise-plan-order-nonexistent]
+state = "stopped"
+enabled = false
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "file://$SRC", ref = "main" }
+[bootstrap.hooks]
+post-packages = "true"
+final = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] | index(\"repo\") < index(\"package\") and index(\"service\") < index(\"package\") and index(\"package\") < index(\"hook\")'"
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[] | select(.id.kind == \"hook\") | .id.name] == [\"post-packages:1\", \"final:1\"]'"
+
+# plugin packages follow the pre-packages hook
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.hooks]
+pre-packages = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"hook\", \"package\"]'"
+
+# user services with requires_tools follow plugin packages and the
+# post-packages hook, and a user service without it precedes the hook
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.services.early-svc]
+scope = "user"
+command = "true"
+state = "stopped"
+enabled = false
+[bootstrap.services.late-svc]
+scope = "user"
+command = "true"
+requires_tools = true
+state = "stopped"
+enabled = false
+[bootstrap.hooks]
+post-packages = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"early-svc\", \"order-test:vendor\", \"post-packages:1\", \"late-svc\"]'"
+
+# plugin packages follow the hooks of every earlier phase, up to post-tools
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.hooks]
+pre-tools = "true"
+post-tools = "true"
+post-packages = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"pre-tools:1\", \"post-tools:1\", \"order-test:vendor\", \"post-packages:1\"]'"
+
+# late user services follow the hooks of every earlier phase
+cat >mise.toml <<TOML
+[bootstrap.services.late-svc]
+scope = "user"
+command = "true"
+requires_tools = true
+state = "stopped"
+enabled = false
+[bootstrap.hooks]
+post-tools = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.name] == [\"post-tools:1\", \"late-svc\"]'"
+
+# URL credentials never reach the plan output
+cat >mise.toml <<TOML
+[bootstrap.repos]
+"~/src/secret" = { url = "https://user:s3cret@example.invalid/private.git" }
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[0].desired | contains(\"example.invalid\") and (contains(\"s3cret\") | not)'"
+assert_not_contains "mise bootstrap plan" "s3cret"

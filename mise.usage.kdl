@@ -1953,10 +1953,12 @@ fi
 Show what applying bootstrap resources would change
 
 Covers accounts, packages, files and directories, system and user services,
-the firewall, and Compose projects, in dependency order. Repositories,
-dotfiles, shell activation, macOS defaults, LaunchAgents, systemd user
-units, the login shell, tools, hooks, and the `bootstrap` task are not
-planned; preview the whole run with `mise bootstrap --dry-run`.
+the firewall, Compose projects, and Git repositories, in dependency order.
+Hooks are listed with the action `run`, since a command cannot be diffed;
+they do not count as changes for `--detailed-exitcode`. Dotfiles, shell
+activation, macOS defaults, LaunchAgents, systemd user units, the login
+shell, tools, and the `bootstrap` task are not planned; preview the whole
+run with `mise bootstrap --dry-run`.
 """#
         flag "-J --json" help="Output a stable machine-readable plan in JSON format"
         flag --detailed-exitcode help="Exit 0 if nothing would change, 2 if something would, 1 on errors or unknown state" {

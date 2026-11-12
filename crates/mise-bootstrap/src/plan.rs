@@ -14,6 +14,7 @@ pub struct PlanSummary {
     pub update: usize,
     pub remove: usize,
     pub unchanged: usize,
+    pub run: usize,
     pub unknown: usize,
 }
 
@@ -24,6 +25,7 @@ impl PlanSummary {
             ResourceAction::Update => self.update += 1,
             ResourceAction::Remove => self.remove += 1,
             ResourceAction::Noop => self.unchanged += 1,
+            ResourceAction::Run => self.run += 1,
             ResourceAction::Unknown => self.unknown += 1,
         }
     }
@@ -104,6 +106,27 @@ impl BootstrapPlan {
             resource.order_after.push(predecessor);
         }
         Ok(())
+    }
+
+    /// Whether `resource` waits, directly or through other resources, on
+    /// `target`. Adding the opposite ordering edge would create a cycle.
+    pub fn waits_on(&self, resource: &ResourceId, target: &ResourceId) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![resource];
+        while let Some(id) = stack.pop() {
+            let Some(found) = self.resources.get(id) else {
+                continue;
+            };
+            for next in found.depends_on.iter().chain(&found.order_after) {
+                if next == target {
+                    return true;
+                }
+                if seen.insert(next) {
+                    stack.push(next);
+                }
+            }
+        }
+        false
     }
 
     fn ordered(&self) -> Result<Vec<&ResourcePlan>> {
@@ -204,6 +227,19 @@ mod tests {
     }
 
     #[test]
+    fn waits_on_follows_transitive_edges() {
+        let mut plan = BootstrapPlan::default();
+        for name in ["a", "b", "c"] {
+            plan.insert(resource(name)).unwrap();
+        }
+        let id = |name: &str| ResourceId::new("test", name);
+        plan.add_dependency(&id("b"), id("a")).unwrap();
+        plan.add_ordering(&id("c"), id("b")).unwrap();
+        assert!(plan.waits_on(&id("c"), &id("a")));
+        assert!(!plan.waits_on(&id("a"), &id("c")));
+    }
+
+    #[test]
     fn rejects_duplicate_resources() {
         let mut plan = BootstrapPlan::default();
         plan.insert(resource("file")).unwrap();
@@ -259,6 +295,7 @@ mod tests {
                 update: 1,
                 remove: 1,
                 unchanged: 1,
+                run: 0,
                 unknown: 1,
             }
         );
