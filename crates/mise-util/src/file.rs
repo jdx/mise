@@ -1179,7 +1179,10 @@ pub fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
         // `entry.file_type()` describes the entry itself; `entry.path().is_dir()` resolves it.
         let ft = entry.file_type()?;
         if ft.is_dir() || (ft.is_symlink() && entry.path().is_dir()) {
-            output.insert(entry.file_name().into_string().unwrap());
+            // A name that is not UTF-8 cannot name a plugin, tool or version, so skip it.
+            if let Ok(name) = entry.file_name().into_string() {
+                output.insert(name);
+            }
         }
     }
 
