@@ -87,3 +87,14 @@ final = "true"
 TOML
 assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] | index(\"repo\") < index(\"package\") and index(\"service\") < index(\"package\") and index(\"package\") < index(\"hook\")'"
 assert_succeed "mise bootstrap plan --json | jq -e '[.resources[] | select(.id.kind == \"hook\") | .id.name] == [\"post-packages:1\", \"final:1\"]'"
+
+# plugin packages follow the pre-packages hook
+cat >mise.toml <<TOML
+[bootstrap.plugins]
+order-test = "https://example.invalid/order-test.git"
+[bootstrap.packages]
+"order-test:vendor" = "latest"
+[bootstrap.hooks]
+pre-packages = "true"
+TOML
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"hook\", \"package\"]'"

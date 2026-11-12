@@ -350,7 +350,7 @@ pub async fn add_repos_and_hooks(
         .filter(|id| {
             matches!(
                 id.kind.as_str(),
-                "service" | "firewall" | "firewall-rule" | "compose"
+                "service" | "user-service" | "firewall" | "firewall-rule" | "compose"
             ) || plan
                 .get(id)
                 .is_some_and(|r| r.phase == Some(mise_bootstrap::ManagedFilePhase::PostPackages))
@@ -387,6 +387,12 @@ pub async fn add_repos_and_hooks(
     if !hooks_enabled {
         return Ok(());
     }
+    // every package, plugin ones included, follows the `pre-packages` hooks
+    let all_packages = packages
+        .iter()
+        .chain(&plugin_packages)
+        .cloned()
+        .collect::<Vec<_>>();
     let hooks = super::hooks_from_config(config);
     let mut previous: Option<ResourceId> = None;
     // resources the next hook to run must follow
@@ -432,7 +438,7 @@ pub async fn add_repos_and_hooks(
         }
         // packages and repos run after the hooks of their `pre-` phase
         let targets: &[ResourceId] = match phase {
-            BootstrapHookPhase::PrePackages => &packages,
+            BootstrapHookPhase::PrePackages => &all_packages,
             BootstrapHookPhase::PreRepos => &repos,
             _ => &[],
         };
