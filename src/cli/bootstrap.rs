@@ -691,6 +691,7 @@ enum Commands {
 /// macOS defaults, LaunchAgents, systemd user units, the login shell, `[tools]`,
 /// and the system dependencies of those tools, without changing anything.
 /// Checking dotfiles can render trusted templates, which may run `exec()`.
+/// `[bootstrap.settings]` is not checked yet: use `mise bootstrap settings status`.
 ///
 /// `--missing` exits with status 1 if anything differs from the config; it
 /// still lists every entry.
