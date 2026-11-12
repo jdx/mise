@@ -215,8 +215,10 @@ impl Backend for GemBackend {
         .arg(self.tool_name())
         .arg("--version")
         .arg(&tv.version)
-        .arg("--install-dir")
-        .arg(tv.install_path().join("libexec"));
+        // `--conservative` keeps a dependency the Ruby already provides
+        // (bundled or default gems such as erb) instead of upgrading it to a
+        // newer release that may need a compiler.
+        .arg("--conservative");
         if let Some(source) = &source {
             // `--source` rather than `--clear-sources --source`: the latter
             // would also cut off the registry holding this gem's dependencies,
@@ -231,6 +233,10 @@ impl Backend for GemBackend {
         }
         cmd.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
+            // `GEM_HOME` rather than `--install-dir`: with `--install-dir`,
+            // RubyGems ignores every installed gem, including the ones bundled
+            // with Ruby, and rebuilds them from source.
+            .env("GEM_HOME", tv.install_path().join("libexec"))
             .env_values(tv.install_env())
             // `gem install` also installs `*.gem` files from its working
             // directory, and a shim can start this install inside an untrusted

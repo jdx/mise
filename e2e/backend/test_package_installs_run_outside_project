@@ -21,15 +21,9 @@ EOS
 cat >"$HOME/bin/gem" <<'EOS'
 #!/usr/bin/env bash
 echo "$PWD" >>"$HOME/gem-pwd"
-while (($#)); do
-  if [[ $1 == "--install-dir" ]]; then
-    mkdir -p "$2/bin"
-    printf '#!/bin/sh\necho hi\n' >"$2/bin/cwd-test-gem"
-    chmod +x "$2/bin/cwd-test-gem"
-    exit 0
-  fi
-  shift
-done
+mkdir -p "$GEM_HOME/bin"
+printf '#!/bin/sh\necho hi\n' >"$GEM_HOME/bin/cwd-test-gem"
+chmod +x "$GEM_HOME/bin/cwd-test-gem"
 EOS
 chmod u+x "$HOME/bin/cargo" "$HOME/bin/gem"
 export PATH="$HOME/bin:$PATH"
