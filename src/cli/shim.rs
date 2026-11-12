@@ -219,7 +219,8 @@ pub(crate) async fn apply_native_shim_command_wrapper(
     if !same_command_name(shim_name, program) {
         return Ok(None);
     }
-    let Some(wrapper) = command_wrapper_for(config, ts, shim_name, true).await? else {
+    let Some(wrapper) = command_wrapper_for(config, ts, shim_name, &command[1..], true).await?
+    else {
         return Ok(None);
     };
     trace!("shim[{shim_name}] WRAPPER command: {}", wrapper.command());
@@ -242,6 +243,7 @@ async fn command_wrapper_for(
     config: &mut Arc<Config>,
     ts: &mut Toolset,
     shim_name: &str,
+    call_args: &[String],
     install_command: bool,
 ) -> Result<Option<CommandWrapper>> {
     if is_active_command_wrapper(shim_name) {
@@ -308,7 +310,9 @@ async fn command_wrapper_for(
         })));
     }
     // The toolset context carries the resolved project `[env]`, which `config.tera_ctx` lacks.
-    let ctx = with_source(ts.tera_ctx(config).await?);
+    let mut ctx = with_source(ts.tera_ctx(config).await?);
+    // What the user typed after the command name, for `args` and `env` only.
+    ctx.insert("argv", call_args);
     let args = wrapper
         .args()
         .iter()
@@ -388,7 +392,7 @@ async fn which_shim(
         .build(config)
         .await?;
     if let Some(wrapper) =
-        command_wrapper_for(config, &mut ts, shim_name, !completion_offline).await?
+        command_wrapper_for(config, &mut ts, shim_name, &args[1..], !completion_offline).await?
     {
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
         return Ok((ShimCommand::Wrapper(wrapper), ts));

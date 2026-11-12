@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/fakeshow" <<'SH'
+#!/usr/bin/env bash
+printf 'level:%s args:%s\n' "$LEVEL" "$*"
+SH
+cat >"$fake_bin/foo" <<'SH'
+#!/usr/bin/env bash
+echo unwrapped
+SH
+chmod +x "$fake_bin/fakeshow" "$fake_bin/foo"
+export PATH="$fake_bin:$PATH"
+
+cat >mise.toml <<'TOML'
+[wrappers.foo]
+command = "fakeshow"
+args = ["--profile={{ 'test' if argv[0] == 'test' else 'development' }}", "--"]
+env = { LEVEL = "{{ 'debug' if '--verbose' in argv else 'info' }}" }
+TOML
+
+mise reshim
+eval "$(mise activate bash --shims)"
+# the user's arguments follow the wrapper's own, unchanged
+assert "foo test a b" "level:info args:--profile=test -- test a b"
+assert "foo server" "level:info args:--profile=development -- server"
+assert "foo --verbose server" "level:debug args:--profile=development -- --verbose server"
+# an empty list indexes without an error
+assert "foo" "level:info args:--profile=development --"

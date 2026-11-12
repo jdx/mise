@@ -547,6 +547,31 @@ command = "foo-real"
 env = { FOO_HOME = "{{ [xdg_data_home, 'foo'] | join_path }}" }
 ```
 
+In `args` and `env` values, `argv` is the list of arguments the user typed after the
+command name. It does not include the wrapper's own `command` or `args`, which still
+come first; the user's arguments are forwarded unchanged. `argv[0]` on an empty list
+is not an error, it just compares unequal. For example, to run `rails test` with
+the `test` secrets profile and everything else with `development`:
+
+```toml [mise.toml]
+[wrappers.rails]
+command = "fnox"
+args = [
+  "--profile={{ 'test' if argv[0] == 'test' else 'development' }}",
+  "exec", "--", "rails",
+]
+```
+
+`rails test models/user_test.rb` runs `fnox --profile=test exec -- rails test
+models/user_test.rb`, and plain `rails` runs `fnox --profile=development exec -- rails`.
+`argv` can also pick an `env` value:
+
+```toml [mise.toml]
+[wrappers.myserver]
+command = "myserver-real"
+env = { RUST_LOG = "{{ 'debug' if '--verbose' in argv else 'info' }}" }
+```
+
 A literal <span v-pre>`{{`</span> or <span v-pre>`{%`</span> in a value, such as Docker's
 <span v-pre>`{{.Names}}`</span> format string, is now
 parsed as a template. Wrap it in a raw block:
