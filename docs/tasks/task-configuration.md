@@ -909,6 +909,8 @@ lock = true
 
 - A name is shared by every task on this machine that names it, in any project.
   Pick a specific name, such as `shop-test-db` rather than `db`.
+- A name can use [templates](/templates.html), so `lock = "{{config_root}}/package-lock.json"`
+  is shared only by tasks of that project, not by every project on the machine.
 - `true` lets one run of the task at a time across every worktree of its
   repository. Another repository with a task of the same name is not affected.
 - `false` or an empty list takes no lock, for example to turn off a lock a

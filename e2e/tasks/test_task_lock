@@ -170,3 +170,15 @@ until grep -q "hold-z" "$MISE_STATE_DIR"/task-locks/*.json 2>/dev/null; do
 done
 assert_contains "cd f && timeout 60 mise run --jobs 1 first ::: second 2>&1" "needs-z ran"
 wait "$holder_pid"
+
+# a lock name can use templates, so a project can scope a shared name to itself
+mkdir -p tpl/p1 tpl/p2
+for p in p1 p2; do
+  cat >tpl/$p/mise.toml <<'EOF'
+[tasks.w]
+lock = "{{config_root}}/package-lock.json"
+run = "true"
+EOF
+done
+assert_contains "mise --cd tpl/p1 tasks info w" "workdir/tpl/p1/package-lock.json"
+assert_not_contains "mise --cd tpl/p1 tasks info w" "tpl/p2"

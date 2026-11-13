@@ -2859,6 +2859,7 @@ impl Task {
                 .is_some_and(|s| contains_template_syntax(s))
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
+            || matches!(&self.lock, Some(TaskLock::Names(names)) if names.iter().any(|n| contains_template_syntax(n)))
             || tools_have_template
     }
 
@@ -2967,6 +2968,14 @@ impl Task {
         // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
         render_sandbox_paths(&mut self.allow_read)?;
         render_sandbox_paths(&mut self.allow_write)?;
+        if let Some(TaskLock::Names(names)) = &mut self.lock {
+            for name in names.iter_mut() {
+                if contains_template_syntax(name) {
+                    *name = render_str(&mut tera, name, &tera_ctx)?;
+                    TaskLock::validate_name(name).map_err(|e| eyre!("{}: {e}", self.name))?;
+                }
+            }
+        }
         for tool in self.tools.values_mut() {
             tool.render_templates(&mut tera, &tera_ctx)?;
         }
