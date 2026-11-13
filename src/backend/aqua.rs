@@ -3914,6 +3914,9 @@ impl AquaBackend {
             }
         }
 
+        #[cfg(unix)]
+        Self::wrap_jar_bins(&srcs, filename)?;
+
         // Bionic provides no glibc or musl loader, so an asset that names no
         // libc can still be linked against one and die at exec. The interpreter
         // says which build it is, whatever the file is called.
@@ -3927,6 +3930,68 @@ impl AquaBackend {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
+        Ok(())
+    }
+
+    /// Make a `.jar` package runnable, as aqua does by running it through
+    /// `java -jar`. The jar keeps a `.jar` name next to a launcher script that
+    /// takes the exposed binary name. Java itself comes from the user.
+    #[cfg(unix)]
+    fn wrap_jar_bins(srcs: &[AquaFileLink], download_filename: &str) -> Result<()> {
+        use std::io::Read;
+        let download_is_jar = download_filename.to_ascii_lowercase().ends_with(".jar");
+        for link in srcs {
+            let src_is_jar = link
+                .src
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"));
+            if !(src_is_jar || download_is_jar) {
+                continue;
+            }
+            let Ok(meta) = fs::metadata(&link.src) else {
+                continue;
+            };
+            if !meta.is_file() {
+                continue;
+            }
+            // A jar is a zip archive; anything else is already a program.
+            let mut magic = [0u8; 4];
+            if fs::File::open(&link.src)
+                .and_then(|mut f| f.read_exact(&mut magic))
+                .is_err()
+                || magic != *b"PK\x03\x04"
+            {
+                continue;
+            }
+            let (jar, launcher) = if src_is_jar {
+                let launcher = if link.src == link.dst {
+                    link.dst.with_extension("")
+                } else {
+                    link.dst.clone()
+                };
+                (link.src.clone(), launcher)
+            } else {
+                let mut jar = link.src.clone().into_os_string();
+                jar.push(".jar");
+                (PathBuf::from(jar), link.dst.clone())
+            };
+            if jar != link.src {
+                // Moves the file the dst symlink points at, so remove dst first.
+                if link.dst != link.src && link.dst.is_symlink() {
+                    fs::remove_file(&link.dst)?;
+                }
+                fs::rename(&link.src, &jar)?;
+            }
+            if launcher.is_symlink() || launcher.exists() {
+                fs::remove_file(&launcher)?;
+            }
+            let script = format!(
+                "#!/bin/sh\nexec java -jar '{}' \"$@\"\n",
+                jar.to_string_lossy().replace('\'', "'\\''")
+            );
+            file::write(&launcher, script)?;
+            file::make_executable(&launcher)?;
+        }
         Ok(())
     }
 
