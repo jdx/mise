@@ -1283,15 +1283,10 @@ async fn installed_version_newer_than_cutoff(
         .versions_hidden_by_before_date(config, "latest", before)
         .await
         .ok()?;
-    // An identity-layout installation is listed as `<version>~<tag>~<digest>`;
-    // the remote lists the bare version.
-    let kept_version = kept
-        .split_once('~')
-        .map_or(kept.as_str(), |(version, _)| version);
-    hidden
-        .iter()
-        .any(|v| v.version == kept_version)
-        .then_some(kept)
+    // Exact match only. An identity-layout installation is listed as
+    // `<version>~<tag>~<digest>` and carries its own lock graph, which a request
+    // for the bare version cannot reuse, so it is left to the usual resolution.
+    hidden.iter().any(|v| v.version == kept).then_some(kept)
 }
 
 /// Whether install-time resolution should refresh the remote-versions cache
