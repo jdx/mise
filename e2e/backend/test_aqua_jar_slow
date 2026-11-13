@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# A package that ships a single .jar runs through `java -jar`, as it does in aqua.
+cat <<'EOF_MISE' >mise.toml
+[tools]
+java = "temurin-21"
+"aqua:checkstyle/checkstyle" = "10.21.0"
+EOF_MISE
+
+mise install
+assert_contains "mise x -- checkstyle --version" "Checkstyle version: 10.21.0"
