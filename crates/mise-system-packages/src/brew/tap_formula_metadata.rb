@@ -84,6 +84,13 @@ module Hardware
   end
 end
 
+class Array
+  def second = self[1]
+  def third = self[2]
+  def fourth = self[3]
+  def fifth = self[4]
+end
+
 class MetadataVersion
   def initialize(value) = @value = value.to_s
   def to_s = @value
