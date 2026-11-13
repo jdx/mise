@@ -736,6 +736,7 @@ const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "deny_net",
     "deny_env",
     "deny_unix",
+    "allow_unix",
 ];
 
 /// Reads a file task's merged `#MISE` header into a [`TaskDecl`], the type a `[tasks.<name>]`
@@ -2866,6 +2867,7 @@ impl Task {
                 .is_some_and(|s| contains_template_syntax(s))
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
+            || self.allow_unix.iter().any(|p| path_contains_template(p))
             || tools_have_template
     }
 
@@ -2971,9 +2973,11 @@ impl Task {
         // the restriction.
         self.deny_read |= !self.allow_read.is_empty();
         self.deny_write |= !self.allow_write.is_empty();
+        self.deny_unix |= !self.allow_unix.is_empty();
         // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
         render_sandbox_paths(&mut self.allow_read)?;
         render_sandbox_paths(&mut self.allow_write)?;
+        render_sandbox_paths(&mut self.allow_unix)?;
         for tool in self.tools.values_mut() {
             tool.render_templates(&mut tera, &tera_ctx)?;
         }
@@ -5306,6 +5310,20 @@ exec proxy "$@"
 
         assert_eq!(task.allow_read, vec![crate::env::HOME.join("read")]);
         assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
+    }
+
+    #[tokio::test]
+    async fn test_render_allow_unix_templates() {
+        let config = Config::get().await.unwrap();
+        let mut task = Task {
+            allow_unix: vec![Path::new("{{ env.HOME }}/agent.sock").into()],
+            ..Default::default()
+        };
+
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        assert_eq!(task.allow_unix, vec![crate::env::HOME.join("agent.sock")]);
+        assert!(task.deny_unix);
     }
 
     /// A list whose only entry renders to nothing allows no path; it must not

@@ -23,6 +23,11 @@ import socket, sys
 srv = socket.socket(socket.AF_UNIX)
 srv.bind(sys.argv[1])
 srv.listen(5)
+if len(sys.argv) > 2:
+    # an abstract socket made outside the sandbox
+    abs_srv = socket.socket(socket.AF_UNIX)
+    abs_srv.bind("\0mise-e2e-outside")
+    abs_srv.listen(5)
 open(sys.argv[1] + ".ready", "w").close()
 while True:
     srv.accept()[0].close()
@@ -35,6 +40,12 @@ try:
     print("connected")
 except OSError as e:
     print("blocked")
+out = socket.socket(socket.AF_UNIX)
+try:
+    out.connect("\0mise-e2e-outside")
+    print("abstract outside connected")
+except OSError:
+    print("abstract outside blocked")
 # A socket made inside the sandbox stays reachable inside it.
 a = socket.socket(socket.AF_UNIX)
 a.bind("\0mise-e2e-" + str(__import__("os").getpid()))
@@ -43,15 +54,20 @@ c = socket.socket(socket.AF_UNIX)
 c.connect(a.getsockname())
 print("abstract ok")
 PY
-python3 server.py "$sock_dir/a/s.sock" &
+python3 server.py "$sock_dir/a/s.sock" abstract &
+server_a=$!
 python3 server.py "$sock_dir/b/s.sock" &
+server_b=$!
+trap 'kill "$server_a" "$server_b" 2>/dev/null; wait' EXIT
 for _ in $(seq 100); do
   [[ -e "$sock_dir/a/s.sock.ready" && -e "$sock_dir/b/s.sock.ready" ]] && break
   sleep 0.1
 done
 
-assert "mise exec -- python3 client.py $sock_dir/a/s.sock | head -1" "connected"
+assert "mise exec -- python3 client.py $sock_dir/a/s.sock | head -2" "connected
+abstract outside connected"
 assert "mise exec --deny-unix -- python3 client.py $sock_dir/a/s.sock" "blocked
+abstract outside blocked
 abstract ok"
 assert "mise exec --allow-unix $sock_dir/a -- python3 client.py $sock_dir/a/s.sock | head -1" "connected"
 assert "mise exec --allow-unix $sock_dir/a -- python3 client.py $sock_dir/b/s.sock | head -1" "blocked"
@@ -67,5 +83,3 @@ deny_unix = true
 TOML
 assert "mise run allowed 2>&1 | grep -v '^\\[' | head -1" "connected"
 assert "mise run denied 2>&1 | grep -v '^\\[' | head -1" "blocked"
-
-kill %1 %2
