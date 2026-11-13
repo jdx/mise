@@ -54,6 +54,10 @@ another OS is listed as skipped but does not count, so one config can hold
 every platform's settings. `mise bootstrap status` and `mise bootstrap plan` do not check
 settings yet, so use this command to detect that drift.
 
+`[bootstrap.settings.macos]` is built in rather than a plugin: it holds
+[macOS preferences](/bootstrap/macos-defaults.html), which the
+`macos-defaults` part applies. No plugin can be named `macos`.
+
 Sections merge across config files key by key, and a more local file's value
 wins, as for the rest of `[bootstrap]`. `desk_plugin` and `desk-plugin` name
 the same plugin, so their sections merge too. `appearance = { blur = true }` and

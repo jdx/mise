@@ -328,11 +328,32 @@ fn check(validator: &jsonschema::Validator, body: &str) -> Option<Outcome> {
     let mut unknown = vec![];
     // never read: the path only places the config for templates and roots
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml");
-    let parser_error = MiseToml::parse_body_reporting(body, &path, false, &mut |field| {
-        unknown.push(field.to_string());
-    })
+    let mut moved = None;
+    let parser_error = MiseToml::parse_body_reporting(
+        body,
+        &path,
+        false,
+        &mut |field| unknown.push(field.to_string()),
+        &mut |m| {
+            let rejected = MiseToml::reject_unreadable_macos_settings(&m, &path);
+            moved = Some(m);
+            rejected
+        },
+    )
     .err()
     .map(|e| format!("{e:#}"));
+    // `[bootstrap.settings.macos]` is read after the rest, so what it rejects is reported here
+    if let Some(moved) = moved {
+        unknown.extend(
+            moved
+                .unknown
+                .iter()
+                .map(|key| format!("bootstrap.settings.macos.{key}")),
+        );
+        if moved.error.is_some() {
+            unknown.push("bootstrap.settings.macos".to_string());
+        }
+    }
     Some(Outcome {
         parser_error,
         unknown,

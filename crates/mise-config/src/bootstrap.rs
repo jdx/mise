@@ -115,15 +115,175 @@ pub struct BootstrapTomlConfig {
     pub settings: IndexMap<String, toml::Table>,
 }
 
-fn plugin_settings(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+fn plugin_settings(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let macos = generator.subschema_for::<MacosSettingsTomlConfig>();
     schemars::json_schema!({
         "type": "object",
         "propertyNames": {"pattern": "^[A-Za-z0-9_.-]+$"},
+        "properties": {"macos": macos},
         "additionalProperties": {
             "type": "object",
             "description": "settings for the bootstrap settings plugin of this name"
         }
     })
+}
+
+/// macOS preferences, written the way `defaults write` writes them; `macos` is built in, not a plugin
+// The preference keys of `BootstrapMacosTomlConfig`, under their new home. `move_macos_settings`
+// moves them back there, so the rest of mise reads one place.
+#[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
+pub struct MacosSettingsTomlConfig {
+    /// Dock preferences (com.apple.dock)
+    #[serde(default)]
+    #[schemars(schema_with = "refs::bootstrap_macos_dock")]
+    pub dock: IndexMap<String, toml::Value>,
+    /// Finder preferences (com.apple.finder)
+    #[serde(default)]
+    #[schemars(schema_with = "refs::bootstrap_macos_finder")]
+    pub finder: IndexMap<String, toml::Value>,
+    /// keyboard preferences
+    #[serde(default)]
+    #[schemars(schema_with = "refs::bootstrap_macos_keyboard")]
+    pub keyboard: IndexMap<String, toml::Value>,
+    /// trackpad preferences
+    #[serde(default)]
+    #[schemars(schema_with = "refs::bootstrap_macos_trackpad")]
+    pub trackpad: IndexMap<String, toml::Value>,
+    /// any preference, by domain and key
+    #[serde(default)]
+    #[schemars(schema_with = "refs::bootstrap_macos_defaults")]
+    pub defaults: IndexMap<String, toml::Value>,
+    /// Explicit macOS preferences with a selectable host scope
+    #[serde(default)]
+    pub defaults_entries: Vec<BootstrapMacosDefaultsEntry>,
+    /// applications to open at login (System Settings > General > Login Items & Extensions)
+    #[serde(default)]
+    #[schemars(with = "Option<login_items::LoginItemsTomlConfig>")]
+    pub login_items: Option<MacosLoginItemsSettings>,
+}
+
+/// `[bootstrap.settings.macos.login_items]` as written, so the move can tell an omitted `apps`
+/// from an explicitly empty one.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MacosLoginItemsSettings {
+    #[serde(default)]
+    pub apps: Option<Vec<String>>,
+    #[serde(default)]
+    pub exclusive: Option<bool>,
+}
+
+/// What [`BootstrapTomlConfig::move_macos_settings`] found.
+#[derive(Debug, Default)]
+pub struct MacosSettingsMove {
+    /// Preferences were set in the deprecated `[bootstrap.macos]` tables.
+    pub legacy: bool,
+    /// Keys under `[bootstrap.settings.macos]` that mean nothing, as dotted paths.
+    pub unknown: Vec<String>,
+    /// `[bootstrap.settings.macos]` could not be read; the config must be rejected.
+    pub error: Option<String>,
+}
+
+impl BootstrapTomlConfig {
+    /// Moves `[bootstrap.settings.macos]` into the preference tables of `[bootstrap.macos]`, where
+    /// the rest of mise reads them. A key set in both places takes the new spelling's value.
+    pub fn move_macos_settings(&mut self) -> MacosSettingsMove {
+        let macos = &mut self.macos;
+        let mut outcome = MacosSettingsMove {
+            legacy: !(macos.dock.is_empty()
+                && macos.finder.is_empty()
+                && macos.keyboard.is_empty()
+                && macos.trackpad.is_empty()
+                && macos.defaults.is_empty()
+                && macos.defaults_entries.is_empty()
+                && macos.login_items.is_none()),
+            ..Default::default()
+        };
+        // `Macos` and `MACOS` name the same section as `macos`, as they would for a plugin, so
+        // none of them may be left behind to be dispatched as a settings plugin. Each is applied
+        // in turn, the exact `macos` last, so a later one replaces a whole preference value
+        // rather than merging into it.
+        let mut names: Vec<String> = self
+            .settings
+            .keys()
+            .filter(|name| plugin_identity(name) == "macos")
+            .cloned()
+            .collect();
+        names.sort_by_key(|name| name == "macos");
+        let tables: Vec<toml::Table> = names
+            .iter()
+            .map(|name| self.settings.shift_remove(name).unwrap_or_default())
+            .collect();
+        for table in tables {
+            let parsed: Result<MacosSettingsTomlConfig, _> =
+                serde_ignored::deserialize(toml::Value::Table(table), |path| {
+                    outcome.unknown.push(path.to_string())
+                });
+            match parsed {
+                Ok(new) => macos.apply_settings(new),
+                Err(err) => {
+                    outcome.error = Some(err.to_string());
+                    return outcome;
+                }
+            }
+        }
+        outcome
+    }
+}
+
+/// The identity of a plugin name: `foo_bar`, `foo-bar` and `FooBar` are the same plugin, which
+/// mise installs under the kebab-case name.
+pub fn plugin_identity(name: &str) -> String {
+    heck::ToKebabCase::to_kebab_case(name)
+}
+
+impl BootstrapMacosTomlConfig {
+    /// Applies one `[bootstrap.settings.macos]` section over these preferences.
+    fn apply_settings(&mut self, new: MacosSettingsTomlConfig) {
+        self.dock.extend(new.dock);
+        self.finder.extend(new.finder);
+        self.keyboard.extend(new.keyboard);
+        self.trackpad.extend(new.trackpad);
+        for (domain, value) in new.defaults {
+            // `-g` and `NSGlobalDomain` are one domain, read in order with the later value
+            // winning, so a key the new spelling sets must not survive under another alias.
+            if let toml::Value::Table(keys) = &value {
+                for (other, old) in self.defaults.iter_mut() {
+                    if *other != domain
+                        && defaults_domain_identity(other) == defaults_domain_identity(&domain)
+                        && let toml::Value::Table(old) = old
+                    {
+                        old.retain(|key, _| !keys.contains_key(key));
+                    }
+                }
+            }
+            match (self.defaults.get_mut(&domain), value) {
+                (Some(toml::Value::Table(old)), toml::Value::Table(new)) => old.extend(new),
+                (_, value) => {
+                    self.defaults.insert(domain, value);
+                }
+            }
+        }
+        self.defaults_entries.extend(new.defaults_entries);
+        // Merge field by field, so `exclusive = true` alone in the new spelling keeps the apps
+        // the old spelling declares, while an explicit `apps = []` clears them.
+        if let Some(new) = new.login_items {
+            let merged = self.login_items.get_or_insert_with(Default::default);
+            if let Some(apps) = new.apps {
+                merged.apps = apps;
+            }
+            if new.exclusive.is_some() {
+                merged.exclusive = new.exclusive;
+            }
+        }
+    }
+}
+
+/// The domain `defaults` reads for `domain`: `-g` and `-globalDomain` name `NSGlobalDomain`.
+fn defaults_domain_identity(domain: &str) -> &str {
+    match domain {
+        "-g" | "-globalDomain" => "NSGlobalDomain",
+        domain => domain,
+    }
 }
 
 fn plugin_urls(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -195,28 +355,30 @@ pub struct BootstrapMacosTomlConfig {
     // TOML so shapes from newer mise versions parse fine on older ones, and a malformed domain
     // warns instead of failing the whole config.
     #[serde(default)]
-    #[schemars(schema_with = "refs::bootstrap_macos_dock")]
+    #[schemars(schema_with = "refs::bootstrap_macos_dock", extend("deprecated" = true))]
     pub dock: IndexMap<String, toml::Value>,
     #[serde(default)]
-    #[schemars(schema_with = "refs::bootstrap_macos_finder")]
+    #[schemars(schema_with = "refs::bootstrap_macos_finder", extend("deprecated" = true))]
     pub finder: IndexMap<String, toml::Value>,
     #[serde(default)]
-    #[schemars(schema_with = "refs::bootstrap_macos_keyboard")]
+    #[schemars(schema_with = "refs::bootstrap_macos_keyboard", extend("deprecated" = true))]
     pub keyboard: IndexMap<String, toml::Value>,
     #[serde(default)]
-    #[schemars(schema_with = "refs::bootstrap_macos_trackpad")]
+    #[schemars(schema_with = "refs::bootstrap_macos_trackpad", extend("deprecated" = true))]
     pub trackpad: IndexMap<String, toml::Value>,
     #[serde(default)]
-    #[schemars(schema_with = "refs::bootstrap_macos_defaults")]
+    #[schemars(schema_with = "refs::bootstrap_macos_defaults", extend("deprecated" = true))]
     pub defaults: IndexMap<String, toml::Value>,
-    /// Explicit macOS preferences with a selectable host scope
+    /// deprecated: use [[bootstrap.settings.macos.defaults_entries]]
     #[serde(default)]
+    #[schemars(extend("deprecated" = true))]
     pub defaults_entries: Vec<BootstrapMacosDefaultsEntry>,
     /// macOS launchd bootstrap config
     #[serde(default)]
     pub launchd: BootstrapMacosLaunchdTomlConfig,
-    /// applications to open at login (System Settings > General > Login Items & Extensions)
+    /// deprecated: use [bootstrap.settings.macos.login_items]
     #[serde(default)]
+    #[schemars(extend("deprecated" = true))]
     pub login_items: Option<login_items::LoginItemsTomlConfig>,
 }
 
@@ -388,5 +550,157 @@ mod tests {
             &["echo win".into(), "echo own".into()]
         );
         assert_eq!(value["run"].as_array().unwrap()[0], toml::Value::Integer(1));
+    }
+}
+
+#[cfg(test)]
+mod macos_settings_tests {
+    use super::*;
+
+    fn bootstrap(toml: &str) -> BootstrapTomlConfig {
+        toml::from_str(toml).unwrap()
+    }
+
+    #[test]
+    fn new_spelling_moves_into_the_preference_tables() {
+        let mut config = bootstrap(
+            r#"
+            [settings.macos.dock]
+            autohide = true
+            [settings.macos.defaults."com.apple.screencapture"]
+            type = "png"
+            [settings.other]
+            key = 1
+            "#,
+        );
+        let moved = config.move_macos_settings();
+        assert!(!moved.legacy);
+        assert!(moved.unknown.is_empty());
+        assert_eq!(config.macos.dock["autohide"], toml::Value::Boolean(true));
+        assert_eq!(
+            config.macos.defaults["com.apple.screencapture"]["type"],
+            toml::Value::String("png".into())
+        );
+        assert!(!config.settings.contains_key("macos"));
+        assert!(config.settings.contains_key("other"));
+    }
+
+    #[test]
+    fn every_spelling_of_macos_is_the_macos_section() {
+        let mut config = bootstrap(
+            r#"
+            [settings.Macos.dock]
+            autohide = true
+            tilesize = 48
+            [settings.MACOS.finder]
+            show_all_files = true
+            [settings.macos.dock]
+            tilesize = 64
+            "#,
+        );
+        let moved = config.move_macos_settings();
+        assert!(moved.error.is_none());
+        assert!(config.settings.is_empty());
+        assert_eq!(config.macos.dock["autohide"], toml::Value::Boolean(true));
+        assert_eq!(config.macos.dock["tilesize"], toml::Value::Integer(64));
+        assert_eq!(
+            config.macos.finder["show_all_files"],
+            toml::Value::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn a_later_spelling_replaces_a_whole_preference_value() {
+        let mut config = bootstrap(
+            r#"
+            [settings.macos.defaults."com.example"]
+            options = { enabled = false }
+            [settings.Macos.defaults."com.example"]
+            options = { enabled = true, mode = "old" }
+            other = 1
+            "#,
+        );
+        assert!(config.move_macos_settings().error.is_none());
+        let domain = &config.macos.defaults["com.example"];
+        assert_eq!(
+            domain["options"],
+            toml::Value::Table(toml::from_str("enabled = false").unwrap())
+        );
+        assert_eq!(domain["other"], toml::Value::Integer(1));
+    }
+
+    #[test]
+    fn new_spelling_wins_over_every_alias_of_a_domain() {
+        let mut config = bootstrap(
+            r#"
+            [macos.defaults.-g]
+            SomeKey = false
+            Other = 1
+            [macos.defaults.NSGlobalDomain]
+            SomeKey = false
+            [settings.macos.defaults.-g]
+            SomeKey = true
+            "#,
+        );
+        config.move_macos_settings();
+        let defaults = &config.macos.defaults;
+        assert_eq!(defaults["-g"]["SomeKey"], toml::Value::Boolean(true));
+        assert_eq!(defaults["-g"]["Other"], toml::Value::Integer(1));
+        assert!(defaults["NSGlobalDomain"].get("SomeKey").is_none());
+    }
+
+    #[test]
+    fn new_spelling_wins_over_the_deprecated_one() {
+        let mut config = bootstrap(
+            r#"
+            [macos.dock]
+            autohide = false
+            tilesize = 48
+            [macos.defaults."com.apple.screencapture"]
+            type = "jpg"
+            disable-shadow = true
+            [settings.macos.dock]
+            autohide = true
+            [settings.macos.defaults."com.apple.screencapture"]
+            type = "png"
+            [settings.macos.typo]
+            x = 1
+            "#,
+        );
+        let moved = config.move_macos_settings();
+        assert!(moved.legacy);
+        assert_eq!(moved.unknown, vec!["typo".to_string()]);
+        assert_eq!(config.macos.dock["autohide"], toml::Value::Boolean(true));
+        assert_eq!(config.macos.dock["tilesize"], toml::Value::Integer(48));
+        let shots = &config.macos.defaults["com.apple.screencapture"];
+        assert_eq!(shots["type"], toml::Value::String("png".into()));
+        assert_eq!(shots["disable-shadow"], toml::Value::Boolean(true));
+    }
+
+    #[test]
+    fn login_items_merge_field_by_field() {
+        let mut config = bootstrap(
+            r#"
+            [macos.login_items]
+            apps = ["/Applications/Rectangle.app"]
+            [settings.macos.login_items]
+            exclusive = true
+            "#,
+        );
+        config.move_macos_settings();
+        let items = config.macos.login_items.unwrap();
+        assert_eq!(items.apps, vec!["/Applications/Rectangle.app".to_string()]);
+        assert_eq!(items.exclusive, Some(true));
+
+        let mut config = bootstrap(
+            r#"
+            [macos.login_items]
+            apps = ["/Applications/Rectangle.app"]
+            [settings.macos.login_items]
+            apps = []
+            "#,
+        );
+        config.move_macos_settings();
+        assert!(config.macos.login_items.unwrap().apps.is_empty());
     }
 }

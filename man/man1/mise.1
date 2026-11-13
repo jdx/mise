@@ -225,7 +225,7 @@ Install and start the configured systemd user units
 Show the state of the configured systemd user units
 .TP
 \fBbootstrap macos\fR
-Manage macOS preferences and LaunchAgents from `[bootstrap.macos]`
+Manage macOS preferences and LaunchAgents from `[bootstrap.settings.macos]` and `[bootstrap.macos.launchd]`
 .TP
 \fBbootstrap macos defaults\fR
 Manage macOS preferences such as Dock, Finder, and keyboard settings
@@ -1935,7 +1935,7 @@ Exit with status 1 if any unit differs from the config (all are still listed)
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP MACOS"
-Manage macOS preferences and LaunchAgents from `[bootstrap.macos]`
+Manage macOS preferences and LaunchAgents from `[bootstrap.settings.macos]` and `[bootstrap.macos.launchd]`
 .PP
 \fBUsage:\fR mise bootstrap macos [OPTIONS] <COMMAND>
 .PP
@@ -1947,11 +1947,13 @@ Print help
 .SH "MISE BOOTSTRAP MACOS DEFAULTS"
 Manage macOS preferences such as Dock, Finder, and keyboard settings
 
-Applies `[bootstrap.macos.defaults]`, `[[bootstrap.macos.defaults_entries]]`,
-and the `[bootstrap.macos.dock]`, `finder`, `keyboard`, and `trackpad`
-sections. Preferences are written the way `defaults write` writes them.
-mise does not restart apps: Dock, Finder, and some others show a change
-only after they relaunch.
+Applies `[bootstrap.settings.macos]`: its `defaults`, `dock`, `finder`,
+`keyboard`, `trackpad`, and `login_items` tables, and its
+`[[bootstrap.settings.macos.defaults_entries]]` array of tables.
+Preferences are written the way `defaults write` writes them. mise does not
+restart apps: Dock, Finder, and some others show a change only after they
+relaunch. Other `[bootstrap.settings.<plugin>]` sections are applied by
+bootstrap settings plugins through `mise bootstrap settings`.
 .PP
 \fBUsage:\fR mise bootstrap macos defaults [OPTIONS] <COMMAND>
 .PP
