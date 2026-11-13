@@ -237,3 +237,15 @@ eval "$(mise hook-env -s zsh --force)"
 print -r -- done
 ZSH
 assert 'cat zsh-restored-cleanup.out' 'done'
+
+# An unset _comps must not trip nounset in the guard.
+zsh -f <<'ZSH' >zsh-unset-comps.out 2>&1
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+autoload -Uz compinit
+compinit -i
+unset _comps
+eval "$(mise hook-env -s zsh --force)"
+print -r -- done
+ZSH
+assert 'cat zsh-unset-comps.out' 'done'
