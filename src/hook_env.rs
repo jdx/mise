@@ -331,15 +331,20 @@ fn check_exit_early_fast() -> bool {
         }
     }
     // Check if any files from [[watch_files]] patterns have been modified
+    // A modified file must not skip the new-match check below, or a file moved in
+    // at the same time would never be recorded for its hook.
+    let mut watch_file_changed = false;
     for path in &PREV_SESSION.watch_files {
         if let Ok(metadata) = path.metadata() {
             if let Ok(modified) = metadata.modified()
                 && mtime_to_millis(modified) > PREV_SESSION.latest_update
             {
-                return force_full_run();
+                watch_file_changed = true;
+                break;
             }
         } else if !path.exists() {
-            return force_full_run();
+            watch_file_changed = true;
+            break;
         }
     }
     if !PREV_SESSION.watch_patterns.is_empty() {
@@ -357,6 +362,9 @@ fn check_exit_early_fast() -> bool {
             }
             return force_full_run();
         }
+    }
+    if watch_file_changed {
+        return force_full_run();
     }
     if have_trust_state_dirs_been_modified() {
         return force_full_run();

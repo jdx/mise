@@ -50,7 +50,7 @@ fi
 # a file moved in keeps an old mtime but still runs the watch hook
 eval "$(mise hook-env -s bash 2>/dev/null)"
 runs_before=$(wc -l <watch-runs.txt)
-touch -d '2 days ago' moved.rs
+touch -t 202001010000 moved.rs
 sleep 1
 mv moved.rs src/moved.rs
 mise hook-env -s bash >/dev/null 2>&1
