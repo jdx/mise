@@ -344,11 +344,17 @@ fn check_exit_early_fast() -> bool {
     }
     if !PREV_SESSION.watch_patterns.is_empty() {
         let known: HashSet<&PathBuf> = PREV_SESSION.watch_files.iter().collect();
-        if PREV_SESSION
+        let new_matches: Vec<PathBuf> = PREV_SESSION
             .watch_patterns
             .iter()
-            .any(|p| p.has_new_match(&known))
-        {
+            .flat_map(|p| p.new_matches(&known))
+            .collect();
+        if !new_matches.is_empty() {
+            // A file moved in keeps its old mtime, so the slow path would not
+            // see it as modified; record it so its watch_files hook still runs.
+            for path in new_matches {
+                watch_files::add_modified_file(path);
+            }
             return force_full_run();
         }
     }
@@ -556,15 +562,19 @@ pub struct WatchPattern {
 }
 
 impl WatchPattern {
-    /// Whether the pattern now matches a file the session did not know about.
-    fn has_new_match(&self, known: &HashSet<&PathBuf>) -> bool {
+    /// The files the pattern now matches that the session did not know about.
+    fn new_matches(&self, known: &HashSet<&PathBuf>) -> Vec<PathBuf> {
         match &self.root {
             Some(root) => watch_files::glob(root, std::slice::from_ref(&self.pattern))
-                .map(|matches| matches.iter().any(|m| !known.contains(m)))
-                .unwrap_or(false),
+                .map(|matches| matches.into_iter().filter(|m| !known.contains(m)).collect())
+                .unwrap_or_default(),
             None => {
                 let path = PathBuf::from(&self.pattern);
-                path.exists() && !known.contains(&path)
+                if path.exists() && !known.contains(&path) {
+                    vec![path]
+                } else {
+                    Vec::new()
+                }
             }
         }
     }

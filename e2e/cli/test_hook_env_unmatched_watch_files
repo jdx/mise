@@ -46,3 +46,17 @@ if [[ $output == *"__MISE_SESSION"* ]]; then
 else
   fail "a further new match should force a full run but got: '$output'"
 fi
+
+# a file moved in keeps an old mtime but still runs the watch hook
+eval "$(mise hook-env -s bash 2>/dev/null)"
+runs_before=$(wc -l <watch-runs.txt)
+touch -d '2 days ago' moved.rs
+sleep 1
+mv moved.rs src/moved.rs
+mise hook-env -s bash >/dev/null 2>&1
+runs_after=$(wc -l <watch-runs.txt)
+if [[ $runs_after -gt $runs_before ]]; then
+  ok "a moved-in file runs the watch hook"
+else
+  fail "a moved-in file did not run the watch hook: $runs_before -> $runs_after"
+fi
