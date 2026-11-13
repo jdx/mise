@@ -16,7 +16,7 @@ use crate::platform::{ARCH, OS};
 use std::ffi::OsStr;
 #[cfg(windows)]
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -326,7 +326,7 @@ fn sweep_helper_orphans() {
 /// A file whose size cannot be read is still reported, at 0 — it exists, which is the part that
 /// matters, and the size is decoration.
 #[cfg(windows)]
-pub(crate) fn helper_orphans() -> Vec<(std::path::PathBuf, u64)> {
+pub(crate) fn helper_orphans() -> Vec<(PathBuf, u64)> {
     let Some(stem) = current_exe_stem() else {
         return Vec::new();
     };
@@ -334,7 +334,7 @@ pub(crate) fn helper_orphans() -> Vec<(std::path::PathBuf, u64)> {
 }
 
 #[cfg(windows)]
-fn helper_orphans_in(dir: &std::path::Path, stem: &str) -> Vec<(std::path::PathBuf, u64)> {
+fn helper_orphans_in(dir: &std::path::Path, stem: &str) -> Vec<(PathBuf, u64)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -654,13 +654,13 @@ fn skip_selected_update(target: &str, current: &str, explicit: bool, force: bool
 struct Updated {
     version: String,
     #[cfg(windows)]
-    staged_shim: Result<Option<std::path::PathBuf>>,
+    staged_shim: Result<Option<PathBuf>>,
     _dir: tempfile::TempDir,
 }
 
 /// Extract `mise-shim.exe` from an already verified release archive.
 #[cfg(windows)]
-fn extract_update_shim(archive: &Path, dest: &Path) -> Result<Option<std::path::PathBuf>> {
+fn extract_update_shim(archive: &Path, dest: &Path) -> Result<Option<PathBuf>> {
     let mut archive = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
     let mut entry = match archive.by_name("mise/bin/mise-shim.exe") {
         Ok(entry) => entry,
@@ -879,32 +879,32 @@ impl SelfUpdate {
         let shim_path = dir.path().join("mise-shim.exe");
         // Verification and archive I/O are blocking; no unverified contents are
         // extracted, and the running executable is untouched on any failure.
-        let staged_shim = tokio::task::spawn_blocking(move || -> Result<_> {
-            if let Some(manifest) = manifest {
-                packslip::verify(&manifest, &selected_version, &archive_path, before)?;
-            }
-            stage_update_binary(
-                &archive_path,
-                &new_binary,
-                &[*include_bytes!("../../zipsign.pub")],
-            )?;
-            #[cfg(target_os = "macos")]
-            Self::verify_macos_signature(&new_binary)?;
-            // Staged from the archive just verified, so it is downloaded once.
-            #[cfg(windows)]
-            let staged_shim = extract_update_shim(&archive_path, &shim_path);
-            #[cfg(windows)]
-            replace_running_binary(&new_binary)?;
-            #[cfg(not(windows))]
-            self_replace::self_replace(&new_binary)?;
-            #[cfg(windows)]
-            return Ok(staged_shim);
-            #[cfg(not(windows))]
-            Ok(())
-        })
-        .await??;
+        let staged_shim =
+            tokio::task::spawn_blocking(move || -> Result<Result<Option<PathBuf>>> {
+                if let Some(manifest) = manifest {
+                    packslip::verify(&manifest, &selected_version, &archive_path, before)?;
+                }
+                stage_update_binary(
+                    &archive_path,
+                    &new_binary,
+                    &[*include_bytes!("../../zipsign.pub")],
+                )?;
+                #[cfg(target_os = "macos")]
+                Self::verify_macos_signature(&new_binary)?;
+                // Staged from the archive just verified, so it is downloaded once.
+                #[cfg(windows)]
+                let staged_shim = extract_update_shim(&archive_path, &shim_path);
+                #[cfg(windows)]
+                replace_running_binary(&new_binary)?;
+                #[cfg(not(windows))]
+                self_replace::self_replace(&new_binary)?;
+                #[cfg(not(windows))]
+                let staged_shim = Ok(None);
+                Ok(staged_shim)
+            })
+            .await??;
         #[cfg(not(windows))]
-        let () = staged_shim;
+        drop(staged_shim);
         Ok(Some(Updated {
             version,
             #[cfg(windows)]
@@ -1118,7 +1118,7 @@ impl SelfUpdate {
 
     /// Put the shim staged from the verified release archive beside the real mise.exe.
     #[cfg(windows)]
-    fn install_staged_shim(staged: Result<Option<std::path::PathBuf>>) -> Result<()> {
+    fn install_staged_shim(staged: Result<Option<PathBuf>>) -> Result<()> {
         let Some(staged) = staged? else {
             return Ok(());
         };
@@ -1327,7 +1327,7 @@ mod archive_tests {
     use super::*;
     use std::io::{Cursor, Write};
 
-    fn signed_archive(dir: &Path, zip: bool) -> (std::path::PathBuf, [u8; 32]) {
+    fn signed_archive(dir: &Path, zip: bool) -> (PathBuf, [u8; 32]) {
         let key = zipsign_api::SigningKey::from_bytes(&[7; 32]);
         let public_key = key.verifying_key().to_bytes();
         let path = dir.join(if zip {
