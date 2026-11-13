@@ -3726,14 +3726,6 @@
           "description": "Get version lists, public GitHub release metadata and attestations from mise-versions before upstream APIs.",
           "type": "boolean"
         },
-        "versions_host_exclude": {
-          "default": [],
-          "description": "GitHub repositories that never use mise-versions, such as `my-org/*`.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "use_versions_host_track": {
           "default": true,
           "description": "Send download statistics to mise-versions after installing a tool.",
@@ -3742,6 +3734,14 @@
         "verbose": {
           "description": "Show extra output, such as installation logs, and set the log level to debug; same as `--verbose`.",
           "type": "boolean"
+        },
+        "versions_host_exclude": {
+          "default": [],
+          "description": "GitHub repositories that never use mise-versions, such as `my-org/*`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "windows_default_file_shell_args": {
           "default": "cmd /c",
