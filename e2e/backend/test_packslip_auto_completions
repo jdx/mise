@@ -223,3 +223,17 @@ eval "$(mise hook-env -s zsh --force)"
 print -r -- done
 ZSH
 assert 'cat zsh-plain-comps.out' 'done'
+
+# Completions registered before the snapshot: the restored cleanup must not
+# call compdef against a plain-array _comps.
+zsh -f <<'ZSH' >zsh-restored-cleanup.out 2>&1
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise hook-env -s zsh --force)"
+unset _comps
+typeset -ga _comps
+cd ../empty
+eval "$(mise hook-env -s zsh --force)"
+print -r -- done
+ZSH
+assert 'cat zsh-restored-cleanup.out' 'done'

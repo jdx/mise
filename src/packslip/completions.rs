@@ -134,18 +134,23 @@ fn safe_command(command: &str) -> bool {
 }
 
 fn registration(shell_name: &str, shell: Shell, commands: &BTreeSet<String>) -> String {
-    let mut output = clear(shell_name).to_string();
     let mut cleanup = String::new();
+    // A shell restored from a snapshot can have `compdef` but a plain `_comps`
+    // array; reset it and run compinit before the previous cleanup (which calls
+    // `compdef`) and before registering.
+    let mut output = String::new();
+    if shell == Shell::Zsh {
+        output.push_str(if commands.is_empty() {
+            "if (( $+functions[__mise_clear_completions] )) && [[ ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
+        } else {
+            "if ! (( $+functions[compdef] )) || [[ ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
+        });
+    }
     if commands.is_empty() {
+        output.push_str(clear(shell_name));
         return output;
     }
-    if shell == Shell::Zsh {
-        output.push_str(
-            // A shell restored from a snapshot can have `compdef` but a plain
-            // `_comps` array; reset it and run compinit so registration works.
-            "if ! (( $+functions[compdef] )) || [[ ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n",
-        );
-    }
+    output.push_str(clear(shell_name));
     if shell == Shell::PowerShell {
         // PowerShell exposes registration but no public lookup. Preserve the
         // existing entry when its completion table is available; if a host
