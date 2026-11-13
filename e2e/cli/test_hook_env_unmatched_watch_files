@@ -60,3 +60,18 @@ if [[ $runs_after -gt $runs_before ]]; then
 else
   fail "a moved-in file did not run the watch hook: $runs_before -> $runs_after"
 fi
+
+# a moved-in file still runs the hook when a loaded config changed in the same prompt
+eval "$(mise hook-env -s bash 2>/dev/null)"
+runs_before=$(wc -l <watch-runs.txt)
+touch -t 202001010000 moved2.rs
+sleep 1
+mv moved2.rs src/moved2.rs
+echo "# changed" >>mise.toml
+mise hook-env -s bash >/dev/null 2>&1
+runs_after=$(wc -l <watch-runs.txt)
+if [[ $runs_after -gt $runs_before ]]; then
+  ok "a moved-in file runs the watch hook alongside a config change"
+else
+  fail "a moved-in file did not run the watch hook with a config change: $runs_before -> $runs_after"
+fi

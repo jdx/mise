@@ -306,16 +306,21 @@ fn check_exit_early_fast() -> bool {
 
     // Every staleness check below returns via force_full_run() so the slow path
     // knows this run must reach build_session and refresh the session.
+    // A stale file must not skip the new-match check below, or a file moved in
+    // at the same time would never be recorded for its hook.
+    let mut stale = false;
     // Check if any loaded config files have been modified
     for config_path in &PREV_SESSION.loaded_configs {
         if let Ok(metadata) = config_path.metadata() {
             if let Ok(modified) = metadata.modified()
                 && mtime_to_millis(modified) > PREV_SESSION.latest_update
             {
-                return force_full_run();
+                stale = true;
+                break;
             }
         } else if !config_path.exists() {
-            return force_full_run();
+            stale = true;
+            break;
         }
     }
     // Check if any files accessed by tera template functions have been modified
@@ -324,26 +329,25 @@ fn check_exit_early_fast() -> bool {
             if let Ok(modified) = metadata.modified()
                 && mtime_to_millis(modified) > PREV_SESSION.latest_update
             {
-                return force_full_run();
+                stale = true;
+                break;
             }
         } else if !path.exists() {
-            return force_full_run();
+            stale = true;
+            break;
         }
     }
     // Check if any files from [[watch_files]] patterns have been modified
-    // A modified file must not skip the new-match check below, or a file moved in
-    // at the same time would never be recorded for its hook.
-    let mut watch_file_changed = false;
     for path in &PREV_SESSION.watch_files {
         if let Ok(metadata) = path.metadata() {
             if let Ok(modified) = metadata.modified()
                 && mtime_to_millis(modified) > PREV_SESSION.latest_update
             {
-                watch_file_changed = true;
+                stale = true;
                 break;
             }
         } else if !path.exists() {
-            watch_file_changed = true;
+            stale = true;
             break;
         }
     }
@@ -363,7 +367,7 @@ fn check_exit_early_fast() -> bool {
             return force_full_run();
         }
     }
-    if watch_file_changed {
+    if stale {
         return force_full_run();
     }
     if have_trust_state_dirs_been_modified() {
