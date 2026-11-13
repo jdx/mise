@@ -2748,7 +2748,7 @@ fn all_manager_names() -> Vec<String> {
 /// The identity of a plugin name: `foo_bar`, `foo-bar` and `FooBar` are the same plugin, which
 /// mise installs under the kebab-case name.
 pub fn plugin_identity(name: &str) -> String {
-    heck::ToKebabCase::to_kebab_case(name)
+    mise_config::bootstrap::plugin_identity(name)
 }
 
 /// `mgr` as the installed manager spells it: a plugin installed as `foo-bar` answers to `foo_bar`

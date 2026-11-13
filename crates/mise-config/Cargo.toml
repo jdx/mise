@@ -8,6 +8,7 @@ repository = "https://github.com/jdx/mise"
 
 [dependencies]
 eyre = "0.6"
+heck = "0.5"
 indexmap = { version = "2", features = ["serde"] }
 mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
 schemars = { version = "1", features = ["indexmap2", "preserve_order"] }

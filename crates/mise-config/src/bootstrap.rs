@@ -198,7 +198,23 @@ impl BootstrapTomlConfig {
                 && macos.login_items.is_none()),
             ..Default::default()
         };
-        let Some(table) = self.settings.shift_remove("macos") else {
+        // `Macos` and `MACOS` name the same section as `macos`, as they would for a plugin, so
+        // none of them may be left behind to be dispatched as a settings plugin.
+        let mut table: Option<toml::Table> = None;
+        for name in self
+            .settings
+            .keys()
+            .filter(|name| plugin_identity(name) == "macos")
+            .cloned()
+            .collect::<Vec<_>>()
+        {
+            let section = self.settings.shift_remove(&name).unwrap_or_default();
+            match &mut table {
+                Some(table) => merge_tables(table, section),
+                None => table = Some(section),
+            }
+        }
+        let Some(table) = table else {
             return outcome;
         };
         let parsed: Result<MacosSettingsTomlConfig, _> =
@@ -249,6 +265,26 @@ impl BootstrapTomlConfig {
             }
         }
         outcome
+    }
+}
+
+/// The identity of a plugin name: `foo_bar`, `foo-bar` and `FooBar` are the same plugin, which
+/// mise installs under the kebab-case name.
+pub fn plugin_identity(name: &str) -> String {
+    heck::ToKebabCase::to_kebab_case(name)
+}
+
+/// Merges `higher` into `base` key by key, `higher` winning.
+fn merge_tables(base: &mut toml::Table, higher: toml::Table) {
+    for (key, value) in higher {
+        match (base.get_mut(&key), value) {
+            (Some(toml::Value::Table(base)), toml::Value::Table(higher)) => {
+                merge_tables(base, higher)
+            }
+            (_, value) => {
+                base.insert(key, value);
+            }
+        }
     }
 }
 
@@ -557,6 +593,30 @@ mod macos_settings_tests {
         );
         assert!(!config.settings.contains_key("macos"));
         assert!(config.settings.contains_key("other"));
+    }
+
+    #[test]
+    fn every_spelling_of_macos_is_the_macos_section() {
+        let mut config = bootstrap(
+            r#"
+            [settings.Macos.dock]
+            autohide = true
+            tilesize = 48
+            [settings.MACOS.finder]
+            show_all_files = true
+            [settings.macos.dock]
+            tilesize = 64
+            "#,
+        );
+        let moved = config.move_macos_settings();
+        assert!(moved.error.is_none());
+        assert!(config.settings.is_empty());
+        assert_eq!(config.macos.dock["autohide"], toml::Value::Boolean(true));
+        assert_eq!(config.macos.dock["tilesize"], toml::Value::Integer(64));
+        assert_eq!(
+            config.macos.finder["show_all_files"],
+            toml::Value::Boolean(true)
+        );
     }
 
     #[test]

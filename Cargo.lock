@@ -7051,6 +7051,7 @@ name = "mise-config"
 version = "0.1.0"
 dependencies = [
  "eyre",
+ "heck",
  "indexmap 2.14.2",
  "mise-bootstrap",
  "schemars 1.2.3",
@@ -7227,7 +7228,6 @@ dependencies = [
  "gix",
  "glob",
  "globset",
- "heck",
  "hex",
  "indexmap 2.14.2",
  "ipnet",
