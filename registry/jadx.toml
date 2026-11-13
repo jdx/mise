@@ -1,0 +1,13 @@
+bins = ["jadx", "jadx-gui"]
+description = "Dex to Java decompiler: command line and GUI tools for producing Java source code from Android Dex and APK files"
+test = { cmd = "jadx --version", expected = "{{version}}", tools = ["java"] }
+url = "https://github.com/skylot/jadx"
+version_order = "semver"
+
+[[backends]]
+full = "github:skylot/jadx"
+
+[backends.options]
+# Releases also carry `jadx-gui-*-win.zip` bundles, which hold only an .exe.
+# The plain zip has the `jadx` and `jadx-gui` launchers for every platform.
+asset_pattern = "jadx-{{ version }}.zip"

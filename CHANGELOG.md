@@ -1,5 +1,86 @@
 # Changelog
 
+## [2026.11.8](https://github.com/jdx/mise/releases/tag/v2026.11.8) - 2026-11-13
+
+### 🚀 Features
+
+- **(bootstrap)** plan repositories and hooks in bootstrap plan by @jdx in [#15653](https://github.com/jdx/mise/pull/15653)
+- **(bootstrap)** load package manager plugins from system plugin directories by @jdx in [#15620](https://github.com/jdx/mise/pull/15620)
+- **(bootstrap)** add bootstrap settings plugins by @jdx in [#15621](https://github.com/jdx/mise/pull/15621)
+- **(bootstrap)** move macOS preferences to [bootstrap.settings.macos] by @jdx in [#15622](https://github.com/jdx/mise/pull/15622)
+- **(config)** support block edits in bootstrap files by @jdx in [#15650](https://github.com/jdx/mise/pull/15650)
+- **(dotfiles)** warn when a copy target was edited since mise wrote it by @jdx in [#15600](https://github.com/jdx/mise/pull/15600)
+- **(github)** add versions_host_exclude to keep repos off mise-versions by @jdx in [#15666](https://github.com/jdx/mise/pull/15666)
+- **(shim)** expose the call's arguments as argv in wrapper templates by @jdx in [#15655](https://github.com/jdx/mise/pull/15655)
+- **(task)** infer root package.json scripts for npm and Bun workspaces by @jdx in [#15616](https://github.com/jdx/mise/pull/15616)
+
+### 🐛 Bug Fixes
+
+- **(activate)** skip resolving WSL Windows drive entries on PATH by @jdx in [#15665](https://github.com/jdx/mise/pull/15665)
+- **(backend)** reuse Ruby's bundled gems when installing gem: tools by @jdx in [#15644](https://github.com/jdx/mise/pull/15644)
+- **(bootstrap)** keep the brew rack lock out of the Cellar so uninstalled formulae disappear by @jdx in [#15597](https://github.com/jdx/mise/pull/15597)
+- **(bootstrap)** refuse to archive a home directory or oversized source in bootstrap remote by @jdx in [#15607](https://github.com/jdx/mise/pull/15607)
+- **(bootstrap)** build brew formulae from source in a clean environment by @jdx in [#15613](https://github.com/jdx/mise/pull/15613)
+- **(completions)** complete the next task after `:::` by @jdx in [#15614](https://github.com/jdx/mise/pull/15614)
+- **(config)** let project tool_alias override global aliases by @jdx in [#15615](https://github.com/jdx/mise/pull/15615)
+- **(config)** write _.file for Load .env in the interactive editor by @jdx in [#15640](https://github.com/jdx/mise/pull/15640)
+- **(config)** resolve tool_alias names in minimum_release_age_excludes by @jdx in [#15638](https://github.com/jdx/mise/pull/15638)
+- **(doctor)** stop warning about the backend a packageManager checksum forces by @jdx in [#15604](https://github.com/jdx/mise/pull/15604)
+- **(env)** ignore unrelated file churn in config directories on the hook-env fast path by @jdx in [#15667](https://github.com/jdx/mise/pull/15667)
+- **(http)** hard link shared raw files on Windows instead of copying by @jdx in [#15647](https://github.com/jdx/mise/pull/15647)
+- **(lock)** send the forge token when fetching a private release's checksum file by @jdx in [#15637](https://github.com/jdx/mise/pull/15637)
+- **(lock)** error on tool arguments that match no configured tool by @jdx in [#15649](https://github.com/jdx/mise/pull/15649)
+- **(node)** resolve symlinks in the npm shim by @jdx in [#15664](https://github.com/jdx/mise/pull/15664)
+- **(npm)** find the installed digest for a tarball URL at latest in hook-env by @jdx in [#15643](https://github.com/jdx/mise/pull/15643)
+- **(pipx)** run an installed github git source with no releases offline by @jdx in [#15602](https://github.com/jdx/mise/pull/15602)
+- **(pypi)** lock the graph for the configured python and keep an existing graph on failure by @jdx in [#15657](https://github.com/jdx/mise/pull/15657)
+- **(sandbox)** allow `./` relative paths on macOS by @jdx in [#15599](https://github.com/jdx/mise/pull/15599)
+- **(spm)** record artifact bundle URLs and checksums in mise.lock by @jdx in [#15646](https://github.com/jdx/mise/pull/15646)
+- **(task)** complete bare root task names in a monorepo by @jdx in [#15598](https://github.com/jdx/mise/pull/15598)
+- **(task)** recognise --MISE and --USAGE comments in Lua file tasks by @jdx in [#15659](https://github.com/jdx/mise/pull/15659)
+- **(task)** list a task pattern's cache entries in one pass by @jdx in [#15671](https://github.com/jdx/mise/pull/15671)
+- **(uninstall)** remove the alias links of the last uninstalled version by @jdx in [#15605](https://github.com/jdx/mise/pull/15605)
+- **(vfox)** verify the lockfile checksum in locked mode by @jdx in [#15648](https://github.com/jdx/mise/pull/15648)
+
+### 🚜 Refactor
+
+- **(system)** resolve bootstrap packages once for status by @jdx in [#15641](https://github.com/jdx/mise/pull/15641)
+
+### 📚 Documentation
+
+- **(config)** clarify global_config_file does not hide ~/.config/mise from projects under home by @jdx in [#15639](https://github.com/jdx/mise/pull/15639)
+- only accept bug reports from real use by @jdx in [e9bf531](https://github.com/jdx/mise/commit/e9bf531d901e3b23411f656cb0878e736e24a62d)
+
+### 📦 Registry
+
+- drop archived asdf plugin backends by @jdx in [#15642](https://github.com/jdx/mise/pull/15642)
+
+### Chore
+
+- **(ci)** run cargo-deny advisories only when dependencies change by @jdx in [#15601](https://github.com/jdx/mise/pull/15601)
+
+### Ci
+
+- email when the docs build fails on the default branch by @jdx in [#15652](https://github.com/jdx/mise/pull/15652)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`cfgaudit/cfgaudit`](https://github.com/cfgaudit/cfgaudit)
+- [`connectrpc/protoc-gen-connect-openapi`](https://github.com/connectrpc/protoc-gen-connect-openapi)
+
+#### Updated Packages (8)
+
+- [`dependabot/cli`](https://github.com/dependabot/cli)
+- [`entireio/git-sync`](https://github.com/entireio/git-sync)
+- [`git-bug/git-bug`](https://github.com/git-bug/git-bug)
+- [`github/gh-ost`](https://github.com/github/gh-ost)
+- [`helmfile/helmfile`](https://github.com/helmfile/helmfile)
+- `kiro.dev/kiro-cli`
+- [`matthart1983/netwatch`](https://github.com/matthart1983/netwatch)
+- [`modem-dev/hunk`](https://github.com/modem-dev/hunk)
+
 ## [2026.11.7](https://github.com/jdx/mise/releases/tag/v2026.11.7) - 2026-11-11
 
 ### 🚀 Features

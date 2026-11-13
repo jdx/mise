@@ -94,6 +94,13 @@ mise cache clear --task 'group:*'
 assert "mise cache task 'group:*' --json | jq '[.[].entries | length] | add'" "0"
 assert_contains "mise cache task 'group:*'" "No artifact cache entries for group:one, group:two"
 
+# A pattern lists each matched task with only its own entries, the same as
+# listing the tasks one by one.
+mise run 'group:*'
+assert "mise cache task 'group:*' --json | jq -c '[.[] | {task, keys: [.entries[].key]}]'" "$(jq -nc --argjson one "$(mise cache task group:one --json)" --argjson two "$(mise cache task group:two --json)" '[$one[0], $two[0]] | map({task, keys: [.entries[].key]})')"
+assert "mise cache task 'group:*' --json | jq '[.[].entries | length] | add'" "2"
+mise cache clear --task 'group:*'
+
 # A stale state pointer can reference another task's artifact key. Clearing the
 # stale task must not remove the owning task's manifest/archive.
 mise run build
