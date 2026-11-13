@@ -156,6 +156,9 @@ pub struct TaskDecl {
     /// block env var inheritance
     #[serde(default)]
     pub deny_env: bool,
+    /// block connections to Unix sockets outside the sandbox; Linux 7.1 or later
+    #[serde(default)]
+    pub deny_unix: bool,
     /// allow reads from specific paths
     #[serde(default)]
     pub allow_read: Vec<PathBuf>,
@@ -166,6 +169,9 @@ pub struct TaskDecl {
     // Allow network to specific hosts
     #[serde(default)]
     pub allow_net: Vec<String>,
+    /// allow connections to the Unix sockets at specific paths (implies deny_unix); Linux 7.1 or later
+    #[serde(default)]
+    pub allow_unix: Vec<PathBuf>,
     /// allow specific env vars through
     #[serde(default)]
     pub allow_env: Vec<String>,
@@ -282,6 +288,9 @@ pub struct TaskTemplate {
     /// Block env var inheritance
     #[serde(default)]
     pub deny_env: bool,
+    /// Block connections to Unix sockets outside the sandbox; Linux 7.1 or later
+    #[serde(default)]
+    pub deny_unix: bool,
     /// Allow reads from specific paths
     #[serde(default)]
     pub allow_read: Vec<PathBuf>,
@@ -291,6 +300,9 @@ pub struct TaskTemplate {
     /// Allow network to specific hosts
     #[serde(default)]
     pub allow_net: Vec<String>,
+    /// Allow connections to the Unix sockets at specific paths (implies deny_unix); Linux 7.1 or later
+    #[serde(default)]
+    pub allow_unix: Vec<PathBuf>,
     /// Allow specific env vars through
     #[serde(default)]
     pub allow_env: Vec<String>,

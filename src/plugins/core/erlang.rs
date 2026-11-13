@@ -254,7 +254,13 @@ impl ErlangPlugin {
             }
             return Ok(os);
         } else if Platform::current().is_linux() {
-            if let Ok(os) = std::env::var("ImageOS") {
+            // Some images (e.g. GitHub's ubuntu-slim) set ImageOS to a generic
+            // "Linux" that says nothing about the release, so ignore it and
+            // read /etc/os-release instead.
+            let image_os = std::env::var("ImageOS")
+                .ok()
+                .filter(|os| !os.eq_ignore_ascii_case("linux"));
+            if let Some(os) = image_os {
                 match os.as_str() {
                     "ubuntu24" => "ubuntu-24.04".to_string(),
                     "ubuntu22" => "ubuntu-22.04".to_string(),

@@ -6060,6 +6060,11 @@ Allow reads from PATH (implies \-\-deny\-read for everything else)
 \fB\-\-allow\-write\fR \fI<PATH>\fR
 Allow writes to PATH (implies \-\-deny\-write for everything else)
 .TP
+\fB\-\-allow\-unix\fR \fI<PATH>\fR
+Allow connections to the Unix socket at PATH, or to every socket under it if PATH is a directory (implies \-\-deny\-unix for every other socket)
+
+Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only.
+.TP
 \fB\-\-deny\-all\fR
 Block reads, writes, network, and env vars
 .TP
@@ -6077,6 +6082,9 @@ Block filesystem reads (system libs and tool dirs still accessible)
 .TP
 \fB\-\-deny\-write\fR
 Block filesystem writes except temporary and device paths (/tmp, /dev)
+.TP
+\fB\-\-deny\-unix\fR
+Block connections to Unix sockets outside the sandbox (Linux 7.1 or later)
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment
@@ -9096,6 +9104,9 @@ Allow reads from a specific path (implies `\-\-deny\-read` for everything else)
 \fB\-\-allow\-write\fR \fI<PATH>\fR
 Allow writes to a specific path (implies `\-\-deny\-write` for everything else)
 .TP
+\fB\-\-allow\-unix\fR \fI<PATH>\fR
+Allow connections to the Unix socket at a specific path, or to every socket under it if PATH is a directory (implies `\-\-deny\-unix` for every other socket). Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only.
+.TP
 \fB\-\-deny\-all\fR
 Block reads, writes, network, and env vars
 .TP
@@ -9112,6 +9123,9 @@ Block filesystem reads (system libraries and tool directories stay readable)
 .TP
 \fB\-\-deny\-write\fR
 Block filesystem writes except temporary and device paths (/tmp, /dev)
+.TP
+\fB\-\-deny\-unix\fR
+Block connections to Unix sockets outside the sandbox (Linux 7.1 or later only)
 .TP
 \fB\-\-fresh\-env\fR
 Bypass the environment cache and recompute the environment

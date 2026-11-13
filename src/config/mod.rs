@@ -1560,12 +1560,7 @@ impl Config {
                 Ok(cf) => {
                     config_files.insert(path, cf);
                 }
-                Err(err) => {
-                    warn!(
-                        "error loading tracked config file {}: {err:#}",
-                        display_path(&path)
-                    );
-                }
+                Err(err) => report_tracked_config_error(&path, &err),
             }
         }
         Ok(config_files)
@@ -8894,4 +8889,43 @@ fn included_task_definitions(
         }
     }
     tasks
+}
+
+tokio::task_local! {
+    /// Set while work nobody asked for (the deferred tool-purgatory cleanup) loads
+    /// tracked configs: failures are counted instead of warned about one by one.
+    static TRACKED_ERRORS_QUIET: std::sync::atomic::AtomicUsize;
+}
+
+/// Runs `future` with tracked-config load failures demoted to debug output.
+/// Returns its result and how many tracked configs failed to load.
+pub(crate) async fn with_quiet_tracked_config_errors<T>(
+    future: impl std::future::Future<Output = T>,
+) -> (T, usize) {
+    TRACKED_ERRORS_QUIET
+        .scope(std::sync::atomic::AtomicUsize::new(0), async {
+            let out = future.await;
+            let skipped =
+                TRACKED_ERRORS_QUIET.with(|count| count.load(std::sync::atomic::Ordering::Relaxed));
+            (out, skipped)
+        })
+        .await
+}
+
+/// Reports a tracked config that could not be loaded.
+pub(crate) fn report_tracked_config_error(path: &Path, err: &eyre::Report) {
+    let counted = TRACKED_ERRORS_QUIET
+        .try_with(|count| count.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+        .is_ok();
+    if counted {
+        debug!(
+            "error loading tracked config file {}: {err:#}",
+            display_path(path)
+        );
+    } else {
+        warn!(
+            "error loading tracked config file {}: {err:#}",
+            display_path(path)
+        );
+    }
 }

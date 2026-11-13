@@ -44,6 +44,13 @@ Run `mise ls-remote aqua:BurntSushi/ripgrep` to list available versions.
 Recipes download and extract published artifacts. A tool that needs custom
 install steps or environment setup needs another backend.
 
+### Java packages
+
+A package that ships a single `.jar` file runs through `java -jar`, as it does in aqua. mise
+writes a small launcher script under the package's binary name, so `ktfmt` or `checkstyle` runs
+directly. Java comes from you, the same way it does for `gradle`; add `java` to your tools. This is
+not available on Windows.
+
 ## The bundled registry {#bundled-registry}
 
 Each mise release bundles a snapshot of the aqua registry and uses it by

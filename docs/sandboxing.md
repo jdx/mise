@@ -21,6 +21,7 @@ hooks outside it. To load config you have not reviewed, use
 | Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 (writes: 6.2)      | Seatbelt (`sandbox-exec`)               | Not enforced     |
 | All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64            | Seatbelt                                | Not enforced     |
 | Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error | Not supported; mise exits with an error | Not enforced     |
+| Connections to Unix sockets (`--deny-unix`, `--allow-unix`)                       | Landlock, Linux 7.1; older kernels fail | Not supported; mise exits with an error | Not enforced     |
 | Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                        | Filtered by mise                        | Filtered by mise |
 
 On Windows, mise filters the environment and warns that file, network and
@@ -65,10 +66,12 @@ the same meaning. Repeat an `--allow-*` flag to allow more paths or variables.
 | `--deny-all`           | `deny_all`         | Turn on the read, write, network and environment restrictions                                    |
 | `--deny-read`          | `deny_read`        | Block reads, except the [implicit paths](#implicit-access)                                       |
 | `--deny-write`         | `deny_write`       | Block writes, except to `/tmp` and `/dev`                                                        |
-| `--deny-net`           | `deny_net`         | Block network sockets and io_uring; Unix sockets still work                                      |
+| `--deny-net`           | `deny_net`         | Block network sockets and io_uring; Unix sockets still work (see `--deny-unix`)                  |
 | `--deny-env`           | `deny_env`         | Pass only the [essential variables](#environment-variables)                                      |
 | `--allow-read=<path>`  | `allow_read`       | Allow reads under a path, and block other reads                                                  |
 | `--allow-write=<path>` | `allow_write`      | Allow reads and writes under a path, and block other writes                                      |
+| `--deny-unix`          | `deny_unix`        | Block connections to Unix sockets, except those allowed (Linux 7.1 or later)                     |
+| `--allow-unix=<path>`  | `allow_unix`       | Allow connections to a socket, or to every socket under a directory, and block other sockets     |
 | `--allow-env=<var>`    | `allow_env`        | Pass a variable or a `*` pattern, and block other variables                                      |
 | `--allow-net=<host>`   | `allow_net`        | Does not work on any platform; see [access to particular hosts](#access-to-particular-hosts)     |
 |                        | `pass_through_env` | Experimental. Pass a variable without adding it to the task cache key; does not filter by itself |
@@ -238,6 +241,34 @@ allow_write = [".", "~/.npm"] # node_modules does not exist yet
 ```
 
 Allowing a directory allows everything in it.
+
+#### Unix sockets
+
+`--deny-net` leaves Unix sockets alone, and a read or write restriction does not
+stop a command from connecting to a socket it cannot write to, such as an SSH
+agent, a password manager or a container runtime. `--deny-unix` closes that gap
+with Landlock, which needs Linux 7.1 or later; on an older kernel mise exits with
+an error instead of running the command without the restriction.
+
+Under `--deny-unix` a command cannot connect to a socket that has a path, such as
+`/run/user/1000/ssh-agent.sock`, unless `--allow-unix` names the socket or a
+directory above it. It also cannot connect to an abstract socket made outside the
+sandbox, but the processes the command starts can still reach each other's
+abstract sockets. Abstract sockets cannot be allowed one at a time.
+
+The allowed socket must exist when the command starts, like any other allowed
+path. A socket the command creates itself is not reachable unless its directory
+is allowed, so allow that directory too. Programs that talk to a local daemon
+through a socket, such as `nscd`, `systemd-resolved` or `syslog` in `/dev/log`, stop working
+unless it is allowed. `--deny-all` does not turn on `--deny-unix`.
+
+```mise-toml
+[tasks."agent:omp"]
+run = "omp"
+allow_write = ["."]
+deny_unix = true
+allow_unix = ["/run/user/1000/allowed-service.sock"]
+```
 
 ### macOS
 

@@ -338,6 +338,11 @@ pub(crate) struct Run {
     #[usage(long, value_name = "PATH")]
     pub allow_write: Vec<std::path::PathBuf>,
 
+    /// Allow connections to the Unix socket at a specific path, or to every socket under it if PATH is a directory (implies
+    /// `--deny-unix` for every other socket). Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only.
+    #[usage(long, value_name = "PATH")]
+    pub allow_unix: Vec<std::path::PathBuf>,
+
     /// Block reads, writes, network, and env vars
     #[usage(long)]
     pub deny_all: bool,
@@ -362,6 +367,11 @@ pub(crate) struct Run {
     /// Block filesystem writes except temporary and device paths (/tmp, /dev)
     #[usage(long)]
     pub deny_write: bool,
+
+    /// Block connections to Unix sockets outside the sandbox (Linux 7.1 or
+    /// later only)
+    #[usage(long)]
+    pub deny_unix: bool,
 
     /// Bypass the environment cache and recompute the environment
     #[usage(long)]
@@ -2078,12 +2088,14 @@ impl Run {
                     deny_read: self.deny_read,
                     deny_write: self.deny_write,
                     deny_net: self.deny_net,
+                    deny_unix: self.deny_unix,
                     deny_env: self.deny_env,
                     deny_process: false,
                     deny_temp_write: false,
                     allow_read: self.allow_read.clone(),
                     allow_write: self.allow_write.clone(),
                     allow_net: self.allow_net.clone(),
+                    allow_unix: self.allow_unix.clone(),
                     allow_env: self.allow_env.clone(),
                     pass_through_env: vec![],
                     cache_env: vec![],

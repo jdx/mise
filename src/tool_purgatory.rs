@@ -194,7 +194,18 @@ pub async fn auto_prune() -> Result<()> {
     // project, and recording it would replace what the project's snapshots say.
     let _suspended = crate::install_layout::snapshots::suspend();
     let config = Config::get().await?;
-    let prunable = crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()).await?;
+    // The user did not ask for this, so a tracked config that cannot be loaded here
+    // is summarized in one line instead of warned about file by file.
+    let (prunable, skipped) = crate::config::with_quiet_tracked_config_errors(
+        crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()),
+    )
+    .await;
+    if skipped > 0 {
+        warn!(
+            "deferred prune skipped {skipped} tracked config(s) that could not be loaded; run `mise prune --dry-run` for details"
+        );
+    }
+    let prunable = prunable?;
     let prunable_by_path = prunable
         .into_iter()
         .map(|(backend, tv)| (tv.install_path(), (backend, tv)))

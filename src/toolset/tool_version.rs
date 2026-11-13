@@ -96,6 +96,7 @@ impl ToolVersion {
         before_date: Option<Timestamp>,
         minimum_release_age: Option<&str>,
         suggest_exact_pin: bool,
+        selection_opts: Option<&ToolVersionOptions>,
     ) -> eyre::Report {
         let id = backend.id();
         // The version list is also empty when fetching it failed, in which case
@@ -108,7 +109,7 @@ impl ToolVersion {
             return eyre::eyre!("no versions found for {id}");
         };
         let hidden = backend
-            .versions_hidden_by_before_date(config, query, before)
+            .versions_hidden_by_before_date(config, query, before, selection_opts)
             .await
             .unwrap_or_default();
         // The cutoff is only to blame when it actually removed a candidate.
@@ -150,11 +151,12 @@ impl ToolVersion {
                 if count == 1 { "it" } else { "them" }
             )
         };
-        eyre::eyre!(
+        // Typed, so `mise lock --bump` can tell a cutoff hold from an empty list.
+        eyre::Report::new(crate::errors::Error::ReleaseAgeHidAllVersions(format!(
             "no versions found for {id} matching minimum_release_age{age_fragment}: \
              it hid {count} release{plural}{cutoff}, the newest being {}{released}.{remedy}",
             newest.version,
-        )
+        )))
     }
 
     pub fn new(request: ToolRequest, version: String) -> Self {
@@ -1054,6 +1056,7 @@ impl ToolVersion {
                 opts.before_date,
                 request.options().minimum_release_age(),
                 true,
+                Some(&request.options()),
             )
             .await);
         }
@@ -1245,7 +1248,7 @@ impl ToolVersion {
         }
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
-        if opts.before_date.is_some() {
+        if let Some(before) = opts.before_date {
             let all_versions = backend
                 .list_versions_matching_with_selection_options(
                     config,
@@ -1258,6 +1261,25 @@ impl ToolVersion {
             if all_versions.iter().any(|m| m == v) {
                 // Exact match exists but was filtered by date - use it anyway
                 return Ok(v.to_string());
+            }
+            // Nothing matched because the cutoff hid every candidate. Returning
+            // the request text would hand a prefix like `1` to the installer as
+            // if it were a version.
+            let hidden = backend
+                .versions_hidden_by_before_date(config, v, before, Some(selection_opts))
+                .await
+                .unwrap_or_default();
+            if !hidden.is_empty() {
+                return Err(Self::no_versions_found(
+                    config,
+                    backend,
+                    v,
+                    opts.before_date,
+                    selection_opts.minimum_release_age(),
+                    true,
+                    Some(selection_opts),
+                )
+                .await);
             }
         }
         Ok(v.to_string())
@@ -1362,6 +1384,7 @@ impl ToolVersion {
                 opts.before_date,
                 request.options().minimum_release_age(),
                 true,
+                Some(&request.options()),
             )
             .await);
         };
@@ -1422,6 +1445,7 @@ pub async fn resolve_sub_base(
                     before_date,
                     None,
                     false,
+                    None,
                 )
                 .await);
             }

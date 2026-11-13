@@ -1292,7 +1292,7 @@ async fn installed_version_newer_than_cutoff(
     }
     let kept = backend.latest_installed_version(None).ok()??;
     let hidden = backend
-        .versions_hidden_by_before_date(config, "latest", before)
+        .versions_hidden_by_before_date(config, "latest", before, Some(&tr.options()))
         .await
         .ok()?;
     // A graph-locked installation is listed as `<version>~uv|aube~<16 hex>`;

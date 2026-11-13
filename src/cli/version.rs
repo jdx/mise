@@ -236,12 +236,12 @@ fn select_version_hint(
     auto_update: bool,
     homebrew: bool,
     windows: bool,
-    winget: bool,
+    official_package: bool,
 ) -> Option<VersionHint> {
     if self_update_available {
         (!auto_update).then_some(VersionHint::AutoUpdate)
-    } else if winget {
-        // WinGet installs the official build, and `upgrade_instructions_or_hint` already says how to update it.
+    } else if official_package {
+        // These installs are the official build, and `upgrade_instructions_or_hint` already says how to update it.
         None
     } else if homebrew {
         Some(VersionHint::Homebrew)
@@ -282,7 +282,9 @@ pub(crate) fn show_version_hint() {
         settings.self_update.auto.is_on(),
         is_homebrew_install(),
         cfg!(windows),
-        crate::upgrade_hint::installed_by_winget(),
+        // WinGet and the official deb, rpm and npm packages ship mise's own build.
+        crate::upgrade_hint::installed_by_winget()
+            || crate::upgrade_hint::upgrade_instructions_text().is_some(),
     ) {
         Some(VersionHint::AutoUpdate) => show_auto_update_hint(),
         Some(VersionHint::Homebrew) => hint!(
