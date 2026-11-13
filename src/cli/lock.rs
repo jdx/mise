@@ -78,15 +78,6 @@ fn is_downgrade(resolved: &str, locked: &str) -> bool {
     crate::semver::semver_precedence_cmp(resolved, locked) == Some(std::cmp::Ordering::Less)
 }
 
-/// Whether the lockfile already pins `version` for `short`. Compared as an
-/// opaque string.
-fn lockfile_pins(lockfile: &Lockfile, short: &str, version: &str) -> bool {
-    lockfile
-        .tools()
-        .get(short)
-        .is_some_and(|entries| entries.iter().any(|entry| entry.version == version))
-}
-
 /// Under `--bump`, put back the locked version of any tool the remote
 /// resolution moved backwards. A lagging remote version list (for example
 /// mise-versions missing the newest releases) can make the newest match older
@@ -98,11 +89,9 @@ fn lockfile_pins(lockfile: &Lockfile, short: &str, version: &str) -> bool {
 /// stays as resolved.
 async fn keep_locked_over_downgrade(
     context: &LockCollectionContext<'_>,
-    lockfile_path: &Path,
     tools: &mut [LockTool],
 ) -> Result<()> {
     let config = context.config;
-    let lockfile = lockfile::read_lockfile_as_trusted(config, lockfile_path)?;
     for (ba, tv) in tools.iter_mut() {
         let unordered = ba
             .backend()
@@ -117,10 +106,9 @@ async fn keep_locked_over_downgrade(
         let Ok(kept) = resolve_for_lock(config, &tv.request, &mut options).await else {
             continue;
         };
-        let short = crate::toolset::install_state::state_short(&ba.short);
-        if is_downgrade(&tv.version, &kept.version)
-            && lockfile_pins(&lockfile, &short, &kept.version)
-        {
+        // Only a version this request's own lock entry supplied is a pin; the
+        // resolver falls back to installed or remote versions when it has none.
+        if kept.resolved_from_lockfile() && is_downgrade(&tv.version, &kept.version) {
             warn!(
                 "{}: the newest version found remotely ({}) is older than the locked {}; keeping {}",
                 ba.short, tv.version, kept.version, kept.version
@@ -965,7 +953,7 @@ impl Lock {
                 .get_tools_to_lock(&collection_context, lockfile_path, config_paths)
                 .await?;
             if self.bump {
-                keep_locked_over_downgrade(&collection_context, lockfile_path, &mut tools).await?;
+                keep_locked_over_downgrade(&collection_context, &mut tools).await?;
             }
             if let Some(installed) = installed {
                 for (_, tv) in &mut tools {
