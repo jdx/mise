@@ -6636,4 +6636,25 @@ no_asset: true
         let mode = std::fs::metadata(&universal).unwrap().permissions().mode();
         assert_ne!(mode & 0o111, 0);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_wrap_jar_bins_keeps_launcher_at_exposed_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let jar = dir.path().join("tool.jar");
+        std::fs::write(&jar, b"PK\x03\x04").unwrap();
+        // A recipe naming its file `tool.jar` links nothing, so src == dst.
+        let link = AquaFileLink {
+            src: jar.clone(),
+            dst: jar.clone(),
+            hard: false,
+            explicit_link: false,
+        };
+
+        AquaBackend::wrap_jar_bins(&[link], "tool.jar").unwrap();
+
+        let script = std::fs::read_to_string(&jar).unwrap();
+        assert!(script.starts_with("#!/bin/sh\nexec java -jar "));
+        assert!(dir.path().join("tool.jar.jar").exists());
+    }
 }
