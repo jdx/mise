@@ -185,6 +185,30 @@ pub struct ApplyReport {
     pub follow_up: Vec<String>,
 }
 
+/// Why a bootstrap settings plugin cannot run here.
+#[derive(Debug)]
+pub struct Unavailable {
+    pub reason: String,
+    /// The plugin is for another OS: one config can hold every platform's sections, so this is
+    /// not drift on this machine.
+    pub other_platform: bool,
+}
+
+impl From<String> for Unavailable {
+    fn from(reason: String) -> Self {
+        Self {
+            reason,
+            other_platform: false,
+        }
+    }
+}
+
+impl std::fmt::Display for Unavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
 /// An installed bootstrap settings plugin that can run on this machine.
 pub struct BootstrapSettingsPlugin {
     name: String,
@@ -195,15 +219,17 @@ pub struct BootstrapSettingsPlugin {
 
 impl BootstrapSettingsPlugin {
     /// The plugin named `name`, or why it cannot run here.
-    pub async fn load(name: &str) -> std::result::Result<Self, String> {
+    pub async fn load(name: &str) -> std::result::Result<Self, Unavailable> {
         let path = system_plugins::resolve(name, &mise_util::dirs::PLUGINS);
         match PluginType::from_plugin_path(&path) {
             Some(PluginType::BootstrapSettings) => {}
-            Some(_) => return Err(format!("plugin {name} is not a bootstrap settings plugin")),
+            Some(_) => {
+                return Err(format!("plugin {name} is not a bootstrap settings plugin").into());
+            }
             None => {
-                return Err(format!(
-                    "no bootstrap settings plugin named {name} is installed"
-                ));
+                return Err(
+                    format!("no bootstrap settings plugin named {name} is installed").into(),
+                );
             }
         }
         let config = MisePluginToml::from_file(&path.join("mise.plugin.toml"))
@@ -213,7 +239,10 @@ impl BootstrapSettingsPlugin {
         if let Some(oses) = &config.os
             && !oses.contains(&os)
         {
-            return Err(format!("{name} is not available on {os}"));
+            return Err(Unavailable {
+                reason: format!("{name} is not available on {os}"),
+                other_platform: true,
+            });
         }
         // Look for `requires` on the PATH the hooks will get, which includes global [tools].
         let env = crate::system::package_plugin::bootstrap_plugin_env()
@@ -223,7 +252,8 @@ impl BootstrapSettingsPlugin {
         {
             return Err(format!(
                 "{name} needs '{binary}', which was not found; add it to [tools] or install it"
-            ));
+            )
+            .into());
         }
         // vfox loads a plugin by the name of its directory, which can differ from `name` in case
         // style (`foo_bar` in config, `foo-bar` on disk).

@@ -49,7 +49,9 @@ mise would set desk: appearance.blur_strength 2 -> 4
 
 `mise bootstrap settings status --missing` exits with status 1 when a value
 differs from the config, for example after someone changes it in the program's
-own settings. `mise bootstrap status` and `mise bootstrap plan` do not check
+own settings, or when a plugin cannot run. A section for a plugin made for
+another OS is listed as skipped but does not count, so one config can hold
+every platform's settings. `mise bootstrap status` and `mise bootstrap plan` do not check
 settings yet, so use this command to detect that drift.
 
 Sections merge across config files key by key, and a more local file's value
