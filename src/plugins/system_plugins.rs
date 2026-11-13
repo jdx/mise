@@ -18,15 +18,31 @@ pub struct SystemPlugin {
     pub name: String,
     pub path: PathBuf,
     pub plugin_type: PluginType,
+    /// The user's plugin that overrides this one, if any.
+    pub overridden_by: Option<PathBuf>,
 }
 
-static SYSTEM_PLUGINS: Lazy<Vec<SystemPlugin>> =
-    Lazy::new(|| scan(&mise_util::env::MISE_SYSTEM_PLUGINS_DIRS, &dirs::PLUGINS));
+static ALL_SYSTEM_PLUGINS: Lazy<Vec<SystemPlugin>> =
+    Lazy::new(|| scan_all(&mise_util::env::MISE_SYSTEM_PLUGINS_DIRS, &dirs::PLUGINS));
+
+static SYSTEM_PLUGINS: Lazy<Vec<SystemPlugin>> = Lazy::new(|| {
+    ALL_SYSTEM_PLUGINS
+        .iter()
+        .filter(|plugin| plugin.overridden_by.is_none())
+        .cloned()
+        .collect()
+});
 
 /// Every usable system plugin, by name. A name found in an earlier directory hides the same
 /// name in later ones, and a user plugin of the same name hides the system plugin.
 pub fn list() -> &'static [SystemPlugin] {
     &SYSTEM_PLUGINS
+}
+
+/// Every system plugin that passed the trust check, including those a user plugin overrides,
+/// for `mise plugins ls` to show.
+pub fn list_all() -> &'static [SystemPlugin] {
+    &ALL_SYSTEM_PLUGINS
 }
 
 /// The system plugin named `name`, unless a user plugin of that name overrides it. `foo_bar` and
@@ -70,7 +86,14 @@ pub fn resolve(name: &str, user_dir: &Path) -> PathBuf {
         .unwrap_or_else(|| user_dir.join(identity(name)))
 }
 
+#[cfg(test)]
 fn scan(system_dirs: &[PathBuf], user_dir: &Path) -> Vec<SystemPlugin> {
+    let mut plugins = scan_all(system_dirs, user_dir);
+    plugins.retain(|plugin| plugin.overridden_by.is_none());
+    plugins
+}
+
+fn scan_all(system_dirs: &[PathBuf], user_dir: &Path) -> Vec<SystemPlugin> {
     let mut plugins: Vec<SystemPlugin> = Vec::new();
     for dir in system_dirs {
         if !dir.is_dir() {
@@ -100,10 +123,11 @@ fn scan(system_dirs: &[PathBuf], user_dir: &Path) -> Vec<SystemPlugin> {
             let Some(plugin_type) = PluginType::from_plugin_path(&path) else {
                 continue;
             };
-            if let Some(user) = user_plugin(user_dir, &name) {
+            let overridden_by = user_plugin(user_dir, &name);
+            if let Some(user) = &overridden_by {
                 warn_once!(
                     "plugin {name} in {} overrides the system plugin in {}",
-                    display_path(&user),
+                    display_path(user),
                     display_path(&path)
                 );
                 // Still claim the name, so a later system directory cannot supply it either.
@@ -112,10 +136,10 @@ fn scan(system_dirs: &[PathBuf], user_dir: &Path) -> Vec<SystemPlugin> {
                 name,
                 path,
                 plugin_type,
+                overridden_by,
             });
         }
     }
-    plugins.retain(|plugin| user_plugin(user_dir, &plugin.name).is_none());
     plugins
 }
 

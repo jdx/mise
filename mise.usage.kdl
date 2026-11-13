@@ -5670,6 +5670,12 @@ directory. This does not install a tool version.
         long_help #"""
 List installed plugins
 
+Plugins installed for every user in a system plugins directory, such as
+`/usr/share/mise/plugins`, are listed after your own and marked `(system)`.
+A package manager or the machine's admin owns them, so `--outdated` skips
+them and `mise plugins update`/`uninstall` leave them alone. A system plugin
+that one of your plugins overrides is marked as overridden.
+
 Use `--core` to list the core tools built into mise instead, or
 `--core --user` for both. `--outdated` checks each plugin's Git remote for
 newer plugin code; it does not compare tool versions. Use `mise ls` for
@@ -5736,7 +5742,9 @@ Update installed plugins
 
 With no names, updates every installed plugin. This updates the plugin code,
 not the tool versions it manages. Linked local plugins are skipped; plugins
-installed from an archive cannot be updated with Git.
+installed from an archive cannot be updated with Git. A system plugin, such
+as one in `/usr/share/mise/plugins`, is skipped with a warning: update it
+with the package or admin that installed it.
 """#
         flag "-j --jobs" help="Number of plugins to update in parallel (default: the `jobs` setting)" {
             arg <JOBS>

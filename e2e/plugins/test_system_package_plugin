@@ -60,6 +60,13 @@ assert_contains "mise bootstrap packages status" "missing"
 assert "mise bootstrap packages apply --yes" ""
 assert "cat $HOME/.fake-packages/one" "system"
 
+# plugins ls shows the system plugin, and update/uninstall leave it alone
+assert_contains "mise plugins ls" "fake (system)"
+assert_contains "mise plugins ls --urls" "system-plugins/fake"
+assert_contains "mise plugins update fake 2>&1" "fake is a system plugin in"
+assert_contains "mise plugins uninstall fake 2>&1" "fake is a system plugin in"
+assert "test -d system-plugins/fake" ""
+
 # A user plugin of the same name wins, with a warning.
 make_plugin user-plugin user
 assert "mise plugin link -f fake $PWD/user-plugin" ""
@@ -69,6 +76,7 @@ cat >mise.toml <<'TOML'
 TOML
 assert_contains "mise bootstrap packages apply --yes 2>&1" "overrides the system plugin"
 assert "cat $HOME/.fake-packages/two" "user"
+assert_contains "mise plugins ls 2>/dev/null" "fake (system, overridden by"
 
 # A system plugins directory that other users can write is ignored.
 assert_succeed "mise plugins uninstall fake"
