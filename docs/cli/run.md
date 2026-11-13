@@ -112,7 +112,7 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
   Per-host filtering does not work: Linux and macOS exit with an error, and Windows runs the task without network restrictions. See <https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts>
 - **`--allow-read <PATH>`** — Allow reads from a specific path (implies `--deny-read` for everything else)
 - **`--allow-write <PATH>`** — Allow writes to a specific path (implies `--deny-write` for everything else)
-- **`--allow-unix <PATH>`** — Allow connections to the Unix socket at a specific path (implies `--deny-unix` for every other socket). Linux 7.1 or later only.
+- **`--allow-unix <PATH>`** — Allow connections to the Unix socket at a specific path, or to every socket under it if PATH is a directory (implies `--deny-unix` for every other socket). Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only.
 - **`--deny-all`** — Block reads, writes, network, and env vars
 - **`--deny-env`** — Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG
 

@@ -45,9 +45,9 @@ setting is off; when you name tools, only those are installed. The --allow-*and
   <https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts>
 - **`--allow-read <PATH>`** — Allow reads from PATH (implies --deny-read for everything else)
 - **`--allow-write <PATH>`** — Allow writes to PATH (implies --deny-write for everything else)
-- **`--allow-unix <PATH>`** — Allow connections to the Unix socket at PATH (implies --deny-unix for every other socket)
+- **`--allow-unix <PATH>`** — Allow connections to the Unix socket at PATH, or to every socket under it if PATH is a directory (implies --deny-unix for every other socket)
 
-  Linux 7.1 or later only.
+  Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only.
 - **`--deny-all`** — Block reads, writes, network, and env vars
 - **`--deny-env`** — Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
 

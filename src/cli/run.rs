@@ -338,8 +338,8 @@ pub(crate) struct Run {
     #[usage(long, value_name = "PATH")]
     pub allow_write: Vec<std::path::PathBuf>,
 
-    /// Allow connections to the Unix socket at a specific path (implies
-    /// `--deny-unix` for every other socket). Linux 7.1 or later only.
+    /// Allow connections to the Unix socket at a specific path, or to every socket under it if PATH is a directory (implies
+    /// `--deny-unix` for every other socket). Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only.
     #[usage(long, value_name = "PATH")]
     pub allow_unix: Vec<std::path::PathBuf>,
 
