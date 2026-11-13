@@ -1245,7 +1245,7 @@ impl ToolVersion {
         }
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
-        if opts.before_date.is_some() {
+        if let Some(before) = opts.before_date {
             let all_versions = backend
                 .list_versions_matching_with_selection_options(
                     config,
@@ -1258,6 +1258,27 @@ impl ToolVersion {
             if all_versions.iter().any(|m| m == v) {
                 // Exact match exists but was filtered by date - use it anyway
                 return Ok(v.to_string());
+            }
+            // Nothing matched because the cutoff hid every candidate. Returning
+            // the request text would hand a prefix like `1` to the installer as
+            // if it were a version.
+            let hidden = backend
+                .versions_hidden_by_before_date(config, v, before)
+                .await
+                .unwrap_or_default();
+            if !hidden.is_empty() {
+                let err = Self::no_versions_found(
+                    config,
+                    backend,
+                    v,
+                    opts.before_date,
+                    selection_opts.minimum_release_age(),
+                    true,
+                )
+                .await;
+                return Err(eyre::Report::new(
+                    crate::errors::Error::ReleaseAgeHidAllVersions(format!("{err:#}")),
+                ));
             }
         }
         Ok(v.to_string())

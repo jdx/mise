@@ -110,6 +110,24 @@ async fn resolve_for_lock(
         resolve_options.use_locked_version = false;
         return request.resolve(config, resolve_options).await;
     }
+    // `--bump` looks for something newer. When release age hides every
+    // candidate there is nothing newer, so the locked version stays.
+    if !resolve_options.use_locked_version
+        && resolved
+            .as_ref()
+            .err()
+            .is_some_and(crate::errors::Error::is_release_age_hid_all_versions)
+    {
+        let mut keep_locked = resolve_options.clone();
+        keep_locked.use_locked_version = true;
+        keep_locked.latest_versions = false;
+        keep_locked.latest_versions_for_all_requests = false;
+        if let Ok(tv) = request.resolve(config, &keep_locked).await
+            && tv.resolved_from_lockfile()
+        {
+            return Ok(tv);
+        }
+    }
     resolved
 }
 

@@ -23,6 +23,9 @@ pub enum Error {
         backend: Box<BackendArg>,
         version: String,
     },
+    /// Every release matching a request is newer than `minimum_release_age`.
+    #[error("{0}")]
+    ReleaseAgeHidAllVersions(String),
     #[error("{tool}@{version} is not in the lockfile\nhint: {hint}")]
     NotInLockfile {
         tool: String,
@@ -184,6 +187,15 @@ impl Error {
             matches!(
                 source.downcast_ref::<Error>(),
                 Some(Error::RequiredChannelResolution { .. })
+            )
+        })
+    }
+
+    pub fn is_release_age_hid_all_versions(err: &Report) -> bool {
+        err.chain().any(|source| {
+            matches!(
+                source.downcast_ref::<Error>(),
+                Some(Error::ReleaseAgeHidAllVersions(_))
             )
         })
     }
