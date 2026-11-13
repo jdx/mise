@@ -3,14 +3,22 @@ use std::collections::BTreeMap;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
+use crate::file::display_path;
 use crate::parallel;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
+use crate::plugins::system_plugins::{self, SystemPlugin};
 use crate::registry::full_to_url;
 use crate::toolset::install_state;
-use crate::ui::table;
+use crate::ui::{style, table};
 
 /// List installed plugins
+///
+/// Plugins installed for every user in a system plugins directory, such as
+/// `/usr/share/mise/plugins`, are listed after your own and marked `(system)`.
+/// A package manager or the machine's admin owns them, so `--outdated` skips
+/// them and `mise plugins update`/`uninstall` leave them alone. A system plugin
+/// that one of your plugins overrides is marked as overridden.
 ///
 /// Use `--core` to list the core tools built into mise instead, or
 /// `--core --user` for both. `--outdated` checks each plugin's Git remote for
@@ -181,6 +189,12 @@ impl PluginsLs {
                     }
                     row
                 })
+                .chain(system_plugins::list_all().iter().map(|plugin| Row {
+                    plugin: plugin.name.clone(),
+                    url: display_path(&plugin.path),
+                    ref_: system_label(plugin),
+                    sha: String::new(),
+                }))
                 .collect::<Vec<_>>();
             let mut table = Table::new(data);
             table::print(&mut table, false)?;
@@ -189,8 +203,20 @@ impl PluginsLs {
             for tool in plugins.values() {
                 miseprintln!("{tool}");
             }
+            for plugin in system_plugins::list_all() {
+                let label = format!("({})", system_label(plugin));
+                miseprintln!("{} {}", plugin.name, style::ndim(label));
+            }
         }
         Ok(())
+    }
+}
+
+/// How `mise plugins ls` marks a system plugin.
+fn system_label(plugin: &SystemPlugin) -> String {
+    match &plugin.overridden_by {
+        Some(user) => format!("system, overridden by {}", display_path(user)),
+        None => "system".to_string(),
     }
 }
 

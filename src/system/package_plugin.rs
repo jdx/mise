@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
-use heck::ToKebabCase;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
@@ -96,10 +95,15 @@ pub struct PackagePluginManager {
 
 impl PackagePluginManager {
     pub fn new(name: String) -> Result<Self> {
-        let plugin_path = mise_util::dirs::PLUGINS.join(name.to_kebab_case());
+        let plugin_path = crate::plugins::system_plugins::resolve(&name, &mise_util::dirs::PLUGINS);
         let config =
             MisePluginToml::from_file(&plugin_path.join("mise.plugin.toml"))?.package_manager;
-        let plugin = Arc::new(VfoxPlugin::new(name.clone(), plugin_path));
+        // vfox loads a plugin by the name of its directory, which can differ from `name` in case
+        // style (`foo_bar` in config, `foo-bar` on disk).
+        let dir_name = plugin_path
+            .file_name()
+            .map_or_else(|| name.clone(), |n| n.to_string_lossy().into_owned());
+        let plugin = Arc::new(VfoxPlugin::new(dir_name, plugin_path));
         Ok(Self {
             name,
             plugin,
@@ -250,6 +254,11 @@ impl PackagePluginManager {
 
     fn vfox(&self, env: &IndexMap<String, String>) -> Result<vfox::Vfox> {
         let (mut vfox, _) = self.plugin.vfox()?;
+        // A system plugin lives outside the user's plugins directory, and vfox finds a plugin
+        // by name inside `plugin_dir`.
+        if let Some(dir) = self.plugin.plugin_path.parent() {
+            vfox.plugin_dir = dir.to_path_buf();
+        }
         vfox.cmd_env = Some(env.clone());
         Ok(vfox)
     }
@@ -274,9 +283,9 @@ impl PackagePluginManager {
                 .join("hooks/package_upgrade.lua")
                 .exists()
         {
-            vfox.package_upgrade(&self.name, ctx).await?;
+            vfox.package_upgrade(&self.plugin.name, ctx).await?;
         } else {
-            vfox.package_install(&self.name, ctx).await?;
+            vfox.package_install(&self.plugin.name, ctx).await?;
         }
         Ok(())
     }
@@ -286,7 +295,9 @@ impl PackagePluginManager {
         let ctx = PackageUninstallContext {
             packages: Self::requests(pkgs),
         };
-        self.vfox(env)?.package_uninstall(&self.name, ctx).await?;
+        self.vfox(env)?
+            .package_uninstall(&self.plugin.name, ctx)
+            .await?;
         Ok(())
     }
 
@@ -535,7 +546,7 @@ impl SystemPackageManager for PackagePluginManager {
         let response = self
             .vfox(env)?
             .package_installed(
-                &self.name,
+                &self.plugin.name,
                 PackageInstalledContext {
                     packages: Self::requests(pkgs),
                 },

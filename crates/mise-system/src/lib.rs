@@ -408,6 +408,15 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
 pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
+    let known = all_manager_names();
+    let mut canonical: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    for (mgr, requests) in by_mgr {
+        canonical
+            .entry(canonical_manager_name(mgr, &known))
+            .or_default()
+            .extend(requests);
+    }
+    let by_mgr = canonical;
     resolve_managers(
         by_mgr,
         IndexMap::new(),
@@ -824,6 +833,7 @@ fn package_requests_collecting(
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
     let available_managers = std::cell::LazyCell::new(available_manager_names);
+    let manager_names = std::cell::LazyCell::new(all_manager_names);
     // (manager, package) pairs an unprefixed key declared
     let mut bare_origin: std::collections::HashSet<(String, String)> =
         std::collections::HashSet::new();
@@ -852,6 +862,9 @@ fn package_requests_collecting(
         };
         match parsed {
             Ok((mgr, name)) => {
+                // Key every request by the manager's own spelling, so status, apply and prune
+                // all find `foo_bar:pkg` under a plugin named `foo-bar`.
+                let mgr = canonical_manager_name(mgr, &manager_names);
                 let version = package.version();
                 let version = (version != "latest").then(|| version.to_string());
                 // Validated before any conflict handling can drop an earlier request
@@ -2242,8 +2255,10 @@ fn packages_from_specs_with_config_files(
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    let manager_names = std::cell::LazyCell::new(all_manager_names);
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
+        let mgr = canonical_manager_name(mgr, &manager_names);
         validate_package_name(&mgr, &name)?;
         // An explicit `snap:<name>` installs from the channel the config
         // declares, the same as a full `mise bootstrap` would.
@@ -2683,6 +2698,28 @@ struct ResolveOpts {
     /// manager's entries must not block a prune, so that union is not checked
     /// for one package declared under two spellings.
     applies_together: bool,
+}
+
+/// The name of every package manager, built in or from a plugin.
+fn all_manager_names() -> Vec<String> {
+    packages::all_managers()
+        .into_iter()
+        .map(|manager| manager.name().to_string())
+        .collect()
+}
+
+/// `mgr` as the installed manager spells it: a plugin installed as `foo-bar` answers to `foo_bar`
+/// too, since mise installs plugins under the kebab-case name.
+fn canonical_manager_name(mgr: String, known: &[String]) -> String {
+    if known.contains(&mgr) {
+        return mgr;
+    }
+    let id = mgr.replace('_', "-");
+    known
+        .iter()
+        .find(|name| name.replace('_', "-") == id)
+        .cloned()
+        .unwrap_or(mgr)
 }
 
 fn resolve_managers(
@@ -3750,6 +3787,19 @@ mod tests {
         // tap entry's adopt does not carry over to it
         assert!(!casks.options.brew_cask_adopt("elsewhere"));
         Ok(())
+    }
+
+    #[test]
+    fn a_manager_answers_to_either_spelling() {
+        let known = vec![
+            "apt".to_string(),
+            "foo-bar".to_string(),
+            "baz_qux".to_string(),
+        ];
+        assert_eq!(canonical_manager_name("foo_bar".into(), &known), "foo-bar");
+        assert_eq!(canonical_manager_name("baz-qux".into(), &known), "baz_qux");
+        assert_eq!(canonical_manager_name("apt".into(), &known), "apt");
+        assert_eq!(canonical_manager_name("other".into(), &known), "other");
     }
 
     /// Prune unions declarations across environments so it can protect whatever

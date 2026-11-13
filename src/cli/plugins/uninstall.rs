@@ -66,6 +66,14 @@ impl PluginsUninstall {
     }
 
     async fn uninstall_one(&self, plugin_name: &str, mpr: &MultiProgressReport) -> Result<()> {
+        if let Some(system) = plugins::system_plugins::find(plugin_name) {
+            warn!(
+                "{} is a system plugin in {}; remove it with the package or admin that installed it",
+                style::eblue(plugin_name),
+                crate::file::display_path(&system.path)
+            );
+            return Ok(());
+        }
         if let Ok(plugin) = plugins::get(plugin_name) {
             if plugin.is_installed() {
                 let prefix = format!("plugin:{}", style::eblue(&plugin.name()));

@@ -273,6 +273,21 @@ pub static MISE_SYSTEM_DATA_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_DATA_DIR").unwrap_or_else(|| PathBuf::from("/usr/local/share/mise"))
 });
 
+/// Directories of plugins installed for every user, searched in order after the user's own
+/// plugins directory: `/usr/share/mise/plugins` for distro packages, then the `plugins`
+/// directory under MISE_SYSTEM_DATA_DIR for the machine's admin.
+pub static MISE_SYSTEM_PLUGINS_DIRS: Lazy<Vec<PathBuf>> =
+    Lazy::new(|| match var_os("MISE_SYSTEM_PLUGINS_DIRS") {
+        Some(v) => std::env::split_paths(&v)
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(replace_path)
+            .collect(),
+        None => vec![
+            PathBuf::from("/usr/share/mise/plugins"),
+            MISE_SYSTEM_DATA_DIR.join("plugins"),
+        ],
+    });
+
 /// System-level installs directory, derived from MISE_SYSTEM_DATA_DIR.
 pub static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_INSTALLS_DIR").unwrap_or_else(|| MISE_SYSTEM_DATA_DIR.join("installs"))

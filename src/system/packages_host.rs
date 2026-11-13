@@ -32,11 +32,20 @@ fn package_plugin_names() -> Vec<String> {
     let Some(plugins) = crate::toolset::install_state::try_list_plugins() else {
         return Vec::new();
     };
-    plugins
+    let mut names: Vec<String> = plugins
         .iter()
         .filter(|(_, plugin_type)| **plugin_type == crate::plugins::PluginType::Package)
         .map(|(name, _)| name.clone())
-        .collect()
+        .collect();
+    names.extend(
+        crate::plugins::system_plugins::list()
+            .iter()
+            .filter(|plugin| plugin.plugin_type == crate::plugins::PluginType::Package)
+            .filter(|plugin| !names.contains(&plugin.name))
+            .map(|plugin| plugin.name.clone())
+            .collect::<Vec<_>>(),
+    );
+    names
 }
 
 fn load_package_plugin(name: &str) -> Result<Arc<dyn SystemPackageManager>> {
