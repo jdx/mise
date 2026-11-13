@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn description_prefers_registry_url() {
         // oc's first backend is http:oc, which must not become github.com/oc
-        let tool = crate::registry::baked_registry().get("oc").unwrap();
+        let tool = crate::registry::REGISTRY.get("oc").unwrap();
         assert_eq!(
             get_description(tool),
             "OpenShift Client CLI (oc). https://github.com/openshift/oc"
