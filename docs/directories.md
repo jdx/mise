@@ -98,20 +98,23 @@ and mise warns once per run that it does.
 
 ### `installs` {#local-share-mise-installs}
 
-Holds installed versions: `mise install node@24.0.0` installs into
-`installs/node/24.0.0`. mise also creates links for prefixes and aliases, such
-as `installs/node/24`. Use `mise where node` or `mise which node` instead of
-building paths from them.
+Holds installed versions. Each installation gets its own directory named by what
+was installed (the [identity install layout](/dev-tools/install-layout.html)):
+`mise install age@1.2.1` installs into `installs/age-hlencrst`, and
+`installs/age/1.2.1` is a link to it. mise also creates links for prefixes and
+aliases, such as `installs/age/1`. Use `mise where age` or `mise which age`
+instead of building paths from them.
 
 `MISE_INSTALLS_DIR` moves this directory. Like the other directory variables, set
 it where mise starts, not in `[env]`, or an install can use one directory while
 later commands and shims look in another.
 
-The experimental [identity install layout](/dev-tools/install-layout.html), on
-with `experimental = true` unless `install_layout = "legacy"`, installs into `installs/<label>-<hash>/`, such as `installs/age-hlencrst`, and
-makes `installs/age/1.2.1` a link to it. Its catalog in `installs/.mise/`
-records which directory holds each installation; it is not a cache, so back it
-up with the installs. On Windows the installations go into `i\` beside
+The catalog in `installs/.mise/` records which directory holds each
+installation and which installation an unlocked request selected; it is not a
+cache, so back it up with the installs. Installations made by an older mise in
+`installs/<tool>/<version>` stay where they are; `mise installs migrate` moves
+them, and `install_layout = "legacy"` (deprecated) keeps installing new versions
+there. On Windows the installations go into `i\` beside
 `installs` (`%LOCALAPPDATA%\mise\i`), a shorter path that leaves more room under
 the 260-character limit. `MISE_INSTALL_STORE_DIR` chooses where installations go
 on any platform; a directory inside `installs/` is ignored.

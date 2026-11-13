@@ -678,7 +678,7 @@ Install the tools in your config, or specific tool versions
 Install a tool version into a directory outside mise
 .TP
 \fBinstalls\fR
-[experimental] Inspect and choose identity\-layout installations
+Inspect and choose installations of the identity install layout
 .TP
 \fBinstalls ls\fR
 List the installations of the identity install layout
@@ -6987,9 +6987,9 @@ mise install\-into node@24 ./mynode && ./mynode/bin/node \-v
 v24.11.0
 .RE
 .SH "MISE INSTALLS"
-[experimental] Inspect and choose identity\-layout installations
+Inspect and choose installations of the identity install layout
 
-With `install_layout = "identity"`, each installation lives in its own
+Under the identity install layout (the default), each installation lives in its own
 `<label>\-<hash>` directory, and several installations of one version can
 exist side by side (different options, platforms, pinned artifacts, or a
 refreshed copy). These commands list them, choose which one mise uses when
