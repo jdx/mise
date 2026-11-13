@@ -54,7 +54,8 @@ on `PATH`.
 
 On Linux, mise reads `/etc/os-release` to find the Ubuntu release. On GitHub
 Actions Ubuntu runners it reads the runner's `ImageOS` instead (`ubuntu20`,
-`ubuntu22` or `ubuntu24`). Where no precompiled build applies,
+`ubuntu22` or `ubuntu24`), unless it is the generic `Linux` that some images
+set, in which case it reads `/etc/os-release`. Where no precompiled build applies,
 [`mise lock`](/cli/lock.html) records the Erlang/OTP source archive, so every
 machine that uses the lockfile compiles the same release. When `mise lock`
 runs on macOS or Windows and resolves a Linux platform, it records Bob's
