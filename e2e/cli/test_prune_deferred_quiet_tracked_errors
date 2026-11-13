@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# The deferred removal runs on whatever command comes next. A tracked config it cannot
+# load (here a `{{ vars.* }}` template, which is rendered without the config's own
+# [vars]) must not print a warning per file; it is summarized once. An explicit
+# `mise prune` still reports each file.
+
+mkdir -p project other
+echo '[tools]
+tiny = "1"' >other/mise.toml
+assert "mise -C other install tiny@1.0.0"
+assert "mise -C other upgrade tiny"
+
+cat >project/mise.toml <<'TOML'
+[vars]
+base_url = "https://example.com"
+
+[tools."http:foo"]
+version = "1.0.0"
+version_list_url = "{{ vars.base_url }}/versions"
+TOML
+assert "mise -C project trust -q"
+assert "mise -C project cfg >/dev/null"
+
+jq '.entries[].remove_after = 0' "$MISE_STATE_DIR/tool-purgatory.json" >purgatory.json
+mv purgatory.json "$MISE_STATE_DIR/tool-purgatory.json"
+
+mise -C other version >out.txt 2>&1
+assert_not_contains "cat out.txt" "error loading tracked config file"
+assert_contains "cat out.txt" "deferred prune skipped 1 tracked config(s)"
+
+assert_contains "mise -C other prune --dry-run 2>&1" "error loading tracked config file"
