@@ -108,10 +108,30 @@ async fn resolve_for_lock(
         .is_some_and(crate::errors::Error::is_not_in_lockfile)
     {
         resolve_options.use_locked_version = false;
-        return request.resolve(config, resolve_options).await;
+        return resolve_keeping_locked(config, request, resolve_options).await;
     }
-    // `--bump` looks for something newer. When release age hides every
-    // candidate there is nothing newer, so the locked version stays.
+    keep_locked_when_release_age_holds(config, request, resolve_options, resolved).await
+}
+
+/// Resolves `request`, keeping the locked version when release age hides every
+/// newer match.
+async fn resolve_keeping_locked(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+    resolve_options: &ResolveOptions,
+) -> Result<ToolVersion> {
+    let resolved = request.resolve(config, resolve_options).await;
+    keep_locked_when_release_age_holds(config, request, resolve_options, resolved).await
+}
+
+/// `--bump` looks for something newer. When release age hides every candidate
+/// there is nothing newer, so the locked version stays.
+async fn keep_locked_when_release_age_holds(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+    resolve_options: &ResolveOptions,
+    resolved: Result<ToolVersion>,
+) -> Result<ToolVersion> {
     if !resolve_options.use_locked_version
         && resolved
             .as_ref()
@@ -2939,7 +2959,7 @@ impl Lock {
                         } else {
                             resolve_options.use_locked_version = false;
                             resolve_options.latest_versions = true;
-                            match request.resolve(config, &resolve_options).await {
+                            match resolve_keeping_locked(config, &request, &resolve_options).await {
                                 Ok(resolved_tv) => tv = resolved_tv,
                                 Err(err) if is_rolling => {
                                     return Err(err.wrap_err(format!(

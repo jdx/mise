@@ -2945,7 +2945,7 @@ mod tests {
         let config = Config::get().await.unwrap();
         let before: Timestamp = "2026-01-01T00:00:00Z".parse().unwrap();
         backend
-            .versions_hidden_by_before_date(&config, query, before)
+            .versions_hidden_by_before_date(&config, query, before, None)
             .await
             .unwrap()
             .into_iter()
@@ -4265,8 +4265,14 @@ pub trait Backend: Debug + Send + Sync {
         config: &Arc<Config>,
         query: &str,
         before: Timestamp,
+        selection_opts: Option<&ToolVersionOptions>,
     ) -> eyre::Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        // The active request's options, not the first config entry's: a later
+        // entry can enable prereleases that the first one does not.
+        let opts = match selection_opts {
+            Some(opts) => opts.clone(),
+            None => config.get_tool_opts_with_overrides(self.ba()).await?,
+        };
         let backend = self.ba().full();
         let hidden: Vec<VersionInfo> = self
             .list_remote_versions_with_info_with_selection_options(config, &opts, false)

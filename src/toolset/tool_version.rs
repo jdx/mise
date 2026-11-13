@@ -96,6 +96,7 @@ impl ToolVersion {
         before_date: Option<Timestamp>,
         minimum_release_age: Option<&str>,
         suggest_exact_pin: bool,
+        selection_opts: Option<&ToolVersionOptions>,
     ) -> eyre::Report {
         let id = backend.id();
         // The version list is also empty when fetching it failed, in which case
@@ -108,7 +109,7 @@ impl ToolVersion {
             return eyre::eyre!("no versions found for {id}");
         };
         let hidden = backend
-            .versions_hidden_by_before_date(config, query, before)
+            .versions_hidden_by_before_date(config, query, before, selection_opts)
             .await
             .unwrap_or_default();
         // The cutoff is only to blame when it actually removed a candidate.
@@ -1054,6 +1055,7 @@ impl ToolVersion {
                 opts.before_date,
                 request.options().minimum_release_age(),
                 true,
+                Some(&request.options()),
             )
             .await);
         }
@@ -1263,7 +1265,7 @@ impl ToolVersion {
             // the request text would hand a prefix like `1` to the installer as
             // if it were a version.
             let hidden = backend
-                .versions_hidden_by_before_date(config, v, before)
+                .versions_hidden_by_before_date(config, v, before, Some(selection_opts))
                 .await
                 .unwrap_or_default();
             if !hidden.is_empty() {
@@ -1274,6 +1276,7 @@ impl ToolVersion {
                     opts.before_date,
                     selection_opts.minimum_release_age(),
                     true,
+                    Some(selection_opts),
                 )
                 .await;
                 return Err(eyre::Report::new(
@@ -1383,6 +1386,7 @@ impl ToolVersion {
                 opts.before_date,
                 request.options().minimum_release_age(),
                 true,
+                Some(&request.options()),
             )
             .await);
         };
@@ -1443,6 +1447,7 @@ pub async fn resolve_sub_base(
                     before_date,
                     None,
                     false,
+                    None,
                 )
                 .await);
             }
