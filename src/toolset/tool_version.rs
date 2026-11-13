@@ -151,11 +151,12 @@ impl ToolVersion {
                 if count == 1 { "it" } else { "them" }
             )
         };
-        eyre::eyre!(
+        // Typed, so `mise lock --bump` can tell a cutoff hold from an empty list.
+        eyre::Report::new(crate::errors::Error::ReleaseAgeHidAllVersions(format!(
             "no versions found for {id} matching minimum_release_age{age_fragment}: \
              it hid {count} release{plural}{cutoff}, the newest being {}{released}.{remedy}",
             newest.version,
-        )
+        )))
     }
 
     pub fn new(request: ToolRequest, version: String) -> Self {
@@ -1269,7 +1270,7 @@ impl ToolVersion {
                 .await
                 .unwrap_or_default();
             if !hidden.is_empty() {
-                let err = Self::no_versions_found(
+                return Err(Self::no_versions_found(
                     config,
                     backend,
                     v,
@@ -1278,10 +1279,7 @@ impl ToolVersion {
                     true,
                     Some(selection_opts),
                 )
-                .await;
-                return Err(eyre::Report::new(
-                    crate::errors::Error::ReleaseAgeHidAllVersions(format!("{err:#}")),
-                ));
+                .await);
             }
         }
         Ok(v.to_string())
