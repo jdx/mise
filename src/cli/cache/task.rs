@@ -9,7 +9,7 @@ use itertools::Itertools;
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::task::task_cache::{TaskCacheEntry, task_cache_entries};
+use crate::task::task_cache::{TaskCacheEntry, task_cache_entries_for};
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_source_checker::task_cwd;
 use crate::task::{GetMatchingExt, Task};
@@ -38,12 +38,22 @@ pub(super) struct CacheTask {
 impl CacheTask {
     pub(super) async fn run(self) -> Result<()> {
         let (config, tasks) = resolve_tasks(&self.task).await?;
-        let mut task_entries = Vec::with_capacity(tasks.len());
-        for task in tasks {
-            let root = task_cwd(&task, &config).await?;
-            let entries = task_cache_entries(&task, &root)?;
-            task_entries.push((task, root, entries));
+        let mut roots = Vec::with_capacity(tasks.len());
+        for task in &tasks {
+            roots.push(task_cwd(task, &config).await?);
         }
+        let requested = tasks
+            .iter()
+            .zip(&roots)
+            .map(|(task, root)| (task, root.as_path()))
+            .collect_vec();
+        let entries = task_cache_entries_for(&requested)?;
+        let task_entries = tasks
+            .into_iter()
+            .zip(roots)
+            .zip(entries)
+            .map(|((task, root), entries)| (task, root, entries))
+            .collect_vec();
         if self.json {
             #[derive(Serialize)]
             struct Output<'a> {
