@@ -649,6 +649,34 @@ fn skip_selected_update(target: &str, current: &str, explicit: bool, force: bool
         || (!force && target == current))
 }
 
+/// A completed update. Keeps the download directory alive so work staged from the
+/// verified archive (the Windows shim) can be used after the binary is replaced.
+struct Updated {
+    version: String,
+    #[cfg(windows)]
+    staged_shim: Result<Option<std::path::PathBuf>>,
+    _dir: tempfile::TempDir,
+}
+
+/// Extract `mise-shim.exe` from an already verified release archive.
+#[cfg(windows)]
+fn extract_update_shim(archive: &Path, dest: &Path) -> Result<Option<std::path::PathBuf>> {
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
+    let mut entry = match archive.by_name("mise/bin/mise-shim.exe") {
+        Ok(entry) => entry,
+        Err(_) => {
+            warn!("mise-shim.exe not found in release archive, skipping");
+            return Ok(None);
+        }
+    };
+    eyre::ensure!(
+        entry.is_file() && !entry.is_symlink(),
+        "release mise-shim.exe is not a regular file"
+    );
+    std::io::copy(&mut entry, &mut std::fs::File::create(dest)?)?;
+    Ok(Some(dest.to_path_buf()))
+}
+
 impl SelfUpdate {
     pub(crate) async fn run(self) -> Result<()> {
         let enforce_age = self.version.is_none();
@@ -671,9 +699,10 @@ impl SelfUpdate {
         sweep_helper_orphans();
         #[cfg(windows)]
         Self::ensure_temp_dir_can_replace_binary()?;
-        let version = self.do_update(enforce_age).await?;
+        let updated = self.do_update(enforce_age).await?;
 
-        if let Some(version) = version {
+        if let Some(updated) = updated {
+            let version = updated.version.clone();
             let styled_version = style(&version).bright().yellow();
             miseprintln!("Updated mise to {styled_version}");
             // On Windows, "exe"/"hardlink" shims are copies of mise-shim.exe and
@@ -683,7 +712,7 @@ impl SelfUpdate {
             // in the `.version` marker, masking the staleness from future
             // (non-forced) reshims. Best-effort. See discussion #10022.
             #[cfg(windows)]
-            match Self::update_mise_shim(&SelfUpdateSource::current(), &version).await {
+            match Self::install_staged_shim(updated.staged_shim) {
                 Ok(()) => {
                     if let Err(e) = Self::reshim_after_update().await {
                         warn!("Failed to reshim after self-update: {e}");
@@ -786,7 +815,7 @@ impl SelfUpdate {
         }
     }
 
-    async fn do_update(&self, enforce_age: bool) -> Result<Option<String>> {
+    async fn do_update(&self, enforce_age: bool) -> Result<Option<Updated>> {
         let settings = Settings::get();
         let source = SelfUpdateSource::from_settings(&settings);
         source.validate()?;
@@ -846,9 +875,11 @@ impl SelfUpdate {
             .join(if cfg!(windows) { "mise.exe" } else { "mise" });
         let new_binary = binary.clone();
         let selected_version = version.clone();
+        #[cfg(windows)]
+        let shim_path = dir.path().join("mise-shim.exe");
         // Verification and archive I/O are blocking; no unverified contents are
         // extracted, and the running executable is untouched on any failure.
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        let staged_shim = tokio::task::spawn_blocking(move || -> Result<_> {
             if let Some(manifest) = manifest {
                 packslip::verify(&manifest, &selected_version, &archive_path, before)?;
             }
@@ -859,14 +890,27 @@ impl SelfUpdate {
             )?;
             #[cfg(target_os = "macos")]
             Self::verify_macos_signature(&new_binary)?;
+            // Staged from the archive just verified, so it is downloaded once.
+            #[cfg(windows)]
+            let staged_shim = extract_update_shim(&archive_path, &shim_path);
             #[cfg(windows)]
             replace_running_binary(&new_binary)?;
             #[cfg(not(windows))]
             self_replace::self_replace(&new_binary)?;
+            #[cfg(windows)]
+            return Ok(staged_shim);
+            #[cfg(not(windows))]
             Ok(())
         })
         .await??;
-        Ok(Some(version))
+        #[cfg(not(windows))]
+        let () = staged_shim;
+        Ok(Some(Updated {
+            version,
+            #[cfg(windows)]
+            staged_shim,
+            _dir: dir,
+        }))
     }
 
     /// Release `v{version}` of the source repository. For mise's own releases
@@ -1072,54 +1116,12 @@ impl SelfUpdate {
         Ok(())
     }
 
+    /// Put the shim staged from the verified release archive beside the real mise.exe.
     #[cfg(windows)]
-    async fn update_mise_shim(source: &SelfUpdateSource, version: &str) -> Result<()> {
-        use std::io::Read;
-
-        source.validate()?;
-        let version = version.strip_prefix('v').unwrap_or(version);
-        let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
-        let client = Self::http_client()?;
-        let release = Self::fetch_release(&client, source, version).await?;
-        let asset = release
-            .assets
-            .iter()
-            .find(|asset| asset.name == archive_name)
-            .ok_or_else(|| {
-                color_eyre::eyre::eyre!(
-                    "release v{version} for {} has no asset named {archive_name}",
-                    source.repository
-                )
-            })?;
-        // Every redirect is governed by the downgrade-rejecting self-update client.
-        let url = source.asset_url(asset).to_string();
-        debug!("Downloading mise-shim.exe from {url}");
-
-        let temp_dir = tempfile::tempdir()?;
-        // Use the real archive name so zipsign context matches the release signature
-        let zip_path = temp_dir.path().join(&archive_name);
-        Self::download_archive(&client, source, &url, &zip_path).await?;
-
-        let manifest = Self::release_packslip(&client, source, &release, version).await?;
-        if let Some(manifest) = manifest {
-            // The main executable already enforced age for this exact release.
-            crate::file::run_blocking(|| packslip::verify(&manifest, version, &zip_path, None))?;
-        }
-
-        // Verify the archive signature using the same key as the main update
-        verify_update_archive(&zip_path, &[*include_bytes!("../../zipsign.pub")])?;
-
-        let file = fs::File::open(&zip_path)?;
-        let mut archive = zip::ZipArchive::new(file)?;
-
-        let mut shim_entry = match archive.by_name("mise/bin/mise-shim.exe") {
-            Ok(entry) => entry,
-            Err(_) => {
-                warn!("mise-shim.exe not found in release archive, skipping");
-                return Ok(());
-            }
+    fn install_staged_shim(staged: Result<Option<std::path::PathBuf>>) -> Result<()> {
+        let Some(staged) = staged? else {
+            return Ok(());
         };
-
         // mise-shim.exe ships beside the real mise.exe. MISE_BIN may be a link to it (winget puts
         // one in WinGet/Links), and renaming over a link beside it would replace the link with a
         // copy and leave the real mise-shim.exe stale.
@@ -1129,17 +1131,10 @@ impl SelfUpdate {
             .parent()
             .expect("MISE_BIN should have a parent directory")
             .join("mise-shim.exe");
-
-        // Write to a temp file first, then rename for atomic replacement
-        let mut buf = Vec::new();
-        shim_entry.read_to_end(&mut buf)?;
-        let temp_shim = temp_dir.path().join("mise-shim.exe");
-        fs::write(&temp_shim, &buf)?;
-        if fs::rename(&temp_shim, &dest).is_err() {
+        if fs::rename(&staged, &dest).is_err() {
             // Fallback for cross-filesystem moves
-            fs::copy(&temp_shim, &dest)?;
+            fs::copy(&staged, &dest)?;
         }
-
         debug!("Updated mise-shim.exe at {}", dest.display());
         Ok(())
     }
