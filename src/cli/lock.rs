@@ -71,6 +71,67 @@ struct LockCollectionContext<'a> {
     resolve_options: &'a ResolveOptions,
 }
 
+/// The lockfile entry version a request already resolved to, when `--bump`
+/// re-resolved it to something older. A stale or lagging remote version list
+/// (for example mise-versions missing the newest releases) can make the newest
+/// match older than what is locked; `--bump` only advances the lockfile.
+/// Backends whose versions have no order never qualify.
+fn locked_version_newer_than(
+    locked: Option<&Vec<lockfile::LockfileTool>>,
+    request_version: &str,
+    resolved: &str,
+    unordered: bool,
+) -> Option<String> {
+    if unordered {
+        return None;
+    }
+    locked?
+        .iter()
+        .filter(|entry| entry.specifiers.contains(request_version))
+        .find(|entry| crate::toolset::is_outdated_version(resolved, &entry.version))
+        .map(|entry| entry.version.clone())
+}
+
+/// Under `--bump`, put back the locked version of any tool the remote
+/// resolution moved backwards.
+async fn keep_locked_over_downgrade(
+    context: &LockCollectionContext<'_>,
+    lockfile_path: &Path,
+    tools: &mut [LockTool],
+) -> Result<()> {
+    let config = context.config;
+    let lockfile = lockfile::read_lockfile_as_trusted(config, lockfile_path)?;
+    for (ba, tv) in tools.iter_mut() {
+        let short = crate::toolset::install_state::state_short(&ba.short).into_owned();
+        let unordered = ba
+            .backend()
+            .is_ok_and(|backend| backend.versions_are_unordered(&tv.request.version()));
+        let Some(locked) = locked_version_newer_than(
+            lockfile.tools().get(&short),
+            &tv.request.version(),
+            &tv.version,
+            unordered,
+        ) else {
+            continue;
+        };
+        let mut options = context.resolve_options.clone();
+        options.use_locked_version = true;
+        options.latest_versions = false;
+        options.latest_versions_for_all_requests = false;
+        let Ok(kept) = resolve_for_lock(config, &tv.request, &mut options).await else {
+            continue;
+        };
+        if kept.version == locked {
+            warn!(
+                "{}: the newest version found remotely ({}) is older than the locked {}; keeping {}",
+                ba.short, tv.version, locked, locked
+            );
+            *tv = kept;
+        }
+    }
+    Ok(())
+}
+
 fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
 }
@@ -904,6 +965,9 @@ impl Lock {
             let mut tools = self
                 .get_tools_to_lock(&collection_context, lockfile_path, config_paths)
                 .await?;
+            if self.bump {
+                keep_locked_over_downgrade(&collection_context, lockfile_path, &mut tools).await?;
+            }
             if let Some(installed) = installed {
                 for (_, tv) in &mut tools {
                     if let Some(actual) = installed.iter().find(|actual| {
@@ -3320,6 +3384,52 @@ impl Lock {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn locked(version: &str, specifier: &str) -> Vec<lockfile::LockfileTool> {
+        vec![lockfile::LockfileTool {
+            version: version.to_string(),
+            backend: None,
+            specifiers: BTreeSet::from([specifier.to_string()]),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::new(),
+            aube: None,
+            uv: None,
+            provenance: None,
+        }]
+    }
+
+    #[test]
+    fn bump_keeps_a_locked_version_newer_than_the_resolved_one() {
+        let entries = locked("0.166.0", "latest");
+        assert_eq!(
+            locked_version_newer_than(Some(&entries), "latest", "0.163.0", false),
+            Some("0.166.0".to_string())
+        );
+        // An upgrade, an equal version, another request, and an unordered
+        // backend all leave the resolved version alone.
+        assert_eq!(
+            locked_version_newer_than(Some(&entries), "latest", "0.168.0", false),
+            None
+        );
+        assert_eq!(
+            locked_version_newer_than(Some(&entries), "latest", "0.166.0", false),
+            None
+        );
+        assert_eq!(
+            locked_version_newer_than(Some(&entries), "0.1", "0.163.0", false),
+            None
+        );
+        assert_eq!(
+            locked_version_newer_than(Some(&entries), "latest", "0.163.0", true),
+            None
+        );
+        assert_eq!(
+            locked_version_newer_than(None, "latest", "0.163.0", false),
+            None
+        );
+    }
+
     #[test]
     fn with_platform_adds_a_platform_the_lockfile_lacks() {
         let linux = Platform::parse("linux-x64").unwrap();
