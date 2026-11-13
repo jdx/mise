@@ -141,9 +141,9 @@ fn registration(shell_name: &str, shell: Shell, commands: &BTreeSet<String>) -> 
     let mut output = String::new();
     if shell == Shell::Zsh {
         output.push_str(if commands.is_empty() {
-            "if (( $+functions[__mise_clear_completions] )) && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
+            "if typeset -f __mise_clear_completions >/dev/null && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         } else {
-            "if ! (( $+functions[compdef] )) || [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
+            "if ! typeset -f compdef >/dev/null || [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         });
     }
     if commands.is_empty() {
