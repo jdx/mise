@@ -199,69 +199,31 @@ impl BootstrapTomlConfig {
             ..Default::default()
         };
         // `Macos` and `MACOS` name the same section as `macos`, as they would for a plugin, so
-        // none of them may be left behind to be dispatched as a settings plugin.
-        let mut table: Option<toml::Table> = None;
-        for name in self
+        // none of them may be left behind to be dispatched as a settings plugin. Each is applied
+        // in turn, the exact `macos` last, so a later one replaces a whole preference value
+        // rather than merging into it.
+        let mut names: Vec<String> = self
             .settings
             .keys()
             .filter(|name| plugin_identity(name) == "macos")
             .cloned()
-            .collect::<Vec<_>>()
-        {
-            let section = self.settings.shift_remove(&name).unwrap_or_default();
-            match &mut table {
-                Some(table) => merge_tables(table, section),
-                None => table = Some(section),
-            }
-        }
-        let Some(table) = table else {
-            return outcome;
-        };
-        let parsed: Result<MacosSettingsTomlConfig, _> =
-            serde_ignored::deserialize(toml::Value::Table(table), |path| {
-                outcome.unknown.push(path.to_string())
-            });
-        let new = match parsed {
-            Ok(new) => new,
-            Err(err) => {
-                outcome.error = Some(err.to_string());
-                return outcome;
-            }
-        };
-        macos.dock.extend(new.dock);
-        macos.finder.extend(new.finder);
-        macos.keyboard.extend(new.keyboard);
-        macos.trackpad.extend(new.trackpad);
-        for (domain, value) in new.defaults {
-            // `-g` and `NSGlobalDomain` are one domain, read in order with the later value
-            // winning, so a key the new spelling sets must not survive under another alias.
-            if let toml::Value::Table(keys) = &value {
-                for (other, old) in macos.defaults.iter_mut() {
-                    if *other != domain
-                        && defaults_domain_identity(other) == defaults_domain_identity(&domain)
-                        && let toml::Value::Table(old) = old
-                    {
-                        old.retain(|key, _| !keys.contains_key(key));
-                    }
+            .collect();
+        names.sort_by_key(|name| name == "macos");
+        let tables: Vec<toml::Table> = names
+            .iter()
+            .map(|name| self.settings.shift_remove(name).unwrap_or_default())
+            .collect();
+        for table in tables {
+            let parsed: Result<MacosSettingsTomlConfig, _> =
+                serde_ignored::deserialize(toml::Value::Table(table), |path| {
+                    outcome.unknown.push(path.to_string())
+                });
+            match parsed {
+                Ok(new) => macos.apply_settings(new),
+                Err(err) => {
+                    outcome.error = Some(err.to_string());
+                    return outcome;
                 }
-            }
-            match (macos.defaults.get_mut(&domain), value) {
-                (Some(toml::Value::Table(old)), toml::Value::Table(new)) => old.extend(new),
-                (_, value) => {
-                    macos.defaults.insert(domain, value);
-                }
-            }
-        }
-        macos.defaults_entries.extend(new.defaults_entries);
-        // Merge field by field, so `exclusive = true` alone in the new spelling keeps the apps
-        // the old spelling declares, while an explicit `apps = []` clears them.
-        if let Some(new) = new.login_items {
-            let merged = macos.login_items.get_or_insert_with(Default::default);
-            if let Some(apps) = new.apps {
-                merged.apps = apps;
-            }
-            if new.exclusive.is_some() {
-                merged.exclusive = new.exclusive;
             }
         }
         outcome
@@ -274,15 +236,43 @@ pub fn plugin_identity(name: &str) -> String {
     heck::ToKebabCase::to_kebab_case(name)
 }
 
-/// Merges `higher` into `base` key by key, `higher` winning.
-fn merge_tables(base: &mut toml::Table, higher: toml::Table) {
-    for (key, value) in higher {
-        match (base.get_mut(&key), value) {
-            (Some(toml::Value::Table(base)), toml::Value::Table(higher)) => {
-                merge_tables(base, higher)
+impl BootstrapMacosTomlConfig {
+    /// Applies one `[bootstrap.settings.macos]` section over these preferences.
+    fn apply_settings(&mut self, new: MacosSettingsTomlConfig) {
+        self.dock.extend(new.dock);
+        self.finder.extend(new.finder);
+        self.keyboard.extend(new.keyboard);
+        self.trackpad.extend(new.trackpad);
+        for (domain, value) in new.defaults {
+            // `-g` and `NSGlobalDomain` are one domain, read in order with the later value
+            // winning, so a key the new spelling sets must not survive under another alias.
+            if let toml::Value::Table(keys) = &value {
+                for (other, old) in self.defaults.iter_mut() {
+                    if *other != domain
+                        && defaults_domain_identity(other) == defaults_domain_identity(&domain)
+                        && let toml::Value::Table(old) = old
+                    {
+                        old.retain(|key, _| !keys.contains_key(key));
+                    }
+                }
             }
-            (_, value) => {
-                base.insert(key, value);
+            match (self.defaults.get_mut(&domain), value) {
+                (Some(toml::Value::Table(old)), toml::Value::Table(new)) => old.extend(new),
+                (_, value) => {
+                    self.defaults.insert(domain, value);
+                }
+            }
+        }
+        self.defaults_entries.extend(new.defaults_entries);
+        // Merge field by field, so `exclusive = true` alone in the new spelling keeps the apps
+        // the old spelling declares, while an explicit `apps = []` clears them.
+        if let Some(new) = new.login_items {
+            let merged = self.login_items.get_or_insert_with(Default::default);
+            if let Some(apps) = new.apps {
+                merged.apps = apps;
+            }
+            if new.exclusive.is_some() {
+                merged.exclusive = new.exclusive;
             }
         }
     }
@@ -617,6 +607,26 @@ mod macos_settings_tests {
             config.macos.finder["show_all_files"],
             toml::Value::Boolean(true)
         );
+    }
+
+    #[test]
+    fn a_later_spelling_replaces_a_whole_preference_value() {
+        let mut config = bootstrap(
+            r#"
+            [settings.macos.defaults."com.example"]
+            options = { enabled = false }
+            [settings.Macos.defaults."com.example"]
+            options = { enabled = true, mode = "old" }
+            other = 1
+            "#,
+        );
+        assert!(config.move_macos_settings().error.is_none());
+        let domain = &config.macos.defaults["com.example"];
+        assert_eq!(
+            domain["options"],
+            toml::Value::Table(toml::from_str("enabled = false").unwrap())
+        );
+        assert_eq!(domain["other"], toml::Value::Integer(1));
     }
 
     #[test]
