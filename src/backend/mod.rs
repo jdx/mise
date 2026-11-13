@@ -6449,6 +6449,9 @@ pub trait Backend: Debug + Send + Sync {
     /// `use_versions_host` and cache contexts, which callers check themselves.
     fn versions_host_tool(&self) -> std::result::Result<String, String> {
         let ba = self.ba();
+        if mise_util::versions_host::backend_excluded(&ba.full_without_opts()) {
+            return Err("it matches versions_host_exclude".to_string());
+        }
         let tool;
         if let Some(plugin) = self.plugin()
             && let Ok(Some(remote_url)) = plugin.get_remote_url()
@@ -6524,9 +6527,10 @@ pub trait Backend: Debug + Send + Sync {
         // which keeps existing cache entries valid, and only for listings the
         // host would otherwise serve: a context already bypasses the host, and
         // the other listings are always direct, so their one entry is correct.
+        let excluded = mise_util::versions_host::backend_excluded(&self.ba().full_without_opts());
         if context.is_none()
-            && !Settings::get().use_versions_host
-            && self.versions_host_skip_reason().is_none()
+            && ((!Settings::get().use_versions_host && self.versions_host_skip_reason().is_none())
+                || excluded)
         {
             return Ok(Some("direct".to_string()));
         }

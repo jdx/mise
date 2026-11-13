@@ -3735,6 +3735,14 @@
           "description": "Show extra output, such as installation logs, and set the log level to debug; same as `--verbose`.",
           "type": "boolean"
         },
+        "versions_host_exclude": {
+          "default": [],
+          "description": "GitHub repositories that never use mise-versions, such as `my-org/*`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "windows_default_file_shell_args": {
           "default": "cmd /c",
           "description": "Shell that runs a file task on Windows when the task sets no `shell` and the file has no shebang or known extension.",

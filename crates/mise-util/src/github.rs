@@ -323,7 +323,9 @@ const RELEASE_LIST_CACHE_VERSION: &str = "2";
 /// data cached before it.
 fn mirror_source(repo: &str) -> bool {
     // Not `prefer_offline`: offline runs should keep reading what was cached.
-    Settings::get().use_versions_host && !crate::versions_host::github_is_url_replaced(Some(repo))
+    Settings::get().use_versions_host
+        && !crate::versions_host::github_is_url_replaced(Some(repo))
+        && !crate::versions_host::github_repo_excluded(repo)
 }
 
 /// Whether the bounded prerelease fallback has found what it went looking for:

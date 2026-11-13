@@ -185,6 +185,12 @@ pub(crate) fn track_install(tool: &str, full: &str, version: &str) {
         return;
     }
 
+    // An excluded repository's name must not reach the host, even under a
+    // known tool name (`tool_alias`, or a fork installed as `jq`).
+    if mise_util::versions_host::backend_excluded(full) {
+        return;
+    }
+
     // Only track known tools (core plugins and registry tools)
     if !PLUGINS_TRACK_DOWNLOADS.contains(tool) {
         return;

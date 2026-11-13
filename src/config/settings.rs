@@ -1667,6 +1667,11 @@ impl SettingsInternal for Settings {
         let mut settings = builder.load()?;
         settings.normalize_pypi_aliases()?;
         normalize_storage_dirs(&mut settings)?;
+        if let Some((pattern, err)) =
+            mise_util::versions_host::invalid_exclude_pattern(&settings.versions_host_exclude)
+        {
+            bail!("settings.versions_host_exclude has an invalid pattern {pattern:?}: {err}");
+        }
         validate_settings_enum_values(&settings)?;
         settings.validate_string_choices()?;
         Ok(settings)

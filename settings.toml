@@ -5039,6 +5039,29 @@ description = "Show extra output, such as installation logs, and set the log lev
 env = "MISE_VERBOSE"
 type = "Bool"
 
+[versions_host_exclude]
+default = []
+description = "GitHub repositories that never use mise-versions, such as `my-org/*`."
+docs = """
+Glob patterns matched against `owner/repo`, case-insensitively. A repository that
+matches is looked up on GitHub directly, with your GitHub token, so mise-versions
+never sees its name: use this for internal or private repositories while keeping
+[`use_versions_host`](#use_versions_host) on for everything else.
+
+```toml
+[settings]
+versions_host_exclude = ["my-org/*", "other-org/internal-cli"]
+```
+
+Covers release, tag, contents and attestation lookups of the `github:` backend and
+mise's own releases. A listing already cached while the repository was not excluded
+is not reused.
+"""
+env = "MISE_VERSIONS_HOST_EXCLUDE"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [windows_default_file_shell_args]
 default = "cmd /c"
 description = "Shell that runs a file task on Windows when the task sets no `shell` and the file has no shebang or known extension."
