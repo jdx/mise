@@ -904,11 +904,48 @@ impl Toolset {
         if should_refresh_remote_versions(tr, &pre_resolve_backend, &resolve_options) {
             resolve_options.refresh_remote_versions = true;
         }
-        let mut tv = crate::ui::resolve_progress::scope(
+        let resolved = crate::ui::resolve_progress::scope(
             tool_progress.map(|p| p.reporter()),
             tr.resolve(config, &resolve_options),
         )
-        .await?;
+        .await;
+        let kept = installed_version_newer_than_cutoff(
+            config,
+            tr,
+            resolved.as_ref().ok(),
+            &pre_resolve_backend,
+            opts,
+            &resolve_options,
+        )
+        .await;
+        // `latest` under the cutoff names an older release than one already
+        // installed, so installing it would only add a version that `mise prune`
+        // removes. Keep the installed one, as every command that resolves
+        // `latest` without asking the remote does, but only when that resolution
+        // is itself installed: a graph-locked installation a fresh request cannot
+        // reuse would otherwise be installed a second time.
+        let kept_tv = if kept.is_some() {
+            match tr
+                .resolve(
+                    config,
+                    &ResolveOptions {
+                        latest_versions: false,
+                        ..resolve_options.clone()
+                    },
+                )
+                .await
+            {
+                Ok(tv) if pre_resolve_backend.is_version_installed(config, &tv, true) => Some(tv),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let mut tv = if let Some(tv) = kept_tv {
+            tv
+        } else {
+            resolved?
+        };
         let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
         crate::lockfile::ensure_locked_url_matches_version(
@@ -1225,6 +1262,53 @@ fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
         request.ensure_safe_install_options()?;
     }
     Ok(())
+}
+
+/// The installed version to keep when a configured `latest` resolved under a
+/// release-age cutoff would install an older release (or none at all, when the
+/// cutoff hides every release) while an installed version is newer than the
+/// cutoff allows. Versions are never ordered here: the version kept is the one
+/// the installed-only resolution picks, and it counts only when the cutoff
+/// hides it, which makes it newer than anything the cutoff selects.
+async fn installed_version_newer_than_cutoff(
+    config: &Arc<Config>,
+    tr: &ToolRequest,
+    resolved: Option<&ToolVersion>,
+    backend: &crate::backend::ABackend,
+    opts: &InstallOptions,
+    resolve_options: &ResolveOptions,
+) -> Option<String> {
+    if opts.force
+        || opts.install_dir.is_some()
+        || !resolve_options.latest_versions
+        || matches!(tr.source(), ToolSource::Argument)
+        || !matches!(tr, ToolRequest::Version { version, .. } if version == "latest")
+    {
+        return None;
+    }
+    let before = tr.resolve_options(resolve_options).ok()?.before_date?;
+    if resolved.is_some_and(|tv| backend.list_installed_versions().contains(&tv.version)) {
+        return None;
+    }
+    let kept = backend.latest_installed_version(None).ok()??;
+    let hidden = backend
+        .versions_hidden_by_before_date(config, "latest", before)
+        .await
+        .ok()?;
+    // A graph-locked installation is listed as `<version>~uv|aube~<16 hex>`;
+    // the remote lists the bare version.
+    let kept_version = kept
+        .rsplit_once('~')
+        .filter(|(_, digest)| digest.len() == 16 && digest.bytes().all(|b| b.is_ascii_hexdigit()))
+        .and_then(|(rest, _)| {
+            rest.strip_suffix("~uv")
+                .or_else(|| rest.strip_suffix("~aube"))
+        })
+        .unwrap_or(kept.as_str());
+    hidden
+        .iter()
+        .any(|v| v.version == kept_version)
+        .then_some(kept)
 }
 
 /// Whether install-time resolution should refresh the remote-versions cache
