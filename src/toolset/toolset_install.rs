@@ -918,19 +918,31 @@ impl Toolset {
             &resolve_options,
         )
         .await;
-        let mut tv = if kept.is_some() {
-            // `latest` under the cutoff names an older release than one already
-            // installed, so installing it would only add a version that
-            // `mise prune` removes. Keep the installed one, as every command
-            // that resolves `latest` without asking the remote does.
-            tr.resolve(
-                config,
-                &ResolveOptions {
-                    latest_versions: false,
-                    ..resolve_options.clone()
-                },
-            )
-            .await?
+        // `latest` under the cutoff names an older release than one already
+        // installed, so installing it would only add a version that `mise prune`
+        // removes. Keep the installed one, as every command that resolves
+        // `latest` without asking the remote does, but only when that resolution
+        // is itself installed: a graph-locked installation a fresh request cannot
+        // reuse would otherwise be installed a second time.
+        let kept_tv = if kept.is_some() {
+            match tr
+                .resolve(
+                    config,
+                    &ResolveOptions {
+                        latest_versions: false,
+                        ..resolve_options.clone()
+                    },
+                )
+                .await
+            {
+                Ok(tv) if pre_resolve_backend.is_version_installed(config, &tv, true) => Some(tv),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let mut tv = if let Some(tv) = kept_tv {
+            tv
         } else {
             resolved?
         };
@@ -1283,10 +1295,20 @@ async fn installed_version_newer_than_cutoff(
         .versions_hidden_by_before_date(config, "latest", before)
         .await
         .ok()?;
-    // Exact match only. An identity-layout installation is listed as
-    // `<version>~<tag>~<digest>` and carries its own lock graph, which a request
-    // for the bare version cannot reuse, so it is left to the usual resolution.
-    hidden.iter().any(|v| v.version == kept).then_some(kept)
+    // A graph-locked installation is listed as `<version>~uv|aube~<16 hex>`;
+    // the remote lists the bare version.
+    let kept_version = kept
+        .rsplit_once('~')
+        .filter(|(_, digest)| digest.len() == 16 && digest.bytes().all(|b| b.is_ascii_hexdigit()))
+        .and_then(|(rest, _)| {
+            rest.strip_suffix("~uv")
+                .or_else(|| rest.strip_suffix("~aube"))
+        })
+        .unwrap_or(kept.as_str());
+    hidden
+        .iter()
+        .any(|v| v.version == kept_version)
+        .then_some(kept)
 }
 
 /// Whether install-time resolution should refresh the remote-versions cache
