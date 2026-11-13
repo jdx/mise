@@ -71,29 +71,31 @@ struct LockCollectionContext<'a> {
     resolve_options: &'a ResolveOptions,
 }
 
-/// The lockfile entry version a request already resolved to, when `--bump`
-/// re-resolved it to something older. A stale or lagging remote version list
-/// (for example mise-versions missing the newest releases) can make the newest
-/// match older than what is locked; `--bump` only advances the lockfile.
-/// Backends whose versions have no order never qualify.
-fn locked_version_newer_than(
-    locked: Option<&Vec<lockfile::LockfileTool>>,
-    request_version: &str,
-    resolved: &str,
-    unordered: bool,
-) -> Option<String> {
-    if unordered {
-        return None;
-    }
-    locked?
-        .iter()
-        .filter(|entry| entry.specifiers.contains(request_version))
-        .find(|entry| crate::toolset::is_outdated_version(resolved, &entry.version))
-        .map(|entry| entry.version.clone())
+/// Whether `resolved` is strictly older than `locked`. Only versions that both
+/// parse as SemVer are ordered; anything else (dates, commit SHAs, channels)
+/// has no known order here, so a different value is never called a downgrade.
+fn is_downgrade(resolved: &str, locked: &str) -> bool {
+    crate::semver::semver_precedence_cmp(resolved, locked) == Some(std::cmp::Ordering::Less)
+}
+
+/// Whether the lockfile already pins `version` for `short`. Compared as an
+/// opaque string.
+fn lockfile_pins(lockfile: &Lockfile, short: &str, version: &str) -> bool {
+    lockfile
+        .tools()
+        .get(short)
+        .is_some_and(|entries| entries.iter().any(|entry| entry.version == version))
 }
 
 /// Under `--bump`, put back the locked version of any tool the remote
-/// resolution moved backwards.
+/// resolution moved backwards. A lagging remote version list (for example
+/// mise-versions missing the newest releases) can make the newest match older
+/// than what is locked; `--bump` only advances the lockfile.
+///
+/// The locked version comes from resolving the request against the lockfile,
+/// the same lookup a plain `mise lock` uses, so legacy entries and option or
+/// backend variants pick the right pin. If that lookup fails, the bump result
+/// stays as resolved.
 async fn keep_locked_over_downgrade(
     context: &LockCollectionContext<'_>,
     lockfile_path: &Path,
@@ -102,18 +104,12 @@ async fn keep_locked_over_downgrade(
     let config = context.config;
     let lockfile = lockfile::read_lockfile_as_trusted(config, lockfile_path)?;
     for (ba, tv) in tools.iter_mut() {
-        let short = crate::toolset::install_state::state_short(&ba.short).into_owned();
         let unordered = ba
             .backend()
             .is_ok_and(|backend| backend.versions_are_unordered(&tv.request.version()));
-        let Some(locked) = locked_version_newer_than(
-            lockfile.tools().get(&short),
-            &tv.request.version(),
-            &tv.version,
-            unordered,
-        ) else {
+        if unordered {
             continue;
-        };
+        }
         let mut options = context.resolve_options.clone();
         options.use_locked_version = true;
         options.latest_versions = false;
@@ -121,10 +117,13 @@ async fn keep_locked_over_downgrade(
         let Ok(kept) = resolve_for_lock(config, &tv.request, &mut options).await else {
             continue;
         };
-        if kept.version == locked {
+        let short = crate::toolset::install_state::state_short(&ba.short);
+        if is_downgrade(&tv.version, &kept.version)
+            && lockfile_pins(&lockfile, &short, &kept.version)
+        {
             warn!(
                 "{}: the newest version found remotely ({}) is older than the locked {}; keeping {}",
-                ba.short, tv.version, locked, locked
+                ba.short, tv.version, kept.version, kept.version
             );
             *tv = kept;
         }
@@ -3386,48 +3385,16 @@ impl Lock {
 mod tests {
     use super::*;
 
-    fn locked(version: &str, specifier: &str) -> Vec<lockfile::LockfileTool> {
-        vec![lockfile::LockfileTool {
-            version: version.to_string(),
-            backend: None,
-            specifiers: BTreeSet::from([specifier.to_string()]),
-            options: BTreeMap::new(),
-            platforms: BTreeMap::new(),
-            aube: None,
-            uv: None,
-            provenance: None,
-        }]
-    }
-
     #[test]
-    fn bump_keeps_a_locked_version_newer_than_the_resolved_one() {
-        let entries = locked("0.166.0", "latest");
-        assert_eq!(
-            locked_version_newer_than(Some(&entries), "latest", "0.163.0", false),
-            Some("0.166.0".to_string())
-        );
-        // An upgrade, an equal version, another request, and an unordered
-        // backend all leave the resolved version alone.
-        assert_eq!(
-            locked_version_newer_than(Some(&entries), "latest", "0.168.0", false),
-            None
-        );
-        assert_eq!(
-            locked_version_newer_than(Some(&entries), "latest", "0.166.0", false),
-            None
-        );
-        assert_eq!(
-            locked_version_newer_than(Some(&entries), "0.1", "0.163.0", false),
-            None
-        );
-        assert_eq!(
-            locked_version_newer_than(Some(&entries), "latest", "0.163.0", true),
-            None
-        );
-        assert_eq!(
-            locked_version_newer_than(None, "latest", "0.163.0", false),
-            None
-        );
+    fn bump_treats_only_semver_decreases_as_downgrades() {
+        assert!(is_downgrade("0.163.0", "0.166.0"));
+        assert!(is_downgrade("1.0.0-alpha.1", "1.0.0"));
+        assert!(!is_downgrade("0.168.0", "0.166.0"));
+        assert!(!is_downgrade("0.166.0", "0.166.0"));
+        // No known order: commit SHAs, dates, channels never count.
+        assert!(!is_downgrade("a1b2c3d", "e4f5a6b"));
+        assert!(!is_downgrade("2024.01.15", "2024.02.01"));
+        assert!(!is_downgrade("nightly", "0.166.0"));
     }
 
     #[test]
