@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# A configured `latest` under minimum_release_age resolves to the newest release
+# outside the cutoff. When a newer release was installed by hand, `mise install`
+# must keep it instead of adding the older one, which `mise prune` would remove.
+
+BACKEND_DIR="$PWD/vfox-dated-backend"
+mkdir -p "$BACKEND_DIR/hooks"
+cat >"$BACKEND_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "dated-backend"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "release date backend test plugin"
+LUA
+cat >"$BACKEND_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return {
+    versions = {
+      { version = "1.0.0", created_at = "2001-06-01T00:00:00Z" },
+      { version = "2.0.0", created_at = "2099-01-01T00:00:00Z" },
+    },
+  }
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+  return { env_vars = {} }
+end
+LUA
+mise plugins link dated-backend "$BACKEND_DIR"
+
+cat >mise.toml <<'TOML'
+[settings]
+minimum_release_age = "365d"
+
+[tools]
+"dated-backend:tool" = "latest"
+TOML
+
+# 2.0.0 is inside the cutoff, so only an exact pin installs it.
+mise install dated-backend:tool@2.0.0
+
+# The configured `latest` is already satisfied by the newer installed version.
+mise install dated-backend:tool
+assert_not_contains "mise ls --installed dated-backend:tool" "1.0.0"
+assert_contains "mise ls --installed dated-backend:tool" "2.0.0"
+mise install
+assert_not_contains "mise ls --installed dated-backend:tool" "1.0.0"
+assert "mise prune --dry-run --tools --yes 2>&1" ""
+
+# An explicit `@latest` still asks the remote and honors the cutoff.
+mise install dated-backend:tool@latest
+assert_contains "mise ls --installed dated-backend:tool" "1.0.0"

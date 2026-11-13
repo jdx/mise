@@ -910,6 +910,21 @@ impl Toolset {
         )
         .await?;
         let backend = tv.backend()?;
+        if installed_version_newer_than_cutoff(config, tr, &tv, &backend, opts).await {
+            // `latest` under the cutoff names an older release than one already
+            // installed, so installing it would only add a version that
+            // `mise prune` removes. Keep the installed one, as every command
+            // that resolves `latest` without asking the remote does.
+            tv = tr
+                .resolve(
+                    config,
+                    &ResolveOptions {
+                        latest_versions: false,
+                        ..resolve_options.clone()
+                    },
+                )
+                .await?;
+        }
         backend::ensure_backend_enabled(&backend.get_type())?;
         crate::lockfile::ensure_locked_url_matches_version(
             &tv,
@@ -1243,6 +1258,40 @@ fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
 /// through to a backend listing that often has far fewer versions (e.g. the
 /// GitHub releases listing only returns the most recent ~30), turning a
 /// previously-resolvable prefix query into "no versions found".
+/// Whether a configured `latest` resolved under a release-age cutoff to a
+/// version that is not installed while an installed version is newer than the
+/// cutoff allows. Versions are never ordered here: an installed version the
+/// cutoff hides is newer than whatever the cutoff selected.
+async fn installed_version_newer_than_cutoff(
+    config: &Arc<Config>,
+    tr: &ToolRequest,
+    tv: &ToolVersion,
+    backend: &crate::backend::ABackend,
+    opts: &InstallOptions,
+) -> bool {
+    if opts.force
+        || !opts.resolve_options.latest_versions
+        || matches!(tr.source(), ToolSource::Argument)
+        || !matches!(tr, ToolRequest::Version { version, .. } if version == "latest")
+    {
+        return false;
+    }
+    let Some(before) = tv.before_date else {
+        return false;
+    };
+    let installed = backend.list_installed_versions();
+    if installed.is_empty() || installed.contains(&tv.version) {
+        return false;
+    }
+    let Ok(hidden) = backend
+        .versions_hidden_by_before_date(config, "latest", before)
+        .await
+    else {
+        return false;
+    };
+    hidden.iter().any(|v| installed.contains(&v.version))
+}
+
 fn should_refresh_remote_versions(
     tr: &ToolRequest,
     backend: &crate::backend::ABackend,
