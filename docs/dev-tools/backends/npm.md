@@ -136,7 +136,9 @@ dependencies. See [dependency graphs](/dev-tools/mise-lock.html#dependency-graph
 
 mise applies [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
 to the tool's dependencies as well as the tool. Embedded aube handles it
-itself. For a locked graph, the cutoff applies when the graph is resolved;
+itself, and it gets no gate when the setting is off for the tool (a zero
+value, an excluded tool, or an exact version request) rather than aube's own 24h
+default. For a locked graph, the cutoff applies when the graph is resolved;
 installs replay the committed dependencies.
 
 External installers need a version that supports the flag mise passes:

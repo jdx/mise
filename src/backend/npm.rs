@@ -2924,16 +2924,16 @@ impl NPMBackend {
                 toml::Value::Boolean(false),
             );
         }
-        if let Some(before_date) = before_date {
-            let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
-                before_date,
-                process_now(),
-            ));
-            config.insert(
-                "minimumReleaseAge".to_string(),
-                toml::Value::Integer(minutes.try_into()?),
-            );
-        }
+        // No cutoff means mise has the gate off for this install (a zero
+        // `minimum_release_age`, an excluded tool, or an exact-version request).
+        // Aube's own default is 24h, so say 0 explicitly rather than inherit it.
+        let minutes = before_date.map_or(0, |before_date| {
+            Self::build_aube_minimum_release_age(elapsed_seconds_ceil(before_date, process_now()))
+        });
+        config.insert(
+            "minimumReleaseAge".to_string(),
+            toml::Value::Integer(minutes.try_into()?),
+        );
         if !trust_policy_excludes.is_empty() {
             config.insert(
                 "trustPolicyExclude".to_string(),
@@ -5821,6 +5821,24 @@ pkg@1.2.0 '1.2.0'
             toml::Value::Integer(1000),
         );
         assert!(NpmOptions::new(&bad).allow_low_downloads().is_err());
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_disables_aube_release_age_without_a_cutoff() {
+        let backend = create_npm_backend("bibtex-tidy");
+        let temp = tempfile::tempdir().unwrap();
+        let install_path = temp.path().join("install");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let request_options = ToolVersionOptions::default();
+        let options = NpmOptions::new(&request_options);
+        backend
+            .write_aube_embed_project(&install_path, None, &options, &AllowBuilds::None, false)
+            .unwrap();
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(config["minimumReleaseAge"].as_integer(), Some(0));
     }
 
     #[test]
