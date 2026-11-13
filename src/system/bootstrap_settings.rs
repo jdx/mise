@@ -319,18 +319,30 @@ impl BootstrapSettingsPlugin {
                 },
             )
             .await?;
-        let after = self
+        // The write may already have taken effect, so a retry would find nothing to change and
+        // return no follow-up steps: keep them in any error from here on.
+        let follow_up = response
+            .follow_up
+            .iter()
+            .map(|item| format!("\n  follow-up: {item}"))
+            .collect::<String>();
+        let after = match self
             .read(changed.iter().map(|status| status.key.clone()).collect())
-            .await?;
+            .await
+        {
+            Ok(after) => after,
+            Err(err) if follow_up.is_empty() => return Err(err),
+            Err(err) => {
+                return Err(err.wrap_err(format!(
+                    "{}: reading the settings back after writing them failed{follow_up}",
+                    self.name
+                )));
+            }
+        };
         for status in &changed {
             let current = after.get(&status.key);
             if !current.is_some_and(|current| same_value(current, &status.declared)) {
                 // Some changes show only after a step such as logging out; keep those steps.
-                let follow_up = response
-                    .follow_up
-                    .iter()
-                    .map(|item| format!("\n  follow-up: {item}"))
-                    .collect::<String>();
                 bail!(
                     "{}: {} is {} after writing {}{follow_up}",
                     self.name,
