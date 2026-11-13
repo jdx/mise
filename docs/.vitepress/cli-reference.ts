@@ -77,6 +77,10 @@ const guides: Record<string, [string, string]> = {
     "Homebrew formulae and taps",
     "/bootstrap/packages/brew.html#third-party-taps",
   ],
+  "bootstrap settings": [
+    "Bootstrap settings plugins",
+    "/bootstrap/settings-plugins.html",
+  ],
   "bootstrap plugins": [
     "Package manager plugins",
     "/bootstrap/packages/plugins.html",

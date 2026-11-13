@@ -36,6 +36,7 @@ gix = { version = "<1", default-features = false, features = [
 ] }
 glob = "0.3"
 globset = "0.4"
+heck = "0.5"
 hex = "0.4"
 indexmap = { version = "2", features = ["serde"] }
 ipnet = { version = "2", features = ["serde"] }

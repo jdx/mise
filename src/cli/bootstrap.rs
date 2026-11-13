@@ -272,6 +272,7 @@ enum BootstrapPart {
     Shell,
     #[usage(name = "macos-defaults", alias = "defaults")]
     Defaults,
+    Settings,
     #[usage(name = "macos-launchd-agents", alias = "launchd")]
     Launchd,
     #[usage(name = "linux-systemd-units", alias = "systemd")]
@@ -285,7 +286,7 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 17] = [
+    const ALL: [Self; 18] = [
         Self::Plugins,
         Self::Packages,
         Self::Accounts,
@@ -297,6 +298,7 @@ impl BootstrapPart {
         Self::Dotfiles,
         Self::Shell,
         Self::Defaults,
+        Self::Settings,
         Self::Launchd,
         Self::Systemd,
         Self::User,
@@ -675,6 +677,7 @@ enum Commands {
     Repos(BootstrapRepos),
     Secrets(BootstrapSecrets),
     Services(BootstrapServices),
+    Settings(BootstrapSettings),
     Status(BootstrapStatus),
     #[usage(hide = true)]
     Systemd(BootstrapSystemdCompat),
@@ -689,6 +692,7 @@ enum Commands {
 /// macOS defaults, LaunchAgents, systemd user units, the login shell, `[tools]`,
 /// and the system dependencies of those tools, without changing anything.
 /// Checking dotfiles can render trusted templates, which may run `exec()`.
+/// `[bootstrap.settings]` is not checked yet: use `mise bootstrap settings status`.
 ///
 /// `--missing` exits with status 1 if anything differs from the config; it
 /// still lists every entry.
@@ -1475,6 +1479,57 @@ struct BootstrapPackages {
     command: BootstrapPackagesCommands,
 }
 
+/// [experimental] Apply `[bootstrap.settings]` through bootstrap settings plugins
+///
+/// A bootstrap settings plugin reads and writes the settings of one program or
+/// desktop, such as a Linux distro's appearance settings. mise compares the
+/// values in `[bootstrap.settings.<plugin>]` with the values the plugin reports
+/// and asks it to write only the ones that differ.
+/// See https://mise.jdx.dev/bootstrap/settings-plugins.html
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapSettings {
+    #[usage(subcommand)]
+    command: BootstrapSettingsCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapSettingsCommands {
+    Apply(BootstrapSettingsApply),
+    Status(BootstrapSettingsStatus),
+}
+
+/// Write the settings that differ from `[bootstrap.settings]`
+///
+/// It does not ask for confirmation.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapSettingsApply {
+    /// Plugins whose sections to apply; all of them by default
+    #[usage(value_name = "PLUGIN")]
+    plugins: Vec<String>,
+
+    /// Show which settings would change without changing them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+}
+
+/// Show each setting in `[bootstrap.settings]` and its current value
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapSettingsStatus {
+    /// Plugins whose sections to show; all of them by default
+    #[usage(value_name = "PLUGIN")]
+    plugins: Vec<String>,
+
+    /// Exit with status 1 if a setting differs from the config or its plugin cannot run
+    #[usage(long)]
+    missing: bool,
+
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+}
+
 /// Manage package manager plugins declared in `[bootstrap.plugins]`
 ///
 /// A package plugin adds a package manager, such as one for VS Code extensions,
@@ -2037,7 +2092,15 @@ impl Bootstrap {
             }
             return self.run_from().await;
         }
-        if let Some(command) = self.command.take() {
+        if let Some(mut command) = self.command.take() {
+            // `mise bootstrap --dry-run settings apply` must not write settings.
+            if self.dry_run
+                && let Commands::Settings(BootstrapSettings {
+                    command: BootstrapSettingsCommands::Apply(apply),
+                }) = &mut command
+            {
+                apply.dry_run = true;
+            }
             return command.run().await;
         }
         if self.save_env {
@@ -2701,6 +2764,16 @@ impl Bootstrap {
             if !post_packages_ran {
                 self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
                     .await?;
+            }
+        }
+
+        // Settings plugins run after tools, like package plugins: a plugin's `requires` may be a
+        // tool this run just installed.
+        if skip.contains(&BootstrapPart::Settings) {
+            debug!("bootstrap: settings plugins skipped");
+        } else {
+            for item in apply_bootstrap_settings(&config, &[], self.dry_run).await? {
+                follow_up.add_skipped(item);
             }
         }
 
@@ -3675,6 +3748,7 @@ impl Commands {
             Self::Repos(cmd) => Box::pin(cmd.run()),
             Self::Secrets(cmd) => Box::pin(cmd.run()),
             Self::Services(cmd) => Box::pin(cmd.run()),
+            Self::Settings(cmd) => Box::pin(cmd.run()),
             Self::Status(cmd) => Box::pin(cmd.run()),
             Self::Systemd(cmd) => {
                 warn_legacy_bootstrap_command(
@@ -5905,6 +5979,170 @@ impl BootstrapPackages {
     }
 }
 
+/// The `[bootstrap.settings]` sections of `plugins`, or of every plugin when it is empty.
+fn selected_settings_sections(
+    config: &Config,
+    plugins: &[String],
+) -> Result<Vec<system::bootstrap_settings::SettingsSection>> {
+    let sections = system::bootstrap_settings::sections_from_config(config)?;
+    // sections are keyed by the plugin's kebab-case name, so any spelling selects one
+    let ids: Vec<String> = plugins
+        .iter()
+        .map(|name| mise_system::plugin_identity(name))
+        .collect();
+    for (name, id) in plugins.iter().zip(&ids) {
+        if !sections.iter().any(|section| &section.plugin == id) {
+            bail!("no [bootstrap.settings.{name}] section is configured");
+        }
+    }
+    Ok(sections
+        .into_iter()
+        .filter(|section| ids.is_empty() || ids.contains(&section.plugin))
+        .collect())
+}
+
+/// Applies `[bootstrap.settings]`, limited to `plugins` unless it is empty. Returns the
+/// follow-up items: steps a plugin asks the user to take, and each section that could not run.
+async fn apply_bootstrap_settings(
+    config: &Config,
+    plugins: &[String],
+    dry_run: bool,
+) -> Result<Vec<String>> {
+    let sections = selected_settings_sections(config, plugins)?;
+    if sections.is_empty() {
+        debug!("bootstrap: no [bootstrap.settings] configured, skipping");
+        return Ok(vec![]);
+    }
+    Settings::get().ensure_experimental("bootstrap settings plugins")?;
+    info!("bootstrap: settings");
+    let mut follow_up = vec![];
+    for section in sections {
+        match system::bootstrap_settings::BootstrapSettingsPlugin::load(&section.plugin).await {
+            Ok(plugin) => {
+                let report = match plugin.apply(&section, dry_run).await {
+                    Ok(report) => report,
+                    // Earlier plugins already wrote their changes, which will match next time,
+                    // so this is the only chance to report the steps they asked for.
+                    Err(err) if !follow_up.is_empty() => {
+                        return Err(err.wrap_err(format!(
+                            "bootstrap settings failed; follow-up from the plugins before it:\n  {}",
+                            follow_up.join("\n  ")
+                        )));
+                    }
+                    Err(err) => return Err(err),
+                };
+                follow_up.extend(
+                    report
+                        .follow_up
+                        .into_iter()
+                        .map(|item| format!("{}: {item}", section.plugin)),
+                );
+            }
+            Err(reason) => follow_up.push(format!(
+                "[bootstrap.settings.{}]: skipped ({reason})",
+                section.plugin
+            )),
+        }
+    }
+    Ok(follow_up)
+}
+
+impl BootstrapSettings {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapSettingsCommands::Apply(cmd) => cmd.run().await,
+            BootstrapSettingsCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapSettingsApply {
+    async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap settings apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
+        let config = Config::get().await?;
+        for item in apply_bootstrap_settings(&config, &self.plugins, self.dry_run).await? {
+            info!("follow-up: {item}");
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapSettingsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let sections = selected_settings_sections(&config, &self.plugins)?;
+        if !sections.is_empty() {
+            Settings::get().ensure_experimental("bootstrap settings plugins")?;
+        }
+        let mut any_missing = false;
+        let mut rows = vec![];
+        let mut entries = vec![];
+        for section in &sections {
+            match system::bootstrap_settings::BootstrapSettingsPlugin::load(&section.plugin).await {
+                Ok(plugin) => {
+                    for status in plugin.status(section).await? {
+                        let differs = status.differs();
+                        any_missing |= differs;
+                        let state = if differs { "differs" } else { "set" };
+                        rows.push(vec![
+                            section.plugin.clone(),
+                            status.key.clone(),
+                            status.declared.to_string(),
+                            status.current_display(),
+                            state.to_string(),
+                        ]);
+                        entries.push(json!({
+                            "plugin": section.plugin,
+                            "key": status.key,
+                            "value": status.declared,
+                            "current": status.current,
+                            "state": state,
+                        }));
+                    }
+                }
+                Err(reason) => {
+                    // A section for another OS is not drift here, so a config can hold every
+                    // platform's sections and still pass `--missing`.
+                    any_missing |= !reason.other_platform;
+                    for (key, value) in &section.values {
+                        let state = format!("skipped ({reason})");
+                        rows.push(vec![
+                            section.plugin.clone(),
+                            key.clone(),
+                            value.to_string(),
+                            String::new(),
+                            state.clone(),
+                        ]);
+                        entries.push(json!({
+                            "plugin": section.plugin,
+                            "key": key,
+                            "value": value,
+                            "current": null,
+                            "state": state,
+                        }));
+                    }
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&entries)?);
+        } else {
+            let mut table = MiseTable::new(false, &["Plugin", "Key", "Value", "Current", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
 impl BootstrapPlugins {
     async fn run(self) -> Result<()> {
         match self.command {
@@ -5932,7 +6170,13 @@ impl BootstrapPluginsStatus {
         let mut any_missing = false;
         let mut table = MiseTable::new(false, &["Plugin", "URL", "State"]);
         for (name, url) in system::plugins_from_config(&config) {
-            let present = installed.get(&name) == Some(&crate::plugins::PluginType::Package);
+            let present = matches!(
+                installed.get(&name),
+                Some(
+                    crate::plugins::PluginType::Package
+                        | crate::plugins::PluginType::BootstrapSettings
+                )
+            );
             any_missing |= !present;
             table.add_row(vec![
                 name,

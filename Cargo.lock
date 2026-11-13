@@ -7227,6 +7227,7 @@ dependencies = [
  "gix",
  "glob",
  "globset",
+ "heck",
  "hex",
  "indexmap 2.14.2",
  "ipnet",

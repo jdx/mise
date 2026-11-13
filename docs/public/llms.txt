@@ -147,6 +147,7 @@
 - [macOS defaults](https://mise.jdx.dev/bootstrap/macos-defaults.html): Declare macOS preferences in mise.toml, and mise bootstrap, or mise bootstrap macos defaults apply, writes them the way the defaults command does.
 - [macOS LaunchAgents](https://mise.jdx.dev/bootstrap/launchd.html): Declare LaunchAgents for your macOS user in [bootstrap.macos.launchd.agents]. mise bootstrap, or mise bootstrap macos launchd-agents apply, writes each agent to…
 - [systemd user units](https://mise.jdx.dev/bootstrap/systemd.html): Declare systemd user services and timers in [bootstrap.linux.systemd.units]. mise bootstrap, or mise bootstrap linux systemd-units apply, writes each to ~/.config/systemd/user/dev.mise.<name>.service…
+- [Bootstrap settings plugins](https://mise.jdx.dev/bootstrap/settings-plugins.html): A bootstrap settings plugin applies the settings of one program or desktop, such as a Linux distro's appearance settings, from a [bootstrap.settings.<plugin>] section.
 
 ## Dotfiles
 
@@ -291,6 +292,9 @@
 - [mise bootstrap services apply](https://mise.jdx.dev/cli/bootstrap/services/apply.html): Apply the service state declared in [bootstrap.services]
 - [mise bootstrap services remove](https://mise.jdx.dev/cli/bootstrap/services/remove.html): Uninstall a user-scope service
 - [mise bootstrap services status](https://mise.jdx.dev/cli/bootstrap/services/status.html): Show the state of services from [bootstrap.services]
+- [mise bootstrap settings](https://mise.jdx.dev/cli/bootstrap/settings.html): [experimental] Apply [bootstrap.settings] through bootstrap settings plugins
+- [mise bootstrap settings apply](https://mise.jdx.dev/cli/bootstrap/settings/apply.html): Write the settings that differ from [bootstrap.settings]
+- [mise bootstrap settings status](https://mise.jdx.dev/cli/bootstrap/settings/status.html): Show each setting in [bootstrap.settings] and its current value
 - [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the state of every configured bootstrap part
 - [mise bootstrap unapply](https://mise.jdx.dev/cli/bootstrap/unapply.html): Remove what a config environment's bootstrap sections created
 - [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage your login shell from [bootstrap.user]

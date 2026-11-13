@@ -10401,6 +10401,17 @@
             "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
             "maxLength": 32
           }
+        },
+        "settings": {
+          "type": "object",
+          "description": "[experimental] settings that bootstrap settings plugins apply, keyed by plugin name; which keys a plugin accepts is up to the plugin",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "description": "settings for the bootstrap settings plugin of this name"
+          }
         }
       },
       "additionalProperties": false

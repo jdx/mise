@@ -4,6 +4,7 @@
 pub use mise_system::*;
 
 pub mod bootstrap_host;
+pub mod bootstrap_settings;
 pub mod package_plugin;
 pub mod packages_host;
 

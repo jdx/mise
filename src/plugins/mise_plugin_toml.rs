@@ -20,9 +20,17 @@ pub(crate) struct MisePluginTomlPackageManagerConfig {
     pub os: Option<Vec<String>>,
 }
 
+/// `[bootstrap-settings]`: the plugin applies a `[bootstrap.settings.<name>]` section.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct MisePluginTomlBootstrapSettingsConfig {
+    pub requires: Vec<String>,
+    pub os: Option<Vec<String>>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub(crate) struct MisePluginToml {
     pub package_manager: MisePluginTomlPackageManagerConfig,
+    pub bootstrap_settings: MisePluginTomlBootstrapSettingsConfig,
     pub exec_env: MisePluginTomlScriptConfig,
     pub list_aliases: MisePluginTomlScriptConfig,
     pub list_bin_paths: MisePluginTomlScriptConfig,
@@ -58,6 +66,9 @@ impl MisePluginToml {
                     self.list_idiomatic_filenames = self.parse_script_config(k, v)?
                 }
                 "package-manager" => self.package_manager = self.parse_package_manager(k, v)?,
+                "bootstrap-settings" => {
+                    self.bootstrap_settings = self.parse_bootstrap_settings(k, v)?
+                }
                 // These obsolete keys make the file invalid, so stop parsing if we see them.
                 "idiomatic-filenames" | "legacy-filenames" => return Ok(()),
                 _ => Err(eyre!("unknown key: {}", k))?,
@@ -85,6 +96,26 @@ impl MisePluginToml {
                 },
                 "os" => config.os = Some(self.parse_string_array(&full_key, v)?),
                 _ => parse_error!(full_key, v, "one of: requires, supports_version_pins, os"),
+            }
+        }
+        Ok(config)
+    }
+
+    fn parse_bootstrap_settings(
+        &mut self,
+        key: &str,
+        v: &Item,
+    ) -> Result<MisePluginTomlBootstrapSettingsConfig> {
+        let Some(table) = v.as_table_like() else {
+            parse_error!(key, v, "table");
+        };
+        let mut config = MisePluginTomlBootstrapSettingsConfig::default();
+        for (k, v) in table.iter() {
+            let full_key = format!("{key}.{k}");
+            match k {
+                "requires" => config.requires = self.parse_string_array(&full_key, v)?,
+                "os" => config.os = Some(self.parse_string_array(&full_key, v)?),
+                _ => parse_error!(full_key, v, "one of: requires, os"),
             }
         }
         Ok(config)

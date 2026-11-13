@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+
+# A bootstrap settings plugin applies [bootstrap.settings.<plugin>]: mise reads
+# the current values, writes only the keys that differ, and checks them again.
+
+export MISE_EXPERIMENTAL=1
+skip_unless_system_plugin_path_is_trusted
+export MISE_SYSTEM_PLUGINS_DIRS="$PWD/system-plugins"
+plugin=system-plugins/desk
+mkdir -p "$plugin/hooks"
+
+cat >"$plugin/metadata.lua" <<'LUA'
+PLUGIN = {
+  name = "desk",
+  version = "0.1.0",
+  homepage = "",
+  license = "MIT",
+  description = "fake desktop settings",
+  minRuntimeVersion = "0.3.0",
+  notes = {},
+  legacyFilenames = {},
+}
+LUA
+
+printf '[bootstrap-settings]\n' >"$plugin/mise.plugin.toml"
+
+# Values are stored as one JSON file, so the hooks only need the json module.
+cat >"$plugin/hooks/settings_read.lua" <<'LUA'
+function PLUGIN:SettingsRead(ctx)
+  local json = require("json")
+  if io.open(os.getenv("HOME") .. "/desk.read-fails", "r") then error("desk is busy") end
+  local f = io.open(os.getenv("HOME") .. "/desk.json", "r")
+  if not f then return { values = {} } end
+  local values = json.decode(f:read("*a"))
+  f:close()
+  return { values = values }
+end
+LUA
+
+cat >"$plugin/hooks/settings_write.lua" <<'LUA'
+function PLUGIN:SettingsWrite(ctx)
+  local json = require("json")
+  local path = os.getenv("HOME") .. "/desk.json"
+  local values = {}
+  local f = io.open(path, "r")
+  if f then
+    values = json.decode(f:read("*a"))
+    f:close()
+  end
+  local log = io.open(os.getenv("HOME") .. "/desk.log", "a")
+  for _, change in ipairs(ctx.changes) do
+    values[change.key] = change.to
+    log:write(change.key .. "\n")
+  end
+  log:close()
+  f = io.open(path, "w")
+  f:write(json.encode(values))
+  f:close()
+  if io.open(os.getenv("HOME") .. "/desk.break-read", "r") then
+    io.open(os.getenv("HOME") .. "/desk.read-fails", "w"):close()
+  end
+  return { follow_up = { "reload the desk" } }
+end
+LUA
+chmod -R go-w system-plugins
+
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 4
+TOML
+
+assert_contains "mise bootstrap settings status" "appearance.blur_strength"
+assert_fail "mise bootstrap settings status --missing"
+
+# A dry run changes nothing.
+assert_contains "mise bootstrap settings apply --dry-run 2>&1" "would set desk: appearance.blur (unset) -> true"
+assert_fail "test -f $HOME/desk.json"
+
+assert_contains "mise bootstrap --only settings --yes 2>&1" "reload the desk"
+assert "cat $HOME/desk.log" "appearance.blur
+appearance.blur_strength"
+assert_succeed "mise bootstrap settings status --missing"
+
+# Only the key that changed is written.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 8
+TOML
+assert_succeed "mise bootstrap settings apply"
+assert "tail -n 1 $HOME/desk.log" "appearance.blur_strength"
+assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
+
+# A section for a plugin that is not installed is skipped with a follow-up.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.missing]
+key = 1
+TOML
+assert_contains "mise bootstrap --only settings --yes 2>&1" "no bootstrap settings plugin named missing"
+
+# The parent's --dry-run reaches `settings apply`.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 16
+TOML
+assert_contains "mise bootstrap --dry-run settings apply 2>&1" "would set desk: appearance.blur_strength 8 -> 16"
+assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
+
+# A quoted dotted key is the same setting as the nested one.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk]
+"appearance.blur" = true
+appearance = { blur_strength = 8 }
+TOML
+assert_succeed "mise bootstrap settings status --missing"
+
+# Another spelling of the plugin's name is the same section, so the more local value wins.
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<'TOML'
+[bootstrap.settings.Desk.appearance]
+blur_strength = 4
+TOML
+assert_succeed "mise bootstrap settings status --missing"
+assert_contains "mise bootstrap settings status Desk" "appearance.blur_strength"
+rm "$HOME/.config/mise/config.toml"
+
+# An integer Lua would round is refused before the plugin sees it.
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur_strength = 9007199254740993
+TOML
+assert_fail_contains "mise bootstrap settings apply" "an integer Lua cannot hold exactly"
+assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
+
+# A section for a plugin made for another OS is skipped, and is not drift here.
+cp -R "$plugin" system-plugins/far
+printf '[bootstrap-settings]\nos = ["plan9"]\n' >system-plugins/far/mise.plugin.toml
+chmod -R go-w system-plugins
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 8
+
+[bootstrap.settings.far]
+glow = true
+TOML
+assert_contains "mise bootstrap settings status" "far is not available on"
+assert_succeed "mise bootstrap settings status --missing"
+
+# When reading back fails after a write, the error still carries the follow-up,
+# since a retry would find nothing left to change.
+touch "$HOME/desk.break-read"
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 6
+TOML
+assert_fail_contains "mise bootstrap settings apply" "reload the desk"

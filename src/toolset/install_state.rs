@@ -878,7 +878,7 @@ fn merge_plugin_tools(tools: &mut InstallStateTools, plugins: &InstallStatePlugi
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
             PluginType::VfoxBackend => short.clone(),
-            PluginType::Package => continue,
+            PluginType::Package | PluginType::BootstrapSettings => continue,
         };
         let tool = tools
             .entry(short.clone())

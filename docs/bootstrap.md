@@ -91,6 +91,7 @@ subcommands.
 | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)          | Your login shell                                                                            |
 | [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html)            | macOS user preferences, written with `defaults write`                                       |
 | [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)                   | Common macOS preferences for the Dock, Finder, keyboard, and trackpad                       |
+| [`[bootstrap.settings]`](/bootstrap/settings-plugins.html)                | Settings that bootstrap settings plugins apply, such as a Linux desktop's appearance        |
 | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)             | macOS LaunchAgents, written and loaded with `launchctl`                                     |
 | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)              | systemd user units, managed with `systemctl --user`                                         |
 | [`[tools]`](/dev-tools/)                                                  | Tools that mise installs and manages                                                        |
@@ -151,15 +152,16 @@ warning. They will be removed in mise 2027.10.4.
 | 15   | `user`                             | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)                                                                                      | `pre-user`, `post-user`         |
 | 16   | `tools`                            | `[tools]`, as `mise install` would                                                                                                                    | `pre-tools`, `post-tools`       |
 | 17   | `packages`                         | Packages from [package manager plugins](/bootstrap/packages/plugins.html)                                                                             |                                 |
-| 18   | `services`                         | User services with `requires_tools = true`                                                                                                            |                                 |
-| 19   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                                                                            |                                 |
-| 20   | `final-hook`                       |                                                                                                                                                       | `final`                         |
+| 18   | `settings`                         | [`[bootstrap.settings]`](/bootstrap/settings-plugins.html) through [bootstrap settings plugins](/bootstrap/settings-plugins.html)                     |                                 |
+| 19   | `services`                         | User services with `requires_tools = true`                                                                                                            |                                 |
+| 20   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                                                                            |                                 |
+| 21   | `final-hook`                       |                                                                                                                                                       | `final`                         |
 
 In step 4, the `pre-packages` hook runs before mise adds apt sources.
 
 The `post-packages` hook runs right after step 4, unless a package in
 `[bootstrap.packages]` comes from a package manager plugin. Then it runs after
-step 17 instead, once those packages are installed. Step 18 runs even with
+step 17 instead, once those packages are installed. Step 19 runs even with
 `--skip tools`.
 
 The declarative parts compare the configuration with the machine and change only

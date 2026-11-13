@@ -58,7 +58,7 @@ copying a token to them. See <https://mise.jdx.dev/bootstrap/github-relay.html>.
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--skip`.
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `settings`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
 - **`--port <PORT>`** — SSH port, overriding the inventory and SSH config
 - **`--prompt-secrets`** — Prompt securely for missing secret inputs on the remote host
 - **`--remote-env <ENV>`** — Config environments to load on each target; repeat or separate with commas (for example, ci,dotfiles)
@@ -67,7 +67,7 @@ copying a token to them. See <https://mise.jdx.dev/bootstrap/github-relay.html>.
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--only`.
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `settings`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
 - **`--source <DIR>`** — Local directory to archive and send to each target
 - **`--ssh-option <OPTION>`** — OpenSSH `-o` option; repeat for multiple options
 - **`--tag <TAG>`** — Select configured hosts with this tag; repeat to match any tag

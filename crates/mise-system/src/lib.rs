@@ -122,6 +122,49 @@ pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
 
 pub use mise_config::dotfiles::DotfilesTomlConfig;
 
+/// Put `higher`'s values over `base`, merging nested tables key by key. A quoted dotted key such as
+/// `"appearance.blur"` means the same setting as `appearance = { blur = .. }`, so it is nested
+/// first, and a higher file's value wins however either file spells it.
+pub fn merge_settings_table(base: &mut toml::Table, higher: toml::Table) {
+    merge_nested_tables(base, nest_dotted_keys(higher));
+}
+
+fn merge_nested_tables(base: &mut toml::Table, higher: toml::Table) {
+    for (key, value) in higher {
+        match (base.get_mut(&key), value) {
+            (Some(toml::Value::Table(lower)), toml::Value::Table(higher)) => {
+                merge_nested_tables(lower, higher)
+            }
+            (_, value) => {
+                base.insert(key, value);
+            }
+        }
+    }
+}
+
+/// `table` with each quoted dotted key turned into nested tables, merged with the tables the
+/// same file already spells out.
+fn nest_dotted_keys(table: toml::Table) -> toml::Table {
+    let mut out = toml::Table::new();
+    for (key, value) in table {
+        let value = match value {
+            toml::Value::Table(table) => toml::Value::Table(nest_dotted_keys(table)),
+            value => value,
+        };
+        let mut parts = key.split('.').rev();
+        let last = parts.next().unwrap_or_default().to_string();
+        let mut nested = toml::Table::new();
+        nested.insert(last, value);
+        for part in parts {
+            let mut outer = toml::Table::new();
+            outer.insert(part.to_string(), toml::Value::Table(nested));
+            nested = outer;
+        }
+        merge_nested_tables(&mut out, nested);
+    }
+    out
+}
+
 /// Combining a file's `[bootstrap]` with the one it includes; it applies mise's macOS-defaults
 /// normalization, so it lives here rather than with the type.
 pub trait BootstrapMerge {
@@ -162,6 +205,25 @@ impl BootstrapMerge for BootstrapTomlConfig {
         fill(&mut self.apt.sources, lower.apt.sources);
         fill(&mut self.dnf.repos, lower.dnf.repos);
         fill(&mut self.mise_shell_activate, lower.mise_shell_activate);
+        // settings tables merge key by key, this file's own values winning, and every spelling
+        // of a plugin's name is the same section
+        for (plugin, shared) in lower.settings {
+            let id = plugin_identity(&plugin);
+            let mut merged = toml::Table::new();
+            merge_settings_table(&mut merged, shared);
+            let own: Vec<String> = self
+                .settings
+                .keys()
+                .filter(|name| plugin_identity(name) == id)
+                .cloned()
+                .collect();
+            for name in own {
+                if let Some(own) = self.settings.shift_remove(&name) {
+                    merge_settings_table(&mut merged, own);
+                }
+            }
+            self.settings.insert(id, merged);
+        }
         // hooks add up across files, the shared commands running first
         for (phase, shared) in lower.hooks {
             match self.hooks.entry(phase) {
@@ -2708,6 +2770,12 @@ fn all_manager_names() -> Vec<String> {
         .collect()
 }
 
+/// The identity of a plugin name: `foo_bar`, `foo-bar` and `FooBar` are the same plugin, which
+/// mise installs under the kebab-case name.
+pub fn plugin_identity(name: &str) -> String {
+    heck::ToKebabCase::to_kebab_case(name)
+}
+
 /// `mgr` as the installed manager spells it: a plugin installed as `foo-bar` answers to `foo_bar`
 /// too, since mise installs plugins under the kebab-case name.
 fn canonical_manager_name(mgr: String, known: &[String]) -> String {
@@ -2819,6 +2887,23 @@ mod tests {
         let merged = own.macos.login_items.unwrap();
         assert_eq!(merged.apps, ["/Applications/A.app", "/Applications/B.app"]);
         assert_eq!(merged.exclusive, Some(true));
+    }
+
+    #[test]
+    fn merge_below_merges_every_spelling_of_a_settings_plugin() {
+        let table = |s: &str| -> toml::Table { s.parse().unwrap() };
+        let mut own = BootstrapTomlConfig::default();
+        own.settings.insert("desk_plugin".into(), table("size = 4"));
+        let mut lower = BootstrapTomlConfig::default();
+        lower
+            .settings
+            .insert("Desk-Plugin".into(), table("size = 2\nblur = true"));
+        own.merge_below(lower);
+        assert_eq!(own.settings.len(), 1);
+        let merged = &own.settings["desk-plugin"];
+        // this file's value wins over the include's, whichever spelling each uses
+        assert_eq!(merged["size"], toml::Value::Integer(4));
+        assert_eq!(merged["blur"], toml::Value::Boolean(true));
     }
 
     #[cfg(unix)]

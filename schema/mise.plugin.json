@@ -81,6 +81,27 @@
           }
         }
       }
+    },
+    "bootstrap-settings": {
+      "description": "configuration for a bootstrap settings plugin, which reads and writes a [bootstrap.settings.<plugin>] section",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "requires": {
+          "description": "host binaries required by the bootstrap settings plugin; mise skips its section when one is missing",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "os": {
+          "description": "operating systems supported by the bootstrap settings plugin",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

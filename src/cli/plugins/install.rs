@@ -208,7 +208,10 @@ fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Opt
     let name = name.as_ref();
     if git_url.is_none()
         && let Some((kind, short)) = name.split_once(':')
-        && matches!(kind, "vfox" | "vfox-backend" | "package" | "asdf")
+        && matches!(
+            kind,
+            "vfox" | "vfox-backend" | "package" | "bootstrap-settings" | "asdf"
+        )
         && !short.is_empty()
         && !short.contains(['/', ':'])
     {

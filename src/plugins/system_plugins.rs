@@ -9,8 +9,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 
-use heck::ToKebabCase;
-
 use crate::dirs;
 use crate::file::display_path;
 use crate::plugins::PluginType;
@@ -54,8 +52,8 @@ pub fn find(name: &str) -> Option<&'static SystemPlugin> {
 }
 
 /// The identity of a plugin name: `foo_bar`, `foo-bar` and `FooBar` are the same plugin.
-fn identity(name: &str) -> String {
-    name.to_kebab_case()
+pub(crate) fn identity(name: &str) -> String {
+    mise_system::plugin_identity(name)
 }
 
 fn find_in<'a>(plugins: &'a [SystemPlugin], name: &str) -> Option<&'a SystemPlugin> {
