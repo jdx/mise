@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# A [[watch_files]] pattern that matches nothing yet is matched again on the
+# [[watch_files]] patterns are matched again on the
 # fast path: a file that appears (even in a nested directory) forces a full run,
 # while unrelated files coming and going in the project directory do not.
 
@@ -34,4 +34,15 @@ if [[ $output == *"__MISE_SESSION"* ]]; then
   ok "a new nested watched file forces a full run"
 else
   fail "a new nested watched file should force a full run but got: '$output'"
+fi
+
+# once the pattern has matches, another new match still forces a full run
+eval "$(mise hook-env -s bash 2>/dev/null)"
+sleep 1
+touch src/more.rs
+output=$(mise hook-env -s bash 2>/dev/null)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+  ok "a further new match forces a full run"
+else
+  fail "a further new match should force a full run but got: '$output'"
 fi

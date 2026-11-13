@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -341,12 +342,15 @@ fn check_exit_early_fast() -> bool {
             return force_full_run();
         }
     }
-    if PREV_SESSION
-        .unmatched_watch_patterns
-        .iter()
-        .any(UnmatchedWatchPattern::matches_now)
-    {
-        return force_full_run();
+    if !PREV_SESSION.watch_patterns.is_empty() {
+        let known: HashSet<&PathBuf> = PREV_SESSION.watch_files.iter().collect();
+        if PREV_SESSION
+            .watch_patterns
+            .iter()
+            .any(|p| p.has_new_match(&known))
+        {
+            return force_full_run();
+        }
     }
     if have_trust_state_dirs_been_modified() {
         return force_full_run();
@@ -527,12 +531,11 @@ pub struct HookEnvSession {
     /// Stored so the fast-path can detect changes without loading config.
     #[serde(default, with = "session_paths")]
     pub watch_files: Vec<PathBuf>,
-    /// [[watch_files]] patterns that matched nothing when the session was
-    /// written. The fast path matches them again, so a file created later is
-    /// noticed without comparing directory mtimes, which unrelated files in the
-    /// directory would also change.
+    /// The [[watch_files]] patterns behind `watch_files`. The fast path matches
+    /// them again, so a file created later is noticed wherever it appears,
+    /// without comparing directory mtimes that unrelated files would also change.
     #[serde(default)]
-    pub unmatched_watch_patterns: Vec<UnmatchedWatchPattern>,
+    pub watch_patterns: Vec<WatchPattern>,
     #[serde(default, with = "session_paths::option")]
     dir: Option<PathBuf>,
     env_var_hash: String,
@@ -546,19 +549,23 @@ pub struct HookEnvSession {
 
 /// A [[watch_files]] pattern, and the directory it is relative to if it has one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnmatchedWatchPattern {
+pub struct WatchPattern {
     #[serde(default, with = "session_paths::option")]
     root: Option<PathBuf>,
     pattern: String,
 }
 
-impl UnmatchedWatchPattern {
-    fn matches_now(&self) -> bool {
+impl WatchPattern {
+    /// Whether the pattern now matches a file the session did not know about.
+    fn has_new_match(&self, known: &HashSet<&PathBuf>) -> bool {
         match &self.root {
             Some(root) => watch_files::glob(root, std::slice::from_ref(&self.pattern))
-                .map(|m| !m.is_empty())
+                .map(|matches| matches.iter().any(|m| !known.contains(m)))
                 .unwrap_or(false),
-            None => Path::new(&self.pattern).exists(),
+            None => {
+                let path = PathBuf::from(&self.pattern);
+                path.exists() && !known.contains(&path)
+            }
         }
     }
 }
@@ -744,17 +751,14 @@ pub async fn build_session(
     config_paths: IndexSet<PathBuf>,
 ) -> Result<HookEnvSession> {
     let mut max_modtime = UNIX_EPOCH;
-    // A pattern that matches nothing yet is kept so the fast path can see a file
-    // appear, whatever directory it appears in.
-    let unmatched_watch_patterns: Vec<UnmatchedWatchPattern> = watch_files
+    let watch_patterns: Vec<WatchPattern> = watch_files
         .iter()
         .flat_map(|wfp| {
-            wfp.patterns.iter().map(|pattern| UnmatchedWatchPattern {
+            wfp.patterns.iter().map(|pattern| WatchPattern {
                 root: wfp.root.clone(),
                 pattern: pattern.clone(),
             })
         })
-        .filter(|u| !u.matches_now())
         .collect();
     let resolved_watch_files = get_watch_files(watch_files)?;
     for cf in &resolved_watch_files {
@@ -826,7 +830,7 @@ pub async fn build_session(
         aliases,
         tera_files: config.tera_files.clone(),
         watch_files: resolved_watch_files.into_iter().collect(),
-        unmatched_watch_patterns,
+        watch_patterns,
         loaded_configs,
         loaded_tools,
         config_paths,
