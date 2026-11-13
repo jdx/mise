@@ -86,7 +86,7 @@ pub fn resolve(name: &str, user_dir: &Path) -> PathBuf {
         .unwrap_or_else(|| user_dir.join(identity(name)))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn scan(system_dirs: &[PathBuf], user_dir: &Path) -> Vec<SystemPlugin> {
     let mut plugins = scan_all(system_dirs, user_dir);
     plugins.retain(|plugin| plugin.overridden_by.is_none());
