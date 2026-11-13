@@ -6100,7 +6100,9 @@ impl BootstrapSettingsStatus {
                     }
                 }
                 Err(reason) => {
-                    any_missing = true;
+                    // A section for another OS is not drift here, so a config can hold every
+                    // platform's sections and still pass `--missing`.
+                    any_missing |= !reason.other_platform;
                     for (key, value) in &section.values {
                         let state = format!("skipped ({reason})");
                         rows.push(vec![

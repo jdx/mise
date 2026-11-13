@@ -134,6 +134,21 @@ TOML
 assert_fail_contains "mise bootstrap settings apply" "an integer Lua cannot hold exactly"
 assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
 
+# A section for a plugin made for another OS is skipped, and is not drift here.
+cp -R "$plugin" system-plugins/far
+printf '[bootstrap-settings]\nos = ["plan9"]\n' >system-plugins/far/mise.plugin.toml
+chmod -R go-w system-plugins
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 8
+
+[bootstrap.settings.far]
+glow = true
+TOML
+assert_contains "mise bootstrap settings status" "far is not available on"
+assert_succeed "mise bootstrap settings status --missing"
+
 # When reading back fails after a write, the error still carries the follow-up,
 # since a retry would find nothing left to change.
 touch "$HOME/desk.break-read"
