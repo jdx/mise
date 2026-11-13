@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# A [[watch_files]] pattern that matches nothing yet is matched again on the
+# fast path: a file that appears (even in a nested directory) forces a full run,
+# while unrelated files coming and going in the project directory do not.
+
+export MISE_ENV_CACHE=0
+
+mkdir -p src
+cat >mise.toml <<'EOF'
+[[watch_files]]
+patterns = ["src/**/*.rs", "optional.txt"]
+run = "echo ran >>watch-runs.txt"
+EOF
+
+eval "$(mise activate bash 2>/dev/null)"
+eval "$(mise hook-env -s bash 2>/dev/null)"
+
+# unrelated churn in the project directory keeps the fast path
+for _ in 1 2 3; do
+  sleep 1
+  touch unrelated.lock
+  rm unrelated.lock
+  output=$(mise hook-env -s bash 2>&1)
+  [[ -z $output ]] || fail "expected fast-path after unrelated churn but got: '$output'"
+done
+ok "unrelated churn keeps the fast path"
+
+# a first match in a nested directory forces a full run
+sleep 1
+touch src/main.rs
+output=$(mise hook-env -s bash 2>/dev/null)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+  ok "a new nested watched file forces a full run"
+else
+  fail "a new nested watched file should force a full run but got: '$output'"
+fi

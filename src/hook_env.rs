@@ -341,12 +341,12 @@ fn check_exit_early_fast() -> bool {
             return force_full_run();
         }
     }
-    for dir in &PREV_SESSION.watch_dirs {
-        if let Ok(modified) = dir.metadata().and_then(|m| m.modified())
-            && mtime_to_millis(modified) > PREV_SESSION.latest_update
-        {
-            return force_full_run();
-        }
+    if PREV_SESSION
+        .unmatched_watch_patterns
+        .iter()
+        .any(UnmatchedWatchPattern::matches_now)
+    {
+        return force_full_run();
     }
     if have_trust_state_dirs_been_modified() {
         return force_full_run();
@@ -527,11 +527,12 @@ pub struct HookEnvSession {
     /// Stored so the fast-path can detect changes without loading config.
     #[serde(default, with = "session_paths")]
     pub watch_files: Vec<PathBuf>,
-    /// Directories a [[watch_files]] pattern is relative to, or a literal watched
-    /// file lives in. A watched file that does not exist yet is created in one
-    /// of them, which changes the directory's mtime.
-    #[serde(default, with = "session_paths")]
-    pub watch_dirs: Vec<PathBuf>,
+    /// [[watch_files]] patterns that matched nothing when the session was
+    /// written. The fast path matches them again, so a file created later is
+    /// noticed without comparing directory mtimes, which unrelated files in the
+    /// directory would also change.
+    #[serde(default)]
+    pub unmatched_watch_patterns: Vec<UnmatchedWatchPattern>,
     #[serde(default, with = "session_paths::option")]
     dir: Option<PathBuf>,
     env_var_hash: String,
@@ -541,6 +542,25 @@ pub struct HookEnvSession {
     /// loading settings. False in sessions from older mise versions.
     #[serde(default)]
     hook_env_shortcuts_unset: bool,
+}
+
+/// A [[watch_files]] pattern, and the directory it is relative to if it has one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnmatchedWatchPattern {
+    #[serde(default, with = "session_paths::option")]
+    root: Option<PathBuf>,
+    pattern: String,
+}
+
+impl UnmatchedWatchPattern {
+    fn matches_now(&self) -> bool {
+        match &self.root {
+            Some(root) => watch_files::glob(root, std::slice::from_ref(&self.pattern))
+                .map(|m| !m.is_empty())
+                .unwrap_or(false),
+            None => Path::new(&self.pattern).exists(),
+        }
+    }
 }
 
 /// A path in `__MISE_SESSION`. serde refuses a path that is not valid UTF-8,
@@ -724,38 +744,18 @@ pub async fn build_session(
     config_paths: IndexSet<PathBuf>,
 ) -> Result<HookEnvSession> {
     let mut max_modtime = UNIX_EPOCH;
-    // A pattern that matches nothing yet is satisfied by creating a file, which
-    // changes its directory's mtime. A pattern that already matches is covered
-    // by its files, so its directory is left out: churn in it is not a change.
-    let mut watch_dirs: Vec<PathBuf> = Vec::new();
-    for wfp in &watch_files {
-        for pattern in &wfp.patterns {
-            let (dir, matched) = match &wfp.root {
-                Some(root) => (
-                    Some(root.clone()),
-                    watch_files::glob(root, std::slice::from_ref(pattern))
-                        .map(|m| !m.is_empty())
-                        .unwrap_or(false),
-                ),
-                None => (
-                    Path::new(pattern).parent().map(Path::to_path_buf),
-                    Path::new(pattern).exists(),
-                ),
-            };
-            if let Some(dir) = dir
-                && !matched
-                && !dir.as_os_str().is_empty()
-                && !watch_dirs.contains(&dir)
-            {
-                watch_dirs.push(dir);
-            }
-        }
-    }
-    for dir in &watch_dirs {
-        if let Ok(Ok(modified)) = dir.metadata().map(|m| m.modified()) {
-            max_modtime = std::cmp::max(modified, max_modtime);
-        }
-    }
+    // A pattern that matches nothing yet is kept so the fast path can see a file
+    // appear, whatever directory it appears in.
+    let unmatched_watch_patterns: Vec<UnmatchedWatchPattern> = watch_files
+        .iter()
+        .flat_map(|wfp| {
+            wfp.patterns.iter().map(|pattern| UnmatchedWatchPattern {
+                root: wfp.root.clone(),
+                pattern: pattern.clone(),
+            })
+        })
+        .filter(|u| !u.matches_now())
+        .collect();
     let resolved_watch_files = get_watch_files(watch_files)?;
     for cf in &resolved_watch_files {
         if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {
@@ -826,7 +826,7 @@ pub async fn build_session(
         aliases,
         tera_files: config.tera_files.clone(),
         watch_files: resolved_watch_files.into_iter().collect(),
-        watch_dirs,
+        unmatched_watch_patterns,
         loaded_configs,
         loaded_tools,
         config_paths,
