@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# `tasks ls --json` reports the same `cache`, `lock` and `skip_if` as `tasks info --json`.
+
+cat <<'TOML' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, env = ["KEY"] }
+lock = "shared"
+skip_if = "true"
+
+[tasks.plain]
+run = "true"
+TOML
+echo x >input.txt
+
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"build\") | .cache.env'" '["KEY"]'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"build\") | .cache.enabled'" 'true'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"build\") | .lock'" '["shared"]'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"build\") | .skip_if'" '"true"'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"plain\") | .cache.enabled'" 'false'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"build\") | {cache, lock, skip_if}'" \
+  "$(mise tasks info build --json | jq -c '{cache, lock, skip_if}')"
