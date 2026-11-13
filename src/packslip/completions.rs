@@ -141,7 +141,9 @@ fn registration(shell_name: &str, shell: Shell, commands: &BTreeSet<String>) -> 
     }
     if shell == Shell::Zsh {
         output.push_str(
-            "if ! (( $+functions[compdef] )); then autoload -Uz compinit; compinit -i; fi\n",
+            // A shell restored from a snapshot can have `compdef` but a plain
+            // `_comps` array; reset it and run compinit so registration works.
+            "if ! (( $+functions[compdef] )) || [[ ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n",
         );
     }
     if shell == Shell::PowerShell {

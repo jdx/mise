@@ -208,3 +208,18 @@ PWSH
   assert 'grep -c original pwsh.out' '2'
 fi
 assert "test ! -e '$CALL_LOG' && echo no-execution" 'no-execution'
+
+# A snapshot-restored shell can have compdef but a plain-array _comps.
+zsh -f <<'ZSH' >zsh-plain-comps.out 2>&1
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+autoload -Uz compinit
+compinit -i
+unset _comps
+typeset -ga _comps
+eval "$(mise hook-env -s zsh --force)"
+cd ../empty
+eval "$(mise hook-env -s zsh --force)"
+print -r -- done
+ZSH
+assert 'cat zsh-plain-comps.out' 'done'
