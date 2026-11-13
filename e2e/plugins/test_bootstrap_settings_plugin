@@ -28,6 +28,7 @@ printf '[bootstrap-settings]\n' >"$plugin/mise.plugin.toml"
 cat >"$plugin/hooks/settings_read.lua" <<'LUA'
 function PLUGIN:SettingsRead(ctx)
   local json = require("json")
+  if io.open(os.getenv("HOME") .. "/desk.read-fails", "r") then error("desk is busy") end
   local f = io.open(os.getenv("HOME") .. "/desk.json", "r")
   if not f then return { values = {} } end
   local values = json.decode(f:read("*a"))
@@ -55,6 +56,9 @@ function PLUGIN:SettingsWrite(ctx)
   f = io.open(path, "w")
   f:write(json.encode(values))
   f:close()
+  if io.open(os.getenv("HOME") .. "/desk.break-read", "r") then
+    io.open(os.getenv("HOME") .. "/desk.read-fails", "w"):close()
+  end
   return { follow_up = { "reload the desk" } }
 end
 LUA
@@ -129,3 +133,13 @@ blur_strength = 9007199254740993
 TOML
 assert_fail_contains "mise bootstrap settings apply" "an integer Lua cannot hold exactly"
 assert "wc -l <$HOME/desk.log | tr -d ' '" "3"
+
+# When reading back fails after a write, the error still carries the follow-up,
+# since a retry would find nothing left to change.
+touch "$HOME/desk.break-read"
+cat >mise.toml <<'TOML'
+[bootstrap.settings.desk.appearance]
+blur = true
+blur_strength = 6
+TOML
+assert_fail_contains "mise bootstrap settings apply" "reload the desk"
