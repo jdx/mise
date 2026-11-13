@@ -2955,8 +2955,11 @@ impl Task {
         if let Some(TaskLock::Names(names)) = &mut self.lock {
             for name in names.iter_mut() {
                 if contains_template_syntax(name) {
-                    *name = render_str(&mut tera, name, &tera_ctx)?;
-                    TaskLock::validate_name(name).map_err(|e| eyre!("{}: {e}", self.name))?;
+                    let rendered = render_str(&mut tera, name, &tera_ctx)?;
+                    // Check before storing: a caller that keeps the task after an error must
+                    // not see the invalid name.
+                    TaskLock::validate_name(&rendered).map_err(|e| eyre!("{}: {e}", self.name))?;
+                    *name = rendered;
                 }
             }
         }
