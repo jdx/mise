@@ -6777,10 +6777,12 @@ echo "hello world"
 #MISE deny_write=true
 #MISE deny_net=true
 #MISE deny_env=true
+#MISE deny_unix=true
 #MISE allow_read=["src"]
 #MISE allow_write=["out"]
 #MISE allow_net=["example.com"]
 #MISE allow_env=["HOME"]
+#MISE allow_unix=["agent.sock"]
 echo "test"
 "#;
         fs::write(&task_file, script_content).unwrap();
@@ -6862,6 +6864,8 @@ echo "test"
         assert_eq!(task.allow_write, [PathBuf::from("out")]);
         assert_eq!(task.allow_net, ["example.com"]);
         assert_eq!(task.allow_env, ["HOME"]);
+        assert!(task.deny_unix);
+        assert_eq!(task.allow_unix, [PathBuf::from("agent.sock")]);
 
         // A header reads every `TaskDecl` key except the ones the file itself provides, so the
         // script above must set each of them.
