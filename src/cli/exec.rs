@@ -97,6 +97,12 @@ pub(crate) struct Exec {
     #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
+    /// Allow connections to the Unix socket at PATH (implies --deny-unix for every other socket)
+    ///
+    /// Linux 7.1 or later only.
+    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_unix: Vec<std::path::PathBuf>,
+
     /// Block reads, writes, network, and env vars
     #[usage(long, verbatim_doc_comment)]
     pub deny_all: bool,
@@ -119,6 +125,10 @@ pub(crate) struct Exec {
     /// Block filesystem writes except temporary and device paths (/tmp, /dev)
     #[usage(long, verbatim_doc_comment)]
     pub deny_write: bool,
+
+    /// Block connections to Unix sockets outside the sandbox (Linux 7.1 or later)
+    #[usage(long, verbatim_doc_comment)]
+    pub deny_unix: bool,
 
     /// Bypass the environment cache and recompute the environment
     #[usage(long)]
@@ -455,12 +465,14 @@ impl Exec {
                 deny_read: self.deny_read,
                 deny_write: self.deny_write,
                 deny_net: self.deny_net,
+                deny_unix: self.deny_unix,
                 deny_env: self.deny_env,
                 deny_process: false,
                 deny_temp_write: false,
                 allow_read: self.allow_read,
                 allow_write: self.allow_write,
                 allow_net: self.allow_net,
+                allow_unix: self.allow_unix,
                 allow_env: self.allow_env,
                 pass_through_env: vec![],
                 cache_env: vec![],

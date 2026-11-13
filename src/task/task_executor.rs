@@ -618,6 +618,7 @@ impl TaskExecutor {
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
             deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
             deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            deny_unix: task.deny_unix || self.sandbox.deny_unix,
             deny_process: false,
             deny_temp_write: false,
             allow_read: task
@@ -637,6 +638,12 @@ impl TaskExecutor {
                 .iter()
                 .chain(self.sandbox.allow_net.iter())
                 .cloned()
+                .collect(),
+            allow_unix: task
+                .allow_unix
+                .iter()
+                .map(&resolve_task_path)
+                .chain(self.sandbox.allow_unix.iter().cloned())
                 .collect(),
             allow_env: task
                 .allow_env

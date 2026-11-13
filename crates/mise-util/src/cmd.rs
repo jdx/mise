@@ -2479,6 +2479,8 @@ impl<'a> CmdLineRunner<'a> {
         // Fail early if per-host network filtering is requested
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         sandbox.reject_allow_net()?;
+        #[cfg(target_os = "macos")]
+        sandbox.reject_unix_sockets()?;
 
         // Clear the inherited env so the child only sees the filtered vars, which carry the
         // essentials `SandboxConfig::filter_env` keeps (on Windows, `SystemRoot` and the rest
@@ -2508,7 +2510,10 @@ impl<'a> CmdLineRunner<'a> {
             // Rules naming a path that does not exist yet get dropped, and the
             // task is then denied. Say so here: pre_exec runs post-fork, where
             // the logger is not available.
-            if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
+            if sandbox.effective_deny_read()
+                || sandbox.effective_deny_write()
+                || sandbox.effective_deny_unix()
+            {
                 sandbox.warn_missing_allow_paths();
             }
             // Likewise a kernel that cannot enforce the rules: an error from
@@ -2527,6 +2532,7 @@ impl<'a> CmdLineRunner<'a> {
                 self.cmd.as_std_mut().pre_exec(move || {
                     if sandbox.effective_deny_read()
                         || sandbox.effective_deny_write()
+                        || sandbox.effective_deny_unix()
                         || sandbox.deny_process
                     {
                         crate::sandbox::landlock_apply(&sandbox, &initial_program)

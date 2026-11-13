@@ -229,10 +229,12 @@ impl Task {
         self.deny_write |= template.deny_write;
         self.deny_net |= template.deny_net;
         self.deny_env |= template.deny_env;
+        self.deny_unix |= template.deny_unix;
 
         self.allow_read.splice(0..0, template.allow_read.clone());
         self.allow_write.splice(0..0, template.allow_write.clone());
         self.allow_net.splice(0..0, template.allow_net.clone());
+        self.allow_unix.splice(0..0, template.allow_unix.clone());
         self.allow_env.splice(0..0, template.allow_env.clone());
         self.pass_through_env
             .splice(0..0, template.pass_through_env.clone());

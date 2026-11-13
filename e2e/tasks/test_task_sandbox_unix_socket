@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# --deny-unix and allow_unix restrict connections to Unix domain sockets with
+# Landlock (Linux 7.1 or later). A kernel without it must refuse the command
+# instead of running it unrestricted.
+# https://github.com/jdx/mise/discussions/15668
+
+if [[ "$(uname)" != "Linux" ]]; then
+  echo "skipping: Unix socket sandboxing is Linux-only"
+  exit 0
+fi
+
+if ! mise exec --deny-unix -- true >out.log 2>&1; then
+  assert_contains "cat out.log" "needs Linux 7.1 or later"
+  echo "skipping: this kernel has no Landlock Unix socket support"
+  exit 0
+fi
+
+# Socket paths are limited to ~107 bytes, so keep them short.
+sock_dir="$(mktemp -d /tmp/mise-unix-XXXXXX)"
+mkdir "$sock_dir/a" "$sock_dir/b"
+cat >server.py <<'PY'
+import socket, sys
+srv = socket.socket(socket.AF_UNIX)
+srv.bind(sys.argv[1])
+srv.listen(5)
+open(sys.argv[1] + ".ready", "w").close()
+while True:
+    srv.accept()[0].close()
+PY
+cat >client.py <<'PY'
+import socket, sys
+s = socket.socket(socket.AF_UNIX)
+try:
+    s.connect(sys.argv[1])
+    print("connected")
+except OSError as e:
+    print("blocked")
+# A socket made inside the sandbox stays reachable inside it.
+a = socket.socket(socket.AF_UNIX)
+a.bind("\0mise-e2e-" + str(__import__("os").getpid()))
+a.listen(1)
+c = socket.socket(socket.AF_UNIX)
+c.connect(a.getsockname())
+print("abstract ok")
+PY
+python3 server.py "$sock_dir/a/s.sock" &
+python3 server.py "$sock_dir/b/s.sock" &
+for _ in $(seq 100); do
+  [[ -e "$sock_dir/a/s.sock.ready" && -e "$sock_dir/b/s.sock.ready" ]] && break
+  sleep 0.1
+done
+
+assert "mise exec -- python3 client.py $sock_dir/a/s.sock | head -1" "connected"
+assert "mise exec --deny-unix -- python3 client.py $sock_dir/a/s.sock" "blocked
+abstract ok"
+assert "mise exec --allow-unix $sock_dir/a -- python3 client.py $sock_dir/a/s.sock | head -1" "connected"
+assert "mise exec --allow-unix $sock_dir/a -- python3 client.py $sock_dir/b/s.sock | head -1" "blocked"
+
+cat >mise.toml <<TOML
+[tasks.allowed]
+run = "python3 client.py $sock_dir/a/s.sock"
+allow_unix = ["$sock_dir/a"]
+
+[tasks.denied]
+run = "python3 client.py $sock_dir/a/s.sock"
+deny_unix = true
+TOML
+assert "mise run allowed 2>&1 | grep -v '^\\[' | head -1" "connected"
+assert "mise run denied 2>&1 | grep -v '^\\[' | head -1" "blocked"
+
+kill %1 %2

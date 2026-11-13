@@ -476,12 +476,16 @@ pub struct Task {
     pub deny_net: bool,
     /// Block env var inheritance
     pub deny_env: bool,
+    /// Block connections to Unix sockets outside the sandbox
+    pub deny_unix: bool,
     /// Allow reads from specific paths
     pub allow_read: Vec<std::path::PathBuf>,
     /// Allow writes to specific paths
     pub allow_write: Vec<std::path::PathBuf>,
     /// Allow network to specific hosts
     pub allow_net: Vec<String>,
+    /// Allow connections to the Unix sockets at specific paths
+    pub allow_unix: Vec<std::path::PathBuf>,
     /// Allow specific env vars through
     pub allow_env: Vec<String>,
     /// Preserve ambient env vars when env inheritance is denied without hashing their values
@@ -731,6 +735,7 @@ const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "deny_write",
     "deny_net",
     "deny_env",
+    "deny_unix",
 ];
 
 /// Reads a file task's merged `#MISE` header into a [`TaskDecl`], the type a `[tasks.<name>]`
@@ -2813,9 +2818,11 @@ impl Task {
         self.deny_write |= other.deny_write;
         self.deny_net |= other.deny_net;
         self.deny_env |= other.deny_env;
+        self.deny_unix |= other.deny_unix;
         self.allow_read.extend(other.allow_read);
         self.allow_write.extend(other.allow_write);
         self.allow_net.extend(other.allow_net);
+        self.allow_unix.extend(other.allow_unix);
         self.allow_env.extend(other.allow_env);
         self.pass_through_env.extend(other.pass_through_env);
     }
@@ -3616,9 +3623,11 @@ impl Task {
             deny_write: decl.deny_write,
             deny_net: decl.deny_net,
             deny_env: decl.deny_env,
+            deny_unix: decl.deny_unix,
             allow_read: decl.allow_read,
             allow_write: decl.allow_write,
             allow_net: decl.allow_net,
+            allow_unix: decl.allow_unix,
             allow_env: decl.allow_env,
             pass_through_env: decl.pass_through_env,
             extends: decl.extends,
@@ -3694,9 +3703,11 @@ impl Default for Task {
             deny_write: false,
             deny_net: false,
             deny_env: false,
+            deny_unix: false,
             allow_read: vec![],
             allow_write: vec![],
             allow_net: vec![],
+            allow_unix: vec![],
             allow_env: vec![],
             pass_through_env: vec![],
             extends: None,

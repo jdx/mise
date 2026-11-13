@@ -3159,10 +3159,12 @@ impl Bootstrap {
             deny_read: false,
             deny_write: false,
             deny_net: false,
+            deny_unix: false,
             deny_env: false,
             allow_read: vec![],
             allow_write: vec![],
             allow_net: vec![],
+            allow_unix: vec![],
             allow_env: vec![],
         }
         .run()
