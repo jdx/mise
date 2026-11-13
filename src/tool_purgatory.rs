@@ -200,12 +200,12 @@ pub async fn auto_prune() -> Result<()> {
         crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()),
     )
     .await;
-    let prunable = prunable?;
     if skipped > 0 {
         warn!(
             "deferred prune skipped {skipped} tracked config(s) that could not be loaded; run `mise prune` for details"
         );
     }
+    let prunable = prunable?;
     let prunable_by_path = prunable
         .into_iter()
         .map(|(backend, tv)| (tv.install_path(), (backend, tv)))
