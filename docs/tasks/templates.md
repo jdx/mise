@@ -115,20 +115,20 @@ overrides do not recalculate that stored value. See
 The task inherits every property it omits. When both the template and the task
 set a property, these rules apply:
 
-| Property                                                                                      | Result                                                                                                                          |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `run`, `run_windows`                                                                          | The task's value replaces the template's. Ignored when the task or the template sets `file`.                                    |
-| `file`                                                                                        | The task's value, else the template's.                                                                                          |
-| `tools`, `env`, `vars`                                                                        | Merged by key. The task's entries add to the template's and win for the same key.                                               |
-| `depends`, `depends_post`, `wait_for`                                                         | The task's list replaces the template's.                                                                                        |
-| `alias`, `sources`, `outputs`                                                                 | The task's value replaces the template's.                                                                                       |
-| `dir`                                                                                         | The task's value, else the template's, else `task_config.dir`, else the task's config root.                                     |
-| `usage`                                                                                       | Both specs, the template's first.                                                                                               |
-| `deny_all`, `deny_read`, `deny_write`, `deny_net`, `deny_env`                                 | On when either sets it. A task cannot turn off a template's restriction.                                                        |
-| `allow_read`, `allow_write`, `allow_net`, `allow_env`, `pass_through_env`, `tags`             | The template's entries followed by the task's.                                                                                  |
-| `description`, `shell`, `timeout`, `output`, `silent`, `confirm`, `cache`, `watch`, `daemons` | The task's value if set, else the template's.                                                                                   |
-| `quiet`, `hide`, `raw`, `interactive`, `raw_args`, `extends`                                  | Not accepted in templates; mise warns about an unknown field. Set them on each task. A template cannot extend another template. |
-| `secrets`                                                                                     | Not allowed in templates; mise reports a config error.                                                                          |
+| Property                                                                                        | Result                                                                                                                          |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `run`, `run_windows`                                                                            | The task's value replaces the template's. Ignored when the task or the template sets `file`.                                    |
+| `file`                                                                                          | The task's value, else the template's.                                                                                          |
+| `tools`, `env`, `vars`                                                                          | Merged by key. The task's entries add to the template's and win for the same key.                                               |
+| `depends`, `depends_post`, `wait_for`                                                           | The task's list replaces the template's.                                                                                        |
+| `alias`, `sources`, `outputs`                                                                   | The task's value replaces the template's.                                                                                       |
+| `dir`                                                                                           | The task's value, else the template's, else `task_config.dir`, else the task's config root.                                     |
+| `usage`                                                                                         | Both specs, the template's first.                                                                                               |
+| `deny_all`, `deny_read`, `deny_write`, `deny_net`, `deny_env`, `deny_unix`                      | On when either sets it. A task cannot turn off a template's restriction.                                                        |
+| `allow_read`, `allow_write`, `allow_net`, `allow_unix`, `allow_env`, `pass_through_env`, `tags` | The template's entries followed by the task's.                                                                                  |
+| `description`, `shell`, `timeout`, `output`, `silent`, `confirm`, `cache`, `watch`, `daemons`   | The task's value if set, else the template's.                                                                                   |
+| `quiet`, `hide`, `raw`, `interactive`, `raw_args`, `extends`                                    | Not accepted in templates; mise warns about an unknown field. Set them on each task. A template cannot extend another template. |
+| `secrets`                                                                                       | Not allowed in templates; mise reports a config error.                                                                          |
 
 ### Empty lists {#empty-lists-and-file-tasks}
 

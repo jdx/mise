@@ -4497,6 +4497,11 @@
           "description": "block env var inheritance",
           "default": false
         },
+        "deny_unix": {
+          "type": "boolean",
+          "description": "block connections to Unix sockets outside the sandbox; Linux 7.1 or later",
+          "default": false
+        },
         "allow_read": {
           "type": "array",
           "description": "allow reads from specific paths",
@@ -4514,6 +4519,13 @@
         "allow_net": {
           "type": "array",
           "description": "allow network to specific hosts; not supported yet, so Linux and macOS reject it",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allow_unix": {
+          "type": "array",
+          "description": "allow connections to the Unix sockets at specific paths (implies deny_unix); Linux 7.1 or later",
           "items": {
             "type": "string"
           }

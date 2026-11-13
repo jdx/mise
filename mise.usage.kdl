@@ -3870,6 +3870,14 @@ https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
     flag --allow-write help="Allow writes to PATH (implies --deny-write for everything else)" var=#true {
         arg <PATH>
     }
+    flag --allow-unix help="Allow connections to the Unix socket at PATH, or to every socket under it if PATH is a directory (implies --deny-unix for every other socket)" var=#true {
+        long_help #"""
+Allow connections to the Unix socket at PATH, or to every socket under it if PATH is a directory (implies --deny-unix for every other socket)
+
+Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only.
+"""#
+        arg <PATH>
+    }
     flag --deny-all help="Block reads, writes, network, and env vars"
     flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG" {
         long_help #"""
@@ -3882,6 +3890,7 @@ SystemRoot and TEMP.
     flag --deny-net help="Block all network access"
     flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
     flag --deny-write help="Block filesystem writes except temporary and device paths (/tmp, /dev)"
+    flag --deny-unix help="Block connections to Unix sockets outside the sandbox (Linux 7.1 or later)"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-deps help="Skip automatic dependency preparation"
     flag --raw help="Connect install commands directly to the terminal; implies --jobs=1" overrides=--jobs
@@ -6156,6 +6165,9 @@ Per-host filtering does not work: Linux and macOS exit with an error, and Window
     flag --allow-write help="Allow writes to a specific path (implies `--deny-write` for everything else)" var=#true {
         arg <PATH>
     }
+    flag --allow-unix help="Allow connections to the Unix socket at a specific path, or to every socket under it if PATH is a directory (implies `--deny-unix` for every other socket). Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only." var=#true {
+        arg <PATH>
+    }
     flag --deny-all help="Block reads, writes, network, and env vars"
     flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG" {
         long_help #"""
@@ -6167,6 +6179,7 @@ On Windows it also keeps the variables programs need to start, such as `SystemRo
     flag --deny-net help="Block all network access"
     flag --deny-read help="Block filesystem reads (system libraries and tool directories stay readable)"
     flag --deny-write help="Block filesystem writes except temporary and device paths (/tmp, /dev)"
+    flag --deny-unix help="Block connections to Unix sockets outside the sandbox (Linux 7.1 or later only)"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use the cache for remote tasks" env=MISE_TASK_REMOTE_NO_CACHE
     flag --no-deps help="Do not run `[deps]` providers that have `auto = true` before the tasks"
@@ -7439,6 +7452,9 @@ Per-host filtering does not work: Linux and macOS exit with an error, and Window
         flag --allow-write help="Allow writes to a specific path (implies `--deny-write` for everything else)" var=#true {
             arg <PATH>
         }
+        flag --allow-unix help="Allow connections to the Unix socket at a specific path, or to every socket under it if PATH is a directory (implies `--deny-unix` for every other socket). Abstract sockets created inside the sandbox stay reachable. Linux 7.1 or later only." var=#true {
+            arg <PATH>
+        }
         flag --deny-all help="Block reads, writes, network, and env vars"
         flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG" {
             long_help #"""
@@ -7450,6 +7466,7 @@ On Windows it also keeps the variables programs need to start, such as `SystemRo
         flag --deny-net help="Block all network access"
         flag --deny-read help="Block filesystem reads (system libraries and tool directories stay readable)"
         flag --deny-write help="Block filesystem writes except temporary and device paths (/tmp, /dev)"
+        flag --deny-unix help="Block connections to Unix sockets outside the sandbox (Linux 7.1 or later only)"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use the cache for remote tasks" env=MISE_TASK_REMOTE_NO_CACHE
         flag --no-deps help="Do not run `[deps]` providers that have `auto = true` before the tasks"

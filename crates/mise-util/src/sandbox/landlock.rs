@@ -1,7 +1,7 @@
 use eyre::{Result, eyre};
 use landlock::{
     ABI, AccessFs, BitFlags, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr,
-    RulesetCreatedAttr, RulesetStatus,
+    RulesetCreatedAttr, RulesetStatus, Scope,
 };
 
 use super::SandboxConfig;
@@ -95,6 +95,11 @@ fn handled_access(config: &SandboxConfig) -> BitFlags<AccessFs> {
     if config.deny_process {
         handled_access |= AccessFs::Execute;
     }
+    // Pathname sockets are refused unless an `allow_unix` rule covers them.
+    // Abstract sockets have no path; `create_ruleset` scopes them separately.
+    if config.effective_deny_unix() {
+        handled_access |= AccessFs::ResolveUnix;
+    }
     handled_access
 }
 
@@ -120,12 +125,21 @@ fn required_access(handled_access: BitFlags<AccessFs>) -> BitFlags<AccessFs> {
 /// kernel: without Truncate (Linux 6.2) a command under `--deny-write` can
 /// still empty any file with truncate(2). Only [`optional_access`] stays best
 /// effort.
-fn create_ruleset(handled_access: BitFlags<AccessFs>) -> Result<landlock::RulesetCreated> {
+fn create_ruleset(
+    handled_access: BitFlags<AccessFs>,
+    scope_abstract_sockets: bool,
+) -> Result<landlock::RulesetCreated> {
     let required = required_access(handled_access);
-    Ruleset::default()
+    let mut ruleset = Ruleset::default()
         .set_compatibility(landlock::CompatLevel::HardRequirement)
         .handle_access(required)
-        .map_err(|e| unsupported_error(required, e))?
+        .map_err(|e| unsupported_error(required, e))?;
+    if scope_abstract_sockets {
+        ruleset = ruleset
+            .scope(Scope::AbstractUnixSocket)
+            .map_err(|e| unsupported_error(required, e))?;
+    }
+    ruleset
         .set_compatibility(landlock::CompatLevel::BestEffort)
         .handle_access(handled_access)
         .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?
@@ -141,6 +155,13 @@ fn unsupported_error(required: BitFlags<AccessFs>, err: impl std::fmt::Display) 
             .set_compatibility(landlock::CompatLevel::HardRequirement)
             .handle_access(required & !AccessFs::Truncate)
             .is_ok();
+    if required.contains(AccessFs::ResolveUnix) {
+        return eyre!(
+            "sandbox: Landlock on this kernel cannot restrict Unix sockets, \
+             so mise will not run the command with --deny-unix or --allow-unix ({err}). \
+             Restricting Unix sockets needs Linux 7.1 or later."
+        );
+    }
     if only_truncate_missing {
         eyre!(
             "sandbox: Landlock on this kernel cannot stop a command from truncating files, \
@@ -161,7 +182,7 @@ fn unsupported_error(required: BitFlags<AccessFs>, err: impl std::fmt::Display) 
 pub(super) fn check_kernel_support(config: &SandboxConfig) -> Result<()> {
     let handled_access = handled_access(config);
     if !handled_access.is_empty() {
-        create_ruleset(handled_access)?;
+        create_ruleset(handled_access, config.effective_deny_unix())?;
     }
     Ok(())
 }
@@ -188,7 +209,7 @@ pub(super) fn apply_landlock(
         return Ok(());
     }
 
-    let mut ruleset = create_ruleset(handled_access)?;
+    let mut ruleset = create_ruleset(handled_access, config.effective_deny_unix())?;
 
     if deny_read && deny_write {
         // Both restricted: add read rules for system paths, full for /tmp and /dev
@@ -260,6 +281,10 @@ pub(super) fn apply_landlock(
         for path in &config.allow_write {
             ruleset = add_path_rule(ruleset, path, full_access)?;
         }
+    }
+
+    for path in &config.allow_unix {
+        ruleset = add_path_rule(ruleset, path, AccessFs::ResolveUnix.into())?;
     }
 
     // The ruleset is installed before the target's initial exec. Permit that
@@ -337,5 +362,27 @@ mod tests {
         .join()
         .unwrap();
         assert_eq!(std::fs::read_to_string(file.path()).unwrap(), "data");
+    }
+
+    #[test]
+    fn test_unix_socket_restriction_needs_resolve_unix() {
+        let none = SandboxConfig::default();
+        assert!(!handled_access(&none).contains(AccessFs::ResolveUnix));
+
+        for config in [
+            SandboxConfig {
+                deny_unix: true,
+                ..Default::default()
+            },
+            SandboxConfig {
+                allow_unix: vec!["/run/agent.sock".into()],
+                ..Default::default()
+            },
+        ] {
+            let handled = handled_access(&config);
+            assert!(handled.contains(AccessFs::ResolveUnix));
+            // A kernel without it must refuse the sandbox, not drop the right.
+            assert!(required_access(handled).contains(AccessFs::ResolveUnix));
+        }
     }
 }

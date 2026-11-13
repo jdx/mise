@@ -19,6 +19,8 @@ pub struct SandboxConfig {
     pub deny_read: bool,
     pub deny_write: bool,
     pub deny_net: bool,
+    /// Block connections to Unix sockets outside the sandbox (Linux 7.1 or later).
+    pub deny_unix: bool,
     pub deny_env: bool,
     /// Block child-process creation. Internal-only: task/CLI sandboxes leave this disabled.
     pub deny_process: bool,
@@ -27,6 +29,8 @@ pub struct SandboxConfig {
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
     pub allow_net: Vec<String>,
+    /// Unix sockets that stay reachable under `deny_unix`; implies it.
+    pub allow_unix: Vec<PathBuf>,
     pub allow_env: Vec<String>,
     /// Environment patterns that survive an active env sandbox without enabling it themselves.
     pub pass_through_env: Vec<String>,
@@ -303,6 +307,7 @@ impl SandboxConfig {
         self.deny_read
             || self.deny_write
             || self.deny_net
+            || self.effective_deny_unix()
             || self.deny_process
             || self.deny_temp_write
             || !self.allow_read.is_empty()
@@ -328,6 +333,7 @@ impl SandboxConfig {
         // would lift the restriction instead of allowing nothing.
         self.deny_read |= !self.allow_read.is_empty();
         self.deny_write |= !self.allow_write.is_empty();
+        self.deny_unix |= !self.allow_unix.is_empty();
         // Keep the spelling a canonicalization replaces. It is the one a caller
         // inside the sandbox will use, and macOS has to let a walk take that
         // route — see `symlinked_allow_paths`.
@@ -369,6 +375,7 @@ impl SandboxConfig {
         };
         resolve(&mut self.allow_read)?;
         resolve(&mut self.allow_write)?;
+        resolve(&mut self.allow_unix)?;
         self.symlinked_allow_paths = symlinked;
         Ok(())
     }
@@ -387,6 +394,10 @@ impl SandboxConfig {
     #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_net(&self) -> bool {
         self.deny_net || !self.allow_net.is_empty()
+    }
+
+    pub fn effective_deny_unix(&self) -> bool {
+        self.deny_unix || !self.allow_unix.is_empty()
     }
 
     pub fn effective_deny_env(&self) -> bool {
@@ -416,6 +427,21 @@ impl SandboxConfig {
         Ok(())
     }
 
+    /// Refuse Unix socket restrictions where the platform cannot enforce them.
+    ///
+    /// Only Landlock on Linux 7.1 or later can tell one socket from another;
+    /// running without the restriction would hand the command the very access
+    /// it was asked to lose.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn reject_unix_sockets(&self) -> eyre::Result<()> {
+        if self.effective_deny_unix() {
+            eyre::bail!(
+                "Unix socket restrictions (--deny-unix, --allow-unix) are only supported on Linux 7.1 or later"
+            );
+        }
+        Ok(())
+    }
+
     /// Allow-list paths that do not exist, in declaration order and listed once
     /// even when named by both `allow_read` and `allow_write`.
     ///
@@ -430,6 +456,7 @@ impl SandboxConfig {
         self.allow_read
             .iter()
             .chain(self.allow_write.iter())
+            .chain(self.allow_unix.iter())
             // Only paths confirmed absent. `exists()` would fold a metadata
             // error — no listing permission on a parent, say — into "missing"
             // and report a cause nothing checked, which is the habit this whole
@@ -578,7 +605,11 @@ impl SandboxConfig {
 
     #[cfg(target_os = "linux")]
     fn apply_linux(&self, program: &str) -> eyre::Result<()> {
-        if self.effective_deny_read() || self.effective_deny_write() || self.deny_process {
+        if self.effective_deny_read()
+            || self.effective_deny_write()
+            || self.effective_deny_unix()
+            || self.deny_process
+        {
             landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
         if self.effective_deny_net() || self.deny_process {
@@ -595,6 +626,7 @@ impl SandboxConfig {
         args: &[String],
     ) -> eyre::Result<Option<SandboxedCommand>> {
         self.reject_allow_net()?;
+        self.reject_unix_sockets()?;
         let profile = macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program)));
         let mut sandbox_args = vec![
             "-p".to_string(),
@@ -1250,6 +1282,28 @@ mod tests {
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
+    }
+
+    #[test]
+    fn test_allow_unix_implies_deny_unix() {
+        let mut config = SandboxConfig {
+            allow_unix: vec![PathBuf::from("/run/agent.sock")],
+            ..Default::default()
+        };
+        assert!(!config.deny_unix);
+        assert!(config.effective_deny_unix());
+        assert!(config.restricts_more_than_env());
+        config.resolve_paths(&[]).unwrap();
+        assert!(config.deny_unix);
+
+        assert!(!SandboxConfig::default().effective_deny_unix());
+        assert!(SandboxConfig::default().reject_unix_sockets().is_ok());
+        let denied = SandboxConfig {
+            deny_unix: true,
+            ..Default::default()
+        };
+        assert!(denied.reject_unix_sockets().is_err());
+        assert!(denied.is_active());
     }
 
     #[test]

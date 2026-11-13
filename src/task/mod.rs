@@ -476,12 +476,16 @@ pub struct Task {
     pub deny_net: bool,
     /// Block env var inheritance
     pub deny_env: bool,
+    /// Block connections to Unix sockets outside the sandbox
+    pub deny_unix: bool,
     /// Allow reads from specific paths
     pub allow_read: Vec<std::path::PathBuf>,
     /// Allow writes to specific paths
     pub allow_write: Vec<std::path::PathBuf>,
     /// Allow network to specific hosts
     pub allow_net: Vec<String>,
+    /// Allow connections to the Unix sockets at specific paths
+    pub allow_unix: Vec<std::path::PathBuf>,
     /// Allow specific env vars through
     pub allow_env: Vec<String>,
     /// Preserve ambient env vars when env inheritance is denied without hashing their values
@@ -731,6 +735,8 @@ const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "deny_write",
     "deny_net",
     "deny_env",
+    "deny_unix",
+    "allow_unix",
 ];
 
 /// Reads a file task's merged `#MISE` header into a [`TaskDecl`], the type a `[tasks.<name>]`
@@ -2813,9 +2819,11 @@ impl Task {
         self.deny_write |= other.deny_write;
         self.deny_net |= other.deny_net;
         self.deny_env |= other.deny_env;
+        self.deny_unix |= other.deny_unix;
         self.allow_read.extend(other.allow_read);
         self.allow_write.extend(other.allow_write);
         self.allow_net.extend(other.allow_net);
+        self.allow_unix.extend(other.allow_unix);
         self.allow_env.extend(other.allow_env);
         self.pass_through_env.extend(other.pass_through_env);
     }
@@ -2859,6 +2867,7 @@ impl Task {
                 .is_some_and(|s| contains_template_syntax(s))
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
+            || self.allow_unix.iter().any(|p| path_contains_template(p))
             || tools_have_template
     }
 
@@ -2964,9 +2973,11 @@ impl Task {
         // the restriction.
         self.deny_read |= !self.allow_read.is_empty();
         self.deny_write |= !self.allow_write.is_empty();
+        self.deny_unix |= !self.allow_unix.is_empty();
         // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
         render_sandbox_paths(&mut self.allow_read)?;
         render_sandbox_paths(&mut self.allow_write)?;
+        render_sandbox_paths(&mut self.allow_unix)?;
         for tool in self.tools.values_mut() {
             tool.render_templates(&mut tera, &tera_ctx)?;
         }
@@ -3616,9 +3627,11 @@ impl Task {
             deny_write: decl.deny_write,
             deny_net: decl.deny_net,
             deny_env: decl.deny_env,
+            deny_unix: decl.deny_unix,
             allow_read: decl.allow_read,
             allow_write: decl.allow_write,
             allow_net: decl.allow_net,
+            allow_unix: decl.allow_unix,
             allow_env: decl.allow_env,
             pass_through_env: decl.pass_through_env,
             extends: decl.extends,
@@ -3694,9 +3707,11 @@ impl Default for Task {
             deny_write: false,
             deny_net: false,
             deny_env: false,
+            deny_unix: false,
             allow_read: vec![],
             allow_write: vec![],
             allow_net: vec![],
+            allow_unix: vec![],
             allow_env: vec![],
             pass_through_env: vec![],
             extends: None,
@@ -5297,6 +5312,20 @@ exec proxy "$@"
         assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
     }
 
+    #[tokio::test]
+    async fn test_render_allow_unix_templates() {
+        let config = Config::get().await.unwrap();
+        let mut task = Task {
+            allow_unix: vec![Path::new("{{ env.HOME }}/agent.sock").into()],
+            ..Default::default()
+        };
+
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        assert_eq!(task.allow_unix, vec![crate::env::HOME.join("agent.sock")]);
+        assert!(task.deny_unix);
+    }
+
     /// A list whose only entry renders to nothing allows no path; it must not
     /// turn the write restriction off.
     #[tokio::test]
@@ -6748,10 +6777,12 @@ echo "hello world"
 #MISE deny_write=true
 #MISE deny_net=true
 #MISE deny_env=true
+#MISE deny_unix=true
 #MISE allow_read=["src"]
 #MISE allow_write=["out"]
 #MISE allow_net=["example.com"]
 #MISE allow_env=["HOME"]
+#MISE allow_unix=["agent.sock"]
 echo "test"
 "#;
         fs::write(&task_file, script_content).unwrap();
@@ -6833,6 +6864,8 @@ echo "test"
         assert_eq!(task.allow_write, [PathBuf::from("out")]);
         assert_eq!(task.allow_net, ["example.com"]);
         assert_eq!(task.allow_env, ["HOME"]);
+        assert!(task.deny_unix);
+        assert_eq!(task.allow_unix, [PathBuf::from("agent.sock")]);
 
         // A header reads every `TaskDecl` key except the ones the file itself provides, so the
         // script above must set each of them.
