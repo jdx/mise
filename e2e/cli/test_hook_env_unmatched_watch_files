@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# [[watch_files]] patterns are matched again on the
+# fast path: a file that appears (even in a nested directory) forces a full run,
+# while unrelated files coming and going in the project directory do not.
+
+export MISE_ENV_CACHE=0
+
+mkdir -p src
+cat >mise.toml <<'EOF'
+[[watch_files]]
+patterns = ["src/**/*.rs", "optional.txt"]
+run = "echo ran >>watch-runs.txt"
+EOF
+
+eval "$(mise activate bash 2>/dev/null)"
+eval "$(mise hook-env -s bash 2>/dev/null)"
+
+# unrelated churn in the project directory keeps the fast path
+for _ in 1 2 3; do
+  sleep 1
+  touch unrelated.lock
+  rm unrelated.lock
+  output=$(mise hook-env -s bash 2>&1)
+  [[ -z $output ]] || fail "expected fast-path after unrelated churn but got: '$output'"
+done
+ok "unrelated churn keeps the fast path"
+
+# a first match in a nested directory forces a full run
+sleep 1
+touch src/main.rs
+output=$(mise hook-env -s bash 2>/dev/null)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+  ok "a new nested watched file forces a full run"
+else
+  fail "a new nested watched file should force a full run but got: '$output'"
+fi
+
+# once the pattern has matches, another new match still forces a full run
+eval "$(mise hook-env -s bash 2>/dev/null)"
+sleep 1
+touch src/more.rs
+output=$(mise hook-env -s bash 2>/dev/null)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+  ok "a further new match forces a full run"
+else
+  fail "a further new match should force a full run but got: '$output'"
+fi
+
+# a file moved in keeps an old mtime but still runs the watch hook
+eval "$(mise hook-env -s bash 2>/dev/null)"
+runs_before=$(wc -l <watch-runs.txt)
+touch -t 202001010000 moved.rs
+sleep 1
+mv moved.rs src/moved.rs
+mise hook-env -s bash >/dev/null 2>&1
+runs_after=$(wc -l <watch-runs.txt)
+if [[ $runs_after -gt $runs_before ]]; then
+  ok "a moved-in file runs the watch hook"
+else
+  fail "a moved-in file did not run the watch hook: $runs_before -> $runs_after"
+fi
+
+# a moved-in file still runs the hook when a loaded config changed in the same prompt
+eval "$(mise hook-env -s bash 2>/dev/null)"
+runs_before=$(wc -l <watch-runs.txt)
+touch -t 202001010000 moved2.rs
+sleep 1
+mv moved2.rs src/moved2.rs
+echo "# changed" >>mise.toml
+mise hook-env -s bash >/dev/null 2>&1
+runs_after=$(wc -l <watch-runs.txt)
+if [[ $runs_after -gt $runs_before ]]; then
+  ok "a moved-in file runs the watch hook alongside a config change"
+else
+  fail "a moved-in file did not run the watch hook with a config change: $runs_before -> $runs_after"
+fi

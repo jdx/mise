@@ -185,7 +185,7 @@ fn warn_outdated_lockfile(path: &Path, today: jiff::civil::Date, remedy: &str) {
     }
 }
 
-fn active_lockfile_paths_in_dir(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn active_lockfile_paths_in_dir(root: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
         paths.push(root.join(format!("mise.{env_name}.local.lock")));
