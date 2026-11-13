@@ -17,6 +17,7 @@ use crate::toolset::Toolset;
 use bytesize::ByteSize;
 use eyre::{Context, Report, Result, bail, eyre};
 use ignore::overrides::Override;
+use itertools::Itertools;
 use jdx_tar::{Builder, EntryType, Header};
 use mise_cache_core::RemoteCacheConfig;
 use serde::{Deserialize, Serialize};
@@ -972,16 +973,62 @@ fn verify_artifact_checksum(manifest: &CacheManifest, archive_path: Option<&Path
 }
 
 pub fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry>> {
+    Ok(task_cache_entries_for(&[(task, root)])?
+        .pop()
+        .unwrap_or_default())
+}
+
+/// Lists the cache entries of several tasks while reading the cache directory once.
+///
+/// Returns one list per requested task, in the order given. The directory holds the
+/// manifests of every task, so scanning it per task would cost tasks × entries.
+pub fn task_cache_entries_for(tasks: &[(&Task, &Path)]) -> Result<Vec<Vec<TaskCacheEntry>>> {
     Settings::get().ensure_experimental("task artifact caching")?;
+    let mut results = tasks.iter().map(|_| Vec::new()).collect::<Vec<_>>();
     let cache_dir = task_cache_dir();
     if !cache_dir.is_dir() {
-        return Ok(Vec::new());
+        return Ok(results);
     }
-    let identity = task_cache_identity(task, root);
-    let current_key = file::read_to_string(task_cache_state_path(task, root))
-        .ok()
-        .map(|key| key.trim().to_string());
-    let mut entries = Vec::new();
+    struct Requested {
+        identity: String,
+        current_key: Option<String>,
+    }
+    let requested = tasks
+        .iter()
+        .map(|(task, root)| Requested {
+            identity: task_cache_identity(task, root),
+            current_key: file::read_to_string(task_cache_state_path(task, root))
+                .ok()
+                .map(|key| key.trim().to_string()),
+        })
+        .collect_vec();
+    // which requested tasks a manifest belongs to, and whether by verified identity
+    let owners = |manifest: &CacheManifest| {
+        requested
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, req)| {
+                let by_identity = manifest.task_identity == req.identity;
+                let by_legacy_current = manifest.task_identity.is_empty()
+                    && req.current_key.as_deref() == Some(manifest.key.as_str());
+                (by_identity || by_legacy_current).then_some((idx, by_identity))
+            })
+            .collect_vec()
+    };
+    let read_manifest = |path: &Path| -> Option<CacheManifest> {
+        // manifests are renamed into place, so an unlocked read sees a whole file or none
+        let contents = fs::read(path).ok()?;
+        match serde_json::from_slice(&contents) {
+            Ok(manifest) => Some(manifest),
+            Err(err) => {
+                warn!(
+                    "ignoring unreadable task cache manifest {}: {err}",
+                    path.display()
+                );
+                None
+            }
+        }
+    };
     for entry in fs::read_dir(&cache_dir)? {
         let entry = entry?;
         let manifest_path = entry.path();
@@ -998,24 +1045,20 @@ pub fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry
         let Some(key) = manifest_path.file_stem().and_then(|stem| stem.to_str()) else {
             continue;
         };
-        let _entry_lock = task_cache_entry_lock(&cache_dir, key)?;
-        let manifest: CacheManifest = match fs::read(&manifest_path)
-            .map_err(Report::from)
-            .and_then(|contents| serde_json::from_slice(&contents).map_err(Report::from))
-        {
-            Ok(manifest) => manifest,
-            Err(err) => {
-                warn!(
-                    "ignoring unreadable task cache manifest {}: {err}",
-                    manifest_path.display()
-                );
-                continue;
-            }
+        // Skip other tasks' entries without taking their lock.
+        let Some(manifest) = read_manifest(&manifest_path) else {
+            continue;
         };
-        let matches_identity = manifest.task_identity == identity;
-        let matches_legacy_current = manifest.task_identity.is_empty()
-            && current_key.as_deref() == Some(manifest.key.as_str());
-        if !matches_identity && !matches_legacy_current {
+        if owners(&manifest).is_empty() {
+            continue;
+        }
+        // Re-read under the lock so a concurrent rewrite or removal is observed.
+        let _entry_lock = task_cache_entry_lock(&cache_dir, key)?;
+        let Some(manifest) = read_manifest(&manifest_path) else {
+            continue;
+        };
+        let owners = owners(&manifest);
+        if owners.is_empty() {
             continue;
         }
         let archive_path = cache_dir.join(format!("{}.tar.zst", manifest.key));
@@ -1032,26 +1075,31 @@ pub fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry
             .map(|duration| duration.as_secs())
             .max()
             .unwrap_or_default();
-        entries.push(TaskCacheEntry {
-            current: current_key.as_deref() == Some(manifest.key.as_str()),
-            key: manifest.key,
-            identity_verified: matches_identity,
-            artifact_checksum: manifest.artifact_checksum,
-            size_bytes: manifest_metadata
-                .len()
-                .saturating_add(archive_metadata.map_or(0, |metadata| metadata.len())),
-            restored_bytes: manifest.restored_bytes,
-            execution_duration_ns: manifest.execution_duration_ns,
-            last_accessed,
-            outputs: manifest.roots,
+        let size_bytes = manifest_metadata
+            .len()
+            .saturating_add(archive_metadata.map_or(0, |metadata| metadata.len()));
+        for (idx, identity_verified) in owners {
+            results[idx].push(TaskCacheEntry {
+                current: requested[idx].current_key.as_deref() == Some(manifest.key.as_str()),
+                key: manifest.key.clone(),
+                identity_verified,
+                artifact_checksum: manifest.artifact_checksum.clone(),
+                size_bytes,
+                restored_bytes: manifest.restored_bytes,
+                execution_duration_ns: manifest.execution_duration_ns,
+                last_accessed,
+                outputs: manifest.roots.clone(),
+            });
+        }
+    }
+    for entries in &mut results {
+        entries.sort_by(|a, b| {
+            b.last_accessed
+                .cmp(&a.last_accessed)
+                .then_with(|| a.key.cmp(&b.key))
         });
     }
-    entries.sort_by(|a, b| {
-        b.last_accessed
-            .cmp(&a.last_accessed)
-            .then_with(|| a.key.cmp(&b.key))
-    });
-    Ok(entries)
+    Ok(results)
 }
 
 pub fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult> {
