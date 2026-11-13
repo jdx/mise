@@ -1,0 +1,9 @@
+# 5.0.11 and earlier ship `cpd-*` archives or none, so the backend starts at
+# 5.0.12, the first release with `jscpd-<platform>` archives.
+backends = [
+  { full = "github:kucherenko/jscpd", attestations_since = "5.1.0", min_version = "5.0.12" },
+]
+bins = ["jscpd"]
+description = "Copy/paste detector for source code in 220+ languages"
+test = { cmd = "jscpd --version", expected = "{{version}}" }
+version_order = "semver"
