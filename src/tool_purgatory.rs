@@ -202,7 +202,7 @@ pub async fn auto_prune() -> Result<()> {
     .await;
     if skipped > 0 {
         warn!(
-            "deferred prune skipped {skipped} tracked config(s) that could not be loaded; run `mise prune` for details"
+            "deferred prune skipped {skipped} tracked config(s) that could not be loaded; run `mise prune --dry-run` for details"
         );
     }
     let prunable = prunable?;
