@@ -71,6 +71,54 @@ struct LockCollectionContext<'a> {
     resolve_options: &'a ResolveOptions,
 }
 
+/// Whether `resolved` is strictly older than `locked`. Only versions that both
+/// parse as SemVer are ordered; anything else (dates, commit SHAs, channels)
+/// has no known order here, so a different value is never called a downgrade.
+fn is_downgrade(resolved: &str, locked: &str) -> bool {
+    crate::semver::semver_precedence_cmp(resolved, locked) == Some(std::cmp::Ordering::Less)
+}
+
+/// Under `--bump`, put back the locked version of any tool the remote
+/// resolution moved backwards. A lagging remote version list (for example
+/// mise-versions missing the newest releases) can make the newest match older
+/// than what is locked; `--bump` only advances the lockfile.
+///
+/// The locked version comes from resolving the request against the lockfile,
+/// the same lookup a plain `mise lock` uses, so legacy entries and option or
+/// backend variants pick the right pin. If that lookup fails, the bump result
+/// stays as resolved.
+async fn keep_locked_over_downgrade(
+    context: &LockCollectionContext<'_>,
+    tools: &mut [LockTool],
+) -> Result<()> {
+    let config = context.config;
+    for (ba, tv) in tools.iter_mut() {
+        let unordered = ba
+            .backend()
+            .is_ok_and(|backend| backend.versions_are_unordered(&tv.request.version()));
+        if unordered {
+            continue;
+        }
+        let mut options = context.resolve_options.clone();
+        options.use_locked_version = true;
+        options.latest_versions = false;
+        options.latest_versions_for_all_requests = false;
+        let Ok(kept) = resolve_for_lock(config, &tv.request, &mut options).await else {
+            continue;
+        };
+        // Only a version this request's own lock entry supplied is a pin; the
+        // resolver falls back to installed or remote versions when it has none.
+        if kept.resolved_from_lockfile() && is_downgrade(&tv.version, &kept.version) {
+            warn!(
+                "{}: the newest version found remotely ({}) is older than the locked {}; keeping {}",
+                ba.short, tv.version, kept.version, kept.version
+            );
+            *tv = kept;
+        }
+    }
+    Ok(())
+}
+
 fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
 }
@@ -904,6 +952,9 @@ impl Lock {
             let mut tools = self
                 .get_tools_to_lock(&collection_context, lockfile_path, config_paths)
                 .await?;
+            if self.bump {
+                keep_locked_over_downgrade(&collection_context, &mut tools).await?;
+            }
             if let Some(installed) = installed {
                 for (_, tv) in &mut tools {
                     if let Some(actual) = installed.iter().find(|actual| {
@@ -3320,6 +3371,20 @@ impl Lock {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn bump_treats_only_semver_decreases_as_downgrades() {
+        assert!(is_downgrade("0.163.0", "0.166.0"));
+        assert!(is_downgrade("1.0.0-alpha.1", "1.0.0"));
+        assert!(!is_downgrade("0.168.0", "0.166.0"));
+        assert!(!is_downgrade("0.166.0", "0.166.0"));
+        // No known order: commit SHAs, dates, channels never count.
+        assert!(!is_downgrade("a1b2c3d", "e4f5a6b"));
+        assert!(!is_downgrade("2024.01.15", "2024.02.01"));
+        assert!(!is_downgrade("nightly", "0.166.0"));
+    }
+
     #[test]
     fn with_platform_adds_a_platform_the_lockfile_lacks() {
         let linux = Platform::parse("linux-x64").unwrap();
