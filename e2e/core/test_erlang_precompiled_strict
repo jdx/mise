@@ -41,3 +41,9 @@ sed -i 's/ubuntu-22\.04/ubuntu-26.04/' mise.toml
 mise lock --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-26.04"'
 assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-26\.04/OTP-28\.5\.tar\.gz"'
+
+# A generic ImageOS=Linux (GitHub's ubuntu-slim) must not be taken as the release:
+# the error must come from /etc/os-release, never name "Linux" as the OS version.
+output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 ImageOS=Linux mise install erlang@28.5 2>&1)" || true
+[[ $output != *"unsupported OS version: Linux"* ]] ||
+  fail "ImageOS=Linux should fall back to /etc/os-release: $output"
