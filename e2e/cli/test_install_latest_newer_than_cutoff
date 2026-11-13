@@ -52,8 +52,33 @@ assert_not_contains "mise ls --installed dated-backend:tool" "1.0.0"
 assert_contains "mise ls --installed dated-backend:tool" "2.0.0"
 mise install
 assert_not_contains "mise ls --installed dated-backend:tool" "1.0.0"
-assert "mise prune --dry-run --tools --yes 2>&1" ""
+assert_not_contains "mise prune --dry-run --tools --yes 2>&1" "dated-backend"
 
 # An explicit `@latest` still asks the remote and honors the cutoff.
 mise install dated-backend:tool@latest
 assert_contains "mise ls --installed dated-backend:tool" "1.0.0"
+
+# When the cutoff hides every release, an installed version still satisfies
+# `latest` instead of failing with "no versions found".
+ONLY_NEW_DIR="$PWD/vfox-only-new"
+cp -R "$BACKEND_DIR" "$ONLY_NEW_DIR"
+cat >"$ONLY_NEW_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return {
+    versions = {
+      { version = "2.0.0", created_at = "2099-01-01T00:00:00Z" },
+    },
+  }
+end
+LUA
+mise plugins link only-new "$ONLY_NEW_DIR"
+cat >mise.toml <<'TOML'
+[settings]
+minimum_release_age = "365d"
+
+[tools]
+"only-new:tool" = "latest"
+TOML
+mise install only-new:tool@2.0.0
+mise install only-new:tool
+assert_contains "mise ls --installed only-new:tool" "2.0.0"

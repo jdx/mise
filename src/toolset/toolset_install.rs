@@ -904,27 +904,37 @@ impl Toolset {
         if should_refresh_remote_versions(tr, &pre_resolve_backend, &resolve_options) {
             resolve_options.refresh_remote_versions = true;
         }
-        let mut tv = crate::ui::resolve_progress::scope(
+        let resolved = crate::ui::resolve_progress::scope(
             tool_progress.map(|p| p.reporter()),
             tr.resolve(config, &resolve_options),
         )
-        .await?;
-        let backend = tv.backend()?;
-        if installed_version_newer_than_cutoff(config, tr, &tv, &backend, opts).await {
+        .await;
+        let kept = installed_version_newer_than_cutoff(
+            config,
+            tr,
+            resolved.as_ref().ok(),
+            &pre_resolve_backend,
+            opts,
+            &resolve_options,
+        )
+        .await;
+        let mut tv = if kept.is_some() {
             // `latest` under the cutoff names an older release than one already
             // installed, so installing it would only add a version that
             // `mise prune` removes. Keep the installed one, as every command
             // that resolves `latest` without asking the remote does.
-            tv = tr
-                .resolve(
-                    config,
-                    &ResolveOptions {
-                        latest_versions: false,
-                        ..resolve_options.clone()
-                    },
-                )
-                .await?;
-        }
+            tr.resolve(
+                config,
+                &ResolveOptions {
+                    latest_versions: false,
+                    ..resolve_options.clone()
+                },
+            )
+            .await?
+        } else {
+            resolved?
+        };
+        let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
         crate::lockfile::ensure_locked_url_matches_version(
             &tv,
@@ -1242,6 +1252,40 @@ fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
     Ok(())
 }
 
+/// The installed version to keep when a configured `latest` resolved under a
+/// release-age cutoff would install an older release (or none at all, when the
+/// cutoff hides every release) while an installed version is newer than the
+/// cutoff allows. Versions are never ordered here: the version kept is the one
+/// the installed-only resolution picks, and it counts only when the cutoff
+/// hides it, which makes it newer than anything the cutoff selects.
+async fn installed_version_newer_than_cutoff(
+    config: &Arc<Config>,
+    tr: &ToolRequest,
+    resolved: Option<&ToolVersion>,
+    backend: &crate::backend::ABackend,
+    opts: &InstallOptions,
+    resolve_options: &ResolveOptions,
+) -> Option<String> {
+    if opts.force
+        || opts.install_dir.is_some()
+        || !resolve_options.latest_versions
+        || matches!(tr.source(), ToolSource::Argument)
+        || !matches!(tr, ToolRequest::Version { version, .. } if version == "latest")
+    {
+        return None;
+    }
+    let before = tr.resolve_options(resolve_options).ok()?.before_date?;
+    if resolved.is_some_and(|tv| backend.list_installed_versions().contains(&tv.version)) {
+        return None;
+    }
+    let kept = backend.latest_installed_version(None).ok()??;
+    let hidden = backend
+        .versions_hidden_by_before_date(config, "latest", before)
+        .await
+        .ok()?;
+    hidden.iter().any(|v| v.version == kept).then_some(kept)
+}
+
 /// Whether install-time resolution should refresh the remote-versions cache
 /// before picking a version. Only selectors whose meaning depends on the
 /// freshest upstream entry benefit: `latest`, `sub-N:latest`, and prefix
@@ -1258,40 +1302,6 @@ fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
 /// through to a backend listing that often has far fewer versions (e.g. the
 /// GitHub releases listing only returns the most recent ~30), turning a
 /// previously-resolvable prefix query into "no versions found".
-/// Whether a configured `latest` resolved under a release-age cutoff to a
-/// version that is not installed while an installed version is newer than the
-/// cutoff allows. Versions are never ordered here: an installed version the
-/// cutoff hides is newer than whatever the cutoff selected.
-async fn installed_version_newer_than_cutoff(
-    config: &Arc<Config>,
-    tr: &ToolRequest,
-    tv: &ToolVersion,
-    backend: &crate::backend::ABackend,
-    opts: &InstallOptions,
-) -> bool {
-    if opts.force
-        || !opts.resolve_options.latest_versions
-        || matches!(tr.source(), ToolSource::Argument)
-        || !matches!(tr, ToolRequest::Version { version, .. } if version == "latest")
-    {
-        return false;
-    }
-    let Some(before) = tv.before_date else {
-        return false;
-    };
-    let installed = backend.list_installed_versions();
-    if installed.is_empty() || installed.contains(&tv.version) {
-        return false;
-    }
-    let Ok(hidden) = backend
-        .versions_hidden_by_before_date(config, "latest", before)
-        .await
-    else {
-        return false;
-    };
-    hidden.iter().any(|v| installed.contains(&v.version))
-}
-
 fn should_refresh_remote_versions(
     tr: &ToolRequest,
     backend: &crate::backend::ABackend,
