@@ -8,8 +8,10 @@ INSTALLS="$MISE_DATA_DIR/installs/npm-commander"
 mise install npm:commander@13.0.0-0
 assert_fail "test -L $INSTALLS/latest"
 assert_fail "test -L $INSTALLS/13"
+# The installation each version link names, wherever it lives.
+prerelease_path="$(realpath "$INSTALLS/13.0.0-0")"
 # with no stable install, `latest` still resolves to the pre-release
-assert "MISE_OFFLINE=1 mise where npm:commander@latest" "$INSTALLS/13.0.0-0"
+assert "MISE_OFFLINE=1 mise where npm:commander@latest" "$prerelease_path"
 
 # links an older mise wrote before it could tell the target is a pre-release
 ln -s ./13.0.0-0 "$INSTALLS/latest"
@@ -22,7 +24,8 @@ assert "readlink $INSTALLS/12" "./12.1.0"
 assert_fail "test -L $INSTALLS/13"
 assert "test -d $INSTALLS/13.0.0-0"
 
-assert "mise where npm:commander@12" "$INSTALLS/12.1.0"
-assert "MISE_OFFLINE=1 mise where npm:commander@latest" "$INSTALLS/12.1.0"
-assert "mise where npm:commander@13.0.0-0" "$INSTALLS/13.0.0-0"
+stable_path="$(realpath "$INSTALLS/12.1.0")"
+assert "mise where npm:commander@12" "$stable_path"
+assert "MISE_OFFLINE=1 mise where npm:commander@latest" "$stable_path"
+assert "mise where npm:commander@13.0.0-0" "$prerelease_path"
 assert_fail "MISE_OFFLINE=1 mise where npm:commander@13"

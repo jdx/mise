@@ -27,9 +27,11 @@ INSTALLS="$MISE_DATA_DIR/installs/stalelink"
 mise install stalelink@1.1.0
 assert "readlink $INSTALLS/1.1" "./1.1.0"
 
-# an install interrupted partway through
-mkdir -p "$MISE_STATE_DIR/incomplete-installs/stalelink/1.1.0"
-touch "$MISE_STATE_DIR/incomplete-installs/stalelink/1.1.0/incomplete"
+# an install interrupted partway through. The marker is keyed by the install
+# directory's name on either layout, and lives in the state directory.
+install_1_1="$(mise where stalelink@1.1.0)"
+mkdir -p "$MISE_STATE_DIR/incomplete-installs/stalelink/$(basename "$install_1_1")"
+touch "$MISE_STATE_DIR/incomplete-installs/stalelink/$(basename "$install_1_1")/incomplete"
 
 mise install stalelink@1.0.0
 
@@ -37,6 +39,7 @@ mise install stalelink@1.0.0
 assert_fail "test -L $INSTALLS/1.1"
 # the directory itself is left alone for the installer to finish
 assert "test -d $INSTALLS/1.1.0"
+assert "test -d $install_1_1"
 # links that still have an eligible target are repointed as usual
 assert "readlink $INSTALLS/latest" "./1.0.0"
 assert "readlink $INSTALLS/1" "./1.0.0"

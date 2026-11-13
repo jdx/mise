@@ -20,25 +20,32 @@ EOF
 assert "mise install tiny@1.0.0"
 assert "mise install tiny@2.1.0"
 
-# Create separate lockfiles: base and env-specific
+# Create separate lockfiles: base and env-specific. They name the backend the
+# installs above used (what mise lock records for tiny); a locked backend that
+# differs is a different installation, which is not installed.
 cat >mise.lock <<'EOF'
 [[tools.tiny]]
 version = "1.0.0"
-backend = "asdf:tiny"
+backend = "vfox:tiny"
 EOF
 
 cat >mise.test.lock <<'EOF'
 [[tools.tiny]]
 version = "2.1.0"
-backend = "asdf:tiny"
+backend = "vfox:tiny"
 EOF
 
+# The installation a version link names: the directory itself on the legacy
+# layout, the installs/<label>-<hash> directory it links to on the identity one.
+tiny_1="$(realpath "$MISE_DATA_DIR/installs/tiny/1.0.0")"
+tiny_2="$(realpath "$MISE_DATA_DIR/installs/tiny/2.1.0")"
+
 # Without MISE_ENV, should use base version from mise.lock (1.0.0)
-assert "mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"
+assert "mise where tiny" "$tiny_1"
 
 # With MISE_ENV=test, should use version from mise.test.lock (2.1.0)
 # Note: Must pass MISE_ENV in the command itself since assert uses bash -c
-assert "MISE_ENV=test mise where tiny" "$MISE_DATA_DIR/installs/tiny/2.1.0"
+assert "MISE_ENV=test mise where tiny" "$tiny_2"
 
 # With MISE_ENV=production (no mise.production.lock), should fall back to base (1.0.0)
-assert "MISE_ENV=production mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"
+assert "MISE_ENV=production mise where tiny" "$tiny_1"

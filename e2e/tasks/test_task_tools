@@ -87,8 +87,8 @@ tools = { needs-dummy = { version = "1.0.0", depends = ["dummy"] }, dummy = "2.0
 run = "needs-dummy"
 EOF
 
-rm -rf "$MISE_DATA_DIR/installs/dummy"
-rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
+# Uninstall rather than delete installs/<tool>: an installation can live outside it.
+mise uninstall --all dummy needs-dummy
 
 assert "MISE_JOBS=1 mise run structured-options" "needs-dummy v1.0.0"
 
