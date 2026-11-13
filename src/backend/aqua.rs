@@ -3963,17 +3963,15 @@ impl AquaBackend {
             {
                 continue;
             }
-            let (jar, launcher) = if src_is_jar {
-                let launcher = if link.src == link.dst {
-                    link.dst.with_extension("")
-                } else {
-                    link.dst.clone()
-                };
-                (link.src.clone(), launcher)
+            // The launcher always takes the exposed name (`link.dst`), the path
+            // `.mise-bins` and the registry's `files` refer to.
+            let launcher = link.dst.clone();
+            let jar = if src_is_jar && link.src != link.dst {
+                link.src.clone()
             } else {
                 let mut jar = link.src.clone().into_os_string();
                 jar.push(".jar");
-                (PathBuf::from(jar), link.dst.clone())
+                PathBuf::from(jar)
             };
             if jar != link.src {
                 // Moves the file the dst symlink points at, so remove dst first.
