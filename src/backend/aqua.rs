@@ -3939,56 +3939,65 @@ impl AquaBackend {
     #[cfg(unix)]
     fn wrap_jar_bins(srcs: &[AquaFileLink], download_filename: &str) -> Result<()> {
         use std::io::Read;
+        use std::os::unix::fs::PermissionsExt;
         let download_is_jar = download_filename.to_ascii_lowercase().ends_with(".jar");
+        // Several links can share one source (aliases); the first one moves the
+        // file, so later ones reuse where it went.
+        let mut moved: HashMap<&Path, PathBuf> = HashMap::new();
         for link in srcs {
-            let src_is_jar = link
-                .src
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"));
-            if !(src_is_jar || download_is_jar) {
-                continue;
-            }
-            let Ok(meta) = fs::metadata(&link.src) else {
-                continue;
+            let jar = if let Some(jar) = moved.get(link.src.as_path()) {
+                jar.clone()
+            } else {
+                let src_is_jar = link
+                    .src
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"));
+                if !(src_is_jar || download_is_jar) {
+                    continue;
+                }
+                if !fs::metadata(&link.src).is_ok_and(|meta| meta.is_file()) {
+                    continue;
+                }
+                // A jar is a zip archive; anything else is already a program.
+                let mut magic = [0u8; 4];
+                if fs::File::open(&link.src)
+                    .and_then(|mut f| f.read_exact(&mut magic))
+                    .is_err()
+                    || magic != *b"PK\x03\x04"
+                {
+                    continue;
+                }
+                let jar = if src_is_jar && link.src != link.dst {
+                    link.src.clone()
+                } else {
+                    let mut jar = link.src.clone().into_os_string();
+                    jar.push(".jar");
+                    PathBuf::from(jar)
+                };
+                if jar != link.src {
+                    // Moves the file the dst symlink points at, so remove dst first.
+                    if link.dst != link.src && link.dst.is_symlink() {
+                        fs::remove_file(&link.dst)?;
+                    }
+                    fs::rename(&link.src, &jar)?;
+                }
+                // The launcher is the command; the jar must not be shimmed too.
+                fs::set_permissions(&jar, fs::Permissions::from_mode(0o644))?;
+                moved.insert(link.src.as_path(), jar.clone());
+                jar
             };
-            if !meta.is_file() {
-                continue;
-            }
-            // A jar is a zip archive; anything else is already a program.
-            let mut magic = [0u8; 4];
-            if fs::File::open(&link.src)
-                .and_then(|mut f| f.read_exact(&mut magic))
-                .is_err()
-                || magic != *b"PK\x03\x04"
-            {
-                continue;
-            }
             // The launcher always takes the exposed name (`link.dst`), the path
             // `.mise-bins` and the registry's `files` refer to.
-            let launcher = link.dst.clone();
-            let jar = if src_is_jar && link.src != link.dst {
-                link.src.clone()
-            } else {
-                let mut jar = link.src.clone().into_os_string();
-                jar.push(".jar");
-                PathBuf::from(jar)
-            };
-            if jar != link.src {
-                // Moves the file the dst symlink points at, so remove dst first.
-                if link.dst != link.src && link.dst.is_symlink() {
-                    fs::remove_file(&link.dst)?;
-                }
-                fs::rename(&link.src, &jar)?;
-            }
+            let launcher = &link.dst;
             if launcher.is_symlink() || launcher.exists() {
-                fs::remove_file(&launcher)?;
+                fs::remove_file(launcher)?;
             }
             let script = format!(
                 "#!/bin/sh\nexec java -jar '{}' \"$@\"\n",
                 jar.to_string_lossy().replace('\'', "'\\''")
             );
-            file::write(&launcher, script)?;
-            file::make_executable(&launcher)?;
+            file::write(launcher, script)?;
+            file::make_executable(launcher)?;
         }
         Ok(())
     }
@@ -6656,5 +6665,39 @@ no_asset: true
         let script = std::fs::read_to_string(&jar).unwrap();
         assert!(script.starts_with("#!/bin/sh\nexec java -jar "));
         assert!(dir.path().join("tool.jar.jar").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_wrap_jar_bins_wraps_every_alias_and_unmarks_the_jar() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let payload = dir.path().join("payload");
+        std::fs::write(&payload, b"PK\x03\x04").unwrap();
+        let links: Vec<_> = ["tool", "tool-alt"]
+            .iter()
+            .map(|name| {
+                let dst = dir.path().join(name);
+                std::os::unix::fs::symlink(&payload, &dst).unwrap();
+                AquaFileLink {
+                    src: payload.clone(),
+                    dst,
+                    hard: false,
+                    explicit_link: false,
+                }
+            })
+            .collect();
+
+        AquaBackend::wrap_jar_bins(&links, "payload.jar").unwrap();
+
+        for name in ["tool", "tool-alt"] {
+            let script = std::fs::read_to_string(dir.path().join(name)).unwrap();
+            assert!(script.contains("payload.jar"), "{name}: {script}");
+        }
+        let mode = std::fs::metadata(dir.path().join("payload.jar"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o111, 0);
     }
 }
