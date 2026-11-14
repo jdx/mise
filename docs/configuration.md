@@ -268,7 +268,8 @@ Global config differs from project config in a few ways:
 - [`global_config_file`](/configuration/settings.html#global_config_file)
   (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file. mise
   loads no `MISE_ENV` variants (such as `mise.ci.toml`) or `.local` files beside
-  it, so point it at the variant file itself to use one. It also turns off the
+  it as global config (they can still load as project config when the file sits
+  in a directory a project walks up through), so point it at the variant file itself to use one. It also turns off the
   [override files](#override-file). It does not hide
   `~/.config/mise/config.toml` from projects under your home directory, which
   still load it as a project config; add `~/.config/mise/config.toml` to
@@ -282,7 +283,7 @@ same file names as the global directory, such as `/etc/mise/config.toml`.
 [`system_config_file`](/configuration/settings.html#system_config_file)
 (`MISE_SYSTEM_CONFIG_FILE`) replaces them with a single file. As with
 `MISE_GLOBAL_CONFIG_FILE`, mise loads no `MISE_ENV` variants (such as
-`mise.ci.toml`) or `.local` files beside it.
+`mise.ci.toml`) or `.local` files beside it as system config.
 
 ## Global override files {#override-file}
 
