@@ -10,7 +10,7 @@ use crate::task::task_cache_store::{
 use crate::task::task_source_checker::{
     DirPruner, TaskCacheInputs, build_output_matcher, expand_enumeration_patterns,
     glob_has_entries, glob_walk_pruned, is_output, output_glob_patterns, symlink_walk_error_path,
-    task_cache_inputs, task_cwd,
+    task_cache_inputs, task_cwd, task_source_paths,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -198,6 +198,11 @@ pub struct TaskArtifactCache {
     explanation: Option<TaskCacheKeyExplanation>,
     state_path: PathBuf,
     limits: TaskCacheLimits,
+    /// Absolute paths of the sources hashed into the key.
+    source_files: Vec<PathBuf>,
+    /// When the key's inputs started being read. A source modified after this
+    /// may differ from the content the key describes.
+    inputs_read_at: SystemTime,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -232,6 +237,7 @@ pub(crate) struct TaskArtifactCacheBuilder {
     root: PathBuf,
     inputs: TaskCacheInputs,
     output_roots: Vec<PathBuf>,
+    inputs_read_at: SystemTime,
 }
 
 pub(crate) struct TaskCacheContext<'a> {
@@ -255,6 +261,7 @@ impl TaskArtifactCache {
         Settings::get().ensure_experimental("task artifact caching")?;
         let root = task_cwd(task, config).await?;
         validate_config(task, &root)?;
+        let inputs_read_at = SystemTime::now();
         let output_roots = resolve_output_roots(task, &root, false)?;
         for output in &output_roots {
             ensure_no_symlink_ancestors(&root, output)?;
@@ -282,6 +289,7 @@ impl TaskArtifactCache {
             root,
             inputs,
             output_roots,
+            inputs_read_at,
         }))
     }
 }
@@ -305,6 +313,7 @@ impl TaskArtifactCacheBuilder {
             root,
             inputs,
             output_roots,
+            inputs_read_at,
         } = self;
         // The encoded action is uploaded to remote caches, so env, var, and
         // arg values enter it only as digests. Args can carry them too: dep
@@ -335,6 +344,11 @@ impl TaskArtifactCacheBuilder {
             .map(|(_, tv)| tv.to_string())
             .collect::<Vec<_>>();
         tools.sort();
+        let source_files = inputs
+            .source_paths
+            .iter()
+            .map(|path| root.join(path))
+            .collect_vec();
         let source_paths = if explain {
             inputs.source_paths.clone()
         } else {
@@ -442,12 +456,42 @@ impl TaskArtifactCacheBuilder {
             explanation,
             state_path,
             limits,
+            source_files,
+            inputs_read_at,
         })
     }
 }
 
 /// Digest of an env, var, or arg value as recorded in the cache action, so the
 /// action changes with the value without carrying the value itself.
+fn source_changed_since(path: &Path, since: SystemTime) -> bool {
+    // Sources are hashed through symlinks, so a write to a link's target must count
+    // as well as a change to the link itself.
+    [fs::symlink_metadata(path), fs::metadata(path)]
+        .into_iter()
+        .any(|metadata| {
+            let Ok(metadata) = metadata else {
+                return true;
+            };
+            if metadata.modified().is_ok_and(|modified| modified > since) {
+                return true;
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let changed = SystemTime::UNIX_EPOCH
+                    + Duration::new(
+                        metadata.ctime().max(0) as u64,
+                        metadata.ctime_nsec().clamp(0, 999_999_999) as u32,
+                    );
+                if changed > since {
+                    return true;
+                }
+            }
+            false
+        })
+}
+
 fn value_digest(value: &str) -> String {
     format!("blake3:{}", hash::hash_blake3_to_str(value))
 }
@@ -507,6 +551,42 @@ impl TaskArtifactCache {
 
     pub(crate) fn explanation(&self) -> Option<&TaskCacheKeyExplanation> {
         self.explanation.as_ref()
+    }
+
+    /// Returns a source that was modified, replaced, removed or newly selected
+    /// after the key was computed. The key describes the content read at that
+    /// time, so a result recorded under it could belong to different content.
+    /// Comparing timestamps instead of hashing again also catches a file that
+    /// was written and then restored, and a status change (ctime) cannot be set
+    /// back by a restore.
+    pub(crate) async fn source_changed_since_key(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+    ) -> Option<PathBuf> {
+        if let Some(path) = self
+            .source_files
+            .iter()
+            .find(|path| source_changed_since(path, self.inputs_read_at))
+        {
+            return Some(path.clone());
+        }
+        // A file that started matching a glob is not in the recorded set.
+        let known = self.source_files.iter().collect::<BTreeSet<_>>();
+        match task_source_paths(task, config).await {
+            Ok(paths) => paths
+                .into_iter()
+                .map(|path| self.root.join(path))
+                .find(|path| !known.contains(path)),
+            Err(err) => {
+                // Without a rescan the result cannot be tied to the key's inputs.
+                warn!(
+                    "task {}: could not rescan sources, so its result is not cached: {err}",
+                    task.name
+                );
+                Some(self.root.clone())
+            }
+        }
     }
 
     pub(crate) async fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
@@ -1759,6 +1839,22 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn sources_changed_after_the_key_are_detected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("input.txt");
+        fs::write(&path, "old").unwrap();
+        let after_write = SystemTime::now() + Duration::from_secs(60);
+        assert!(!source_changed_since(&path, after_write));
+        let before_write = SystemTime::now() - Duration::from_secs(60);
+        assert!(source_changed_since(&path, before_write));
+        // content restored later still counts: the timestamps moved
+        fs::write(&path, "old").unwrap();
+        assert!(source_changed_since(&path, before_write));
+        fs::remove_file(&path).unwrap();
+        assert!(source_changed_since(&path, after_write));
+    }
 
     #[test]
     fn config_deserializes_and_rejects_unknown_fields() {

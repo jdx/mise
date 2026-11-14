@@ -1115,6 +1115,16 @@ pub(crate) async fn task_cache_inputs(
     }))
 }
 
+/// The files a task's `sources` select right now, relative to the task's root, without
+/// hashing them. Used to notice files that started matching while a task ran.
+pub(crate) async fn task_source_paths(task: &Task, config: &Arc<Config>) -> Result<Vec<PathBuf>> {
+    let SourceMetadatas { root, files, .. } = collect_source_metadatas(task, config).await?;
+    Ok(files
+        .into_iter()
+        .map(|(path, _)| path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
+        .collect())
+}
+
 /// Check if task sources are up to date (fresher than outputs)
 pub(crate) async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool> {
     if task.sources.is_empty() {

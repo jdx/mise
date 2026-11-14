@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+cat <<'TOML' >mise.toml
+[settings]
+experimental = true
+
+[tasks.check]
+run = "touch started; sleep 3; echo \"checked: $(cat input.txt)\""
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true }
+
+[tasks.glob]
+run = "touch glob-started; sleep 3; echo globbed"
+sources = ["src/*.txt"]
+outputs = []
+cache = { enabled = true }
+TOML
+
+wait_for_file() {
+  for _ in $(seq 100); do
+    [ -e "$1" ] && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+echo old >input.txt
+
+# A source edited while the task runs makes the recorded pass unreliable:
+# the key describes the content from before the run.
+mise run check >run.out 2>&1 &
+pid=$!
+wait_for_file started
+echo new >input.txt
+wait "$pid"
+echo old >input.txt
+assert_contains "cat run.out" "input.txt changed while the task ran; not caching"
+assert "mise cache task check --json | jq '.[0].entries | length'" "0"
+assert_contains "mise run check 2>&1" "checked: old"
+
+# An unchanged run is cached as before.
+assert "mise cache task check --json | jq '.[0].entries | length'" "1"
+assert_contains "mise run check 2>&1" "sources up-to-date, skipping"
+
+# A file that starts matching the sources during the run is a change too.
+mkdir src
+echo a >src/a.txt
+mise run glob >glob.out 2>&1 &
+pid=$!
+wait_for_file glob-started
+echo b >src/b.txt
+wait "$pid"
+assert_contains "cat glob.out" "changed while the task ran; not caching"
+assert "mise cache task glob --json | jq '.[0].entries | length'" "0"

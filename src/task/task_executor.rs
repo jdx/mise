@@ -1300,27 +1300,20 @@ impl TaskExecutor {
         save_checksum(task, config).await?;
         // A raw or interactive run stores no artifact, but its key still identifies the
         // outputs it produced, so dependents include it in their own keys.
-        let raw_cache_key = raw_cache_state.map(|cache| {
-            if self.task_cache.writes()
-                && let Err(err) = cache.mark_current()
-            {
-                warn!(
-                    "task {} artifact cache state update failed: {err}",
-                    task.name
-                );
-            }
-            cache.key().to_string()
-        });
-        let cache_key = if self.task_cache.writes()
-            && let Some(cache) = artifact_cache
-        {
-            let output = output_capture
-                .as_ref()
-                .map(|output| output.lock().unwrap().clone())
-                .unwrap_or_default();
-            match cache.store(task, &output, execution_duration).await {
-                Ok(()) => {
-                    if let Err(err) = cache.mark_current() {
+        let raw_cache_key = match raw_cache_state {
+            Some(cache) => {
+                if let Some(source) = cache.source_changed_since_key(task, config).await {
+                    // Dependents would build on a result of unknown inputs.
+                    warn!(
+                        "task {}: {} changed while the task ran; not caching",
+                        task.name,
+                        display_path(&source)
+                    );
+                    None
+                } else {
+                    if self.task_cache.writes()
+                        && let Err(err) = cache.mark_current()
+                    {
                         warn!(
                             "task {} artifact cache state update failed: {err}",
                             task.name
@@ -1328,9 +1321,38 @@ impl TaskExecutor {
                     }
                     Some(cache.key().to_string())
                 }
-                Err(err) => {
-                    warn!("task {} artifact cache write failed: {err}", task.name);
-                    None
+            }
+            None => None,
+        };
+        let cache_key = if self.task_cache.writes()
+            && let Some(cache) = artifact_cache
+        {
+            let output = output_capture
+                .as_ref()
+                .map(|output| output.lock().unwrap().clone())
+                .unwrap_or_default();
+            if let Some(source) = cache.source_changed_since_key(task, config).await {
+                warn!(
+                    "task {}: {} changed while the task ran; not caching",
+                    task.name,
+                    display_path(&source)
+                );
+                None
+            } else {
+                match cache.store(task, &output, execution_duration).await {
+                    Ok(()) => {
+                        if let Err(err) = cache.mark_current() {
+                            warn!(
+                                "task {} artifact cache state update failed: {err}",
+                                task.name
+                            );
+                        }
+                        Some(cache.key().to_string())
+                    }
+                    Err(err) => {
+                        warn!("task {} artifact cache write failed: {err}", task.name);
+                        None
+                    }
                 }
             }
         } else {
