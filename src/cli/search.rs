@@ -280,12 +280,21 @@ fn search_description(tool: &ToolCatalogEntry) -> String {
 
 fn get_description(tool: &RegistryTool) -> String {
     let description = tool.description.unwrap_or_default();
-    let backend = get_backends(tool.backends())
-        .iter()
-        .filter(|b| !Settings::get().disable_backends.contains(b))
-        .map(|b| b.to_string())
-        .next()
-        .unwrap_or_default();
+    // an explicit registry url is the real homepage; the backend-derived link
+    // is only a guess (e.g. http:oc would otherwise become github.com/oc)
+    let backend = match tool.url {
+        Some(url) => url.to_string(),
+        None => get_backends(tool.backends())
+            .iter()
+            .filter(|b| !Settings::get().disable_backends.contains(b))
+            .map(|b| b.to_string())
+            .next()
+            .unwrap_or_default(),
+    };
+    format_description(description, &backend)
+}
+
+fn format_description(description: &str, backend: &str) -> String {
     if description.is_empty() {
         backend.to_string()
     } else {
@@ -338,5 +347,20 @@ fn get_aqua_description(id: &str, search_backend: &str) -> String {
     match pkg.description.as_deref().filter(|d| !d.is_empty()) {
         Some(description) => format!("{description}. {backend}"),
         None => backend,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn description_prefers_registry_url() {
+        // oc's first backend is http:oc, which must not become github.com/oc
+        let tool = crate::registry::REGISTRY.get("oc").unwrap();
+        assert_eq!(
+            get_description(tool),
+            "OpenShift Client CLI (oc). https://github.com/openshift/oc"
+        );
     }
 }
