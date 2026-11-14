@@ -2997,14 +2997,20 @@ impl Bootstrap {
         // Opening the scope reads the config the checkout holds now, which is
         // the very thing a broken commit stops from loading. The pull is how a
         // machine gets the fix, so when only that config fails to load, pull
-        // without the history record. Every other failure, such as waiting
-        // on the operation lock, still stops the update: nothing else would
-        // serialize the pull with the operation that holds the lock.
-        let generation = match system::host::config().await {
-            Ok(_) => Some(OperationScope::begin("bootstrap --update", false).await?),
+        // without the history record, but still under the operation lock so
+        // it cannot overlap an operation that holds it. A lock timeout, or any
+        // other error opening the scope, stops the update.
+        let (generation, _lock) = match system::host::config().await {
+            Ok(_) => (
+                Some(OperationScope::begin("bootstrap --update", false).await?),
+                None,
+            ),
             Err(err) => {
                 debug!("bootstrap: pulling the global config without a history record: {err:#}");
-                None
+                (
+                    None,
+                    Some(system::history::scope::hold_operation_lock().await?),
+                )
             }
         };
         let pulled = run_bootstrap_git(checkout, ["pull", "--ff-only"]);
