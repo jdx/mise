@@ -580,7 +580,10 @@ impl TaskArtifactCache {
                 .find(|path| !known.contains(path)),
             Err(err) => {
                 // Without a rescan the result cannot be tied to the key's inputs.
-                debug!("could not rescan sources of {}: {err}", task.name);
+                warn!(
+                    "task {}: could not rescan sources, so its result is not cached: {err}",
+                    task.name
+                );
                 Some(self.root.clone())
             }
         }
