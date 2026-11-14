@@ -260,10 +260,12 @@ pub(crate) fn check_nested_order(
             key.display
         );
     }
-    let (Some(held), Some(first)) = (inherited.last(), to_take.first()) else {
+    // Compare lock names: an inherited id may be a slot, `name:N`, which sorts after `name`.
+    let held = inherited.iter().map(|id| pool_of(id)).max();
+    let (Some(held), Some(first)) = (held, to_take.first()) else {
         return Ok(());
     };
-    if first.id.as_str() < held.as_str() {
+    if first.id.as_str() < held {
         bail!(
             "task {}: cannot take lock {} while a parent task holds {held}: a nested task can only \
              add locks that sort after the ones it inherits. Add {} to the parent task's `lock`",
@@ -273,6 +275,14 @@ pub(crate) fn check_nested_order(
         );
     }
     Ok(())
+}
+
+/// The lock a `MISE_TASK_LOCKS` id belongs to: the id without a slot suffix (`name:N`).
+fn pool_of(id: &str) -> &str {
+    match id.rsplit_once(':') {
+        Some((name, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => id,
+    }
 }
 
 /// What `MISE_TASK_LOCKS` says once this task holds `held` on top of what it inherited.
@@ -400,7 +410,9 @@ impl<'a> LockAcquisition<'a> {
         };
         let mut admission = if key.count > 1 {
             let mut file = self.open(&key.admission_path())?;
-            file.lock().map_err(fail)?;
+            if !file.try_lock().map_err(fail)? {
+                return Ok(None);
+            }
             Some(file)
         } else {
             None
@@ -660,6 +672,14 @@ mod tests {
             ["a", "b", "c:1"].map(String::from).into_iter().collect()
         );
         assert!(inherited(&BTreeMap::new()).is_empty());
+    }
+
+    #[test]
+    fn a_slot_id_belongs_to_its_lock() {
+        assert_eq!(pool_of("cpu:1"), "cpu");
+        assert_eq!(pool_of("cpu"), "cpu");
+        assert_eq!(pool_of("cpu0"), "cpu0");
+        assert_eq!(pool_of("a:b"), "a:b");
     }
 
     #[test]

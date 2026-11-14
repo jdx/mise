@@ -57,6 +57,15 @@ impl TaskLock {
                 "lock name {name:?} cannot contain a comma or a control character"
             ));
         }
+        if let Some((_, tail)) = name.rsplit_once(':')
+            && !tail.is_empty()
+            && tail.bytes().all(|b| b.is_ascii_digit())
+        {
+            return Err(format!(
+                "lock name {name:?} cannot end in `:` and a number: mise names the slots of a \
+                 lock that way"
+            ));
+        }
         Ok(())
     }
 }
@@ -253,6 +262,15 @@ mod tests {
         assert!(parse("{ name = \"cpu\", count = \"2\" }").is_err());
         assert!(parse("{ name = \"a,b\", count = 2 }").is_err());
         assert!(parse("{ name = \"cpu\", slots = 2 }").is_err());
+    }
+
+    #[test]
+    fn rejects_names_that_look_like_slots() {
+        assert!(parse("\"cpu:1\"").is_err());
+        assert!(parse("{ name = \"cpu:12\", count = 2 }").is_err());
+        assert!(parse("\"cpu:x\"").is_ok());
+        assert!(parse("\"cpu:\"").is_ok());
+        assert!(parse("\"cpu0\"").is_ok());
     }
 
     #[test]

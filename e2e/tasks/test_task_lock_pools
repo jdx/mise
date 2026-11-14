@@ -4,7 +4,7 @@
 
 export LOCK_LOG="$PWD/running.log"
 export LOCK_SIGNALS="$PWD/signals"
-mkdir -p "$LOCK_SIGNALS" a b c d
+mkdir -p "$LOCK_SIGNALS" a b c d e
 
 cat <<'EOF2' >a/mise.toml
 [settings.task.lock_pools]
@@ -58,6 +58,14 @@ lock = { name = "pair", count = 1 }
 run = 'mkdir "$LOCK_SIGNALS/w3"; ls "$LOCK_SIGNALS" | grep -c "^w" >>"$LOCK_LOG"; sleep 1; rmdir "$LOCK_SIGNALS/w3"'
 EOF2
 
+# schema: invalid
+cat <<'EOF2' >e/mise.toml
+[tasks.bad]
+lock = "cpu:1"
+run = "true"
+EOF2
+
+# schema: invalid
 cat <<'EOF2' >d/mise.toml
 [tasks.bad]
 lock = { name = "cpu", count = 0 }
@@ -78,6 +86,7 @@ assert_contains "cd c && timeout 30 mise tasks info big" "cpu (2 of 4 slots)"
 assert_contains "cd c && timeout 30 mise tasks info too-big" "cpu (4 of 4 slots)"
 assert_fail_contains "cd b && timeout 30 mise run ok" "task.lock_pools.cpu must be a whole number"
 assert_fail_contains "cd d && timeout 30 mise tasks info bad" "lock count must be a positive whole number"
+assert_fail_contains "cd e && timeout 30 mise tasks info bad" "cannot end in"
 
 (cd a && mise run hold) >a.log 2>&1 &
 a_pid=$!

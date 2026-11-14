@@ -70,7 +70,7 @@ pub enum TaskLockEntry {
 
 /// a lock name shared by every task on this machine that names it
 #[derive(JsonSchema)]
-#[schemars(extend("pattern" = "^[^,]*\\S[^,]*$"))]
+#[schemars(extend("pattern" = "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"))]
 pub struct TaskLockName(pub String);
 
 #[derive(JsonSchema)]

@@ -4465,7 +4465,7 @@
                 {
                   "type": "string",
                   "description": "a lock name shared by every task on this machine that names it; the task holds one of its slots",
-                  "pattern": "^[^,]*\\S[^,]*$"
+                  "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
                 },
                 {
                   "type": "object",
@@ -4475,7 +4475,7 @@
                     "name": {
                       "type": "string",
                       "description": "a lock name shared by every task on this machine that names it",
-                      "pattern": "^[^,]*\\S[^,]*$"
+                      "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
                     },
                     "count": {
                       "type": "integer",
@@ -4496,7 +4496,7 @@
                   {
                     "type": "string",
                     "description": "a lock name shared by every task on this machine that names it; the task holds one of its slots",
-                    "pattern": "^[^,]*\\S[^,]*$"
+                    "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
                   },
                   {
                     "type": "object",
@@ -4505,7 +4505,7 @@
                       "name": {
                         "type": "string",
                         "description": "a lock name shared by every task on this machine that names it",
-                        "pattern": "^[^,]*\\S[^,]*$"
+                        "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
                       },
                       "count": {
                         "type": "integer",

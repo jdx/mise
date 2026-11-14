@@ -367,6 +367,11 @@ npm run build
 run = "rm -rf dist"
 run_windows = "rmdir /s /q dist"
 `,
+  "tasks.<name>.lock.name": toml`
+[tasks.build]
+run = "cargo build"
+lock = [{ name = "cpu", count = 2 }]
+`,
   "tasks.<name>.description": toml`
 [tasks.build]
 description = "Compile the project"
