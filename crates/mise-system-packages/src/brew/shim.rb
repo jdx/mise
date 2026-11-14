@@ -905,6 +905,17 @@ class Formula
     block ? Dir.chdir(path.to_s, &block) : path
   end
 
+  def with_env(env)
+    values = env.to_h { |key, value| [key.to_s, value.nil? ? nil : value.to_s] }
+    previous = values.to_h { |key, _value| [key, ENV[key]] }
+    begin
+      ENV.update(values)
+      yield
+    ensure
+      ENV.update(previous)
+    end
+  end
+
   def loader_path = OS.mac? ? "@loader_path" : "$ORIGIN"
 
   def rpath(source: bin, target: lib)

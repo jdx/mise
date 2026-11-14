@@ -657,6 +657,74 @@ end
         Ok(())
     }
 
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_with_env_scopes_values_and_restores_after_errors() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let formula_rb = tmp.path().join("example.rb");
+        let buildpath = tmp.path().join("build");
+        mise_util::file::create_dir_all(&buildpath)?;
+        mise_util::file::write(&shim, SHIM_RB)?;
+        mise_util::file::write(
+            &formula_rb,
+            r#"class Example < Formula
+  def install
+    ENV["MISE_SCOPE_EXISTING"] = "original"
+    ENV.delete("MISE_SCOPE_NEW")
+    result = with_env(MISE_SCOPE_EXISTING: nil, MISE_SCOPE_NEW: buildpath) do
+      raise "nil must unset" if ENV.key?("MISE_SCOPE_EXISTING")
+      raise "Pathname value" unless ENV["MISE_SCOPE_NEW"] == buildpath.to_s
+      with_env("MISE_SCOPE_NEW" => 42) do
+        raise "nested value" unless ENV["MISE_SCOPE_NEW"] == "42"
+      end
+      raise "nested restore" unless ENV["MISE_SCOPE_NEW"] == buildpath.to_s
+      :result
+    end
+    raise "block result" unless result == :result
+    raise "restore existing" unless ENV["MISE_SCOPE_EXISTING"] == "original"
+    raise "remove new" if ENV.key?("MISE_SCOPE_NEW")
+    begin
+      with_env("MISE_SCOPE_EXISTING" => "temporary", MISE_SCOPE_NEW: "new") do
+        raise "expected failure"
+      end
+    rescue RuntimeError => e
+      raise unless e.message == "expected failure"
+    end
+    raise "restore after error" unless ENV["MISE_SCOPE_EXISTING"] == "original"
+    raise "remove after error" if ENV.key?("MISE_SCOPE_NEW")
+    (prefix/"passed").write("ok")
+  end
+end
+"#,
+        )?;
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CELLAR", tmp.path().join("Cellar"))
+            .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            mise_util::file::read_to_string(tmp.path().join("Cellar/example/1.0.0/passed"))?,
+            "ok"
+        );
+        Ok(())
+    }
+
     /// `install_symlink` resolves a relative source against the receiving
     /// directory, as Homebrew does. Without that, `relative_path_from` is
     /// handed a relative path and an absolute base and raises "different
