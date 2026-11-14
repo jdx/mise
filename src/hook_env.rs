@@ -691,6 +691,60 @@ pub(crate) fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result
 /// editor swap files), and each one would otherwise force a full run at every
 /// prompt. Config subdirectories such as `.config/mise` are still compared by
 /// directory mtime, since a file added to one changes that directory's mtime.
+/// Paths under the literal directory `dir` that match `pattern`, like
+/// `glob::glob(dir/pattern)` with `dir` escaped. `glob` re-stats every prefix
+/// from `/` on each call, so this walks the pattern's components itself and
+/// only reads the directories a wildcard applies to.
+fn glob_in_dir(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+    let mut current = vec![dir.to_path_buf()];
+    // `components` splits on the platform's separators, so a Windows pattern
+    // with backslashes walks the same way as one with slashes.
+    for component in Path::new(pattern).components() {
+        let component = match component {
+            std::path::Component::Normal(name) => name.to_string_lossy(),
+            std::path::Component::CurDir => continue,
+            _ => {
+                // `..` or a root/prefix: leave it to glob.
+                let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
+                return glob::glob(&Path::new(&escaped_dir).join(pattern).to_string_lossy())
+                    .map(|paths| paths.flatten().collect())
+                    .unwrap_or_default();
+            }
+        };
+        let component = component.as_ref();
+        if component.contains("**") {
+            // Recursive patterns are rare here; let glob handle them.
+            let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
+            return glob::glob(&Path::new(&escaped_dir).join(pattern).to_string_lossy())
+                .map(|paths| paths.flatten().collect())
+                .unwrap_or_default();
+        }
+        if component.contains(['*', '?', '[']) {
+            let Ok(matcher) = glob::Pattern::new(component) else {
+                return vec![];
+            };
+            let mut next = vec![];
+            for base in &current {
+                let Ok(entries) = std::fs::read_dir(base) else {
+                    continue;
+                };
+                for entry in entries.flatten() {
+                    if matcher.matches(&entry.file_name().to_string_lossy()) {
+                        next.push(entry.path());
+                    }
+                }
+            }
+            current = next;
+        } else {
+            for base in &mut current {
+                base.push(component);
+            }
+            current.retain(|p| p.symlink_metadata().is_ok() || p.exists());
+        }
+    }
+    current
+}
+
 fn config_search_dir_mtimes() -> Vec<SystemTime> {
     let mut mtimes = Vec::new();
     if let Some(cwd) = &*dirs::CWD
@@ -725,10 +779,7 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
                 // The names are glob patterns (literal names are glob-escaped),
                 // so a name with metacharacters is matched, not statted.
                 let matches: Vec<PathBuf> = if name.contains(['*', '?', '[']) {
-                    let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
-                    glob::glob(&Path::new(&escaped_dir).join(name).to_string_lossy())
-                        .map(|paths| paths.flatten().collect())
-                        .unwrap_or_default()
+                    glob_in_dir(&dir, name)
                 } else {
                     vec![dir.join(name)]
                 };
@@ -745,11 +796,7 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
                 // `conf.d/*` names the folder fragments: a file added to one
                 // changes that folder's mtime, not conf.d's.
                 let check_dirs = if subdir.contains(['*', '?', '[']) {
-                    // `dir` is a literal directory: escape its glob metacharacters.
-                    let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
-                    glob::glob(&Path::new(&escaped_dir).join(subdir).to_string_lossy())
-                        .map(|paths| paths.flatten().collect())
-                        .unwrap_or_default()
+                    glob_in_dir(&dir, subdir)
                 } else {
                     vec![dir.join(subdir)]
                 };
@@ -1116,6 +1163,47 @@ pub fn build_alias_commands(
 mod tests {
     use super::{FAST_PATH_FORCED_FULL_RUN, force_full_run, has_preclap_logging_flag};
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn glob_in_dir_matches_like_glob_with_an_escaped_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("we[ir]d dir");
+        for sub in ["conf.d/a", "conf.d/b"] {
+            std::fs::create_dir_all(dir.join(".config/mise").join(sub)).unwrap();
+        }
+        std::fs::write(dir.join(".config/mise/conf.d/c.toml"), "").unwrap();
+        for pattern in [
+            ".config/mise/conf.d/*",
+            ".config/mise/conf.d/*/mise.toml",
+            ".config/mise/conf.d/*.toml",
+            ".config/nothing/*",
+        ] {
+            let escaped = glob::Pattern::escape(&dir.to_string_lossy());
+            let mut expected: Vec<_> = glob::glob(
+                &std::path::Path::new(&escaped)
+                    .join(pattern)
+                    .to_string_lossy(),
+            )
+            .unwrap()
+            .flatten()
+            .collect();
+            let mut actual = super::glob_in_dir(&dir, pattern);
+            expected.sort();
+            actual.sort();
+            assert_eq!(actual, expected, "{pattern}");
+        }
+        assert_eq!(super::glob_in_dir(&dir, ".config/mise/conf.d/*").len(), 3);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn glob_in_dir_walks_backslash_patterns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::create_dir_all(dir.join("config[dev]").join("nested")).unwrap();
+        let found = super::glob_in_dir(dir, "config[[]dev]\\nested");
+        assert_eq!(found, vec![dir.join("config[dev]").join("nested")]);
+    }
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()

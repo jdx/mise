@@ -1201,14 +1201,20 @@ pub(crate) fn platforms_disjoint<S: AsRef<str>>(a: &[S], b: &[S]) -> bool {
 /// emulation. Without it the registry drops a backend here, before aqua is ever
 /// asked whether it supports the platform, and aqua would have said yes.
 fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
+    if platforms.is_empty() {
+        return true;
+    }
     let os = settings.os();
     let arch = settings.arch();
-    let platform = format!("{os}-{arch}");
 
-    platforms.is_empty()
-        || platforms.contains(&os)
+    platforms.contains(&os)
         || platforms.contains(&arch)
-        || platforms.contains(&platform.as_str())
+        // `{os}-{arch}`, compared without building the string.
+        || platforms.iter().any(|p| {
+            p.strip_prefix(os)
+                .and_then(|rest| rest.strip_prefix('-'))
+                .is_some_and(|rest| rest == arch)
+        })
         || (os == "windows"
             && arch == "arm64"
             && (platforms.contains(&"x64") || platforms.contains(&"windows-x64")))
