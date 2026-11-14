@@ -1098,11 +1098,14 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
-                    for key in ["permissions", "relative", "dot_prefix", "group", "depends"] {
-                        if table.contains_key(key) {
-                            bail!(
-                                "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
-                            );
+                    // a merge is checked against its own, narrower list below
+                    if !table.contains_key("merge") {
+                        for key in crate::edits::WHOLE_FILE_KEYS {
+                            if table.contains_key(key) {
+                                bail!(
+                                    "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
+                                );
+                            }
                         }
                     }
                     if table.contains_key("merge") {
@@ -1585,6 +1588,15 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
         // a merge is an edit of a structured file, whatever else the table says;
         // the edit parser accepts it or says why not
         toml::Value::Table(table) if table.contains_key("merge") => return None,
+        // a block or line edit is never a whole-file entry; the edit parser
+        // refuses the whole-file keys it carries instead of this one claiming it
+        toml::Value::Table(table)
+            if crate::edits::EDIT_KEYS
+                .iter()
+                .any(|key| table.contains_key(*key)) =>
+        {
+            return None;
+        }
         toml::Value::Table(table)
             if table.is_empty()
                 || table.contains_key("mode")
@@ -8843,6 +8855,15 @@ source = "oldrc""#,
 
     /// `format` belongs to a merge; on a whole-file entry it would be dropped
     /// silently and the file linked or copied over the one being merged into.
+    #[test]
+    fn a_block_or_line_edit_with_variants_is_not_a_whole_file_entry() {
+        for edit in ["block = \"text\"", "line = \"text\""] {
+            let value: toml::Value =
+                toml::from_str(&format!("{edit}\nvariants = [{{ profile = \"work\" }}]")).unwrap();
+            assert!(file_entry_from_toml("~/.config/t.conf/id", value).is_none());
+        }
+    }
+
     #[test]
     fn whole_file_entries_reject_format() {
         for entry in [

@@ -69,8 +69,9 @@ reads the target's path under
 
 The table shows which whole-file keys each kind of entry accepts. An entry
 with `content` is an inline-content entry, and one with only `permissions`
-(no `source`, `content`, or `mode`) is a permissions-only entry. Every entry
-also accepts `enabled`.
+(no `source`, `content`, or `mode`) is a permissions-only entry. Every whole-file entry also accepts `enabled`;
+block, line, and merge edits do not, and mise warns and ignores an edit that sets
+it.
 
 | Entry            | Accepts                                                                                                                                                             | Accepted, no effect              |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |

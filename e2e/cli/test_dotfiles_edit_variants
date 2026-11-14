@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# variants only selects among whole-file entries. On a block or line edit it
+# used to be dropped without a word, and when a selector matched, the entry was
+# also read as a whole-file entry whose source did not exist and broke the apply.
+
+cat <<EOF2 >mise.toml
+[dotfiles]
+"$PWD/out/t.conf/id" = { block = "text", variants = [{ profile = "work" }] }
+EOF2
+
+assert_contains "mise dot status 2>&1" "variants applies to whole-file entries, not block or line edits"
+assert_not_contains "mise dot status 2>&1" "block:id"
+assert_contains "MISE_ENV=work mise dot status 2>&1" "variants applies to whole-file entries, not block or line edits"
+assert_succeed "MISE_ENV=work mise dot apply --yes"
+assert "test -e out/t.conf || echo absent" "absent"
