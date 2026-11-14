@@ -1096,7 +1096,7 @@ impl TaskExecutor {
         // command, so a skipped or restored task never waits, and held until every run entry
         // ends.
         let mut task_env = task_env;
-        let lock_keys = task_lock::requested(task);
+        let lock_keys = task_lock::requested(task)?;
         let task_locks = if lock_keys.is_empty() || (task.run().is_empty() && task_file.is_none()) {
             None
         } else if self.dry_run {
@@ -1110,11 +1110,7 @@ impl TaskExecutor {
             None
         } else {
             let inherited = task_lock::inherited(&env);
-            let to_take: Vec<_> = lock_keys
-                .iter()
-                .filter(|key| !inherited.contains(key.id()))
-                .cloned()
-                .collect();
+            let to_take = task_lock::still_needed(&lock_keys, &inherited);
             task_lock::check_nested_order(task, &inherited, &to_take)?;
             // A task that takes locks takes its `--jobs` permit and its hold on the terminal
             // (write for an interactive task, read otherwise) with them, all or nothing, and
@@ -1193,7 +1189,7 @@ impl TaskExecutor {
                     confirm_guard = Some(acquire_runtime_lock(task.interactive).await);
                 }
             };
-            let locks = task_lock::exported(&inherited, &lock_keys);
+            let locks = task_lock::exported(&inherited, &held);
             env.insert(task_lock::LOCKS_ENV.to_string(), locks.clone());
             // Tasks a run entry injects inherit `task_env`, so they see the locks this task holds.
             task_env.push((task_lock::LOCKS_ENV.to_string(), locks));

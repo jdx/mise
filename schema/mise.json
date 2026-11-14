@@ -3490,6 +3490,13 @@
               "description": "How many recent runs of each task `mise tasks history` keeps.",
               "type": "integer"
             },
+            "lock_pools": {
+              "description": "How many slots each named task `lock` has, for locks that several runs hold at once.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
             "lock_timeout": {
               "description": "How long a task waits for a lock another run holds before it fails.",
               "type": "string"
@@ -4453,17 +4460,63 @@
               "description": "`true` lets one run of this task at a time across every worktree of its repository; `false` takes no lock"
             },
             {
-              "type": "string",
-              "description": "a lock name shared by every task on this machine that names it",
-              "pattern": "^[^,]*\\S[^,]*$"
+              "description": "a lock shared by every task on this machine that names it",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "a lock name shared by every task on this machine that names it; the task holds one of its slots",
+                  "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
+                },
+                {
+                  "type": "object",
+                  "description": "a lock shared by every task on this machine that names it, of which the task holds `count` slots",
+                  "required": ["name"],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "a lock name shared by every task on this machine that names it",
+                      "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "description": "how many of the lock's slots the task holds while it runs; `task.lock_pools` sets how many slots the lock has, one unless it says more, and a count above that is lowered to it",
+                      "minimum": 1
+                    }
+                  },
+                  "unevaluatedProperties": false
+                }
+              ]
             },
             {
               "type": "array",
-              "description": "lock names shared by every task on this machine that names them, taken in sorted order",
+              "description": "locks shared by every task on this machine that names them, taken in sorted order",
               "items": {
-                "type": "string",
-                "description": "a lock name shared by every task on this machine that names it",
-                "pattern": "^[^,]*\\S[^,]*$"
+                "description": "a lock shared by every task on this machine that names it",
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "a lock name shared by every task on this machine that names it; the task holds one of its slots",
+                    "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
+                  },
+                  {
+                    "type": "object",
+                    "description": "a lock shared by every task on this machine that names it, of which the task holds `count` slots",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "a lock name shared by every task on this machine that names it",
+                        "pattern": "^(?![^,]*:\\d+$)[^,]*\\S[^,]*$"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "description": "how many of the lock's slots the task holds while it runs; `task.lock_pools` sets how many slots the lock has, one unless it says more, and a count above that is lowered to it",
+                        "minimum": 1
+                      }
+                    },
+                    "required": ["name"],
+                    "unevaluatedProperties": false
+                  }
+                ]
               }
             }
           ]

@@ -7,6 +7,12 @@
 //! holder dies and nothing ever goes stale. Lock files are never deleted: a waiter that had
 //! opened a removed file would lock it while a newcomer locked its replacement.
 //!
+//! A named lock is a pool of slots, one unless `task.lock_pools` gives it more, each its own
+//! file. A run takes `count` of them (`lock = { name = "cpu", count = 4 }`), all or none: it
+//! tries the slots under a short admission lock for its pool, and gives back any it took if
+//! fewer than `count` are free, so two waiters never each hold part of what the other needs.
+//! Slot 0 is the file a plain `lock = "name"` always took, and slot N is `name:N`.
+//!
 //! The holder writes who it is beside the lock, for the message a waiter prints. A record
 //! whose lock can be taken is left over and is never shown.
 //!
@@ -22,6 +28,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::config::Settings;
 use crate::dirs;
 use crate::file::display_path;
 use crate::task::{Task, TaskLock};
@@ -41,18 +48,37 @@ pub(crate) struct LockKey {
     id: String,
     /// What messages call it.
     display: String,
+    /// How many of the pool's slots the task holds.
+    count: u32,
+    /// How many slots the pool has.
+    capacity: u32,
+    /// Slots a parent task already holds, which this one must not try again.
+    skip: BTreeSet<u32>,
 }
 
 impl LockKey {
-    pub(crate) fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn named(name: &str) -> Self {
+    /// A pool of `capacity` slots, `count` of them wanted. A count above the capacity is
+    /// lowered to it.
+    fn pool(name: &str, count: u32, capacity: u32) -> Self {
+        let capacity = capacity.max(1);
+        let count = count.clamp(1, capacity);
+        let display = if capacity == 1 {
+            name.to_string()
+        } else {
+            format!("{name} ({count} of {capacity} slots)")
+        };
         Self {
             id: name.to_string(),
-            display: name.to_string(),
+            display,
+            count,
+            capacity,
+            skip: BTreeSet::new(),
         }
+    }
+
+    #[cfg(test)]
+    fn named(name: &str) -> Self {
+        Self::pool(name, 1, 1)
     }
 
     /// `lock = true`: the task's name in its repository. Every worktree of a repository shares
@@ -75,12 +101,29 @@ impl LockKey {
         Self {
             id,
             display: format!("{} (this repository)", task.name),
+            count: 1,
+            capacity: 1,
+            skip: BTreeSet::new(),
         }
     }
 
-    fn path(&self, ext: &str) -> PathBuf {
-        let file = &mise_util::hash::hash_sha256_to_str(&self.id)[..16];
+    /// What `MISE_TASK_LOCKS` calls slot `n`.
+    fn slot_id(&self, n: u32) -> String {
+        if n == 0 {
+            self.id.clone()
+        } else {
+            format!("{}:{n}", self.id)
+        }
+    }
+
+    fn slot_path(&self, n: u32, ext: &str) -> PathBuf {
+        let file = &mise_util::hash::hash_sha256_to_str(&self.slot_id(n))[..16];
         locks_dir().join(format!("{file}.{ext}"))
+    }
+
+    /// The lock that admits one run at a time to take several slots.
+    fn admission_path(&self) -> PathBuf {
+        self.slot_path(0, "admit")
     }
 }
 
@@ -113,27 +156,77 @@ fn repository_of(dir: &Path) -> PathBuf {
     dir
 }
 
-/// The locks `task` asks for, sorted and without repeats.
-pub(crate) fn requested(task: &Task) -> Vec<LockKey> {
+/// How many slots the pool `name` has: one unless `task.lock_pools` says otherwise.
+fn capacity_of(name: &str) -> Result<u32> {
+    let Some(value) = Settings::get()
+        .task
+        .lock_pools
+        .as_ref()
+        .and_then(|pools| pools.get(name).cloned())
+    else {
+        return Ok(1);
+    };
+    match value.trim().parse::<u32>() {
+        Ok(n) if (1..=MAX_SLOTS).contains(&n) => Ok(n),
+        _ => bail!(
+            "task.lock_pools.{name} must be a whole number from 1 to {MAX_SLOTS}, not {value:?}"
+        ),
+    }
+}
+
+/// More slots than any machine has cores, so a typo does not make a thousand lock files.
+const MAX_SLOTS: u32 = 4096;
+
+/// The locks `task` asks for, sorted and without repeats. A name listed twice takes the larger
+/// count.
+pub(crate) fn requested(task: &Task) -> Result<Vec<LockKey>> {
     let mut keys = match &task.lock {
         None | Some(TaskLock::Off) => vec![],
         Some(TaskLock::Task) => vec![LockKey::this_task(task)],
-        Some(TaskLock::Names(names)) => names.iter().map(|n| LockKey::named(n)).collect(),
+        Some(TaskLock::Names(locks)) => locks
+            .iter()
+            .map(|l| Ok(LockKey::pool(&l.name, l.count.get(), capacity_of(&l.name)?)))
+            .collect::<Result<Vec<_>>>()?,
     };
     keys.sort();
-    keys.dedup();
-    keys
+    keys.dedup_by(|later, first| {
+        let same = later.id == first.id;
+        if same && later.count > first.count {
+            *first = later.clone();
+        }
+        same
+    });
+    Ok(keys)
 }
 
 /// How `mise tasks info` and `--dry-run` describe a task's locks.
 pub fn describe(task: &Task) -> Option<String> {
-    let keys = requested(task);
+    let keys = requested(task).ok()?;
     (!keys.is_empty()).then(|| {
         keys.iter()
             .map(|k| k.display.as_str())
             .collect::<Vec<_>>()
             .join(", ")
     })
+}
+
+/// What `keys` still need once the slots a parent task holds are counted: a key the parent
+/// covers is dropped, and one it covers in part keeps the slots it holds in `skip`.
+pub(crate) fn still_needed(keys: &[LockKey], inherited: &BTreeSet<String>) -> Vec<LockKey> {
+    keys.iter()
+        .filter_map(|key| {
+            let held: BTreeSet<u32> = (0..key.capacity)
+                .filter(|n| inherited.contains(&key.slot_id(*n)))
+                .collect();
+            if held.len() as u32 >= key.count {
+                return None;
+            }
+            let mut key = key.clone();
+            key.count -= held.len() as u32;
+            key.skip = held;
+            Some(key)
+        })
+        .collect()
 }
 
 /// The locks a parent task already holds for this one.
@@ -158,10 +251,21 @@ pub(crate) fn check_nested_order(
     inherited: &BTreeSet<String>,
     to_take: &[LockKey],
 ) -> Result<()> {
-    let (Some(held), Some(first)) = (inherited.last(), to_take.first()) else {
+    if let Some(key) = to_take.iter().find(|key| !key.skip.is_empty()) {
+        bail!(
+            "task {}: cannot take more of lock {} while a parent task holds some of it: two \
+             parents could each wait for the slots the other holds. Raise the `count` on the \
+             parent task's `lock`",
+            task.name,
+            key.display
+        );
+    }
+    // Compare lock names: an inherited id may be a slot, `name:N`, which sorts after `name`.
+    let held = inherited.iter().map(|id| pool_of(id)).max();
+    let (Some(held), Some(first)) = (held, to_take.first()) else {
         return Ok(());
     };
-    if first.id.as_str() < held.as_str() {
+    if first.id.as_str() < held {
         bail!(
             "task {}: cannot take lock {} while a parent task holds {held}: a nested task can only \
              add locks that sort after the ones it inherits. Add {} to the parent task's `lock`",
@@ -173,10 +277,25 @@ pub(crate) fn check_nested_order(
     Ok(())
 }
 
-/// What `MISE_TASK_LOCKS` says once this task holds `keys` on top of what it inherited.
-pub(crate) fn exported(inherited: &BTreeSet<String>, keys: &[LockKey]) -> String {
+/// The lock a `MISE_TASK_LOCKS` id belongs to: the id without a slot suffix (`name:N`).
+fn pool_of(id: &str) -> &str {
+    match id.rsplit_once(':') {
+        // a slot number is below `MAX_SLOTS`; the 16 digits a `lock = true` hash can be are not
+        Some((name, n))
+            if !n.starts_with('0')
+                && n.bytes().all(|b| b.is_ascii_digit())
+                && n.parse::<u32>().is_ok_and(|n| (1..MAX_SLOTS).contains(&n)) =>
+        {
+            name
+        }
+        _ => id,
+    }
+}
+
+/// What `MISE_TASK_LOCKS` says once this task holds `held` on top of what it inherited.
+pub(crate) fn exported(inherited: &BTreeSet<String>, held: &HeldLocks) -> String {
     let mut all = inherited.clone();
-    all.extend(keys.iter().map(|k| k.id.clone()));
+    all.extend(held.slot_ids());
     all.into_iter().collect::<Vec<_>>().join(",")
 }
 
@@ -220,7 +339,13 @@ impl HolderRecord {
 
 /// Locks this task holds. Dropping it removes the holder records, then releases the locks.
 pub(crate) struct HeldLocks {
-    locks: Vec<(LockKey, fslock::LockFile)>,
+    locks: Vec<HeldPool>,
+}
+
+/// The slots of one lock a task holds.
+struct HeldPool {
+    key: LockKey,
+    slots: Vec<(u32, fslock::LockFile)>,
 }
 
 impl HeldLocks {
@@ -228,13 +353,23 @@ impl HeldLocks {
     pub(crate) fn is_empty(&self) -> bool {
         self.locks.is_empty()
     }
+
+    /// What `MISE_TASK_LOCKS` calls each slot held.
+    fn slot_ids(&self) -> Vec<String> {
+        self.locks
+            .iter()
+            .flat_map(|pool| pool.slots.iter().map(|(n, _)| pool.key.slot_id(*n)))
+            .collect()
+    }
 }
 
 impl Drop for HeldLocks {
     fn drop(&mut self) {
         // The record goes first, while the lock still keeps the next holder from writing its own.
-        for (key, _) in &self.locks {
-            let _ = std::fs::remove_file(key.path("json"));
+        for pool in &self.locks {
+            for (n, _) in &pool.slots {
+                let _ = std::fs::remove_file(pool.key.slot_path(*n, "json"));
+            }
         }
     }
 }
@@ -243,8 +378,8 @@ impl Drop for HeldLocks {
 pub(crate) struct LockAcquisition<'a> {
     task: &'a Task,
     pending: std::vec::IntoIter<LockKey>,
-    /// The lock this acquisition is waiting for, already opened.
-    current: Option<(LockKey, fslock::LockFile)>,
+    /// The lock this acquisition is waiting for.
+    current: Option<LockKey>,
     held: HeldLocks,
 }
 
@@ -261,49 +396,99 @@ impl<'a> LockAcquisition<'a> {
         })
     }
 
+    fn open(&self, path: &Path) -> Result<fslock::LockFile> {
+        fslock::LockFile::open(path).wrap_err_with(|| {
+            format!(
+                "task {}: cannot open lock file {}",
+                self.task.name,
+                path.display()
+            )
+        })
+    }
+
+    /// Takes `key.count` free slots, or none. Several slots are tried under the pool's
+    /// admission lock, which is held only for this attempt and never while waiting.
+    fn try_take_slots(&self, key: &LockKey) -> Result<Option<Vec<(u32, fslock::LockFile)>>> {
+        let fail = |err: std::io::Error| {
+            eyre::Report::new(err).wrap_err(format!(
+                "task {}: cannot take lock {}",
+                self.task.name, key.display
+            ))
+        };
+        let mut admission = if key.count > 1 {
+            let mut file = self.open(&key.admission_path())?;
+            // Admission is held for one pass over the slots, so a busy one clears in moments:
+            // wait a few milliseconds for it, so a miss really means the slots are taken.
+            let mut tries = 0;
+            while !file.try_lock().map_err(fail)? {
+                tries += 1;
+                if tries > 20 {
+                    return Ok(None);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            Some(file)
+        } else {
+            None
+        };
+        let mut taken = vec![];
+        for n in (0..key.capacity).filter(|n| !key.skip.contains(n)) {
+            let mut file = self.open(&key.slot_path(n, "lock"))?;
+            if file.try_lock().map_err(fail)? {
+                taken.push((n, file));
+                if taken.len() as u32 == key.count {
+                    break;
+                }
+            }
+        }
+        if let Some(file) = admission.as_mut() {
+            let _ = file.unlock();
+        }
+        Ok((taken.len() as u32 == key.count).then_some(taken))
+    }
+
     /// Takes every lock that is free, in order, and stops at the first one that is not.
     /// `true` once every lock is held.
     pub(crate) fn try_take(&mut self) -> Result<bool> {
         loop {
-            let (key, mut file) = match self.current.take() {
-                Some(current) => current,
-                None => match self.pending.next() {
-                    Some(key) => {
-                        let path = key.path("lock");
-                        let file = fslock::LockFile::open(&path).wrap_err_with(|| {
-                            format!(
-                                "task {}: cannot open lock file {}",
-                                self.task.name,
-                                path.display()
-                            )
-                        })?;
-                        (key, file)
-                    }
-                    None => return Ok(true),
-                },
+            let Some(key) = self.current.take().or_else(|| self.pending.next()) else {
+                return Ok(true);
             };
-            if !file.try_lock().wrap_err_with(|| {
-                format!("task {}: cannot take lock {}", self.task.name, key.display)
-            })? {
-                self.current = Some((key, file));
+            let Some(slots) = self.try_take_slots(&key)? else {
+                self.current = Some(key);
                 return Ok(false);
+            };
+            for (n, _) in &slots {
+                self.write_record(&key, *n);
             }
-            self.write_record(&key);
-            self.held.locks.push((key, file));
+            self.held.locks.push(HeldPool { key, slots });
         }
     }
 
-    /// The lock this acquisition waits for and who holds it, if the holder said.
+    /// The lock this acquisition waits for and who holds it, if the holders said.
     pub(crate) fn waiting_for(&self) -> String {
-        let Some((key, _)) = &self.current else {
+        let Some(key) = &self.current else {
             return String::new();
         };
-        let holder = std::fs::read_to_string(key.path("json"))
-            .ok()
-            .and_then(|text| serde_json::from_str::<HolderRecord>(&text).ok())
-            .map(|record| format!(", {}", record.describe()))
-            .unwrap_or_default();
-        format!("lock {}{holder}", key.display)
+        let mut holders = vec![];
+        for n in (0..key.capacity).filter(|n| !key.skip.contains(n)) {
+            // A record counts only while its slot is held.
+            let held = match fslock::LockFile::open(&key.slot_path(n, "lock")) {
+                Ok(mut file) => !file.try_lock().unwrap_or(true),
+                Err(_) => false,
+            };
+            if !held {
+                continue;
+            }
+            if let Some(record) = std::fs::read_to_string(key.slot_path(n, "json"))
+                .ok()
+                .and_then(|text| serde_json::from_str::<HolderRecord>(&text).ok())
+            {
+                holders.push(record.describe());
+            }
+        }
+        let holders: String = holders.iter().map(|h| format!(", {h}")).collect();
+        format!("lock {}{holders}", key.display)
     }
 
     /// Waits until every lock is held. `waited` is the time this task already spent waiting
@@ -362,7 +547,7 @@ impl<'a> LockAcquisition<'a> {
             .held
             .locks
             .iter()
-            .map(|(k, _)| k.display.as_str())
+            .map(|pool| pool.key.display.as_str())
             .collect::<Vec<_>>();
         format!(
             "{} {}",
@@ -371,7 +556,7 @@ impl<'a> LockAcquisition<'a> {
         )
     }
 
-    fn write_record(&self, key: &LockKey) {
+    fn write_record(&self, key: &LockKey, slot: u32) {
         let record = HolderRecord {
             pid: std::process::id(),
             task: self.task.name.clone(),
@@ -383,7 +568,7 @@ impl<'a> LockAcquisition<'a> {
         };
         // Only for the message other runs print, so a failure here changes nothing else.
         if let Ok(json) = serde_json::to_string(&record)
-            && let Err(err) = crate::file::write(key.path("json"), json)
+            && let Err(err) = crate::file::write(key.slot_path(slot, "json"), json)
         {
             debug!("task {}: cannot record lock holder: {err}", self.task.name);
         }
@@ -452,7 +637,7 @@ mod tests {
         };
         let key = LockKey::named(&format!("budget-{}", std::process::id()));
         std::fs::create_dir_all(locks_dir()).unwrap();
-        let mut holder = fslock::LockFile::open(&key.path("lock")).unwrap();
+        let mut holder = fslock::LockFile::open(&key.slot_path(0, "lock")).unwrap();
         assert!(holder.try_lock().unwrap());
 
         let mut acquisition = LockAcquisition::new(&task, vec![key]).unwrap();
@@ -494,16 +679,92 @@ mod tests {
     }
 
     #[test]
-    fn inherited_locks_round_trip_through_the_env() {
-        let keys = vec![LockKey::named("b"), LockKey::named("a")];
-        let parent: BTreeSet<String> = ["c".to_string()].into();
-        let value = exported(&parent, &keys);
-        assert_eq!(value, "a,b,c");
-        let env = BTreeMap::from([(LOCKS_ENV.to_string(), value)]);
+    fn inherited_locks_are_read_from_the_env() {
+        let env = BTreeMap::from([(LOCKS_ENV.to_string(), "a,b,c:1".to_string())]);
         assert_eq!(
             inherited(&env),
-            ["a", "b", "c"].map(String::from).into_iter().collect()
+            ["a", "b", "c:1"].map(String::from).into_iter().collect()
         );
         assert!(inherited(&BTreeMap::new()).is_empty());
+    }
+
+    #[test]
+    fn a_slot_id_belongs_to_its_lock() {
+        assert_eq!(pool_of("cpu:1"), "cpu");
+        assert_eq!(pool_of("cpu"), "cpu");
+        assert_eq!(pool_of("cpu0"), "cpu0");
+        assert_eq!(pool_of("a:b"), "a:b");
+        assert_eq!(pool_of("cpu:01"), "cpu:01");
+        assert_eq!(pool_of("cpu:0"), "cpu:0");
+        assert_eq!(pool_of("cpu:4095"), "cpu");
+        assert_eq!(pool_of("cpu:4096"), "cpu:4096");
+        assert_eq!(pool_of("task:1234567890123456"), "task:1234567890123456");
+    }
+
+    #[test]
+    fn a_count_above_the_pool_is_lowered_to_it() {
+        let key = LockKey::pool("cpu", 9, 4);
+        assert_eq!((key.count, key.capacity), (4, 4));
+        let key = LockKey::pool("cpu", 3, 1);
+        assert_eq!((key.count, key.capacity), (1, 1));
+        assert_eq!(key.display, "cpu");
+        assert_eq!(LockKey::pool("cpu", 2, 8).display, "cpu (2 of 8 slots)");
+    }
+
+    #[test]
+    fn slots_are_named_after_the_lock() {
+        let key = LockKey::pool("cpu", 1, 4);
+        assert_eq!(key.slot_id(0), "cpu");
+        assert_eq!(key.slot_id(2), "cpu:2");
+        assert_ne!(key.slot_path(0, "lock"), key.slot_path(1, "lock"));
+    }
+
+    #[test]
+    fn a_parent_that_holds_slots_covers_a_smaller_need() {
+        let keys = vec![LockKey::pool("cpu", 2, 4)];
+        let held: BTreeSet<String> = ["cpu", "cpu:1", "cpu:3"].map(String::from).into();
+        assert!(still_needed(&keys, &held).is_empty());
+        let held: BTreeSet<String> = ["cpu", "cpu:1"].map(String::from).into();
+        assert!(still_needed(&keys, &held).is_empty());
+        let held: BTreeSet<String> = ["cpu:1"].map(String::from).into();
+        let needed = still_needed(&keys, &held);
+        assert_eq!(needed.len(), 1);
+        assert_eq!(needed[0].count, 1);
+        assert_eq!(needed[0].skip, BTreeSet::from([1]));
+        let task = Task {
+            name: "child".into(),
+            ..Default::default()
+        };
+        let err = check_nested_order(&task, &held, &needed).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot take more of lock"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn several_slots_are_taken_all_or_none() {
+        let task = Task {
+            name: "pool".into(),
+            ..Default::default()
+        };
+        let name = format!("pool-{}", std::process::id());
+        // Two runs share a pool of four: 3 + 2 does not fit, 3 + 1 does.
+        let mut first = LockAcquisition::new(&task, vec![LockKey::pool(&name, 3, 4)]).unwrap();
+        assert!(first.try_take().unwrap());
+        let mut second = LockAcquisition::new(&task, vec![LockKey::pool(&name, 2, 4)]).unwrap();
+        assert!(!second.try_take().unwrap());
+        // The failed attempt kept nothing, so a single slot is still free.
+        let mut third = LockAcquisition::new(&task, vec![LockKey::pool(&name, 1, 4)]).unwrap();
+        assert!(third.try_take().unwrap());
+        let held = first.into_held();
+        assert_eq!(
+            held.slot_ids(),
+            [name.clone(), format!("{name}:1"), format!("{name}:2")]
+        );
+        assert_eq!(third.into_held().slot_ids(), [format!("{name}:3")]);
+        // Once the first run ends, the second fits.
+        drop(held);
+        assert!(second.try_take().unwrap());
     }
 }

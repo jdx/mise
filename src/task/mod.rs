@@ -129,8 +129,8 @@ use task_sources::TaskOutputs;
 pub use task_sources::{RawOutputTemplates, TaskOutputsExt};
 
 pub use mise_config::task::{
-    RunEntry, Silent, TaskDaemons, TaskDecl, TaskLock, TaskRustCacheConfig, TaskToolValue,
-    TaskToolValueMap, TaskWatchOptions,
+    NamedLock, RunEntry, Silent, TaskDaemons, TaskDecl, TaskLock, TaskRustCacheConfig,
+    TaskToolValue, TaskToolValueMap, TaskWatchOptions,
 };
 
 /// Turning a task's tool declaration into a request, and rendering its templates, needs mise's
@@ -2867,7 +2867,7 @@ impl Task {
                 .is_some_and(|s| contains_template_syntax(s))
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
-            || matches!(&self.lock, Some(TaskLock::Names(names)) if names.iter().any(|n| contains_template_syntax(n)))
+            || matches!(&self.lock, Some(TaskLock::Names(names)) if names.iter().any(|n| contains_template_syntax(&n.name)))
             || self.allow_unix.iter().any(|p| path_contains_template(p))
             || tools_have_template
     }
@@ -2956,13 +2956,13 @@ impl Task {
             // Render and check every name before storing any, so a failure leaves the lock as
             // it was for a caller that keeps the task.
             let mut rendered_names = Vec::with_capacity(names.len());
-            for name in names.iter() {
-                if contains_template_syntax(name) {
-                    let rendered = render_str(&mut tera, name, &tera_ctx)?;
+            for lock in names.iter() {
+                if contains_template_syntax(&lock.name) {
+                    let rendered = render_str(&mut tera, &lock.name, &tera_ctx)?;
                     TaskLock::validate_name(&rendered).map_err(|e| eyre!("{}: {e}", self.name))?;
-                    rendered_names.push(rendered);
+                    rendered_names.push(NamedLock::new(rendered).with_count(lock.count));
                 } else {
-                    rendered_names.push(name.clone());
+                    rendered_names.push(lock.clone());
                 }
             }
             *names = rendered_names;
@@ -6868,7 +6868,10 @@ echo "test"
         assert_eq!(task.timeout, Some("5m".to_string()));
         assert_eq!(
             task.lock,
-            Some(super::TaskLock::Names(vec!["sim".into(), "test-db".into()]))
+            Some(super::TaskLock::Names(vec![
+                super::NamedLock::new("sim"),
+                super::NamedLock::new("test-db")
+            ]))
         );
         // Where a task was loaded from makes it global, never its own header.
         assert!(!task.global);

@@ -22,7 +22,7 @@ pub use confirm::TaskConfirm;
 pub use decl::{TaskDecl, TaskTemplate};
 pub use decls::{TaskDecls, TaskTemplateDecls};
 pub use dep::TaskDep;
-pub use lock::TaskLock;
+pub use lock::{NamedLock, TaskLock};
 pub use outputs::TaskOutputs;
 pub(crate) use schema::{defs as schema_defs, task_template as template_schema};
 pub use secrets::{G7_TEXT, TaskSecrets};
