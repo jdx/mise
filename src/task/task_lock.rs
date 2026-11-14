@@ -418,14 +418,14 @@ impl<'a> LockAcquisition<'a> {
         let mut admission = if key.count > 1 {
             let mut file = self.open(&key.admission_path())?;
             // Admission is held for one pass over the slots, so a busy one clears in moments:
-            // wait a little for it, so a miss really means the slots are taken.
+            // wait a few milliseconds for it, so a miss really means the slots are taken.
             let mut tries = 0;
             while !file.try_lock().map_err(fail)? {
                 tries += 1;
-                if tries > 200 {
+                if tries > 20 {
                     return Ok(None);
                 }
-                std::thread::sleep(std::time::Duration::from_millis(5));
+                std::thread::sleep(std::time::Duration::from_millis(1));
             }
             Some(file)
         } else {
