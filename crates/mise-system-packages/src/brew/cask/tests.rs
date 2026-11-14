@@ -689,8 +689,19 @@ fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
         desired: crate::PackageDesiredState::Present,
     };
 
-    let error = package_state(&request, &cask).unwrap_err();
-    assert!(error.to_string().contains("unsupported artifact type"));
+    // Linux reports the cask as unavailable rather than failing the query.
+    #[cfg(target_os = "linux")]
+    match package_state(&request, &cask)? {
+        PackageState::Unavailable { reason } => {
+            assert!(reason.contains("unsupported artifact type"));
+        }
+        state => panic!("expected unavailable, got {state:?}"),
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let error = package_state(&request, &cask).unwrap_err();
+        assert!(error.to_string().contains("unsupported artifact type"));
+    }
     Ok(())
 }
 
@@ -6527,6 +6538,26 @@ fn linux_rejects_non_font_casks() -> Result<()> {
         platform_unavailable_state(&cask, &artifacts),
         Some(PackageState::Unavailable { .. })
     ));
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_skips_casks_with_unparseable_artifacts() -> Result<()> {
+    let mut cask = test_cask("example-appimage", "1.0.0");
+    cask.artifacts = vec![serde_json::json!({"app_image": ["Example.AppImage"]})];
+    let req = PackageRequest {
+        name: cask.token.clone(),
+        version: None,
+        tap_url: None,
+        desired: crate::PackageDesiredState::Present,
+    };
+
+    let state = package_state(&req, &cask)?;
+    assert!(
+        matches!(&state, PackageState::Unavailable { .. }),
+        "{state:?}"
+    );
     Ok(())
 }
 
