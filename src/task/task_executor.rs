@@ -1300,25 +1300,30 @@ impl TaskExecutor {
         save_checksum(task, config).await?;
         // A raw or interactive run stores no artifact, but its key still identifies the
         // outputs it produced, so dependents include it in their own keys.
-        let raw_cache_key = raw_cache_state.map(|cache| {
-            if self.task_cache.writes()
-                && let Some(source) = cache.source_changed_since_key()
-            {
-                warn!(
-                    "task {}: {} changed while the task ran; not marking it current",
-                    task.name,
-                    display_path(source)
-                );
-            } else if self.task_cache.writes()
-                && let Err(err) = cache.mark_current()
-            {
-                warn!(
-                    "task {} artifact cache state update failed: {err}",
-                    task.name
-                );
+        let raw_cache_key = match raw_cache_state {
+            Some(cache) => {
+                if let Some(source) = cache.source_changed_since_key(task, config).await {
+                    // Dependents would build on a result of unknown inputs.
+                    warn!(
+                        "task {}: {} changed while the task ran; not caching",
+                        task.name,
+                        display_path(&source)
+                    );
+                    None
+                } else {
+                    if self.task_cache.writes()
+                        && let Err(err) = cache.mark_current()
+                    {
+                        warn!(
+                            "task {} artifact cache state update failed: {err}",
+                            task.name
+                        );
+                    }
+                    Some(cache.key().to_string())
+                }
             }
-            cache.key().to_string()
-        });
+            None => None,
+        };
         let cache_key = if self.task_cache.writes()
             && let Some(cache) = artifact_cache
         {
@@ -1326,11 +1331,11 @@ impl TaskExecutor {
                 .as_ref()
                 .map(|output| output.lock().unwrap().clone())
                 .unwrap_or_default();
-            if let Some(source) = cache.source_changed_since_key() {
+            if let Some(source) = cache.source_changed_since_key(task, config).await {
                 warn!(
                     "task {}: {} changed while the task ran; not caching",
                     task.name,
-                    display_path(source)
+                    display_path(&source)
                 );
                 None
             } else {

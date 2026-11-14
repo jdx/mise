@@ -10,7 +10,7 @@ use crate::task::task_cache_store::{
 use crate::task::task_source_checker::{
     DirPruner, TaskCacheInputs, build_output_matcher, expand_enumeration_patterns,
     glob_has_entries, glob_walk_pruned, is_output, output_glob_patterns, symlink_walk_error_path,
-    task_cache_inputs, task_cwd,
+    task_cache_inputs, task_cwd, task_source_paths,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -465,25 +465,31 @@ impl TaskArtifactCacheBuilder {
 /// Digest of an env, var, or arg value as recorded in the cache action, so the
 /// action changes with the value without carrying the value itself.
 fn source_changed_since(path: &Path, since: SystemTime) -> bool {
-    let Ok(metadata) = fs::symlink_metadata(path) else {
-        return true;
-    };
-    if metadata.modified().is_ok_and(|modified| modified > since) {
-        return true;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let changed = SystemTime::UNIX_EPOCH
-            + Duration::new(
-                metadata.ctime().max(0) as u64,
-                metadata.ctime_nsec().clamp(0, 999_999_999) as u32,
-            );
-        if changed > since {
-            return true;
-        }
-    }
-    false
+    // Sources are hashed through symlinks, so a write to a link's target must count
+    // as well as a change to the link itself.
+    [fs::symlink_metadata(path), fs::metadata(path)]
+        .into_iter()
+        .any(|metadata| {
+            let Ok(metadata) = metadata else {
+                return true;
+            };
+            if metadata.modified().is_ok_and(|modified| modified > since) {
+                return true;
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let changed = SystemTime::UNIX_EPOCH
+                    + Duration::new(
+                        metadata.ctime().max(0) as u64,
+                        metadata.ctime_nsec().clamp(0, 999_999_999) as u32,
+                    );
+                if changed > since {
+                    return true;
+                }
+            }
+            false
+        })
 }
 
 fn value_digest(value: &str) -> String {
@@ -547,16 +553,36 @@ impl TaskArtifactCache {
         self.explanation.as_ref()
     }
 
-    /// Returns a source that was modified, replaced or removed after the key was
-    /// computed. The key describes the content read at that time, so a result
-    /// recorded under it could belong to different content. Comparing timestamps
-    /// instead of hashing again also catches a file that was written and then
-    /// restored, and a status change (ctime) cannot be set back by a restore.
-    pub(crate) fn source_changed_since_key(&self) -> Option<&Path> {
-        self.source_files
+    /// Returns a source that was modified, replaced, removed or newly selected
+    /// after the key was computed. The key describes the content read at that
+    /// time, so a result recorded under it could belong to different content.
+    /// Comparing timestamps instead of hashing again also catches a file that
+    /// was written and then restored, and a status change (ctime) cannot be set
+    /// back by a restore.
+    pub(crate) async fn source_changed_since_key(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+    ) -> Option<PathBuf> {
+        if let Some(path) = self
+            .source_files
             .iter()
             .find(|path| source_changed_since(path, self.inputs_read_at))
-            .map(PathBuf::as_path)
+        {
+            return Some(path.clone());
+        }
+        // A file that started matching a glob is not in the recorded set.
+        let known = self.source_files.iter().collect::<BTreeSet<_>>();
+        match task_source_paths(task, config).await {
+            Ok(paths) => paths
+                .into_iter()
+                .map(|path| self.root.join(path))
+                .find(|path| !known.contains(path)),
+            Err(err) => {
+                debug!("could not rescan sources of {}: {err}", task.name);
+                None
+            }
+        }
     }
 
     pub(crate) async fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
