@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# A key no parser reads in a dotfile entry, a group entry, or a bootstrap hook
+# warns. Before, it was dropped silently, so a guessed selector such as
+# `env = "work"` read as if it gated the entry. The rest of the entry still
+# applies, as it did.
+
+mkdir -p src "$HOME/.dotfiles/common"
+echo "whole" >src/whole.conf
+echo "group" >"$HOME/.dotfiles/common/.grouprc"
+
+# schema: invalid
+cat <<'TOML' >mise.toml
+[dotfiles]
+"~/.config/whole.conf" = { source = "src/whole.conf", mode = "copy", env = "work" }
+"~/.config/edit.conf/id" = { block = "text", env = "work" }
+
+[dotfile_groups.common]
+root = "common"
+mode = "copy"
+
+[dotfile_groups.common.entries]
+"~/.grouprc" = { profile = "work" }
+TOML
+
+assert_contains "mise dot apply --yes 2>&1" '[dotfiles]."~/.config/whole.conf": unknown key "env", ignoring it'
+assert_contains "mise dot status 2>&1" '[dotfiles]."~/.config/edit.conf/id": unknown key "env", ignoring it'
+assert_contains "mise dot status 2>&1" '[dotfile_groups.common.entries]."~/.grouprc": unknown key "profile", ignoring it'
+assert "cat $HOME/.config/whole.conf" "whole"
+assert_contains "cat $HOME/.config/edit.conf" "text"
+assert "cat $HOME/.grouprc" "group"
+
+# known keys do not warn
+cat <<'TOML' >mise.toml
+[dotfiles]
+"~/.config/whole.conf" = { source = "src/whole.conf", mode = "copy", variants = [{ profile = "work" }, { default = true }] }
+"~/.config/edit.conf/id" = { block = "text" }
+TOML
+assert_not_contains "mise dot status 2>&1" "unknown key"
+
+# a hook keeps tolerating keys from a newer mise, and says it ignores them
+cat <<'TOML' >mise.toml
+[bootstrap.hooks.post-packages]
+run = "echo HOOK_RAN"
+env = "work"
+TOML
+assert_contains "mise bootstrap plan 2>&1" '[bootstrap.hooks.post-packages]: unknown key "env", ignoring it'
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.desired == \"echo HOOK_RAN\")' >/dev/null"

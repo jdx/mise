@@ -1407,6 +1407,7 @@ fn files_from_config_files_with_tracking_roots(
         };
         if let Some(dotfiles) = cf.dotfiles_config() {
             for (key, value) in dotfiles.0 {
+                warn_unknown_entry_keys("[dotfiles]", &key, &value);
                 if is_track_value(&value) {
                     continue;
                 }
@@ -1487,6 +1488,27 @@ fn parse_dotfiles_entry(target: &str, value: toml::Value, config: &Path) -> Opti
         return None;
     }
     parse_file_entry(target, value, config)
+}
+
+/// Warn about the keys of a dotfile entry table that neither the whole-file
+/// nor the edit parser reads. Each takes the keys it knows and drops the
+/// rest, so a guessed key such as `env` would otherwise look like it works.
+/// `section` names the table the entry is in, such as `[dotfiles]`.
+pub(crate) fn warn_unknown_entry_keys(section: &str, target: &str, value: &toml::Value) {
+    use mise_config::de::struct_fields;
+    let Some(table) = value.as_table() else {
+        return;
+    };
+    let known = || {
+        struct_fields::<FileTomlTable>()
+            .iter()
+            .chain(struct_fields::<crate::edits::EditTomlTable>())
+    };
+    for key in table.keys() {
+        if !known().any(|known| known == key) {
+            warn_once!("{section}.\"{target}\": unknown key {key:?}, ignoring it");
+        }
+    }
 }
 
 const GROUP_KEY_IN_DOTFILES: &str =
