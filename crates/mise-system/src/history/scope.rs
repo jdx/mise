@@ -986,6 +986,31 @@ impl std::fmt::Display for OperationLockBusy {
 
 impl std::error::Error for OperationLockBusy {}
 
+/// The operation lock, held without recording anything. For a step that must
+/// not overlap a history operation but cannot open a scope, such as a pull of
+/// the config the scope would have to read. Released on drop.
+pub struct OperationLockGuard {
+    _lock: Option<fslock::LockFile>,
+}
+
+/// Waits for the operation lock for `history.lock_wait` like a scope does,
+/// and fails with the same error when another operation still holds it. Run
+/// inside an operation of a parent mise, it takes nothing: the parent holds
+/// the lock and waits for this process, as with `OperationScope::begin`.
+pub async fn hold_operation_lock() -> Result<OperationLockGuard> {
+    if std::env::var_os(ENV_VAR).is_some() {
+        debug!("history: attached to the parent mise operation");
+        return Ok(OperationLockGuard { _lock: None });
+    }
+    let wait = operation_lock_wait();
+    let lock = tokio::task::spawn_blocking(move || {
+        let store = Store::open_in(&super::local::root())?;
+        acquire_operation_lock(&store, wait)
+    })
+    .await??;
+    Ok(OperationLockGuard { _lock: Some(lock) })
+}
+
 fn acquire_operation_lock(store: &Store, wait: std::time::Duration) -> Result<fslock::LockFile> {
     let state_dir = store.state_dir();
     let path = store::operation_lock_in(state_dir);
