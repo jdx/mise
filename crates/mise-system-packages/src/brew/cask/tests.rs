@@ -689,8 +689,19 @@ fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
         desired: crate::PackageDesiredState::Present,
     };
 
-    let error = package_state(&request, &cask).unwrap_err();
-    assert!(error.to_string().contains("unsupported artifact type"));
+    // Linux reports the cask as unavailable rather than failing the query.
+    #[cfg(target_os = "linux")]
+    match package_state(&request, &cask)? {
+        PackageState::Unavailable { reason } => {
+            assert!(reason.contains("unsupported artifact type"));
+        }
+        state => panic!("expected unavailable, got {state:?}"),
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let error = package_state(&request, &cask).unwrap_err();
+        assert!(error.to_string().contains("unsupported artifact type"));
+    }
     Ok(())
 }
 
