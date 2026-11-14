@@ -94,3 +94,31 @@ mkdir -p "$plain"
 git -C "$plain" init -q -b main
 echo '[env]' >"$plain/config.toml"
 assert_succeed "MISE_CONFIG_DIR='$plain' mise bootstrap --update --yes --only dotfiles"
+
+# A commit whose config does not parse stops every other command, so the
+# update that carries the fix has to pull before it loads that config.
+broken_repo="$PWD/broken-source"
+mkdir -p "$broken_repo"
+git -C "$broken_repo" init -q -b main
+git -C "$broken_repo" config user.email test@example.com
+git -C "$broken_repo" config user.name "mise test"
+printf '[env]\nFIXED = "0"\n' >"$broken_repo/config.toml"
+git -C "$broken_repo" add config.toml
+git -C "$broken_repo" commit -qm initial
+broken="$HOME/broken-config"
+git clone -q "$broken_repo" "$broken"
+printf '[env\nFIXED = "0"\n' >"$broken_repo/config.toml"
+git -C "$broken_repo" commit -qam broken
+git -C "$broken" pull -q --ff-only
+cat <<'EOF' >"$broken_repo/config.toml"
+[env]
+FIXED = "1"
+
+[tasks.bootstrap]
+run = 'echo "$FIXED" > ~/broken-seen'
+EOF
+git -C "$broken_repo" commit -qam fix
+assert_fail "MISE_CONFIG_DIR='$broken' mise env" "Invalid TOML"
+assert_succeed "MISE_CONFIG_DIR='$broken' mise bootstrap --update --yes --only task"
+assert "git -C '$broken' rev-parse HEAD" "$(git -C "$broken_repo" rev-parse HEAD)"
+assert "cat ~/broken-seen" "1"
