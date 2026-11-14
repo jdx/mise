@@ -1302,6 +1302,14 @@ impl TaskExecutor {
         // outputs it produced, so dependents include it in their own keys.
         let raw_cache_key = raw_cache_state.map(|cache| {
             if self.task_cache.writes()
+                && let Some(source) = cache.source_changed_since_key()
+            {
+                warn!(
+                    "task {}: {} changed while the task ran; not marking it current",
+                    task.name,
+                    display_path(source)
+                );
+            } else if self.task_cache.writes()
                 && let Err(err) = cache.mark_current()
             {
                 warn!(
@@ -1318,19 +1326,28 @@ impl TaskExecutor {
                 .as_ref()
                 .map(|output| output.lock().unwrap().clone())
                 .unwrap_or_default();
-            match cache.store(task, &output, execution_duration).await {
-                Ok(()) => {
-                    if let Err(err) = cache.mark_current() {
-                        warn!(
-                            "task {} artifact cache state update failed: {err}",
-                            task.name
-                        );
+            if let Some(source) = cache.source_changed_since_key() {
+                warn!(
+                    "task {}: {} changed while the task ran; not caching",
+                    task.name,
+                    display_path(source)
+                );
+                None
+            } else {
+                match cache.store(task, &output, execution_duration).await {
+                    Ok(()) => {
+                        if let Err(err) = cache.mark_current() {
+                            warn!(
+                                "task {} artifact cache state update failed: {err}",
+                                task.name
+                            );
+                        }
+                        Some(cache.key().to_string())
                     }
-                    Some(cache.key().to_string())
-                }
-                Err(err) => {
-                    warn!("task {} artifact cache write failed: {err}", task.name);
-                    None
+                    Err(err) => {
+                        warn!("task {} artifact cache write failed: {err}", task.name);
+                        None
+                    }
                 }
             }
         } else {
