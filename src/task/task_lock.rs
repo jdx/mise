@@ -280,7 +280,15 @@ pub(crate) fn check_nested_order(
 /// The lock a `MISE_TASK_LOCKS` id belongs to: the id without a slot suffix (`name:N`).
 fn pool_of(id: &str) -> &str {
     match id.rsplit_once(':') {
-        Some((name, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => name,
+        // a slot number is below `MAX_SLOTS`; the 16 digits a `lock = true` hash can be are not
+        Some((name, n))
+            if n.len() <= 4
+                && !n.is_empty()
+                && n.bytes().all(|b| b.is_ascii_digit())
+                && n.parse::<u32>().is_ok_and(|n| n < MAX_SLOTS) =>
+        {
+            name
+        }
         _ => id,
     }
 }
@@ -410,8 +418,15 @@ impl<'a> LockAcquisition<'a> {
         };
         let mut admission = if key.count > 1 {
             let mut file = self.open(&key.admission_path())?;
-            if !file.try_lock().map_err(fail)? {
-                return Ok(None);
+            // Admission is held for one pass over the slots, so a busy one clears in moments:
+            // wait a little for it, so a miss really means the slots are taken.
+            let mut tries = 0;
+            while !file.try_lock().map_err(fail)? {
+                tries += 1;
+                if tries > 200 {
+                    return Ok(None);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
             }
             Some(file)
         } else {
@@ -680,6 +695,7 @@ mod tests {
         assert_eq!(pool_of("cpu"), "cpu");
         assert_eq!(pool_of("cpu0"), "cpu0");
         assert_eq!(pool_of("a:b"), "a:b");
+        assert_eq!(pool_of("task:1234567890123456"), "task:1234567890123456");
     }
 
     #[test]
