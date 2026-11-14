@@ -5240,6 +5240,47 @@ fn appdir_artifact_source_matches_app_case_insensitively() -> Result<()> {
 }
 
 #[test]
+fn stages_and_links_a_nested_appdir_bundle() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let appdir = tmp.path().join("Applications");
+    let nested = appdir.join("Parent.app/Contents/Applications/Child.app");
+    file::create_dir_all(nested.join("Contents"))?;
+    file::write(nested.join("Contents/Info.plist"), "bundle contents")?;
+    let stage = tmp.path().join("stage");
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(&stage)?;
+    file::create_dir_all(&caskroom)?;
+    let mut cask = test_cask("example", "1.0.0");
+    cask.appdir = Some(appdir.clone());
+    let apps = [AppArtifact {
+        source: "Parent.app".to_string(),
+        target: None,
+    }];
+    let binary = BinaryArtifact {
+        source: "$APPDIR/Parent.app/Contents/Applications/Child.app".to_string(),
+        target: Some("$APPDIR/Child.app".to_string()),
+    };
+    stage_binary(&stage, &caskroom, &cask, &apps, &binary)?;
+    link_binary_for(&caskroom, &cask, &appdir, &binary)?;
+    let target = appdir.join("Child.app");
+    assert_eq!(target.canonicalize()?, nested.canonicalize()?);
+    assert_eq!(
+        file::read_to_string(target.join("Contents/Info.plist"))?,
+        "bundle contents"
+    );
+    // Completion lookup still requires a regular file.
+    assert!(find_completion_source(&stage, &caskroom, &cask, &apps, &binary.source)?.is_none());
+    let escape = BinaryArtifact {
+        source: "$APPDIR/Parent.app/../../outside".to_string(),
+        target: binary.target.clone(),
+    };
+    assert!(stage_binary(&stage, &caskroom, &cask, &apps, &escape).is_err());
+    Ok(())
+}
+
+#[test]
 fn generated_completion_executable_prefers_staged_prefix_binary() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;

@@ -3954,7 +3954,12 @@ fn find_generated_completion_executable(
 
 #[cfg(test)]
 fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<PathBuf>> {
-    appdir_artifact_source_in(source, apps, |app| app_target_path(app.target_name()?))
+    appdir_artifact_source_in(
+        source,
+        apps,
+        |app| app_target_path(app.target_name()?),
+        Path::is_file,
+    )
 }
 
 fn appdir_artifact_source_for(
@@ -3962,15 +3967,19 @@ fn appdir_artifact_source_for(
     source: &str,
     apps: &[AppArtifact],
 ) -> Result<Option<PathBuf>> {
-    appdir_artifact_source_in(source, apps, |app| {
-        cask_app_target_path(cask, app.target_name()?)
-    })
+    appdir_artifact_source_in(
+        source,
+        apps,
+        |app| cask_app_target_path(cask, app.target_name()?),
+        Path::is_file,
+    )
 }
 
 fn appdir_artifact_source_in(
     source: &str,
     apps: &[AppArtifact],
     app_target: impl Fn(&AppArtifact) -> Result<PathBuf>,
+    accepts: impl Fn(&Path) -> bool,
 ) -> Result<Option<PathBuf>> {
     let Some(relative) = source.strip_prefix("$APPDIR/") else {
         return Ok(None);
@@ -3991,7 +4000,7 @@ fn appdir_artifact_source_in(
             continue;
         }
         let path = target.join(&suffix);
-        if path.is_file() {
+        if accepts(&path) {
             matches.push(path);
         }
     }
@@ -4459,13 +4468,18 @@ fn stage_binary(
     if binary.source.contains("$APPDIR") {
         // $APPDIR is the Applications directory where install_app placed the bundle.
         // Symlink into the installed app so the CLI wrapper can trace back to find the app.
-        let app_binary =
-            appdir_artifact_source_for(cask, &binary.source, apps)?.ok_or_else(|| {
-                eyre!(
-                    "brew-cask: binary artifact '{}' was not found",
-                    binary.source
-                )
-            })?;
+        let app_binary = appdir_artifact_source_in(
+            &binary.source,
+            apps,
+            |app| cask_app_target_path(cask, app.target_name()?),
+            |path| path.is_file() || path.is_dir(),
+        )?
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask: binary artifact '{}' was not found",
+                binary.source
+            )
+        })?;
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
         let source = find_binary_source(stage, caskroom, cask, binary)?;
@@ -4755,7 +4769,7 @@ fn cask_appdir_for(cask: &Cask, apps: &[AppArtifact]) -> Result<PathBuf> {
 #[cfg(test)]
 fn link_binary(caskroom: &Path, appdir: &Path, binary: &BinaryArtifact) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, appdir, binary)?;
-    if !caskroom_binary.is_file() {
+    if !caskroom_binary.is_file() && !caskroom_binary.is_dir() {
         if caskroom_binary
             .symlink_metadata()
             .is_ok_and(|metadata| metadata.file_type().is_symlink())
@@ -4787,7 +4801,7 @@ fn link_binary_for(
     binary: &BinaryArtifact,
 ) -> Result<()> {
     let caskroom_binary = caskroom_binary_path_for(caskroom, cask, appdir, binary)?;
-    if !caskroom_binary.is_file() {
+    if !caskroom_binary.is_file() && !caskroom_binary.is_dir() {
         if caskroom_binary
             .symlink_metadata()
             .is_ok_and(|metadata| metadata.file_type().is_symlink())
