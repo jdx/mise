@@ -1103,27 +1103,42 @@ pub fn task_cache_entries_for(tasks: &[(&Task, &Path)]) -> Result<Vec<Vec<TaskCa
 }
 
 pub fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult> {
-    let entries = task_cache_entries(task, root)?;
+    clear_task_caches(&[(task, root)])
+}
+
+/// Clears the cache entries of several tasks while reading the cache directory twice
+/// in total: once to list their entries and once to find their partial writes.
+pub fn clear_task_caches(tasks: &[(&Task, &Path)]) -> Result<TaskCacheClearResult> {
+    let entries = task_cache_entries_for(tasks)?;
     let cache_dir = task_cache_dir();
-    let identified_entries = entries.iter().filter(|entry| entry.identity_verified);
-    let mut size_bytes = identified_entries
-        .clone()
-        .fold(0_u64, |total, entry| total.saturating_add(entry.size_bytes));
-    for entry in identified_entries.clone() {
+    let mut size_bytes = 0_u64;
+    let mut entry_count = 0;
+    let mut legacy_entries = 0;
+    // A manifest can belong to more than one requested task; remove it once.
+    let mut removed = BTreeSet::new();
+    for entry in entries.iter().flatten() {
+        if !entry.identity_verified {
+            legacy_entries += 1;
+            continue;
+        }
+        if !removed.insert(entry.key.clone()) {
+            continue;
+        }
+        size_bytes = size_bytes.saturating_add(entry.size_bytes);
+        entry_count += 1;
         let _entry_lock = task_cache_entry_lock(&cache_dir, &entry.key)?;
         remove_cache_file(&cache_dir.join(format!("{}.tar.zst", entry.key)))?;
         remove_cache_file(&cache_dir.join(format!("{}.json", entry.key)))?;
     }
-    let legacy_entries = entries
-        .len()
-        .saturating_sub(identified_entries.clone().count());
     if legacy_entries > 0 {
         warn!(
             "skipping {legacy_entries} legacy task cache entries because ownership cannot be verified; use `mise cache clear` to remove them"
         );
     }
-    let identity = task_cache_identity(task, root);
-    let mut entry_count = identified_entries.count();
+    let identities = tasks
+        .iter()
+        .map(|(task, root)| task_cache_identity(task, root))
+        .collect::<BTreeSet<_>>();
     let partial_entries = match fs::read_dir(&cache_dir) {
         Ok(entries) => Some(entries),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
@@ -1152,7 +1167,7 @@ pub fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult
         let Ok(manifest) = serde_json::from_slice::<CacheManifest>(&contents) else {
             continue;
         };
-        if manifest.task_identity != identity {
+        if !identities.contains(&manifest.task_identity) {
             continue;
         }
         let archive_path = cache_dir.join(format!("{stem}.tar.zst"));
@@ -1163,7 +1178,9 @@ pub fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult
         remove_cache_file(&manifest_path)?;
         remove_cache_file(&archive_path)?;
     }
-    remove_cache_file(&task_cache_state_path(task, root))?;
+    for (task, root) in tasks {
+        remove_cache_file(&task_cache_state_path(task, root))?;
+    }
     Ok(TaskCacheClearResult {
         entries: entry_count,
         size_bytes,

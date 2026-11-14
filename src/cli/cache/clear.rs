@@ -43,14 +43,17 @@ impl CacheClear {
     pub(super) async fn run(self) -> Result<()> {
         if let Some(task_name) = &self.task {
             let (config, tasks) = super::task::resolve_tasks(task_name).await?;
-            let mut entries = 0;
-            let mut size_bytes = 0_u64;
+            let mut roots = Vec::new();
             for task in &tasks {
-                let root = crate::task::task_source_checker::task_cwd(task, &config).await?;
-                let result = crate::task::task_cache::clear_task_cache(task, &root)?;
-                entries += result.entries;
-                size_bytes = size_bytes.saturating_add(result.size_bytes);
+                roots.push(crate::task::task_source_checker::task_cwd(task, &config).await?);
             }
+            let requested = tasks
+                .iter()
+                .zip(&roots)
+                .map(|(task, root)| (task, root.as_path()))
+                .collect_vec();
+            let result = crate::task::task_cache::clear_task_caches(&requested)?;
+            let (entries, size_bytes) = (result.entries, result.size_bytes);
             info!(
                 "task cache cleared for {}: {} entries, {}",
                 tasks.iter().map(|task| &task.display_name).join(", "),
