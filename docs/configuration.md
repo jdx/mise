@@ -266,8 +266,10 @@ Global config differs from project config in a few ways:
 - `[secrets.*]` and `[daemons_settings]` are ignored there, and
   `[daemon_providers]` is allowed only there.
 - [`global_config_file`](/configuration/settings.html#global_config_file)
-  (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file. It
-  also turns off the [override files](#override-file). It does not hide
+  (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file. mise
+  loads no `MISE_ENV` variants (such as `mise.ci.toml`) or `.local` files beside
+  it, so point it at the variant file itself to use one. It also turns off the
+  [override files](#override-file). It does not hide
   `~/.config/mise/config.toml` from projects under your home directory, which
   still load it as a project config; add `~/.config/mise/config.toml` to
   [`ignored_config_paths`](/configuration/settings.html#ignored_config_paths)
@@ -278,7 +280,9 @@ precedence. It lives in `/etc/mise`
 ([`MISE_SYSTEM_CONFIG_DIR`](/directories.html#system-config)) and accepts the
 same file names as the global directory, such as `/etc/mise/config.toml`.
 [`system_config_file`](/configuration/settings.html#system_config_file)
-(`MISE_SYSTEM_CONFIG_FILE`) replaces them with a single file.
+(`MISE_SYSTEM_CONFIG_FILE`) replaces them with a single file. As with
+`MISE_GLOBAL_CONFIG_FILE`, mise loads no `MISE_ENV` variants (such as
+`mise.ci.toml`) or `.local` files beside it.
 
 ## Global override files {#override-file}
 
