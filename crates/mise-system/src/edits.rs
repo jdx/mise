@@ -424,19 +424,27 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
             }
         }
         toml::Value::Table(table) => {
-            // without an edit key the table is a whole-file entry
-            if !EDIT_KEYS.iter().any(|key| table.contains_key(*key)) {
-                return None;
-            }
-            // an edit owns lines in a file, not the file itself; dropping
-            // the key silently would leave the declared mode, variants or
-            // other whole-file setting unapplied
-            for key in WHOLE_FILE_KEYS {
-                if table.contains_key(key) {
-                    warn!(
-                        "[dotfiles].\"{path_and_id}\": {key} applies to whole-file entries, not block or line edits, ignoring entry"
-                    );
+            let has_edit_key = EDIT_KEYS.iter().any(|key| table.contains_key(*key));
+            if !has_edit_key {
+                // without an edit key a table that carries a whole-file key is
+                // a whole-file entry; anything else is an edit mise cannot read
+                let is_whole_file_table = table.is_empty()
+                    || table.contains_key("source")
+                    || WHOLE_FILE_KEYS.iter().any(|key| table.contains_key(*key));
+                if is_whole_file_table {
                     return None;
+                }
+            } else {
+                // an edit owns lines in a file, not the file itself; dropping
+                // the key silently would leave the declared mode, variants or
+                // other whole-file setting unapplied
+                for key in WHOLE_FILE_KEYS {
+                    if table.contains_key(key) {
+                        warn!(
+                            "[dotfiles].\"{path_and_id}\": {key} applies to whole-file entries, not block or line edits, ignoring entry"
+                        );
+                        return None;
+                    }
                 }
             }
         }
