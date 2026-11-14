@@ -316,8 +316,11 @@ pub(crate) fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditReque
     merged.into_values().collect()
 }
 
+/// keys that make an entry an edit of part of a file instead of a whole file
+pub(crate) const EDIT_KEYS: [&str; 5] = ["block", "line", "template", "comment", "position"];
+
 /// keys that only mean something on a whole-file entry
-const WHOLE_FILE_KEYS: [&str; 17] = [
+pub(crate) const WHOLE_FILE_KEYS: [&str; 17] = [
     "mode",
     "content",
     "permissions",
@@ -421,28 +424,14 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
             }
         }
         toml::Value::Table(table) => {
-            // `{ enabled = false }` turns off an inherited whole-file entry
-            let only_enabled = table.len() == 1 && table.contains_key("enabled");
-            let is_whole_file_table = table.is_empty()
-                || only_enabled
-                || table.contains_key("mode")
-                || table.contains_key("remove_empty")
-                || table.contains_key("create_if_missing")
-                || (table.contains_key("source")
-                    || table.contains_key("content")
-                    || table.contains_key("permissions")
-                    || table.contains_key("dot_prefix"))
-                    && !table.contains_key("block")
-                    && !table.contains_key("line")
-                    && !table.contains_key("template")
-                    && !table.contains_key("comment")
-                    && !table.contains_key("position");
-            if is_whole_file_table {
+            // without an edit key the table is a whole-file entry
+            if !EDIT_KEYS.iter().any(|key| table.contains_key(*key)) {
                 return None;
             }
             // an edit owns lines in a file, not the file itself; dropping
-            // the key silently would leave the declared mode unapplied
-            for key in ["permissions", "dot_prefix"] {
+            // the key silently would leave the declared mode, variants or
+            // other whole-file setting unapplied
+            for key in WHOLE_FILE_KEYS {
                 if table.contains_key(key) {
                     warn!(
                         "[dotfiles].\"{path_and_id}\": {key} applies to whole-file entries, not block or line edits, ignoring entry"
@@ -2523,6 +2512,24 @@ mod tests {
         assert!(edit_entry_from_toml("~/a/config.toml/shared", value).is_some());
         let value: toml::Value = toml::from_str("source = \"s.toml\"").unwrap();
         assert!(edit_entry_from_toml("~/a/config.toml", value).is_none());
+    }
+
+    #[test]
+    fn whole_file_keys_on_a_block_or_line_edit_are_refused() {
+        for extra in [
+            "variants = [{ profile = \"work\" }]",
+            "enabled = false",
+            "mode = \"track\"",
+            "permissions = \"0600\"",
+        ] {
+            let value: toml::Value = toml::from_str(&format!("block = \"text\"\n{extra}")).unwrap();
+            assert!(
+                edit_entry_from_toml("~/a/config.toml/id", value).is_none(),
+                "{extra}"
+            );
+        }
+        let value: toml::Value = toml::from_str("block = \"text\"").unwrap();
+        assert!(edit_entry_from_toml("~/a/config.toml/id", value).is_some());
     }
 
     #[test]
