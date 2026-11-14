@@ -567,10 +567,10 @@ impl Backend for ZigPlugin {
             (indexes["zig"], tv.version.as_str())
         };
 
-        // Try to get full info from JSON (includes checksum and size)
-        // Don't pre-set provenance at lock time — minisign verification hasn't run yet.
-        // Provenance is recorded in install_version_ after download() confirms minisign
-        // verification succeeded.
+        // Try to get full info from JSON (includes checksum and size).
+        // Every archive is minisign-verified by download() at install, so a
+        // resolved entry records minisign. Leaving it out would make the lockfile
+        // ratchet read an older minisign entry as a downgrade.
         match self
             .get_download_info_from_json(json_url, version, arch, os)
             .await
@@ -579,15 +579,15 @@ impl Backend for ZigPlugin {
                 url: Some(url),
                 checksum,
                 size,
+                provenance: Some(ProvenanceType::Minisign),
                 ..Default::default()
             }),
             Err(err) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
                 // Fallback: construct URL directly for numbered versions (no checksum available)
-                // Don't pre-set provenance here — record it only after download() confirms
-                // minisign verification succeeded during install
                 warn!("zig: {err:#}; locking the {version} URL without a checksum");
                 Ok(PlatformInfo {
                     url: Some(Self::release_tarball_url(arch, os, &tv.version)),
+                    provenance: Some(ProvenanceType::Minisign),
                     ..Default::default()
                 })
             }
@@ -596,6 +596,7 @@ impl Backend for ZigPlugin {
                 // under /builds/, no checksum (minisign verifies at install). (#10251)
                 Ok(PlatformInfo {
                     url: Some(Self::nightly_tarball_url(arch, os, &tv.version)),
+                    provenance: Some(ProvenanceType::Minisign),
                     ..Default::default()
                 })
             }
