@@ -697,7 +697,21 @@ pub(crate) fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result
 /// only reads the directories a wildcard applies to.
 fn glob_in_dir(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     let mut current = vec![dir.to_path_buf()];
-    for component in pattern.split('/').filter(|c| !c.is_empty()) {
+    // `components` splits on the platform's separators, so a Windows pattern
+    // with backslashes walks the same way as one with slashes.
+    for component in Path::new(pattern).components() {
+        let component = match component {
+            std::path::Component::Normal(name) => name.to_string_lossy(),
+            std::path::Component::CurDir => continue,
+            _ => {
+                // `..` or a root/prefix: leave it to glob.
+                let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
+                return glob::glob(&Path::new(&escaped_dir).join(pattern).to_string_lossy())
+                    .map(|paths| paths.flatten().collect())
+                    .unwrap_or_default();
+            }
+        };
+        let component = component.as_ref();
         if component.contains("**") {
             // Recursive patterns are rare here; let glob handle them.
             let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
@@ -1179,6 +1193,16 @@ mod tests {
             assert_eq!(actual, expected, "{pattern}");
         }
         assert_eq!(super::glob_in_dir(&dir, ".config/mise/conf.d/*").len(), 3);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn glob_in_dir_walks_backslash_patterns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::create_dir_all(dir.join("config[dev]").join("nested")).unwrap();
+        let found = super::glob_in_dir(dir, "config[[]dev]\\nested");
+        assert_eq!(found, vec![dir.join("config[dev]").join("nested")]);
     }
 
     fn args(values: &[&str]) -> Vec<String> {
