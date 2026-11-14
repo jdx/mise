@@ -6530,6 +6530,26 @@ fn linux_rejects_non_font_casks() -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_skips_casks_with_unparseable_artifacts() -> Result<()> {
+    let mut cask = test_cask("example-appimage", "1.0.0");
+    cask.artifacts = vec![serde_json::json!({"app_image": ["Example.AppImage"]})];
+    let req = PackageRequest {
+        name: cask.token.clone(),
+        version: None,
+        tap_url: None,
+        desired: crate::PackageDesiredState::Present,
+    };
+
+    let state = package_state(&req, &cask)?;
+    assert!(
+        matches!(&state, PackageState::Unavailable { .. }),
+        "{state:?}"
+    );
+    Ok(())
+}
+
 #[test]
 fn app_only_casks_ignore_pkgutil_ids() -> Result<()> {
     let mut cask = test_cask("example", "1.0.0");
