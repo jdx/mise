@@ -282,10 +282,9 @@ fn pool_of(id: &str) -> &str {
     match id.rsplit_once(':') {
         // a slot number is below `MAX_SLOTS`; the 16 digits a `lock = true` hash can be are not
         Some((name, n))
-            if n.len() <= 4
-                && !n.is_empty()
+            if !n.starts_with('0')
                 && n.bytes().all(|b| b.is_ascii_digit())
-                && n.parse::<u32>().is_ok_and(|n| n < MAX_SLOTS) =>
+                && n.parse::<u32>().is_ok_and(|n| (1..MAX_SLOTS).contains(&n)) =>
         {
             name
         }
@@ -695,6 +694,10 @@ mod tests {
         assert_eq!(pool_of("cpu"), "cpu");
         assert_eq!(pool_of("cpu0"), "cpu0");
         assert_eq!(pool_of("a:b"), "a:b");
+        assert_eq!(pool_of("cpu:01"), "cpu:01");
+        assert_eq!(pool_of("cpu:0"), "cpu:0");
+        assert_eq!(pool_of("cpu:4095"), "cpu");
+        assert_eq!(pool_of("cpu:4096"), "cpu:4096");
         assert_eq!(pool_of("task:1234567890123456"), "task:1234567890123456");
     }
 
