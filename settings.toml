@@ -4454,6 +4454,27 @@ docs = "Older runs are dropped when a new one is recorded. `0` stops recording, 
 env = "MISE_TASK_HISTORY_LIMIT"
 type = "Integer"
 
+[task.lock_pools]
+description = "How many slots each named task `lock` has, for locks that several runs hold at once."
+docs = """
+A [`lock`](/tasks/task-configuration.html#lock) is a pool of slots. Unset, a
+name has one slot, so one run holds it at a time. Give a name more to let that
+many runs hold it at once, or to let each task take a share of it with
+`lock = { name = "cpu", count = 4 }`. Values are whole numbers written as
+strings:
+
+```toml
+[settings.task.lock_pools]
+cpu = "8"
+```
+
+Set it once per machine, in the global config, rather than per project: runs
+that disagree on how many slots a pool has can exceed the smaller number
+between them. A task whose `count` is above the pool's slots takes all of them.
+"""
+optional = true
+type = "IndexMap<String, String>"
+
 [task.lock_timeout]
 description = "How long a task waits for a lock another run holds before it fails."
 docs = """

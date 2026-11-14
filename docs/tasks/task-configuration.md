@@ -885,7 +885,7 @@ Windows at once. The run-wide timeout does not stop the processes of
 
 ### `lock`
 
-- **Type**: `boolean | string | string[]`
+- **Type**: `boolean | string | { name, count } | (string | { name, count })[]`
 - **Default**: unset
 
 Resources the task holds while its commands run. A run that needs a lock
@@ -913,8 +913,52 @@ lock = true
   is shared only by tasks of that project, not by every project on the machine.
 - `true` lets one run of the task at a time across every worktree of its
   repository. Another repository with a task of the same name is not affected.
+- `{ name = "...", count = N }` takes N slots of a lock that has several, for a
+  resource that is limited rather than unique, such as the cores or memory of a
+  machine. See [Locks with several slots](#locks-with-several-slots).
 - `false` or an empty list takes no lock, for example to turn off a lock a
   template sets.
+
+#### Locks with several slots
+
+A lock is a pool of slots. By default a name has one, so one run holds it at a
+time. Set [`task.lock_pools`](/configuration/settings.html#task.lock_pools) once
+per machine to give a name more, and let each task take the share it needs:
+
+```toml
+# ~/.config/mise/config.toml
+[settings.task.lock_pools]
+cpu = "8"
+```
+
+```toml
+[tasks.lint]
+run = "..."
+lock = "cpu" # one slot
+
+[tasks.test]
+run = "..."
+lock = [{ name = "cpu", count = 4 }, "test-db"]
+```
+
+Here `lint` and `test` run together while their shares fit in the 8 slots, and
+a run that does not fit waits. A task takes all `count` slots or none, so two
+waiters never each hold part of what the other needs, and a task that does not
+fit leaves room for a smaller one that does. A `count` above the pool's slots
+takes all of them. A task that waits gives up its `--jobs` slot, as it does for
+any lock. Waiting tasks are not queued, so a steady stream of small tasks can
+keep a large one waiting; give the large one the whole pool if that matters.
+
+`MISE_TASK_LOCKS` lists the slots a task holds, for example
+`cpu,cpu:2,cpu:5,cpu:6`: the first slot is the bare name and the others add
+`:N`. A task can use the numbers to pick a resource no other running task has,
+such as a test database or a port. A nested task that needs no more slots than
+its parent holds shares them; one that needs more fails, because two parents
+could each wait for the slots the other holds.
+
+Set the number of slots in one place per machine, normally the global config,
+not in each project: runs that disagree on how many slots a pool has can exceed
+the smaller number between them.
 
 A task takes its locks after its dependencies finish and once mise has decided
 it must run: a task skipped by `skip_if` or fresh `sources`, or restored from
