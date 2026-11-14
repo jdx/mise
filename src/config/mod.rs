@@ -161,6 +161,9 @@ pub struct Config {
     pub tera_ctx: tera::Context,
     /// Built on first use by [`Self::shorthands`]: most configs never read it.
     shorthands: std::sync::OnceLock<Shorthands>,
+    /// The settings in effect at load, so a lazily built map matches them even
+    /// if settings are rebuilt later.
+    shorthands_settings: Arc<Settings>,
     pub shell_aliases: EnvWithSources,
     /// Files accessed by tera template functions (read_file, hash_file, etc.)
     /// during shell alias template rendering, used to watch for changes in hook-env.
@@ -320,6 +323,7 @@ impl Config {
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: self.shorthands.clone(),
+            shorthands_settings: self.shorthands_settings.clone(),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
@@ -391,6 +395,7 @@ impl Config {
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: Default::default(),
+            shorthands_settings: Settings::get(),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
@@ -415,6 +420,7 @@ impl Config {
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: config.shorthands.clone(),
+            shorthands_settings: config.shorthands_settings.clone(),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
@@ -856,7 +862,7 @@ impl Config {
     /// The asdf and vfox shorthands, built on first use.
     pub fn shorthands(&self) -> &Shorthands {
         self.shorthands
-            .get_or_init(|| get_shorthands(&Settings::get()))
+            .get_or_init(|| get_shorthands(&self.shorthands_settings))
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
