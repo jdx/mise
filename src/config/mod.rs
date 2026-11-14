@@ -159,7 +159,8 @@ pub struct Config {
     pub repo_urls: HashMap<String, String>,
     pub vars: IndexMap<String, String>,
     pub tera_ctx: tera::Context,
-    pub shorthands: Shorthands,
+    /// Built on first use by [`Self::shorthands`]: most configs never read it.
+    shorthands: std::sync::OnceLock<Shorthands>,
     pub shell_aliases: EnvWithSources,
     /// Files accessed by tera template functions (read_file, hash_file, etc.)
     /// during shell alias template rendering, used to watch for changes in hook-env.
@@ -389,7 +390,7 @@ impl Config {
             bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
-            shorthands: get_shorthands(&Settings::get()),
+            shorthands: Default::default(),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
@@ -852,6 +853,12 @@ impl Config {
         )
     }
 
+    /// The asdf and vfox shorthands, built on first use.
+    pub fn shorthands(&self) -> &Shorthands {
+        self.shorthands
+            .get_or_init(|| get_shorthands(&Settings::get()))
+    }
+
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         if let Some(url) = self.repo_urls.get(plugin_name)
             && (Path::new(url).is_absolute()
@@ -888,7 +895,7 @@ impl Config {
             );
         }
 
-        self.shorthands
+        self.shorthands()
             .get(plugin_name)
             .map(|full| registry::full_to_url(&full[0]))
             .or_else(|| {

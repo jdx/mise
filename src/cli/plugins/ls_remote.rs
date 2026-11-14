@@ -22,7 +22,7 @@ impl PluginsLsRemote {
     pub(super) async fn run(self, config: &Config) -> Result<()> {
         let installed_plugins = install_state::list_plugins();
 
-        let shorthands = config.shorthands.iter().sorted().collect_vec();
+        let shorthands = config.shorthands().iter().sorted().collect_vec();
         let max_plugin_len = shorthands
             .iter()
             .map(|(plugin, _)| measure_text_width(plugin))

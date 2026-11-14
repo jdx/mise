@@ -89,7 +89,7 @@ impl PluginsLs {
         }
 
         if self.all {
-            for (name, backends) in &config.shorthands {
+            for (name, backends) in config.shorthands() {
                 for full in backends {
                     let plugin_type = PluginType::from_full(full)?;
                     plugins.insert(name.clone(), (plugin_type, Some(full_to_url(full))));

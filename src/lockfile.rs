@@ -22,6 +22,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use mise_util::yaml;
 use serde::{Deserialize, Serialize};
+use std::cell::LazyCell;
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -117,7 +118,9 @@ pub fn warn_outdated_lockfiles(config: &Config) {
         return;
     }
     let monorepo_root = config.monorepo_lockfile_root();
-    let today = jiff::Zoned::now().date();
+    // Reading the clock builds jiff's time-zone database, so only do it once a
+    // lockfile turns out to be old.
+    let today: LazyCell<jiff::civil::Date> = LazyCell::new(|| jiff::Zoned::now().date());
     let mut targets = HashMap::new();
     let mut roots = HashSet::new();
     for (path, cf) in &config.config_files {
@@ -147,7 +150,7 @@ pub fn warn_outdated_lockfiles(config: &Config) {
                     "add a matching config and run `mise lock --upgrade`, or remove the lockfile if no longer needed"
                 }
             };
-            warn_outdated_lockfile(&candidate, today, remedy);
+            warn_outdated_lockfile(&candidate, &today, remedy);
         }
     }
     for candidate in &discovery.legacy_lockfiles {
@@ -156,7 +159,7 @@ pub fn warn_outdated_lockfiles(config: &Config) {
         }
         warn_outdated_lockfile(
             candidate,
-            today,
+            &today,
             "run `mise lock --upgrade` at the monorepo root",
         );
     }
@@ -173,9 +176,14 @@ pub fn suppress_outdated_lockfile_warning(config: &Config) {
         .store(true, Ordering::Relaxed);
 }
 
-fn warn_outdated_lockfile(path: &Path, today: jiff::civil::Date, remedy: &str) {
+fn warn_outdated_lockfile(path: &Path, today: &LazyCell<jiff::civil::Date>, remedy: &str) {
     if let Ok(lockfile) = Lockfile::read(path)
-        && outdated_lockfile_version(lockfile.lockfile_version(), today)
+        // A current-format lockfile can never be outdated, so don't read the
+        // clock for it.
+        && LOCKFILE_VERSION_DATES
+            .iter()
+            .any(|&(bumped_version, _)| bumped_version > lockfile.lockfile_version())
+        && outdated_lockfile_version(lockfile.lockfile_version(), **today)
     {
         warn_once!(
             "{} uses old lockfile format version {}; {remedy}",
@@ -5745,7 +5753,7 @@ pub(crate) fn read_lockfile_for_tool_source(
     {
         warn_outdated_lockfile(
             &lockfile_path,
-            jiff::Zoned::now().date(),
+            &LazyCell::new(|| jiff::Zoned::now().date()),
             "run `mise lock --upgrade` from its config directory",
         );
     }
