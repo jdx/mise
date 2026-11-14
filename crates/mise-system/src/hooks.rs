@@ -117,6 +117,11 @@ impl BootstrapHook {
                 if run.is_none() && run_windows.is_none() {
                     bail!("expected a `run` or `run_windows` command");
                 }
+                // what is left is a key no hook reads; a guessed one such as
+                // `env` would otherwise look like it works
+                for key in table.keys() {
+                    warn_once!("[bootstrap.hooks.{phase}]: unknown key {key:?}, ignoring it");
+                }
                 // `run_windows` replaces `run` on Windows; a hook with only
                 // `run_windows` does nothing elsewhere.
                 let (field, selected) = match (windows, run_windows) {

@@ -600,6 +600,13 @@ variants = [{ profile = "work" }]
 ```
 
 `MISE_ENV=ssh` skips `~/.ssh/work_key`, and `MISE_ENV=ssh,work` links it.
+`profile` names one entry of the `MISE_ENV` list, in any position.
+
+Block, line, and merge edits take no `variants`, and dotfile entries take no
+`env` key; mise warns about a key it does not read. To apply edits, hooks, or
+anything else only for a combination of environments, give the combination
+its own config file, such as `mise.ssh-work.toml`, and select it with the
+rest: `MISE_ENV=ssh,work,ssh-work`.
 
 To give a whole set of entries to one operating system, put them in a
 platform config file such as `config.macos.toml` instead, with the

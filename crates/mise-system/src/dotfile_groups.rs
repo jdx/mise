@@ -310,6 +310,7 @@ fn expand_group(
     let mut entries = vec![];
     let mut edits = vec![];
     for (key, value) in group.entries {
+        files::warn_unknown_entry_keys(&format!("[dotfile_groups.{name}.entries]"), &key, &value);
         if is_edit_entry(&value) {
             edits.push(group_edit_entry(&defaults, &key, value, &origin.config)?);
         } else {
