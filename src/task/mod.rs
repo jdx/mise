@@ -2867,6 +2867,7 @@ impl Task {
                 .is_some_and(|s| contains_template_syntax(s))
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
+            || matches!(&self.lock, Some(TaskLock::Names(names)) if names.iter().any(|n| contains_template_syntax(n)))
             || self.allow_unix.iter().any(|p| path_contains_template(p))
             || tools_have_template
     }
@@ -2950,6 +2951,21 @@ impl Task {
             && contains_template_syntax(timeout)
         {
             *timeout = render_str(&mut tera, timeout, &tera_ctx)?;
+        }
+        if let Some(TaskLock::Names(names)) = &mut self.lock {
+            // Render and check every name before storing any, so a failure leaves the lock as
+            // it was for a caller that keeps the task.
+            let mut rendered_names = Vec::with_capacity(names.len());
+            for name in names.iter() {
+                if contains_template_syntax(name) {
+                    let rendered = render_str(&mut tera, name, &tera_ctx)?;
+                    TaskLock::validate_name(&rendered).map_err(|e| eyre!("{}: {e}", self.name))?;
+                    rendered_names.push(rendered);
+                } else {
+                    rendered_names.push(name.clone());
+                }
+            }
+            *names = rendered_names;
         }
         let mut render_sandbox_paths = |paths: &mut Vec<PathBuf>| -> Result<()> {
             let mut rendered = Vec::with_capacity(paths.len());

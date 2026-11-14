@@ -17,6 +17,12 @@ pub enum TaskLock {
 }
 
 impl TaskLock {
+    /// Whether `name` holds template syntax. A template is checked after it renders, since
+    /// its source can hold a comma that the rendered name does not.
+    pub fn is_template(name: &str) -> bool {
+        name.contains("{{") || name.contains("{%") || name.contains("{#")
+    }
+
     /// Whether `name` can name a lock. `MISE_TASK_LOCKS` joins names with commas, so a name
     /// cannot hold one.
     pub fn validate_name(name: &str) -> Result<(), String> {
@@ -58,14 +64,18 @@ impl<'de> Deserialize<'de> for TaskLock {
             }
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<TaskLock, E> {
-                TaskLock::validate_name(v).map_err(E::custom)?;
+                if !TaskLock::is_template(v) {
+                    TaskLock::validate_name(v).map_err(E::custom)?;
+                }
                 Ok(TaskLock::Names(vec![v.to_string()]))
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<TaskLock, A::Error> {
                 let mut names = vec![];
                 while let Some(name) = seq.next_element::<String>()? {
-                    TaskLock::validate_name(&name).map_err(de::Error::custom)?;
+                    if !TaskLock::is_template(&name) {
+                        TaskLock::validate_name(&name).map_err(de::Error::custom)?;
+                    }
                     names.push(name);
                 }
                 Ok(if names.is_empty() {
@@ -90,6 +100,16 @@ mod tests {
             lock: TaskLock,
         }
         toml::from_str::<Wrapper>(&format!("lock = {value}")).map(|w| w.lock)
+    }
+
+    #[test]
+    fn a_template_is_checked_after_it_renders() {
+        let name = "{{ config_root | replace(from='/', to='-') }}";
+        assert_eq!(
+            parse(&format!("\"{name}\"")).unwrap(),
+            TaskLock::Names(vec![name.to_string()])
+        );
+        assert!(parse("\"a,b\"").is_err());
     }
 
     #[test]
