@@ -4483,6 +4483,78 @@ fn raw_executable_keeps_url_filename() -> Result<()> {
 }
 
 #[test]
+fn raw_opaque_url_stages_the_declared_binary() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let archive = tmp.path().join("cached-name");
+    file::write(&archive, "#!/bin/sh\necho fixture\n")?;
+    let mut cask = test_cask("example", "1.0.0");
+    cask.url = "https://example.com/download/?file=tool-arm64".to_string();
+    cask.artifacts = vec![serde_json::json!({
+        "binary": ["tool-arm64", {"target": "tool"}],
+    })];
+    let (name, executable) = raw_cask_artifact_name(&cask, &archive, "cached-name")?;
+    assert_eq!(name, "tool-arm64");
+    assert!(executable);
+    let stage = tmp.path().join("stage");
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(&stage)?;
+    file::create_dir_all(&caskroom)?;
+    file::copy(&archive, stage.join(name))?;
+    let binary = cask_artifacts(&cask)?.binaries.remove(0);
+    stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
+    link_binary_for(&caskroom, &cask, Path::new("/Applications"), &binary)?;
+    assert_eq!(
+        file::read_to_string(tmp.path().join("bin/tool"))?,
+        "#!/bin/sh\necho fixture\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn raw_opaque_url_does_not_guess_ambiguous_or_unsafe_binary_names() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let archive = tmp.path().join("cached-name");
+    file::write(&archive, "raw")?;
+    let mut cask = test_cask("example", "1.0.0");
+    cask.url = "https://example.com/download/".to_string();
+    for source in [
+        "../tool",
+        "/tool",
+        "dir/tool",
+        "dir\\tool",
+        "$APPDIR/tool",
+        ".",
+        "..",
+        ".metadata",
+        ".mise-hidden",
+    ] {
+        cask.artifacts = vec![serde_json::json!({"binary": [source]})];
+        assert_eq!(
+            raw_cask_artifact_name(&cask, &archive, "cached-name")?.0,
+            "cached-name",
+            "{source}"
+        );
+    }
+    cask.artifacts = vec![
+        serde_json::json!({"binary": ["first"]}),
+        serde_json::json!({"binary": ["second"]}),
+    ];
+    assert_eq!(
+        raw_cask_artifact_name(&cask, &archive, "cached-name")?.0,
+        "cached-name"
+    );
+    cask.url = "https://example.com/original".to_string();
+    cask.artifacts = vec![serde_json::json!({"binary": ["other"]})];
+    assert_eq!(
+        raw_cask_artifact_name(&cask, &archive, "cached-name")?.0,
+        "original"
+    );
+    Ok(())
+}
+
+#[test]
 fn detects_a_single_suffixless_nested_archive() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let archive = tmp.path().join("download");

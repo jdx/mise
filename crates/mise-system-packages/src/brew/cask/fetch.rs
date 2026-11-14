@@ -349,7 +349,7 @@ pub(super) fn extract_archive(
             // A direct pkg download may have an opaque URL path while the response's
             // Content-Disposition and the cask artifact supply its real name. Stage
             // XAR installers under the declared artifact name; other raw downloads
-            // are executable binaries and retain the original URL filename.
+            // are executable binaries and normally retain the URL filename.
             let (stage_filename, executable) = raw_cask_artifact_name(cask, archive, filename)?;
             let dest = extract_dir.join(stage_filename);
             file::copy(archive, &dest)?;
@@ -623,10 +623,16 @@ pub(super) fn raw_cask_artifact_name(
     // A URL whose path ends in a separator, or only in dot segments that
     // normalization collapses, has no final segment to name the staged file;
     // `extract_dir.join("")` would target the staging directory itself.
-    Ok((
-        archive_filename(&cask.url)
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| fallback.to_string()),
-        true,
-    ))
+    let filename = archive_filename(&cask.url).filter(|name| !name.is_empty());
+    if filename.is_none()
+        && let Ok(artifacts) = cask_artifacts(cask)
+        && let [binary] = artifacts.binaries.as_slice()
+        && !binary.source.contains(['/', '\\', '$'])
+        && validate_cask_path_component("binary source", &binary.source).is_ok()
+    {
+        // With no URL filename, a single bare binary declaration supplies an
+        // unambiguous name. Keep metadata paths and templates out of staging.
+        return Ok((binary.source.clone(), true));
+    }
+    Ok((filename.unwrap_or_else(|| fallback.to_string()), true))
 }
