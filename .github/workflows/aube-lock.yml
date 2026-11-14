@@ -62,7 +62,7 @@ jobs:
     if: needs.changes.outputs.aube == 'true'
     permissions:
       contents: write
-    uses: jdx/renovate-config/.github/workflows/aube-lock.yml@d0f85cba63adc5a26194009e76eebcf5bc1ee823 # v1.0.2
+    uses: jdx/renovate-config/.github/workflows/aube-lock.yml@f29cd6d5584e3acad48f18cc6eba09604a5bc6bf # v1.2.0
     secrets:
-      AUBE_LOCK_APP_ID: ${{ secrets.AUBE_LOCK_APP_ID }}
+      AUBE_LOCK_APP_CLIENT_ID: Iv23ct0esfAqqzDuwjhI
       AUBE_LOCK_APP_PRIVATE_KEY: ${{ secrets.AUBE_LOCK_APP_PRIVATE_KEY }}
