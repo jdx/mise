@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Regression test for #15742: on macOS `current_exe()` is the path a process was
+# launched through, so a shim-triggered auto-install saw the shim as the mise
+# binary. With no mise on PATH, the reshim that followed pointed every shim at
+# that shim, and every command failed with "too many levels of symbolic links".
+# `__MISE_BIN` stands in for macOS's `current_exe()` here.
+
+shimdir="$MISE_DATA_DIR/shims"
+mise_bin="$(which mise)"
+
+mise i dummy@1.0.0
+assert "readlink $shimdir/dummy" "$mise_bin"
+
+# Running as the shim: mise follows its link back to the mise it points at.
+__MISE_BIN="$shimdir/dummy" PATH=/usr/bin:/bin "$mise_bin" reshim --force
+assert "readlink $shimdir/dummy" "$mise_bin"
+
+# A shim mise cannot follow (a plain file, like a Windows hardlink shim) is not
+# written as every shim's target: reshim warns and leaves the shims alone.
+mkdir -p "$HOME/tool-bin"
+touch "$HOME/tool-bin/dummy"
+assert_contains "__MISE_BIN=$HOME/tool-bin/dummy PATH=/usr/bin:/bin $mise_bin reshim --force 2>&1" "is not the mise executable"
+assert "readlink $shimdir/dummy" "$mise_bin"

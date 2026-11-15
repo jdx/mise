@@ -575,13 +575,53 @@ pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
         .max(80)
 });
 
-/// true if inside a script like bin/exec-env or bin/install
-/// used to prevent infinite loops
+/// The mise executable, for re-running mise from a subprocess or pointing shims at it.
+///
+/// `__MISE_BIN` when a parent mise passed one, else the running executable, resolved by
+/// [`mise_bin_behind`] so it never names a tool shim.
 pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
     var_path("__MISE_BIN")
         .or_else(|| current_exe().ok())
+        .map(mise_bin_behind)
         .unwrap_or_else(|| "mise".into())
 });
+
+/// Whether running `path` runs mise rather than a tool: its file name is a mise name.
+pub fn is_mise_path(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| is_mise_binary(&name.to_string_lossy()))
+}
+
+/// The mise executable that `exe` runs.
+///
+/// mise chooses what to do from the name it was run as, so a path whose file name is not a mise
+/// name runs a tool, never mise. macOS reports the path a process was launched through as
+/// `current_exe()`, which for a shim launch is the shim (`shims/jq`). Re-running that runs `jq`,
+/// and a reshim pointed at it makes every shim a link to itself (#15742).
+///
+/// Follow the shim link one step first: that is the mise the last reshim chose, usually a
+/// launcher a package manager keeps across upgrades (`/opt/homebrew/bin/mise`), where the fully
+/// resolved file is versioned (`…/Cellar/mise/<version>/bin/mise`) and goes away on cleanup.
+/// Resolve fully only when that step does not end at mise. A path that is not a link to mise (a
+/// Windows hardlink shim) is returned as given.
+pub fn mise_bin_behind(exe: PathBuf) -> PathBuf {
+    if is_mise_path(&exe) {
+        return exe;
+    }
+    if let Ok(target) = std::fs::read_link(&exe) {
+        let target = match exe.parent() {
+            Some(dir) if target.is_relative() => dir.join(target),
+            _ => target,
+        };
+        if is_mise_path(&target) {
+            return target;
+        }
+    }
+    match crate::file::canonicalize_cached(&exe) {
+        Some(resolved) if is_mise_path(&resolved) => resolved,
+        _ => exe,
+    }
+}
 
 pub static MISE_TIMINGS: Lazy<u8> = Lazy::new(|| var_u8("MISE_TIMINGS"));
 
@@ -1623,6 +1663,73 @@ mod tests {
     }
 
     use super::*;
+
+    /// A Homebrew-like layout: `bin/mise` is the stable launcher, a link to the versioned file.
+    #[cfg(unix)]
+    fn brew_layout(root: &Path) -> (PathBuf, PathBuf) {
+        let cellar = root.join("Cellar/mise/1.0/bin");
+        std::fs::create_dir_all(&cellar).unwrap();
+        let real = cellar.join("mise");
+        std::fs::write(&real, "").unwrap();
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        let launcher = root.join("bin/mise");
+        std::os::unix::fs::symlink(&real, &launcher).unwrap();
+        std::fs::create_dir_all(root.join("shims")).unwrap();
+        (launcher, real)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tool_shim_resolves_to_the_launcher_it_links_to() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (launcher, _real) = brew_layout(tmp.path());
+        let shim = tmp.path().join("shims/jq");
+        std::os::unix::fs::symlink(&launcher, &shim).unwrap();
+        // One step, not the versioned file behind it: that goes away on `brew cleanup`.
+        assert_eq!(mise_bin_behind(shim), launcher);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_relative_shim_link_resolves_against_the_shim_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (launcher, _real) = brew_layout(tmp.path());
+        let shim = tmp.path().join("shims/jq");
+        std::os::unix::fs::symlink("../bin/mise", &shim).unwrap();
+        let resolved = mise_bin_behind(shim);
+        assert_eq!(
+            std::fs::canonicalize(&resolved).unwrap(),
+            std::fs::canonicalize(&launcher).unwrap()
+        );
+        assert!(is_mise_path(&resolved));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_shim_through_a_link_not_named_mise_resolves_fully() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_launcher, real) = brew_layout(tmp.path());
+        let hop = tmp.path().join("bin/hop");
+        std::os::unix::fs::symlink(&real, &hop).unwrap();
+        let shim = tmp.path().join("shims/jq");
+        std::os::unix::fs::symlink(&hop, &shim).unwrap();
+        assert_eq!(mise_bin_behind(shim), std::fs::canonicalize(&real).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mise_and_paths_that_do_not_lead_to_mise_are_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (launcher, _real) = brew_layout(tmp.path());
+        // Already mise: not resolved, so the launcher is kept rather than the versioned file.
+        assert_eq!(mise_bin_behind(launcher.clone()), launcher);
+        // A plain file under a tool's name, like a Windows hardlink shim.
+        let tool = tmp.path().join("bin/jq");
+        std::fs::write(&tool, "").unwrap();
+        assert_eq!(mise_bin_behind(tool.clone()), tool);
+        // A bare name is left for PATH lookup.
+        assert_eq!(mise_bin_behind("mise".into()), PathBuf::from("mise"));
+    }
 
     #[test]
     fn default_tmp_dir_stays_out_of_the_cache_dir() {
