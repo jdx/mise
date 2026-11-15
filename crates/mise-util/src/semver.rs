@@ -159,6 +159,55 @@ pub fn semver_precedence_cmp(current: &str, candidate: &str) -> Option<Ordering>
     Some(parse(current)?.cmp_precedence(&parse(candidate)?))
 }
 
+/// One segment of build metadata. Numbers sort before text and compare as
+/// numbers, so build 101 follows build 7.
+pub type BuildSegment = (bool, u64, String);
+
+/// Sort key for the build metadata after a `+`, such as Java's
+/// `temurin-25.0.4+7.0.LTS`. `Versioning` ignores that part, so versions that
+/// differ only there tie; add this key after `Versioning::new(v)` to order them.
+pub fn build_metadata_key(v: &str) -> Vec<BuildSegment> {
+    let Some((_, meta)) = v.split_once('+') else {
+        return vec![];
+    };
+    meta.split('.')
+        .map(|seg| match seg.parse::<u64>() {
+            Ok(n) => (false, n, String::new()),
+            Err(_) => (true, 0, seg.to_string()),
+        })
+        .collect()
+}
+
+/// Sort key that orders versions like `Versioning` and then breaks ties by
+/// numeric build metadata. Append the version string as a final tie-break.
+pub fn version_sort_key(v: &str) -> (Option<Versioning>, Vec<BuildSegment>) {
+    (Versioning::new(v), build_metadata_key(v))
+}
+
+/// For versions identical before the `+`, whether `current`'s build metadata is
+/// older than `latest`'s. Only a numeric build segment can say so: `+7` is older
+/// than `+101`, but `+one` and `+two` are not ordered. Anything else is `false`.
+pub fn build_metadata_is_older(current: &str, latest: &str) -> bool {
+    let (Some((cbase, cmeta)), Some((lbase, lmeta))) =
+        (current.split_once('+'), latest.split_once('+'))
+    else {
+        return false;
+    };
+    if cbase != lbase {
+        return false;
+    }
+    for (c, l) in cmeta.split('.').zip(lmeta.split('.')) {
+        if c == l {
+            continue;
+        }
+        return match (c.parse::<u64>(), l.parse::<u64>()) {
+            (Ok(c), Ok(l)) => c < l,
+            _ => false,
+        };
+    }
+    false
+}
+
 /// Compares numeric major, minor, and patch components, ignoring prerelease and
 /// build suffixes. Returns `None` if either triplet cannot be extracted.
 /// Use [`semver_precedence_cmp`] when prerelease ordering matters.
@@ -182,6 +231,34 @@ mod tests {
         split_version_prefix,
     };
     use std::cmp::Ordering;
+
+    #[test]
+    fn version_sort_key_orders_build_numbers_numerically() {
+        let mut v = [
+            "t-25.0.4+7.0.LTS",
+            "t-25.0.4+101.0.LTS",
+            "t-25.0.4+36.0.LTS",
+        ];
+        v.sort_by_key(|v| (super::version_sort_key(v), v.to_string()));
+        assert_eq!(
+            v,
+            [
+                "t-25.0.4+7.0.LTS",
+                "t-25.0.4+36.0.LTS",
+                "t-25.0.4+101.0.LTS"
+            ]
+        );
+    }
+
+    #[test]
+    fn build_metadata_is_older_needs_numeric_segments() {
+        use super::build_metadata_is_older as older;
+        assert!(older("t-25.0.4+7.0.LTS", "t-25.0.4+101.0.LTS"));
+        assert!(!older("t-25.0.4+101.0.LTS", "t-25.0.4+7.0.LTS"));
+        assert!(!older("1.0.0+one", "1.0.0+two"));
+        assert!(!older("1.0.0+1", "1.0.1+2"));
+        assert!(!older("1.0.0", "1.0.0+2"));
+    }
 
     #[test]
     fn test_split_version_prefix() {

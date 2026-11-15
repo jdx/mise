@@ -4,6 +4,8 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::lock_file::LockFile;
 use crate::plugins::PluginType;
+use crate::semver::version_sort_key;
+
 use crate::toolset::tool_version_options::strip_options_credentials;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
@@ -13,7 +15,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock as Lazy, Mutex};
-use versions::Versioning;
 
 /// Normalize a version string for sorting by stripping leading 'v' or 'V' prefix.
 /// This ensures "v1.0.0" and "1.0.0" are sorted together correctly.
@@ -29,28 +30,8 @@ fn normalize_version_for_sort(v: &str) -> &str {
 pub(crate) fn sort_versions(versions: &mut [String]) {
     versions.sort_by_cached_key(|v| {
         let normalized = normalize_version_for_sort(v);
-        (
-            Versioning::new(normalized),
-            build_metadata_key(normalized),
-            v.to_string(),
-        )
+        (version_sort_key(normalized), v.to_string())
     });
-}
-
-/// Orders versions that `Versioning` treats as equal because they differ only
-/// in the build metadata after a `+`, such as Java's `temurin-25.0.4+7.0.LTS`
-/// and `temurin-25.0.4+101.0.LTS`. Numeric segments compare as numbers, so
-/// build 101 follows build 7 instead of preceding it as text.
-fn build_metadata_key(v: &str) -> Vec<(bool, u64, String)> {
-    let Some((_, meta)) = v.split_once('+') else {
-        return vec![];
-    };
-    meta.split('.')
-        .map(|seg| match seg.parse::<u64>().ok() {
-            Some(n) => (false, n, String::new()),
-            None => (true, 0, seg.to_string()),
-        })
-        .collect()
 }
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;

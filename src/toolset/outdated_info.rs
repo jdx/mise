@@ -1,4 +1,6 @@
-use crate::semver::{chunkify_version, semver_precedence_cmp, split_version_prefix};
+use crate::semver::{
+    build_metadata_is_older, chunkify_version, semver_precedence_cmp, split_version_prefix,
+};
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, backend::ABackend, config::Config};
 use serde::Serialize;
@@ -540,6 +542,9 @@ fn is_up_to_date(unordered: bool, current: &str, latest: &str) -> bool {
 /// Uses SemVer precedence when possible, then the general version comparison;
 /// versions that cannot be ordered are considered outdated when they differ.
 pub fn is_outdated_version(current: &str, latest: &str) -> bool {
+    if build_metadata_is_older(current, latest) {
+        return true;
+    }
     if let Some(ordering) = semver_precedence_cmp(current, latest) {
         return ordering == Ordering::Less;
     }
