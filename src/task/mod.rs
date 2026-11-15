@@ -3509,14 +3509,20 @@ fn match_tasks_with_context(
     td: &TaskDep,
     parent_task: Option<&Task>,
 ) -> Result<Vec<Task>> {
-    // A dependency that names only tags selects from every task, like `mise run --tag`.
-    let resolved_pattern = if td.task.is_empty() && !td.tags.is_empty() {
-        "**".to_string()
+    // A dependency that names only tags selects from every task, like `mise run --tag`. It reads
+    // the task map directly: an alias is not a pattern, so no lookup may answer for `**`.
+    let tag_only = td.task.is_empty() && !td.tags.is_empty();
+    let resolved_pattern = if tag_only {
+        String::new()
     } else {
         resolve_task_pattern(&td.task, parent_task)
     };
-    let matches = tasks
-        .get_matching(&resolved_pattern)?
+    let candidates: Vec<&&Task> = if tag_only {
+        tasks.values().unique().collect()
+    } else {
+        tasks.get_matching(&resolved_pattern)?
+    };
+    let matches = candidates
         .into_iter()
         .filter(|t| td.tags.is_empty() || t.has_any_tag(&td.tags))
         .map(|t| {

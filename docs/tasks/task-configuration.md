@@ -443,8 +443,9 @@ depends = [
 
 #### Dependencies by tag
 
-Use `tag` in a table entry to depend on every task that has a
-[tag](#tags), whatever its name. A list selects the tasks that have any of
+Use `tag` in a table entry to depend on every task in the loaded configs that
+has a [tag](#tags), whatever its name. To select tasks from other monorepo
+projects, add a `task` pattern such as `//...:**`. A list selects the tasks that have any of
 the tags.
 
 ```toml

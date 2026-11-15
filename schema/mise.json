@@ -4035,7 +4035,28 @@
           "description": "do not fail when the task name or pattern has no matches"
         }
       },
-      "unevaluatedProperties": false
+      "unevaluatedProperties": false,
+      "anyOf": [
+        {
+          "required": ["task"]
+        },
+        {
+          "required": ["tag"],
+          "properties": {
+            "tag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "minItems": 1
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "task_props": {
       "type": "object",

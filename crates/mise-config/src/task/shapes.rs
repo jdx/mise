@@ -157,10 +157,26 @@ pub enum TaskDependencyItem {
     Table(#[schemars(schema_with = "refs::task_dependency_table")] ()),
 }
 
+/// A dependency table needs a `task`, or a `tag` that is not an empty list; the parser rejects
+/// anything else.
+fn needs_a_selector(schema: &mut Schema) {
+    crate::schema::unevaluated(schema);
+    schema.insert(
+        "anyOf".into(),
+        serde_json::json!([
+            {"required": ["task"]},
+            {
+                "required": ["tag"],
+                "properties": {"tag": {"anyOf": [{"type": "string"}, {"type": "array", "minItems": 1}]}}
+            }
+        ]),
+    );
+}
+
 /// task dependency with args, env, and optional flag
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = crate::schema::unevaluated)]
+#[schemars(transform = needs_a_selector)]
 pub struct TaskDependencyTable {
     /// task name, alias, or pattern; needed unless `tag` is set
     pub task: Option<String>,
