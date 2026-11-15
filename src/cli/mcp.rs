@@ -753,6 +753,15 @@ fn is_path_like(task: &str) -> bool {
     xx::regex!(r"^((\.*|~)[/\\]|\w:[/\\])").is_match(task)
 }
 
+/// The task names a dependency list names. A dependency that selects by tag alone has no name.
+fn dependency_names(dependencies: &[mise_config::task::TaskDep]) -> Vec<String> {
+    dependencies
+        .iter()
+        .filter(|d| !d.task.is_empty())
+        .map(|d| d.task.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -963,13 +972,4 @@ mod tests {
         assert_eq!(info.server_info.name, "mise");
         assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
     }
-}
-
-/// The task names a dependency list names. A dependency that selects by tag alone has no name.
-fn dependency_names(dependencies: &[mise_config::task::TaskDep]) -> Vec<String> {
-    dependencies
-        .iter()
-        .filter(|d| !d.task.is_empty())
-        .map(|d| d.task.clone())
-        .collect()
 }

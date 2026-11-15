@@ -444,9 +444,10 @@ depends = [
 #### Dependencies by tag
 
 Use `tag` in a table entry to depend on every task in the loaded configs that
-has a [tag](#tags), whatever its name. To select tasks from other monorepo
-projects, add a `task` pattern such as `//...:**`. A list selects the tasks that have any of
-the tags.
+has a [tag](#tags), whatever its name. It does not load other monorepo
+projects to look for tagged tasks. A remote task counts only when the tags are
+in its `mise.toml` entry, not in the `#MISE` header of the file. A list selects the tasks that have any of the
+tags.
 
 ```toml
 [tasks.clippy]
