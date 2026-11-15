@@ -8,6 +8,7 @@ mod html;
 mod http;
 mod json;
 mod log;
+mod pcall;
 mod semver;
 mod strings;
 
@@ -22,5 +23,6 @@ pub(crate) use html::mod_html as html;
 pub(crate) use http::mod_http as http;
 pub(crate) use json::mod_json as json;
 pub(crate) use log::mod_log as log;
+pub(crate) use pcall::mod_pcall as pcall;
 pub(crate) use semver::mod_semver as semver;
 pub(crate) use strings::mod_strings as strings;
