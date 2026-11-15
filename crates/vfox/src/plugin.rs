@@ -304,6 +304,9 @@ impl Plugin {
                 )?;
             }
 
+            // Plugins wrap async calls such as http.get in pcall
+            lua_mod::pcall(&self.lua)?;
+
             // Load standard Lua modules (http, json, etc.) FIRST
             // These must be available before loading embedded lib files
             lua_mod::archiver(&self.lua)?;
