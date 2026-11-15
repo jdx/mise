@@ -179,11 +179,16 @@ pub(super) fn parse_installer_artifact(value: &Value) -> Result<Option<Installer
     let Some(installer) = value.as_object().and_then(|object| object.get("installer")) else {
         return Ok(None);
     };
-    let values = installer
-        .as_array()
-        .ok_or_else(|| eyre!("brew-cask: installer metadata must be an array"))?;
+    // Homebrew's API publishes an array; casks evaluated from a tap emit a
+    // single object.
+    let values: Vec<&Value> = match installer {
+        Value::Array(values) => values.iter().collect(),
+        value @ Value::Object(_) => vec![value],
+        _ => bail!("brew-cask: installer metadata must be an array or object"),
+    };
     let script = values
         .first()
+        .copied()
         .and_then(Value::as_object)
         .and_then(|value| value.get("script"))
         .and_then(Value::as_object)
