@@ -635,7 +635,17 @@ pub async fn generate(
                 })
                 .filter_map(|old| old.platforms.get(&platform.to_key()))
             {
-                ensure_no_downgrade(old, &info, &backend)?;
+                ensure_no_downgrade(old, &info, &backend).map_err(|error| {
+                    eyre!(
+                        "{error}: {short}@{version} on {} ({backend}) recorded provenance {} but \
+                         the new entry has {}. If the registry recipe no longer provides what \
+                         mise needs to verify it, fix the recipe or lock the tool through \
+                         another backend",
+                        platform.to_key(),
+                        describe_provenance(old),
+                        describe_provenance(&info),
+                    )
+                })?;
                 carry_forge_ids(old, &mut info);
             }
         }
@@ -978,6 +988,15 @@ fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo) {
         && new.repository_id == old.repository_id
     {
         new.repository_owner_id = old.repository_owner_id.clone();
+    }
+}
+
+/// Names a platform entry's provenance for an error message.
+fn describe_provenance(info: &PlatformInfo) -> String {
+    match (&info.provenance, &info.signer) {
+        (Some(provenance), _) => provenance.to_string(),
+        (None, Some(signer)) => format!("signer {signer}"),
+        (None, None) => "no provenance".to_string(),
     }
 }
 
