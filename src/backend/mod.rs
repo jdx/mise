@@ -5421,6 +5421,10 @@ pub trait Backend: Debug + Send + Sync {
                 ctx.pr.set_message(install_lock_wait_message(pid));
             })
         })?);
+        // Another mise may have finished installing while we waited for the lock. The
+        // installed versions this process memoized before then are stale, and the
+        // configured install dependencies of later tools resolve against them.
+        install_state::reset_tools();
 
         let mut install_satisfied = self
             .is_install_satisfied_or_false(&ctx.config, &tv, true)
