@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# A { default = ... } directive depends on the caller's environment, which the cache key
+# does not cover, so the env is not cached and every run sees the caller's value.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+cat >mise.toml <<'TOML'
+[env]
+JOBS = { default = "4" }
+TOML
+
+CACHE_FILES="find '$MISE_STATE_DIR/env-cache' -type f 2>/dev/null | wc -l | tr -d ' '"
+
+# Built while JOBS is set: a later run without it still gets the default
+rm -rf "$MISE_STATE_DIR/env-cache"
+assert "JOBS=3 mise x -- sh -c 'echo \${JOBS-unset}'" "3"
+assert "env -u JOBS mise x -- sh -c 'echo \${JOBS-unset}'" "4"
+assert "JOBS=7 mise x -- sh -c 'echo \${JOBS-unset}'" "7"
+
+# Built while JOBS is unset: a later run with it set gets the caller's value
+rm -rf "$MISE_STATE_DIR/env-cache"
+assert "env -u JOBS mise x -- sh -c 'echo \${JOBS-unset}'" "4"
+assert "JOBS=3 mise x -- sh -c 'echo \${JOBS-unset}'" "3"
+assert "$CACHE_FILES" "0"

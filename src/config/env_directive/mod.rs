@@ -357,6 +357,10 @@ impl EnvResults {
                     if resolve_opts.vars && opts.prompt.is_some() {
                         prompt::note_declared(&k);
                     }
+                    // Whether the default applies depends on the caller's environment, which
+                    // the env cache key does not cover, so a cached result would replay whichever
+                    // branch the first run took.
+                    r.has_uncacheable = true;
                     // Same fold as `Val` above, and for the same reason.
                     let k = if resolve_opts.vars {
                         k
@@ -776,12 +780,10 @@ impl EnvResults {
         // A redacted value is a secret by the user's or the directive's own account
         // (age values are redacted by default), and the env cache would write it to disk.
         // `env_cache_redacted` opts in; decrypted values were marked above regardless.
-        // A redacted var can change without the config file changing, and a `default` or
-        // `required` depends on the caller's environment, which the cache key does not see.
-        let caller_dependent = r
-            .redactions
-            .iter()
-            .any(|k| r.caller_env_keys.contains(k) || r.rendered_defaults.contains(k));
+        // A redacted var can change without the config file changing, and a `required`
+        // depends on the caller's environment, which the cache key does not see. (A
+        // `default` marked the result uncacheable already.)
+        let caller_dependent = r.redactions.iter().any(|k| r.caller_env_keys.contains(k));
         if !r.redactions.is_empty()
             && (!Settings::get().env_cache_redacted || resolve_opts.vars || caller_dependent)
         {
@@ -1297,6 +1299,19 @@ mod tests {
         )])
         .await;
         assert!(!results.has_uncacheable);
+    }
+
+    /// Whether a default applies depends on the caller's environment, which the env cache
+    /// key does not cover, so a cached result would replay the first run's choice.
+    #[tokio::test]
+    async fn test_default_is_uncacheable() {
+        let results = resolve_for_cache_test(vec![EnvDirective::Default(
+            "WITH_DEFAULT".into(),
+            "value".into(),
+            Default::default(),
+        )])
+        .await;
+        assert!(results.has_uncacheable);
     }
 
     #[tokio::test]

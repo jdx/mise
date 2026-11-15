@@ -789,9 +789,11 @@ Caches environment variables and `PATH` so nested commands such as
 `mise exec -- mise env` skip recomputing them. Entries expire after
 [`env_cache_ttl`](#env_cache_ttl) or when config files, tool versions, settings,
 or files that env plugins watch change. Edits to dotenv files or `_.source`
-scripts may not invalidate an entry; set `MISE_ENV_CACHE=0` for a command that
-must recompute. Configurations with secrets (an `age` value or a sops-encrypted
-file) are never cached, and neither are those with `redact = true` unless
+scripts may not invalidate an entry, and neither do the caller's variables that a
+template reads with `get_env()` or `env.NAME`; set `MISE_ENV_CACHE=0` for a
+command that must recompute. Configurations with secrets (an `age` value or a
+sops-encrypted file) or a `default` directive are never cached, and neither are
+those with `redact = true` unless
 [`env_cache_redacted`](#env_cache_redacted) is on. See
 [Environment cache](/cache-behavior.html#environment-caching).
 """

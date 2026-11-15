@@ -100,6 +100,10 @@ expire after [`env_cache_ttl`](/configuration/settings.html#env_cache_ttl), and
 files that env plugins declare as watched invalidate them. Edits to dotenv files
 or `_.source` scripts can still leave a nested command with a cached
 environment; clear or disable the cache when such an edit does not show up.
+The key does not cover the caller's environment either, so a template that reads
+a variable with `get_env()` or `env.NAME` keeps the value from the run that
+built the entry. Use a [`default`](/environments/#defaults) directive for
+a value the caller can override: mise does not cache a config that has one.
 Changes in an external service, such as a rotated secret, are not file changes,
 so choose a suitable TTL.
 
