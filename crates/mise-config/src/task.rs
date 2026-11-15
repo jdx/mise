@@ -699,13 +699,16 @@ mod shape_tests {
         let declared = keys::<TaskDependencyTable>();
         assert_eq!(
             declared,
-            ["args", "env", "optional", "task"].map(String::from).into()
+            ["args", "env", "optional", "tag", "task"]
+                .map(String::from)
+                .into()
         );
         for key in &declared {
             let sample = match key.as_str() {
                 "task" => "\"build\"",
                 "args" => "[\"a\"]",
                 "env" => "{ A = \"b\" }",
+                "tag" => "[\"lint\"]",
                 _ => "true",
             };
             let table = format!(

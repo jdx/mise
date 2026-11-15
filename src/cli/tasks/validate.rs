@@ -367,7 +367,9 @@ impl TasksValidate {
                 .iter()
                 .chain(task.depends_post.iter())
                 .chain(task.wait_for.iter())
-                .filter(|dep| !dep.optional && !dep.task.contains(['*', '?']))
+                .filter(|dep| {
+                    !dep.optional && !dep.task.is_empty() && !dep.task.contains(['*', '?'])
+                })
                 .map(|dep| dep.task.as_str());
             let run_references = task.run().iter().flat_map(|entry| {
                 let names = match entry {
@@ -553,6 +555,10 @@ impl TasksValidate {
                 continue;
             }
             let dep_name = &dep.task;
+            // A tag selects at run time, like a wildcard
+            if dep_name.is_empty() {
+                continue;
+            }
             // Skip pattern wildcards for now (they're resolved at runtime)
             if dep_name.contains('*') || dep_name.contains('?') {
                 continue;

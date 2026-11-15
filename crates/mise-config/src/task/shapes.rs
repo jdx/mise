@@ -162,8 +162,10 @@ pub enum TaskDependencyItem {
 #[serde(deny_unknown_fields)]
 #[schemars(transform = crate::schema::unevaluated)]
 pub struct TaskDependencyTable {
-    /// task name, alias, or pattern
-    pub task: String,
+    /// task name, alias, or pattern; needed unless `tag` is set
+    pub task: Option<String>,
+    /// select the tasks that have this tag, or any of these tags; with `task`, only the tasks it matches that have one
+    pub tag: Option<TaskTags>,
     /// arguments to pass to the task
     pub args: Option<Vec<String>>,
     /// environment variables to set for this dependency only

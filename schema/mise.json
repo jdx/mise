@@ -3996,7 +3996,24 @@
       "properties": {
         "task": {
           "type": "string",
-          "description": "task name, alias, or pattern"
+          "description": "task name, alias, or pattern; needed unless `tag` is set"
+        },
+        "tag": {
+          "description": "select the tasks that have this tag, or any of these tags; with `task`, only the tasks it matches that have one",
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "what kind of task this is, such as `test` or `lint`; `mise run --tag` and `mise tasks ls --tag` select tasks by it"
+            },
+            {
+              "type": "array",
+              "description": "what kind of task this is, such as `test`, `lint` or `slow`; `mise run --tag` and `mise tasks ls --tag` select tasks by them",
+              "items": {
+                "type": "string",
+                "description": "a tag, such as `test`, `lint` or `slow`"
+              }
+            }
+          ]
         },
         "args": {
           "type": "array",
@@ -4018,7 +4035,6 @@
           "description": "do not fail when the task name or pattern has no matches"
         }
       },
-      "required": ["task"],
       "unevaluatedProperties": false
     },
     "task_props": {

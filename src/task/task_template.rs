@@ -598,6 +598,7 @@ mod tests {
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -607,6 +608,7 @@ mod tests {
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };

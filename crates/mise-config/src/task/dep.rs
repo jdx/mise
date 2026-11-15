@@ -12,6 +12,16 @@ pub struct TaskDep {
     pub args: Vec<String>,
     pub env: IndexMap<String, String>,
     pub optional: bool,
+    /// Select the tasks that have at least one of these tags. With a `task`, only the tasks it
+    /// matches that carry a tag; without one, every task that carries a tag.
+    pub tags: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrManyTags {
+    One(String),
+    Many(Vec<String>),
 }
 
 impl TaskDep {
@@ -68,6 +78,12 @@ impl Display for TaskDep {
         for (k, v) in &self.env {
             write!(f, "{}={} ", k, v)?;
         }
+        if !self.tags.is_empty() {
+            write!(f, "tag:{}", self.tags.join(","))?;
+            if !self.task.is_empty() {
+                write!(f, " ")?;
+            }
+        }
         write!(f, "{}", self.task)?;
         if !self.args.is_empty() {
             write!(f, " {}", self.args.join(" "))?;
@@ -91,6 +107,7 @@ impl FromStr for TaskDep {
             args: Default::default(),
             env: Default::default(),
             optional: false,
+            tags: Default::default(),
         })
     }
 }
@@ -112,6 +129,7 @@ impl<'de> Deserialize<'de> for TaskDep {
                     args: Default::default(),
                     env: Default::default(),
                     optional: false,
+                    tags: Default::default(),
                 })
             }
 
@@ -128,6 +146,7 @@ impl<'de> Deserialize<'de> for TaskDep {
                     args: items[1..].to_vec(),
                     env: Default::default(),
                     optional: false,
+                    tags: Default::default(),
                 })
             }
 
@@ -136,6 +155,7 @@ impl<'de> Deserialize<'de> for TaskDep {
                 let mut args: Vec<String> = Vec::new();
                 let mut env: IndexMap<String, String> = IndexMap::new();
                 let mut optional = false;
+                let mut tags: Vec<String> = Vec::new();
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
@@ -143,20 +163,30 @@ impl<'de> Deserialize<'de> for TaskDep {
                         "args" => args = map.next_value()?,
                         "env" => env = map.next_value()?,
                         "optional" => optional = map.next_value()?,
+                        "tag" => {
+                            tags = match map.next_value()? {
+                                OneOrManyTags::One(tag) => vec![tag],
+                                OneOrManyTags::Many(tags) => tags,
+                            }
+                        }
                         _ => {
                             return Err(de::Error::unknown_field(
                                 &key,
-                                &["task", "args", "env", "optional"],
+                                &["task", "tag", "args", "env", "optional"],
                             ));
                         }
                     }
                 }
 
+                if task.is_none() && tags.is_empty() {
+                    return Err(de::Error::custom("a dependency needs a `task` or a `tag`"));
+                }
                 Ok(TaskDep {
-                    task: task.ok_or_else(|| de::Error::missing_field("task"))?,
+                    task: task.unwrap_or_default(),
                     args,
                     env,
                     optional,
+                    tags,
                 })
             }
         }
@@ -167,10 +197,15 @@ impl<'de> Deserialize<'de> for TaskDep {
 
 impl Serialize for TaskDep {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if !self.env.is_empty() || self.optional {
-            // Use object format when env or optional metadata is present
+        if !self.env.is_empty() || self.optional || !self.tags.is_empty() {
+            // Use object format when env, optional or tag metadata is present
             let mut map = serializer.serialize_map(None)?;
-            map.serialize_entry("task", &self.task)?;
+            if !self.task.is_empty() || self.tags.is_empty() {
+                map.serialize_entry("task", &self.task)?;
+            }
+            if !self.tags.is_empty() {
+                map.serialize_entry("tag", &self.tags)?;
+            }
             if !self.args.is_empty() {
                 map.serialize_entry("args", &self.args)?;
             }

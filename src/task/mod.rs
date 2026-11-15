@@ -3509,10 +3509,16 @@ fn match_tasks_with_context(
     td: &TaskDep,
     parent_task: Option<&Task>,
 ) -> Result<Vec<Task>> {
-    let resolved_pattern = resolve_task_pattern(&td.task, parent_task);
+    // A dependency that names only tags selects from every task, like `mise run --tag`.
+    let resolved_pattern = if td.task.is_empty() && !td.tags.is_empty() {
+        "**".to_string()
+    } else {
+        resolve_task_pattern(&td.task, parent_task)
+    };
     let matches = tasks
         .get_matching(&resolved_pattern)?
         .into_iter()
+        .filter(|t| td.tags.is_empty() || t.has_any_tag(&td.tags))
         .map(|t| {
             let mut t = (*t).clone();
             t.args = td.args.clone();
@@ -3538,7 +3544,17 @@ fn match_tasks_with_context(
         })
         .collect::<Result<Vec<_>>>()?;
     if matches.is_empty() && !td.optional {
-        let mut err_msg = format!("task not found: {}", td.task);
+        let mut err_msg = if td.tags.is_empty() {
+            format!("task not found: {}", td.task)
+        } else if td.task.is_empty() {
+            format!("no task has the tag: {}", td.tags.join(", "))
+        } else {
+            format!(
+                "no task matching {} has the tag: {}",
+                td.task,
+                td.tags.join(", ")
+            )
+        };
 
         // In monorepo mode, suggest similar tasks using fuzzy matching
         if resolved_pattern.starts_with("//") {
@@ -5496,12 +5512,14 @@ exec proxy "$@"
                     args: vec![],
                     env: Default::default(),
                     optional: false,
+                    tags: Default::default(),
                 },
                 TaskDep {
                     task: "post2".to_string(),
                     args: vec![],
                     env: Default::default(),
                     optional: false,
+                    tags: Default::default(),
                 },
             ],
             ..Default::default()
@@ -5515,6 +5533,7 @@ exec proxy "$@"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -6180,6 +6199,7 @@ echo "hello world"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -6191,6 +6211,7 @@ echo "hello world"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -6217,6 +6238,7 @@ echo "hello world"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -6228,6 +6250,7 @@ echo "hello world"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -6239,6 +6262,7 @@ echo "hello world"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -6270,12 +6294,14 @@ echo "hello world"
                     args: vec![],
                     env: Default::default(),
                     optional: false,
+                    tags: Default::default(),
                 },
                 crate::task::task_dep::TaskDep {
                     task: "task_b".to_string(),
                     args: vec![],
                     env: Default::default(),
                     optional: false,
+                    tags: Default::default(),
                 },
             ],
             ..Default::default()
@@ -6288,6 +6314,7 @@ echo "hello world"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };
@@ -6299,6 +6326,7 @@ echo "hello world"
                 args: vec![],
                 env: Default::default(),
                 optional: false,
+                tags: Default::default(),
             }],
             ..Default::default()
         };

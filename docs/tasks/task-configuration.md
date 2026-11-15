@@ -441,6 +441,32 @@ depends = [
 ]
 ```
 
+#### Dependencies by tag
+
+Use `tag` in a table entry to depend on every task that has a
+[tag](#tags), whatever its name. A list selects the tasks that have any of
+the tags.
+
+```toml
+[tasks.clippy]
+tags = "lint"
+run = "cargo clippy"
+
+[tasks.shellcheck]
+tags = "lint"
+run = "shellcheck scripts/*.sh"
+
+[tasks.ci]
+depends = [{ tag = "lint" }, { tag = ["test", "slow"] }]
+```
+
+With a `task` as well, the entry keeps only the matching tasks that have the
+tag, like `mise run --tag lint 'check:*'`. It fails when no task is selected,
+unless `optional = true`. A task never depends on itself, so a task tagged
+`lint` can sit in a `{ tag = "lint" }` entry of its own. `tag` also works in
+[`depends_post`](/tasks/task-configuration.html#depends-post) and
+[`wait_for`](/tasks/task-configuration.html#wait-for).
+
 ### `depends_post`
 
 - **Type**: same as [`depends`](#depends)

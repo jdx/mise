@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+cat <<'EOS' >mise.toml
+[tasks.clippy]
+tags = "lint"
+run = 'echo ran-clippy'
+
+[tasks.shellcheck]
+tags = ["lint", "shell"]
+run = 'echo ran-shellcheck'
+
+[tasks."test:unit"]
+tags = "test"
+run = 'echo ran-unit'
+
+[tasks.ci]
+depends = [{ tag = "lint" }]
+run = 'echo ran-ci'
+
+[tasks.ci-any]
+depends = [{ tag = ["shell", "test"] }]
+run = 'echo ran-ci-any'
+
+[tasks.ci-both]
+depends = [{ task = "test:*", tag = "lint" }]
+run = 'echo ran-ci-both'
+
+[tasks.ci-optional]
+depends = [{ task = "test:*", tag = "lint", optional = true }]
+run = 'echo ran-ci-optional'
+
+[tasks.ci-none]
+depends = [{ tag = "nothing" }]
+run = 'echo ran-ci-none'
+
+[tasks.after]
+depends_post = [{ tag = "shell" }]
+run = 'echo ran-after'
+
+[tasks.self]
+tags = "lint"
+depends = [{ tag = "lint" }]
+run = 'echo ran-self'
+EOS
+
+# a tag selects every task that has it, whatever its name
+assert_contains "mise run ci" "ran-clippy"
+assert_contains "mise run ci" "ran-shellcheck"
+assert_not_contains "mise run ci" "ran-unit"
+
+# a list of tags selects the tasks that have any of them
+assert_contains "mise run ci-any" "ran-shellcheck"
+assert_contains "mise run ci-any" "ran-unit"
+assert_not_contains "mise run ci-any" "ran-clippy"
+
+# with a name, only the matching tasks that have the tag are kept
+assert_fail_contains "mise run ci-both" "no task matching test:* has the tag: lint"
+assert_contains "mise run ci-optional" "ran-ci-optional"
+assert_fail_contains "mise run ci-none" "no task has the tag: nothing"
+
+# depends_post takes tags too
+assert_contains "mise run after" "ran-shellcheck"
+
+# a task tagged lint does not depend on itself
+assert_contains "mise run self" "ran-clippy"
+assert_contains "mise run self" "ran-self"
