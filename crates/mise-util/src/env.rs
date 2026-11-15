@@ -609,11 +609,16 @@ pub fn mise_bin_behind(exe: PathBuf) -> PathBuf {
         return exe;
     }
     if let Ok(target) = std::fs::read_link(&exe) {
+        // A relative link is relative to the directory the link really sits in. Resolve that
+        // first: `..` after a symlinked shims directory names the real parent, and making the
+        // joined path absolute later removes `..` without following links.
         let target = match exe.parent() {
-            Some(dir) if target.is_relative() => dir.join(target),
+            Some(dir) if target.is_relative() => {
+                crate::file::canonicalize_or_self(dir).join(target)
+            }
             _ => target,
         };
-        if is_mise_path(&target) {
+        if is_mise_path(&target) && target.exists() {
             return target;
         }
     }
@@ -1702,6 +1707,40 @@ mod tests {
             std::fs::canonicalize(&launcher).unwrap()
         );
         assert!(is_mise_path(&resolved));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_relative_shim_link_follows_a_symlinked_shims_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        // The real shims live in `farm`; `data/shims` is a link to them.
+        let (launcher, _real) = brew_layout(&tmp.path().join("farm"));
+        std::fs::create_dir_all(tmp.path().join("data")).unwrap();
+        std::os::unix::fs::symlink(tmp.path().join("farm/shims"), tmp.path().join("data/shims"))
+            .unwrap();
+        std::os::unix::fs::symlink("../bin/mise", tmp.path().join("farm/shims/jq")).unwrap();
+        let resolved = mise_bin_behind(tmp.path().join("data/shims/jq"));
+        // Made absolute the way shims are written, lexically: still the launcher in `farm`.
+        let written = std::path::absolute(&resolved).unwrap();
+        let written: PathBuf = written.components().fold(PathBuf::new(), |mut p, c| {
+            match c {
+                std::path::Component::ParentDir => {
+                    p.pop();
+                }
+                c => p.push(c),
+            }
+            p
+        });
+        assert_eq!(
+            written,
+            std::fs::canonicalize(tmp.path().join("farm/bin"))
+                .unwrap()
+                .join("mise")
+        );
+        assert_eq!(
+            std::fs::canonicalize(&resolved).unwrap(),
+            std::fs::canonicalize(&launcher).unwrap()
+        );
     }
 
     #[cfg(unix)]
