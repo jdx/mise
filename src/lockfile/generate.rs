@@ -635,7 +635,12 @@ pub async fn generate(
                 })
                 .filter_map(|old| old.platforms.get(&platform.to_key()))
             {
-                ensure_no_downgrade(old, &info, &backend)?;
+                ensure_no_downgrade(old, &info, &backend).map_err(|error| {
+                    eyre!(
+                        "{error} ({short}@{version} on {}, {backend})",
+                        platform.to_key()
+                    )
+                })?;
                 carry_forge_ids(old, &mut info);
             }
         }
@@ -981,6 +986,20 @@ fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo) {
     }
 }
 
+/// Names a recorded provenance for an error message.
+fn describe_provenance(provenance: Option<&ProvenanceType>) -> String {
+    provenance.map_or_else(|| "no provenance".to_string(), ToString::to_string)
+}
+
+/// Names a signer and its attestation for an error message.
+fn describe_signer(info: &PlatformInfo) -> String {
+    match (&info.signer, &info.attested_by) {
+        (Some(signer), Some(by)) => format!("{signer} (attested by {by})"),
+        (Some(signer), None) => signer.clone(),
+        (None, _) => "no signer".to_string(),
+    }
+}
+
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
     // A verified Packslip signer is the replacement trust baseline for an
     // artifact authenticated by its signed release manifest. Older incremental
@@ -995,7 +1014,12 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
         packslip_signer_replaces_provenance,
     ) {
         bail!(
-            "lockfile generation would downgrade recorded provenance; previous files were preserved"
+            "lockfile generation would downgrade recorded provenance; previous files were \
+             preserved: recorded {} but the new entry has {}. If the registry recipe no longer \
+             provides what mise needs to verify it, fix the recipe or lock the tool through \
+             another backend",
+            describe_provenance(old.provenance.as_ref()),
+            describe_provenance(new.provenance.as_ref()),
         );
     }
     // A Packslip entry's signer continues as the same string, or, when both
@@ -1011,7 +1035,10 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
             || new.attested_by != old.attested_by)
     {
         bail!(
-            "lockfile generation would change the recorded signer; previous files were preserved"
+            "lockfile generation would change the recorded signer; previous files were \
+             preserved: recorded {} but the new entry has {}",
+            describe_signer(old),
+            describe_signer(new),
         );
     }
     // Preserve identities across reordering, then pair replaced URLs in their
@@ -1033,7 +1060,11 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
             packslip_signer_replaces_provenance,
         ) {
             bail!(
-                "lockfile generation would downgrade additional artifact provenance; previous files were preserved"
+                "lockfile generation would downgrade additional artifact provenance; previous \
+                 files were preserved: {} recorded {} but the new entry has {}",
+                artifact.url,
+                describe_provenance(artifact.provenance.as_ref()),
+                describe_provenance(replacement.and_then(|a| a.provenance.as_ref())),
             );
         }
     }
