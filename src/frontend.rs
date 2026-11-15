@@ -9,10 +9,14 @@ use std::sync::{Arc, OnceLock};
 use eyre::Result;
 
 use crate::config::Config;
+use crate::lockfile::LockfileUpdateMode;
 use crate::toolset::ToolVersion;
 
-type LockfilesAfterInstall =
-    fn(Arc<Config>, Vec<ToolVersion>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+type LockfilesAfterInstall = fn(
+    Arc<Config>,
+    Vec<ToolVersion>,
+    LockfileUpdateMode,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 
 pub struct Frontend {
     /// `mise lock` for the versions an install just added.
@@ -36,8 +40,9 @@ fn get() -> &'static Frontend {
 pub(crate) async fn generate_lockfiles_after_install(
     config: Arc<Config>,
     installed: &[ToolVersion],
+    mode: LockfileUpdateMode,
 ) -> Result<()> {
-    (get().lockfiles_after_install)(config, installed.to_vec()).await
+    (get().lockfiles_after_install)(config, installed.to_vec(), mode).await
 }
 
 pub(crate) fn subcommand_names() -> Vec<String> {

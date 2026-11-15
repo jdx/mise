@@ -10,7 +10,7 @@ fn init() {
     // The library's tests have no `cli` to register the real frontend. Stand in for it so a
     // missing-task error or a post-install lockfile update does not panic on an unset hook.
     crate::frontend::register(crate::frontend::Frontend {
-        lockfiles_after_install: |_, _| Box::pin(async { Ok(()) }),
+        lockfiles_after_install: |_, _, _| Box::pin(async { Ok(()) }),
         subcommand_names: Vec::new,
     });
     crate::testing::init();

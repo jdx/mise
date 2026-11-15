@@ -1041,8 +1041,10 @@ fn finish_hook_env_fast_exit() {
 /// Hand core the pieces of CLI behavior it calls into (see [`crate::frontend`]).
 pub(crate) fn register_frontend() {
     crate::frontend::register(crate::frontend::Frontend {
-        lockfiles_after_install: |config, installed| {
-            Box::pin(async move { lock::Lock::generate_after_install(config, &installed).await })
+        lockfiles_after_install: |config, installed, mode| {
+            Box::pin(
+                async move { lock::Lock::generate_after_install(config, &installed, mode).await },
+            )
         },
         subcommand_names,
     });

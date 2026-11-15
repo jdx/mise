@@ -5575,6 +5575,7 @@ pub async fn generate_lockfiles_after_changes(
         Box::pin(crate::frontend::generate_lockfiles_after_install(
             config.clone(),
             new_versions,
+            lockfile_update_mode,
         ))
         .await?;
     }

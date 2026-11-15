@@ -360,6 +360,10 @@ The policy covers the tools declared by every config in that root, such as
 inherited from the global config or a parent config root keep their own
 policy. The policy applies even when `locked_scopes` excludes its scope.
 
+As in locked mode, installing or running tools does not update that root's
+lockfiles: run `mise lock` to record new versions or platforms and prune
+entries of removed tools, or `mise upgrade` to move to newer versions.
+
 ### Preparing platform entries
 
 For backends that record URLs, add entries for every platform that installs the
