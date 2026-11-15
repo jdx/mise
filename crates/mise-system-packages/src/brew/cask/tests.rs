@@ -1697,7 +1697,7 @@ fn parses_installer_script_sudo_and_print_stderr() -> Result<()> {
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert_eq!(
             err,
-            format!("brew-cask: installer script {field} must be a boolean")
+            format!("brew-cask:logi-options+: installer script {field} must be a boolean")
         );
     }
     Ok(())
@@ -11548,4 +11548,33 @@ fn requested_tokens_use_the_last_segment_of_a_tapped_name() {
     let tokens = requested_tokens(&requests);
     assert!(tokens.contains("foo") && tokens.contains("bar"));
     assert_eq!(tokens.len(), 2);
+}
+
+#[test]
+fn parses_tap_cask_installer_object() -> Result<()> {
+    let mut cask = test_cask("flux-markdown", "1.0.0");
+    cask.artifacts = vec![serde_json::json!({
+        "installer": {"script": {
+            "executable": "install-flux-markdown.sh",
+            "args": ["--appdir", "/Applications"],
+            "sudo": false
+        }}
+    })];
+
+    assert_eq!(
+        cask_artifacts(&cask)?.installers,
+        [InstallerArtifact {
+            executable: "install-flux-markdown.sh".to_string(),
+            args: vec!["--appdir".to_string(), "/Applications".to_string()],
+            sudo: false,
+        }]
+    );
+
+    cask.artifacts = vec![serde_json::json!({"installer": "oops"})];
+    let err = cask_artifacts(&cask).unwrap_err().to_string();
+    assert_eq!(
+        err,
+        "brew-cask:flux-markdown: installer metadata must be an array or object"
+    );
+    Ok(())
 }

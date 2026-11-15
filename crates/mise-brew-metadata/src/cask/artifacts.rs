@@ -15,6 +15,15 @@ pub use ordinary::{
 use ordinary::{parse_completion_artifact, parse_installer_artifact};
 
 pub fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
+    // Parsers that only see one artifact report "brew-cask: ..."; name the
+    // cask so a failure in a long bootstrap run can be traced.
+    parse_cask_artifacts(cask).map_err(|err| match err.to_string().strip_prefix("brew-cask: ") {
+        Some(rest) => eyre!("brew-cask:{}: {rest}", cask.token),
+        None => err,
+    })
+}
+
+fn parse_cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     let mut artifacts = CaskArtifacts::default();
     for artifact in &cask.artifacts {
         let artifact_type = artifact_type(artifact);
