@@ -188,7 +188,11 @@ pub fn version_sort_key(v: &str) -> (Option<Versioning>, Vec<BuildSegment>) {
 /// older than `latest`'s. Only a numeric build segment can say so: `+7` is older
 /// than `+101`, but `+one` and `+two` are not ordered. Anything else is `false`.
 pub fn build_metadata_is_older(current: &str, latest: &str) -> bool {
-    let strip = |v: &str| v.strip_prefix(['v', 'V']).unwrap_or(v).to_string();
+    // Only a `v` directly before the number is a version prefix; `vcli-2.6.0` is a name.
+    let strip = |v: &str| match v.strip_prefix(['v', 'V']) {
+        Some(rest) if rest.starts_with(|c: char| c.is_ascii_digit()) => rest.to_string(),
+        _ => v.to_string(),
+    };
     let (current, latest) = (strip(current), strip(latest));
     let (Some((cbase, cmeta)), Some((lbase, lmeta))) =
         (current.split_once('+'), latest.split_once('+'))
@@ -262,6 +266,7 @@ mod tests {
         assert!(older("1.0.0+07.1", "1.0.0+7.2"));
         assert!(older("v1.0.0+7", "1.0.0+101"));
         assert!(older("1.0.0+7", "V1.0.0+101"));
+        assert!(!older("vcli-2.6.0+7", "cli-2.6.0+101"));
     }
 
     #[test]
