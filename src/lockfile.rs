@@ -10,7 +10,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{self, Backend};
-use crate::config::{Config, Settings, SettingsExt};
+use crate::config::{Config, ConfigMap, Settings, SettingsExt};
 use crate::env;
 use crate::file;
 use crate::file::display_path;
@@ -3503,13 +3503,14 @@ fn tools_left_alone(ts: &Toolset) -> HashSet<(ToolSource, String)> {
 }
 
 /// Whether every config that writes a lockfile is in a config root that sets
-/// `tool_config.locked`. Installs leave such a lockfile alone, as they do in
-/// locked mode; `mise lock` and `mise upgrade` still write it.
-pub fn locked_by_tool_config(config: &Config, config_paths: &[PathBuf]) -> bool {
+/// `tool_config.locked`, with roots looked up among `config_files`. Installs
+/// leave such a lockfile alone, as they do in locked mode; `mise lock` and
+/// `mise upgrade` still write it.
+pub fn locked_by_tool_config(config_files: &ConfigMap, config_paths: &[PathBuf]) -> bool {
     !config_paths.is_empty()
         && config_paths
             .iter()
-            .all(|path| config.tool_config_locked(&ToolSource::MiseToml(path.clone())))
+            .all(|path| crate::config::tool_config_locked_in(config_files, path))
 }
 
 /// The config files that write each lockfile.
@@ -3557,7 +3558,7 @@ pub(crate) fn update_lockfiles(
     let mut has_deferred_provenance = false;
 
     for (lockfile_path, configs) in lockfile_configs {
-        if !mode.allow_locked() && locked_by_tool_config(config, &configs) {
+        if !mode.allow_locked() && locked_by_tool_config(&config.config_files, &configs) {
             debug!(
                 "not updating {}: tool_config.locked",
                 display_path(&lockfile_path)
@@ -4519,7 +4520,7 @@ pub(crate) async fn auto_lock_new_versions(
     } else {
         config_paths_by_lockfile(config)
             .into_iter()
-            .filter(|(_, configs)| locked_by_tool_config(config, configs))
+            .filter(|(_, configs)| locked_by_tool_config(&config.config_files, configs))
             .map(|(lockfile_path, _)| lockfile_path)
             .collect()
     };

@@ -362,7 +362,11 @@ policy. The policy applies even when `locked_scopes` excludes its scope.
 
 As in locked mode, installing or running tools does not update that root's
 lockfiles: run `mise lock` to record new versions or platforms and prune
-entries of removed tools, or `mise upgrade` to move to newer versions.
+entries of removed tools, or `mise upgrade` to move to newer versions. A
+lockfile shared by several config roots, such as a monorepo lockfile, is left
+alone only when every root that writes it sets `tool_config.locked`; otherwise
+installs still update it, but do not record new versions that a locked root
+pins.
 
 ### Preparing platform entries
 

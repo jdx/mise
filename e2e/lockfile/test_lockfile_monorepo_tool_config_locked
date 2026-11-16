@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# A monorepo lockfile is left alone by installs when every config root that
+# writes it sets `tool_config.locked`, including sibling packages that the
+# install did not start from.
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+export MISE_LOCKFILE_MODE=generate
+
+mkdir -p repo/packages/a repo/packages/b
+for name in a b; do
+  printf '#!/bin/sh\necho %s\n' "$name" >"$PWD/fixture-$name"
+  chmod +x "$PWD/fixture-$name"
+done
+sum_a="$(shasum -a 256 fixture-a | cut -d' ' -f1)"
+sum_b="$(shasum -a 256 fixture-b | cut -d' ' -f1)"
+tool_a="\"http:fixture-a\" = { version = \"1.0.0\", url = \"file://$PWD/fixture-a\", checksum = \"sha256:$sum_a\" }"
+tool_b="\"http:fixture-b\" = { version = \"1.0.0\", url = \"file://$PWD/fixture-b\", checksum = \"sha256:$sum_b\" }"
+
+cat <<'EOT' >repo/mise.toml
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+
+[tool_config]
+locked = true
+EOT
+write_package() {
+  local dir=$1 locked=$2 tools=$3
+  cat <<EOT >"repo/packages/$dir/mise.toml"
+[tool_config]
+locked = $locked
+
+[tools]
+$tools
+EOT
+}
+
+write_package a true "$tool_a"
+write_package b true "$tool_b"
+assert "cd repo && mise lock"
+assert_contains "cat repo/mise.lock" 'http:fixture-b'
+
+# Package b drops its tool; an install in package a leaves the stale entry.
+write_package b true ""
+cp repo/mise.lock lock.before
+assert "cd repo/packages/a && mise install"
+assert "diff lock.before repo/mise.lock"
+
+# An explicit `mise lock` prunes it.
+assert "cd repo && mise lock"
+assert_not_contains "cat repo/mise.lock" 'http:fixture-b'
+
+# Once one writer is unlocked, installs maintain the shared lockfile again.
+write_package b false "$tool_b"
+assert "cd repo && mise lock"
+assert_contains "cat repo/mise.lock" 'http:fixture-b'
+write_package b false ""
+assert "cd repo/packages/a && mise install"
+assert_not_contains "cat repo/mise.lock" 'http:fixture-b'

@@ -913,7 +913,8 @@ impl Lock {
             self.get_lockfile_targets(config, setup.effective_config_files, &scoped_config_paths);
         if setup.skip_tool_config_locked {
             lockfile_targets.retain(|lockfile_path, config_paths| {
-                let locked = lockfile::locked_by_tool_config(config, config_paths);
+                let locked =
+                    lockfile::locked_by_tool_config(setup.effective_config_files, config_paths);
                 if locked {
                     debug!(
                         "not updating {}: tool_config.locked",

@@ -76,6 +76,28 @@ pub use command_wrapper::{CommandWrapper, CommandWrapperOptions};
 
 type AliasMap = IndexMap<String, Alias>;
 pub type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
+
+/// Whether the config root of the config at `path` sets `tool_config.locked`,
+/// looking the root up among `config_files`. Callers that load more configs
+/// than [`Config`] does, such as the sibling configs of a monorepo lockfile,
+/// pass that larger map.
+pub fn tool_config_locked_in(config_files: &ConfigMap, path: &Path) -> bool {
+    if is_override_config(path) {
+        return false;
+    }
+    let Some(root) = config_files.get(path).map(|cf| cf.config_root()) else {
+        return false;
+    };
+    // The global config root defaults to $HOME, which can also be the
+    // config_root of a local config stored directly in $HOME. Keep those
+    // conceptual roots separate even when their path values coincide.
+    let is_global = is_global_config(path);
+    config_files.values().any(|cf| {
+        is_global_config(cf.get_path()) == is_global
+            && cf.config_root() == root
+            && cf.tool_config().locked
+    })
+}
 pub(crate) type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 type RemoteTaskIncludeKey = (String, Option<String>);
 type RemoteTaskIncludeArtifacts = DashMap<RemoteTaskIncludeKey, Arc<OnceCell<TaskFileArtifact>>>;
@@ -252,21 +274,7 @@ impl Config {
         let (ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path)) = source else {
             return false;
         };
-        if is_override_config(path) {
-            return false;
-        }
-        let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
-            return false;
-        };
-        // The global config root defaults to $HOME, which can also be the
-        // config_root of a local config stored directly in $HOME. Keep those
-        // conceptual roots separate even when their path values coincide.
-        let is_global = is_global_config(path);
-        self.config_files.values().any(|cf| {
-            is_global_config(cf.get_path()) == is_global
-                && cf.config_root() == root
-                && cf.tool_config().locked
-        })
+        tool_config_locked_in(&self.config_files, path)
     }
 
     pub async fn get() -> Result<Arc<Self>> {
