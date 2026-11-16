@@ -1046,12 +1046,13 @@ mod tests {
     }
 
     #[test]
-    fn unchanged_state_enables_without_starting_or_stopping() {
-        let request = |active_state: &str, unit_file_state: &str| {
+    fn unchanged_state_enables_or_disables_without_starting_or_stopping() {
+        let request = |enabled: bool, active_state: &str, unit_file_state: &str| {
             let mut request = ServiceRequest::from_toml(
                 "example".to_string(),
                 ServiceTomlConfig {
                     state: ServiceState::Unchanged,
+                    enabled,
                     on_change: ServiceChangeAction::Restart,
                     ..Default::default()
                 },
@@ -1064,29 +1065,36 @@ mod tests {
             });
             request
         };
-        // an enabled unit is converged whether or not it is running
-        for active_state in ["active", "inactive", "failed"] {
-            let request = request(active_state, "enabled");
-            assert_eq!(request.plan().action, ResourceAction::Noop);
-            // and a changed dependency neither reloads nor restarts it
-            let change = notifications("/etc/example.conf").change_for(&request);
-            assert!(request.action(change).unwrap().is_none());
-            assert_eq!(
-                request.plan_with_change(change).action,
-                ResourceAction::Noop
-            );
-        }
-        for active_state in ["active", "inactive"] {
-            let request = request(active_state, "disabled");
-            assert_eq!(request.plan().action, ResourceAction::Update);
-            let action = request.action(ServiceChange::default()).unwrap().unwrap();
-            assert_eq!(
-                action.commands(),
-                [
-                    vec!["unmask".to_string(), "example.service".to_string()],
-                    vec!["enable".to_string(), "example.service".to_string()],
-                ]
-            );
+        for (enabled, matching, other, command) in [
+            (true, "enabled", "disabled", "enable"),
+            (false, "disabled", "enabled", "disable"),
+        ] {
+            // a unit already enabled or disabled as declared is converged whether or not it
+            // is running
+            for active_state in ["active", "inactive", "failed"] {
+                let request = request(enabled, active_state, matching);
+                assert_eq!(request.plan().action, ResourceAction::Noop);
+                // and a changed dependency neither reloads nor restarts it
+                let change = notifications("/etc/example.conf").change_for(&request);
+                assert!(request.action(change).unwrap().is_none());
+                assert_eq!(
+                    request.plan_with_change(change).action,
+                    ResourceAction::Noop
+                );
+            }
+            // otherwise only the unit-file state changes
+            for active_state in ["active", "inactive"] {
+                let request = request(enabled, active_state, other);
+                assert_eq!(request.plan().action, ResourceAction::Update);
+                let action = request.action(ServiceChange::default()).unwrap().unwrap();
+                assert_eq!(
+                    action.commands(),
+                    [
+                        vec!["unmask".to_string(), "example.service".to_string()],
+                        vec![command.to_string(), "example.service".to_string()],
+                    ]
+                );
+            }
         }
         assert!(
             ServiceRequest::from_toml(
