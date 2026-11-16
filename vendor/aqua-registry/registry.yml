@@ -5754,6 +5754,69 @@ packages:
       - name: gorss
         src: dist/gorss_{{.OS}}
   - type: github_release
+    repo_owner: LambdaBytes
+    repo_name: sping
+    description: A modern, cross-platform ping with real-time diagnostics, network context, quality scoring, and multi-target monitoring
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.5.5")
+        asset: sping-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            replacements:
+              amd64: amd64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: sping-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: sping-{{.Version}}-{{.OS}}-{{.Arch}}-musl
+            replacements:
+              arm64: aarch64
+            variants:
+              - key: libc
+                value: musl
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            replacements:
+              amd64: amd64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+  - type: github_release
     repo_owner: LargeModGames
     repo_name: spotatui
     description: A fully standalone Spotify client for the terminal. Native streaming included, no daemon required
@@ -6006,6 +6069,398 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: Every-Other-Token
+    description: See how sure an LLM is about each word
+    files:
+      - name: every-other-token
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 4.0.0")
+        no_asset: true
+      - version_constraint: semver("<= 4.1.2")
+        asset: every-other-token
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: "true"
+        asset: every-other-token-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: every-other-token
+            src: "{{.AssetWithoutExt}}/every-other-token"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: corescout
+    description: Learns how your machine and AI coding agents work together and serves it over MCP
+    files:
+      - name: corescout
+      - name: corescout-mcp
+      - name: corescout-service
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: corescout-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: corescout
+            src: "{{.AssetWithoutExt}}/corescout"
+          - name: corescout-mcp
+            src: "{{.AssetWithoutExt}}/corescout-mcp"
+          - name: corescout-service
+            src: "{{.AssetWithoutExt}}/corescout-service"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: llm-bench
+    description: Benchmark OpenAI and Anthropic APIs for p50/p99 latency, tokens per second and cost
+    files:
+      - name: llm-bench
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: llm-bench-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: llm-bench
+            src: "{{.AssetWithoutExt}}/llm-bench"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: llm-cost-dashboard
+    description: Prices every LLM call from your logs
+    files:
+      - name: llm-dash
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.2.1")
+        asset: llm-cost-dashboard-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: llm-dash
+            src: "{{.AssetWithoutExt}}/llm-dash"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: llm-cost-dashboard-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: llm-dash
+            src: "{{.AssetWithoutExt}}/llm-dash"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: polymarket-agent
+    description: Polymarket CLI and MCP server that lets AI agents search markets, read books and place orders
+    files:
+      - name: polymarket-agent
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: polymarket-agent-{{.Version}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: polymarket-agent
+            src: "{{.AssetWithoutExt}}/polymarket-agent"
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: polymarket-agent
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: prompt-observatory
+    description: Local dashboard that streams an LLM response and flags latency, hallucination risk and cost
+    files:
+      - name: prompt-observatory
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: prompt-observatory-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: prompt-observatory
+            src: "{{.AssetWithoutExt}}/prompt-observatory"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: reckoner
+    description: Deterministic entity resolution for company and agency names, with a receipt for every merge
+    files:
+      - name: reckoner
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: reckoner-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: reckoner
+            src: "{{.AssetWithoutExt}}/reckoner"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: tft-synapse
+    description: Free TFT helper. Tells you when to save, level or roll
+    files:
+      - name: tft-synapse
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.0")
+        asset: tft-synapse
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: "true"
+        asset: tft-synapse-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tft-synapse
+            src: "{{.AssetWithoutExt}}/tft-synapse"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: tokenviz
+    description: Count prompt tokens with tiktoken and rank lines by token cost
+    files:
+      - name: tokenviz
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tokenviz-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tokenviz
+            src: "{{.AssetWithoutExt}}/tokenviz"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: tokio-prompt-orchestrator
+    description: LLM API proxy. Same prompt twice costs one call
+    files:
+      - name: orchestrator
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        no_asset: true
+      - version_constraint: Version == "v0.1.0"
+        asset: orchestrator
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v1.1.0"
+        asset: orchestrator
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 1.4.1")
+        asset: orchestrator-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: orchestrator
+            src: "{{.AssetWithoutExt}}/orchestrator"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: orchestrator-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: orchestrator
+            src: "{{.AssetWithoutExt}}/orchestrator"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
   - type: github_release
     repo_owner: MaybeJustJames
     repo_name: zephyr
@@ -31992,6 +32447,61 @@ packages:
           type: github_release
           asset: cli_{{.Version}}_checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: creativeprojects
+    repo_name: resticprofile
+    description: Configuration profiles manager and scheduler for restic backup
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.6.0"
+        asset: resticprofile_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.5.2")
+        no_asset: true
+      - version_constraint: semver("<= 0.13.1")
+        asset: resticprofile_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.20.0")
+        asset: resticprofile_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.29.1")
+        asset: resticprofile_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            goarch: arm64
+            format: zip
+      - version_constraint: "true"
+        asset: resticprofile_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
   - type: http
     repo_owner: cri-o
     repo_name: cri-o
@@ -38591,6 +39101,26 @@ packages:
       - darwin
       - amd64
   - type: github_release
+    repo_owner: elastic
+    repo_name: crd-ref-docs
+    description: Generates Kubernetes CRD API reference documentation
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.12")
+        no_asset: true
+      - version_constraint: "true"
+        asset: crd-ref-docs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+  - type: github_release
     repo_owner: electric-saw
     repo_name: kafta
     description: Kafta is a command line for managing Kafka clusters
@@ -38812,6 +39342,22 @@ packages:
       - version_constraint: "true"
         rosetta2: true
         asset: kubectl-doctor_{{.OS}}_{{.Arch}}.zip
+  - type: github_release
+    repo_owner: emprcl
+    repo_name: spor
+    description: infinite undo for your whole project
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: spor_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: http
     repo_owner: encoredev
     repo_name: encore
@@ -44343,6 +44889,22 @@ packages:
           - name: copilot-language-server
   - type: github_release
     repo_owner: github
+    repo_name: gh-actions-lock
+    description: A gh CLI extension that generates and verifies the GitHub Actions dependency lockfile, pinning every action your workflows use to an exact commit
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.1"
+        no_asset: true
+      - version_constraint: semver("<= 0.0.9")
+        asset: "{{.OS}}-{{.Arch}}"
+        format: raw
+      - version_constraint: "true"
+        asset: "{{.OS}}-{{.Arch}}"
+        format: raw
+        github_artifact_attestations:
+          signer_workflow: github/gh-actions-lock/.github/workflows/release.yml
+  - type: github_release
+    repo_owner: github
     repo_name: gh-ost
     description: GitHub's Online Schema-migration Tool for MySQL
     version_constraint: "false"
@@ -47770,6 +48332,45 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: http
+    name: google.com/cloud-sdk
+    repo_owner: google-cloud-sdk-unofficial
+    repo_name: google-cloud-sdk
+    description: CLI for interacting with Google Cloud products and services
+    link: https://cloud.google.com/sdk/docs/install-sdk
+    version_source: github_tag
+    files:
+      - name: gcloud
+        src: google-cloud-sdk/bin/gcloud
+      - name: gsutil
+        src: google-cloud-sdk/bin/gsutil
+      - name: docker-credential-gcloud
+        src: google-cloud-sdk/bin/docker-credential-gcloud
+      - name: bq
+        src: google-cloud-sdk/bin/bq
+    replacements:
+      amd64: x86_64
+      arm64: arm
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v181.0.1"
+        no_asset: true
+      - version_constraint: semver("< 327.0.0")
+        url: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+      - version_constraint: semver("< 371.0.0")
+        url: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        supported_envs:
+          - darwin
+          - linux
+      - version_constraint: "true"
+        url: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        supported_envs:
+          - darwin
+          - linux
   - type: github_release
     repo_owner: google
     repo_name: addlicense
@@ -51689,6 +52290,17 @@ packages:
     overrides:
       - goos: windows
         format: zip
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.17")
+      - version_constraint: "true"
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: darwin
+            files:
+              - name: herdr-core
+                src: Herdr Core.app/Contents/MacOS/herdr-core
   - type: github_release
     repo_owner: hetznercloud
     repo_name: cli
@@ -52734,6 +53346,20 @@ packages:
           type: github_release
           asset: mimosa_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: iBotPeaches
+    repo_name: Apktool
+    description: A tool for reverse engineering Android apk files
+    files:
+      - name: apktool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v2.0.3"
+        no_asset: true
+      - version_constraint: "true"
+        asset: apktool_{{trimV .Version}}.jar
+        format: raw
+        complete_windows_ext: false
   - type: github_archive
     repo_owner: iamhsa
     repo_name: pkenv
@@ -65083,7 +65709,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.20.0")
         asset: kyverno-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -65105,6 +65731,29 @@ packages:
               - kyverno/kyverno
               - --certificate-github-workflow-ref
               - refs/tags/{{.Version}}
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: kyverno-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - ^https://github\.com/kyverno/kyverno/\.github/workflows/(release|prepare-release|release-publish)\.yaml@
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-github-workflow-repository
+              - kyverno/kyverno
         overrides:
           - goos: windows
             format: zip
@@ -70838,6 +71487,39 @@ packages:
         asset: dry-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
+  - type: github_release
+    repo_owner: mongodb
+    repo_name: kingfisher
+    description: Detect secrets. Validate them live. Map blast radius. Revoke fast. Run the CLI or embed in Rust, Python, or Node.js
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.85.0")
+        asset: kingfisher-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.90.0")
+        asset: kingfisher-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: kingfisher-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x64
+        github_artifact_attestations:
+          signer_workflow: mongodb/kingfisher/.github/workflows/release.yml
+        overrides:
+          - goos: windows
+            format: zip
   - name: mongodb/mongodb-atlas-cli/atlascli
     type: github_release
     repo_owner: mongodb
@@ -100678,6 +101360,40 @@ packages:
           algorithm: sha256
   - type: github_release
     repo_owner: timmo001
+    repo_name: kestrel
+    description: "One app for your cameras and recorders: live view, recordings, events and health, through a small server on your own network"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: timmo001/kestrel/.github/workflows/desktop.yml
+        files:
+          - name: kestrel
+            src: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}/bin/kestrel.cmd
+        overrides:
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: aarch64
+            files:
+              - name: kestrel
+                src: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}/bin/kestrel
+        supported_envs:
+          - linux
+          - windows/amd64
+  - type: github_release
+    repo_owner: timmo001
     repo_name: system-bridge
     description: A bridge for your systems
     version_constraint: "false"
@@ -106671,7 +107387,7 @@ packages:
           - darwin
           - windows
           - linux/amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.19.6")
         asset: moor-{{.Version}}-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
@@ -106682,6 +107398,13 @@ packages:
           - darwin
           - windows
           - linux/amd64
+      - version_constraint: "true"
+        asset: moor-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: moor
+            link: moor
   - type: github_release
     repo_owner: wallix
     repo_name: awless
@@ -108950,6 +109673,48 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: yhay81
+    repo_name: sqrail
+    description: A bounded SQL-on-files CLI for coding agents. SQL in, files out
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.2")
+        asset: sqrail-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: sqrail
+            src: "{{.AssetWithoutExt}}/bin/sqrail"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: yhay81/sqrail/.github/workflows/release.yml
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: sqrail-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: sqrail
+            src: "{{.AssetWithoutExt}}/bin/sqrail"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: yhay81/sqrail/.github/workflows/release.yml
         overrides:
           - goos: windows
             format: zip

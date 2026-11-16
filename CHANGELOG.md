@@ -1,5 +1,92 @@
 # Changelog
 
+## [2026.11.9](https://github.com/jdx/mise/releases/tag/v2026.11.9) - 2026-11-16
+
+### 🚀 Features
+
+- **(aqua)** run .jar packages through java -jar by @jdx in [#15688](https://github.com/jdx/mise/pull/15688)
+- **(task)** include cache, lock and skip_if in tasks ls --json by @jdx in [#15675](https://github.com/jdx/mise/pull/15675)
+- **(task)** add deny_unix and allow_unix sandbox restrictions by @jdx in [#15672](https://github.com/jdx/mise/pull/15672)
+- **(task)** render templates in lock names by @jdx in [#15710](https://github.com/jdx/mise/pull/15710)
+- **(task)** let a lock hold several slots with `task.lock_pools` and `count` by @jdx in [#15720](https://github.com/jdx/mise/pull/15720)
+- **(task)** select dependencies by tag with { tag = ... } by @jdx in [#15753](https://github.com/jdx/mise/pull/15753)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** pull the global config before loading it on --update by @jdx in [#15731](https://github.com/jdx/mise/pull/15731)
+- **(bootstrap)** skip brew-cask entries with unsupported artifacts on linux by @jdx in [#15732](https://github.com/jdx/mise/pull/15732)
+- **(brew)** support Array#second in tap metadata shims by @jdx in [#15708](https://github.com/jdx/mise/pull/15708)
+- **(brew)** build source formulas that use with_env by @jdx in [#15737](https://github.com/jdx/mise/pull/15737)
+- **(brew)** install cask binaries from URLs without a filename by @jdx in [#15738](https://github.com/jdx/mise/pull/15738)
+- **(brew)** link cask binaries that name nested app bundles by @jdx in [#15739](https://github.com/jdx/mise/pull/15739)
+- **(brew)** accept installer script casks from taps by @jdx in [#15743](https://github.com/jdx/mise/pull/15743)
+- **(dotfiles)** warn about keys no dotfile entry or bootstrap hook reads by @jdx in [#15735](https://github.com/jdx/mise/pull/15735)
+- **(dotfiles)** refuse whole-file keys on block and line edits by @jdx in [#15733](https://github.com/jdx/mise/pull/15733)
+- **(env)** run compinit when zsh _comps is not an associative array by @jdx in [#15692](https://github.com/jdx/mise/pull/15692)
+- **(erlang)** use /etc/os-release when ImageOS is the generic Linux by @jdx in [#15691](https://github.com/jdx/mise/pull/15691)
+- **(install)** keep an installed version newer than the minimum_release_age cutoff by @jdx in [#15673](https://github.com/jdx/mise/pull/15673)
+- **(install)** summarize tracked-config load failures during deferred prune by @jdx in [#15698](https://github.com/jdx/mise/pull/15698)
+- **(lock)** keep the locked version when --bump resolves an older one by @jdx in [#15687](https://github.com/jdx/mise/pull/15687)
+- **(lock)** keep the locked version when minimum_release_age hides every match under --bump by @jdx in [#15689](https://github.com/jdx/mise/pull/15689)
+- **(lock)** name the tool and provenance in the downgrade error by @jdx in [#15755](https://github.com/jdx/mise/pull/15755)
+- **(npm)** turn off aube's release age gate when mise has it off by @jdx in [#15697](https://github.com/jdx/mise/pull/15697)
+- **(search)** show the registry url instead of a guessed github link by @jdx in [#15709](https://github.com/jdx/mise/pull/15709)
+- **(self-update)** download the Windows release archive only once by @jdx in [#15686](https://github.com/jdx/mise/pull/15686)
+- **(shim)** keep shims pointing at mise after a shim-triggered install by @jdx in [#15758](https://github.com/jdx/mise/pull/15758)
+- **(task)** do not cache a pass when a source changed during the run by @jdx in [#15719](https://github.com/jdx/mise/pull/15719)
+- **(task)** scan the cache once when clearing several tasks by @jdx in [#15718](https://github.com/jdx/mise/pull/15718)
+- **(version)** don't call the official apt package a third-party build by @jdx in [#15690](https://github.com/jdx/mise/pull/15690)
+- **(vfox)** let plugins call async functions inside pcall by @jdx in [#15741](https://github.com/jdx/mise/pull/15741)
+- **(zig)** record minisign provenance at lock time by @jdx in [#15730](https://github.com/jdx/mise/pull/15730)
+
+### 📚 Documentation
+
+- **(config)** note explicit global and system config files load no env variants by @jdx in [#15716](https://github.com/jdx/mise/pull/15716)
+
+### ⚡ Performance
+
+- **(config)** trim eager work in hook-env by @jdx in [#15734](https://github.com/jdx/mise/pull/15734)
+
+### 📦 Registry
+
+- add jadx by @jdx in [#15685](https://github.com/jdx/mise/pull/15685)
+- add jscpd by @jdx in [#15696](https://github.com/jdx/mise/pull/15696)
+
+### Chore
+
+- **(ci)** migrate lock workflows to GitHub App client IDs by @jdx in [#15714](https://github.com/jdx/mise/pull/15714)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (20)
+
+- [`LambdaBytes/sping`](https://github.com/LambdaBytes/sping)
+- [`Mattbusel/Every-Other-Token`](https://github.com/Mattbusel/Every-Other-Token)
+- [`Mattbusel/corescout`](https://github.com/Mattbusel/corescout)
+- [`Mattbusel/llm-bench`](https://github.com/Mattbusel/llm-bench)
+- [`Mattbusel/llm-cost-dashboard`](https://github.com/Mattbusel/llm-cost-dashboard)
+- [`Mattbusel/polymarket-agent`](https://github.com/Mattbusel/polymarket-agent)
+- [`Mattbusel/prompt-observatory`](https://github.com/Mattbusel/prompt-observatory)
+- [`Mattbusel/reckoner`](https://github.com/Mattbusel/reckoner)
+- [`Mattbusel/tft-synapse`](https://github.com/Mattbusel/tft-synapse)
+- [`Mattbusel/tokenviz`](https://github.com/Mattbusel/tokenviz)
+- [`Mattbusel/tokio-prompt-orchestrator`](https://github.com/Mattbusel/tokio-prompt-orchestrator)
+- [`creativeprojects/resticprofile`](https://github.com/creativeprojects/resticprofile)
+- [`elastic/crd-ref-docs`](https://github.com/elastic/crd-ref-docs)
+- [`emprcl/spor`](https://github.com/emprcl/spor)
+- [`github/gh-actions-lock`](https://github.com/github/gh-actions-lock)
+- [`google.com/cloud-sdk`](https://github.com/google-cloud-sdk-unofficial/google-cloud-sdk)
+- [`iBotPeaches/Apktool`](https://github.com/iBotPeaches/Apktool)
+- [`mongodb/kingfisher`](https://github.com/mongodb/kingfisher)
+- [`timmo001/kestrel`](https://github.com/timmo001/kestrel)
+- [`yhay81/sqrail`](https://github.com/yhay81/sqrail)
+
+#### Updated Packages (3)
+
+- [`herdrdev/herdr-core`](https://github.com/herdrdev/herdr-core)
+- [`kyverno/kyverno`](https://github.com/kyverno/kyverno)
+- [`walles/moor`](https://github.com/walles/moor)
+
 ## [2026.11.8](https://github.com/jdx/mise/releases/tag/v2026.11.8) - 2026-11-13
 
 ### 🚀 Features
