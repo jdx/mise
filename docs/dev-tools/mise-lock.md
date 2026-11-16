@@ -458,18 +458,26 @@ mise lock --check
 ```
 
 ```text
+✗ ~/src/app/mise.lock has 2 problems
+  yq@4.44.1 for linux-x64: none
+  yq@4.44.1 for macos-arm64: checksum only
 mise ERROR ~/src/app/mise.lock would fail a locked install:
   - jq@1.6 is not in the lockfile
   - No lockfile checksum found for yq@4.44.1 on platform linux-x64 (https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64) (--locked mode)
 hint: run `mise lock` to update the lockfile
 ```
 
+Each platform entry also shows how a locked install verifies its download: the
+[provenance](#provenance-and-security) type the entry records (`minisign`,
+`cosign`, `slsa` or `github-attestations`), `checksum only`, or `none`. This is
+informational; the check does not fail on it.
+
 The platforms are the [`lockfile_platforms`](/configuration/settings.html#lockfile_platforms)
 setting plus the current platform when that setting is set, else the
 platforms already in the lockfile; pass `--platform` to choose others. A tool that does not support one of them fails
 the check unless its `os` option excludes that platform. `--json` prints one
-object per platform entry with its `problems`, and still exits non-zero when
-there are any.
+object per platform entry with its `provenance` and `problems`, and still exits
+non-zero when there are any problems.
 
 ## Backend support
 

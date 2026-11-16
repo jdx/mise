@@ -103,8 +103,10 @@ also updates the request in mise.toml to match.
   without the URL or checksum the install needs, or a dependency-graph
   sidecar that is missing or was edited. It checks the platforms
   `mise lock` would lock (see `--platform`). Nothing is resolved remotely
-  and nothing is written. Combine with `--json` for one object per
-  platform entry.
+  and nothing is written. Each platform entry is listed with how a locked
+  install verifies its download: the provenance type it records (such as
+  `github-attestations`), `checksum only`, or `none`. Combine with `--json`
+  for one object per platform entry.
 - **`-h --help`** — Print help
 
 ## Examples
