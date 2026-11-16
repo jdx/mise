@@ -560,44 +560,48 @@ impl ServerHandler for MiseServer {
                         message: Cow::Owned(format!("Failed to fetch remote tasks: {e:#}")),
                         data: None,
                     })?;
-                let task_list: Vec<_> = names.iter().zip(&fetched).map(|(name, task)| {
-                    json!({
-                        "name": name,
-                        "description": task.description.clone(),
-                        "aliases": task.aliases,
-                        "tags": task.tags,
-                        "source": task.config_source.to_string_lossy(),
-                        "config_sources": task
-                            .config_sources()
-                            .iter()
-                            .map(|source| source.to_string_lossy())
-                            .collect::<Vec<_>>(),
-                        "depends": task.depends.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
-                        "daemons": task.daemons,
-                        "secrets": task.secrets.as_ref().map(|s| s.names()).unwrap_or_default(),
-                        "depends_post": task.depends_post.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
-                        "wait_for": task.wait_for.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
-                        "env": task
-                            .env
-                            .0
-                            .iter()
-                            .chain(task.overlay_env.iter().map(|(d, _)| d))
-                            .map(|d| d.to_string())
-                            .collect::<Vec<_>>(),
-                        "dir": task.dir.clone(),
-                        "hide": task.hide,
-                        "raw": task.raw,
-                        "interactive": task.interactive,
-                        "sources": task.sources.clone(),
-                        "outputs": task.outputs.clone(),
-                        "shell": task.shell.clone(),
-                        "quiet": task.quiet,
-                        "silent": task.silent,
-                        "tools": task.tools.clone(),
-                        "run": task.run(),
-                        "usage": task.usage.clone(),
+                let task_list: Vec<_> = names
+                    .iter()
+                    .zip(&fetched)
+                    .map(|(name, task)| {
+                        json!({
+                            "name": name,
+                            "description": task.description.clone(),
+                            "aliases": task.aliases,
+                            "tags": task.tags,
+                            "source": task.config_source.to_string_lossy(),
+                            "config_sources": task
+                                .config_sources()
+                                .iter()
+                                .map(|source| source.to_string_lossy())
+                                .collect::<Vec<_>>(),
+                            "depends": dependency_names(&task.depends),
+                            "daemons": task.daemons,
+                            "secrets": task.secrets.as_ref().map(|s| s.names()).unwrap_or_default(),
+                            "depends_post": dependency_names(&task.depends_post),
+                            "wait_for": dependency_names(&task.wait_for),
+                            "env": task
+                                .env
+                                .0
+                                .iter()
+                                .chain(task.overlay_env.iter().map(|(d, _)| d))
+                                .map(|d| d.to_string())
+                                .collect::<Vec<_>>(),
+                            "dir": task.dir.clone(),
+                            "hide": task.hide,
+                            "raw": task.raw,
+                            "interactive": task.interactive,
+                            "sources": task.sources.clone(),
+                            "outputs": task.outputs.clone(),
+                            "shell": task.shell.clone(),
+                            "quiet": task.quiet,
+                            "silent": task.silent,
+                            "tools": task.tools.clone(),
+                            "run": task.run(),
+                            "usage": task.usage.clone(),
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 let text = serde_json::to_string_pretty(&task_list).unwrap();
                 let contents = vec![ResourceContents::TextResourceContents {
@@ -747,6 +751,15 @@ fn is_path_like(task: &str) -> bool {
         return !task.contains(':');
     }
     xx::regex!(r"^((\.*|~)[/\\]|\w:[/\\])").is_match(task)
+}
+
+/// The task names a dependency list names. A dependency that selects by tag alone has no name.
+fn dependency_names(dependencies: &[mise_config::task::TaskDep]) -> Vec<String> {
+    dependencies
+        .iter()
+        .filter(|d| !d.task.is_empty())
+        .map(|d| d.task.clone())
+        .collect()
 }
 
 #[cfg(test)]

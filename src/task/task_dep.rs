@@ -59,6 +59,7 @@ mod tests {
             args: vec!["arg1".to_string(), "arg2".to_string()],
             env: Default::default(),
             optional: false,
+            tags: Default::default(),
         };
         assert_eq!(td.to_string(), "task arg1 arg2");
 
@@ -70,6 +71,7 @@ mod tests {
             args: vec![],
             env,
             optional: false,
+            tags: Default::default(),
         };
         assert_eq!(td.to_string(), "FOO=bar task");
     }
@@ -139,6 +141,7 @@ mod tests {
             args: vec![],
             env,
             optional: false,
+            tags: Default::default(),
         };
         let json = serde_json::to_string(&td).unwrap();
         assert!(json.contains(r#""task":"mytask""#));
@@ -193,6 +196,7 @@ mod tests {
             ],
             env: Default::default(),
             optional: false,
+            tags: Default::default(),
         };
         let mut tera = TeraEngine::V2(Box::default());
         let mut ctx = tera::Context::new();
@@ -209,6 +213,7 @@ mod tests {
             args: vec!["{% if usage.fix %}--fix{% endif %}".to_string()],
             env: Default::default(),
             optional: false,
+            tags: Default::default(),
         };
         let mut tera = TeraEngine::V2(Box::default());
         let mut ctx = tera::Context::new();
@@ -282,5 +287,30 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("missing task name"));
+    }
+
+    #[test]
+    fn test_task_dep_tag_round_trip() {
+        let td: TaskDep = serde_json::from_str(r#"{"tag":"lint"}"#).unwrap();
+        assert!(td.task.is_empty());
+        assert_eq!(td.tags, vec!["lint"]);
+        assert_eq!(serde_json::to_string(&td).unwrap(), r#"{"tag":["lint"]}"#);
+
+        let td: TaskDep = serde_json::from_str(r#"{"task":"a:*","tag":["x","y"]}"#).unwrap();
+        assert_eq!(td.task, "a:*");
+        assert_eq!(td.tags, vec!["x", "y"]);
+    }
+
+    #[test]
+    fn test_task_dep_needs_task_or_tag() {
+        assert!(serde_json::from_str::<TaskDep>(r#"{"args":["a"]}"#).is_err());
+    }
+
+    #[test]
+    fn test_task_dep_render_keeps_tag_only_dependency() {
+        let mut td: TaskDep = serde_json::from_str(r#"{"tag":"lint"}"#).unwrap();
+        let mut tera = TeraEngine::V2(Box::default());
+        let ctx = tera::Context::new();
+        assert!(td.render(&mut tera, &ctx).unwrap());
     }
 }
