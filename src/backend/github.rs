@@ -89,6 +89,16 @@ impl<'a> GitBackendOptions<'a> {
         }
     }
 
+    /// The per-tool `libc` option, normalized to `gnu` or `musl`.
+    fn libc(&self) -> Result<Option<&'static str>> {
+        let backend = match self.default_api_url {
+            DEFAULT_GITLAB_API_BASE_URL => "gitlab",
+            DEFAULT_FORGEJO_API_BASE_URL => "forgejo",
+            _ => "github",
+        };
+        self.values.libc(backend)
+    }
+
     fn raw(&self) -> &'a ToolVersionOptions {
         self.values.raw()
     }
@@ -350,6 +360,10 @@ impl<'a> GitBackendOptions<'a> {
         if let Some(value) = self.matching_regex() {
             result.insert("matching_regex".to_string(), value.to_string());
         }
+        // An invalid value fails the asset lookup, so it never reaches a lock entry.
+        if let Ok(Some(libc)) = self.libc() {
+            result.insert("libc".to_string(), libc.to_string());
+        }
         result
     }
 }
@@ -579,6 +593,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "bin".into(),
         "rename_exe".into(),
         "bin_path".into(),
+        "libc".into(),
     ]
 }
 
@@ -1635,7 +1650,7 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                target.qualifier().map(|s| s.to_string()),
+                asset_matcher::tool_target_libc(target, opts.libc()?).0,
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
@@ -1769,7 +1784,7 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                target.qualifier().map(|s| s.to_string()),
+                asset_matcher::tool_target_libc(target, opts.libc()?).0,
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
@@ -2501,7 +2516,7 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
-            .for_target(target)
+            .for_tool_target(target, opts.libc()?)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
             .with_matching(opts.matching().unwrap_or_default())
@@ -2606,7 +2621,7 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
-            .for_target(target)
+            .for_tool_target(target, opts.libc()?)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
             .with_matching(opts.matching().unwrap_or_default())
@@ -2713,7 +2728,7 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
-            .for_target(target)
+            .for_tool_target(target, opts.libc()?)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
             .with_matching(opts.matching().unwrap_or_default())
@@ -4906,6 +4921,55 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_libc_option_is_validated_and_locked() {
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let libc_opts = |value: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert("libc".to_string(), toml::Value::String(value.to_string()));
+            opts
+        };
+        let backend = create_test_backend();
+        let glibc = libc_opts("glibc");
+        assert_eq!(backend.options(&glibc).libc().unwrap(), Some("gnu"));
+        assert_eq!(
+            backend.options(&glibc).lockfile_options(&linux).get("libc"),
+            Some(&"gnu".to_string())
+        );
+        let musl = libc_opts("musl");
+        assert_eq!(
+            backend.options(&musl).lockfile_options(&linux).get("libc"),
+            Some(&"musl".to_string())
+        );
+        let unset = ToolVersionOptions::default();
+        assert!(
+            !backend
+                .options(&unset)
+                .lockfile_options(&linux)
+                .contains_key("libc")
+        );
+
+        let bad = libc_opts("uclibc");
+        let err = backend.options(&bad).libc().unwrap_err();
+        assert!(
+            err.to_string().contains("invalid github `libc` option"),
+            "{err}"
+        );
+        let gitlab = UnifiedGitBackend::from_arg(BackendArg::from("gitlab:o/r"));
+        let err = gitlab.options(&bad).libc().unwrap_err();
+        assert!(
+            err.to_string().contains("invalid gitlab `libc` option"),
+            "{err}"
+        );
+        assert!(
+            !backend
+                .options(&bad)
+                .lockfile_options(&linux)
+                .contains_key("libc")
+        );
     }
 
     #[test]

@@ -5398,6 +5398,11 @@
         "bin_path": {
           "type": "string",
           "description": "directory inside the install that contains binaries (tera templated)"
+        },
+        "libc": {
+          "type": "string",
+          "description": "force strict glibc or musl asset selection on linux",
+          "enum": ["glibc", "gnu", "musl"]
         }
       }
     },
@@ -6088,6 +6093,11 @@
         "variant": {
           "type": "string",
           "description": "publisher-declared alternative build to select, such as fips"
+        },
+        "libc": {
+          "type": "string",
+          "description": "force strict glibc or musl artifact selection on linux",
+          "enum": ["glibc", "gnu", "musl"]
         },
         "pubkey": {
           "type": "string",

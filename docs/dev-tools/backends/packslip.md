@@ -233,6 +233,7 @@ The `packslip.exec`, `packslip.stampers`, and `skills.*` settings go under
 | Option                                                                      | Default                         | Purpose                                                      |
 | --------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------ |
 | [`variant`](#variant)                                                       | No variant                      | Select a publisher-declared alternative build.               |
+| [`libc`](#libc)                                                             | The host's libc                 | Choose the glibc or musl build on Linux.                     |
 | [`pubkey`](#pubkey)                                                         | Unset                           | Pin a minisign-format public key or public-key file.         |
 | [`identity`, `identity_prefix`, `issuer`](#identity-identity-prefix-issuer) | Derived from a recognized forge | Set the expected keyless signer and OIDC issuer.             |
 | [`workflow`](#workflow)                                                     | Any workflow of the repository  | Pin the repository workflow that signs releases on a tag.    |
@@ -252,6 +253,27 @@ provide the variant you request.
 [tools]
 "packslip:github.com/example/tool" = { version = "latest", variant = "fips" }
 ```
+
+### `libc`
+
+On glibc Linux, mise installs a release's glibc build. It takes the musl build
+instead when the release has no glibc build, or when the glibc build needs a
+newer glibc than the host has. Set `libc` to choose for one tool:
+
+```toml
+[tools]
+"packslip:github.com/jdx/fnox" = { version = "latest", libc = "musl" }
+```
+
+Accepted values are `glibc` (or `gnu`) and `musl`. When set, mise never falls
+back to a build for the other libc, and the value overrides
+[`libc = "glibc"`](/configuration/settings.html#libc) in settings. It cannot
+select glibc on a musl platform: an Alpine host, `libc = "musl"` in settings, or
+a `linux-*-musl` lockfile platform. It applies with [`variant`](#variant): a
+variant's musl build needs both options.
+
+The value is recorded in the lockfile, so changing it resolves the tool again.
+Run `mise install --force` to switch a version that is already installed.
 
 ### `pubkey`
 

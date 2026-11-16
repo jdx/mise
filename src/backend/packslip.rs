@@ -26,7 +26,7 @@ use packslip::sigstore::{GITHUB_ISSUER, Policy, Trust};
 use serde::{Deserialize, Serialize};
 
 use crate::args::BackendArg;
-use crate::backend::options::VersionOrder;
+use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{ArchiveLayout, install_artifact};
 use crate::backend::{
@@ -79,6 +79,16 @@ impl<'a> PackslipOptions<'a> {
     /// Which build to take when the release has several for this platform.
     fn variant(&self) -> Option<String> {
         self.raw.get_string("variant")
+    }
+
+    /// The per-tool `libc` option, normalized to `gnu` or `musl`.
+    fn libc(&self) -> Result<Option<&'static str>> {
+        BackendOptions::new(self.raw).libc("packslip")
+    }
+
+    /// This host for this tool: the platform with the tool's `libc` option applied.
+    fn host(&self, platform: &Platform) -> Result<HostPlatform> {
+        Ok(HostPlatform::for_tool(platform, self.libc()?))
     }
 
     /// A minisign-format public key line, or the path of a `.pub` file.
@@ -134,6 +144,7 @@ impl<'a> PackslipOptions<'a> {
 pub(crate) fn install_time_option_keys() -> Vec<String> {
     [
         "variant",
+        "libc",
         "pubkey",
         "identity",
         "identity_prefix",
@@ -502,11 +513,30 @@ pub(crate) struct HostPlatform {
     pub(crate) os: String,
     pub(crate) arch: String,
     pub(crate) libc: Option<String>,
+    /// Set when the tool's `libc` option chose `libc`: no build for the other
+    /// libc is taken in its place.
+    pub(crate) strict_libc: bool,
 }
 
 impl HostPlatform {
     pub(crate) fn current() -> Self {
         Self::from_platform(&Platform::current())
+    }
+
+    /// The host for a tool whose `libc` option is `tool_libc`. A libc the platform
+    /// names wins, as it does for aqua: a lockfile entry is keyed by the platform,
+    /// so `libc = "glibc"` must not put a gnu build under `linux-x64-musl`, and a
+    /// musl host (Alpine, or `libc = "musl"` in settings) stays musl.
+    pub(crate) fn for_tool(platform: &Platform, tool_libc: Option<&str>) -> Self {
+        let mut host = Self::from_platform(platform);
+        if let Some(libc) = tool_libc
+            && host.os == "linux"
+            && platform.libc().is_none()
+        {
+            host.libc = Some(libc.to_string());
+        }
+        host.strict_libc = tool_libc.is_some() && host.libc.as_deref() == tool_libc;
+        host
     }
 
     fn as_host(&self) -> Host<'_> {
@@ -534,6 +564,7 @@ impl HostPlatform {
             os: os.to_string(),
             arch: arch.to_string(),
             libc,
+            strict_libc: false,
         }
     }
 }
@@ -588,7 +619,7 @@ pub(crate) fn select_artifact<'a>(
         ),
         Err(Selection::NoMatch) => {}
     }
-    if host.libc.as_deref() == Some("gnu") {
+    if host.libc.as_deref() == Some("gnu") && !host.strict_libc {
         let musl = Host {
             libc: Some("musl"),
             ..strict
@@ -608,8 +639,13 @@ pub(crate) fn select_artifact<'a>(
         }
     }
     let available = artifacts.iter().map(describe).join(", ");
+    let libc_note = if host.strict_libc {
+        " (set by the tool's `libc` option)"
+    } else {
+        ""
+    };
     Err(NoHostArtifact(format!(
-        "no artifact for {}/{}{}{hint}. The release has: {available}",
+        "no artifact for {}/{}{}{libc_note}{hint}. The release has: {available}",
         host.os,
         host.arch,
         host.libc
@@ -636,7 +672,7 @@ async fn select_compatible_artifact<'a>(
     ignore_requirements: bool,
 ) -> Result<&'a Artifact> {
     let artifact = select_artifact(artifacts, host, variant)?;
-    if ignore_requirements || host.libc.as_deref() != Some("gnu") {
+    if ignore_requirements || host.strict_libc || host.libc.as_deref() != Some("gnu") {
         return Ok(artifact);
     }
     let Some(min) = artifact
@@ -2041,7 +2077,7 @@ impl PackslipBackend {
         }
         let artifact = match select_compatible_artifact(
             &statement.predicate.artifacts,
-            &HostPlatform::current(),
+            &opts.host(&Platform::current())?,
             opts.variant().as_deref(),
             opts.raw.get("ignore_requirements") == Some("true"),
         )
@@ -2513,7 +2549,7 @@ impl PackslipBackend {
                 None => {
                     select_compatible_artifact(
                         &statement.predicate.artifacts,
-                        &HostPlatform::current(),
+                        &opts.host(&Platform::current())?,
                         opts.variant().as_deref(),
                         raw_opts.get("ignore_requirements") == Some("true"),
                     )
@@ -3009,7 +3045,7 @@ impl Backend for PackslipBackend {
             opts.allow_unlogged(),
             before,
         )?;
-        let host = HostPlatform::from_platform(&target.platform);
+        let host = opts.host(&target.platform)?;
         let artifact = if target.is_current() {
             select_compatible_artifact(
                 &statement.predicate.artifacts,
@@ -3051,7 +3087,7 @@ impl Backend for PackslipBackend {
         Ok(info)
     }
 
-    /// `variant` and `ignore_requirements` can decide which artifact is
+    /// `variant`, `libc` and `ignore_requirements` can decide which artifact is
     /// downloaded, so distinct choices need distinct lock entries. `trust` is
     /// kept so an install from the lock does not quietly relax to the vendor.
     fn resolve_lockfile_options(
@@ -3064,6 +3100,9 @@ impl Backend for PackslipBackend {
         let mut options = BTreeMap::new();
         if let Some(variant) = opts.variant() {
             options.insert("variant".to_string(), variant);
+        }
+        if let Some(libc) = opts.libc()? {
+            options.insert("libc".to_string(), libc.to_string());
         }
         if raw_opts.get("ignore_requirements") == Some("true") {
             options.insert("ignore_requirements".to_string(), "true".to_string());
@@ -4332,7 +4371,7 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             )]),
             base
         );
-        for (key, value) in [("variant", "gpu"), ("trust", "vendor")] {
+        for (key, value) in [("variant", "gpu"), ("libc", "musl"), ("trust", "vendor")] {
             assert_ne!(
                 identity(&[(key, value)]),
                 base,
@@ -4409,6 +4448,7 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             os: "linux".into(),
             arch: "x86_64".into(),
             libc: Some("gnu".into()),
+            strict_libc: false,
         }
     }
 
@@ -4628,6 +4668,99 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
     }
 
     #[test]
+    fn tool_libc_option_chooses_the_linux_build() {
+        let platform = |key: &str| Platform::parse(key).unwrap();
+        let musl_on_gnu = HostPlatform::for_tool(&platform("linux-x64"), Some("musl"));
+        assert_eq!(musl_on_gnu.libc.as_deref(), Some("musl"));
+        assert!(musl_on_gnu.strict_libc);
+        let gnu = HostPlatform::for_tool(&platform("linux-x64"), Some("gnu"));
+        assert_eq!(gnu.libc.as_deref(), Some("gnu"));
+        assert!(gnu.strict_libc);
+        // No option keeps the host as it was, fallbacks included.
+        assert_eq!(
+            HostPlatform::for_tool(&platform("linux-x64"), None),
+            HostPlatform::from_platform(&platform("linux-x64"))
+        );
+        // A musl platform stays musl, and macOS has no libc to choose.
+        let gnu_on_musl = HostPlatform::for_tool(&platform("linux-x64-musl"), Some("gnu"));
+        assert_eq!(gnu_on_musl.libc.as_deref(), Some("musl"));
+        assert!(!gnu_on_musl.strict_libc);
+        let mac = HostPlatform::for_tool(&platform("macos-arm64"), Some("musl"));
+        assert_eq!(mac.libc, None);
+        assert!(!mac.strict_libc);
+
+        let gnu_build = artifact("t-gnu.tar.xz", "linux", "x86_64", Some("gnu"), "tar.xz");
+        let musl_build = artifact("t-musl.tar.xz", "linux", "x86_64", Some("musl"), "tar.xz");
+        let both = vec![gnu_build.clone(), musl_build.clone()];
+        assert_eq!(
+            select_artifact(&both, &musl_on_gnu, None).unwrap().name,
+            "t-musl.tar.xz"
+        );
+        assert_eq!(
+            select_artifact(&both, &linux(), None).unwrap().name,
+            "t-gnu.tar.xz",
+            "without the option a gnu host keeps the gnu build"
+        );
+        // With `libc = "glibc"`, a release with only a musl build is refused
+        // instead of falling back to it.
+        let musl_only = vec![musl_build];
+        let err = select_artifact(&musl_only, &gnu, None).unwrap_err();
+        assert!(err.to_string().contains("`libc` option"), "{err}");
+        assert!(err.is::<NoHostArtifact>());
+        let gnu_only = vec![gnu_build];
+        assert!(select_artifact(&gnu_only, &musl_on_gnu, None).is_err());
+    }
+
+    #[tokio::test]
+    async fn tool_libc_option_skips_the_glibc_floor_fallback() {
+        let mut gnu_with_floor = artifact("t-gnu.tar.xz", "linux", "x86_64", Some("gnu"), "tar.xz");
+        gnu_with_floor.requires = Some(packslip::model::Requires {
+            // No glibc meets this, so only the option keeps the gnu build.
+            glibc_min: Some("999.0".into()),
+            ..Default::default()
+        });
+        let artifacts = vec![
+            gnu_with_floor,
+            artifact("t-musl.tar.xz", "linux", "x86_64", Some("musl"), "tar.xz"),
+        ];
+        let gnu = HostPlatform::for_tool(&Platform::parse("linux-x64").unwrap(), Some("gnu"));
+        assert_eq!(
+            select_compatible_artifact(&artifacts, &gnu, None, false)
+                .await
+                .unwrap()
+                .name,
+            "t-gnu.tar.xz"
+        );
+    }
+
+    #[test]
+    fn tool_libc_option_is_validated_and_locked() {
+        let backend = PackslipBackend::from_arg(BackendArg::from("packslip:packslip.dev/tool"));
+        let request = |libc: &str| {
+            let raw: ToolVersionOptions = toml::from_str(&format!("libc = {libc}")).unwrap();
+            ToolRequest::new_with_options(
+                backend.ba.clone(),
+                "1.0.0",
+                raw,
+                crate::toolset::ToolSource::Unknown,
+            )
+            .unwrap()
+        };
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let options = backend
+            .resolve_lockfile_options(&request("\"glibc\""), &target)
+            .unwrap();
+        assert_eq!(options.get("libc").map(String::as_str), Some("gnu"));
+        let err = backend
+            .resolve_lockfile_options(&request("\"uclibc\""), &target)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("invalid packslip `libc` option"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn selects_the_one_artifact_for_the_host() {
         let artifacts = vec![
             artifact("t-darwin-arm64.tar.xz", "darwin", "aarch64", None, "tar.xz"),
@@ -4668,6 +4801,7 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             os: "darwin".into(),
             arch: "aarch64".into(),
             libc: None,
+            strict_libc: false,
         };
         assert_eq!(
             select_artifact(&artifacts, &mac, None).unwrap().name,
@@ -4677,6 +4811,7 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             os: "windows".into(),
             arch: "x86_64".into(),
             libc: None,
+            strict_libc: false,
         };
         let err = select_artifact(&artifacts, &windows, None).unwrap_err();
         assert!(

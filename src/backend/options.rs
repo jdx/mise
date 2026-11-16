@@ -80,6 +80,22 @@ impl<'a> BackendOptions<'a> {
         self.raw
     }
 
+    /// The per-tool `libc` option, normalized to `gnu` or `musl`. It makes Linux asset
+    /// selection strict for this tool, like the `libc` setting does for every tool.
+    /// `backend` names the backend in the error for a value it does not accept.
+    pub(crate) fn libc(&self, backend: &str) -> Result<Option<&'static str>> {
+        let Some(value) = self.raw.opts.get("libc") else {
+            return Ok(None);
+        };
+        match value.as_str() {
+            Some("gnu" | "glibc") => Ok(Some("gnu")),
+            Some("musl") => Ok(Some("musl")),
+            _ => bail!(
+                "invalid {backend} `libc` option {value}: expected \"glibc\", \"gnu\", or \"musl\""
+            ),
+        }
+    }
+
     /// Returns the option only when the underlying TOML value is a string.
     /// Prefer platform helpers for options that may be written as native TOML
     /// scalars.

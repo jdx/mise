@@ -136,6 +136,9 @@ pub struct ToolForgeOptions {
     pub rename_exe: Option<RenameExe>,
     /// directory inside the install that contains binaries (tera templated)
     pub bin_path: Option<String>,
+    /// force strict glibc or musl asset selection on linux
+    #[schemars(extend("enum" = ["glibc", "gnu", "musl"]))]
+    pub libc: Option<String>,
 }
 
 #[derive(JsonSchema)]
@@ -405,6 +408,9 @@ pub struct ToolSpmOptions {
 pub struct ToolPackslipOptions {
     /// publisher-declared alternative build to select, such as fips
     pub variant: Option<String>,
+    /// force strict glibc or musl artifact selection on linux
+    #[schemars(extend("enum" = ["glibc", "gnu", "musl"]))]
+    pub libc: Option<String>,
     /// minisign public key line or path to a .pub file pinning the signer
     pub pubkey: Option<String>,
     /// exact keyless signer certificate identity

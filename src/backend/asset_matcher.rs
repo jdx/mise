@@ -191,6 +191,27 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
 
 // ========== AssetPicker (from asset_detector) ==========
 
+/// The libc qualifier to match a target's assets against when the tool's `libc` option is
+/// `tool_libc`, and whether the option chose it (which makes the choice strict).
+///
+/// A libc the target platform names wins, as it does for aqua: a lockfile entry is keyed
+/// by the platform, so `libc = "glibc"` must not put a gnu build under `linux-x64-musl`,
+/// and a musl host (Alpine, or `libc = "musl"` in settings) stays musl. The option only
+/// applies to Linux.
+pub(crate) fn tool_target_libc(
+    target: &PlatformTarget,
+    tool_libc: Option<&str>,
+) -> (Option<String>, bool) {
+    let qualifier = target.qualifier().map(str::to_string);
+    match (tool_libc, target.libc()) {
+        (Some(libc), None) if target.os_name() == "linux" => (Some(libc.to_string()), true),
+        (Some(libc), Some(platform)) if target.os_name() == "linux" => {
+            (qualifier, platform == libc)
+        }
+        _ => (qualifier, false),
+    }
+}
+
 /// Automatically detects the best asset for the current platform
 pub(crate) struct AssetPicker {
     target_os: String,
@@ -208,6 +229,9 @@ pub(crate) struct AssetPicker {
     /// regex validity a local property of the picker rather than something that
     /// depends on call ordering between binary and provenance selection.
     matching_regex: Option<Result<Regex, String>>,
+    /// Refuse assets named for a libc other than `target_libc`, set when the tool's
+    /// `libc` option chose it.
+    strict_libc: bool,
 }
 
 impl AssetPicker {
@@ -233,7 +257,15 @@ impl AssetPicker {
             preferred_name: None,
             matching: None,
             matching_regex: None,
+            strict_libc: false,
         }
+    }
+
+    /// Refuse assets named for a libc other than the target's, instead of only
+    /// scoring them lower.
+    pub(crate) fn with_strict_libc(mut self, strict_libc: bool) -> Self {
+        self.strict_libc = strict_libc;
+        self
     }
 
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
@@ -346,6 +378,7 @@ impl AssetPicker {
             .filter(|(score, asset)| {
                 *score > 0
                     && !self.has_arch_mismatch(asset)
+                    && !(self.strict_libc && self.has_libc_mismatch(asset))
                     && !is_non_executable_asset(asset)
                     && !is_metadata_asset(asset)
             })
@@ -548,6 +581,10 @@ impl AssetPicker {
 
     fn has_arch_mismatch(&self, asset: &str) -> bool {
         self.score_arch_match(asset) < 0
+    }
+
+    fn has_libc_mismatch(&self, asset: &str) -> bool {
+        self.target_os == "linux" && self.score_libc_match(asset) < 0
     }
 
     fn score_libc_match(&self, asset: &str) -> i32 {
@@ -985,6 +1022,8 @@ pub(crate) struct AssetMatcher {
     matching: Option<String>,
     /// Regex an asset name must match (ubi's `matching_regex`)
     matching_regex: Option<String>,
+    /// Whether the tool's `libc` option chose `target_libc`
+    strict_libc: bool,
 }
 
 impl AssetMatcher {
@@ -998,6 +1037,18 @@ impl AssetMatcher {
         self.target_os = Some(target.os_name().to_string());
         self.target_arch = Some(target.arch_name().to_string());
         self.target_libc = target.qualifier().map(|s| s.to_string());
+        self
+    }
+
+    /// Configure for a target platform, with the tool's `libc` option applied (see
+    /// [`tool_target_libc`]).
+    pub(crate) fn for_tool_target(
+        mut self,
+        target: &PlatformTarget,
+        tool_libc: Option<&str>,
+    ) -> Self {
+        self = self.for_target(target);
+        (self.target_libc, self.strict_libc) = tool_target_libc(target, tool_libc);
         self
     }
 
@@ -1085,6 +1136,7 @@ impl AssetMatcher {
         Some(
             AssetPicker::with_libc(os.clone(), arch.clone(), self.target_libc.clone())
                 .with_no_app(self.no_app)
+                .with_strict_libc(self.strict_libc)
                 .with_preferred_name(self.preferred_name.clone().unwrap_or_default())
                 .with_matching(self.matching.clone().unwrap_or_default())
                 .with_matching_regex(self.matching_regex.clone().unwrap_or_default()),
@@ -1125,10 +1177,15 @@ impl AssetMatcher {
             } else {
                 format!("\nNote: filtered by {}", active_filters.join(", "))
             };
+            let libc_note = match (&self.target_libc, self.strict_libc) {
+                (Some(libc), true) => format!("-{libc} (set by the tool's `libc` option)"),
+                _ => String::new(),
+            };
             let message = format!(
-                "No matching asset found for platform {}-{}{}\nAvailable assets:\n{}",
+                "No matching asset found for platform {}-{}{}{}\nAvailable assets:\n{}",
                 os,
                 arch,
+                libc_note,
                 filter_note,
                 assets.join("\n")
             );
@@ -3465,5 +3522,59 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert_eq!(asset_pattern_hint("tool-[0-9]*.zip"), "");
         // `.*` is a valid glob suffix, not a regex signal.
         assert_eq!(asset_pattern_hint("tool-linux-x64.*"), "");
+    }
+
+    #[test]
+    fn test_tool_libc_option_chooses_the_linux_asset() {
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        assert_eq!(
+            tool_target_libc(&target("linux-x64"), Some("musl")),
+            (Some("musl".to_string()), true)
+        );
+        assert_eq!(tool_target_libc(&target("linux-x64"), None), (None, false));
+        // A musl platform stays musl, and the option is Linux-only.
+        assert_eq!(
+            tool_target_libc(&target("linux-x64-musl"), Some("gnu")),
+            (Some("musl".to_string()), false)
+        );
+        assert_eq!(
+            tool_target_libc(&target("linux-x64-musl"), Some("musl")),
+            (Some("musl".to_string()), true)
+        );
+        assert_eq!(
+            tool_target_libc(&target("macos-arm64"), Some("musl")),
+            (None, false)
+        );
+
+        let both = vec![
+            "fnox-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "fnox-x86_64-unknown-linux-musl.tar.gz".to_string(),
+            "fnox-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+        let pick = |tool_libc: Option<&str>, assets: &[String]| {
+            AssetMatcher::new()
+                .for_tool_target(&target("linux-x64"), tool_libc)
+                .pick_from(assets)
+                .map(|m| m.name)
+        };
+        assert_eq!(
+            pick(None, &both).unwrap(),
+            "fnox-x86_64-unknown-linux-gnu.tar.gz"
+        );
+        assert_eq!(
+            pick(Some("musl"), &both).unwrap(),
+            "fnox-x86_64-unknown-linux-musl.tar.gz"
+        );
+        // A release with only the other libc's build is refused, not installed.
+        let gnu_only = vec!["fnox-x86_64-unknown-linux-gnu.tar.gz".to_string()];
+        let err = pick(Some("musl"), &gnu_only).unwrap_err();
+        assert!(err.to_string().contains("`libc` option"), "{err}");
+        // An asset that names no libc still fits.
+        let plain = vec!["fnox-linux-x86_64.tar.gz".to_string()];
+        assert_eq!(
+            pick(Some("gnu"), &plain).unwrap(),
+            "fnox-linux-x86_64.tar.gz"
+        );
     }
 }

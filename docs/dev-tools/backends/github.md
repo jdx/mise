@@ -102,6 +102,7 @@ such as `postinstall` and `os`, are described in
 | [`asset_pattern`](#asset-pattern)                                                            | Name the asset to download                                         |
 | [`matching`](#matching), [`matching_regex`](#matching-regex)                                 | Narrow the assets that autodetection chooses from                  |
 | [`no_app`](#no-app)                                                                          | Prefer a command-line archive over a macOS `.app` bundle           |
+| [`libc`](#libc)                                                                              | Choose the glibc or musl build on Linux                            |
 | [`additional_asset_patterns`](#additional-asset-patterns)                                    | Extract more archives from the same release into the install       |
 | [`version_prefix`](#version-prefix)                                                          | Read versions from tags with a prefix other than `v`               |
 | [`version_regex`](#version-regex)                                                            | List only the release tags that match a pattern                    |
@@ -183,6 +184,27 @@ version = "latest"
 rename_exe = "swiftformat"
 no_app = true # use swiftformat.zip, not SwiftFormat.for.Xcode.app.zip
 ```
+
+#### `libc`
+
+On Linux, autodetection prefers assets named for the host's C library (`gnu` or
+`glibc`, or `musl`), but takes one for the other libc when that is the best
+match. Set `libc` to choose for one tool:
+
+```toml
+[tools]
+"github:jdx/fnox" = { version = "latest", libc = "musl" }
+```
+
+Accepted values are `glibc` (or `gnu`) and `musl`. When set, mise refuses
+assets named for the other libc, keeps assets that name none, and the value
+overrides [`libc = "glibc"`](/configuration/settings.html#libc) in settings. It
+cannot select glibc on a musl platform: an Alpine host, `libc = "musl"` in
+settings, or a `linux-*-musl` lockfile platform. It has no effect when
+`asset_pattern` or `url` is set.
+
+The value is recorded in the lockfile, so changing it resolves the tool again.
+Run `mise install --force` to switch a version that is already installed.
 
 #### `additional_asset_patterns` {#additional-asset-patterns}
 
