@@ -188,6 +188,8 @@ pub fn version_sort_key(v: &str) -> (Option<Versioning>, Vec<BuildSegment>) {
 /// older than `latest`'s. Only a numeric build segment can say so: `+7` is older
 /// than `+101`, but `+one` and `+two` are not ordered. Anything else is `false`.
 pub fn build_metadata_is_older(current: &str, latest: &str) -> bool {
+    let strip = |v: &str| v.strip_prefix(['v', 'V']).unwrap_or(v).to_string();
+    let (current, latest) = (strip(current), strip(latest));
     let (Some((cbase, cmeta)), Some((lbase, lmeta))) =
         (current.split_once('+'), latest.split_once('+'))
     else {
@@ -197,13 +199,12 @@ pub fn build_metadata_is_older(current: &str, latest: &str) -> bool {
         return false;
     }
     for (c, l) in cmeta.split('.').zip(lmeta.split('.')) {
-        if c == l {
-            continue;
+        match (c.parse::<u64>(), l.parse::<u64>()) {
+            (Ok(c), Ok(l)) if c == l => continue,
+            (Ok(c), Ok(l)) => return c < l,
+            _ if c == l => continue,
+            _ => return false,
         }
-        return match (c.parse::<u64>(), l.parse::<u64>()) {
-            (Ok(c), Ok(l)) => c < l,
-            _ => false,
-        };
     }
     false
 }
@@ -258,6 +259,9 @@ mod tests {
         assert!(!older("1.0.0+one", "1.0.0+two"));
         assert!(!older("1.0.0+1", "1.0.1+2"));
         assert!(!older("1.0.0", "1.0.0+2"));
+        assert!(older("1.0.0+07.1", "1.0.0+7.2"));
+        assert!(older("v1.0.0+7", "1.0.0+101"));
+        assert!(older("1.0.0+7", "V1.0.0+101"));
     }
 
     #[test]
