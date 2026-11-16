@@ -275,7 +275,9 @@ pub async fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     if !bins_by_dir.is_empty() {
         // Locating the mise binary walks PATH, so defer it until a declaration
         // actually needs a shim.
-        let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+        let Some(mise_bin) = shim_target()? else {
+            return lazy_bins_error.map_or(Ok(()), Err);
+        };
         let excluded = &Settings::get().shims.exclude;
         // Same in-process serialization as `reshim_for`: a bootstrap write that
         // blocks on the shims file lock would starve a reshim in this process
@@ -487,8 +489,9 @@ pub async fn reshim_for(
         })
         .lock();
 
-    let mise_bin = mise_bin_for_shims();
-    let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
+    let Some(mise_bin) = shim_target()? else {
+        return Ok(());
+    };
 
     #[cfg(windows)]
     let shim_mode = effective_shim_mode(&mise_bin);
@@ -1008,7 +1011,9 @@ pub fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()>
     if wrappers.is_empty() {
         return Ok(());
     }
-    let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+    let Some(mise_bin) = shim_target()? else {
+        return Ok(());
+    };
     let shims = wrappers
         .keys()
         .flat_map(|name| platform_shim_names(&mise_bin, name))
@@ -1279,24 +1284,32 @@ pub fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -
 
 /// The mise executable to re-invoke from a subprocess.
 ///
-/// `current_exe()` is the path mise was launched through on some platforms (macOS), so when a tool
-/// shim triggered the run it names the shim (`jq`), not mise. Fall back to the real mise then.
+/// [`env::MISE_BIN`] already follows a tool shim's link back to mise. A shim it cannot follow (a
+/// Windows hardlink) still names the tool, so look for mise on PATH then.
 pub fn running_mise_bin() -> PathBuf {
-    let is_mise = |p: &Path| {
-        p.file_name()
-            .is_some_and(|n| env::is_mise_binary(&n.to_string_lossy()))
-    };
-    if let Ok(exe) = std::env::current_exe() {
-        if is_mise(&exe) {
-            return exe;
-        }
-        // Unix tool shims are symlinks to mise, so resolving one finds it even when no mise is on PATH.
-        let resolved = file::canonicalize_or_self(&exe);
-        if is_mise(&resolved) {
-            return resolved;
-        }
+    let mise_bin = env::MISE_BIN.clone();
+    if env::is_mise_path(&mise_bin) {
+        return mise_bin;
     }
     mise_bin_for_shims()
+}
+
+/// The mise executable to write shims for, made absolute (a relative shim target does not
+/// work), or `None` after a warning when that is not mise.
+///
+/// Every shim runs this path, so a target that is not mise breaks every command at once: a tool
+/// shim as the target makes each shim a link to itself (#15742). Leaving the shims as they are
+/// is better than that.
+fn shim_target() -> Result<Option<PathBuf>> {
+    let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+    if env::is_mise_path(&mise_bin) {
+        return Ok(Some(mise_bin));
+    }
+    warn!(
+        "not writing shims: {} is not the mise executable; put mise on PATH and run `mise reshim`",
+        display_path(&mise_bin)
+    );
+    Ok(None)
 }
 
 /// Resolve the mise executable that Unix symlink shims should target.
