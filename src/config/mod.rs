@@ -5678,9 +5678,17 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
     } else {
         lockfile::snapshot_pre_install_platforms(config, ts, new_versions)
     };
+    let tool_config_locked =
+        lockfile::tool_config_locked_lockfiles(config, lockfile_update_mode).await;
     let has_deferred_provenance = measure!("updating lockfiles", {
-        lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
-            .wrap_err("failed to update lockfiles")?
+        lockfile::update_lockfiles(
+            config,
+            ts,
+            new_versions,
+            lockfile_update_mode,
+            &tool_config_locked,
+        )
+        .wrap_err("failed to update lockfiles")?
     });
     if !new_versions.is_empty() || has_deferred_provenance {
         measure!("auto-locking platforms", {
@@ -5690,6 +5698,7 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
                 new_versions,
                 &pre_install_platforms,
                 lockfile_update_mode,
+                &tool_config_locked,
             )
             .await
             .wrap_err("failed to auto-lock platforms")?;

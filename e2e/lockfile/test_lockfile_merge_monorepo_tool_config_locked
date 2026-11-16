@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# The deprecated merge mode decides which monorepo lockfiles to leave alone
+# from every config root that writes them, including sibling packages that
+# the install did not start from.
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+export MISE_LOCKFILE_PLATFORMS=linux-x64
+
+mkdir -p repo/packages/a repo/packages/b
+printf '#!/bin/sh\necho a\n' >"$PWD/fixture-a"
+chmod +x "$PWD/fixture-a"
+sum_a="$(shasum -a 256 fixture-a | cut -d' ' -f1)"
+
+cat <<'EOT' >repo/mise.toml
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+
+[tool_config]
+locked = true
+EOT
+cat <<EOT >repo/packages/a/mise.toml
+[tool_config]
+locked = true
+
+[tools]
+"http:fixture-a" = { version = "1.0.0", url = "file://$PWD/fixture-a", checksum = "sha256:$sum_a" }
+EOT
+write_package_b() {
+  cat <<EOT >repo/packages/b/mise.toml
+[tool_config]
+locked = $1
+EOT
+}
+
+write_package_b true
+assert "cd repo && mise lock"
+assert_not_contains "cat repo/mise.lock" 'windows-x64'
+
+# Every writer is locked: an install in package a leaves the lockfile alone.
+cp repo/mise.lock lock.before
+assert "cd repo/packages/a && MISE_LOCKFILE_MODE=merge MISE_LOCKFILE_PLATFORMS=windows-x64 mise install"
+assert "diff lock.before repo/mise.lock"
+
+# Package b is unlocked, so installs maintain the shared lockfile again.
+write_package_b false
+assert "cd repo/packages/a && mise uninstall http:fixture-a@1.0.0"
+assert "cd repo/packages/a && MISE_LOCKFILE_MODE=merge MISE_LOCKFILE_PLATFORMS=windows-x64 mise install"
+assert_contains "cat repo/mise.lock" 'windows-x64'
