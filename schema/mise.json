@@ -1967,6 +1967,14 @@
           "description": "Maximum total size of the download cache, such as `500MB` or `10GiB`.",
           "type": "string"
         },
+        "enable_backends": {
+          "default": [],
+          "description": "Allowlist of backends mise may resolve and install tools with, such as `core` or `aqua`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "enable_tools": {
           "description": "Allowlist of configured tools mise uses; other tools are ignored.",
           "type": "array",

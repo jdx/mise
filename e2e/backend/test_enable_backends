@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+
+# a listed backend installs
+MISE_ENABLE_BACKENDS=aqua mise install age@1.2.1
+assert_contains "MISE_ENABLE_BACKENDS=aqua mise ls age" "1.2.1"
+
+# a backend missing from the list fails and names the setting, core tools included
+assert_fail "MISE_ENABLE_BACKENDS=aqua mise install gem:rake@13.0.0" "backend gem is not listed in enable_backends"
+assert_fail "MISE_ENABLE_BACKENDS=aqua mise use -g gem:rake@13.0.0" "backend gem is not listed in enable_backends"
+assert_fail "MISE_ENABLE_BACKENDS=aqua mise install node@22" "enable_backends allows only aqua"
+assert_fail "MISE_ENABLE_BACKENDS=aqua mise ls-remote gem:rake" "backend gem is not listed in enable_backends"
+
+# a registry shorthand skips to its next listed backend: fnox lists packslip, then github
+assert "mise tool fnox --backend" "packslip:github.com/jdx/fnox"
+# an empty list allows every backend
+assert "MISE_ENABLE_BACKENDS= mise tool fnox --backend" "packslip:github.com/jdx/fnox"
+assert "MISE_ENABLE_BACKENDS=github mise tool fnox --backend" "github:jdx/fnox"
+MISE_ENABLE_BACKENDS=github mise install fnox@1.48.0
+assert_contains "MISE_ENABLE_BACKENDS=github mise exec fnox@1.48.0 -- fnox --version" "fnox 1.48.0"
+
+# when no backend of a registry entry is listed, the error says which setting ruled them out
+assert_fail "MISE_ENABLE_BACKENDS=aqua mise install fnox@1.48.0" "enable_backends allows only aqua"
+
+# disable_backends still applies to the listed backends
+assert "MISE_ENABLE_BACKENDS=aqua,asdf MISE_DISABLE_BACKENDS=aqua mise tool age --backend" "asdf:threkk/asdf-age"
+assert_fail "MISE_ENABLE_BACKENDS=aqua MISE_DISABLE_BACKENDS=aqua mise install aqua:FiloSottile/age@1.2.1" "backend aqua is disabled by disable_backends"

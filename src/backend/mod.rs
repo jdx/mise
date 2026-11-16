@@ -796,27 +796,96 @@ pub(crate) fn remove(short: &str) {
     }
 }
 
+/// Why the `disable_backends` and `enable_backends` settings rule a backend out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackendDenial {
+    Disabled,
+    NotEnabled,
+}
+
+/// Whether `disable_backends` or `enable_backends` rules out this backend.
 pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
-    if *backend_type == BackendType::Pipx {
-        return is_disabled_backend_name("pypi") || is_disabled_backend_name("pipx");
-    }
-    backend_type
-        .disable_key()
-        .is_some_and(is_disabled_backend_name)
+    backend_type_denial(backend_type).is_some()
 }
 
 pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
-    if is_disabled_backend_type(backend_type) {
-        bail!("backend {backend_type} is disabled by disable_backends");
+    match backend_type_denial(backend_type) {
+        Some(BackendDenial::Disabled) => {
+            bail!("backend {backend_type} is disabled by disable_backends")
+        }
+        Some(BackendDenial::NotEnabled) => {
+            bail!("backend {backend_type} is not listed in enable_backends")
+        }
+        None => Ok(()),
     }
-    Ok(())
 }
 
-fn is_disabled_backend_name(backend: &str) -> bool {
-    Settings::get()
-        .disable_backends
-        .iter()
-        .any(|disabled| disabled == backend)
+/// Whether the settings allow the backend named `backend`, such as `aqua` or
+/// a vfox backend plugin's name.
+pub fn is_backend_name_allowed(backend: &str) -> bool {
+    backend_name_denial(backend).is_none()
+}
+
+fn backend_type_denial(backend_type: &BackendType) -> Option<BackendDenial> {
+    backend_type.disable_key().and_then(backend_name_denial)
+}
+
+/// For an error about a registry entry none of whose backends `fulls` (such as
+/// `aqua:owner/repo`) can be used: which settings ruled them out, if any did.
+pub fn denied_backends_hint(fulls: &[&str]) -> Option<String> {
+    let mut disabled = vec![];
+    let mut not_enabled = false;
+    for full in fulls {
+        let name = full.split(':').next().unwrap_or(full);
+        match backend_name_denial(name) {
+            Some(BackendDenial::Disabled) if !disabled.contains(&name) => disabled.push(name),
+            Some(BackendDenial::NotEnabled) => not_enabled = true,
+            _ => {}
+        }
+    }
+    let mut reasons = vec![];
+    if not_enabled {
+        let enabled = &Settings::get().enable_backends;
+        reasons.push(format!(
+            "enable_backends allows only {}",
+            enabled.join(", ")
+        ));
+    }
+    if !disabled.is_empty() {
+        reasons.push(format!("disable_backends lists {}", disabled.join(", ")));
+    }
+    (!reasons.is_empty()).then(|| reasons.join("; "))
+}
+
+fn backend_name_denial(backend: &str) -> Option<BackendDenial> {
+    let settings = Settings::get();
+    backend_list_denial(
+        backend,
+        &settings.disable_backends,
+        &settings.enable_backends,
+    )
+}
+
+fn backend_list_denial(
+    backend: &str,
+    disabled: &[String],
+    enabled: &[String],
+) -> Option<BackendDenial> {
+    // `pypi` and `pipx` name the same backend
+    let is_pypi = |name: &str| matches!(name, "pypi" | "pipx");
+    let listed = |list: &[String]| {
+        list.iter()
+            .any(|name| name == backend || (is_pypi(name) && is_pypi(backend)))
+    };
+    // `MISE_ENABLE_BACKENDS=` parses to one empty name, which means no allowlist
+    let allowlist = enabled.iter().any(|name| !name.is_empty());
+    if listed(disabled) {
+        Some(BackendDenial::Disabled)
+    } else if allowlist && !listed(enabled) {
+        Some(BackendDenial::NotEnabled)
+    } else {
+        None
+    }
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
@@ -1276,6 +1345,46 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn empty_enable_backends_allows_every_backend() {
+        assert_eq!(backend_list_denial("gem", &[], &[]), None);
+        assert_eq!(backend_list_denial("gem", &[], &names(&[""])), None);
+    }
+
+    #[test]
+    fn enable_backends_allows_only_listed_backends() {
+        let enabled = names(&["core", "aqua"]);
+        assert_eq!(backend_list_denial("aqua", &[], &enabled), None);
+        assert_eq!(backend_list_denial("core", &[], &enabled), None);
+        assert_eq!(
+            backend_list_denial("gem", &[], &enabled),
+            Some(BackendDenial::NotEnabled)
+        );
+    }
+
+    #[test]
+    fn disable_backends_applies_on_top_of_enable_backends() {
+        let enabled = names(&["core", "aqua"]);
+        assert_eq!(
+            backend_list_denial("aqua", &names(&["aqua"]), &enabled),
+            Some(BackendDenial::Disabled)
+        );
+    }
+
+    #[test]
+    fn enable_backends_treats_pypi_and_pipx_as_one_backend() {
+        assert_eq!(backend_list_denial("pypi", &[], &names(&["pipx"])), None);
+        assert_eq!(backend_list_denial("pipx", &[], &names(&["pypi"])), None);
+        assert_eq!(
+            backend_list_denial("pipx", &names(&["pypi"]), &[]),
+            Some(BackendDenial::Disabled)
+        );
+    }
 
     #[cfg(unix)]
     #[test]

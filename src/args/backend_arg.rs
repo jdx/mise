@@ -490,11 +490,14 @@ impl BackendArg {
             {
                 let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
                 bail!(
-                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration{}",
+                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration{}{}",
                     all_backends.join(", "),
                     self.registry_version
                         .as_ref()
                         .map(|v| format!(" for version {v}"))
+                        .unwrap_or_default(),
+                    backend::denied_backends_hint(&all_backends)
+                        .map(|hint| format!(" ({hint})"))
                         .unwrap_or_default()
                 );
             }

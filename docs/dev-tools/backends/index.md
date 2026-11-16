@@ -125,8 +125,9 @@ these that applies:
    when that backend can serve the requested version.
 5. An installed plugin with the same name, unless its backend is disabled.
 6. The first backend in the tool's registry entry that runs on this platform,
-   is not listed in [`disable_backends`](#disable-backends), and supports the
-   requested version. Experimental backends count only with
+   is allowed by [`enable_backends`](#enable-backends) and
+   [`disable_backends`](#disable-backends), and supports the requested
+   version. Experimental backends count only with
    [`experimental = true`](/configuration/settings.html#experimental).
 
 `mise tool` shows the result, and `mise registry` shows the registry's list in
@@ -217,6 +218,32 @@ Short names then skip those backends in their registry list, and installing an
 explicit identifier such as `asdf:owner/asdf-tool` fails. Versions already
 installed stay on disk and work again if you enable the backend. mise never
 uses the asdf backend on Windows, whatever this setting says.
+
+### Allow only some backends {#enable-backends}
+
+Set [`enable_backends`](/configuration/settings.html#enable_backends) to list
+the only backends mise may use. A backend mise adds later stays off until you
+add it to the list. Core tools such as `node` and `python` use the `core`
+backend:
+
+```toml [mise.toml]
+[settings]
+enable_backends = ["core", "aqua", "github"]
+```
+
+A short name then skips registry backends that are not listed, so `fnox`,
+whose registry entry lists `packslip` before `github`, installs from
+`github:jdx/fnox`. An identifier whose backend is not listed fails:
+
+```sh
+mise install gem:rake
+# mise ERROR backend gem is not listed in enable_backends
+```
+
+`disable_backends` still applies to the backends in the list. An empty list,
+the default, allows every backend. The setting checks the backend each tool is
+configured with, not tools a backend runs itself, such as the `node` that the
+`npm` backend uses.
 
 ## Troubleshooting {#troubleshooting}
 
