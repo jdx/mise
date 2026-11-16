@@ -186,6 +186,29 @@ lockfile = false
 | Lock an exact version without changing a prefix request              | `mise lock node@24.11.0` |
 | Install the versions `mise.lock` records                             | `mise install --locked`  |
 
+### Previewing changes
+
+`mise lock --dry-run` resolves everything a real `mise lock` would and prints
+what it would write to each platform entry, without touching `mise.lock`:
+
+```sh
+# mise.lock has jq 1.7.1 for linux-x64 without a checksum; yq was just added
+mise lock --dry-run --platform linux-x64,macos-arm64
+```
+
+```text
+→ Dry run - would update:
+  ~ jq@1.7.1 for linux-x64 (checksum filled)
+  + jq@1.7.1 for macos-arm64 (new platform)
+  + yq@4.44.1 for linux-x64 (new entry)
+  + yq@4.44.1 for macos-arm64 (new entry)
+→ 4 of 4 platform entries would change
+```
+
+An entry can also show `version change from <old version>`, other fields that
+would be filled or changed (`url changed`), or `unchanged`. A dry run fails
+when the real run would, for example when a version cannot be resolved.
+
 ### Bumping locked versions
 
 `mise lock --bump` re-resolves version requests such as `latest`, `lts` or a

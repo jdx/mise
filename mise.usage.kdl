@@ -4845,7 +4845,17 @@ Values below 1 are treated as 1.
 """#
         arg <JOBS>
     }
-    flag "-n --dry-run" help="Show what would change, without writing anything"
+    flag "-n --dry-run" help="Show what would change, without writing anything" {
+        long_help #"""
+Show what would change, without writing anything
+
+Resolves every tool on every platform as `mise lock` would, then lists
+each platform entry as a new entry, a version change, a new platform,
+the fields it would fill or change (such as a missing checksum), or
+unchanged. Like `mise lock`, it may download artifacts to compute
+checksums.
+"""#
+    }
     flag "-p --platform" help="Platforms to lock, comma-separated, such as `linux-x64,macos-arm64`" var=#true {
         long_help #"""
 Platforms to lock, comma-separated, such as `linux-x64,macos-arm64`

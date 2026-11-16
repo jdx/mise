@@ -37,6 +37,12 @@ also updates the request in mise.toml to match.
 
   **Environment Variable:** `MISE_JOBS`
 - **`-n --dry-run`** — Show what would change, without writing anything
+
+  Resolves every tool on every platform as `mise lock` would, then lists
+  each platform entry as a new entry, a version change, a new platform,
+  the fields it would fill or change (such as a missing checksum), or
+  unchanged. Like `mise lock`, it may download artifacts to compute
+  checksums.
 - **`-p --platform <PLATFORM>`** — Platforms to lock, comma-separated, such as `linux-x64,macos-arm64`
 
   Defaults to the `lockfile_platforms` setting plus the current platform when

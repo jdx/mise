@@ -7266,6 +7266,12 @@ Values below 1 are treated as 1.
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would change, without writing anything
+
+Resolves every tool on every platform as `mise lock` would, then lists
+each platform entry as a new entry, a version change, a new platform,
+the fields it would fill or change (such as a missing checksum), or
+unchanged. Like `mise lock`, it may download artifacts to compute
+checksums.
 .TP
 \fB\-p, \-\-platform\fR \fI<PLATFORM>\fR
 Platforms to lock, comma\-separated, such as `linux\-x64,macos\-arm64`
