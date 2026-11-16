@@ -364,6 +364,15 @@ impl ToolVersion {
         self.resolved_from_lockfile
     }
 
+    /// Why each dependency graph the lockfile records for this version cannot
+    /// be read: a sidecar that is missing, unreadable, or edited since its
+    /// digest was recorded.
+    pub fn locked_graph_errors(&self) -> Vec<eyre::Report> {
+        let aube = self.aube_lock.as_ref().and_then(|g| g.load().err());
+        let uv = self.uv_lock.as_ref().and_then(|g| g.load().err());
+        aube.into_iter().chain(uv).collect()
+    }
+
     /// Whether the request named this exact release, e.g. `hk = "2.0.1"` in
     /// `mise.toml` or `mise install hk@2.0.1`. Release-age policy governs which
     /// version a fuzzy request may select; naming one release is that selection,
@@ -692,6 +701,7 @@ impl ToolVersion {
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
             keep_moved_alias_pins: base_opts.keep_moved_alias_pins,
+            locked: false,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -800,7 +810,7 @@ impl ToolVersion {
     /// order, forbid resolving this request outside the lockfile.
     fn locked_by(config: &Config, request: &ToolRequest, opts: &ResolveOptions) -> (bool, bool) {
         let invocation_locked =
-            config.invocation_locked_for(request.source(), Settings::get().locked);
+            opts.locked || config.invocation_locked_for(request.source(), Settings::get().locked);
         let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
         (invocation_locked, tool_config_locked)
     }
@@ -1559,6 +1569,10 @@ pub struct ResolveOptions {
     /// sets it so the upgrade binds the alias to that pin instead of
     /// re-resolving it.
     pub keep_moved_alias_pins: bool,
+    /// Resolve as `--locked` does, whatever the settings say: a request the
+    /// lockfile does not hold fails with `Error::NotInLockfile`.
+    /// `mise lock --check` sets it.
+    pub locked: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1581,6 +1595,7 @@ impl Default for ResolveOptions {
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
             keep_moved_alias_pins: false,
+            locked: false,
         }
     }
 }

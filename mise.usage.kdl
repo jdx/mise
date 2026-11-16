@@ -4935,6 +4935,20 @@ Combine with `--json` for machine-readable output, or with `--local`
 and `--global` to choose the lockfiles.
 """#
     }
+    flag --check help="Check that the lockfile is up to date, without changing it" {
+        long_help #"""
+Check that the lockfile is up to date, without changing it
+
+Reads each lockfile in scope and fails, listing each problem, when a
+locked install (`mise install --locked`) would reject it: a configured
+tool whose request no longer matches a locked version, a platform entry
+without the URL or checksum the install needs, or a dependency-graph
+sidecar that is missing or was edited. It checks the platforms
+`mise lock` would lock (see `--platform`). Nothing is resolved remotely
+and nothing is written. Combine with `--json` for one object per
+platform entry.
+"""#
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL]…" help="Tools to lock, such as `node python`; defaults to every configured tool and every tool a task needs" help_long=#"""
 Tools to lock, such as `node python`; defaults to every configured tool and every tool a task needs

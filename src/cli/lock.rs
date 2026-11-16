@@ -29,6 +29,7 @@ use tokio::task::JoinSet;
 /// A tool to lock for a specific lockfile target.
 type LockTool = (crate::args::BackendArg, crate::toolset::ToolVersion);
 
+mod check;
 mod dry_run;
 
 /// Every platform entry locking `tools` on `platforms` resolves: each
@@ -428,6 +429,19 @@ pub(crate) struct Lock {
     #[usage(long, verbatim_doc_comment)]
     pub sidecars: bool,
 
+    /// Check that the lockfile is up to date, without changing it
+    ///
+    /// Reads each lockfile in scope and fails, listing each problem, when a
+    /// locked install (`mise install --locked`) would reject it: a configured
+    /// tool whose request no longer matches a locked version, a platform entry
+    /// without the URL or checksum the install needs, or a dependency-graph
+    /// sidecar that is missing or was edited. It checks the platforms
+    /// `mise lock` would lock (see `--platform`). Nothing is resolved remotely
+    /// and nothing is written. Combine with `--json` for one object per
+    /// platform entry.
+    #[usage(long, verbatim_doc_comment)]
+    pub check: bool,
+
     /// Restrict the run to these lockfiles, for callers that relock the
     /// entries they rewrote (`mise backends switch`).
     #[usage(skip)]
@@ -749,7 +763,8 @@ impl Lock {
         // missing one must be installed before the tools to lock are known.
         // Listing sidecars is read-only, so it never installs anything.
         let mut config = Config::get().await?;
-        if !self.sidecars {
+        // Checking reads the lockfile alone, so it installs nothing either.
+        if !self.sidecars && !self.check {
             config = Toolset::install_config_plugins_and_reload(config, self.dry_run).await?;
         }
         self.run_with_installed(None, config).await
@@ -771,6 +786,7 @@ impl Lock {
             minimum_release_age: None,
             upgrade: false,
             sidecars: false,
+            check: false,
             lockfiles: None,
         }
         .run_with_installed(Some(installed), config)
@@ -786,6 +802,7 @@ impl Lock {
         if self.upgrade && !self.tool.is_empty() {
             bail!("`mise lock --upgrade` cannot be combined with tool arguments");
         }
+        self.reject_check_conflicts()?;
         if self.sidecars {
             return self.list_sidecars(&config).await;
         }
@@ -793,7 +810,7 @@ impl Lock {
         let generate = settings.generate_lockfiles();
         let auto_prune = settings.lockfile_auto_prune;
         let atomic = self.upgrade || generate;
-        if !self.dry_run && !atomic && self.lockfiles.is_none() {
+        if !self.dry_run && !self.check && !atomic && self.lockfiles.is_none() {
             lockfile::migrate_monorepo_lockfiles(&config, self.upgrade)?;
         }
         let before_date = self.get_before_date()?;
@@ -851,6 +868,9 @@ impl Lock {
         };
         // The generation locks stay held until the command finishes.
         let (inputs, _generation_locks) = self.snapshot_inputs(&setup)?;
+        if self.check {
+            return self.check_lockfiles(&setup, &inputs).await;
+        }
 
         let ts_owned;
         let ts = if let Some(monorepo_union) = &monorepo_union {
@@ -953,20 +973,21 @@ impl Lock {
             && distinct_lockfile_targets(lockfile_targets.keys());
         // Hold lockfile locks from the initial read through publication and GC.
         // Otherwise another process can publish a graph after our stale GC scan.
-        let generation_lock_paths: BTreeSet<PathBuf> = if setup.atomic && !self.dry_run {
-            lockfile_targets
-                .keys()
-                .cloned()
-                .chain(config_snapshots.keys().cloned())
-                .chain(
-                    migration_inputs
-                        .iter()
-                        .flat_map(|(source, target)| [source.clone(), target.clone()]),
-                )
-                .collect()
-        } else {
-            BTreeSet::new()
-        };
+        let generation_lock_paths: BTreeSet<PathBuf> =
+            if setup.atomic && !self.dry_run && !self.check {
+                lockfile_targets
+                    .keys()
+                    .cloned()
+                    .chain(config_snapshots.keys().cloned())
+                    .chain(
+                        migration_inputs
+                            .iter()
+                            .flat_map(|(source, target)| [source.clone(), target.clone()]),
+                    )
+                    .collect()
+            } else {
+                BTreeSet::new()
+            };
         let mut generation_locks = Vec::new();
         for path in &generation_lock_paths {
             generation_locks.push(crate::lock_file::LockFile::new(path).lock()?);
@@ -1957,6 +1978,34 @@ impl Lock {
 
     /// `--sidecars`: report the sidecar directories of each existing lockfile
     /// without resolving tools or writing anything.
+    /// `--check` reads the lockfile as it is, so it cannot take flags that
+    /// change what would be locked or that write.
+    fn reject_check_conflicts(&self) -> Result<()> {
+        if !self.check {
+            return Ok(());
+        }
+        let conflicts = [
+            ("--bump", self.bump),
+            ("--upgrade", self.upgrade),
+            ("--dry-run", self.dry_run),
+            ("--minimum-release-age", self.minimum_release_age.is_some()),
+            ("--sidecars", self.sidecars),
+        ];
+        if let Some((flag, _)) = conflicts.iter().find(|(_, set)| *set) {
+            bail!("`mise lock --check` cannot be combined with {flag}");
+        }
+        if let Some(tool) = self.tool.iter().find(|tool| tool.tvr.is_some()) {
+            bail!(
+                "`mise lock --check` checks the configured versions; name the tool without a version: {}",
+                tool.ba.short
+            );
+        }
+        if !Settings::get().lockfile_enabled() {
+            bail!("`mise lock --check` needs lockfiles, which the `lockfile` setting disables");
+        }
+        Ok(())
+    }
+
     async fn list_sidecars(&self, config: &Arc<Config>) -> Result<()> {
         if !self.tool.is_empty()
             || self.dry_run
@@ -3667,6 +3716,7 @@ mod tests {
             bump: false,
             upgrade: false,
             sidecars: false,
+            check: false,
             lockfiles: None,
             json: false,
         }

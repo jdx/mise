@@ -95,6 +95,16 @@ also updates the request in mise.toml to match.
   and absolute otherwise, such as the sidecars of a symlinked lockfile.
   Combine with `--json` for machine-readable output, or with `--local`
   and `--global` to choose the lockfiles.
+- **`--check`** — Check that the lockfile is up to date, without changing it
+
+  Reads each lockfile in scope and fails, listing each problem, when a
+  locked install (`mise install --locked`) would reject it: a configured
+  tool whose request no longer matches a locked version, a platform entry
+  without the URL or checksum the install needs, or a dependency-graph
+  sidecar that is missing or was edited. It checks the platforms
+  `mise lock` would lock (see `--platform`). Nothing is resolved remotely
+  and nothing is written. Combine with `--json` for one object per
+  platform entry.
 - **`-h --help`** — Print help
 
 ## Examples

@@ -342,6 +342,7 @@ impl BackendsSwitch {
             minimum_release_age: None,
             upgrade: false,
             sidecars: false,
+            check: false,
             lockfiles: None,
         }
     }

@@ -3246,6 +3246,68 @@ pub trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Why `--locked` would refuse to install `tv` on `platform_key` from
+    /// `locked_platform`, the lockfile's entry for that platform: no URL to
+    /// download, or no checksum to verify the download against. `mise install
+    /// --locked` refuses with this error before downloading anything, and
+    /// `mise lock --check` reports it for every platform.
+    fn locked_entry_error(
+        &self,
+        tv: &ToolVersion,
+        platform_key: &str,
+        locked_platform: Option<&PlatformInfo>,
+    ) -> Option<eyre::Report> {
+        if !self.requires_lockfile_url(tv) {
+            return None;
+        }
+        let has_lockfile_url = locked_platform.is_some_and(|p| {
+            p.url.is_some()
+                || (self.resolves_locked_url_from_checksum() && p.is_pinned_without_url())
+        });
+        if !has_lockfile_url {
+            let hint = if Settings::safe_mode() && !self.resolves_locked_url_from_checksum() {
+                "safe mode ignores the URLs in a project lockfile, and this backend cannot resolve its download from a checksum alone; disable safe mode or locked mode"
+            } else {
+                "Run `mise lock` to generate lockfile URLs, or disable locked mode"
+            };
+            return Some(eyre!(
+                "No lockfile URL found for {} on platform {} (--locked mode)\nhint: {hint}",
+                tv.style(),
+                platform_key
+            ));
+        }
+        // Refuse before downloading, so a lockfile with URLs but no checksums
+        // cannot install whatever those URLs serve. Only merge mode writes
+        // such entries, so the setting goes with it.
+        let settings = Settings::get();
+        let p = locked_platform?;
+        if !settings
+            .locked_require_checksum
+            .unwrap_or(settings.generate_lockfiles())
+        {
+            return None;
+        }
+        let (url, _) = std::iter::once((p.url.as_deref(), &p.checksum))
+            .chain(
+                p.additional_artifacts
+                    .iter()
+                    .map(|a| (Some(a.url.as_str()), &a.checksum)),
+            )
+            .find(|(_, checksum)| checksum.is_none())?;
+        Some(eyre!(
+            "No lockfile checksum found for {} on platform {}{} \
+            (--locked mode)\n\
+            hint: Run `mise lock` to record checksums, or set locked_require_checksum = false",
+            tv.style(),
+            platform_key,
+            url.map(|u| format!(
+                " ({})",
+                crate::install_layout::resolver::redact_credentials(u)
+            ))
+            .unwrap_or_default(),
+        ))
+    }
+
     /// Whether this backend's artifact-identity options describe the machine
     /// that wrote a lock entry rather than the tool request.
     ///
@@ -5280,27 +5342,6 @@ pub trait Backend: Debug + Send + Sync {
             );
         }
         if ctx.locked && self.requires_lockfile_url(&tv) {
-            let platform_key = self.get_platform_key_for(&tv);
-            let locked_platform = tv.lock_platforms.get(&platform_key);
-            let has_lockfile_url = locked_platform.is_some_and(|p| {
-                p.url.is_some()
-                    || (self.resolves_locked_url_from_checksum() && p.is_pinned_without_url())
-            });
-            if !has_lockfile_url {
-                let hint = if Settings::safe_mode() && !self.resolves_locked_url_from_checksum() {
-                    "safe mode ignores the URLs in a project lockfile, and this backend cannot resolve its download from a checksum alone; disable safe mode or locked mode"
-                } else {
-                    "Run `mise lock` to generate lockfile URLs, or disable locked mode"
-                };
-                bail!(
-                    "No lockfile URL found for {} on platform {} (--locked mode)\nhint: {hint}",
-                    tv.style(),
-                    platform_key
-                );
-            }
-            // Refuse before downloading, so a lockfile with URLs but no
-            // checksums cannot install whatever those URLs serve. Only merge
-            // mode writes such entries, so the setting goes with it.
             if settings.locked_require_checksum.is_some() {
                 deprecated_at!(
                     "2027.10.0",
@@ -5309,32 +5350,11 @@ pub trait Backend: Debug + Send + Sync {
                     "locked_require_checksum is no longer needed: locked mode always requires a lockfile checksum. Remove the setting."
                 );
             }
-            if settings
-                .locked_require_checksum
-                .unwrap_or(settings.generate_lockfiles())
-                && let Some(p) = locked_platform
+            let platform_key = self.get_platform_key_for(&tv);
+            if let Some(err) =
+                self.locked_entry_error(&tv, &platform_key, tv.lock_platforms.get(&platform_key))
             {
-                let missing = std::iter::once((p.url.as_deref(), &p.checksum))
-                    .chain(
-                        p.additional_artifacts
-                            .iter()
-                            .map(|a| (Some(a.url.as_str()), &a.checksum)),
-                    )
-                    .find(|(_, checksum)| checksum.is_none());
-                if let Some((url, _)) = missing {
-                    bail!(
-                        "No lockfile checksum found for {} on platform {}{} \
-                        (--locked mode)\n\
-                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false",
-                        tv.style(),
-                        platform_key,
-                        url.map(|u| format!(
-                            " ({})",
-                            crate::install_layout::resolver::redact_credentials(u)
-                        ))
-                        .unwrap_or_default(),
-                    );
-                }
+                return Err(err);
             }
         }
 

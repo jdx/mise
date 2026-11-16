@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# `mise lock --check` fails, listing each problem, when a locked install would
+# reject the lockfile, and passes when it is complete. It never writes.
+
+export MISE_LOCKFILE=1
+# The harness pins merge mode; generate, the default, requires checksums.
+export MISE_LOCKFILE_MODE=generate
+
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.7.1"
+TOML
+
+assert_fail_contains "mise lock --check --platform linux-x64" "the lockfile does not exist"
+assert "test ! -f mise.lock"
+
+mise lock --platform linux-x64
+assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 tool version, 1 platform entry)"
+assert_contains "mise lock --check --json" '"platform": "linux-x64"'
+assert_contains "mise lock --check --json" '"problems": []'
+
+# A platform mise lock would add has no URL to download.
+assert_fail_contains "mise lock --check --platform linux-x64,macos-arm64" "No lockfile URL found for jq@1.7.1 on platform macos-arm64"
+
+# A missing checksum fails, and the lockfile is left as it is.
+sed -i.bak '/^checksum = /d' mise.lock
+cp mise.lock before.lock
+assert_fail_contains "mise lock --check" "No lockfile checksum found for jq@1.7.1 on platform linux-x64"
+assert_fail_contains "mise lock --check" "to update the lockfile"
+assert_fail_contains "mise lock --check --json" '"problems": ['
+assert "cmp before.lock mise.lock"
+
+# A request bumped in mise.toml but not in the lockfile fails.
+mise lock --platform linux-x64
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.6"
+TOML
+cp mise.lock before.lock
+assert_fail_contains "mise lock --check" "jq@1.6 is not in the lockfile"
+assert "cmp before.lock mise.lock"
+
+assert_fail_contains "mise lock --check --bump" "cannot be combined with --bump"
+assert_fail_contains "mise lock --check jq@1.6" "name the tool without a version"

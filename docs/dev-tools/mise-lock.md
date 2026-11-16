@@ -185,6 +185,7 @@ lockfile = false
 | Move `mise.lock` to the newest allowed version without installing    | `mise lock --bump node`  |
 | Lock an exact version without changing a prefix request              | `mise lock node@24.11.0` |
 | Install the versions `mise.lock` records                             | `mise install --locked`  |
+| Check that `mise.lock` is up to date, without changing it            | `mise lock --check`      |
 
 ### Previewing changes
 
@@ -435,6 +436,40 @@ In a Dockerfile, copy `mise.lock` with `mise.toml` before `mise install`, and
 
 See [Continuous integration](/continuous-integration.html) for complete
 workflows.
+
+### Checking the lockfile {#checking-the-lockfile}
+
+`mise lock --check` fails when `mise.lock` is behind `mise.toml`, so a pull
+request that changes one without the other fails in CI instead of at install
+time. It reads only the lockfile: it resolves nothing remotely and writes
+nothing. For every configured tool, including the tools tasks declare, on each
+platform `mise lock` would lock, it reports what `mise install --locked` would
+reject:
+
+- a request with no matching locked version, such as `node = "26"` while
+  `mise.lock` still holds 24.11.0 (an update bot that bumps only `mise.toml`)
+- a platform entry without a download URL, or without a checksum when
+  [`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)
+  applies
+- a [dependency graph](#dependency-graphs) sidecar that is missing or was edited
+
+```sh
+mise lock --check
+```
+
+```text
+mise ERROR ~/src/app/mise.lock would fail a locked install:
+  - jq@1.6 is not in the lockfile
+  - No lockfile checksum found for yq@4.44.1 on platform linux-x64 (https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64) (--locked mode)
+hint: run `mise lock` to update the lockfile
+```
+
+The platforms are the [`lockfile_platforms`](/configuration/settings.html#lockfile_platforms)
+setting plus the current platform when that setting is set, else the
+platforms already in the lockfile; pass `--platform` to choose others. A tool that does not support one of them fails
+the check unless its `os` option excludes that platform. `--json` prints one
+object per platform entry with its `problems`, and still exits non-zero when
+there are any.
 
 ## Backend support
 

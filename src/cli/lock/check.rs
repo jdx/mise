@@ -1,0 +1,288 @@
+//! `mise lock --check`: whether each lockfile in scope already holds what a
+//! locked install needs, read from the lockfile alone. Nothing is resolved
+//! remotely and nothing is written.
+
+use std::path::{Path, PathBuf};
+
+use console::style;
+use eyre::{Result, bail};
+use mise_util::redactions::{redact_json, redact_output};
+
+use super::{Lock, LockInputs, LockSetup, platform_tasks};
+use crate::file::display_path;
+use crate::lockfile;
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
+
+/// One row of `mise lock --check --json`: a tool's entry on one platform,
+/// or, with no platform, a problem with the tool or lockfile as a whole.
+#[derive(Debug, serde::Serialize)]
+struct CheckEntry {
+    lockfile: String,
+    tool: Option<String>,
+    version: Option<String>,
+    platform: Option<String>,
+    problems: Vec<String>,
+}
+
+/// What checking one lockfile found.
+struct LockfileCheck {
+    path: PathBuf,
+    tools: usize,
+    entries: Vec<CheckEntry>,
+}
+
+impl LockfileCheck {
+    fn problems(&self) -> impl Iterator<Item = &String> {
+        self.entries.iter().flat_map(|entry| &entry.problems)
+    }
+
+    fn push(
+        &mut self,
+        tool: Option<&ToolVersion>,
+        platform: Option<String>,
+        problems: Vec<String>,
+    ) {
+        self.entries.push(CheckEntry {
+            lockfile: display_path(&self.path),
+            tool: tool.map(|tv| tv.ba().short.clone()),
+            version: tool.map(|tv| tv.version.clone()),
+            platform,
+            problems,
+        });
+    }
+}
+
+/// The first line of an error, without color: the hints that follow it are
+/// replaced by one hint for the whole check.
+fn first_line(err: &eyre::Report) -> String {
+    let message = console::strip_ansi_codes(&err.to_string()).into_owned();
+    message.lines().next().unwrap_or_default().to_string()
+}
+
+fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+impl Lock {
+    /// Check every lockfile target, then report and fail if any problem was found.
+    pub(super) async fn check_lockfiles(
+        &self,
+        setup: &LockSetup<'_>,
+        inputs: &LockInputs,
+    ) -> Result<()> {
+        let mut checks = Vec::with_capacity(inputs.lockfile_targets.len());
+        for (lockfile_path, config_paths) in &inputs.lockfile_targets {
+            let requests = self.check_requests(setup, lockfile_path, config_paths)?;
+            if requests.is_empty() {
+                continue;
+            }
+            checks.push(self.check_lockfile(setup, lockfile_path, requests).await?);
+        }
+
+        let problem_count: usize = checks.iter().map(|check| check.problems().count()).sum();
+        if self.json {
+            let entries: Vec<&CheckEntry> =
+                checks.iter().flat_map(|check| &check.entries).collect();
+            let entries = redact_json(serde_json::to_value(&entries)?);
+            miseprintln!("{}", serde_json::to_string_pretty(&entries)?);
+        } else if checks.is_empty() {
+            miseprintln!("{} No tools configured to lock", style("!").yellow());
+        } else {
+            for check in checks
+                .iter()
+                .filter(|check| check.problems().next().is_none())
+            {
+                let entries = check
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.platform.is_some())
+                    .count();
+                miseprintln!(
+                    "{} {} is up to date ({}, {})",
+                    style("✓").green(),
+                    style(display_path(&check.path)).cyan(),
+                    count(check.tools, "tool version", "tool versions"),
+                    count(entries, "platform entry", "platform entries"),
+                );
+            }
+        }
+        if problem_count == 0 {
+            return Ok(());
+        }
+        let mut message = String::new();
+        for check in checks
+            .iter()
+            .filter(|check| check.problems().next().is_some())
+        {
+            message.push_str(&format!(
+                "{} would fail a locked install:\n",
+                display_path(&check.path)
+            ));
+            for problem in check.problems() {
+                message.push_str(&format!("  - {}\n", redact_output(problem)));
+            }
+        }
+        message.push_str("hint: run `mise lock` to update the lockfile");
+        bail!(message)
+    }
+
+    /// The requests `mise lock` would lock into `lockfile_path`: the
+    /// configured tools of the config files that write it, plus the tools of
+    /// tasks declared there, as named by the tool arguments.
+    fn check_requests(
+        &self,
+        setup: &LockSetup<'_>,
+        lockfile_path: &Path,
+        config_paths: &[PathBuf],
+    ) -> Result<Vec<ToolRequest>> {
+        let config = setup.config;
+        let named = |ba: &crate::args::BackendArg| {
+            self.tool.is_empty() || self.tool.iter().any(|tool| tool.ba.as_ref() == ba)
+        };
+        let mut requests: Vec<ToolRequest> = Vec::new();
+        let mut push = |request: ToolRequest| {
+            let duplicate = requests.iter().any(|seen| {
+                seen.ba().full() == request.ba().full()
+                    && seen.version() == request.version()
+                    && seen.options() == request.options()
+                    && seen.source() == request.source()
+            });
+            if !duplicate {
+                requests.push(request);
+            }
+        };
+        for (path, cf) in setup.effective_config_files.iter() {
+            let source = cf.source();
+            let idiomatic_here = source.is_idiomatic_version_file()
+                && lockfile::lockfile_path_for_tool_source(config, &source).is_some_and(
+                    |(source_lockfile, _)| {
+                        lockfile::same_file_path(&source_lockfile, lockfile_path)
+                    },
+                );
+            if !(config_paths.contains(path) || idiomatic_here) {
+                continue;
+            }
+            for (ba, tool_requests, _) in cf.to_tool_request_set()?.iter() {
+                if named(ba) {
+                    tool_requests.iter().cloned().for_each(&mut push);
+                }
+            }
+        }
+        for task in setup.tasks.values() {
+            let Some(config_path) =
+                self.task_config_path(task, config, config_paths, setup.effective_config_files)
+            else {
+                continue;
+            };
+            let (task_lockfile_path, _) = lockfile::lockfile_path_for_config(
+                &config_path,
+                config.monorepo_lockfile_root().as_deref(),
+            );
+            if !lockfile::same_file_path(&task_lockfile_path, lockfile_path) {
+                continue;
+            }
+            let tools = task.tool_args().map_err(|err| {
+                err.wrap_err(format!("failed to parse tools for task `{}`", task.name))
+            })?;
+            for tool in tools {
+                let Some(request) = tool.tvr.as_ref().filter(|_| named(&tool.ba)) else {
+                    continue;
+                };
+                push(ToolRequest::new_with_options(
+                    tool.ba.clone(),
+                    &request.version(),
+                    request.options(),
+                    ToolSource::MiseToml(config_path.clone()),
+                )?);
+            }
+        }
+        Ok(requests)
+    }
+
+    /// Resolve each request from the lockfile as `--locked` does, and check
+    /// each platform's entry the way a locked install would.
+    async fn check_lockfile(
+        &self,
+        setup: &LockSetup<'_>,
+        lockfile_path: &Path,
+        requests: Vec<ToolRequest>,
+    ) -> Result<LockfileCheck> {
+        let mut check = LockfileCheck {
+            path: lockfile_path.to_path_buf(),
+            tools: 0,
+            entries: Vec::new(),
+        };
+        if !lockfile_path.exists() {
+            check.push(None, None, vec!["the lockfile does not exist".to_string()]);
+            return Ok(check);
+        }
+        let platforms = self.determine_target_platforms(lockfile_path)?;
+        let locked = ResolveOptions {
+            use_locked_version: true,
+            locked: true,
+            offline: true,
+            warn_not_in_lockfile: false,
+            ..Default::default()
+        };
+        for request in requests {
+            let resolved = match request.resolve_options(&locked) {
+                Ok(opts) => ToolVersion::resolve(setup.config, request.clone(), &opts).await,
+                Err(err) => Err(err),
+            };
+            let tv = match resolved {
+                Ok(tv) if tv.resolved_from_lockfile() => tv,
+                // Without its plugin a request resolves to itself, before
+                // the lockfile is read only when it has no entry there.
+                Ok(tv)
+                    if tv.backend().is_ok_and(|backend| {
+                        backend.plugin().is_some_and(|p| !p.is_installed())
+                    }) =>
+                {
+                    check.push(
+                        Some(&tv),
+                        None,
+                        vec![format!(
+                            "{}@{} is not in the lockfile",
+                            tv.ba().short,
+                            tv.version
+                        )],
+                    );
+                    continue;
+                }
+                // Linked, path and system versions are not locked.
+                Ok(_) => continue,
+                Err(err) => {
+                    check.entries.push(CheckEntry {
+                        lockfile: display_path(lockfile_path),
+                        tool: Some(request.ba().short.clone()),
+                        version: Some(request.version()),
+                        platform: None,
+                        problems: vec![first_line(&err)],
+                    });
+                    continue;
+                }
+            };
+            check.tools += 1;
+            let graph_problems: Vec<String> = tv
+                .locked_graph_errors()
+                .iter()
+                .map(|err| format!("{}@{}: {}", tv.ba().short, tv.version, first_line(err)))
+                .collect();
+            if !graph_problems.is_empty() {
+                check.push(Some(&tv), None, graph_problems);
+            }
+            let backend = tv.backend().ok();
+            for (_, tv, platform) in platform_tasks(&[(tv.ba().clone(), tv.clone())], &platforms) {
+                let key = platform.to_key();
+                let problem = backend
+                    .as_ref()
+                    .and_then(|backend| {
+                        backend.locked_entry_error(&tv, &key, tv.lock_platforms.get(&key))
+                    })
+                    .map(|err| first_line(&err));
+                check.push(Some(&tv), Some(key), problem.into_iter().collect());
+            }
+        }
+        Ok(check)
+    }
+}
