@@ -1162,8 +1162,13 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
         let mut memo = INSTALL_STATE_TOOL_MEMO
             .lock()
             .expect("INSTALL_STATE_TOOL_MEMO lock failed");
-        if RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation && attempt < 3 {
-            continue;
+        if RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation {
+            if attempt < 3 {
+                continue;
+            }
+            // Still resetting: leave the memo empty. The install is on disk, so the
+            // next `get_tool` scans it, rather than finding an entry of this version alone.
+            return;
         }
         let entry = memo
             .get_or_insert_with(Default::default)
