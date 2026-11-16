@@ -1145,35 +1145,43 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
     }
     // A memo entry created here from the new version alone would shadow the versions
     // already installed, which a reset leaves nobody to have read. Scan for them first,
-    // outside the memo lock like `get_tool`; the new install is on disk by now.
-    let has_entry = INSTALL_STATE_TOOL_MEMO
-        .lock()
-        .expect("INSTALL_STATE_TOOL_MEMO lock failed")
-        .as_ref()
-        .is_some_and(|memo| memo.get(&short).is_some_and(Option::is_some));
-    let scanned = if has_entry {
-        None
-    } else {
-        load_tool(&ba.short)
-    };
-    let mut memo = INSTALL_STATE_TOOL_MEMO
-        .lock()
-        .expect("INSTALL_STATE_TOOL_MEMO lock failed");
-    let entry = memo
-        .get_or_insert_with(Default::default)
-        .entry(short.clone())
-        .or_insert(None);
-    match entry {
-        Some(tool) => update(tool),
-        None => {
-            *entry = Some(match scanned {
-                Some(mut tool) => {
-                    update(&mut tool);
-                    tool
-                }
-                None => new_tool(),
-            })
+    // outside the memo lock like `get_tool`; the new install is on disk by now. A reset
+    // between the check, the scan and the insert makes both stale, so start over.
+    for attempt in 0.. {
+        let generation = RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst);
+        let has_entry = INSTALL_STATE_TOOL_MEMO
+            .lock()
+            .expect("INSTALL_STATE_TOOL_MEMO lock failed")
+            .as_ref()
+            .is_some_and(|memo| memo.get(&short).is_some_and(Option::is_some));
+        let scanned = if has_entry {
+            None
+        } else {
+            load_tool(&ba.short)
+        };
+        let mut memo = INSTALL_STATE_TOOL_MEMO
+            .lock()
+            .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+        if RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation && attempt < 3 {
+            continue;
         }
+        let entry = memo
+            .get_or_insert_with(Default::default)
+            .entry(short.clone())
+            .or_insert(None);
+        match entry {
+            Some(tool) => update(tool),
+            None => {
+                *entry = Some(match scanned {
+                    Some(mut tool) => {
+                        update(&mut tool);
+                        tool
+                    }
+                    None => new_tool(),
+                })
+            }
+        }
+        return;
     }
 }
 
