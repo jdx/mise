@@ -134,6 +134,9 @@ static INSTALL_STATE_TOOL_MEMO: Mutex<Option<HashMap<String, Option<InstallState
 /// Memoized read of the consolidated root manifest, for per-tool lookups.
 static ROOT_MANIFEST_MEMO: Mutex<Option<Arc<Manifest>>> = Mutex::new(None);
 static MANIFEST_LOCK: Mutex<()> = Mutex::new(());
+/// Bumped by every reset. A per-tool scan that began before a reset read the disk
+/// before whatever made the reset necessary, so it must not repopulate the memo.
+static RESET_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn shared_install_dirs_for_scan() -> Vec<PathBuf> {
     if crate::config::settings::is_loaded() {
@@ -742,6 +745,7 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
             return hit.clone();
         }
     }
+    let generation = RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst);
     let tool = load_tool(raw);
     // The disk read above runs without the memo lock, so add_tool_version may
     // have landed meanwhile. Neither side is authoritative: this one scanned
@@ -750,6 +754,10 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
     let mut memo = INSTALL_STATE_TOOL_MEMO
         .lock()
         .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+    if RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation {
+        // Reset while scanning: hand the scan to this caller, but do not cache it.
+        return tool;
+    }
     match memo
         .get_or_insert_with(Default::default)
         .entry(short.to_string())
@@ -1659,6 +1667,7 @@ pub(crate) fn read_checksum(install_path: &Path) -> Option<String> {
 }
 
 pub(crate) fn reset() {
+    RESET_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     *INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed") = None;
@@ -1681,6 +1690,7 @@ pub(crate) fn reset() {
 }
 
 pub fn reset_tools() {
+    RESET_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;
