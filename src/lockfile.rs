@@ -3558,7 +3558,10 @@ pub(crate) async fn tool_config_locked_lockfiles(
     config: &Arc<Config>,
     mode: LockfileUpdateMode,
 ) -> HashSet<PathBuf> {
-    if mode.allow_locked() {
+    // Without lockfiles, or in global locked mode, no lockfile pass runs, so
+    // there is nothing to look up.
+    let settings = Settings::get();
+    if mode.allow_locked() || !settings.lockfile_enabled() || settings.locked {
         return HashSet::new();
     }
     let monorepo_root = config.monorepo_lockfile_root();
@@ -3569,14 +3572,10 @@ pub(crate) async fn tool_config_locked_lockfiles(
     match config.monorepo_lockfile_union().await {
         Ok(union) => locked_lockfiles_in(&union.config_files, Some(&root)),
         Err(err) => {
-            // Without the siblings, the shared lockfile's writers are unknown:
-            // keep updating it, with locked pins still withheld.
+            // Without the siblings, every writer that can be checked is
+            // locked, so leave the shared lockfile alone.
             debug!("loading monorepo configs to check tool_config.locked: {err:#}");
-            let root_lockfile_dir = crate::config::monorepo_lockfile_dir(&root);
             locked
-                .into_iter()
-                .filter(|path| path.parent() != Some(root_lockfile_dir.as_path()))
-                .collect()
         }
     }
 }
