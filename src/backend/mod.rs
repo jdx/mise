@@ -5650,6 +5650,9 @@ pub trait Backend: Debug + Send + Sync {
                 // verification failure is the backend's to track (packslip keeps
                 // a usable binary and marks only its skills incomplete).
                 install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                // A scan that ran while the marker was still there skipped this version,
+                // and a reset after `add_tool_version` can have cached that scan.
+                install_state::reset_tools();
                 self.verify_install(&ctx, &tv).await
             }
             Err(err) => Err(err),
