@@ -12,7 +12,7 @@ use crate::config::{Config, ConfigMap, SettingsExt};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::generate::PlatformSelection;
-use crate::lockfile::{self, LockResolutionResult, Lockfile};
+use crate::lockfile::{self, LockResolutionResult, Lockfile, LockfileUpdateMode};
 use crate::platform::Platform;
 use crate::task::Task;
 use crate::toolset::{
@@ -556,6 +556,9 @@ fn restore_lockfile_snapshots(rollbacks: Vec<PreparedLockfileRollback>) -> Resul
 /// Inputs shared by every phase of a lock run.
 struct LockSetup<'a> {
     installed: Option<&'a [crate::toolset::ToolVersion]>,
+    /// Leave alone the lockfiles of config roots that set `tool_config.locked`:
+    /// an install must not update them, as in locked mode.
+    skip_tool_config_locked: bool,
     config: &'a Arc<Config>,
     generate: bool,
     auto_prune: bool,
@@ -714,12 +717,14 @@ impl Lock {
         if !self.sidecars {
             config = Toolset::install_config_plugins_and_reload(config, self.dry_run).await?;
         }
-        self.run_with_installed(None, config).await
+        self.run_with_installed(None, LockfileUpdateMode::AllowLocked, config)
+            .await
     }
 
     pub(crate) async fn generate_after_install(
         config: Arc<Config>,
         installed: &[crate::toolset::ToolVersion],
+        mode: LockfileUpdateMode,
     ) -> Result<()> {
         Self {
             tool: vec![],
@@ -735,13 +740,14 @@ impl Lock {
             sidecars: false,
             lockfiles: None,
         }
-        .run_with_installed(Some(installed), config)
+        .run_with_installed(Some(installed), mode, config)
         .await
     }
 
     async fn run_with_installed(
         self,
         installed: Option<&[crate::toolset::ToolVersion]>,
+        mode: LockfileUpdateMode,
         config: Arc<Config>,
     ) -> Result<()> {
         lockfile::suppress_outdated_lockfile_warning(&config);
@@ -804,6 +810,7 @@ impl Lock {
 
         let setup = LockSetup {
             installed,
+            skip_tool_config_locked: installed.is_some() && !mode.allow_locked(),
             config: &config,
             generate,
             auto_prune,
@@ -902,8 +909,21 @@ impl Lock {
             }
             None => self.config_paths_in_lock_scope(config, setup.effective_config_files),
         };
-        let lockfile_targets =
+        let mut lockfile_targets =
             self.get_lockfile_targets(config, setup.effective_config_files, &scoped_config_paths);
+        if setup.skip_tool_config_locked {
+            lockfile_targets.retain(|lockfile_path, config_paths| {
+                let locked =
+                    lockfile::locked_by_tool_config(setup.effective_config_files, config_paths);
+                if locked {
+                    debug!(
+                        "not updating {}: tool_config.locked",
+                        display_path(lockfile_path)
+                    );
+                }
+                !locked
+            });
+        }
         let migration_inputs = self.monorepo_migration_paths(config);
         let can_skip_generation = setup.generate
             && setup.installed.is_some_and(|versions| versions.is_empty())

@@ -10,7 +10,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{self, Backend};
-use crate::config::{Config, Settings, SettingsExt};
+use crate::config::{Config, ConfigMap, Settings, SettingsExt};
 use crate::env;
 use crate::file;
 use crate::file::display_path;
@@ -3025,7 +3025,7 @@ pub enum LockfileUpdateMode {
 }
 
 impl LockfileUpdateMode {
-    fn allow_locked(self) -> bool {
+    pub fn allow_locked(self) -> bool {
         matches!(self, Self::AllowLocked)
     }
 }
@@ -3502,11 +3502,90 @@ fn tools_left_alone(ts: &Toolset) -> HashSet<(ToolSource, String)> {
         .collect()
 }
 
+/// Whether every config that writes a lockfile is in a config root that sets
+/// `tool_config.locked`, with roots looked up among `config_files`. Installs
+/// leave such a lockfile alone, as they do in locked mode; `mise lock` and
+/// `mise upgrade` still write it.
+pub fn locked_by_tool_config(config_files: &ConfigMap, config_paths: &[PathBuf]) -> bool {
+    !config_paths.is_empty()
+        && config_paths
+            .iter()
+            .all(|path| crate::config::tool_config_locked_in(config_files, path))
+}
+
+/// The config files that write each lockfile.
+fn config_paths_by_lockfile(config: &Config) -> HashMap<PathBuf, Vec<PathBuf>> {
+    config_paths_by_lockfile_in(
+        &config.config_files,
+        config.monorepo_lockfile_root().as_deref(),
+    )
+}
+
+fn config_paths_by_lockfile_in(
+    config_files: &ConfigMap,
+    monorepo_root: Option<&Path>,
+) -> HashMap<PathBuf, Vec<PathBuf>> {
+    let mut lockfile_configs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+    for (config_path, cf) in config_files.iter().rev() {
+        if !cf.source().is_mise_toml() {
+            continue;
+        }
+        let (lockfile_path, _is_local) = lockfile_path_for_config(config_path, monorepo_root);
+        lockfile_configs
+            .entry(lockfile_path)
+            .or_default()
+            .push(config_path.clone());
+    }
+    lockfile_configs
+}
+
+/// The lockfiles that every writing config locks with `tool_config.locked`.
+fn locked_lockfiles_in(config_files: &ConfigMap, monorepo_root: Option<&Path>) -> HashSet<PathBuf> {
+    config_paths_by_lockfile_in(config_files, monorepo_root)
+        .into_iter()
+        .filter(|(_, configs)| locked_by_tool_config(config_files, configs))
+        .map(|(lockfile_path, _)| lockfile_path)
+        .collect()
+}
+
+/// The lockfiles an install in `mode` leaves alone because every config that
+/// writes them is in a `tool_config.locked` root.
+///
+/// The configs loaded for the current directory leave out sibling monorepo
+/// packages, which also write the shared root lockfile, so with a monorepo
+/// lockfile the writers come from the monorepo union, as in `mise lock`.
+pub(crate) async fn tool_config_locked_lockfiles(
+    config: &Arc<Config>,
+    mode: LockfileUpdateMode,
+) -> HashSet<PathBuf> {
+    // Without lockfiles, or in global locked mode, no lockfile pass runs, so
+    // there is nothing to look up.
+    let settings = Settings::get();
+    if mode.allow_locked() || !settings.lockfile_enabled() || settings.locked {
+        return HashSet::new();
+    }
+    let monorepo_root = config.monorepo_lockfile_root();
+    let locked = locked_lockfiles_in(&config.config_files, monorepo_root.as_deref());
+    let Some(root) = monorepo_root.filter(|_| !locked.is_empty()) else {
+        return locked;
+    };
+    match config.monorepo_lockfile_union().await {
+        Ok(union) => locked_lockfiles_in(&union.config_files, Some(&root)),
+        Err(err) => {
+            // Without the siblings, every writer that can be checked is
+            // locked, so leave the shared lockfile alone.
+            debug!("loading monorepo configs to check tool_config.locked: {err:#}");
+            locked
+        }
+    }
+}
+
 pub(crate) fn update_lockfiles(
     config: &Config,
     ts: &Toolset,
     new_versions: &[ToolVersion],
     mode: LockfileUpdateMode,
+    tool_config_locked: &HashSet<PathBuf>,
 ) -> Result<bool> {
     if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(false);
@@ -3516,18 +3595,7 @@ pub(crate) fn update_lockfiles(
     let left_alone = tools_left_alone(ts);
 
     // Group config files by target lockfile path
-    let mut lockfile_configs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-    for (config_path, cf) in config.config_files.iter().rev() {
-        if !cf.source().is_mise_toml() {
-            continue;
-        }
-        let (lockfile_path, _is_local) =
-            lockfile_path_for_config(config_path, config.monorepo_lockfile_root().as_deref());
-        lockfile_configs
-            .entry(lockfile_path)
-            .or_default()
-            .push(config_path.clone());
-    }
+    let mut lockfile_configs = config_paths_by_lockfile(config);
     for source in tools_by_source.keys() {
         if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, source) {
             lockfile_configs.entry(lockfile_path).or_default();
@@ -3541,6 +3609,13 @@ pub(crate) fn update_lockfiles(
     let mut has_deferred_provenance = false;
 
     for (lockfile_path, configs) in lockfile_configs {
+        if tool_config_locked.contains(&lockfile_path) {
+            debug!(
+                "not updating {}: tool_config.locked",
+                display_path(&lockfile_path)
+            );
+            continue;
+        }
         // When lockfiles are enabled implicitly, only maintain files the user has
         // already created. An explicit `lockfile = true` opts into project
         // lockfile creation too; global lockfiles remain explicit via the
@@ -4424,6 +4499,7 @@ pub(crate) async fn auto_lock_new_versions(
     new_versions: &[ToolVersion],
     pre_install_platforms: &HashMap<PathBuf, BTreeSet<String>>,
     mode: LockfileUpdateMode,
+    tool_config_locked: &HashSet<PathBuf>,
 ) -> Result<()> {
     if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(());
@@ -4493,7 +4569,7 @@ pub(crate) async fn auto_lock_new_versions(
 
     for (lockfile_path, versions) in candidate_versions_by_lockfile {
         // Only update existing lockfiles (consistent with update_lockfiles)
-        if !lockfile_path.exists() {
+        if !lockfile_path.exists() || tool_config_locked.contains(&lockfile_path) {
             continue;
         }
 
