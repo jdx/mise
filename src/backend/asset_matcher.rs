@@ -191,6 +191,18 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
     ]
 });
 
+/// The Linux libc an asset name declares, as `"gnu"` or `"musl"`, if it names one.
+pub(crate) fn linux_libc_named_by(asset: &str) -> Option<&'static str> {
+    LIBC_PATTERNS
+        .iter()
+        .find(|(_, pattern)| pattern.is_match(asset))
+        .and_then(|(libc, _)| match libc {
+            AssetLibc::Gnu => Some("gnu"),
+            AssetLibc::Musl => Some("musl"),
+            AssetLibc::Msvc => None,
+        })
+}
+
 // ========== AssetPicker (from asset_detector) ==========
 
 /// The libc qualifier to match a target's assets against when the tool's `libc` option is
