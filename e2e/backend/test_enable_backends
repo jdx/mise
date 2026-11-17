@@ -10,6 +10,8 @@ assert_fail "MISE_ENABLE_BACKENDS=aqua mise install gem:rake@13.0.0" "backend ge
 assert_fail "MISE_ENABLE_BACKENDS=aqua mise use -g gem:rake@13.0.0" "backend gem is not listed in enable_backends"
 assert_fail "MISE_ENABLE_BACKENDS=aqua mise install node@22" "enable_backends allows only aqua"
 assert_fail "MISE_ENABLE_BACKENDS=aqua mise ls-remote gem:rake" "backend gem is not listed in enable_backends"
+assert_fail "MISE_ENABLE_BACKENDS=aqua mise install-into gem:rake@13.0.0 rake-dest" "backend gem is not listed in enable_backends"
+assert_fail "MISE_DISABLE_BACKENDS=gem mise install-into gem:rake@13.0.0 rake-dest" "backend gem is disabled by disable_backends"
 
 # a registry shorthand skips to its next listed backend: fnox lists packslip, then github
 assert "mise tool fnox --backend" "packslip:github.com/jdx/fnox"

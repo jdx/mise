@@ -42,6 +42,9 @@ pub(crate) struct InstallInto {
 
 impl InstallInto {
     pub(crate) async fn run(self) -> Result<()> {
+        // install-into calls the backend directly, skipping the toolset
+        // install's check, so refuse a backend the settings rule out here
+        crate::backend::ensure_backend_enabled(&self.tool.ba.backend_type())?;
         let install_path = self.path.absolutize()?.into_owned();
         let config = Config::get().await?;
         let ts = Arc::new(
@@ -60,6 +63,7 @@ impl InstallInto {
             .clone();
         let before_date = tv.before_date;
         let backend = tv.backend()?;
+        crate::backend::ensure_backend_enabled(&backend.get_type())?;
         let mpr = MultiProgressReport::get();
         let install_ctx = InstallContext {
             config: config.clone(),
