@@ -42,11 +42,12 @@ pub(crate) struct InstallInto {
 
 impl InstallInto {
     pub(crate) async fn run(self) -> Result<()> {
-        // install-into calls the backend directly, skipping the toolset
-        // install's check, so refuse a backend the settings rule out here
-        crate::backend::ensure_backend_enabled(&self.tool.ba.backend_type())?;
         let install_path = self.path.absolutize()?.into_owned();
         let config = Config::get().await?;
+        // install-into calls the backend directly, skipping the toolset
+        // install's check, so refuse a backend the settings rule out here.
+        // Check after loading the config, so `[tool_alias]` picks the backend.
+        crate::backend::ensure_backend_enabled(&self.tool.ba.backend_type())?;
         let ts = Arc::new(
             ToolsetBuilder::new()
                 .with_args(std::slice::from_ref(&self.tool))
