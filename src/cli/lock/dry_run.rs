@@ -7,8 +7,13 @@ use console::style;
 use mise_util::redactions::redact_output;
 
 use super::{LockTool, platform_tasks};
+use crate::backend::platform_target::PlatformTarget;
 use crate::lockfile::{Lockfile, LockfileTool, PlatformInfo, ProvenanceType};
 use crate::platform::Platform;
+
+/// The change to one stored entry on one platform: `(version, options,
+/// platform key, change)`.
+type Change = (String, BTreeMap<String, String>, String, EntryChange);
 
 /// What resolving would do to one tool version's entry on one platform.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,20 +90,28 @@ pub(super) fn entry_changes(
         let keys = platform_keys(&tools, platforms);
         let stale: &[String] = stale_versions.get(short).map_or(&[], Vec::as_slice);
         let mut changes = tool_changes(before, after, short, &locked_here, &keys, stale);
-        // A platform this run tried to lock that neither lockfile has.
-        for (_, tv, platform) in tasks.iter().filter(|(ba, _, _)| ba.short == short) {
-            let key = platform.to_key();
-            if !changes
+        let attempted =
+            tasks
                 .iter()
-                .any(|(version, k, _)| *version == tv.version && *k == key)
-            {
-                changes.push((tv.version.clone(), key, EntryChange::Unresolved));
-            }
-        }
+                .filter(|(ba, _, _)| ba.short == short)
+                .map(|(ba, tv, platform)| {
+                    let options = crate::backend::get(ba)
+                        .and_then(|backend| {
+                            backend
+                                .lockfile_options(
+                                    &tv.request,
+                                    &PlatformTarget::new(platform.clone()),
+                                )
+                                .ok()
+                        })
+                        .unwrap_or_default();
+                    (tv.version.clone(), options, platform.to_key())
+                });
+        add_unresolved(&mut changes, attempted);
         lines.extend(
             changes
                 .into_iter()
-                .map(|(version, platform, change)| EntryLine {
+                .map(|(version, _, platform, change)| EntryLine {
                     short: short.to_string(),
                     version,
                     platform,
@@ -107,6 +120,22 @@ pub(super) fn entry_changes(
         );
     }
     lines
+}
+
+/// Add an `Unresolved` change for each attempted `(version, options,
+/// platform key)` that neither lockfile has an entry for.
+fn add_unresolved(
+    changes: &mut Vec<Change>,
+    attempted: impl IntoIterator<Item = (String, BTreeMap<String, String>, String)>,
+) {
+    for (version, options, key) in attempted {
+        if !changes
+            .iter()
+            .any(|(v, o, k, _)| *v == version && *o == options && *k == key)
+        {
+            changes.push((version, options, key, EntryChange::Unresolved));
+        }
+    }
 }
 
 /// The platform keys an entry of `tools` can be stored under on
@@ -133,9 +162,11 @@ fn platform_keys(tools: &[&LockTool], platforms: &[Platform]) -> Vec<String> {
     keys
 }
 
-/// The change to each of `short`'s entries on each of `keys`, as
-/// `(version, platform key, change)`: one per stored option variant, and
-/// only where either lockfile has the platform.
+/// The change to each of `short`'s entries on each of `keys` (the
+/// platforms this run targets), one per stored option variant and only where
+/// either lockfile has the platform. Platforms the lockfile stores outside
+/// `keys` are reported only when they change, as when generation drops them.
+/// Versions in `stale` are left to the prune message.
 fn tool_changes(
     before: &Lockfile,
     after: &Lockfile,
@@ -143,21 +174,30 @@ fn tool_changes(
     locked_here: &[&str],
     keys: &[String],
     stale: &[String],
-) -> Vec<(String, String, EntryChange)> {
+) -> Vec<Change> {
     let before_entries: &[LockfileTool] = before.tools_for(short).map_or(&[], Vec::as_slice);
     let after_entries: &[LockfileTool] = after.tools_for(short).map_or(&[], Vec::as_slice);
     let same =
         |a: &LockfileTool, b: &LockfileTool| a.version == b.version && a.options == b.options;
+    let mut all_keys: Vec<String> = keys.to_vec();
+    for entry in before_entries.iter().chain(after_entries) {
+        for key in entry.platforms.keys() {
+            if !all_keys.contains(key) {
+                all_keys.push(key.clone());
+            }
+        }
+    }
     let mut changes = Vec::new();
     for (i, after_entry) in after_entries.iter().enumerate() {
-        if after_entries[..i]
-            .iter()
-            .any(|seen| same(seen, after_entry))
+        if stale.contains(&after_entry.version)
+            || after_entries[..i]
+                .iter()
+                .any(|seen| same(seen, after_entry))
         {
             continue;
         }
         let before_entry = before_entries.iter().find(|entry| same(entry, after_entry));
-        for key in keys {
+        for key in &all_keys {
             let old = before_entry.and_then(|entry| entry.platforms.get(key));
             let new = after_entry.platforms.get(key);
             let change = match (before_entry, old, new) {
@@ -182,7 +222,15 @@ fn tool_changes(
                 (_, Some(old), Some(new)) if same_entry(old, new) => EntryChange::Unchanged,
                 (_, Some(old), Some(new)) => EntryChange::Updated(changed_fields(old, new)),
             };
-            changes.push((after_entry.version.clone(), key.clone(), change));
+            if change == EntryChange::Unchanged && !keys.contains(key) {
+                continue;
+            }
+            changes.push((
+                after_entry.version.clone(),
+                after_entry.options.clone(),
+                key.clone(),
+                change,
+            ));
         }
     }
     // Entries the run drops, other than stale versions the prune message names.
@@ -195,12 +243,13 @@ fn tool_changes(
         {
             continue;
         }
-        for key in keys
+        for key in all_keys
             .iter()
             .filter(|key| before_entry.platforms.contains_key(*key))
         {
             changes.push((
                 before_entry.version.clone(),
+                before_entry.options.clone(),
                 key.clone(),
                 EntryChange::Removed,
             ));
@@ -351,6 +400,9 @@ mod tests {
         let keys: Vec<String> = keys.iter().map(|key| key.to_string()).collect();
         let stale: Vec<String> = stale.iter().map(|v| v.to_string()).collect();
         tool_changes(before, after, "tool", locked_here, &keys, &stale)
+            .into_iter()
+            .map(|(version, _, platform, change)| (version, platform, change))
+            .collect()
     }
 
     fn change(before: &Lockfile, after: &Lockfile, version: &str) -> Vec<EntryChange> {
@@ -358,6 +410,10 @@ mod tests {
             .into_iter()
             .map(|(_, _, change)| change)
             .collect()
+    }
+
+    fn flavor(name: &str) -> BTreeMap<String, String> {
+        BTreeMap::from([("flavor".to_string(), name.to_string())])
     }
 
     fn line(version: &str, platform: &str, change: EntryChange) -> (String, String, EntryChange) {
@@ -496,6 +552,70 @@ mod tests {
         assert_eq!(
             changes(&before, &after, &["1.1.0"], &["linux-x64"], &["1.0.0"]),
             []
+        );
+    }
+
+    #[test]
+    fn a_stale_version_left_in_the_resolved_copy_is_not_reported() {
+        let both = lockfile(&[
+            ("1.0.0", &[], "linux-x64", Some(info(Some("u"), Some("c")))),
+            ("1.1.0", &[], "linux-x64", Some(info(Some("v"), Some("d")))),
+        ]);
+        assert_eq!(
+            changes(&both, &both, &["1.1.0"], &["linux-x64"], &["1.0.0"]),
+            [line("1.1.0", "linux-x64", EntryChange::Unchanged)]
+        );
+    }
+
+    #[test]
+    fn an_untargeted_platform_is_reported_only_when_it_changes() {
+        let before = lockfile(&[
+            ("1.0.0", &[], "linux-x64", Some(info(Some("u"), Some("c")))),
+            (
+                "1.0.0",
+                &[],
+                "macos-arm64",
+                Some(info(Some("v"), Some("d"))),
+            ),
+        ]);
+        // Kept as it was: only the targeted platform is listed.
+        assert_eq!(
+            changes(&before, &before, &["1.0.0"], &["linux-x64"], &[]),
+            [line("1.0.0", "linux-x64", EntryChange::Unchanged)]
+        );
+        // Dropped by generation: the stored platform is reported as removed.
+        let after = linux("1.0.0", info(Some("u"), Some("c")));
+        assert_eq!(
+            changes(&before, &after, &["1.0.0"], &["linux-x64"], &[]),
+            [
+                line("1.0.0", "linux-x64", EntryChange::Unchanged),
+                line("1.0.0", "macos-arm64", EntryChange::Removed),
+            ]
+        );
+    }
+
+    #[test]
+    fn each_unresolved_option_variant_is_reported() {
+        let mut changes = vec![(
+            "1.0.0".to_string(),
+            flavor("a"),
+            "linux-x64".to_string(),
+            EntryChange::NewEntry,
+        )];
+        add_unresolved(
+            &mut changes,
+            [
+                ("1.0.0".to_string(), flavor("a"), "linux-x64".to_string()),
+                ("1.0.0".to_string(), flavor("b"), "linux-x64".to_string()),
+            ],
+        );
+        let reported: Vec<_> = changes
+            .iter()
+            .map(|(_, options, _, change)| (options["flavor"].as_str(), change.clone()))
+            .collect();
+        assert_eq!(
+            reported,
+            [("a", EntryChange::NewEntry), ("b", EntryChange::Unresolved)]
         );
     }
 
