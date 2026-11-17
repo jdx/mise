@@ -115,6 +115,9 @@ static INSTALL_STATE_TOOL_MEMO: Mutex<Option<HashMap<String, Option<InstallState
 /// Memoized read of the consolidated root manifest, for per-tool lookups.
 static ROOT_MANIFEST_MEMO: Mutex<Option<Arc<Manifest>>> = Mutex::new(None);
 static MANIFEST_LOCK: Mutex<()> = Mutex::new(());
+/// Bumped by every reset. A per-tool scan that began before a reset read the disk
+/// before whatever made the reset necessary, so it must not repopulate the memo.
+static RESET_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn shared_install_dirs_for_scan() -> Vec<PathBuf> {
     if crate::config::settings::is_loaded() {
@@ -723,30 +726,43 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
             return hit.clone();
         }
     }
-    let tool = load_tool(raw);
-    // The disk read above runs without the memo lock, so add_tool_version may
-    // have landed meanwhile. Neither side is authoritative: this one scanned
-    // every version on disk, that one knows about an install that may have
-    // completed after the scan. Picking either loses versions, so merge.
-    let mut memo = INSTALL_STATE_TOOL_MEMO
-        .lock()
-        .expect("INSTALL_STATE_TOOL_MEMO lock failed");
-    match memo
-        .get_or_insert_with(Default::default)
-        .entry(short.to_string())
-    {
-        std::collections::hash_map::Entry::Vacant(v) => v.insert(tool).clone(),
-        std::collections::hash_map::Entry::Occupied(mut o) => {
-            match (o.get_mut(), tool) {
-                (Some(recorded), Some(scanned)) => merge_scanned_into(recorded, scanned),
-                (slot, Some(scanned)) if slot.is_none() => *slot = Some(scanned),
-                // A scan that found nothing does not disprove an install that
-                // was just recorded.
-                _ => {}
+    // A reset during the scan means it may predate whatever made the reset necessary, so
+    // scan again rather than cache or return it. Resets are rare; give up after a few.
+    for attempt in 0.. {
+        let generation = RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst);
+        let tool = load_tool(raw);
+        // The disk read above runs without the memo lock, so add_tool_version may
+        // have landed meanwhile. Neither side is authoritative: this one scanned
+        // every version on disk, that one knows about an install that may have
+        // completed after the scan. Picking either loses versions, so merge.
+        let mut memo = INSTALL_STATE_TOOL_MEMO
+            .lock()
+            .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+        if RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation {
+            if attempt < 3 {
+                continue;
             }
-            o.get().clone()
+            // Still resetting: hand the scan to this caller, but do not cache it.
+            return tool;
         }
+        return match memo
+            .get_or_insert_with(Default::default)
+            .entry(short.to_string())
+        {
+            std::collections::hash_map::Entry::Vacant(v) => v.insert(tool).clone(),
+            std::collections::hash_map::Entry::Occupied(mut o) => {
+                match (o.get_mut(), tool) {
+                    (Some(recorded), Some(scanned)) => merge_scanned_into(recorded, scanned),
+                    (slot, Some(scanned)) if slot.is_none() => *slot = Some(scanned),
+                    // A scan that found nothing does not disprove an install that
+                    // was just recorded.
+                    _ => {}
+                }
+                o.get().clone()
+            }
+        };
     }
+    unreachable!("the retry loop returns")
 }
 
 /// Add the scan of directory `dir_name` to `tools`. Two directories can record
@@ -1108,16 +1124,50 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
             *tools = Some(Arc::new(next_tools));
         }
     }
-    let mut memo = INSTALL_STATE_TOOL_MEMO
-        .lock()
-        .expect("INSTALL_STATE_TOOL_MEMO lock failed");
-    let entry = memo
-        .get_or_insert_with(Default::default)
-        .entry(short.clone())
-        .or_insert(None);
-    match entry {
-        Some(tool) => update(tool),
-        None => *entry = Some(new_tool()),
+    // A memo entry created here from the new version alone would shadow the versions
+    // already installed, which a reset leaves nobody to have read. Scan for them first,
+    // outside the memo lock like `get_tool`; the new install is on disk by now. A reset
+    // between the check, the scan and the insert makes both stale, so start over.
+    for attempt in 0.. {
+        let generation = RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst);
+        let has_entry = INSTALL_STATE_TOOL_MEMO
+            .lock()
+            .expect("INSTALL_STATE_TOOL_MEMO lock failed")
+            .as_ref()
+            .is_some_and(|memo| memo.get(&short).is_some_and(Option::is_some));
+        let scanned = if has_entry {
+            None
+        } else {
+            load_tool(&ba.short)
+        };
+        let mut memo = INSTALL_STATE_TOOL_MEMO
+            .lock()
+            .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+        if RESET_GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation {
+            if attempt < 3 {
+                continue;
+            }
+            // Still resetting: leave the memo empty. The install is on disk, so the
+            // next `get_tool` scans it, rather than finding an entry of this version alone.
+            return;
+        }
+        let entry = memo
+            .get_or_insert_with(Default::default)
+            .entry(short.clone())
+            .or_insert(None);
+        match entry {
+            Some(tool) => update(tool),
+            None => {
+                *entry = Some(match scanned {
+                    Some(mut tool) => {
+                        update(&mut tool);
+                        tool
+                    }
+                    None => new_tool(),
+                })
+            }
+        }
+        return;
     }
 }
 
@@ -1639,16 +1689,25 @@ pub(crate) fn read_checksum(install_path: &Path) -> Option<String> {
     }
 }
 
+/// Clear the per-tool memo and bump the generation in one critical section, after the
+/// manifest memos a scan reads are gone. A scan that inserted before this is cleared;
+/// one that checks the generation after it is not cached.
+fn clear_tool_memo() {
+    let mut memo = INSTALL_STATE_TOOL_MEMO
+        .lock()
+        .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+    *memo = None;
+    RESET_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
 pub(crate) fn reset() {
+    RESET_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     *INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed") = None;
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;
-    *INSTALL_STATE_TOOL_MEMO
-        .lock()
-        .expect("INSTALL_STATE_TOOL_MEMO lock failed") = None;
     *ROOT_MANIFEST_MEMO
         .lock()
         .expect("ROOT_MANIFEST_MEMO lock failed") = None;
@@ -1658,16 +1717,15 @@ pub(crate) fn reset() {
     *SHARED_MANIFEST_MEMO
         .lock()
         .expect("SHARED_MANIFEST_MEMO lock failed") = None;
+    clear_tool_memo();
     super::tool_version::reset_install_path_cache();
 }
 
 pub fn reset_tools() {
+    RESET_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;
-    *INSTALL_STATE_TOOL_MEMO
-        .lock()
-        .expect("INSTALL_STATE_TOOL_MEMO lock failed") = None;
     *ROOT_MANIFEST_MEMO
         .lock()
         .expect("ROOT_MANIFEST_MEMO lock failed") = None;
@@ -1677,6 +1735,7 @@ pub fn reset_tools() {
     *SHARED_MANIFEST_MEMO
         .lock()
         .expect("SHARED_MANIFEST_MEMO lock failed") = None;
+    clear_tool_memo();
     super::tool_version::reset_install_path_cache();
 }
 

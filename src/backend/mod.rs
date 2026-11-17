@@ -5421,6 +5421,10 @@ pub trait Backend: Debug + Send + Sync {
                 ctx.pr.set_message(install_lock_wait_message(pid));
             })
         })?);
+        // Another mise may have finished installing while we waited for the lock. The
+        // installed versions this process memoized before then are stale, and the
+        // configured install dependencies of later tools resolve against them.
+        install_state::reset_tools();
 
         let mut install_satisfied = self
             .is_install_satisfied_or_false(&ctx.config, &tv, true)
@@ -5646,6 +5650,9 @@ pub trait Backend: Debug + Send + Sync {
                 // verification failure is the backend's to track (packslip keeps
                 // a usable binary and marks only its skills incomplete).
                 install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                // A scan that ran while the marker was still there skipped this version,
+                // and a reset after `add_tool_version` can have cached that scan.
+                install_state::reset_tools();
                 self.verify_install(&ctx, &tv).await
             }
             Err(err) => Err(err),
