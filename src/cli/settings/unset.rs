@@ -86,6 +86,29 @@ fn remove_from_file(mut key: &str, path: &std::path::Path) -> Result<Option<Stri
             return Ok(Some(config.to_string()));
         }
 
+        if !crate::config::settings::SETTINGS_META.contains_key(key)
+            && let Some((map_key, entry)) = super::map_entry(key)
+        {
+            // One entry of a map setting such as `task.lock_pools.cpu`: leave the others.
+            let (parent_key, child_key) = map_key.split_once('.').unwrap_or(("", map_key));
+            let table: Option<&mut dyn toml_edit::TableLike> = if parent_key.is_empty() {
+                Some(&mut *settings)
+            } else {
+                settings
+                    .get_mut(parent_key)
+                    .and_then(toml_edit::Item::as_table_like_mut)
+            };
+            let removed = table
+                .and_then(|t| t.get_mut(child_key))
+                .and_then(toml_edit::Item::as_table_like_mut)
+                .is_some_and(|map| map.remove(entry).is_some());
+            if !removed {
+                return Ok(None);
+            }
+            let _: SettingsFile = toml::from_str(&config.to_string())?;
+            return Ok(Some(config.to_string()));
+        }
+
         let settings: &mut dyn toml_edit::TableLike =
             if let Some((parent_key, child_key)) = key.split_once('.') {
                 key = child_key;

@@ -15,6 +15,15 @@ fn canonical_setting(key: &str) -> &str {
     }
 }
 
+/// Splits `task.lock_pools.cpu` into the map setting `task.lock_pools` and its entry `cpu`.
+/// None unless the part before the last dot is a map setting.
+fn map_entry(key: &str) -> Option<(&str, &str)> {
+    use crate::config::settings::{SETTINGS_META, SettingsType};
+    let (map_key, entry) = key.rsplit_once('.')?;
+    let meta = SETTINGS_META.get(map_key)?;
+    (matches!(meta.type_, SettingsType::IndexMap) && !entry.is_empty()).then_some((map_key, entry))
+}
+
 fn remove_legacy_pypi_setting(settings: &mut dyn toml_edit::TableLike, key: &str) -> bool {
     let Some(leaf) = key.strip_prefix("pypi.") else {
         return false;

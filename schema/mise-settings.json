@@ -145,7 +145,8 @@
             "list_by_colon",
             "list_by_os_path_separator",
             "set_by_comma",
-            "parse_url_replacements"
+            "parse_url_replacements",
+            "parse_lock_pools"
           ],
           "description": "How to parse the environment variable value"
         },

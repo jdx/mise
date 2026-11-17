@@ -71,6 +71,14 @@ pub(super) fn set(
     override_file: bool,
 ) -> Result<()> {
     key = super::canonical_setting(key);
+    // `task.lock_pools.cpu` is one entry of the `task.lock_pools` map.
+    let mut entry = None;
+    if !SETTINGS_META.contains_key(key)
+        && let Some((map_key, name)) = super::map_entry(key)
+    {
+        key = map_key;
+        entry = Some(name);
+    }
     let meta = match SETTINGS_META.get(key) {
         Some(meta) => meta,
         None => {
@@ -106,6 +114,7 @@ pub(super) fn set(
     validate_setting_choice(key, value)?;
 
     let value = match meta.type_ {
+        _ if entry.is_some() => value.into(),
         SettingsType::Bool => parse_bool(value)?,
         SettingsType::Integer => parse_i64(value)?,
         SettingsType::Duration => parse_duration(value)?,
@@ -190,7 +199,17 @@ pub(super) fn set(
             }
             _ => value,
         };
-        settings.insert(key, value.into());
+        if let Some(entry) = entry {
+            // Keep the map's other entries: write into it, creating it when absent.
+            let map = settings
+                .entry(key)
+                .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                .as_table_like_mut()
+                .ok_or_else(|| eyre!("Setting {key} is not a table"))?;
+            map.insert(entry, value.into());
+        } else {
+            settings.insert(key, value.into());
+        }
 
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;
