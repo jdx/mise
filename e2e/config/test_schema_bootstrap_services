@@ -28,6 +28,9 @@ scope = "system"
 state = "stopped"
 masked = false
 on_change = "reload_or_restart"
+[bootstrap.services.greetd]
+state = "unchanged"
+enabled = true
 TOML
 assert_succeed "$tombi_lint services-valid.toml"
 printf '[bootstrap.services.worker]\nscope = "invalid"\n' >services-invalid.toml

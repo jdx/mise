@@ -13,6 +13,9 @@ pub enum ServiceState {
     Stopped,
     // User scope only: the installed service definition is removed.
     Absent,
+    // System services and existing user units only: mise enables, disables, or masks the unit
+    // but never starts or stops it.
+    Unchanged,
 }
 
 impl ServiceState {
@@ -21,6 +24,7 @@ impl ServiceState {
             Self::Running => "running",
             Self::Stopped => "stopped",
             Self::Absent => "absent",
+            Self::Unchanged => "unchanged",
         }
     }
 }
@@ -74,7 +78,7 @@ pub enum ServiceChangeAction {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
 #[schemars(extend("not" = {"required": ["builtin", "command"]}))]
 pub struct ServiceTomlConfig {
-    /// running or stopped; absent removes a user service's definition (user scope only)
+    /// running or stopped; absent removes a user service's definition (user scope only); unchanged sets enabled without starting or stopping the unit (system services and existing user units only)
     #[serde(default)]
     pub state: ServiceState,
     /// start the service at boot (system scope) or at login (user scope)

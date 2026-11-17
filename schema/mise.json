@@ -9068,8 +9068,8 @@
             "properties": {
               "state": {
                 "type": "string",
-                "description": "running or stopped; absent removes a user service's definition (user scope only)",
-                "enum": ["running", "stopped", "absent"],
+                "description": "running or stopped; absent removes a user service's definition (user scope only); unchanged sets enabled without starting or stopping the unit (system services and existing user units only)",
+                "enum": ["running", "stopped", "absent", "unchanged"],
                 "default": "running"
               },
               "enabled": {

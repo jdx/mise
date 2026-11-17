@@ -133,6 +133,11 @@ impl ServiceRequest {
         if config.masked && config.state == ServiceState::Running {
             bail!("bootstrap service '{name}' cannot be both masked and running");
         }
+        if config.masked && config.state == ServiceState::Unchanged {
+            bail!(
+                "bootstrap service '{name}' cannot be both masked and `state = \"unchanged\"`, because masking stops the unit; set `state = \"stopped\"`"
+            );
+        }
         if config.masked && config.enabled {
             bail!("bootstrap service '{name}' cannot be both masked and enabled");
         }
@@ -577,6 +582,7 @@ impl ServiceAction {
             ServiceState::Running => Some("start"),
             // rejected for system services by `compose_system_declarations`
             ServiceState::Absent => Some("stop"),
+            ServiceState::Unchanged => None,
         }
     }
 }
@@ -705,6 +711,7 @@ fn active_state_matches(desired: ServiceState, current: &str) -> bool {
     match desired {
         ServiceState::Running => matches!(current, "active" | "reloading"),
         ServiceState::Stopped | ServiceState::Absent => current == "inactive",
+        ServiceState::Unchanged => true,
     }
 }
 
@@ -1035,6 +1042,71 @@ mod tests {
                 .commands_after_reload(action.notified)
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn unchanged_state_enables_or_disables_without_starting_or_stopping() {
+        let request = |enabled: bool, active_state: &str, unit_file_state: &str| {
+            let mut request = ServiceRequest::from_toml(
+                "example".to_string(),
+                ServiceTomlConfig {
+                    state: ServiceState::Unchanged,
+                    enabled,
+                    on_change: ServiceChangeAction::Restart,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            request.inspection = Some(ServiceInspection::Present {
+                active_state: active_state.to_string(),
+                unit_file_state: unit_file_state.to_string(),
+                need_daemon_reload: false,
+            });
+            request
+        };
+        for (enabled, matching, other, command) in [
+            (true, "enabled", "disabled", "enable"),
+            (false, "disabled", "enabled", "disable"),
+        ] {
+            // a unit already enabled or disabled as declared is converged whether or not it
+            // is running
+            for active_state in ["active", "inactive", "failed"] {
+                let request = request(enabled, active_state, matching);
+                assert_eq!(request.plan().action, ResourceAction::Noop);
+                // and a changed dependency neither reloads nor restarts it
+                let change = notifications("/etc/example.conf").change_for(&request);
+                assert!(request.action(change).unwrap().is_none());
+                assert_eq!(
+                    request.plan_with_change(change).action,
+                    ResourceAction::Noop
+                );
+            }
+            // otherwise only the unit-file state changes
+            for active_state in ["active", "inactive"] {
+                let request = request(enabled, active_state, other);
+                assert_eq!(request.plan().action, ResourceAction::Update);
+                let action = request.action(ServiceChange::default()).unwrap().unwrap();
+                assert_eq!(
+                    action.commands(),
+                    [
+                        vec!["unmask".to_string(), "example.service".to_string()],
+                        vec![command.to_string(), "example.service".to_string()],
+                    ]
+                );
+            }
+        }
+        assert!(
+            ServiceRequest::from_toml(
+                "example".to_string(),
+                ServiceTomlConfig {
+                    state: ServiceState::Unchanged,
+                    enabled: false,
+                    masked: true,
+                    ..Default::default()
+                },
+            )
+            .is_err()
         );
     }
 

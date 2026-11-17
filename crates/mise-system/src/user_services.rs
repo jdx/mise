@@ -94,6 +94,11 @@ impl UserServiceRequest {
         if config.masked {
             bail!("user service '{name}' cannot be masked; use `state = \"absent\"` to remove it");
         }
+        if config.state == ServiceState::Unchanged {
+            bail!(
+                "user service '{name}' cannot use `state = \"unchanged\"`, which applies to system services and existing user units"
+            );
+        }
         if config.on_change != super::services_common::ServiceChangeAction::default() {
             bail!("user service '{name}': `on_change` only applies to system services");
         }

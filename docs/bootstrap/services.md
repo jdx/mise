@@ -268,7 +268,7 @@ install the package or write the file first.
 
 | Key         | Values                                                      | Default               |
 | ----------- | ----------------------------------------------------------- | --------------------- |
-| `state`     | `"running"` or `"stopped"`                                  | `"running"`           |
+| `state`     | `"running"`, `"stopped"`, or `"unchanged"`                  | `"running"`           |
 | `enabled`   | `true` starts the unit at boot                              | `true`                |
 | `masked`    | `true` prevents the unit from starting at all               | `false`               |
 | `on_change` | `"reload_or_restart"`, `"reload"`, `"restart"`, or `"none"` | `"reload_or_restart"` |
@@ -297,6 +297,26 @@ A unit that does not exist yet is accepted only when the same run writes its
 unit file (or its `name@.service` template) into a systemd unit directory such
 as `/etc/systemd/system` through `[bootstrap.files]`, and that file entry lists
 the service in `notify`.
+
+### Enable a service without starting it {#enable-without-starting}
+
+`state = "unchanged"` sets only whether the unit starts at boot, and never
+starts or stops it. Use it for a unit that should take over later, such as a
+login manager that would replace the console you are provisioning from:
+
+```toml
+[bootstrap.services.greetd]
+state = "unchanged"
+enabled = true
+```
+
+mise runs `systemctl enable greetd.service` if the unit is not enabled yet, and
+nothing once it is, whether or not greetd is running. A managed file that
+`notify`s the service does not reload or restart it. The same works for an
+[existing user unit](#existing-user-units), such as one that belongs to a
+graphical session that has not started yet. `"unchanged"` cannot be combined
+with `masked = true`, because masking stops the unit, and it is not available
+for user services that mise defines with `command` or `builtin`.
 
 ### Stop and disable a service
 

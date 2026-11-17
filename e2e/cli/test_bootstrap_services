@@ -65,3 +65,13 @@ scope = "user"
 restart = "always"
 EOF2
 assert_fail "mise bootstrap services status" "manages an existing systemd user unit"
+
+# `state = "unchanged"` leaves a unit's runtime state alone, which mise cannot
+# promise for a service it defines and starts itself.
+cat <<EOF2 >mise.toml
+[bootstrap.services.$missing_service]
+scope = "user"
+command = "sleep 1"
+state = "unchanged"
+EOF2
+assert_fail "mise bootstrap services status" "which applies to system services and existing user units"
