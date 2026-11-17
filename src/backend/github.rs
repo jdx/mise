@@ -328,9 +328,9 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     /// The libc a provenance picker matches for `target`, so the provenance follows
-    /// the archive that was picked. When `asset_pattern` (or an explicit URL) chose
-    /// `asset_name`, the `libc` option did not, so a Linux archive that names its libc
-    /// decides; otherwise the option applies as it did to the archive.
+    /// the archive that was picked. A Linux archive that names its libc decides, however
+    /// it was chosen. Otherwise the `libc` option applies, unless `asset_pattern`, a
+    /// direct `url` or an explicit URL chose the archive without it.
     fn libc_for_provenance(
         &self,
         target: &PlatformTarget,
@@ -338,15 +338,20 @@ impl<'a> GitBackendOptions<'a> {
         asset_name: &str,
     ) -> Result<Option<String>> {
         let tool_libc = self.libc()?;
-        if !explicit_pattern && self.asset_pattern_for_target(target).is_none() {
-            return Ok(asset_matcher::tool_target_libc(target, tool_libc).0);
-        }
         if target.os_name() == "linux"
             && let Some(libc) = asset_matcher::linux_libc_named_by(asset_name)
         {
             return Ok(Some(libc.to_string()));
         }
-        Ok(asset_matcher::tool_target_libc(target, None).0)
+        let picked_without_option = explicit_pattern
+            || self.asset_pattern_for_target(target).is_some()
+            || self.direct_url_for_target(target).is_some();
+        let tool_libc = if picked_without_option {
+            None
+        } else {
+            tool_libc
+        };
+        Ok(asset_matcher::tool_target_libc(target, tool_libc).0)
     }
 
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
@@ -5016,8 +5021,8 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 .contains_key("libc")
         );
 
-        // Provenance follows the tool's libc, except when `asset_pattern` (or an explicit
-        // URL) picked the binary: then the libc the picked archive names decides.
+        // Provenance follows the libc the picked archive names. When it names none, the
+        // tool's libc applies, except when `asset_pattern` or a `url` picked the binary.
         let provenance_libc = |opts: &ToolVersionOptions, explicit: bool, asset: &str| {
             backend
                 .options(opts)
@@ -5033,6 +5038,34 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             Some("gnu")
         );
         assert_eq!(provenance_libc(&musl, true, "tool-linux.tar.gz"), None);
+        assert_eq!(
+            provenance_libc(&musl, false, "tool-linux.tar.gz").as_deref(),
+            Some("musl")
+        );
+        // A direct platform `url` to a musl archive on a glibc host, with no sidecar named after
+        // it: the musl provenance still outranks the gnu one.
+        let mut direct = ToolVersionOptions::default();
+        direct.opts.insert(
+            "platform_linux_x64_url".to_string(),
+            toml::Value::String("https://example.com/tool-linux-musl.tar.gz".to_string()),
+        );
+        let libc = provenance_libc(&direct, false, "tool-linux-musl.tar.gz");
+        assert_eq!(libc.as_deref(), Some("musl"));
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), libc);
+        let assets = vec![
+            "tool-linux-gnu.intoto.jsonl".to_string(),
+            "tool-linux-musl.intoto.jsonl".to_string(),
+        ];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-musl.tar.gz").as_deref(),
+            Some("tool-linux-musl.intoto.jsonl")
+        );
+        let mut direct_plain = libc_opts("musl");
+        direct_plain.opts.insert(
+            "platform_linux_x64_url".to_string(),
+            toml::Value::String("https://example.com/tool.tar.gz".to_string()),
+        );
+        assert_eq!(provenance_libc(&direct_plain, false, "tool.tar.gz"), None);
         let mut patterned = libc_opts("musl");
         patterned.opts.insert(
             "asset_pattern".to_string(),
