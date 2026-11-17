@@ -395,6 +395,16 @@ impl Backend for PIPXBackend {
         false
     }
 
+    fn validate_locked_graph(&self, config: &Config, tv: &ToolVersion) -> Result<()> {
+        if let Some(lock) = &tv.uv_lock {
+            return self.validate_uv_lock(tv, lock.load()?);
+        }
+        if self.uv_lock_allowed(tv) && self.uv_graph_required(config, tv)? {
+            return Err(self.missing_uv_graph_error(tv));
+        }
+        Ok(())
+    }
+
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(_) => {
@@ -597,46 +607,35 @@ impl Backend for PIPXBackend {
             };
             self.validate_uv_lock(&tv, lock.load()?)?;
             tv.uv_lock = Some(lock);
-        } else if self.uv_lock_allowed(&tv) {
-            let revision = self.uv_lockfile_version(&ctx.config, &tv)?;
-            let graph_required = revision.is_some_and(|v| v >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
-            if graph_required {
-                if !self.uv_lock_options_supported(&tv) {
-                    if ctx.locked {
-                        self.validate_lock_options(&tv)?;
-                    }
+        } else if self.uv_lock_allowed(&tv) && self.uv_graph_required(&ctx.config, &tv)? {
+            if ctx.locked {
+                return Err(self.missing_uv_graph_error(&tv));
+            }
+            if !self.uv_lock_options_supported(&tv) {
+                warn!(
+                    "{} dependency graph skipped because uvx_args or pipx_args are configured; installing with version-only resolution",
+                    self.ba.short
+                );
+                return Ok(tv);
+            }
+            if self
+                .spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
+                .await
+                .is_none()
+            {
+                return Ok(tv);
+            }
+            if let Some(version) = tv.uv_install_path_version().map(str::to_owned) {
+                tv.version = version;
+            }
+            match self.resolve_uv_lock(&ctx.config, &tv).await {
+                Ok(lock) => tv.uv_lock = Some(lock),
+                Err(error) => {
                     warn!(
-                        "{} dependency graph skipped because uvx_args or pipx_args are configured; installing with version-only resolution",
+                        "{} dependency graph unavailable; installing with version-only resolution: {error}",
                         self.ba.short
                     );
                     return Ok(tv);
-                }
-                if ctx.locked {
-                    bail!(
-                        "{} has no uv dependency graph; run `mise lock`",
-                        self.ba.short
-                    );
-                }
-                if self
-                    .spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
-                    .await
-                    .is_none()
-                {
-                    return Ok(tv);
-                }
-                if let Some(version) = tv.uv_install_path_version().map(str::to_owned) {
-                    tv.version = version;
-                }
-                match self.resolve_uv_lock(&ctx.config, &tv).await {
-                    Ok(lock) => tv.uv_lock = Some(lock),
-                    Err(error) => {
-                        warn!(
-                            "{} dependency graph unavailable; installing with version-only resolution: {error}",
-                            self.ba.short
-                        );
-                        return Ok(tv);
-                    }
                 }
             }
         }
@@ -691,9 +690,7 @@ impl Backend for PIPXBackend {
                     && self.is_version_installed(config, tv, check_symlink));
             }
         } else if self.uv_lock_allowed(tv) {
-            let revision = self.uv_lockfile_version(config, tv)?;
-            let graph_required = revision.is_some_and(|v| v >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
+            let graph_required = self.uv_graph_required(config, tv)?;
             let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
                 || tv.request.tool_config_locked(config, true);
             if graph_required {

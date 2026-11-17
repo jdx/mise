@@ -100,13 +100,15 @@ also updates the request in mise.toml to match.
   Reads each lockfile in scope and fails, listing each problem, when a
   locked install (`mise install --locked`) would reject it: a configured
   tool whose request no longer matches a locked version, a platform entry
-  without the URL or checksum the install needs, or a dependency-graph
-  sidecar that is missing or was edited. It checks the platforms
-  `mise lock` would lock (see `--platform`). Nothing is resolved remotely
-  and nothing is written. Each platform entry is listed with how a locked
-  install verifies its download: the provenance type it records (such as
-  `github-attestations`), `checksum only`, or `none`. Combine with `--json`
-  for one object per platform entry.
+  without the URL or checksum the install needs, or a dependency graph
+  that is missing, was edited, or does not describe the locked package.
+  It checks the platforms `mise lock` would lock (see `--platform`).
+  Nothing is resolved remotely and nothing is written; remote task
+  includes are skipped. Each platform entry lists the provenance type
+  recorded when the lockfile was generated (such as
+  `github-attestations`), `checksum only`, or `none`. A locked install
+  may check only the recorded checksum (see `locked_verify_provenance`).
+  Combine with `--json` for one object per platform entry.
 - **`-h --help`** — Print help
 
 ## Examples

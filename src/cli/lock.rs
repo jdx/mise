@@ -434,13 +434,15 @@ pub(crate) struct Lock {
     /// Reads each lockfile in scope and fails, listing each problem, when a
     /// locked install (`mise install --locked`) would reject it: a configured
     /// tool whose request no longer matches a locked version, a platform entry
-    /// without the URL or checksum the install needs, or a dependency-graph
-    /// sidecar that is missing or was edited. It checks the platforms
-    /// `mise lock` would lock (see `--platform`). Nothing is resolved remotely
-    /// and nothing is written. Each platform entry is listed with how a locked
-    /// install verifies its download: the provenance type it records (such as
-    /// `github-attestations`), `checksum only`, or `none`. Combine with `--json`
-    /// for one object per platform entry.
+    /// without the URL or checksum the install needs, or a dependency graph
+    /// that is missing, was edited, or does not describe the locked package.
+    /// It checks the platforms `mise lock` would lock (see `--platform`).
+    /// Nothing is resolved remotely and nothing is written; remote task
+    /// includes are skipped. Each platform entry lists the provenance type
+    /// recorded when the lockfile was generated (such as
+    /// `github-attestations`), `checksum only`, or `none`. A locked install
+    /// may check only the recorded checksum (see `locked_verify_provenance`).
+    /// Combine with `--json` for one object per platform entry.
     #[usage(long, verbatim_doc_comment)]
     pub check: bool,
 
@@ -844,6 +846,10 @@ impl Lock {
             .as_ref()
             .map(|monorepo_union| &monorepo_union.config_files)
             .unwrap_or(&config.config_files);
+        if self.check {
+            // The check makes no network requests, and fetching a remote include is one.
+            crate::config::skip_remote_task_includes();
+        }
         let task_load_context = crate::task::TaskLoadContext::all();
         let tasks = match config.tasks_with_context(Some(&task_load_context)).await {
             Ok(tasks) => tasks,
@@ -1371,7 +1377,9 @@ impl Lock {
             let lines = dry_run::entry_changes(
                 &lockfile,
                 &resolved,
-                &platform_tasks(&resolvable, target_platforms),
+                &resolvable,
+                target_platforms,
+                &stale_versions,
             );
             dry_run::show(&lines)?;
         }

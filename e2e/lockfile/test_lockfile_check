@@ -54,3 +54,38 @@ assert "cmp before.lock mise.lock"
 
 assert_fail_contains "mise lock --check --bump" "cannot be combined with --bump"
 assert_fail_contains "mise lock --check jq@1.6" "name the tool without a version"
+
+# A tool whose os option rules out every checked platform is not checked.
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.7.1"
+yq = { version = "4.44.1", os = ["windows"] }
+TOML
+assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 tool version, 1 platform entry)"
+
+# A remote task include is skipped rather than fetched.
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.7.1"
+
+[task_config]
+includes = ["git::https://127.0.0.1:1/does-not-exist.git//tasks?ref=v1"]
+TOML
+assert_contains "GIT_TERMINAL_PROMPT=0 MISE_EXPERIMENTAL=1 mise lock --check 2>&1" "skipping remote task include"
+assert_contains "GIT_TERMINAL_PROMPT=0 MISE_EXPERIMENTAL=1 mise lock --check 2>&1" "mise.lock is up to date"
+
+# A revision 2 lockfile must record the dependency graph an npm tool replays.
+mkdir missing-graph
+cat <<'TOML' >missing-graph/mise.toml
+[tools]
+"npm:cowsay" = "1.5.0"
+TOML
+cat <<'TOML' >missing-graph/mise.lock
+lockfile_version = 2
+
+[[tools."npm:cowsay"]]
+version = "1.5.0"
+backend = "npm:cowsay"
+specifiers = ["1.5.0"]
+TOML
+assert_fail_contains "cd missing-graph && mise lock --check --platform linux-x64" "has no embedded-aube dependency graph"

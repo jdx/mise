@@ -194,6 +194,24 @@ impl PIPXBackend {
         Ok(())
     }
 
+    /// Whether installing `tv` needs a uv dependency graph: its lockfile
+    /// revision records one, or a new resolution would create one.
+    pub(crate) fn uv_graph_required(&self, config: &Config, tv: &ToolVersion) -> Result<bool> {
+        let revision = self.uv_lockfile_version(config, tv)?;
+        Ok(revision.is_some_and(|v| v >= 2)
+            || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
+    }
+
+    /// Why `--locked` refuses a version whose required uv graph is missing.
+    pub(crate) fn missing_uv_graph_error(&self, tv: &ToolVersion) -> eyre::Report {
+        self.validate_lock_options(tv).err().unwrap_or_else(|| {
+            eyre::eyre!(
+                "{} has no uv dependency graph; run `mise lock`",
+                self.ba.short
+            )
+        })
+    }
+
     async fn lock_uv_program(&self, config: &Arc<Config>) -> Result<PathBuf> {
         let uv = self.spawnable_dependency(config, None, "uv").await
             .ok_or_else(|| eyre!("Python dependency locks require uv >= {MIN_UV_VERSION}; install it with `mise use uv`"))?;

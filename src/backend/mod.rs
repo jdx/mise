@@ -3308,6 +3308,19 @@ pub trait Backend: Debug + Send + Sync {
         ))
     }
 
+    /// Why `--locked` would refuse the dependency graph the lockfile records,
+    /// or should record, for `tv`. By default that is a sidecar that is
+    /// missing, unreadable or edited since its digest was recorded. A backend
+    /// that replays a graph also refuses one that is required but absent, or
+    /// that does not describe this package. `mise lock --check` reports this
+    /// for each locked version without installing anything.
+    fn validate_locked_graph(&self, _config: &Config, tv: &ToolVersion) -> Result<()> {
+        match tv.locked_graph_errors().into_iter().next() {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
     /// Whether this backend's artifact-identity options describe the machine
     /// that wrote a lock entry rather than the tool request.
     ///

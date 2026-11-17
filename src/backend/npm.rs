@@ -1094,6 +1094,20 @@ impl Backend for NPMBackend {
         false
     }
 
+    fn validate_locked_graph(&self, config: &Config, tv: &ToolVersion) -> Result<()> {
+        let source_lockfile_version = self.aube_lockfile_version(config, tv)?;
+        self.check_aube_graph_requirement(
+            tv,
+            Self::resolved_package_manager(),
+            source_lockfile_version,
+            true,
+        )?;
+        match &tv.aube_lock {
+            Some(lock) => self.validate_aube_lock(tv, lock.load()?),
+            None => Ok(()),
+        }
+    }
+
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
         Ok(vec!["aube"])
     }
@@ -1387,28 +1401,15 @@ impl Backend for NPMBackend {
         // An upgrade resolves a new version outside the lockfile, but must
         // still satisfy the graph requirements of the entry it will replace.
         let source_lockfile_version = self.aube_lockfile_version(&ctx.config, &tv)?;
-        if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
-            eyre::bail!(
-                "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
-                self.display_tool_name(),
-                package_manager
-            );
-        }
+        self.check_aube_graph_requirement(
+            &tv,
+            package_manager,
+            source_lockfile_version,
+            ctx.locked,
+        )?;
         // A tarball URL has no dependency graph (see `resolve_aube_lock`); its
         // version, the digest, is all the lockfile holds.
         let graph_wanted = !is_tarball_spec(&self.tool_name());
-        if package_manager == NpmPackageManager::Aube
-            && graph_wanted
-            && tv.resolved_from_lockfile()
-            && tv.aube_lock.is_none()
-            && ctx.locked
-            && source_lockfile_version.is_some_and(|v| v >= 2)
-        {
-            eyre::bail!(
-                "npm:{} has no embedded-aube dependency graph in the revision 2 lockfile; run `mise lock` to repair it or disable locked mode",
-                self.display_tool_name()
-            );
-        }
         if package_manager == NpmPackageManager::Aube
             && graph_wanted
             && tv.aube_lock.is_none()
@@ -1749,6 +1750,40 @@ impl NPMBackend {
             Some(revision) => Ok(Some(revision)),
             None => self.bumped_lockfile_version(config, &tv.request),
         }
+    }
+
+    /// The graph rules an install of `tv` with `package_manager` answers to
+    /// before anything is resolved: a recorded embedded-aube graph needs
+    /// embedded aube to replay it, and a `locked` install of a version from a
+    /// revision 2 lockfile needs the graph that revision records.
+    fn check_aube_graph_requirement(
+        &self,
+        tv: &ToolVersion,
+        package_manager: NpmPackageManager,
+        source_lockfile_version: Option<u32>,
+        locked: bool,
+    ) -> Result<()> {
+        if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
+            eyre::bail!(
+                "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
+                self.display_tool_name(),
+                package_manager
+            );
+        }
+        // A tarball URL has no dependency graph (see `resolve_aube_lock`).
+        if locked
+            && package_manager == NpmPackageManager::Aube
+            && !is_tarball_spec(&self.tool_name())
+            && tv.resolved_from_lockfile()
+            && tv.aube_lock.is_none()
+            && source_lockfile_version.is_some_and(|v| v >= 2)
+        {
+            eyre::bail!(
+                "npm:{} has no embedded-aube dependency graph in the revision 2 lockfile; run `mise lock` to repair it or disable locked mode",
+                self.display_tool_name()
+            );
+        }
+        Ok(())
     }
 
     /// The lockfile revision of the entry matching `request`, if that entry
