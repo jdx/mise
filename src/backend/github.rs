@@ -3362,7 +3362,12 @@ impl UnifiedGitBackend {
         let picker = AssetPicker::with_libc(
             current_platform.os_name().to_string(),
             current_platform.arch_name().to_string(),
-            current_platform.qualifier().map(|s| s.to_string()),
+            asset_matcher::tool_target_libc(
+                &current_platform,
+                opts.libc()
+                    .map_err(|e| VerificationStatus::Error(e.to_string()))?,
+            )
+            .0,
         )
         .with_matching(matching.unwrap_or_default())
         .with_matching_regex(matching_regex.unwrap_or_default());
