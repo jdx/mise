@@ -224,9 +224,14 @@ url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-
 TOML
 assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "mise.lock is up to date (1 tool version, 1 platform entry)"
 assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "for macos-arm64: checksum only"
-# A platform entry that is not found is listed as verifying nothing.
-sed -i 's/^asset_pattern = .*/asset_pattern = "other.tar.gz"/' mise.lock
-assert_fail_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "for macos-arm64: none"
+# A platform entry that is not found is listed as verifying nothing. No e2e
+# host shares windows-x64's options, so its entry is looked up on its own.
+cat <<'TOML' >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+platforms.windows-x64.asset_pattern = "hello-world-1.0.0.zip"
+TOML
+assert_fail_contains "MISE_OFFLINE=1 mise lock --check --platform windows-x64" "for windows-x64: none"
 # In a lockfile without request bindings, an alias to a prefix selects the
 # matching entry among several locked versions.
 cat <<'TOML' >mise.toml
