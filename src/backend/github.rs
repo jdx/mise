@@ -694,6 +694,25 @@ impl Backend for UnifiedGitBackend {
         true
     }
 
+    fn locked_artifacts_error(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+        locked_platform: Option<&PlatformInfo>,
+    ) -> Option<eyre::Report> {
+        let patterns = self
+            .options(&tv.request.options())
+            .additional_asset_patterns_for_target(target);
+        self.locked_additional_artifacts_incomplete(tv, target, &patterns, locked_platform)
+            .then(|| {
+                eyre::eyre!(
+                    "No matching complete lockfile artifact list found for {} on platform {} (--locked mode)",
+                    tv.style(),
+                    target.to_key()
+                )
+            })
+    }
+
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab
@@ -1115,22 +1134,6 @@ impl Backend for UnifiedGitBackend {
             self.resolve_asset_url(&tv, &opts, &repo).await?
         };
 
-        let locked_additional_artifacts_present = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(|platform| !platform.additional_artifacts.is_empty());
-        // A lockfile that is not trusted loses its artifact URLs but keeps the
-        // checksums (see `Lockfile::drop_what_needs_trust`). The main asset is
-        // then resolved from the release, and so are the extra ones, each still
-        // verified against the checksum kept at its position.
-        let locked_additional_urls_dropped =
-            tv.lock_platforms.get(&platform_key).is_some_and(|p| {
-                !p.additional_artifacts.is_empty()
-                    && p.additional_artifacts.len() == additional_patterns.len()
-                    && p.additional_artifacts
-                        .iter()
-                        .all(|a| a.url.is_empty() && a.checksum.is_some())
-            });
         let additional_assets = match tv.lock_platforms.get(&platform_key) {
             Some(platform)
                 if self.additional_artifacts_match_patterns(
@@ -1152,9 +1155,14 @@ impl Backend for UnifiedGitBackend {
                     })
                     .collect()
             }
-            _ if ctx.locked
-                && (!additional_patterns.is_empty() || locked_additional_artifacts_present)
-                && !locked_additional_urls_dropped =>
+            locked_platform
+                if ctx.locked
+                    && self.locked_additional_artifacts_incomplete(
+                        &tv,
+                        &current_target,
+                        &additional_patterns,
+                        locked_platform,
+                    ) =>
             {
                 eyre::bail!(
                     "No matching complete lockfile artifact list found for {} on platform {} (--locked mode)",
@@ -1426,6 +1434,32 @@ impl UnifiedGitBackend {
                 &tv.version,
             ))
         .then_some(ProvenanceType::GithubAttestations)
+    }
+
+    /// Whether `--locked` refuses the additional artifacts the lockfile
+    /// records for `target`: they must be one complete entry per configured
+    /// pattern, each with a URL that matches it.
+    fn locked_additional_artifacts_incomplete(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+        patterns: &[String],
+        locked_platform: Option<&PlatformInfo>,
+    ) -> bool {
+        let artifacts = locked_platform.map_or(&[][..], |p| &p.additional_artifacts[..]);
+        if self.additional_artifacts_match_patterns(tv, target, patterns, artifacts) {
+            return false;
+        }
+        // A lockfile that is not trusted loses its artifact URLs but keeps the
+        // checksums (see `Lockfile::drop_what_needs_trust`). The main asset is
+        // then resolved from the release, and so are the extra ones, each still
+        // verified against the checksum kept at its position.
+        let urls_dropped = !artifacts.is_empty()
+            && artifacts.len() == patterns.len()
+            && artifacts
+                .iter()
+                .all(|a| a.url.is_empty() && a.checksum.is_some());
+        (!patterns.is_empty() || !artifacts.is_empty()) && !urls_dropped
     }
 
     fn additional_artifacts_match_patterns(

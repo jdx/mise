@@ -104,12 +104,13 @@ also updates the request in mise.toml to match.
   dependency graph that is missing, was edited, or does not describe the
   locked package. It checks the platforms `mise lock` would lock (see
   `--platform`) and the scopes `locked_scopes` enforces. It runs offline
-  and writes nothing; remote task includes are skipped. Each platform
-  entry lists the provenance type recorded when the lockfile was
-  generated (such as `github-attestations`), `checksum only`, or `none`.
-  A locked install may check only the recorded checksum (see
-  `locked_verify_provenance`). Combine with `--json` for one object per
-  platform entry.
+  and writes nothing: remote task includes are skipped, and a remote
+  config include is read from its cache, failing when it was never
+  fetched. Each platform entry lists the provenance type recorded when
+  the lockfile was generated (such as `github-attestations`), `checksum
+  only`, or `none`. A locked install may check only the recorded checksum
+  (see `locked_verify_provenance`). Combine with `--json` for one object
+  per platform entry.
 - **`-h --help`** — Print help
 
 ## Examples

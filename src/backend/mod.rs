@@ -3281,9 +3281,13 @@ pub trait Backend: Debug + Send + Sync {
         // such entries, so the setting goes with it.
         let settings = Settings::get();
         let p = locked_platform?;
-        // The download is verified against `<algorithm>:<digest>`, and an
-        // entry without the separator fails only after downloading.
-        if let Some(checksum) = p.checksum.as_deref().filter(|c| !c.contains(':')) {
+        // Each download is verified against `<algorithm>:<digest>`, and a
+        // checksum without the separator fails only after downloading.
+        if let Some(checksum) = std::iter::once(p.checksum.as_deref())
+            .chain(p.additional_artifacts.iter().map(|a| a.checksum.as_deref()))
+            .flatten()
+            .find(|c| !c.contains(':'))
+        {
             return Some(eyre!(
                 "Invalid lockfile checksum {checksum:?} for {} on platform {} (--locked mode)\n\
                 hint: Run `mise lock` to record checksums",
@@ -3316,6 +3320,19 @@ pub trait Backend: Debug + Send + Sync {
             ))
             .unwrap_or_default(),
         ))
+    }
+
+    /// Why `--locked` would refuse the extra artifacts the lockfile records
+    /// for `target` in `locked_platform`, after [`Self::locked_entry_error`]
+    /// accepted its main one. Only a backend that downloads more than one
+    /// artifact per platform has anything to say.
+    fn locked_artifacts_error(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+        _locked_platform: Option<&PlatformInfo>,
+    ) -> Option<eyre::Report> {
+        None
     }
 
     /// Why `--locked` would refuse the dependency graph the lockfile records,

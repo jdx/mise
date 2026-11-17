@@ -744,8 +744,8 @@ than
 Shell activation, `mise exec`, `mise env`, `mise ls`, shims, and
 [offline](/configuration/settings.html#offline) mode always use the cached copy.
 If a refresh fails or returns a file this mise cannot load, mise warns and keeps
-the cached copy; with nothing cached, it is an error. `mise cache clear` forces
-a refetch.
+the cached copy; with nothing cached, it is an error. Offline, an include that
+was never fetched is an error too. `mise cache clear` forces a refetch.
 
 ### `min_version` {#minimum-mise-version}
 

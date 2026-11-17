@@ -4946,12 +4946,13 @@ platform entry without the URL or checksum the install needs, or a
 dependency graph that is missing, was edited, or does not describe the
 locked package. It checks the platforms `mise lock` would lock (see
 `--platform`) and the scopes `locked_scopes` enforces. It runs offline
-and writes nothing; remote task includes are skipped. Each platform
-entry lists the provenance type recorded when the lockfile was
-generated (such as `github-attestations`), `checksum only`, or `none`.
-A locked install may check only the recorded checksum (see
-`locked_verify_provenance`). Combine with `--json` for one object per
-platform entry.
+and writes nothing: remote task includes are skipped, and a remote
+config include is read from its cache, failing when it was never
+fetched. Each platform entry lists the provenance type recorded when
+the lockfile was generated (such as `github-attestations`), `checksum
+only`, or `none`. A locked install may check only the recorded checksum
+(see `locked_verify_provenance`). Combine with `--json` for one object
+per platform entry.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
@@ -9123,6 +9124,26 @@ mise which node --version
 """# help="Show the version that provides it"
 }
 config {
+    prop offline optional=#true type=bool help="Check that the lockfile is up to date, without changing it" long_help=#"""
+Check that the lockfile is up to date, without changing it
+
+Reads each lockfile in scope and fails, listing each problem, when a
+locked install (`mise install --locked`) would reject it: a configured
+tool or tool stub whose request no longer matches a locked version, a
+platform entry without the URL or checksum the install needs, or a
+dependency graph that is missing, was edited, or does not describe the
+locked package. It checks the platforms `mise lock` would lock (see
+`--platform`) and the scopes `locked_scopes` enforces. It runs offline
+and writes nothing: remote task includes are skipped, and a remote
+config include is read from its cache, failing when it was never
+fetched. Each platform entry lists the provenance type recorded when
+the lockfile was generated (such as `github-attestations`), `checksum
+only`, or `none`. A locked install may check only the recorded checksum
+(see `locked_verify_provenance`). Combine with `--json` for one object
+per platform entry.
+"""# {
+        cli "--check"
+    }
     prop task.remote_no_cache optional=#true type=bool env=MISE_TASK_REMOTE_NO_CACHE help="Do not use the cache for remote tasks" {
         cli "--no-cache"
     }
