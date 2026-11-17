@@ -220,11 +220,7 @@ impl Config {
     /// Whether invocation-wide locked mode applies to a tool's config scope.
     /// Sources outside configuration files remain locked because they have no
     /// scope that can be excluded.
-    pub(crate) fn invocation_locked_for(
-        &self,
-        source: &ToolSource,
-        invocation_locked: bool,
-    ) -> bool {
+    pub fn invocation_locked_for(&self, source: &ToolSource, invocation_locked: bool) -> bool {
         if !invocation_locked {
             return false;
         }

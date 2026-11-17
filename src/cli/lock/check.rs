@@ -12,6 +12,7 @@ use mise_util::redactions::{redact_json, redact_output};
 use super::{Lock, LockInputs, LockSetup, platform_tasks};
 use crate::backend::Backend;
 use crate::backend::platform_target::PlatformTarget;
+use crate::config::{Settings, SettingsExt};
 use crate::file::display_path;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::platform::Platform;
@@ -239,6 +240,42 @@ impl Lock {
                 }
             }
         }
+        // Tool stubs that read their entries from this lockfile, as `mise
+        // lock` locks them: no config file declares them.
+        for (path, stub) in super::live_tool_stubs(lockfile_path, config_paths)? {
+            let skip = |err: eyre::Report| {
+                warn!(
+                    "skipping tool stub {}: not a valid tool stub",
+                    display_path(&path)
+                );
+                debug!("tool stub {}: {err:#}", display_path(&path));
+            };
+            let stub = match stub {
+                Ok(stub) => stub,
+                Err(err) => {
+                    skip(err);
+                    continue;
+                }
+            };
+            if Settings::safe_mode() && stub.has_tool_options() {
+                warn!(
+                    "skipping tool stub {} in safe mode: its tool options apply only outside safe mode",
+                    display_path(&path)
+                );
+                continue;
+            }
+            let request = match stub.to_tool_request(&path) {
+                Ok(request) => request,
+                Err(err) => {
+                    skip(err);
+                    continue;
+                }
+            };
+            select_python(request.ba(), &request)?;
+            if named(request.ba()) {
+                push(request);
+            }
+        }
         pythons.into_iter().for_each(&mut push);
         Ok(requests)
     }
@@ -256,11 +293,34 @@ impl Lock {
             tools: 0,
             entries: Vec::new(),
         };
+        let platforms = self.determine_target_platforms(lockfile_path)?;
+        let config = setup.config;
+        let requests: Vec<ToolRequest> = requests
+            .into_iter()
+            .filter(|request| {
+                // `mise lock` skips a tool whose `os` option rules out every platform.
+                platforms
+                    .iter()
+                    .any(|platform| request.is_os_supported_on(platform))
+                    // A locked install enforces the lockfile only for the
+                    // scopes in `locked_scopes`, never for the global override
+                    // config, unless `tool_config.locked` says so.
+                    && (config.invocation_locked_for(request.source(), true)
+                        || request.tool_config_locked(config, true))
+            })
+            .collect();
         if !lockfile_path.exists() {
-            check.push(None, None, vec!["the lockfile does not exist".to_string()]);
+            // System and path versions need no entry.
+            if requests.iter().any(|request| {
+                !matches!(
+                    request,
+                    ToolRequest::System { .. } | ToolRequest::Path { .. }
+                )
+            }) {
+                check.push(None, None, vec!["the lockfile does not exist".to_string()]);
+            }
             return Ok(check);
         }
-        let platforms = self.determine_target_platforms(lockfile_path)?;
         let lockfile = Lockfile::read(lockfile_path)?;
         let locked = ResolveOptions {
             use_locked_version: true,
@@ -270,25 +330,21 @@ impl Lock {
             ..Default::default()
         };
         for request in requests {
-            // `mise lock` skips a tool whose `os` option rules out every platform.
-            if !platforms
-                .iter()
-                .any(|platform| request.is_os_supported_on(platform))
-            {
-                continue;
-            }
             let resolved = match request.resolve_options(&locked) {
-                Ok(opts) => ToolVersion::resolve(setup.config, request.clone(), &opts).await,
+                Ok(opts) => ToolVersion::resolve(config, request.clone(), &opts).await,
                 Err(err) => Err(err),
             };
             let tv = match resolved {
                 Ok(tv) if tv.resolved_from_lockfile() => tv,
                 // Without its plugin a request resolves to itself, before
                 // the lockfile is read only when it has no entry there.
+                // Offline, `sub-N:latest` has no base to subtract from and
+                // resolves to itself too, where a locked install needs an entry.
                 Ok(tv)
-                    if tv.backend().is_ok_and(|backend| {
-                        backend.plugin().is_some_and(|p| !p.is_installed())
-                    }) =>
+                    if matches!(tv.request, ToolRequest::Sub { .. })
+                        || tv.backend().is_ok_and(|backend| {
+                            backend.plugin().is_some_and(|p| !p.is_installed())
+                        }) =>
                 {
                     check.push(
                         Some(&tv),

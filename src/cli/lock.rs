@@ -433,12 +433,12 @@ pub(crate) struct Lock {
     ///
     /// Reads each lockfile in scope and fails, listing each problem, when a
     /// locked install (`mise install --locked`) would reject it: a configured
-    /// tool whose request no longer matches a locked version, a platform entry
-    /// without the URL or checksum the install needs, or a dependency graph
-    /// that is missing, was edited, or does not describe the locked package.
-    /// It checks the platforms `mise lock` would lock (see `--platform`).
-    /// Nothing is resolved remotely and nothing is written; remote task
-    /// includes are skipped. Combine with `--json` for one object per
+    /// tool or tool stub whose request no longer matches a locked version, a
+    /// platform entry without the URL or checksum the install needs, or a
+    /// dependency graph that is missing, was edited, or does not describe the
+    /// locked package. It checks the platforms `mise lock` would lock (see
+    /// `--platform`) and the scopes `locked_scopes` enforces. It runs offline
+    /// and writes nothing; remote task includes are skipped. Combine with `--json` for one object per
     /// platform entry.
     #[usage(long, verbatim_doc_comment)]
     pub check: bool,
@@ -844,7 +844,10 @@ impl Lock {
             .map(|monorepo_union| &monorepo_union.config_files)
             .unwrap_or(&config.config_files);
         if self.check {
-            // The check makes no network requests, and fetching a remote include is one.
+            // The check makes no network requests. Offline mode keeps every
+            // lookup to the cache, such as a dotnet `lts` alias or the Python
+            // a pipx tool selects; fetching a remote include is skipped.
+            Settings::override_with(|s| s.offline = Some(true))?;
             crate::config::skip_remote_task_includes();
         }
         let task_load_context = crate::task::TaskLoadContext::all();
