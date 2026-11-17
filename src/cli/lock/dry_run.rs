@@ -89,25 +89,19 @@ pub(super) fn entry_changes(
         let locked_here: Vec<&str> = tools.iter().map(|(_, tv)| tv.version.as_str()).collect();
         let keys = platform_keys(&tools, platforms);
         let stale: &[String] = stale_versions.get(short).map_or(&[], Vec::as_slice);
-        let mut changes = tool_changes(before, after, short, &locked_here, &keys, stale);
-        let attempted =
-            tasks
-                .iter()
-                .filter(|(ba, _, _)| ba.short == short)
-                .map(|(ba, tv, platform)| {
-                    let options = crate::backend::get(ba)
-                        .and_then(|backend| {
-                            backend
-                                .lockfile_options(
-                                    &tv.request,
-                                    &PlatformTarget::new(platform.clone()),
-                                )
-                                .ok()
-                        })
-                        .unwrap_or_default();
-                    (tv.version.clone(), options, platform.to_key())
+        let attempted: Vec<Attempt> = tasks
+            .iter()
+            .filter(|(ba, _, _)| ba.short == short)
+            .map(|(ba, tv, platform)| {
+                let options = crate::backend::get(ba).and_then(|backend| {
+                    backend
+                        .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))
+                        .ok()
                 });
-        add_unresolved(&mut changes, attempted);
+                (tv.version.clone(), options, platform.to_key())
+            })
+            .collect();
+        let changes = short_changes(before, after, short, &locked_here, &keys, stale, attempted);
         lines.extend(
             changes
                 .into_iter()
@@ -122,18 +116,42 @@ pub(super) fn entry_changes(
     lines
 }
 
-/// Add an `Unresolved` change for each attempted `(version, options,
-/// platform key)` that neither lockfile has an entry for.
-fn add_unresolved(
-    changes: &mut Vec<Change>,
-    attempted: impl IntoIterator<Item = (String, BTreeMap<String, String>, String)>,
-) {
+/// One entry this run tried to resolve: `(version, lockfile options, platform
+/// key)`, with no options when the backend could not say which apply.
+type Attempt = (String, Option<BTreeMap<String, String>>, String);
+
+/// The changes to `short`'s entries (see [`tool_changes`]), plus an
+/// `Unresolved` change for each of `attempted` that neither lockfile has an
+/// entry for.
+fn short_changes(
+    before: &Lockfile,
+    after: &Lockfile,
+    short: &str,
+    locked_here: &[&str],
+    keys: &[String],
+    stale: &[String],
+    attempted: Vec<Attempt>,
+) -> Vec<Change> {
+    let mut changes = tool_changes(before, after, short, locked_here, keys, stale);
+    add_unresolved(&mut changes, attempted);
+    changes
+}
+
+/// Add an `Unresolved` change for each attempt no change covers. An attempt
+/// whose options are unknown is covered by any entry of its version and
+/// platform, rather than by an entry without options.
+fn add_unresolved(changes: &mut Vec<Change>, attempted: impl IntoIterator<Item = Attempt>) {
     for (version, options, key) in attempted {
-        if !changes
-            .iter()
-            .any(|(v, o, k, _)| *v == version && *o == options && *k == key)
-        {
-            changes.push((version, options, key, EntryChange::Unresolved));
+        let covered = changes.iter().any(|(v, o, k, _)| {
+            *v == version && *k == key && options.as_ref().is_none_or(|options| o == options)
+        });
+        if !covered {
+            changes.push((
+                version,
+                options.unwrap_or_default(),
+                key,
+                EntryChange::Unresolved,
+            ));
         }
     }
 }
@@ -605,8 +623,16 @@ mod tests {
         add_unresolved(
             &mut changes,
             [
-                ("1.0.0".to_string(), flavor("a"), "linux-x64".to_string()),
-                ("1.0.0".to_string(), flavor("b"), "linux-x64".to_string()),
+                (
+                    "1.0.0".to_string(),
+                    Some(flavor("a")),
+                    "linux-x64".to_string(),
+                ),
+                (
+                    "1.0.0".to_string(),
+                    Some(flavor("b")),
+                    "linux-x64".to_string(),
+                ),
             ],
         );
         let reported: Vec<_> = changes
@@ -617,6 +643,87 @@ mod tests {
             reported,
             [("a", EntryChange::NewEntry), ("b", EntryChange::Unresolved)]
         );
+    }
+
+    #[test]
+    fn two_requests_sharing_a_version_get_one_line_each() {
+        let attempted = || {
+            vec![
+                (
+                    "1.0.0".to_string(),
+                    Some(flavor("a")),
+                    "linux-x64".to_string(),
+                ),
+                (
+                    "1.0.0".to_string(),
+                    Some(flavor("b")),
+                    "linux-x64".to_string(),
+                ),
+            ]
+        };
+        let keys = ["linux-x64".to_string()];
+        let reported = |after: &Lockfile| -> Vec<(String, EntryChange)> {
+            short_changes(
+                &Lockfile::default(),
+                after,
+                "tool",
+                &["1.0.0", "1.0.0"],
+                &keys,
+                &[],
+                attempted(),
+            )
+            .into_iter()
+            .map(|(_, options, _, change)| (options["flavor"].clone(), change))
+            .collect()
+        };
+        let a: Entry<'_> = (
+            "1.0.0",
+            &[("flavor", "a")],
+            "linux-x64",
+            Some(info(Some("a"), Some("c"))),
+        );
+        let b: Entry<'_> = (
+            "1.0.0",
+            &[("flavor", "b")],
+            "linux-x64",
+            Some(info(Some("b"), Some("d"))),
+        );
+        let both = lockfile(&[a.clone(), b]);
+        assert_eq!(
+            reported(&both),
+            [
+                ("a".to_string(), EntryChange::NewEntry),
+                ("b".to_string(), EntryChange::NewEntry),
+            ]
+        );
+        let only_a = lockfile(&[a]);
+        assert_eq!(
+            reported(&only_a),
+            [
+                ("a".to_string(), EntryChange::NewEntry),
+                ("b".to_string(), EntryChange::Unresolved),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_attempt_with_unknown_options_is_covered_by_its_version() {
+        let mut changes = vec![(
+            "1.0.0".to_string(),
+            flavor("a"),
+            "linux-x64".to_string(),
+            EntryChange::Unchanged,
+        )];
+        add_unresolved(
+            &mut changes,
+            [("1.0.0".to_string(), None, "linux-x64".to_string())],
+        );
+        assert_eq!(changes.len(), 1);
+        add_unresolved(
+            &mut changes,
+            [("1.0.0".to_string(), None, "macos-arm64".to_string())],
+        );
+        assert_eq!(changes[1].3, EntryChange::Unresolved);
     }
 
     #[test]
