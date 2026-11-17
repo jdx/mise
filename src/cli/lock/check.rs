@@ -129,8 +129,9 @@ impl LockfileCheck {
             lockfile: display_path(&self.path),
             tool: Some(request.ba().short.clone()),
             version: Some(request.version()),
+            // A platform entry that was not found verifies nothing.
+            provenance: platform.as_ref().map(|_| provenance(None)),
             platform,
-            provenance: None,
             problems: vec![problem],
         });
     }
