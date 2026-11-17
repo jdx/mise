@@ -1691,6 +1691,7 @@ impl UnifiedGitBackend {
                     &self.preferred_asset_name(),
                 )?,
             )
+            .with_preferred_name(self.preferred_asset_name())
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
             if let Some(provenance_name) = pick_slsa_provenance(&picker, &asset_names, &asset.name)
@@ -1830,6 +1831,7 @@ impl UnifiedGitBackend {
                     &self.preferred_asset_name(),
                 )?,
             )
+            .with_preferred_name(self.preferred_asset_name())
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
 
@@ -3408,6 +3410,7 @@ impl UnifiedGitBackend {
             )
             .map_err(|e| VerificationStatus::Error(e.to_string()))?,
         )
+        .with_preferred_name(self.preferred_asset_name())
         .with_matching(matching.unwrap_or_default())
         .with_matching_regex(matching_regex.unwrap_or_default());
 
@@ -4470,6 +4473,29 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             pick_slsa_provenance(&picker, &assets, "tool-linux-amd64").as_deref(),
             Some("tool-linux-amd64.provenance.json")
         );
+    }
+
+    /// A libc token in the tool's own name must not rank the provenance files, in either
+    /// listing order, when no sidecar is named after the archive.
+    #[test]
+    fn test_slsa_provenance_ignores_libc_in_the_tool_name() {
+        let picker = AssetPicker::with_libc(
+            "linux".to_string(),
+            "x86_64".to_string(),
+            Some("musl".to_string()),
+        )
+        .with_preferred_name("gnu-tool");
+        let gnu = "gnu-tool-linux-x64-gnu.intoto.jsonl".to_string();
+        let musl = "gnu-tool-linux-x64-musl.intoto.jsonl".to_string();
+        for assets in [
+            vec![gnu.clone(), musl.clone()],
+            vec![musl.clone(), gnu.clone()],
+        ] {
+            assert_eq!(
+                pick_slsa_provenance(&picker, &assets, "gnu-tool-linux-x64-musl.tar.gz").as_deref(),
+                Some(musl.as_str())
+            );
+        }
     }
 
     /// An artifact whose name looks like provenance must not be offered as its own
