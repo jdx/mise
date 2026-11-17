@@ -23,6 +23,7 @@ assert_contains "MISE_ENABLE_BACKENDS=github mise exec fnox@1.48.0 -- fnox --ver
 
 # when no backend of a registry entry is listed, the error says which setting ruled them out
 assert_fail "MISE_ENABLE_BACKENDS=aqua mise install fnox@1.48.0" "enable_backends allows only aqua"
+assert_fail "MISE_ENABLE_BACKENDS=aqua mise install-into fnox@1.48.0 fnox-dest" "enable_backends allows only aqua"
 
 # disable_backends still applies to the listed backends
 assert "MISE_ENABLE_BACKENDS=aqua,asdf MISE_DISABLE_BACKENDS=aqua mise tool age --backend" "asdf:threkk/asdf-age"
