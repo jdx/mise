@@ -202,6 +202,40 @@ checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a57
 url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"
 TOML
 assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "mise.lock is up to date (1 tool version, 1 platform entry)"
+# In a lockfile without request bindings, an alias to a prefix selects the
+# matching entry among several locked versions.
+cat <<'TOML' >mise.toml
+[tool_alias."github:jdx/mise-test-fixtures".versions]
+old = "prefix:1"
+
+[tools."github:jdx/mise-test-fixtures"]
+version = "old"
+platforms.macos-arm64.asset_pattern = "hello-world-1.0.0.tar.gz"
+TOML
+cat <<'TOML' >mise.lock
+[[tools."github:jdx/mise-test-fixtures"]]
+version = "1.0.0"
+backend = "github:jdx/mise-test-fixtures"
+
+[tools."github:jdx/mise-test-fixtures".options]
+asset_pattern = "hello-world-1.0.0.tar.gz"
+
+[tools."github:jdx/mise-test-fixtures"."platforms.macos-arm64"]
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"
+
+[[tools."github:jdx/mise-test-fixtures"]]
+version = "2.0.0"
+backend = "github:jdx/mise-test-fixtures"
+
+[tools."github:jdx/mise-test-fixtures".options]
+asset_pattern = "hello-world-1.0.0.tar.gz"
+
+[tools."github:jdx/mise-test-fixtures"."platforms.macos-arm64"]
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+url = "https://github.com/jdx/mise-test-fixtures/releases/download/v2.0.0/hello-world-1.0.0.tar.gz"
+TOML
+assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "mise.lock is up to date (1 tool version, 1 platform entry)"
 cd .. || exit 1
 
 # The Python a pipx tool selects is skipped with the tool its os option rules out.
@@ -239,3 +273,22 @@ version = "1.0.0"
 backend = "vfox:jdx/vfox-tiny"
 TOML
 assert_fail_contains "cd alias && mise lock --check --platform linux-x64" "No lockfile URL found for tiny@1.0.0 on platform linux-x64"
+# An alias to a prefix matches the pinned versions on a separator boundary.
+mkdir alias-prefix
+cat <<'TOML' >alias-prefix/mise.toml
+[tool_alias.tiny.versions]
+old = "prefix:1"
+
+[tools]
+tiny = "old"
+TOML
+cat <<'TOML' >alias-prefix/mise.lock
+[[tools.tiny]]
+version = "1.0.0"
+backend = "vfox:jdx/vfox-tiny"
+
+[[tools.tiny]]
+version = "2.0.0"
+backend = "vfox:jdx/vfox-tiny"
+TOML
+assert_fail_contains "cd alias-prefix && mise lock --check --platform linux-x64" "No lockfile URL found for tiny@1.0.0 on platform linux-x64"

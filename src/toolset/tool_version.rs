@@ -239,14 +239,15 @@ impl ToolVersion {
             // Without the plugin only the config's aliases expand. The
             // lockfile may still pin what one of them means, as it would be
             // found once the plugin is installed.
+            let (lock_query, lock_prefix_boundary) = lock_query(&linked_query);
             if opts.use_locked_version
                 && matches!(request, ToolRequest::Version { .. })
                 && linked_query != request.version()
-                && !has_linked_version(request.ba(), &linked_query)
+                && !has_linked_version(request.ba(), lock_query)
                 && let Some(lt) = request.lockfile_resolve_with_prefix(
                     config,
-                    &linked_query,
-                    false,
+                    lock_query,
+                    lock_prefix_boundary,
                     opts.keep_moved_alias_pins || Self::resolution_locked(config, &request, &opts),
                 )?
             {
@@ -355,23 +356,21 @@ impl ToolVersion {
         request: &ToolRequest,
         target: &PlatformTarget,
     ) -> Result<Option<Self>> {
-        let (query, boundary) = match request {
-            ToolRequest::Prefix { prefix, .. } => (prefix.clone(), true),
+        let version = request.version();
+        let (query, boundary, alias_resolved) = match request {
+            ToolRequest::Prefix { prefix, .. } => (prefix.clone(), true, false),
             _ => {
-                let version = request.version();
-                match request.backend() {
-                    Ok(backend) => (
-                        config
-                            .resolve_alias(&backend, &version)
-                            .await
-                            .unwrap_or(version),
-                        false,
-                    ),
-                    Err(_) => (version, false),
-                }
+                let resolved = match request.backend() {
+                    Ok(backend) => config
+                        .resolve_alias(&backend, &version)
+                        .await
+                        .unwrap_or_else(|_| version.clone()),
+                    Err(_) => version.clone(),
+                };
+                let (query, boundary) = lock_query(&resolved);
+                (query.to_string(), boundary, resolved != version)
             }
         };
-        let alias_resolved = !boundary && query != request.version();
         Ok(request
             .lockfile_resolve_for_target(config, &query, boundary, alias_resolved, target)?
             .map(|lt| Self::from_lockfile(request.clone(), lt)))
@@ -922,10 +921,7 @@ impl ToolVersion {
         // concrete versions (#5781). Config-level `prefix:...` strings always
         // parse into ToolRequest::Prefix, so a Version request only carries
         // this scheme via an alias.
-        let (lock_query, lock_prefix_boundary) = match v.strip_prefix("prefix:") {
-            Some(p) => (p, true),
-            None => (v.as_str(), false),
-        };
+        let (lock_query, lock_prefix_boundary) = lock_query(&v);
         if opts.use_locked_version
             && !has_linked_version(request.ba(), lock_query)
             && let Some(lt) = request.lockfile_resolve_with_prefix(
@@ -1694,6 +1690,16 @@ impl ResolveOptions {
 /// to an external absolute path, as opposed to runtime symlinks or mise-managed
 /// install/cache links. A link that `version` cannot select (`node@22` linked while the
 /// config asks for `24.21.0`) is not a candidate, so it must not displace the lockfile.
+/// The lockfile query for what an alias expanded to: a `prefix:` selector
+/// matches the bare prefix on a separator boundary, since the lockfile
+/// stores concrete versions (#5781).
+fn lock_query(version: &str) -> (&str, bool) {
+    match version.strip_prefix("prefix:") {
+        Some(prefix) => (prefix, true),
+        None => (version, false),
+    }
+}
+
 fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
     if install_state::get_tool_full(&ba.short)
         .is_some_and(|installed| installed != ba.full_without_opts())
