@@ -1,3 +1,4 @@
+use crate::semver::version_sort_key;
 use chrono::{DateTime, SecondsFormat, Utc};
 use comfy_table::{Attribute, Cell, Color};
 use eyre::{Result, ensure};
@@ -8,7 +9,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use versions::Versioning;
 
 use crate::args::{BackendArg, TruncateOptions};
 use crate::backend::Backend;
@@ -482,7 +482,7 @@ impl Ls {
             .sorted_by_cached_key(|((plugin_name, version), _)| {
                 (
                     plugin_name.clone(),
-                    Versioning::new(version),
+                    version_sort_key(version),
                     version.clone(),
                 )
             })
@@ -534,7 +534,7 @@ impl Ls {
             .sorted_by_cached_key(|((plugin_name, version), _)| {
                 (
                     plugin_name.clone(),
-                    Versioning::new(version),
+                    version_sort_key(version),
                     version.clone(),
                 )
             })

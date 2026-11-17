@@ -7,7 +7,7 @@ use crate::backend::Backend;
 use crate::config::SettingsExt;
 use crate::config::{Alias, Config};
 use crate::plugins::VERSION_REGEX;
-use crate::semver::split_version_prefix;
+use crate::semver::{split_version_prefix, version_sort_key};
 use crate::toolset::{
     ConfigScope, ResolveOptions, ToolRequest, Toolset, ToolsetBuilder, install_state,
 };
@@ -321,7 +321,7 @@ fn list_symlinks_for_dir(
     }
     symlinks = symlinks
         .into_iter()
-        .sorted_by_cached_key(|(k, _)| (Versioning::new(k), k.to_string()))
+        .sorted_by_cached_key(|(k, _)| (version_sort_key(k), k.to_string()))
         .collect();
     symlinks
 }
@@ -426,7 +426,7 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
         .into_iter()
         .filter(|v| !is_install_incomplete(backend, installs_dir, v))
         .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
-        .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+        .sorted_by_cached_key(|v| (version_sort_key(v), v.to_string()))
         .collect()
 }
 

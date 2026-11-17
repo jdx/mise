@@ -6199,7 +6199,7 @@ fn matching_request_bindings<'a>(
 ///   for a pair of `1.9b` and `1.10b`. Where it does order, `Versioning` agrees
 ///   with it: `Versioning::new` reaches for `SemVer` first.
 fn cmp_lockfile_versions_newest_first(a: &str, b: &str) -> std::cmp::Ordering {
-    (versions::Versioning::new(b), b).cmp(&(versions::Versioning::new(a), a))
+    (crate::semver::version_sort_key(b), b).cmp(&(crate::semver::version_sort_key(a), a))
 }
 
 fn select_unbound_lockfile_tool<'a>(
