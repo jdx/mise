@@ -4,11 +4,13 @@ use crate::file::{self, display_path};
 use crate::hash;
 use crate::rand::random_string;
 use crate::task::Task;
+use crate::task::task_source_gitignore::{GitIgnored, is_gitignore_entry};
 use crate::task::task_sources::TaskOutputsExt;
 use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::overrides::{Override, OverrideBuilder};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -196,9 +198,63 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
     Ok(expanded)
 }
 
-/// Build an [`Override`] matcher for a task's `sources` patterns.
+/// The matcher for a task's `sources`, built by [`build_source_matcher`].
 ///
-/// `match_root` is the directory the [`Override`] is anchored at (the workspace
+/// Entries are evaluated in order and the last one that decides a path wins.
+/// A glob entry decides the paths it matches. A `!@gitignore` entry decides
+/// the paths git ignores, dropping them from what earlier entries matched, so
+/// the matcher keeps the globs between two such entries in their own
+/// [`Gitignore`] segment.
+pub(crate) struct SourceMatcher {
+    root: PathBuf,
+    /// The glob entries, split at each `!@gitignore`. Every segment but
+    /// the first follows one.
+    segments: Vec<Gitignore>,
+    /// Present when `sources` has a `!@gitignore` entry and the match root
+    /// is in a git work tree.
+    gitignored: Option<Arc<GitIgnored>>,
+}
+
+impl SourceMatcher {
+    fn empty(root: &Path) -> Self {
+        Self {
+            root: root.to_path_buf(),
+            segments: vec![],
+            gitignored: None,
+        }
+    }
+
+    /// The directory relative patterns are anchored at.
+    pub(crate) fn path(&self) -> &Path {
+        &self.root
+    }
+
+    /// Whether `sources` select `path`.
+    pub(crate) fn matched(&self, path: &Path, is_dir: bool) -> bool {
+        for (i, segment) in self.segments.iter().enumerate().rev() {
+            // Globs are stored inverted, the way `Override` stores them: a
+            // source pattern is an ignore rule and a `!` entry a whitelist.
+            match segment.matched(path, is_dir) {
+                ignore::Match::Ignore(_) => return true,
+                ignore::Match::Whitelist(_) => return false,
+                ignore::Match::None => {}
+            }
+            if i > 0
+                && self
+                    .gitignored
+                    .as_ref()
+                    .is_some_and(|gitignored| gitignored.is_ignored(&self.root.join(path), is_dir))
+            {
+                return false;
+            }
+        }
+        false
+    }
+}
+
+/// Build the matcher for a task's `sources` patterns.
+///
+/// `match_root` is the directory the matcher is anchored at (the workspace
 /// root in workspace setups, otherwise the task CWD). `task_cwd` is the
 /// directory the task actually runs from. Relative patterns are resolved
 /// against `task_cwd` and absolute ones taken as-is; either way the result is
@@ -207,14 +263,25 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
 ///
 /// Patterns use gitignore syntax with `!` inverted (the [`Override`] convention):
 /// a non-negated entry marks a file as a *source*, `!`-prefixed excludes it,
-/// `\!` escapes a literal `!`, and order matters.
+/// `\!` escapes a literal `!`, and order matters. `!@gitignore`
+/// excludes the files git ignores.
 pub(crate) fn build_source_matcher(
     match_root: &Path,
     task_cwd: &Path,
     sources: &[String],
-) -> Override {
-    let mut builder = OverrideBuilder::new(match_root);
+) -> SourceMatcher {
+    let segment_builder = || {
+        let mut builder = GitignoreBuilder::new(match_root);
+        builder.allow_unclosed_class(false);
+        builder
+    };
+    let mut builders = vec![segment_builder()];
     for s in sources {
+        if is_gitignore_entry(s) {
+            builders.push(segment_builder());
+            continue;
+        }
+        let builder = builders.last_mut().expect("one builder");
         let normalized = normalize_pattern(match_root, task_cwd, s);
         let expanded = match expand_glob_braces(&normalized) {
             Ok(expanded) => expanded,
@@ -227,15 +294,31 @@ pub(crate) fn build_source_matcher(
             }
         };
         for normalized in expanded {
-            if let Err(e) = builder.add(&normalized) {
+            if let Err(e) = builder.add_line(None, &normalized) {
                 warn!("invalid source pattern {s:?}: {e}");
             }
         }
     }
-    builder.build().unwrap_or_else(|e| {
-        warn!("failed to build source matcher: {e}");
-        Override::empty()
-    })
+    let segments = match builders
+        .iter()
+        .map(|b| b.build())
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(segments) => segments,
+        Err(e) => {
+            warn!("failed to build source matcher: {e}");
+            return SourceMatcher::empty(match_root);
+        }
+    };
+    let gitignored = (segments.len() > 1)
+        .then(|| GitIgnored::discover(match_root))
+        .flatten()
+        .map(Arc::new);
+    SourceMatcher {
+        root: match_root.to_path_buf(),
+        segments,
+        gitignored,
+    }
 }
 
 /// Resolve `.` and `..` in `path` without consulting the filesystem.
@@ -373,25 +456,22 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
     format!("{prefix}{rel_str}")
 }
 
-/// Returns true iff `path` is selected as a source by `matcher`. With
-/// [`Override`]'s inverted semantics, a non-negated user pattern produces
-/// `Match::Whitelist` for matching paths.
+/// Returns true iff `path` is selected as a source by `matcher`.
 ///
 /// `path` is lexically normalized first: `glob` builds the paths it returns
 /// from the raw pattern, so an enumerated file still carries the `..` that
 /// [`normalize_pattern`] has already resolved out of the matcher's copy.
 ///
 /// Absolute paths that don't fall under the matcher's root are out of
-/// gitignore's domain — `Override::matched` would return `Match::None` and,
-/// when positive patterns are present, promote that to `Match::Ignore`,
-/// silently dropping a file the glob legitimately included. Trust the glob
-/// in that case.
-pub(crate) fn is_source(matcher: &Override, path: &Path) -> bool {
+/// gitignore's domain — no pattern matches them, so the matcher would
+/// silently drop a file the glob legitimately included. Trust the glob in
+/// that case.
+pub(crate) fn is_source(matcher: &SourceMatcher, path: &Path) -> bool {
     let path = lexical_normalize(path);
     if path.is_absolute() && !path.starts_with(matcher.path()) {
         return true;
     }
-    matcher.matched(&path, false).is_whitelist()
+    matcher.matched(&path, false)
 }
 
 /// Expands a trailing `**` to `**/*` so enumeration reaches files.
@@ -741,6 +821,11 @@ impl DirPruner {
         let mut excluded: Vec<Override> = vec![];
         let normalized_root = lexical_normalize(match_root);
         for entry in entries {
+            // Dropping git-ignored files never includes a path again, so it
+            // leaves the excluded directories excluded.
+            if !outputs && is_gitignore_entry(entry) {
+                continue;
+            }
             let normalized = normalize_pattern(match_root, task_cwd, entry);
             let Ok(alternatives) = expand_glob_braces(&normalized) else {
                 excluded.clear();
@@ -1579,7 +1664,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
 fn get_file_metadatas(
     root: &Path,
     patterns_or_paths: &[String],
-    matcher: &Override,
+    matcher: &SourceMatcher,
     pruner: &DirPruner,
 ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
     if patterns_or_paths.is_empty() {

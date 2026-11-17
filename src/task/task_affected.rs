@@ -15,6 +15,7 @@ use crate::task::Task;
 use crate::task::task_source_checker::{
     build_source_matcher, is_source, lexical_normalize, parent_dir_pops_glob, task_cwd,
 };
+use crate::task::task_source_gitignore::is_gitignore_entry;
 use crate::task::workspace::git::{WorkspaceChanges, WorkspaceGitRevisions};
 
 /// Why `--affected` selected a task in a project without a monorepo root.
@@ -334,7 +335,12 @@ pub async fn affected_task_reasons(
             .chain(&file)
             .filter_map(|p| p.parent().map(Path::to_path_buf)),
     );
-    dirs.extend(patterns.iter().map(|pattern| literal_dir(pattern)));
+    dirs.extend(
+        patterns
+            .iter()
+            .filter(|pattern| !is_gitignore_entry(pattern))
+            .map(|pattern| literal_dir(pattern)),
+    );
     let indexes = dirs
         .iter()
         .map(|dir| repos.index_for(dir))
@@ -436,7 +442,7 @@ fn resolve_parent(path: &Path) -> PathBuf {
 /// The part from the first glob component on stays as written. A pattern whose `..` would
 /// collapse a glob component is returned unchanged, as the source matcher does.
 fn resolve_pattern(task_cwd: &Path, pattern: &str) -> Vec<String> {
-    let (prefix, body) = if pattern.starts_with("\\!") {
+    let (prefix, body) = if pattern.starts_with("\\!") || is_gitignore_entry(pattern) {
         return vec![pattern.to_string()];
     } else if let Some(rest) = pattern.strip_prefix('!') {
         ("!", rest)
