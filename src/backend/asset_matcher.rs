@@ -180,11 +180,13 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
         ),
         (
             AssetLibc::Gnu,
-            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc|manylinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:gnu(?:eabi(?:hf)?)?|glibc|manylinux(?:[0-9_]+)?)(?:\b|_)")
+                .unwrap(),
         ),
         (
             AssetLibc::Musl,
-            Regex::new(r"(?i)(?:\b|_)(?:musl|musllinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:musl(?:eabi(?:hf)?)?|musllinux(?:[0-9_]+)?)(?:\b|_)")
+                .unwrap(),
         ),
     ]
 });
@@ -378,7 +380,7 @@ impl AssetPicker {
             .filter(|(score, asset)| {
                 *score > 0
                     && !self.has_arch_mismatch(asset)
-                    && !(self.strict_libc && self.has_libc_mismatch(asset))
+                    && self.fits_strict_libc(asset)
                     && !is_non_executable_asset(asset)
                     && !is_metadata_asset(asset)
             })
@@ -454,11 +456,16 @@ impl AssetPicker {
             }
         };
 
-        // Score by platform match only (no format/build penalties)
+        // Score by platform match only (no format/build penalties). On Linux the libc counts
+        // too, so a musl build gets the musl provenance; one that names no libc scores 0 and
+        // still serves as the shared fallback.
         let mut scored: Vec<(i32, &String)> = candidates
             .into_iter()
             .map(|asset| {
-                let score = self.score_os_match(asset) + self.score_arch_match(asset);
+                let mut score = self.score_os_match(asset) + self.score_arch_match(asset);
+                if self.target_os == "linux" {
+                    score += self.score_libc_match(asset);
+                }
                 (score, asset)
             })
             .collect();
@@ -585,6 +592,11 @@ impl AssetPicker {
 
     fn has_libc_mismatch(&self, asset: &str) -> bool {
         self.target_os == "linux" && self.score_libc_match(asset) < 0
+    }
+
+    /// Whether `asset` may be picked when the tool's `libc` option made the libc strict.
+    fn fits_strict_libc(&self, asset: &str) -> bool {
+        !self.strict_libc || !self.has_libc_mismatch(asset)
     }
 
     fn score_libc_match(&self, asset: &str) -> i32 {
@@ -3575,6 +3587,56 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert_eq!(
             pick(Some("gnu"), &plain).unwrap(),
             "fnox-linux-x86_64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_tool_libc_option_reads_arm_eabi_suffixes() {
+        let strict = |libc: &str, asset: &str| {
+            AssetPicker::with_libc("linux".into(), "arm".into(), Some(libc.into()))
+                .with_strict_libc(true)
+                .pick_best_asset(&[asset.to_string()])
+        };
+        for gnu in [
+            "tool-armv7-unknown-linux-gnueabihf.tar.gz",
+            "tool-arm-unknown-linux-gnueabi.tar.gz",
+        ] {
+            assert_eq!(strict("musl", gnu), None, "{gnu}");
+            assert_eq!(strict("gnu", gnu).as_deref(), Some(gnu));
+        }
+        for musl in [
+            "tool-armv7-unknown-linux-musleabihf.tar.gz",
+            "tool-arm-unknown-linux-musleabi.tar.gz",
+        ] {
+            assert_eq!(strict("gnu", musl), None, "{musl}");
+            assert_eq!(strict("musl", musl).as_deref(), Some(musl));
+        }
+    }
+
+    #[test]
+    fn test_tool_libc_option_ranks_provenance_by_libc() {
+        let gnu = "tool-x86_64-unknown-linux-gnu.intoto.jsonl".to_string();
+        let musl = "tool-x86_64-unknown-linux-musl.intoto.jsonl".to_string();
+        let picker =
+            |libc: &str| AssetPicker::with_libc("linux".into(), "x86_64".into(), Some(libc.into()));
+        for assets in [
+            vec![gnu.clone(), musl.clone()],
+            vec![musl.clone(), gnu.clone()],
+        ] {
+            assert_eq!(
+                picker("musl").pick_best_provenance(&assets),
+                Some(musl.clone())
+            );
+            assert_eq!(
+                picker("gnu").pick_best_provenance(&assets),
+                Some(gnu.clone())
+            );
+        }
+        // A shared provenance file that names no libc is still picked.
+        let shared = vec!["multiple.intoto.jsonl".to_string()];
+        assert_eq!(
+            picker("musl").pick_best_provenance(&shared),
+            Some("multiple.intoto.jsonl".to_string())
         );
     }
 }

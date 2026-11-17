@@ -360,7 +360,7 @@ impl<'a> GitBackendOptions<'a> {
         if let Some(value) = self.matching_regex() {
             result.insert("matching_regex".to_string(), value.to_string());
         }
-        // An invalid value fails the asset lookup, so it never reaches a lock entry.
+        // `resolve_lockfile_options` rejects an invalid value before this runs.
         if let Ok(Some(libc)) = self.libc() {
             result.insert("libc".to_string(), libc.to_string());
         }
@@ -1107,6 +1107,8 @@ impl Backend for UnifiedGitBackend {
         {
             asset_matcher::validate_matching_regex(opts.matching_regex())?;
         }
+        // A locked URL below skips asset selection, where an invalid `libc` would fail.
+        opts.libc()?;
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
@@ -1237,7 +1239,11 @@ impl Backend for UnifiedGitBackend {
         target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        Ok(self.options(&raw_opts).lockfile_options(target))
+        let opts = self.options(&raw_opts);
+        // Fail here rather than drop the option: an entry locked without `libc` would
+        // otherwise still match, and the install would reuse its URL.
+        opts.libc()?;
+        Ok(opts.lockfile_options(target))
     }
 
     /// Resolve platform-specific lock information for cross-platform lockfile generation.
@@ -4962,6 +4968,22 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         let err = gitlab.options(&bad).libc().unwrap_err();
         assert!(
             err.to_string().contains("invalid gitlab `libc` option"),
+            "{err}"
+        );
+        // Locking fails rather than dropping the option, so an older entry without it
+        // cannot match and hand the install its URL.
+        let mut request = ToolRequest::new(
+            backend.ba().clone(),
+            "1.0.0",
+            crate::toolset::ToolSource::Unknown,
+        )
+        .unwrap();
+        request.set_options(bad.clone());
+        let err = backend
+            .resolve_lockfile_options(&request, &linux)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("invalid github `libc` option"),
             "{err}"
         );
         assert!(
