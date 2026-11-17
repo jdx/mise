@@ -110,6 +110,20 @@ pub fn file_hash_blake3(path: &Path, pr: Option<&dyn SingleReport>) -> Result<St
     Ok(format!("{}", hash.to_hex()))
 }
 
+/// The algorithms `ensure_checksum` verifies, as written before the `:` in
+/// a `<algorithm>:<digest>` checksum.
+pub const CHECKSUM_ALGORITHMS: &[&str] = &[
+    "blake3", "sha512", "sha256", "sha224", "sha384", "sha1", "md5",
+];
+
+/// Whether `checksum` is `<algorithm>:<digest>` with an algorithm
+/// `ensure_checksum` can verify.
+pub fn is_verifiable_checksum(checksum: &str) -> bool {
+    checksum
+        .split_once(':')
+        .is_some_and(|(algo, _)| CHECKSUM_ALGORITHMS.contains(&algo))
+}
+
 pub fn ensure_checksum(
     path: &Path,
     checksum: &str,
@@ -186,6 +200,21 @@ mod tests {
             parse_sum_output(&format!("\\{digest}  /tmp/my\\\\tool\n")),
             digest
         );
+    }
+
+    #[test]
+    fn checksum_algorithms_are_the_ones_ensure_checksum_computes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("artifact");
+        file::write(&path, b"artifact").unwrap();
+        for algo in CHECKSUM_ALGORITHMS {
+            let err = ensure_checksum(&path, "00", None, algo).unwrap_err();
+            assert!(err.is::<ChecksumMismatch>(), "{algo}: {err}");
+            assert!(is_verifiable_checksum(&format!("{algo}:00")));
+        }
+        assert!(ensure_checksum(&path, "00", None, "no-such-algorithm").is_err());
+        assert!(!is_verifiable_checksum("no-such-algorithm:00"));
+        assert!(!is_verifiable_checksum("00"));
     }
 
     #[test]

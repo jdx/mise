@@ -77,6 +77,9 @@ assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 t
 cp mise.lock good.lock
 sed -i.bak 's/^checksum = "[a-z0-9]*:/checksum = "/' mise.lock
 assert_fail_contains "mise lock --check" "Invalid lockfile checksum"
+# So does one whose algorithm mise cannot compute.
+sed 's/^checksum = "[a-z0-9]*:/checksum = "no-such-algorithm:/' good.lock >mise.lock
+assert_fail_contains "mise lock --check" "Invalid lockfile checksum"
 cp good.lock mise.lock
 
 # A remote task include is skipped rather than fetched.
@@ -114,6 +117,13 @@ jq = "system"
 TOML
 assert_contains "cd system-only && mise lock --check --platform linux-x64" "is up to date"
 assert "test ! -f system-only/mise.lock"
+# Nor an entry in an existing lockfile, even without the tool's plugin.
+cat <<'TOML' >system-only/mise.toml
+[tools]
+"asdf:mise-plugins/mise-tiny" = "system"
+TOML
+touch system-only/mise.lock
+assert_contains "cd system-only && mise lock --check --platform linux-x64" "is up to date"
 
 # A tool stub mise.lock lists is checked like a configured tool.
 mkdir -p stub/bin
