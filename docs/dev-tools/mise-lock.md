@@ -487,7 +487,7 @@ there are any.
 Remote [task includes](/tasks/task-discovery.html#remote-git-includes)
 (`git::`, `oci::` and `zip::`) are skipped with a warning, because fetching
 them is a network request, so the tools their tasks declare are not checked.
-A remote config [include](/configuration.html#includes) is read from its
+A remote config [include](/configuration.html#include) is read from its
 cached copy, and the check fails when it was never fetched. Naming a tool that
 is not configured fails, as it does for `mise lock`.
 
