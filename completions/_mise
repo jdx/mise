@@ -57,7 +57,7 @@ _mise() {
     local __usage_ret=1
     (( __usage_menu )) && compstate[insert]=menu
     if (( ${#inserts[@]} )); then
-        local -a display=()
+        local -a display=() display_done=() inserts_done=() display_open=() inserts_open=()
         local i max=0 value pad
         for value in "${values[@]}"; do
             (( ${#value} > max )) && max=${#value}
@@ -69,10 +69,22 @@ _mise() {
             else
                 display+=("${values[i]}")
             fi
+            # A candidate meant to be continued (`node@`, `build:`, `sub/`, `--shell=`) takes no
+            # space after it; a finished one does.
+            if [[ "${(Q)inserts[i]}" == *[@:/=] ]]; then
+                display_open+=("${display[i]}")
+                inserts_open+=("${inserts[i]}")
+            else
+                display_done+=("${display[i]}")
+                inserts_done+=("${inserts[i]}")
+            fi
         done
         # `-U` because the binary already filtered by the typed prefix, and `-Q` because the
         # inserts are quoted already.
-        compadd -l -d display -U -Q -S '' -a inserts && __usage_ret=0
+        (( ${#inserts_done[@]} )) &&
+            compadd -l -d display_done -U -Q -S ' ' -a inserts_done && __usage_ret=0
+        (( ${#inserts_open[@]} )) &&
+            compadd -l -d display_open -U -Q -S '' -a inserts_open && __usage_ret=0
     fi
 
     case "$__usage_files" in
