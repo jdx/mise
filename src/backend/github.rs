@@ -327,6 +327,23 @@ impl<'a> GitBackendOptions<'a> {
         }
     }
 
+    /// The libc a provenance picker matches for `target`. Like `matching`, the `libc`
+    /// option is ignored when `asset_pattern` (or an explicit URL) chose the binary, so
+    /// the provenance follows the archive that was actually picked.
+    fn libc_for_provenance(
+        &self,
+        target: &PlatformTarget,
+        explicit_pattern: bool,
+    ) -> Result<Option<String>> {
+        let tool_libc = self.libc()?;
+        let tool_libc = if explicit_pattern || self.asset_pattern_for_target(target).is_some() {
+            None
+        } else {
+            tool_libc
+        };
+        Ok(asset_matcher::tool_target_libc(target, tool_libc).0)
+    }
+
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
         if self.api_url() != self.default_api_url {
@@ -1656,7 +1673,7 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                asset_matcher::tool_target_libc(target, opts.libc()?).0,
+                opts.libc_for_provenance(target, explicit_pattern)?,
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
@@ -1790,7 +1807,7 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                asset_matcher::tool_target_libc(target, opts.libc()?).0,
+                opts.libc_for_provenance(target, verification.explicit_pattern)?,
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
@@ -3362,12 +3379,8 @@ impl UnifiedGitBackend {
         let picker = AssetPicker::with_libc(
             current_platform.os_name().to_string(),
             current_platform.arch_name().to_string(),
-            asset_matcher::tool_target_libc(
-                &current_platform,
-                opts.libc()
-                    .map_err(|e| VerificationStatus::Error(e.to_string()))?,
-            )
-            .0,
+            opts.libc_for_provenance(&current_platform, verification.explicit_pattern)
+                .map_err(|e| VerificationStatus::Error(e.to_string()))?,
         )
         .with_matching(matching.unwrap_or_default())
         .with_matching_regex(matching_regex.unwrap_or_default());
@@ -4996,6 +5009,35 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 .options(&bad)
                 .lockfile_options(&linux)
                 .contains_key("libc")
+        );
+
+        // Provenance follows the tool's libc, except when `asset_pattern` picked the binary.
+        assert_eq!(
+            backend
+                .options(&musl)
+                .libc_for_provenance(&linux, false)
+                .unwrap()
+                .as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            backend
+                .options(&musl)
+                .libc_for_provenance(&linux, true)
+                .unwrap(),
+            None
+        );
+        let mut patterned = libc_opts("musl");
+        patterned.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-linux-gnu.tar.gz".to_string()),
+        );
+        assert_eq!(
+            backend
+                .options(&patterned)
+                .libc_for_provenance(&linux, false)
+                .unwrap(),
+            None
         );
     }
 
