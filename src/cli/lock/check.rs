@@ -369,6 +369,15 @@ impl Lock {
             };
             let host = match resolved {
                 Ok(tv) if tv.resolved_from_lockfile() => Ok(tv),
+                // Linked, path and system versions are not locked.
+                Ok(tv)
+                    if matches!(
+                        tv.request,
+                        ToolRequest::System { .. } | ToolRequest::Path { .. }
+                    ) =>
+                {
+                    continue;
+                }
                 // Without its plugin a request resolves to itself, before
                 // the lockfile is read only when it has no entry there.
                 // Offline, `sub-N:latest` has no base to subtract from and
@@ -381,7 +390,6 @@ impl Lock {
                 {
                     Err(not_in_lockfile(&tv.request, &tv.version))
                 }
-                // Linked, path and system versions are not locked.
                 Ok(_) => continue,
                 Err(err) => Err(first_line(&err)),
             };

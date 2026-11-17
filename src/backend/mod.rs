@@ -3282,11 +3282,12 @@ pub trait Backend: Debug + Send + Sync {
         let settings = Settings::get();
         let p = locked_platform?;
         // Each download is verified against `<algorithm>:<digest>`, and a
-        // checksum without the separator fails only after downloading.
+        // checksum without the separator, or with an algorithm mise cannot
+        // compute, fails only after downloading.
         if let Some(checksum) = std::iter::once(p.checksum.as_deref())
             .chain(p.additional_artifacts.iter().map(|a| a.checksum.as_deref()))
             .flatten()
-            .find(|c| !c.contains(':'))
+            .find(|c| !crate::hash::is_verifiable_checksum(c))
         {
             return Some(eyre!(
                 "Invalid lockfile checksum {checksum:?} for {} on platform {} (--locked mode)\n\
