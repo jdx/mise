@@ -336,10 +336,11 @@ impl<'a> GitBackendOptions<'a> {
         target: &PlatformTarget,
         explicit_pattern: bool,
         asset_name: &str,
+        tool_name: &str,
     ) -> Result<Option<String>> {
         let tool_libc = self.libc()?;
         if target.os_name() == "linux"
-            && let Some(libc) = asset_matcher::linux_libc_named_by(asset_name)
+            && let Some(libc) = asset_matcher::linux_libc_named_by(asset_name, tool_name)
         {
             return Ok(Some(libc.to_string()));
         }
@@ -1683,7 +1684,12 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                opts.libc_for_provenance(target, explicit_pattern, &asset.name)?,
+                opts.libc_for_provenance(
+                    target,
+                    explicit_pattern,
+                    &asset.name,
+                    &self.preferred_asset_name(),
+                )?,
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
@@ -1817,7 +1823,12 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                opts.libc_for_provenance(target, verification.explicit_pattern, &asset.name)?,
+                opts.libc_for_provenance(
+                    target,
+                    verification.explicit_pattern,
+                    &asset.name,
+                    &self.preferred_asset_name(),
+                )?,
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
@@ -3389,8 +3400,13 @@ impl UnifiedGitBackend {
         let picker = AssetPicker::with_libc(
             current_platform.os_name().to_string(),
             current_platform.arch_name().to_string(),
-            opts.libc_for_provenance(&current_platform, verification.explicit_pattern, asset_name)
-                .map_err(|e| VerificationStatus::Error(e.to_string()))?,
+            opts.libc_for_provenance(
+                &current_platform,
+                verification.explicit_pattern,
+                asset_name,
+                &self.preferred_asset_name(),
+            )
+            .map_err(|e| VerificationStatus::Error(e.to_string()))?,
         )
         .with_matching(matching.unwrap_or_default())
         .with_matching_regex(matching_regex.unwrap_or_default());
@@ -5026,7 +5042,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         let provenance_libc = |opts: &ToolVersionOptions, explicit: bool, asset: &str| {
             backend
                 .options(opts)
-                .libc_for_provenance(&linux, explicit, asset)
+                .libc_for_provenance(&linux, explicit, asset, &backend.preferred_asset_name())
                 .unwrap()
         };
         assert_eq!(

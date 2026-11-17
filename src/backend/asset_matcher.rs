@@ -191,8 +191,35 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
     ]
 });
 
+/// `asset` with the tool's own name stripped from the front, when it starts with it as
+/// a whole token, so platform tokens inside the tool name are not read as the asset's.
+fn strip_tool_name<'a>(asset: &'a str, tool_name: Option<&str>) -> &'a str {
+    let Some(tool_name) = tool_name.filter(|name| !name.is_empty()) else {
+        return asset;
+    };
+    let Some(prefix) = asset.get(..tool_name.len()) else {
+        return asset;
+    };
+    if !prefix.eq_ignore_ascii_case(tool_name) {
+        return asset;
+    }
+    let rest = &asset[tool_name.len()..];
+    // Only strip when the tool name is a complete leading token, i.e. it ends
+    // at a separator or version boundary. Otherwise the prefix would cut
+    // through a longer first token (e.g. tool name "win" inside
+    // "windows-...") and corrupt detection. Mirrors the boundary handling in
+    // asset_matches_preferred_name.
+    match rest.chars().next() {
+        None => rest,
+        Some(c) if c == '-' || c == '_' || c == '.' || c.is_ascii_digit() => rest,
+        _ => asset,
+    }
+}
+
 /// The Linux libc an asset name declares, as `"gnu"` or `"musl"`, if it names one.
-pub(crate) fn linux_libc_named_by(asset: &str) -> Option<&'static str> {
+/// A libc token in the leading `tool_name` does not count.
+pub(crate) fn linux_libc_named_by(asset: &str, tool_name: &str) -> Option<&'static str> {
+    let asset = strip_tool_name(asset, Some(tool_name));
     LIBC_PATTERNS
         .iter()
         .find(|(_, pattern)| pattern.is_match(asset))
@@ -517,26 +544,7 @@ impl AssetPicker {
     /// as the asset's platform. Falls back to the full asset when no preferred
     /// name is set or the asset does not start with it.
     fn platform_part<'a>(&self, asset: &'a str) -> &'a str {
-        let Some(preferred_name) = self.preferred_name.as_deref() else {
-            return asset;
-        };
-        let Some(prefix) = asset.get(..preferred_name.len()) else {
-            return asset;
-        };
-        if !prefix.eq_ignore_ascii_case(preferred_name) {
-            return asset;
-        }
-        let rest = &asset[preferred_name.len()..];
-        // Only strip when the tool name is a complete leading token, i.e. it ends
-        // at a separator or version boundary. Otherwise the prefix would cut
-        // through a longer first token (e.g. preferred_name "win" inside
-        // "windows-...") and corrupt detection. Mirrors the boundary handling in
-        // asset_matches_preferred_name.
-        match rest.chars().next() {
-            None => rest,
-            Some(c) if c == '-' || c == '_' || c == '.' || c.is_ascii_digit() => rest,
-            _ => asset,
-        }
+        strip_tool_name(asset, self.preferred_name.as_deref())
     }
 
     fn score_os_match(&self, asset: &str) -> i32 {
@@ -3599,6 +3607,28 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert_eq!(
             pick(Some("gnu"), &plain).unwrap(),
             "fnox-linux-x86_64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_libc_named_by_skips_the_tool_name() {
+        assert_eq!(
+            linux_libc_named_by("gnu-tool-linux-x64-musl.tar.gz", "gnu-tool"),
+            Some("musl")
+        );
+        assert_eq!(
+            linux_libc_named_by("gnu-tool-linux-x64.tar.gz", "gnu-tool"),
+            None
+        );
+        assert_eq!(
+            linux_libc_named_by("musl-tool-linux-x64-gnu.tar.gz", "MUSL-tool"),
+            Some("gnu")
+        );
+        // A name that only starts with the tool name inside a longer token is not stripped.
+        assert_eq!(linux_libc_named_by("gnutls-linux-x64.tar.gz", "gnu"), None);
+        assert_eq!(
+            linux_libc_named_by("tool-linux-x64-musl.tar.gz", ""),
+            Some("musl")
         );
     }
 
