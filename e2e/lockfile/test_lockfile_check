@@ -52,6 +52,16 @@ cp mise.lock before.lock
 assert_fail_contains "mise lock --check" "jq@1.6 is not in the lockfile"
 assert "cmp before.lock mise.lock"
 
+# Like a locked install, the check enforces only the scopes locked_scopes names.
+assert_contains "MISE_LOCKED_SCOPES=global mise lock --check" "mise.lock is up to date"
+
+# Offline, sub-1:latest has nothing to subtract from, so it needs an entry.
+cat <<'TOML' >mise.toml
+[tools]
+jq = "sub-1:latest"
+TOML
+assert_fail_contains "mise lock --check" "jq@sub-1:latest is not in the lockfile"
+
 assert_fail_contains "mise lock --check --bump" "cannot be combined with --bump"
 assert_fail_contains "mise lock --check jq@1.6" "name the tool without a version"
 
@@ -62,6 +72,12 @@ jq = "1.7.1"
 yq = { version = "4.44.1", os = ["windows"] }
 TOML
 assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 tool version, 1 platform entry)"
+
+# A checksum the download could not be verified against fails.
+cp mise.lock good.lock
+sed -i.bak 's/^checksum = "[a-z0-9]*:/checksum = "/' mise.lock
+assert_fail_contains "mise lock --check" "Invalid lockfile checksum"
+cp good.lock mise.lock
 
 # A remote task include is skipped rather than fetched.
 cat <<'TOML' >mise.toml
@@ -89,3 +105,28 @@ backend = "npm:cowsay"
 specifiers = ["1.5.0"]
 TOML
 assert_fail_contains "cd missing-graph && mise lock --check --platform linux-x64" "has no embedded-aube dependency graph"
+
+# System versions need no lockfile.
+mkdir system-only
+cat <<'TOML' >system-only/mise.toml
+[tools]
+jq = "system"
+TOML
+assert_contains "cd system-only && mise lock --check --platform linux-x64" "is up to date"
+assert "test ! -f system-only/mise.lock"
+
+# A tool stub mise.lock lists is checked like a configured tool.
+mkdir -p stub/bin
+cd stub || exit 1
+echo '[tools]' >mise.toml
+cat >bin/jq <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+
+tool = "jq"
+version = "1.7.1"
+EOF
+mise generate tool-stub bin/jq --lock
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
+assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 tool version"
+sed -i.bak 's/^version = "1.7.1"/version = "1.6"/' bin/jq
+assert_fail_contains "mise lock --check" "jq@1.6 is not in the lockfile"

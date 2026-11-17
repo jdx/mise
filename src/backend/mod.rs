@@ -3281,6 +3281,16 @@ pub trait Backend: Debug + Send + Sync {
         // such entries, so the setting goes with it.
         let settings = Settings::get();
         let p = locked_platform?;
+        // The download is verified against `<algorithm>:<digest>`, and an
+        // entry without the separator fails only after downloading.
+        if let Some(checksum) = p.checksum.as_deref().filter(|c| !c.contains(':')) {
+            return Some(eyre!(
+                "Invalid lockfile checksum {checksum:?} for {} on platform {} (--locked mode)\n\
+                hint: Run `mise lock` to record checksums",
+                tv.style(),
+                platform_key,
+            ));
+        }
         if !settings
             .locked_require_checksum
             .unwrap_or(settings.generate_lockfiles())

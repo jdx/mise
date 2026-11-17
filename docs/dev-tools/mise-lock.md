@@ -441,14 +441,16 @@ workflows.
 
 `mise lock --check` fails when `mise.lock` is behind `mise.toml`, so a pull
 request that changes one without the other fails in CI instead of at install
-time. It reads only the lockfile: it resolves nothing remotely and writes
-nothing. For every configured tool, including the tools tasks declare, on each
-platform `mise lock` would lock, it reports what `mise install --locked` would
-reject:
+time. It reads only the lockfile: it runs in [offline](/configuration/settings.html#offline)
+mode and writes nothing. For every configured tool, including the tools tasks
+declare and the [tool stubs](/dev-tools/tool-stubs.html) the lockfile lists, on
+each platform `mise lock` would lock, it reports what `mise install --locked`
+would reject:
 
 - a request with no matching locked version, such as `node = "26"` while
   `mise.lock` still holds 24.11.0 (an update bot that bumps only `mise.toml`)
-- a platform entry without a download URL, or without a checksum when
+- a platform entry without a download URL, with a malformed checksum, or
+  without a checksum when
   [`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)
   applies
 - a [dependency graph](#dependency-graphs) that a locked install needs and
@@ -483,7 +485,10 @@ platforms already in the lockfile; pass `--platform` to choose others. A tool th
 the check unless its `os` option excludes that platform. Each platform is
 checked against the entry a locked install there would use, so a tool that
 locks one entry per Linux distro, such as `core:swift`, is checked per distro.
-The Python that a `pipx` tool selects is checked with it. `--json` prints one
+The Python that a `pipx` tool selects is checked with it. Like a locked install,
+the check enforces only the scopes in
+[`locked_scopes`](/configuration/settings.html#locked_scopes) and the tools under
+`tool_config.locked`, and never the global override config. `--json` prints one
 object per platform entry with its `provenance` and `problems`, and still exits
 non-zero when there are any problems.
 
