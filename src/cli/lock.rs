@@ -1374,7 +1374,9 @@ impl Lock {
             let lines = dry_run::entry_changes(
                 &lockfile,
                 &resolved,
-                &platform_tasks(&resolvable, target_platforms),
+                &resolvable,
+                target_platforms,
+                &stale_versions,
             );
             dry_run::show(&lines)?;
         }
