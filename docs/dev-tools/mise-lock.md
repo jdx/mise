@@ -451,7 +451,9 @@ reject:
 - a platform entry without a download URL, or without a checksum when
   [`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)
   applies
-- a [dependency graph](#dependency-graphs) sidecar that is missing or was edited
+- a [dependency graph](#dependency-graphs) that a locked install needs and
+  the lockfile does not record, or a sidecar that is missing, was edited, or
+  does not describe the locked package
 
 ```sh
 mise lock --check
@@ -467,9 +469,16 @@ hint: run `mise lock` to update the lockfile
 The platforms are the [`lockfile_platforms`](/configuration/settings.html#lockfile_platforms)
 setting plus the current platform when that setting is set, else the
 platforms already in the lockfile; pass `--platform` to choose others. A tool that does not support one of them fails
-the check unless its `os` option excludes that platform. `--json` prints one
+the check unless its `os` option excludes that platform. Each platform is
+checked against the entry a locked install there would use, so a tool that
+locks one entry per Linux distro, such as `core:swift`, is checked per distro.
+The Python that a `pipx` tool selects is checked with it. `--json` prints one
 object per platform entry with its `problems`, and still exits non-zero when
 there are any.
+
+Remote [task includes](/tasks/task-discovery.html#remote-git-includes)
+(`git::`, `oci::` and `zip::`) are skipped with a warning, because fetching
+them is a network request, so the tools their tasks declare are not checked.
 
 ## Backend support
 

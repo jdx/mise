@@ -100,10 +100,11 @@ also updates the request in mise.toml to match.
   Reads each lockfile in scope and fails, listing each problem, when a
   locked install (`mise install --locked`) would reject it: a configured
   tool whose request no longer matches a locked version, a platform entry
-  without the URL or checksum the install needs, or a dependency-graph
-  sidecar that is missing or was edited. It checks the platforms
-  `mise lock` would lock (see `--platform`). Nothing is resolved remotely
-  and nothing is written. Combine with `--json` for one object per
+  without the URL or checksum the install needs, or a dependency graph
+  that is missing, was edited, or does not describe the locked package.
+  It checks the platforms `mise lock` would lock (see `--platform`).
+  Nothing is resolved remotely and nothing is written; remote task
+  includes are skipped. Combine with `--json` for one object per
   platform entry.
 - **`-h --help`** — Print help
 

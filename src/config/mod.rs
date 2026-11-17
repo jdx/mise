@@ -7223,6 +7223,15 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
     })
 }
 
+static SKIP_REMOTE_TASK_INCLUDES: AtomicBool = AtomicBool::new(false);
+
+/// Makes task loading skip, from now on in this process, the includes it would fetch from a
+/// remote source. For a command that promises to read only local files, such as
+/// `mise lock --check`.
+pub fn skip_remote_task_includes() {
+    SKIP_REMOTE_TASK_INCLUDES.store(true, Ordering::Relaxed);
+}
+
 /// Includes that are fetched from a remote source instead of read from disk.
 fn is_remote_task_include(include: &str) -> bool {
     include.starts_with("git::")
@@ -8033,6 +8042,12 @@ async fn load_task_sources_from_configs(
         None
     };
     for include in &includes {
+        if is_remote_task_include(include) && SKIP_REMOTE_TASK_INCLUDES.load(Ordering::Relaxed) {
+            warn_once!(
+                "skipping remote task include `{include}`: this command reads only local files, so it does not see the tasks it defines"
+            );
+            continue;
+        }
         // A remote include is experimental. Without it, skip just that include so
         // the config's other tasks still list, complete and run.
         let remote_source = if include.starts_with("git::") {

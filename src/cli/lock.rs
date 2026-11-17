@@ -434,10 +434,11 @@ pub(crate) struct Lock {
     /// Reads each lockfile in scope and fails, listing each problem, when a
     /// locked install (`mise install --locked`) would reject it: a configured
     /// tool whose request no longer matches a locked version, a platform entry
-    /// without the URL or checksum the install needs, or a dependency-graph
-    /// sidecar that is missing or was edited. It checks the platforms
-    /// `mise lock` would lock (see `--platform`). Nothing is resolved remotely
-    /// and nothing is written. Combine with `--json` for one object per
+    /// without the URL or checksum the install needs, or a dependency graph
+    /// that is missing, was edited, or does not describe the locked package.
+    /// It checks the platforms `mise lock` would lock (see `--platform`).
+    /// Nothing is resolved remotely and nothing is written; remote task
+    /// includes are skipped. Combine with `--json` for one object per
     /// platform entry.
     #[usage(long, verbatim_doc_comment)]
     pub check: bool,
@@ -842,6 +843,10 @@ impl Lock {
             .as_ref()
             .map(|monorepo_union| &monorepo_union.config_files)
             .unwrap_or(&config.config_files);
+        if self.check {
+            // The check makes no network requests, and fetching a remote include is one.
+            crate::config::skip_remote_task_includes();
+        }
         let task_load_context = crate::task::TaskLoadContext::all();
         let tasks = match config.tasks_with_context(Some(&task_load_context)).await {
             Ok(tasks) => tasks,
