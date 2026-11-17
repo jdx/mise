@@ -2,19 +2,17 @@
 //! locked install needs, read from the lockfile alone. Nothing is resolved
 //! remotely and nothing is written.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use console::style;
 use eyre::{Result, bail};
 use mise_util::redactions::{redact_json, redact_output};
 
-use super::{Lock, LockInputs, LockSetup, platform_tasks};
-use crate::backend::Backend;
+use super::{Lock, LockInputs, LockSetup};
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::{Settings, SettingsExt};
 use crate::file::display_path;
-use crate::lockfile::{self, Lockfile, PlatformInfo};
+use crate::lockfile;
 use crate::platform::Platform;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 
@@ -55,6 +53,22 @@ impl LockfileCheck {
             problems,
         });
     }
+
+    /// A row for `request`, which did not resolve to a lockfile entry.
+    fn push_unresolved(
+        &mut self,
+        request: &ToolRequest,
+        platform: Option<String>,
+        problem: String,
+    ) {
+        self.entries.push(CheckEntry {
+            lockfile: display_path(&self.path),
+            tool: Some(request.ba().short.clone()),
+            version: Some(request.version()),
+            platform,
+            problems: vec![problem],
+        });
+    }
 }
 
 /// The first line of an error, without color: the hints that follow it are
@@ -68,28 +82,6 @@ fn count(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-/// The lockfile's entry for `tv` on `platform`. A locked install there picks
-/// the entry recorded with that platform's lock options (Swift's record the
-/// Linux distro, for one), which need not be the entry `tv` resolved to here.
-fn locked_platform_info<'a>(
-    backend: &dyn Backend,
-    lockfile: &'a Lockfile,
-    tv: &'a ToolVersion,
-    platform: &Platform,
-    current_options: Option<&BTreeMap<String, String>>,
-) -> Option<&'a PlatformInfo> {
-    let key = platform.to_key();
-    match backend.lockfile_options(&tv.request, &PlatformTarget::new(platform.clone())) {
-        Ok(options) if current_options != Some(&options) => lockfile
-            .tools_for(&tv.ba().short)?
-            .iter()
-            .find(|entry| entry.version == tv.version && entry.options == options)?
-            .platforms
-            .get(&key),
-        _ => tv.lock_platforms.get(&key),
-    }
-}
-
 impl Lock {
     /// Check every lockfile target, then report and fail if any problem was found.
     pub(super) async fn check_lockfiles(
@@ -98,12 +90,41 @@ impl Lock {
         inputs: &LockInputs,
     ) -> Result<()> {
         let mut checks = Vec::with_capacity(inputs.lockfile_targets.len());
+        let mut configured: Vec<crate::args::BackendArg> = Vec::new();
+        let mut targets = Vec::with_capacity(inputs.lockfile_targets.len());
         for (lockfile_path, config_paths) in &inputs.lockfile_targets {
-            let requests = self.check_requests(setup, lockfile_path, config_paths)?;
+            let platforms = self.determine_target_platforms(lockfile_path)?;
+            let requests = self.check_requests(
+                setup,
+                lockfile_path,
+                config_paths,
+                &platforms,
+                &mut configured,
+            )?;
+            targets.push((lockfile_path, platforms, requests));
+        }
+        // As `mise lock` does, refuse a tool argument that names nothing
+        // configured: a typo would otherwise pass as a clean check.
+        let missing: Vec<String> = self
+            .tool
+            .iter()
+            .filter(|arg| !configured.iter().any(|ba| tool_arg_names(&arg.ba, ba)))
+            .map(|arg| arg.ba.to_string())
+            .collect();
+        if !missing.is_empty() {
+            bail!(
+                "cannot check {}: not configured in this project. Add it with `mise use`, or remove it from the arguments",
+                redact_output(&missing.join(", "))
+            );
+        }
+        for (lockfile_path, platforms, requests) in targets {
             if requests.is_empty() {
                 continue;
             }
-            checks.push(self.check_lockfile(setup, lockfile_path, requests).await?);
+            checks.push(
+                self.check_lockfile(setup, lockfile_path, &platforms, requests)
+                    .await?,
+            );
         }
 
         let problem_count: usize = checks.iter().map(|check| check.problems().count()).sum();
@@ -161,18 +182,30 @@ impl Lock {
         setup: &LockSetup<'_>,
         lockfile_path: &Path,
         config_paths: &[PathBuf],
+        platforms: &[Platform],
+        configured: &mut Vec<crate::args::BackendArg>,
     ) -> Result<Vec<ToolRequest>> {
         let config = setup.config;
         let named = |ba: &crate::args::BackendArg| {
-            self.tool.is_empty() || self.tool.iter().any(|tool| tool.ba.as_ref() == ba)
+            self.tool.is_empty() || self.tool.iter().any(|tool| tool_arg_names(&tool.ba, ba))
         };
         // `mise lock` also locks the Python a pipx tool selects, for the
-        // tools it locks or, with `mise lock python`, for every tool.
+        // tools it locks or, with `mise lock python`, for every tool. It
+        // resolves only a tool whose `os` option allows a locked platform,
+        // and only such a tool's Python comes with it.
         let python_named = self.tool.iter().any(|tool| tool.ba.short == "python");
         let mut pythons: Vec<ToolRequest> = Vec::new();
         let mut select_python = |ba: &crate::args::BackendArg, request: &ToolRequest| {
-            if named(ba) || python_named {
-                pythons.extend(crate::backend::pipx::selected_python_dependency(request)?);
+            configured.push(ba.clone());
+            let locked_somewhere = platforms
+                .iter()
+                .any(|platform| request.is_os_supported_on(platform));
+            if (named(ba) || python_named)
+                && locked_somewhere
+                && let Some(python) = crate::backend::pipx::selected_python_dependency(request)?
+            {
+                configured.push(python.ba().as_ref().clone());
+                pythons.push(python);
             }
             eyre::Ok(())
         };
@@ -281,11 +314,12 @@ impl Lock {
     }
 
     /// Resolve each request from the lockfile as `--locked` does, and check
-    /// each platform's entry the way a locked install would.
+    /// each platform's entry the way a locked install there would.
     async fn check_lockfile(
         &self,
         setup: &LockSetup<'_>,
         lockfile_path: &Path,
+        platforms: &[Platform],
         requests: Vec<ToolRequest>,
     ) -> Result<LockfileCheck> {
         let mut check = LockfileCheck {
@@ -293,7 +327,6 @@ impl Lock {
             tools: 0,
             entries: Vec::new(),
         };
-        let platforms = self.determine_target_platforms(lockfile_path)?;
         let config = setup.config;
         let requests: Vec<ToolRequest> = requests
             .into_iter()
@@ -321,7 +354,6 @@ impl Lock {
             }
             return Ok(check);
         }
-        let lockfile = Lockfile::read(lockfile_path)?;
         let locked = ResolveOptions {
             use_locked_version: true,
             locked: true,
@@ -329,13 +361,14 @@ impl Lock {
             warn_not_in_lockfile: false,
             ..Default::default()
         };
+        let host_target = PlatformTarget::from_current();
         for request in requests {
             let resolved = match request.resolve_options(&locked) {
                 Ok(opts) => ToolVersion::resolve(config, request.clone(), &opts).await,
                 Err(err) => Err(err),
             };
-            let tv = match resolved {
-                Ok(tv) if tv.resolved_from_lockfile() => tv,
+            let host = match resolved {
+                Ok(tv) if tv.resolved_from_lockfile() => Ok(tv),
                 // Without its plugin a request resolves to itself, before
                 // the lockfile is read only when it has no entry there.
                 // Offline, `sub-N:latest` has no base to subtract from and
@@ -346,57 +379,110 @@ impl Lock {
                             backend.plugin().is_some_and(|p| !p.is_installed())
                         }) =>
                 {
-                    check.push(
-                        Some(&tv),
-                        None,
-                        vec![format!(
-                            "{}@{} is not in the lockfile",
-                            tv.ba().short,
-                            tv.version
-                        )],
-                    );
-                    continue;
+                    Err(not_in_lockfile(&tv.request, &tv.version))
                 }
                 // Linked, path and system versions are not locked.
                 Ok(_) => continue,
-                Err(err) => {
-                    check.entries.push(CheckEntry {
-                        lockfile: display_path(lockfile_path),
-                        tool: Some(request.ba().short.clone()),
-                        version: Some(request.version()),
-                        platform: None,
-                        problems: vec![first_line(&err)],
-                    });
-                    continue;
+                Err(err) => Err(first_line(&err)),
+            };
+            // A platform whose lock options differ from this host's (Swift's
+            // record the Linux distro, a GitHub tool's can hold a
+            // per-platform `asset_pattern`) reads the entry recorded with
+            // its own options, as a locked install there would. The others
+            // read the entry resolved here.
+            let basis = host.as_ref().map_or(&request, |tv| &tv.request);
+            let backend = basis.backend().ok();
+            let lock_options = |target: &PlatformTarget| {
+                backend
+                    .as_ref()
+                    .and_then(|backend| backend.lockfile_options(basis, target).ok())
+            };
+            let host_options = lock_options(&host_target);
+            let variants: Vec<Platform> = platforms
+                .iter()
+                .filter(|platform| request.is_os_supported_on(platform))
+                .flat_map(|platform| match (&host, &backend) {
+                    (Ok(tv), Some(backend)) => backend.platform_variants_for(tv, platform),
+                    _ => vec![platform.clone()],
+                })
+                .collect();
+            let mut rows = Vec::with_capacity(variants.len());
+            let mut own_entries = false;
+            for platform in variants {
+                let target = PlatformTarget::new(platform.clone());
+                let options = lock_options(&target);
+                let entry = if options.is_none() || options == host_options {
+                    host.clone()
+                } else {
+                    own_entries = true;
+                    match ToolVersion::resolve_locked_for_target(config, &request, &target).await {
+                        Ok(Some(tv)) => Ok(tv),
+                        Ok(None) => Err(not_in_lockfile(&request, &request.version())),
+                        Err(err) => Err(first_line(&err)),
+                    }
+                };
+                rows.push((platform, entry));
+            }
+            // A tool no platform reads its own entry for fails as a whole.
+            if let (Err(problem), false) = (&host, own_entries) {
+                check.push_unresolved(&request, None, problem.clone());
+                continue;
+            }
+            let Some(first) = host
+                .as_ref()
+                .ok()
+                .or_else(|| rows.iter().find_map(|(_, entry)| entry.as_ref().ok()))
+            else {
+                for (platform, entry) in rows {
+                    if let Err(problem) = entry {
+                        let key = platform.to_key();
+                        check.push_unresolved(
+                            &request,
+                            Some(key.clone()),
+                            format!("{problem} on platform {key}"),
+                        );
+                    }
                 }
+                continue;
             };
             check.tools += 1;
-            let backend = tv.backend().ok();
-            if let Some(err) = backend
-                .as_ref()
-                .and_then(|backend| backend.validate_locked_graph(setup.config, &tv).err())
+            if let Some(err) = first
+                .backend()
+                .ok()
+                .and_then(|backend| backend.validate_locked_graph(config, first).err())
             {
-                let problem = format!("{}@{}: {}", tv.ba().short, tv.version, first_line(&err));
-                check.push(Some(&tv), None, vec![problem]);
+                let problem = format!(
+                    "{}@{}: {}",
+                    first.ba().short,
+                    first.version,
+                    first_line(&err)
+                );
+                check.push(Some(first), None, vec![problem]);
             }
-            let current_options = backend.as_ref().and_then(|backend| {
-                backend
-                    .lockfile_options(&tv.request, &PlatformTarget::from_current())
-                    .ok()
-            });
-            for (_, tv, platform) in platform_tasks(&[(tv.ba().clone(), tv.clone())], &platforms) {
+            for (platform, entry) in rows {
                 let key = platform.to_key();
-                let problem = backend
-                    .as_ref()
-                    .and_then(|backend| {
-                        let locked_platform = locked_platform_info(
-                            backend.as_ref(),
-                            &lockfile,
-                            &tv,
-                            &platform,
-                            current_options.as_ref(),
+                let tv = match entry {
+                    Ok(tv) => tv,
+                    Err(problem) => {
+                        check.push_unresolved(
+                            &request,
+                            Some(key.clone()),
+                            format!("{problem} on platform {key}"),
                         );
-                        backend.locked_entry_error(&tv, &key, locked_platform)
+                        continue;
+                    }
+                };
+                let locked_platform = tv.lock_platforms.get(&key);
+                let target = PlatformTarget::new(platform);
+                let problem = tv
+                    .backend()
+                    .ok()
+                    .and_then(|backend| {
+                        backend
+                            .locked_entry_error(&tv, &key, locked_platform)
+                            .or_else(|| {
+                                backend.locked_artifacts_error(&tv, &target, locked_platform)
+                            })
                     })
                     .map(|err| first_line(&err));
                 check.push(Some(&tv), Some(key), problem.into_iter().collect());
@@ -404,4 +490,15 @@ impl Lock {
         }
         Ok(check)
     }
+}
+
+/// Whether the tool argument `arg` names the configured backend `ba`, as
+/// `mise lock` matches them: a bare name by its short name, any argument by
+/// its full backend.
+fn tool_arg_names(arg: &crate::args::BackendArg, ba: &crate::args::BackendArg) -> bool {
+    (!arg.short.contains(':') && arg.short == ba.short) || arg.full() == ba.full()
+}
+
+fn not_in_lockfile(request: &ToolRequest, version: &str) -> String {
+    format!("{}@{version} is not in the lockfile", request.ba().short)
 }

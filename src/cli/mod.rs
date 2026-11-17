@@ -20,6 +20,10 @@ static CLI_SETTING_PROPS: &[PropMeta] = &[
         cli: &["--no-cache"],
         ..PropMeta::new("task.remote_no_cache", Ty::Bool)
     },
+    PropMeta {
+        cli: &["--check"],
+        ..PropMeta::new("offline", Ty::Bool)
+    },
 ];
 const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
 
@@ -34,6 +38,7 @@ fn command_local_settings(layer: &usage_rs::config::CliLayer) -> Result<Settings
     let mut s = SettingsPartial::empty();
     s.truncate = get_bool("truncate");
     s.task.remote_no_cache = get_bool("task.remote_no_cache");
+    s.offline = get_bool("offline");
     Ok(s)
 }
 
@@ -2069,6 +2074,15 @@ mod tests {
             parse_task_remote_no_cache(&["mise", "oci", "build", "--no-cache"]),
             None
         );
+    }
+
+    #[test]
+    fn lock_check_flag_sets_offline_before_config_loads() {
+        let offline = |args: &[&str]| parse_command_local_settings(args).offline;
+        assert_eq!(offline(&["mise", "lock"]), None);
+        assert_eq!(offline(&["mise", "lock", "--check"]), Some(true));
+        // Another command's `--check` is its own.
+        assert_eq!(offline(&["mise", "fmt", "--check"]), None);
     }
 
     #[test]

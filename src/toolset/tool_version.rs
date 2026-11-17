@@ -6,6 +6,7 @@ use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::args::BackendArg;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{self, ABackend, VersionInfo};
 use crate::config::env_directive::EnvValue;
 use crate::config::{Config, Settings, SettingsExt};
@@ -235,6 +236,24 @@ impl ToolVersion {
         if let Some(plugin) = backend.plugin()
             && !plugin.is_installed()
         {
+            // Without the plugin only the config's aliases expand. The
+            // lockfile may still pin what one of them means, as it would be
+            // found once the plugin is installed.
+            if opts.use_locked_version
+                && matches!(request, ToolRequest::Version { .. })
+                && linked_query != request.version()
+                && !has_linked_version(request.ba(), &linked_query)
+                && let Some(lt) = request.lockfile_resolve_with_prefix(
+                    config,
+                    &linked_query,
+                    false,
+                    opts.keep_moved_alias_pins || Self::resolution_locked(config, &request, &opts),
+                )?
+            {
+                return Ok(
+                    Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date)
+                );
+            }
             let tv = Self::new(request.clone(), request.version());
             return Ok(tv.with_before_date(opts.before_date));
         }
@@ -326,6 +345,36 @@ impl ToolVersion {
     pub(crate) fn with_locked(mut self) -> Self {
         self.locked = true;
         self
+    }
+
+    /// The version a locked install on `target` would take for `request`
+    /// from the lockfile, selected by that platform's lock options. `None`
+    /// when no entry matches.
+    pub async fn resolve_locked_for_target(
+        config: &Arc<Config>,
+        request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<Option<Self>> {
+        let (query, boundary) = match request {
+            ToolRequest::Prefix { prefix, .. } => (prefix.clone(), true),
+            _ => {
+                let version = request.version();
+                match request.backend() {
+                    Ok(backend) => (
+                        config
+                            .resolve_alias(&backend, &version)
+                            .await
+                            .unwrap_or(version),
+                        false,
+                    ),
+                    Err(_) => (version, false),
+                }
+            }
+        };
+        let alias_resolved = !boundary && query != request.version();
+        Ok(request
+            .lockfile_resolve_for_target(config, &query, boundary, alias_resolved, target)?
+            .map(|lt| Self::from_lockfile(request.clone(), lt)))
     }
 
     fn from_lockfile(mut request: ToolRequest, lt: LockfileTool) -> Self {

@@ -438,9 +438,10 @@ pub(crate) struct Lock {
     /// dependency graph that is missing, was edited, or does not describe the
     /// locked package. It checks the platforms `mise lock` would lock (see
     /// `--platform`) and the scopes `locked_scopes` enforces. It runs offline
-    /// and writes nothing; remote task includes are skipped. Combine with `--json` for one object per
-    /// platform entry.
-    #[usage(long, verbatim_doc_comment)]
+    /// and writes nothing: remote task includes are skipped, and a remote
+    /// config include is read from its cache, failing when it was never
+    /// fetched. Combine with `--json` for one object per platform entry.
+    #[usage(long, setting = "offline", verbatim_doc_comment)]
     pub check: bool,
 
     /// Restrict the run to these lockfiles, for callers that relock the
@@ -844,10 +845,11 @@ impl Lock {
             .map(|monorepo_union| &monorepo_union.config_files)
             .unwrap_or(&config.config_files);
         if self.check {
-            // The check makes no network requests. Offline mode keeps every
-            // lookup to the cache, such as a dotnet `lts` alias or the Python
-            // a pipx tool selects; fetching a remote include is skipped.
-            Settings::override_with(|s| s.offline = Some(true))?;
+            // The check makes no network requests. `--check` turns on offline
+            // mode before the config loads (its `setting`), which keeps every
+            // lookup to the cache, such as a dotnet `lts` alias, the Python a
+            // pipx tool selects or a remote config include; a remote task
+            // include is skipped.
             crate::config::skip_remote_task_includes();
         }
         let task_load_context = crate::task::TaskLoadContext::all();
