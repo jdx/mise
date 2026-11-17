@@ -479,7 +479,8 @@ impl Commands {
     /// an all-project tracked-config scan or mutate installed tools. Deferred
     /// cleanup will run on the next ordinary command instead. The cleanup also
     /// loads the current directory's config, which `trust` and `untrust` are
-    /// deciding about and so must not load.
+    /// deciding about and so must not load. `lock --check` only reads the
+    /// lockfile, so it must not uninstall tools either.
     fn allows_tool_purgatory_auto_prune(&self) -> bool {
         !matches!(
             self,
@@ -493,7 +494,7 @@ impl Commands {
                 | Self::ToolUpdate(_)
                 | Self::Trust(_)
                 | Self::Untrust(_)
-        )
+        ) && !matches!(self, Self::Lock(cmd) if cmd.check)
     }
 
     /// Whether running this command is the user's decision to run the project's code. Asking a
@@ -2162,6 +2163,19 @@ mod tests {
                 .as_ref()
                 .is_some_and(Commands::allows_tool_purgatory_auto_prune)
         );
+    }
+
+    #[test]
+    fn lock_check_does_not_allow_tool_purgatory_auto_prune() {
+        let allows = |args: &[&str]| {
+            parse_cli(args)
+                .unwrap()
+                .command
+                .as_ref()
+                .is_some_and(Commands::allows_tool_purgatory_auto_prune)
+        };
+        assert!(!allows(&["mise", "lock", "--check"]));
+        assert!(allows(&["mise", "lock"]));
     }
 
     #[test]
