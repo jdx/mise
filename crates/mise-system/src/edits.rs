@@ -635,10 +635,12 @@ fn merge_op(
     }
     // the key is split at its last `/`, so a key written without an id reads
     // as `<parent dir>/<file name>`; name the missing id instead of blaming
-    // the format or failing later on a directory
+    // the format. Only the key is checked: whether the target is a directory
+    // depends on the filesystem, and a whole-file entry may replace it before
+    // this edit runs
     let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
     let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
-    if id_looks_like_file && (target_is_unformatted || path.is_dir()) {
+    if id_looks_like_file && target_is_unformatted {
         bail!(
             "\"{path_raw}\".{id}: the key is missing its /<id> segment, so \"{id}\" was read as the id and \"{path_raw}\" as the target; did you mean \"{path_raw}/{id}/<id>\" (for example \"{path_raw}/{id}/shared\"), ignoring entry"
         );
@@ -2435,31 +2437,41 @@ mod tests {
 
     #[test]
     fn a_merge_key_without_an_id_names_the_missing_id() {
+        let key = "~/.config/app/settings.toml";
+        // the key is split at its last `/`, as the parser does
+        let (path, id) = split_edit_key(key).unwrap();
+        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
+        let err = resolve_entry(
+            &path,
+            id,
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        );
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("missing its /<id>"), "{err}");
+        assert!(err.contains(&format!("{key}/shared")), "{err}");
+    }
+
+    #[test]
+    fn a_merge_key_with_an_id_that_looks_like_a_file_is_not_refused() {
+        // `~/settings.toml/defaults.toml` is a valid key even while
+        // `~/settings.toml` is a directory that a whole-file entry replaces
         let dir = tempfile::tempdir().unwrap();
-        let existing = format!("{}/settings.toml", dir.path().display());
-        for (key, entry) in [
-            // no format: the target has no extension
-            (
-                "~/.config/app/settings.toml".to_string(),
-                "source = \"s\"\nmerge = true",
-            ),
-            // a format hides that, but the target is a directory
-            (existing, "source = \"s\"\nmerge = true\nformat = \"toml\""),
-        ] {
-            // the key is split at its last `/`, as the parser does
-            let (path, id) = split_edit_key(&key).unwrap();
-            let entry: EditTomlEntry = toml::from_str(entry).unwrap();
-            let err = resolve_entry(
+        let target = format!("{}/settings.toml", dir.path().display());
+        file::create_dir_all(&target).unwrap();
+        let (path, id) = split_edit_key(&format!("{target}/defaults.toml")).unwrap();
+        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
+        assert!(
+            resolve_entry(
                 &path,
                 id,
                 entry,
                 Path::new("/cfg"),
-                Path::new("/cfg/mise.toml"),
-            );
-            let err = err.unwrap_err().to_string();
-            assert!(err.contains("missing its /<id>"), "{err}");
-            assert!(err.contains(&format!("{key}/shared")), "{err}");
-        }
+                Path::new("/cfg/mise.toml")
+            )
+            .is_ok()
+        );
     }
 
     #[test]
