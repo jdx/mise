@@ -819,7 +819,7 @@ end
     }
 
     /// `bin.install` makes the installed file executable, as Homebrew does,
-    /// even when the source was a plain download with mode 0644. Other
+    /// but keeps it writable so a later `inreplace` works, even when the source was a plain download with mode 0644. Other
     /// directories keep the source's mode.
     #[tokio::test]
     #[cfg(unix)]
@@ -841,7 +841,7 @@ end
         let formula_rb = tmp.path().join("example.rb");
         mise_util::file::write(
             &formula_rb,
-            "class Example < Formula\n  def install\n    bin.install \"tool\"\n    sbin.install \"admin\"\n    pkgshare.install \"data\"\n  end\nend\n",
+            "class Example < Formula\n  def install\n    bin.install \"tool\"\n    inreplace bin/\"tool\", \"sh\", \"bash\"\n    sbin.install \"admin\"\n    pkgshare.install \"data\"\n  end\nend\n",
         )?;
         let output = std::process::Command::new(&ruby)
             .arg(&shim)
@@ -864,8 +864,8 @@ end
         let mode = |p: &str| -> Result<u32> {
             Ok(std::fs::metadata(keg.join(p))?.permissions().mode() & 0o777)
         };
-        assert_eq!(mode("bin/tool")?, 0o555);
-        assert_eq!(mode("sbin/admin")?, 0o555);
+        assert_eq!(mode("bin/tool")?, 0o755);
+        assert_eq!(mode("sbin/admin")?, 0o755);
         assert_eq!(mode("share/example/data")?, 0o644);
         Ok(())
     }
