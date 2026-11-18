@@ -512,7 +512,7 @@ impl ToolRequest {
         }
     }
 
-    pub(super) fn to_path(&self, path: PathBuf) -> Self {
+    pub(crate) fn to_path(&self, path: PathBuf) -> Self {
         Self::Path {
             backend: self.ba().clone(),
             path,

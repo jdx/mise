@@ -1274,14 +1274,19 @@ impl Config {
         Ok(map)
     }
 
-    pub async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
+    /// An alias that needs no network: a configured or backend-provided one.
+    pub fn resolve_static_alias(&self, backend: &ABackend, v: &str) -> Result<Option<String>> {
         if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short)
             && let Some(alias) = plugin_aliases.versions.get(v)
         {
-            return Ok(alias.clone());
+            return Ok(Some(alias.clone()));
         }
-        if let Some(alias) = backend.get_aliases()?.get(v) {
-            return Ok(alias.clone());
+        Ok(backend.get_aliases()?.get(v).cloned())
+    }
+
+    pub async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
+        if let Some(alias) = self.resolve_static_alias(backend, v)? {
+            return Ok(alias);
         }
         if let Some(alias) = backend.resolve_dynamic_alias(v).await? {
             return Ok(alias);

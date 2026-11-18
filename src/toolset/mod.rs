@@ -953,7 +953,7 @@ impl Toolset {
         }
     }
 
-    fn is_disabled(&self, ba: &BackendArg) -> bool {
+    pub(crate) fn is_disabled(&self, ba: &BackendArg) -> bool {
         let settings = Settings::get();
         let enable_tools = settings.enable_tools();
         let disable_tools = settings.disable_tools();

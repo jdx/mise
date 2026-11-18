@@ -1963,9 +1963,31 @@ async fn get_desired_shims(
                 continue;
             }
         };
+        let file_aliases = cf.aliases().ok();
         for request in set.tools.values().flatten() {
-            if matches!(request, crate::toolset::ToolRequest::Path { .. })
-                && request.is_os_supported()
+            // An alias such as `node = "local"` can stand for a `path:` version.
+            let request = match request {
+                crate::toolset::ToolRequest::Version { version, .. } => request
+                    .backend()
+                    .ok()
+                    .and_then(|b| {
+                        // The project's own aliases first: they are not in the current config.
+                        let own = file_aliases
+                            .as_ref()
+                            .and_then(|a| a.get(&b.ba().short))
+                            .and_then(|a| a.versions.get(version))
+                            .cloned();
+                        own.or_else(|| config.resolve_static_alias(&b, version).ok().flatten())
+                    })
+                    .and_then(|v| v.strip_prefix("path:").map(PathBuf::from))
+                    .and_then(|p| std::fs::canonicalize(p).ok())
+                    .map(|p| request.to_path(p)),
+                crate::toolset::ToolRequest::Path { .. } => Some(request.clone()),
+                _ => None,
+            };
+            let Some(request) = request else { continue };
+            if request.is_os_supported()
+                && !toolset.is_disabled(request.ba())
                 && let Ok(backend) = request.backend()
             {
                 let tv = ToolVersion::new(request.clone(), request.version());
