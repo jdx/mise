@@ -339,11 +339,13 @@ impl TasksLs {
             // of every alias crowds the candidates. `mise tasks ls` shows them.
             let shorthand = shorthand_names(current_root.as_deref(), &task);
             let bare = bare_names(current_root.as_deref(), &task);
-            let spellings: Vec<String> = own_aliases
+            // The task's own names come first and its aliases last, so the primary name of a
+            // command is never an alias that another task owns as its name.
+            let spellings: Vec<String> = bare
                 .iter()
-                .chain(&prefixed_aliases)
                 .chain(&shorthand)
-                .chain(&bare)
+                .chain(&own_aliases)
+                .chain(&prefixed_aliases)
                 .cloned()
                 .collect();
             match self.complete_word.as_deref() {

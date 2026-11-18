@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# A task named like another task's alias keeps its own spec: `test` wins over `tests`' alias.
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'TOML' >mise.toml
+[tasks.test]
+usage = 'flag "--real-flag"'
+run = 'echo real'
+
+[tasks.tests]
+alias = "test"
+usage = 'flag "--other-flag"'
+run = 'echo other'
+TOML
+
+assert "mise -q test" "real"
+flags="$(mise __complete_word__ --shell fish --line 'mise run test --')"
+assert_contains_text "$flags" '--real-flag'
+assert_not_contains_text "$flags" '--other-flag'
