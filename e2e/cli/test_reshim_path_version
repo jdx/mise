@@ -140,3 +140,19 @@ gl = "1.2.3"
 EOF2
 (cd "$other" && MISE_SAFE=1 mise reshim --force)
 assert "readlink $shimdir/galiasbin" "$(which mise)"
+
+# A disabled backend's path: tools get no shims.
+mkdir -p "$PWD/nobackend/bin" "$PWD/proj6"
+cat >"$PWD/nobackend/bin/nobackendbin" <<'SH'
+#!/usr/bin/env bash
+echo "nobackend"
+SH
+chmod +x "$PWD/nobackend/bin/nobackendbin"
+cat >"$PWD/proj6/mise.toml" <<EOF2
+[tools]
+"github:jdx/nobackend" = "path:$PWD/nobackend/bin"
+EOF2
+(cd "$PWD/proj6" && mise reshim)
+assert "readlink $shimdir/nobackendbin" "$(which mise)"
+(cd "$other" && MISE_DISABLE_BACKENDS=github mise reshim --force)
+assert_fail "test -e $shimdir/nobackendbin"

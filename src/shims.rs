@@ -2027,6 +2027,7 @@ async fn get_desired_shims(
             if request.is_os_supported()
                 && (global_alias || !request.ignored_in_safe_mode())
                 && !toolset.is_disabled(request.ba())
+                && !crate::backend::is_disabled_backend_type(&request.ba().backend_type())
                 && let Ok(backend) = request.backend()
             {
                 let tv = ToolVersion::new(request.clone(), request.version());
