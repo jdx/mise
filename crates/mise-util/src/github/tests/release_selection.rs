@@ -193,3 +193,49 @@ fn test_build_revision_ignores_non_numeric_suffix() {
     let best = pick_best_build_revision(releases, "3.3.11").unwrap();
     assert_eq!(best.tag_name, "3.3.11-1");
 }
+
+// jdx/ruby publishes Ruby previews as GitHub pre-releases. Selection must
+// pick the highest build revision of one without a tag lookup.
+#[tokio::test]
+async fn test_build_revision_selection_accepts_prerelease_flagged_releases() {
+    let releases = vec![
+        make_prerelease("4.1.0-preview1"),
+        make_prerelease("4.1.0-preview1-1"),
+    ];
+    let (release, found_build_revision) = pick_release_with_build_revision_status(
+        releases,
+        "owner/never-fetched",
+        "4.1.0-preview1",
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(release.tag_name, "4.1.0-preview1-1");
+    assert!(found_build_revision);
+}
+
+// The two listings differ only in whether `prerelease: true` releases survive:
+// the Ruby precompiled paths need the one that keeps them.
+#[tokio::test]
+async fn test_prerelease_listing_variants_differ_only_in_prereleases() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/prerelease-variants";
+    let body = vec![make_prerelease("4.1.0-preview1-1"), make_release("3.4.0-1")];
+    let _mock = server
+        .mock("GET", format!("/repos/{repo}/releases").as_str())
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&body).unwrap())
+        .create_async()
+        .await;
+
+    let all = list_releases_including_prereleases_from_url(&base, repo, false)
+        .await
+        .unwrap();
+    assert!(all.iter().any(|r| r.tag_name == "4.1.0-preview1-1"));
+    let stable = list_releases_from_url(&base, repo).await.unwrap();
+    assert!(!stable.iter().any(|r| r.tag_name == "4.1.0-preview1-1"));
+    assert!(stable.iter().any(|r| r.tag_name == "3.4.0-1"));
+}

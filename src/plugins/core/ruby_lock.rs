@@ -234,7 +234,7 @@ impl RubyPlugin {
                 Ok(r) => r,
                 Err(err) => {
                     debug!("locked build revision {tag} not found, finding latest: {err}");
-                    match github::get_release_with_build_revision_status(
+                    match github::get_release_including_prereleases_with_build_revision_status(
                         repo,
                         version,
                         use_versions_host,
@@ -256,8 +256,12 @@ impl RubyPlugin {
                 }
             }
         } else {
-            match github::get_release_with_build_revision_status(repo, version, use_versions_host)
-                .await
+            match github::get_release_including_prereleases_with_build_revision_status(
+                repo,
+                version,
+                use_versions_host,
+            )
+            .await
             {
                 Ok((r, found_build_revision)) => {
                     if requires_build_revision && !found_build_revision {

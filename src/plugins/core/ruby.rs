@@ -537,10 +537,10 @@ impl RubyPlugin {
                  To compile ruby from source, run: mise settings ruby.compile=true"
             );
         };
-        // Only the releases `list_releases` returns are considered. Without
-        // MISE_LIST_ALL_VERSIONS that is the most recent page, which is where the
-        // precompiled builds live.
-        let releases = github::list_releases(source).await?;
+        // Only the releases listed are considered. Without MISE_LIST_ALL_VERSIONS
+        // that is the most recent page, which is where the precompiled builds live.
+        // Pre-releases are included because jdx/ruby publishes Ruby previews that way.
+        let releases = github::list_releases_including_prereleases(source).await?;
         let available = Self::precompiled_versions_from_releases(
             &releases,
             Self::source_requires_build_revision(source),
