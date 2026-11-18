@@ -1,5 +1,86 @@
 # Changelog
 
+## [2026.11.10](https://github.com/jdx/mise/releases/tag/v2026.11.10) - 2026-11-18
+
+### 🚀 Features
+
+- **(backend)** add enable_backends allowlist by @jdx in [#15766](https://github.com/jdx/mise/pull/15766)
+- **(backend)** add a per-tool libc option to packslip and github by @jdx in [#15765](https://github.com/jdx/mise/pull/15765)
+- **(bootstrap)** enable services without starting or stopping them by @jdx in [#15759](https://github.com/jdx/mise/pull/15759)
+- **(bootstrap)** accept permissions as another name for mode in files and directories by @jdx in [#15849](https://github.com/jdx/mise/pull/15849)
+- **(http)** add filter_bins option by @jdx in [#15835](https://github.com/jdx/mise/pull/15835)
+- **(lock)** add --check by @jdx in [#15768](https://github.com/jdx/mise/pull/15768)
+- **(lock)** show each entry's provenance in --check by @jdx in [#15769](https://github.com/jdx/mise/pull/15769)
+- **(pypi)** pin packages to private uv indexes with indexes and sources by @jdx in [#15840](https://github.com/jdx/mise/pull/15840)
+- **(settings)** set one task.lock_pools entry and read it from MISE_TASK_LOCK_POOLS by @jdx in [#15794](https://github.com/jdx/mise/pull/15794)
+- **(task)** skip git-ignored files in sources with !@gitignore by @jdx in [#15796](https://github.com/jdx/mise/pull/15796)
+- **(task)** offer one spelling per task in completion, chosen by the typed prefix by @jdx in [#15832](https://github.com/jdx/mise/pull/15832)
+
+### 🐛 Bug Fixes
+
+- **(backend)** use mise's HTTP client for the sigstore TUF fetch by @jdx in [#15829](https://github.com/jdx/mise/pull/15829)
+- **(backend)** make bin.install files executable in brew formulas by @jdx in [#15836](https://github.com/jdx/mise/pull/15836)
+- **(bootstrap)** pull the source before loading its config on --from --update by @jdx in [#15841](https://github.com/jdx/mise/pull/15841)
+- **(brew)** define HOMEBREW_PREFIX and friends in the source build shim by @jdx in [#15834](https://github.com/jdx/mise/pull/15834)
+- **(core)** pick a rustup check test host that differs from TARGET by @jdx in [#15831](https://github.com/jdx/mise/pull/15831)
+- **(core)** bound the rust beta/nightly release-age cutoff search by fetch_remote_versions_timeout by @jdx in [#15847](https://github.com/jdx/mise/pull/15847)
+- **(exec)** keep tool bins ahead of inherited PATH entries by @jdx in [#15838](https://github.com/jdx/mise/pull/15838)
+- **(install)** refresh installed versions after waiting on an install lock by @jdx in [#15757](https://github.com/jdx/mise/pull/15757)
+- **(install)** reject a named tool excluded by its os option by @jdx in [#15826](https://github.com/jdx/mise/pull/15826)
+- **(java)** pick the newest build in ls, runtime symlinks, lockfile and outdated by @jdx in [#15756](https://github.com/jdx/mise/pull/15756)
+- **(lock)** leave tool_config.locked lockfiles alone after installs by @jdx in [#15761](https://github.com/jdx/mise/pull/15761)
+- **(lock)** make --dry-run report what would change by @jdx in [#15767](https://github.com/jdx/mise/pull/15767)
+- **(lock)** point aqua SLSA downgrades at the signer options by @jdx in [#15827](https://github.com/jdx/mise/pull/15827)
+- **(lock)** skip the not-in-lockfile warning for tools excluded by os by @jdx in [#15848](https://github.com/jdx/mise/pull/15848)
+- **(ls)** keep tools that share a version in --all-sources by @jdx in [#15833](https://github.com/jdx/mise/pull/15833)
+- **(prune)** keep the current commit of an npm git source tracking HEAD by @jdx in [#15837](https://github.com/jdx/mise/pull/15837)
+- **(ruby)** install precompiled previews published as pre-releases by @jdx in [#15830](https://github.com/jdx/mise/pull/15830)
+- **(shim)** skip rustup checks for unrelated tools on inactive shims by @jdx in [#15795](https://github.com/jdx/mise/pull/15795)
+
+### 📚 Documentation
+
+- **(task)** say that dependencies with different arguments run separately by @jdx in [#15855](https://github.com/jdx/mise/pull/15855)
+
+### 📦️ Dependency Updates
+
+- update aube to v2.10.1 by @renovate[bot] in [#15792](https://github.com/jdx/mise/pull/15792)
+- update jdx crates to v7.4.0 by @renovate[bot] in [#15793](https://github.com/jdx/mise/pull/15793)
+- update mise tools by @renovate[bot] in [#15803](https://github.com/jdx/mise/pull/15803)
+- ignore unmaintained chrono advisories in cargo-deny by @jdx in [#15821](https://github.com/jdx/mise/pull/15821)
+- update mise tools by @renovate[bot] in [#15822](https://github.com/jdx/mise/pull/15822)
+- prefer the distribution's package manager over brew for plugin system dependencies by @jdx in [#15839](https://github.com/jdx/mise/pull/15839)
+- update rust crates by @renovate[bot] in [#15805](https://github.com/jdx/mise/pull/15805)
+- update github actions by @renovate[bot] in [#15802](https://github.com/jdx/mise/pull/15802)
+- lock file maintenance by @renovate[bot] in [#15807](https://github.com/jdx/mise/pull/15807)
+- update rust crate sigstore-verify to 0.16 by @renovate[bot] in [#15804](https://github.com/jdx/mise/pull/15804)
+
+### 📦 Registry
+
+- add cargo-nextest by @jdx in [#15854](https://github.com/jdx/mise/pull/15854)
+
+### Chore
+
+- set up entire graph and brain for agents by @jdx in [#15843](https://github.com/jdx/mise/pull/15843)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (7)
+
+- [`Mattbusel/HelixRouter-adaptive-async-compute-router-`](https://github.com/Mattbusel/HelixRouter-adaptive-async-compute-router-)
+- [`Mattbusel/crypto-orderbook`](https://github.com/Mattbusel/crypto-orderbook)
+- [`bnjbvr/cargo-machete`](https://github.com/bnjbvr/cargo-machete)
+- [`cargo-lambda/cargo-lambda`](https://github.com/cargo-lambda/cargo-lambda)
+- `macstadium.com/orka`
+- [`reylosql/reylo`](https://github.com/reylosql/reylo)
+- [`zavoloklom/docker-compose-linter`](https://github.com/zavoloklom/docker-compose-linter)
+
+#### Updated Packages (4)
+
+- [`ImageMagick/ImageMagick`](https://github.com/ImageMagick/ImageMagick)
+- [`casey/just`](https://github.com/casey/just)
+- [`fastfetch-cli/fastfetch`](https://github.com/fastfetch-cli/fastfetch)
+- [`stunnel/static-curl`](https://github.com/stunnel/static-curl)
+
 ## [2026.11.9](https://github.com/jdx/mise/releases/tag/v2026.11.9) - 2026-11-16
 
 ### 🚀 Features

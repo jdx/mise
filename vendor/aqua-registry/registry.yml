@@ -4700,7 +4700,7 @@ packages:
               - name: mogrify
               - name: montage
               - name: stream
-      - version_constraint: "true"
+      - version_constraint: semver("<= 7.1.2-35")
         github_artifact_attestations:
           signer_workflow: ImageMagick/ImageMagick/.github/workflows/release.yml
         supported_envs:
@@ -4717,6 +4717,34 @@ packages:
             format: 7z
             replacements:
               amd64: x64
+            files:
+              - name: compare
+              - name: composite
+              - name: conjure
+              - name: identify
+              - name: magick
+              - name: mogrify
+              - name: montage
+              - name: stream
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: ImageMagick/ImageMagick/.github/workflows/release.yml
+        asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: magick
+            src: "{{.AssetWithoutExt}}/bin/magick"
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+        overrides:
+          - goos: windows
+            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-{{.Arch}}.{{.Format}}
+            format: 7z
             files:
               - name: compare
               - name: composite
@@ -6112,6 +6140,42 @@ packages:
           - amd64
   - type: github_release
     repo_owner: Mattbusel
+    repo_name: HelixRouter-adaptive-async-compute-router-
+    description: Adaptive Tokio job router that picks inline, spawn, CPU pool, batch or drop per job from cost and live pressure
+    files:
+      - name: helixrouter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: helixrouter-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: helixrouter
+            src: "{{.AssetWithoutExt}}/helixrouter"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
     repo_name: corescout
     description: Learns how your machine and AI coding agents work together and serves it over MCP
     files:
@@ -6130,6 +6194,40 @@ packages:
             src: "{{.AssetWithoutExt}}/corescout-mcp"
           - name: corescout-service
             src: "{{.AssetWithoutExt}}/corescout-service"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+  - type: github_release
+    repo_owner: Mattbusel
+    repo_name: crypto-orderbook
+    description: Keep a sequenced Binance order book in memory and serve depth, micro-price and VWAP over REST, WebSocket and Prometheus
+    files:
+      - name: crypto-orderbook
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: crypto-orderbook-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: crypto-orderbook
+            src: "{{.AssetWithoutExt}}/crypto-orderbook"
         windows_arm_emulation: true
         replacements:
           amd64: x86_64
@@ -22345,6 +22443,112 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: bnjbvr
+    repo_name: cargo-machete
+    description: Remove unused Rust dependencies with this one weird trick
+    files:
+      - name: cargo-machete
+        src: "{{.AssetWithoutExt}}/cargo-machete"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.1"
+        asset: cargo-machete-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.10.0"
+        asset: cargo-machete-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: semver("<= 0.8.0")
+        asset: cargo-machete-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.9.2")
+        asset: cargo-machete-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+      - version_constraint: "true"
+        asset: cargo-machete-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+  - type: github_release
     repo_owner: bodaay
     repo_name: HuggingFaceModelDownloader
     description: Simple go utility to download HuggingFace Models and Datasets
@@ -25368,6 +25572,119 @@ packages:
         github_artifact_attestations:
           signer_workflow: cargo-bins/cargo-binstall/.github/workflows/release-cli.yml
   - type: github_release
+    repo_owner: cargo-lambda
+    repo_name: cargo-lambda
+    description: Cargo Lambda is a Cargo subcommand to help you work with AWS Lambda
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.10.0", "v0.10.1", "v0.11.0"]
+        asset: cargo-lambda-{{.Version}}.{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: cargo-lambda
+            src: cargo-lambda/cargo-lambda
+        replacements:
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: cargo-lambda-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            replacements:
+              darwin: apple-darwin
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.8.0")
+        asset: cargo-lambda-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: cargo-lambda-{{.Version}}-{{.OS}}.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.9.0")
+        asset: cargo-lambda-{{.Version}}.{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: cargo-lambda-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: windows
+            asset: cargo-lambda-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x64
+            checksum:
+              enabled: false
+      - version_constraint: semver("<= 1.0.3")
+        asset: cargo-lambda-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: cargo-lambda-{{.Version}}.{{.OS}}.{{.Format}}
+            replacements:
+              darwin: apple-darwin
+          - goos: windows
+            format: zip
+            asset: cargo-lambda-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x64
+      - version_constraint: "true"
+        asset: cargo-lambda-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            asset: cargo-lambda-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x64
+  - type: github_release
     repo_owner: carthage-software
     repo_name: mago
     description: Mago is a toolchain for PHP that aims to provide a set of tools to help developers write better code
@@ -26054,10 +26371,27 @@ packages:
           linux: unknown-linux-musl
         supported_envs:
           - linux/amd64
+      - version_constraint: semver("<= 1.36.0")
+        asset: just-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: just-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -41275,6 +41609,17 @@ packages:
             format: zip
             files:
               - name: fastfetch
+          - goos: linux
+            goarch: amd64
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            goarch: amd64
+            variants:
+              - key: libc
+                value: musl
+            asset: fastfetch-musl-{{.Arch}}.{{.Format}}
         replacements:
           arm64: aarch64
           darwin: macos
@@ -67604,6 +67949,30 @@ packages:
           - goos: windows
             format: zip
   - type: http
+    name: macstadium.com/orka
+    description: CLI for the Orka 4.x virtualization platform on Apple hardware
+    link: https://docs.macstadium.com/orka/orka-overview/tools-integrations
+    url: https://cli-builds-public.s3.eu-west-1.amazonaws.com/official/{{.Version}}/orka/{{.OS}}/{{.Arch}}/orka.{{.Format}}
+    replacements:
+      darwin: macos
+    overrides:
+      - goos: darwin
+        format: pkg
+        files:
+          - name: orka
+            src: orka.pkg/Payload/orka
+      - goos: linux
+        format: tar.gz
+        files:
+          - name: orka
+      - goos: windows
+        url: https://cli-builds-public.s3.eu-west-1.amazonaws.com/official/{{.Version}}/orka/{{.OS}}/{{.Arch}}/orka.exe
+        format: raw
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
+  - type: http
     name: macstadium.com/orka3
     description: CLI for the Orka virtualization platform on Apple hardware
     link: https://docs.macstadium.com/orka/orka-overview/tools-integrations
@@ -85005,6 +85374,34 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: reylosql
+    repo_name: reylo
+    description: Infer types for SQL queries from the database itself
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: reylo-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          windows: win32
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: reylo-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
+  - type: github_release
     repo_owner: rfjakob
     repo_name: gocryptfs
     description: Encrypted overlay filesystem written in Go
@@ -94693,14 +95090,11 @@ packages:
     description: static builds cURL with HTTP3
     files:
       - name: curl
-      - name: curl-config
     version_constraint: "false"
     version_overrides:
       - version_constraint: Version == "8.6.0-1"
         asset: curl-{{.OS}}-{{.Arch}}-8.6.0.{{.Format}}
         format: tar.xz
-        files:
-          - name: curl
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -94712,8 +95106,6 @@ packages:
       - version_constraint: Version == "8.6.0"
         asset: curl-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
         format: tar.xz
-        files:
-          - name: curl
         replacements:
           darwin: macos
         supported_envs:
@@ -94722,8 +95114,6 @@ packages:
       - version_constraint: semver("<= 8.2.0")
         asset: curl-static-{{.Arch}}-{{.Version}}.{{.Format}}
         format: tar.xz
-        files:
-          - name: curl
         supported_envs:
           - linux
       - version_constraint: semver("<= 8.5.0")
@@ -94737,19 +95127,27 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
-        asset: curl-{{.OS}}-{{.Arch}}-dev-{{.Version}}.{{.Format}}
+      - version_constraint: semver("< 8.7.1")
+        asset: curl-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
         format: tar.xz
-        files:
-          - name: curl
-            src: curl-{{.Arch}}/bin/curl
-          - name: curl-config
-            src: curl-{{.Arch}}/bin/curl-config
         replacements:
           amd64: x86_64
           arm64: aarch64
           darwin: macos
         overrides:
+          - goos: darwin
+            replacements:
+              arm64: arm64
+      - version_constraint: "true"
+        asset: curl-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: curl-{{.OS}}-{{.Arch}}-musl-{{.Version}}.{{.Format}}
           - goos: darwin
             replacements:
               arm64: arm64
@@ -110726,6 +111124,29 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: zavoloklom
+    repo_name: docker-compose-linter
+    description: A command-line tool for validating and enforcing best practices in Docker Compose files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: raw
+        files:
+          - name: dclint
+        supported_envs:
+          - linux
+        overrides:
+          - goos: linux
+            asset: dclint-alpine-{{.Arch}}
+            variants:
+              - key: libc
+                value: musl
+          - goos: linux
+            asset: dclint-bullseye-{{.Arch}}
+            variants:
+              - key: libc
+                value: glibc
   - type: github_release
     repo_owner: zegl
     repo_name: kube-score
