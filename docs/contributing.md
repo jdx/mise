@@ -675,8 +675,8 @@ See [Backends](/dev-tools/backends/) for how mise picks a backend.
 ## CI and releases {#ci-and-releases}
 
 CI builds and tests on Linux, macOS, and Windows, runs the full E2E suite on
-Linux in parallel tranches, and checks Clippy, dependencies, the minimum Rust
-version, and the PR title. A change under `registry/` also runs
+Linux in parallel tranches, and checks Clippy, dependencies, and the minimum
+Rust version. A change under `registry/` also runs
 `mise test-tool` for the entries it adds or changes.
 
 mise versions are CalVer (`YYYY.M.PATCH`) and releases are automated. The
