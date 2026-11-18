@@ -160,3 +160,23 @@ assert_fail "test -e $shimdir/nobackendbin"
 assert "readlink $shimdir/nobackendbin" "$(which mise)"
 (cd "$PWD/proj6" && MISE_DISABLE_BACKENDS=github mise reshim --force)
 assert_fail "test -e $shimdir/nobackendbin"
+
+# A tracked project's templated version does not hide its literal path: tool.
+mkdir -p "$PWD/tmplbin/bin" "$PWD/proj7"
+cat >"$PWD/tmplbin/bin/tmplbinbin" <<'SH'
+#!/usr/bin/env bash
+echo "tmpl"
+SH
+chmod +x "$PWD/tmplbin/bin/tmplbinbin"
+cat >"$PWD/proj7/mise.toml" <<EOF2
+[vars]
+nv = "20"
+
+[tools]
+"github:jdx/tmplbin" = "path:$PWD/tmplbin/bin"
+"github:jdx/tmplother" = "{{ vars.nv }}"
+EOF2
+(cd "$PWD/proj7" && mise reshim)
+assert "readlink $shimdir/tmplbinbin" "$(which mise)"
+(cd "$other" && mise reshim --force)
+assert "readlink $shimdir/tmplbinbin" "$(which mise)"

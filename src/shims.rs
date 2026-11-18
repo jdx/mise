@@ -1967,7 +1967,12 @@ async fn get_desired_shims(
         BTreeSet::new()
     };
     for (path, cf) in config_files {
-        let set = match cf.to_tool_request_set() {
+        // A tool whose version uses a template (such as `{{ vars.x }}`) may need the project's
+        // own context; keep the tools that do not, so their shims survive.
+        let set = match cf
+            .to_tool_request_set()
+            .or_else(|_| cf.to_tool_request_set_skipping_templated())
+        {
             Ok(set) => set,
             Err(err) => {
                 debug!("ignoring tools of {}: {err:#}", display_path(path));
