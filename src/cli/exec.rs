@@ -389,8 +389,12 @@ impl Exec {
 
         crate::shims::ensure_command_wrapper_shims(&config, &ts)?;
 
-        let (mut env, env_remove) = measure!("env_with_path", {
-            ts.env_with_path_and_removals(&config).await?
+        // `configured_paths` is every directory mise puts ahead of the inherited PATH: `_.path`
+        // entries, the uv venv, tool-added paths and tool bins. The caller's PATH may hold one
+        // without mise's activation state (a scrubbed child of an activated shell), and it must
+        // still beat another tool's bundled binary, such as the npm tool over Node's npm.
+        let (mut env, env_remove, configured_paths) = measure!("env_with_path", {
+            ts.env_with_path_removals_and_paths(&config).await?
         });
         env.extend(wrapper_env);
         // Only this command is for the supervisor's context. A `mise x` the daemon
@@ -593,9 +597,6 @@ impl Exec {
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
         // command must not be reinterpreted as a shell body.
-        // `_.path` directories the caller's PATH may already hold. They stay ahead of
-        // the tool bins when `exec_program` resolves the program.
-        let configured_paths = config.path_dirs().await?.clone();
         exec_program(
             program,
             args,
@@ -793,9 +794,9 @@ impl Drop for ScrubOnDrop<'_> {
 pub(crate) struct ExecExtras<'a> {
     /// Variable names to take back out of mise's own environment when the exec fails.
     pub scrub_on_failure: &'a [String],
-    /// `_.path` directories from the config (not the `position = "append"` ones, which rank with the
-    /// tool paths). The caller's PATH may already hold them, but they
-    /// still rank as mise-added when the program is resolved.
+    /// Every directory mise puts ahead of the inherited PATH: `_.path` entries, the uv venv,
+    /// tool-added paths and tool bins. The caller's PATH may already hold them, but they still
+    /// rank as mise-added when the program is resolved.
     pub configured_paths: &'a [std::path::PathBuf],
 }
 

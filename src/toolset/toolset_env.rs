@@ -234,13 +234,32 @@ impl Toolset {
         &self,
         config: &Arc<Config>,
     ) -> Result<(EnvMap, BTreeSet<String>)> {
+        let (env, env_remove, _) = self.env_with_path_removals_and_paths(config).await?;
+        Ok((env, env_remove))
+    }
+
+    /// Like `env_with_path_and_removals`, and also returns every directory mise put ahead of
+    /// the inherited PATH (`_.path` entries, the uv venv, tool-added paths, tool bins), from the
+    /// same environment build, so a caller can tell them from inherited ones without building
+    /// the environment again.
+    pub async fn env_with_path_removals_and_paths(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(EnvMap, BTreeSet<String>, Vec<PathBuf>)> {
         // Try to load from cache if enabled
         if CachedEnv::is_enabled()
-            && let Some((mut cached, env_remove)) = self.try_load_env_cache(config).await?
+            && let Some(cached) = self.try_load_env_cache_full(config).await?
         {
             trace!("env_cache: using cached environment");
-            github::oauth::inject_token_env(&mut cached);
-            return Ok((cached, env_remove));
+            let mut env = cached.env;
+            let added = cached
+                .user_paths
+                .into_iter()
+                .chain(cached.tool_paths)
+                .collect::<Vec<_>>();
+            env.insert(PATH_KEY.to_string(), self.child_path(added.iter().cloned()));
+            github::oauth::inject_token_env(&mut env);
+            return Ok((env, cached.env_remove, added));
         }
 
         let (mut env, env_results) = self.final_env(config).await?;
@@ -272,7 +291,11 @@ impl Toolset {
         // ephemeral token is never persisted to disk.
         github::oauth::inject_token_env(&mut env);
 
-        Ok((env, env_results.env_remove))
+        Ok((
+            env,
+            env_results.env_remove,
+            user_paths.into_iter().chain(tool_paths).collect(),
+        ))
     }
 
     /// Get environment with split paths (user_paths and tool_paths separate)
@@ -364,25 +387,6 @@ impl Toolset {
             );
         }
         Ok(cached)
-    }
-
-    /// Try to load environment from cache (returns reconstructed EnvMap)
-    async fn try_load_env_cache(
-        &self,
-        config: &Arc<Config>,
-    ) -> Result<Option<(EnvMap, BTreeSet<String>)>> {
-        match self.try_load_env_cache_full(config).await? {
-            Some(cached) => {
-                let mut env = cached.env;
-                // Reconstruct PATH from cached paths
-                env.insert(
-                    PATH_KEY.to_string(),
-                    self.child_path(cached.user_paths.into_iter().chain(cached.tool_paths)),
-                );
-                Ok(Some((env, cached.env_remove)))
-            }
-            None => Ok(None),
-        }
     }
 
     /// Save environment to cache with split paths

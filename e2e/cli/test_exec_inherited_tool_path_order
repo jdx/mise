@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Regression test: a tool's bin directory keeps its precedence in `mise x -- cmd` when the
+# caller's PATH already contains it, as when an activated shell's state variables were scrubbed.
+# The `cmd` of the `dummy` tool must beat the one of the `tiny` tool, as it does in the PATH the
+# child gets.
+# See: https://github.com/jdx/mise/issues/15771
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "latest"
+tiny = "latest"
+TOML
+mise i
+
+for tool in dummy tiny; do
+  bin="$(mise where "$tool")/bin"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\necho %s_CMD\n' "$tool" >"$bin/cmd"
+  chmod +x "$bin/cmd"
+done
+
+assert "mise x -- sh -c cmd" "dummy_CMD"
+assert "mise x -- cmd" "dummy_CMD"
+# The runtime symlink path is the one mise puts on PATH.
+export PATH="$MISE_DATA_DIR/installs/dummy/latest/bin:$PATH"
+assert "mise x -- sh -c cmd" "dummy_CMD"
+assert "mise x -- cmd" "dummy_CMD"
