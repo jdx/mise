@@ -36,13 +36,14 @@ pub(crate) fn select_tuf_config(override_url: Option<String>) -> Result<TufConfi
     Ok(config)
 }
 
-/// The TUF client picks its own HTTP client unless it is given one, and that
-/// one connects over either IP family, so `config` gets mise's when the mirror
-/// needs credentials or `ipv4_only` is on.
-fn with_http_client(config: TufConfig, credentials: Option<HeaderValue>) -> Result<TufConfig> {
-    if credentials.is_none() && !mise_tls::ipv4_only() {
-        return Ok(config);
-    }
+/// The TUF client picks its own HTTP client unless it is given one. That one
+/// connects over either IP family, sends no mirror credentials, and cannot fall
+/// back to the bundled roots when the system has no CA certificates, so
+/// `config` always gets mise's.
+pub(crate) fn with_http_client(
+    config: TufConfig,
+    credentials: Option<HeaderValue>,
+) -> Result<TufConfig> {
     Ok(config.with_http_client(tuf_http_client(credentials)?))
 }
 
