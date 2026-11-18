@@ -1650,6 +1650,26 @@ fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, S
     Ok((python, version.to_string()))
 }
 
+/// What a rolling `latest` points at on its remote, asked once per tool for
+/// the life of the process. A scan visits every tracked config, and an
+/// unreachable remote would otherwise cost a timeout for each one, so a failed
+/// lookup is remembered too.
+async fn rolling_head(config: &Arc<Config>, backend: &Arc<dyn Backend>) -> Option<String> {
+    static HEADS: std::sync::Mutex<BTreeMap<String, Option<String>>> =
+        std::sync::Mutex::new(BTreeMap::new());
+    let key = backend.ba().short.to_string();
+    if let Some(head) = HEADS.lock().unwrap().get(&key) {
+        return head.clone();
+    }
+    let head = backend
+        .resolve_channel_version(config, "latest")
+        .await
+        .ok()
+        .flatten();
+    HEADS.lock().unwrap().insert(key, head.clone());
+    head
+}
+
 async fn collect_needed_versions(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -1696,11 +1716,7 @@ async fn collect_needed_versions(
             && let Ok(backend) = tv.backend()
             && backend.is_rolling_channel("latest")
         {
-            let head = backend
-                .resolve_channel_version(config, "latest")
-                .await
-                .ok()
-                .flatten();
+            let head = rolling_head(config, &backend).await;
             let mut current = tv.clone();
             let installed = head.is_some_and(|head| {
                 current.version = head;
