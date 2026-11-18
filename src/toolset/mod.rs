@@ -223,14 +223,27 @@ impl Toolset {
                     tvl.resolve(&config, &opts),
                 )
                 .await;
+                // A tool whose `os` excludes this host is never installed or
+                // used here, so the lockfile holding nothing for it is no
+                // problem worth a warning or a failed progress row.
+                let os_excluded =
+                    !tvl.requests.is_empty() && tvl.requests.iter().all(|r| !r.is_os_supported());
+                let ignorable = |err: &eyre::Report| {
+                    Error::is_not_in_lockfile(err) && (!opts.warn_not_in_lockfile || os_excluded)
+                };
                 if let Some(reporter) = reporter {
-                    reporter.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
+                    let failure = result
+                        .as_ref()
+                        .err()
+                        .filter(|e| !(os_excluded && Error::is_not_in_lockfile(e)))
+                        .map(|e| e.to_string());
+                    reporter.complete(failure.as_deref());
                 }
                 if let Err(err) = result {
                     if Error::is_required_channel_resolution_err(&err) {
                         return Err(err);
                     }
-                    if Error::is_not_in_lockfile(&err) && !opts.warn_not_in_lockfile {
+                    if ignorable(&err) {
                         debug!("Failed to resolve tool version list for {ba}: {err}");
                     } else {
                         // warn_once: a command may resolve the same toolset more than

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# A tool whose `os` excludes this host is not looked up in the lockfile, so
+# tool_config.locked does not warn about it on every command.
+export MISE_LOCKFILE=1
+mise plugin install tiny
+
+cat <<'TOML' >mise.toml
+[tool_config]
+locked = true
+
+[tools]
+tiny = { version = "1.0.0", os = ["windows"] }
+TOML
+
+assert_not_contains "mise ls 2>&1" "not in the lockfile"
+assert_not_contains "mise env 2>&1" "not in the lockfile"
