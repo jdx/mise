@@ -156,3 +156,7 @@ EOF2
 assert "readlink $shimdir/nobackendbin" "$(which mise)"
 (cd "$other" && MISE_DISABLE_BACKENDS=github mise reshim --force)
 assert_fail "test -e $shimdir/nobackendbin"
+(cd "$PWD/proj6" && mise reshim)
+assert "readlink $shimdir/nobackendbin" "$(which mise)"
+(cd "$PWD/proj6" && MISE_DISABLE_BACKENDS=github mise reshim --force)
+assert_fail "test -e $shimdir/nobackendbin"

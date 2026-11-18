@@ -2038,6 +2038,8 @@ async fn get_desired_shims(
     for (t, tv) in path_versions {
         if !matches!(tv.request, crate::toolset::ToolRequest::Path { .. })
             || !shim_scope_contains_request(scope, &tv.request)
+            // The current toolset is not filtered by `disable_backends`.
+            || crate::backend::is_disabled_backend_type(&tv.request.ba().backend_type())
         {
             continue;
         }
