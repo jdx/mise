@@ -141,11 +141,14 @@ impl GitIgnored {
             if !gitlink && self.rules_ignore(&parent, &prefix, as_dir) == Some(true) {
                 return true;
             }
-            // Below a nested repository, its own index and rules decide.
-            if !last && self.workdir.join(&prefix).join(".git").exists() {
-                return self
-                    .nested_repo(&prefix)
-                    .is_some_and(|nested| nested.is_ignored(&path, is_dir));
+            // Below a nested repository, its own index and rules decide. A
+            // `.git` that does not open as one is an ordinary entry to git,
+            // so the walk goes on with this work tree's rules.
+            if !last
+                && self.workdir.join(&prefix).join(".git").exists()
+                && let Some(nested) = self.nested_repo(&prefix)
+            {
+                return nested.is_ignored(&path, is_dir);
             }
         }
         false
@@ -354,6 +357,17 @@ mod tests {
         // and the outer `sub` rule does not ignore a tracked submodule.
         assert!(!ignored.is_ignored(&sub.join("notes.txt"), false));
         assert!(!ignored.is_ignored(&sub, true));
+    }
+
+    #[test]
+    fn a_stray_git_entry_does_not_hide_the_outer_rules() {
+        let tmp = repo();
+        let root = tmp.path();
+        write(&root.join(".gitignore"), "out/\n");
+        write(&root.join("pkg/.git"), "not a repository\n");
+        let ignored = GitIgnored::discover(root).unwrap();
+        assert!(ignored.is_ignored(&root.join("pkg/out/generated.js"), false));
+        assert!(!ignored.is_ignored(&root.join("pkg/src/a.js"), false));
     }
 
     #[cfg(unix)]
