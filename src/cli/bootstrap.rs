@@ -2800,18 +2800,26 @@ impl Bootstrap {
             debug!("bootstrap: `bootstrap` task skipped");
         } else {
             let tasks = config.tasks().await?;
-            if tasks.iter().any(|(_, t)| {
+            // The name `mise run` is given. A bare `bootstrap` resolves relative to the working
+            // directory, so a monorepo root task is named in full to keep a sub-project's own
+            // `bootstrap` from running in its place.
+            let task_name = if tasks.iter().any(|(_, t)| {
                 t.aliases.iter().any(|a| a == "bootstrap")
-                    // `//:bootstrap` is how a monorepo names the root config's `bootstrap` task
-                    || t.name == "//:bootstrap"
                     || (!t.name.contains(':') && t.is_match("bootstrap"))
             }) {
+                Some("bootstrap")
+            } else if tasks.iter().any(|(_, t)| t.name == "//:bootstrap") {
+                Some("//:bootstrap")
+            } else {
+                None
+            };
+            if let Some(task_name) = task_name {
                 // The task `mise run bootstrap` below starts, found the way it finds it, so an
                 // exact name wins over an alias another task declares.
                 let skip_deps = Settings::get().task.skip_depends;
                 let roots = crate::task::task_list::get_task_lists(
                     &config,
-                    &["bootstrap".to_string()],
+                    &[task_name.to_string()],
                     false,
                     skip_deps,
                     false,
@@ -2838,7 +2846,7 @@ impl Bootstrap {
                 // tasks it actually resolves, templated `run` entries included.
                 config::run_only_trusted_tasks();
                 info!("bootstrap: running `bootstrap` task");
-                self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
+                self.run_task(task_name, skip.contains(&BootstrapPart::Tools))
                     .await?;
             } else {
                 debug!("bootstrap: no `bootstrap` task defined, skipping");

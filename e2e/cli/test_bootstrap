@@ -577,7 +577,12 @@ run = "touch monorepo_pkg_ran"
 EOF2
 MISE_EXPERIMENTAL=1 assert_succeed "mise bootstrap --only task"
 assert_succeed "test -f monorepo_root_ran"
-assert_fail "test -f monorepo_pkg_ran"
+assert_fail "test -f pkg/monorepo_pkg_ran"
+# from inside the sub-project the root task still runs, not the sub-project's
+rm -f monorepo_root_ran
+(cd pkg && MISE_EXPERIMENTAL=1 assert_succeed "mise bootstrap --only task")
+assert_succeed "test -f monorepo_root_ran"
+assert_fail "test -f pkg/monorepo_pkg_ran"
 rm -rf pkg monorepo_root_ran
 
 # a file task named `bootstrap.sh` is the special `bootstrap` task
