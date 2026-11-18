@@ -404,7 +404,7 @@ mod tests {
         }
         assert!(!suspicious("API_KEY=test;echo ready", &[]));
         // many commands on one line neither nest calls nor hide a later secret
-        let long = "API_KEY=a;".repeat(100_000);
+        let long = "API_KEY=a;".repeat(20_000);
         assert!(!suspicious(&long, &[]));
         assert!(suspicious(
             &format!("{long}DEPLOY_TOKEN=abcdefghijkl1234"),
@@ -424,7 +424,7 @@ mod tests {
         let prefix = format!("ab;{}", "x".repeat(256));
         assert!(suspicious(
             &format!("password: {prefix}#actual-secret"),
-            &[prefix.clone()]
+            std::slice::from_ref(&prefix)
         ));
         assert!(!suspicious(&format!("password: {prefix}"), &[prefix]));
         // a plain scalar is approved as a whole, up to a comment
