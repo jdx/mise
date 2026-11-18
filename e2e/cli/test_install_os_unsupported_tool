@@ -64,3 +64,9 @@ cat >mise.toml <<'TOML'
 "github:jdx/mise-test-fixtures" = { version = "latest", os = ["no-such-os"] }
 TOML
 assert_fail_contains "mise install github:jdx/mise-test-fixtures 1.0.0" "no-such-os"
+
+# a versionless argument's os override installs the configured version
+os=linux
+[[ "$(uname)" == Darwin ]] && os=macos
+out=$(mise install --dry-run "github:jdx/mise-test-fixtures[os=$os]" 2>&1)
+assert_contains "echo '$out'" "1.0.0"
