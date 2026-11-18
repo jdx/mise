@@ -133,7 +133,7 @@ impl GitIgnored {
         let mut prefix = PathBuf::new();
         for part in &parts[..parts.len() - 1] {
             prefix.push(part);
-            if self.is_tracked(&prefix, false)
+            if self.is_gitlink(&prefix)
                 && let Some(nested) = self.nested_repo(&prefix)
             {
                 return nested.is_ignored(&path, is_dir);
@@ -149,7 +149,7 @@ impl GitIgnored {
             let as_dir = !last || is_dir;
             // A submodule is tracked as a single index entry, which no rule
             // can ignore.
-            let gitlink = as_dir && self.is_tracked(&prefix, false);
+            let gitlink = as_dir && self.is_gitlink(&prefix);
             if !gitlink && self.rules_ignore(&parent, &prefix, as_dir) == Some(true) {
                 return true;
             }
@@ -171,8 +171,11 @@ impl GitIgnored {
         nested
             .entry(relative.to_path_buf())
             .or_insert_with(|| {
-                Self::discover(&self.workdir.join(relative))
-                    .filter(|repo| repo.workdir != self.workdir)
+                // Discovery walks upward, so it only counts when it finds a
+                // work tree rooted at this very directory.
+                let dir = self.workdir.join(relative);
+                Self::discover(&dir)
+                    .filter(|repo| repo.workdir == dir)
                     .map(Arc::new)
             })
             .clone()
@@ -184,6 +187,13 @@ impl GitIgnored {
         }
         let canonical = self.canonical_workdir.as_ref()?;
         path.strip_prefix(canonical).ok().map(Path::to_path_buf)
+    }
+
+    /// Whether the index tracks `relative` as a submodule.
+    fn is_gitlink(&self, relative: &Path) -> bool {
+        index_path(relative)
+            .and_then(|key| self.index.entry_by_path(key.as_ref()).map(|e| e.mode))
+            .is_some_and(|mode| mode == gix::index::entry::Mode::COMMIT)
     }
 
     fn is_tracked(&self, relative: &Path, is_dir: bool) -> bool {
@@ -389,6 +399,25 @@ mod tests {
         assert!(ignored.is_ignored(&root.join("vendor/other.js"), false));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_tracked_symlink_below_an_ignored_directory_is_not_a_submodule() {
+        let tmp = repo();
+        let root = tmp.path();
+        let other = root.join("other");
+        fs::create_dir_all(&other).unwrap();
+        git(&other, &["init", "-q"]);
+        write(&other.join("file.js"), "x");
+        fs::create_dir_all(root.join("lib")).unwrap();
+        std::os::unix::fs::symlink("../other", root.join("lib/link")).unwrap();
+        git(root, &["add", "lib/link"]);
+        write(&root.join(".gitignore"), "lib/\n");
+        let ignored = GitIgnored::discover(root).unwrap();
+        // `lib/link` is a tracked symlink, not a submodule, so `lib/` still
+        // ignores what is below it.
+        assert!(ignored.is_ignored(&root.join("lib/link/file.js"), false));
+    }
+
     #[test]
     fn a_stray_git_entry_does_not_hide_the_outer_rules() {
         let tmp = repo();
@@ -441,6 +470,8 @@ mod tests {
         let later = ["src/**", GITIGNORE_ENTRY, "{../shared,src}/**"];
         assert!(is(&later, "shared/out/input.js"));
         assert!(!is(&later, "pkg/out/c.js"));
+        let both = ["{../shared,src}/**", GITIGNORE_ENTRY, "{../shared,src}/**"];
+        assert!(is(&both, "shared/out/a.js"));
         // Without the entry, a file the glob found outside the root is kept.
         assert!(is(&["../shared/**"], "shared/out/b.js"));
     }
