@@ -1393,7 +1393,7 @@ pub async fn prunable_tools_with_sources(
     })
 }
 
-/// Tool versions whose backend-specific satisfaction check already passed in this
+/// Rust tool versions whose rustup-backed satisfaction check already passed in this
 /// process. `mise run` installs missing tools more than once (the config toolset,
 /// then the tasks' tools), and a check can spawn processes (e.g. rustup), so a
 /// passed check is not repeated. The install-marker check still runs every time.
@@ -1446,7 +1446,13 @@ async fn is_version_satisfied(
     tv: &ToolVersion,
     full_check: bool,
 ) -> bool {
-    if full_check {
+    if full_check && backend.ba().short != "rust" {
+        // Other backends' checks depend on the request (source, lockfile graph
+        // preparation), which a shared cache entry would hide.
+        backend
+            .is_install_satisfied_or_false(config, tv, true)
+            .await
+    } else if full_check {
         check_once(
             satisfied_key(config, tv),
             || backend.is_version_installed(config, tv, true),
