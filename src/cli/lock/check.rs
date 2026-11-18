@@ -12,7 +12,7 @@ use super::{Lock, LockInputs, LockSetup};
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::{Settings, SettingsExt};
 use crate::file::display_path;
-use crate::lockfile;
+use crate::lockfile::{self, PlatformInfo};
 use crate::platform::Platform;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 
@@ -24,7 +24,25 @@ struct CheckEntry {
     tool: Option<String>,
     version: Option<String>,
     platform: Option<String>,
+    /// How a locked install verifies the download: the provenance type the
+    /// entry records, `checksum only`, or `none`. Only platform entries have one.
+    provenance: Option<String>,
     problems: Vec<String>,
+}
+
+/// How a locked install verifies the artifact of `entry`. This only
+/// describes the entry; whether it is enough is not judged here.
+fn provenance(entry: Option<&PlatformInfo>) -> String {
+    match entry {
+        Some(PlatformInfo {
+            provenance: Some(provenance),
+            ..
+        }) => provenance.to_string(),
+        Some(PlatformInfo {
+            checksum: Some(_), ..
+        }) => "checksum only".to_string(),
+        _ => "none".to_string(),
+    }
 }
 
 /// What checking one lockfile found.
@@ -42,16 +60,62 @@ impl LockfileCheck {
     fn push(
         &mut self,
         tool: Option<&ToolVersion>,
-        platform: Option<String>,
+        platform: Option<(String, Option<&PlatformInfo>)>,
         problems: Vec<String>,
     ) {
+        let (platform, provenance) = match platform {
+            Some((key, entry)) => (Some(key), Some(provenance(entry))),
+            None => (None, None),
+        };
         self.entries.push(CheckEntry {
             lockfile: display_path(&self.path),
             tool: tool.map(|tv| tv.ba().short.clone()),
             version: tool.map(|tv| tv.version.clone()),
             platform,
+            provenance,
             problems,
         });
+    }
+
+    fn print(&self) -> Result<()> {
+        let problems = self.problems().count();
+        let platform_entries = || self.entries.iter().filter(|e| e.platform.is_some());
+        if problems == 0 {
+            miseprintln!(
+                "{} {} is up to date ({}, {})",
+                style("✓").green(),
+                style(display_path(&self.path)).cyan(),
+                count(self.tools, "tool version", "tool versions"),
+                count(
+                    platform_entries().count(),
+                    "platform entry",
+                    "platform entries"
+                ),
+            );
+        } else {
+            miseprintln!(
+                "{} {} has {}",
+                style("✗").red(),
+                style(display_path(&self.path)).cyan(),
+                count(problems, "problem", "problems"),
+            );
+        }
+        for entry in platform_entries() {
+            let (Some(tool), Some(version), Some(platform), Some(provenance)) = (
+                &entry.tool,
+                &entry.version,
+                &entry.platform,
+                &entry.provenance,
+            ) else {
+                continue;
+            };
+            miseprintln!(
+                "  {}@{version} for {}: {provenance}",
+                style(redact_output(tool)).bold(),
+                style(platform).blue(),
+            );
+        }
+        Ok(())
     }
 
     /// A row for `request`, which did not resolve to a lockfile entry.
@@ -65,6 +129,8 @@ impl LockfileCheck {
             lockfile: display_path(&self.path),
             tool: Some(request.ba().short.clone()),
             version: Some(request.version()),
+            // A platform entry that was not found verifies nothing.
+            provenance: platform.as_ref().map(|_| provenance(None)),
             platform,
             problems: vec![problem],
         });
@@ -136,22 +202,8 @@ impl Lock {
         } else if checks.is_empty() {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
         } else {
-            for check in checks
-                .iter()
-                .filter(|check| check.problems().next().is_none())
-            {
-                let entries = check
-                    .entries
-                    .iter()
-                    .filter(|entry| entry.platform.is_some())
-                    .count();
-                miseprintln!(
-                    "{} {} is up to date ({}, {})",
-                    style("✓").green(),
-                    style(display_path(&check.path)).cyan(),
-                    count(check.tools, "tool version", "tool versions"),
-                    count(entries, "platform entry", "platform entries"),
-                );
+            for check in &checks {
+                check.print()?;
             }
         }
         if problem_count == 0 {
@@ -493,7 +545,11 @@ impl Lock {
                             })
                     })
                     .map(|err| first_line(&err));
-                check.push(Some(&tv), Some(key), problem.into_iter().collect());
+                check.push(
+                    Some(&tv),
+                    Some((key, locked_platform)),
+                    problem.into_iter().collect(),
+                );
             }
         }
         Ok(check)

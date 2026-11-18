@@ -20,6 +20,16 @@ assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 t
 assert_contains "mise lock --check --json" '"platform": "linux-x64"'
 assert_contains "mise lock --check --json" '"problems": []'
 
+# Each platform entry shows how a locked install verifies its download.
+assert_contains "mise lock --check" "jq@1.7.1 for linux-x64: checksum only"
+assert_contains "mise lock --check --json" '"provenance": "checksum only"'
+cp mise.lock complete.lock
+awk '{ print } $0 == "[tools.jq.\"platforms.linux-x64\"]" { print "provenance = \"github-attestations\"" }' mise.lock >with-provenance.lock
+mv with-provenance.lock mise.lock
+assert_contains "mise lock --check" "jq@1.7.1 for linux-x64: github-attestations"
+assert_contains "mise lock --check --json" '"provenance": "github-attestations"'
+cp complete.lock mise.lock
+
 # A platform mise lock would add has no URL to download.
 assert_fail_contains "mise lock --check --platform linux-x64,macos-arm64" "No lockfile URL found for jq@1.7.1 on platform macos-arm64"
 
@@ -29,6 +39,7 @@ cp mise.lock before.lock
 assert_fail_contains "mise lock --check" "No lockfile checksum found for jq@1.7.1 on platform linux-x64"
 assert_fail_contains "mise lock --check" "to update the lockfile"
 assert_fail_contains "mise lock --check --json" '"problems": ['
+assert_fail_contains "mise lock --check" "jq@1.7.1 for linux-x64: none"
 assert "cmp before.lock mise.lock"
 
 # A request bumped in mise.toml but not in the lockfile fails.
@@ -212,6 +223,15 @@ checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a57
 url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"
 TOML
 assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "mise.lock is up to date (1 tool version, 1 platform entry)"
+assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "for macos-arm64: checksum only"
+# A platform entry that is not found is listed as verifying nothing. No e2e
+# host shares windows-x64's options, so its entry is looked up on its own.
+cat <<'TOML' >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+platforms.windows-x64.asset_pattern = "hello-world-1.0.0.zip"
+TOML
+assert_fail_contains "MISE_OFFLINE=1 mise lock --check --platform windows-x64" "for windows-x64: none"
 # In a lockfile without request bindings, an alias to a prefix selects the
 # matching entry among several locked versions.
 cat <<'TOML' >mise.toml

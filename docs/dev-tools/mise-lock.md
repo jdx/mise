@@ -471,11 +471,22 @@ mise lock --check
 ```
 
 ```text
+✗ ~/src/app/mise.lock has 2 problems
+  yq@4.44.1 for linux-x64: none
+  yq@4.44.1 for macos-arm64: checksum only
 mise ERROR ~/src/app/mise.lock would fail a locked install:
   - jq@1.6 is not in the lockfile
   - No lockfile checksum found for yq@4.44.1 on platform linux-x64 (https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64) (--locked mode)
 hint: run `mise lock` to update the lockfile
 ```
+
+Each platform entry also shows the [provenance](#provenance-and-security) type
+recorded when the lockfile was generated (`minisign`, `cosign`, `slsa` or
+`github-attestations`), `checksum only`, or `none`. That is what `mise lock`
+verified, not what every install repeats: when an entry records both a checksum
+and provenance, a locked install may check only the checksum unless
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
+is set. This is informational; the check does not fail on it.
 
 The platforms are the [`lockfile_platforms`](/configuration/settings.html#lockfile_platforms)
 setting plus the current platform when that setting is set, else the
@@ -489,8 +500,8 @@ The Python that a `pipx` tool selects is checked with it. Like a locked install,
 the check enforces only the scopes in
 [`locked_scopes`](/configuration/settings.html#locked_scopes) and the tools under
 `tool_config.locked`, and never the global override config. `--json` prints one
-object per platform entry with its `problems`, and still exits non-zero when
-there are any.
+object per platform entry with its `provenance` and `problems`, and still exits
+non-zero when there are any problems.
 
 Remote [task includes](/tasks/task-discovery.html#remote-git-includes)
 (`git::`, `oci::` and `zip::`) are skipped with a warning, because fetching
