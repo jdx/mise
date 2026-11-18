@@ -18,3 +18,20 @@ assert "mise -q test" "real"
 flags="$(mise __complete_word__ --shell fish --line 'mise run test --')"
 assert_contains_text "$flags" '--real-flag'
 assert_not_contains_text "$flags" '--other-flag'
+
+# The same holds when the aliased task sorts before the task that owns the name
+cat <<'TOML' >mise.toml
+[tasks.alpha]
+alias = "zeta"
+usage = 'flag "--alpha-flag"'
+run = 'echo alpha'
+
+[tasks.zeta]
+usage = 'flag "--zeta-flag"'
+run = 'echo zeta'
+TOML
+
+assert "mise -q zeta" "zeta"
+flags="$(mise __complete_word__ --shell fish --line 'mise run zeta --')"
+assert_contains_text "$flags" '--zeta-flag'
+assert_not_contains_text "$flags" '--alpha-flag'

@@ -294,6 +294,18 @@ impl TasksLs {
     async fn display_usage(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         let mut usage = usage::Spec::default();
         let current_root = current_root_prefix(config);
+        // Every task's own name, so an alias another task owns as a name is never offered
+        // for the alias's task: a name wins when the task runs, and must when it completes.
+        let task_names: std::collections::HashSet<String> = tasks
+            .iter()
+            .flat_map(|t| {
+                let bare = current_root
+                    .as_deref()
+                    .and_then(|r| t.display_name.strip_prefix(r))
+                    .map(str::to_string);
+                std::iter::once(t.display_name.clone()).chain(bare)
+            })
+            .collect();
         for task in tasks {
             // Without experimental a `git::` file was not fetched, so its `#USAGE` header is
             // unknown; complete the task from its TOML metadata alone.
@@ -326,7 +338,13 @@ impl TasksLs {
                     .var(true)
                     .build(),
             );
-            let own_aliases = task_spec.cmd.aliases.clone();
+            let own_aliases: Vec<String> = task_spec
+                .cmd
+                .aliases
+                .iter()
+                .filter(|a| !task_names.contains(*a))
+                .cloned()
+                .collect();
             let prefixed_aliases: Vec<String> =
                 match crate::task::extract_monorepo_path(&task.display_name) {
                     Some(path) => own_aliases
