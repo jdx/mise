@@ -64,9 +64,13 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
         // `changeme'more'`) is still part of it. An unquoted value stops at a
         // shell separator (`KEY=value;next`), but in structured text a `;` is
         // part of the value, so the capture is incomplete.
-        let continues = if found.name("bare").is_some() {
-            line[value.end()..].starts_with(['"', '\''])
-                || (structured && line[value.end()..].starts_with(';'))
+        let bare = found.name("bare").is_some();
+        let continues = if bare {
+            let rest = &line[value.end()..];
+            let tail = rest.trim_start();
+            rest.starts_with(['"', '\''])
+                // a plain scalar runs to the end of the line or a comment
+                || (structured && !(tail.is_empty() || tail.starts_with('#')))
         } else {
             line[value.end()..]
                 .get(1..)
@@ -77,7 +81,19 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
                         && !(structured && matches!(next, ',' | '}' | ']' | ')' | '#'))
                 })
         };
-        if approved(text) && !continues {
+        if bare && !structured && text.contains(';') {
+            // shell: `KEY=value;next` is two commands. Judge the value alone,
+            // then each command after it; no segment holds a separator, so
+            // none recurses further.
+            let mut parts = text.split(';');
+            let first = parts.next().unwrap_or_default();
+            if approved(first) && !continues {
+                covered.push(value.start()..value.start() + first.len());
+            } else {
+                flagged = true;
+            }
+            flagged = flagged || parts.any(|part| suspicious(part, allowed));
+        } else if approved(text) && !continues {
             covered.push(value.range());
         } else {
             flagged = true;
@@ -166,6 +182,7 @@ mod tests {
             "export OPENAI_API_KEY=\"abcd1234efgh\"",
             "password: hunter2hunter2",
             "password: abc;defghijkl",
+            "password: ab;cdefghijklmnop",
             "AWS=AKIAABCDEFGHIJKLMNOP",
             "-----BEGIN OPENSSH PRIVATE KEY-----",
             "secret = 'abcdefgh'",
@@ -287,6 +304,8 @@ mod tests {
             "API_KEY=ctx7_api_key;DEPLOY_TOKEN=abcdefghijkl1234",
             "API_KEY=ctx7_api_key;DEPLOY_TOKEN=\"abcdefghijkl1234\"",
             "password: ctx7_api_key;sample-tail",
+            "password: ctx7_api_key extra words here",
+            "API_KEY=ctx7_api_key;DEPLOY_TOKEN=abcdefghijkl1234x",
             "export \"API_KEY\"=\"ctx7_api_key\",sample-tail",
             "API_KEY=ctx7_api_key'additional'",
             "API_KEY=\"ctx7_api_key abcdefghijkl\"",
@@ -311,6 +330,8 @@ mod tests {
             "export API_KEY=ctx7_api_key; echo ready",
             "API_KEY='ctx7_api_key'",
             "export API_KEY=ctx7_api_key;echo ready",
+            "API_KEY=ctx7_api_key;EDITOR=vimvimvim",
+            "password: ctx7_api_key # note",
             "API_KEY=\"ctx7_api_key\"; echo ready",
             "\"API_KEY\": \"ctx7_api_key\",",
             "API_KEY = \"ctx7_api_key\"#comment",
