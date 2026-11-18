@@ -141,6 +141,7 @@ fn test_normalize_tool_names_resolves_aliases() {
         "nodejs".to_string(),
         "golang".to_string(),
         "core:ruby".to_string(),
+        "core:nodejs".to_string(),
         "dotnet-core".to_string(),
     ]);
     let expected = BTreeSet::from([

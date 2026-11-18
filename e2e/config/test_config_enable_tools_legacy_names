@@ -14,7 +14,7 @@ assert_contains "mise ls" "node"
 assert_not_contains "mise ls" "tiny"
 assert_not_contains "mise ls" "go "
 
-export MISE_ENABLE_TOOLS=golang,core:node
+export MISE_ENABLE_TOOLS=golang,core:nodejs
 assert_contains "mise ls" "node"
 assert_contains "mise ls" "go "
 assert_not_contains "mise ls" "tiny"

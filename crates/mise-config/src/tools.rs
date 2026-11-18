@@ -21,11 +21,11 @@ pub(crate) use schema::task_tool_patterns;
 /// Resolves a legacy tool spelling to the name mise keys it by: `nodejs` is `node`, `golang`
 /// is `go`, `dotnet-core` is `dotnet`, and a `core:` prefix is dropped.
 pub fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
-    match backend {
+    match backend.trim_start_matches("core:") {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
-        _ => backend.trim_start_matches("core:"),
+        other => other,
     }
     .into()
 }
