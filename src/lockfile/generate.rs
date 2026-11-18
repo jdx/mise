@@ -1000,6 +1000,21 @@ fn describe_signer(info: &PlatformInfo) -> String {
     }
 }
 
+/// An aqua recipe that declares SLSA without a signer cannot continue a
+/// recorded SLSA entry; the tool options supply the signer and keep it verified.
+fn slsa_signer_hint(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> &'static str {
+    if backend.starts_with("aqua:")
+        && old.provenance.as_ref().is_some_and(ProvenanceType::is_slsa)
+        && new.provenance.is_none()
+    {
+        ", or, if the recipe names the SLSA provenance asset but no signer, set \
+         slsa_signer_identity and slsa_signer_issuer in the tool options so the SLSA \
+         provenance can be verified and recorded again"
+    } else {
+        ""
+    }
+}
+
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
     // A verified Packslip signer is the replacement trust baseline for an
     // artifact authenticated by its signed release manifest. Older incremental
@@ -1017,9 +1032,10 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
             "lockfile generation would downgrade recorded provenance; previous files were \
              preserved: recorded {} but the new entry has {}. If the registry recipe no longer \
              provides what mise needs to verify it, fix the recipe or lock the tool through \
-             another backend",
+             another backend{}",
             describe_provenance(old.provenance.as_ref()),
             describe_provenance(new.provenance.as_ref()),
+            slsa_signer_hint(old, new, backend),
         );
     }
     // A Packslip entry's signer continues as the same string, or, when both
@@ -1957,6 +1973,23 @@ mod tests {
         let mut new = old.clone();
         new.provenance_verified = None;
         assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_ok());
+    }
+
+    #[test]
+    fn aqua_slsa_downgrade_points_at_the_signer_options() {
+        let old = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa { url: None }),
+            ..Default::default()
+        };
+        let new = PlatformInfo::default();
+        let aqua = ensure_no_downgrade(&old, &new, "aqua:o/r")
+            .unwrap_err()
+            .to_string();
+        assert!(aqua.contains("slsa_signer_identity"), "{aqua}");
+        let github = ensure_no_downgrade(&old, &new, "github:o/r")
+            .unwrap_err()
+            .to_string();
+        assert!(!github.contains("slsa_signer_identity"), "{github}");
     }
 
     #[test]
