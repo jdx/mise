@@ -50,7 +50,7 @@ assert_contains "mise bootstrap packages apply --dry-run" 'port -N uninstall bc'
 assert_succeed "test ! -s '$HOME/port-log'"
 
 assert_succeed "mise bootstrap packages apply --yes --update"
-assert "cat '$HOME/port-log'" $'-N sync\n-N install ripgrep\n-N uninstall bc'
+assert "cat '$HOME/port-log'" $'-N uninstall bc\n-N sync\n-N install ripgrep'
 
 # A satisfied config is a no-op.
 printf '  git @2.47.0_0 (active)\n  ripgrep @14.0.0_0 (active)\n' >"$HOME/port-state"
