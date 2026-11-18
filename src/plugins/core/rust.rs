@@ -151,6 +151,11 @@ where
     Fut: std::future::Future<Output = bool>,
 {
     for date in dates {
+        // `timeout_at` accepts a future that is already ready even after the deadline, so a probe
+        // that finished just in time must not start the next one on an expired budget.
+        if tokio::time::Instant::now() >= deadline {
+            return DatedBuildSearch::OutOfTime;
+        }
         match tokio::time::timeout_at(deadline, exists(date)).await {
             Ok(true) => return DatedBuildSearch::Found(date),
             Ok(false) => {}
@@ -2151,6 +2156,20 @@ mod tests {
         .await;
         assert_eq!(result, DatedBuildSearch::OutOfTime);
         assert!(probes < 5, "probed {probes} dates past the deadline");
+    }
+
+    #[tokio::test]
+    async fn the_archive_search_does_not_probe_once_the_deadline_has_passed() {
+        let day = jiff::civil::date(2026, 11, 9);
+        let deadline = tokio::time::Instant::now();
+        let mut probes = 0;
+        let result = search_dated_builds(cutoff_search_dates(day, false, 90), deadline, |_| {
+            probes += 1;
+            async { true }
+        })
+        .await;
+        assert_eq!(result, DatedBuildSearch::OutOfTime);
+        assert_eq!(probes, 0);
     }
 
     #[tokio::test]
