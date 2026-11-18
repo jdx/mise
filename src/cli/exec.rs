@@ -193,6 +193,22 @@ impl Exec {
         } else {
             &shim_task_tools
         };
+        // A named tool the config scopes to another platform with `os` must not reach the backend.
+        // Read the config files, not the merged set: an env var version replaces the entry.
+        for ta in tool_args {
+            let configured = config
+                .config_files
+                .values()
+                .find_map(|cf| {
+                    cf.to_tool_request_set()
+                        .ok()?
+                        .tools
+                        .get(ta.ba.as_ref())
+                        .cloned()
+                })
+                .unwrap_or_default();
+            super::install::check_named_os(ta, configured)?;
+        }
         let build = async |config: &Arc<Config>| {
             ToolsetBuilder::new()
                 .with_args(tool_args)

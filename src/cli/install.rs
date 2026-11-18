@@ -144,6 +144,54 @@ pub(crate) struct Install {
     yes: bool,
 }
 
+/// Whether the argument spells its own `os` option, which then overrides the config's.
+pub(crate) fn names_os(ta: &ToolArg) -> bool {
+    // Only an option typed on the command line counts, not one an alias or config supplies.
+    ta.ba.explicit_opts().is_some_and(|opts| opts.os.is_some())
+}
+
+/// Reject a named tool its `os` option excludes from this platform: the argument's own
+/// option when it has one, else what the config says.
+pub(crate) fn check_named_os(ta: &ToolArg, configured: Vec<ToolRequest>) -> Result<()> {
+    if names_os(ta) {
+        let tr = match &ta.tvr {
+            Some(tr) => tr.clone(),
+            None => ToolRequest::new(ta.ba.clone(), "latest", ToolSource::Argument)?,
+        };
+        reject_os_excluded(vec![tr])?;
+    } else {
+        reject_os_excluded(configured)?;
+    }
+    Ok(())
+}
+
+/// Drop requests the tool's `os` option excludes from this platform. A named
+/// tool with no supported request left is an error, so it never reaches the
+/// backend; a tool with some supported requests installs those.
+pub(crate) fn reject_os_excluded(requests: Vec<ToolRequest>) -> Result<Vec<ToolRequest>> {
+    let (supported, excluded): (Vec<_>, Vec<_>) =
+        requests.into_iter().partition(|tr| tr.is_os_supported());
+    for tr in &excluded {
+        if supported.iter().any(|s| s.ba().short == tr.ba().short) {
+            continue;
+        }
+        let os = tr.os().as_ref().map(|os| os.join(", ")).unwrap_or_default();
+        if os.is_empty() {
+            eyre::bail!(
+                "{} is not available on {}",
+                tr.ba().short,
+                *crate::platform::OS
+            );
+        }
+        eyre::bail!(
+            "{} is not available on {}: its `os` option lists {os}",
+            tr.ba().short,
+            *crate::platform::OS
+        );
+    }
+    Ok(supported)
+}
+
 impl Install {
     /// a bare `mise install` (install everything missing from config), as run
     /// by `mise bootstrap`
@@ -377,6 +425,34 @@ impl Install {
             .filter(|t| !configured_tools.contains(*t))
             .cloned()
             .collect();
+        // `tool@version` replaces the configured request, dropping its `os` option, so judge
+        // a named tool by what the config files say about it.
+        for ta in ToolArg::double_tool_condition(&expanded_runtimes)?
+            .iter()
+            .filter(|ta| ta.tvr.is_some() || names_os(ta))
+        {
+            // The highest-precedence config file that lists the tool decides. Monorepo
+            // projects are siblings, so the union of their effective requests decides.
+            let configured = match &monorepo_union {
+                Some(union) => union
+                    .tool_request_set
+                    .tools
+                    .get(ta.ba.as_ref())
+                    .cloned()
+                    .unwrap_or_default(),
+                None => configured_config_files
+                    .values()
+                    .find_map(|cf| {
+                        cf.to_tool_request_set()
+                            .ok()?
+                            .tools
+                            .get(ta.ba.as_ref())
+                            .cloned()
+                    })
+                    .unwrap_or_default(),
+            };
+            check_named_os(ta, configured)?;
+        }
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
         extend_toolset(&mut ts, &task_requests);
         let mut tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
@@ -550,17 +626,22 @@ impl Install {
         runtimes: &[ToolArg],
     ) -> Result<Vec<ToolRequest>> {
         let mut requests = vec![];
+        // Arguments that spell their own `os` were checked by `check_named_os`, and it
+        // overrides whatever the config says about the tool.
+        let mut overridden = vec![];
         for ta in ToolArg::double_tool_condition(runtimes)? {
+            let mut mine = vec![];
+            let named_os = names_os(&ta);
             match ta.tvr {
                 // user provided an explicit version
-                Some(tv) => requests.push(tv),
+                Some(tv) => mine.push(tv),
                 None => {
                     match ts.versions.get(ta.ba.as_ref()) {
                         // the tool is in config so fetch the params from config
                         // this may match multiple versions of one tool (e.g.: python)
                         Some(tvl) => {
                             for tvr in &tvl.requests {
-                                requests.push(tvr.clone());
+                                mine.push(tvr.clone());
                             }
                         }
                         // In normal install mode, a bare tool absent from config defaults to
@@ -571,12 +652,19 @@ impl Install {
                             }
                             let tvr =
                                 ToolRequest::new(ta.ba.clone(), "latest", ToolSource::Argument)?;
-                            requests.push(tvr);
+                            mine.push(tvr);
                         }
                     }
                 }
             }
+            if named_os {
+                overridden.extend(mine);
+            } else {
+                requests.extend(mine);
+            }
         }
+        let mut requests = reject_os_excluded(requests)?;
+        requests.extend(overridden);
         Ok(requests)
     }
 
