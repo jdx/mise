@@ -80,7 +80,7 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
                     .is_some_and(|next| {
                         !next.is_whitespace()
                             && next != ';'
-                            && !(structured && matches!(next, ',' | '}' | ']' | ')'))
+                            && !(structured && matches!(next, ',' | '}' | ']' | ')' | '#'))
                     })
             };
         if ended && suspicious(&value.as_str()[text.len() + 1..], allowed) {
@@ -283,6 +283,7 @@ mod tests {
             "API_KEY=ctx7_api_key;B_TOKEN=abcdefghijkl",
             "API_KEY=ctx7_api_key;X=ghp_111111111111111111111111111111",
             "API_KEY=\"ctx7_api_key\"#actual-secret",
+            "API_KEY=ctx7_api_key;DEPLOY_TOKEN=abcdefghijkl1234",
             "API_KEY=ctx7_api_key'additional'",
             "API_KEY=\"ctx7_api_key abcdefghijkl\"",
             "export API_KEY=ctx7_api_key B_TOKEN=abcdefghijkl",
@@ -308,6 +309,7 @@ mod tests {
             "export API_KEY=ctx7_api_key;echo ready",
             "API_KEY=\"ctx7_api_key\"; echo ready",
             "\"API_KEY\": \"ctx7_api_key\",",
+            "API_KEY = \"ctx7_api_key\"#comment",
             "{ \"API_KEY\": \"ctx7_api_key\" }",
             "{\"API_KEY\":\"ctx7_api_key\"}",
         ] {
