@@ -629,11 +629,23 @@ fn check_merge_key_has_id(
     {
         return Ok(());
     }
+    // every other error merge_op reports comes first: none of them is fixed by
+    // adding an id or a format
+    if entry.block.is_some()
+        || entry.line.is_some()
+        || entry.position.is_some()
+        || entry.comment.is_some()
+        || (entry.source.is_none()
+            && crate::files::implied_source(&crate::files::resolve_target_arg(path_raw)).is_err())
+    {
+        return Ok(());
+    }
     let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
     let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
     if id_looks_like_file && target_is_unformatted {
-        // the suggested key is TOML, so quote and escape it as TOML
-        let suggestion = toml::Value::String(format!("{path_raw}/{id}/shared"));
+        // the suggested key is TOML, so quote and escape it as a TOML key; a
+        // JSON string is also a valid TOML basic string, which keys allow
+        let suggestion = serde_json::to_string(&format!("{path_raw}/{id}/shared"))?;
         // a format only helps when the parsed id would be accepted as it is
         let format_alternative = if is_valid_id(id) {
             ", otherwise set a format"
@@ -2481,10 +2493,15 @@ mod tests {
                 "\"~/.config/app/user settings.toml/shared\"",
                 false,
             ),
-            // the suggestion is a TOML string, so a quote cannot end it early
+            // the suggestion is a TOML key, so a quote or a newline is escaped
             (
                 "~/.config/app\"data/settings.toml",
-                "'~/.config/app\"data/settings.toml/shared'",
+                "\"~/.config/app\\\"data/settings.toml/shared\"",
+                true,
+            ),
+            (
+                "~/.config/app\nlocal/settings.toml",
+                "\"~/.config/app\\nlocal/settings.toml/shared\"",
                 true,
             ),
         ] {
@@ -2502,6 +2519,34 @@ mod tests {
             assert!(err.contains("missing its /<id>"), "{err}");
             assert!(err.contains(suggestion), "{err}");
             assert_eq!(err.contains("set a format"), offers_format, "{err}");
+        }
+    }
+
+    #[test]
+    fn other_merge_errors_are_reported_before_the_missing_id() {
+        for (key, entry, reason) in [
+            (
+                "~/.config/app/settings.toml",
+                "source = \"s\"\nmerge = true\nline = \"x\"",
+                "block or line",
+            ),
+            (
+                "/etc/app/settings.toml",
+                "merge = true",
+                "source is required",
+            ),
+        ] {
+            let (path, id) = split_edit_key(key).unwrap();
+            let entry: EditTomlEntry = toml::from_str(entry).unwrap();
+            let err = resolve_entry(
+                &path,
+                id,
+                entry,
+                Path::new("/cfg"),
+                Path::new("/cfg/mise.toml"),
+            );
+            let err = err.unwrap_err().to_string();
+            assert!(err.contains(reason), "{err}");
         }
     }
 
