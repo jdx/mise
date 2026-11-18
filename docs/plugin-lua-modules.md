@@ -143,12 +143,15 @@ keep their top level to function definitions.
 | [Backend](/backend-plugin-development.html)         | `backend_list_versions.lua`, `backend_install.lua`, `backend_exec_env.lua` | `backend_uninstall.lua`, `backend_list_tools.lua`, `backend_search_tools.lua`                  |
 | [Environment](/env-plugin-development.html)         | `mise_env.lua`, `mise_path.lua`, or both                                   | none                                                                                           |
 | [Package manager](/package-plugin-development.html) | `package_installed.lua`, `package_install.lua`                             | `package_upgrade.lua`, `package_uninstall.lua`                                                 |
+| [Settings](/settings-plugin-development.html)       | `settings_read.lua`, `settings_write.lua`                                  | none                                                                                           |
 
 mise decides a plugin's type from these files. A plugin with
-`hooks/backend_install.lua` is a backend plugin. One with both
-`hooks/package_install.lua` and `hooks/package_installed.lua` is a package
-manager plugin. Any other plugin with a `metadata.lua` is a tool or environment
-plugin. Package manager plugins can also declare their capabilities in a
+`hooks/backend_install.lua` is a backend plugin, whatever other hooks it has.
+One with both
+`hooks/settings_read.lua` and `hooks/settings_write.lua` is a settings plugin.
+One with both `hooks/package_install.lua` and `hooks/package_installed.lua` is a
+package manager plugin. Any other plugin with a `metadata.lua` is a tool or environment
+plugin. Package manager and settings plugins can also declare their capabilities in a
 `mise.plugin.toml` file. mise does not call upstream vfox's `PreUse` hook.
 
 ## Tool options in hooks {#tool-options}
@@ -666,4 +669,5 @@ settings with their variables; see
 - [Backend plugins](/backend-plugin-development.html)
 - [Environment plugins](/env-plugin-development.html)
 - [Package manager plugins](/package-plugin-development.html)
+- [Settings plugins](/settings-plugin-development.html)
 - [Publishing plugins](/plugin-publishing.html)
