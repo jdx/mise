@@ -42,12 +42,16 @@ fn port_bin() -> Option<PathBuf> {
     if !cfg!(target_os = "macos") {
         return None;
     }
-    // `file::which` caches a miss for the whole process, which would hide a
-    // `port` that a `pre-packages` hook installs after an earlier check.
-    mise_util::file::which_spawnable("port").or_else(|| {
-        let default = PathBuf::from(DEFAULT_PORT);
-        (default.is_file() && mise_util::file::is_executable(&default)).then_some(default)
-    })
+    // Not `file::which`: it caches a miss for the whole process, which would
+    // hide a `port` that a `pre-packages` hook installs after an earlier check,
+    // and it accepts a directory named `port`.
+    let usable = |path: &PathBuf| path.is_file() && mise_util::file::is_executable(path);
+    let on_path = std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join("port"))
+            .find(usable)
+    });
+    on_path.or_else(|| Some(PathBuf::from(DEFAULT_PORT)).filter(usable))
 }
 
 fn port_path() -> Result<String> {
@@ -128,15 +132,14 @@ impl InstalledPort<'_> {
 fn parse_line(line: &str) -> Option<InstalledPort<'_>> {
     let (name, rest) = line.strip_prefix("  ")?.split_once(" @")?;
     let (spec, flags) = rest.split_once(' ').unwrap_or((rest, ""));
-    // The revision is the first `_<digits>` that ends the release: followed
-    // by a variant (`+name` or `-name`, the latter for a negated one) or by
-    // nothing. Variant names may contain `_` themselves, so they come later.
-    let (version, revision) = spec.match_indices('_').find_map(|(index, _)| {
-        let after = &spec[index + 1..];
-        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
-        let ends = matches!(after.as_bytes().get(digits), None | Some(b'+' | b'-'));
-        (digits > 0 && ends).then(|| (&spec[..index], &after[..digits]))
-    })?;
+    // Variants (`+name`, or `-name` for a negated one) start at the first `+`
+    // or `-`; their names may contain `_`. The revision is the last `_<digits>`
+    // before them, and a version may itself contain `_`.
+    let release = spec.split(['+', '-']).next()?;
+    let (version, revision) = release.rsplit_once('_')?;
+    if revision.is_empty() || !revision.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     Some(InstalledPort {
         name,
         spec,
@@ -325,6 +328,9 @@ mod tests {
         assert_eq!((negated.version, negated.revision), ("2.47.0", "0"));
         let mixed = parse_line("  git @2.47.0_1-x11+perl5_34 (active)").unwrap();
         assert_eq!((mixed.version, mixed.revision), ("2.47.0", "1"));
+        // a version that itself contains `_<digits>` keeps it
+        let underscored = parse_line("  tool @1_2_3+x_4 (active)").unwrap();
+        assert_eq!((underscored.version, underscored.revision), ("1_2", "3"));
     }
 
     #[test]
