@@ -784,3 +784,20 @@ fn test_ensure_symlinks_stay_within_still_refuses_absolute_links_not_in_the_tree
     let err = ensure_symlinks_stay_within(&root).unwrap_err();
     assert!(format!("{err:#}").contains("points outside of"));
 }
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_rebases_chained_absolute_links() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(root.join("opt/pkg")).unwrap();
+    fs::write(root.join("opt/pkg/tool-real"), "tool").unwrap();
+    symlink("/opt/pkg/tool-real", root.join("opt/pkg/tool")).unwrap();
+    symlink("/opt/pkg/tool", root.join("tool")).unwrap();
+
+    ensure_symlinks_stay_within(&root).unwrap();
+
+    assert_eq!(fs::read_to_string(root.join("tool")).unwrap(), "tool");
+}
