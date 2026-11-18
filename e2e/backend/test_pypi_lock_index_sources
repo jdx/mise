@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mise install uv@0.12.10 python@3.12.11
+python3 "$ROOT/e2e/fixtures/pypi/server.py" "$PWD/index" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in {1..100}; do
+  [[ -s index/port ]] && break
+  sleep 0.1
+done
+port=$(cat index/port)
+# The global registry stands in for PyPI. The private index hosts mise-lock-cli
+# too, but only `mise-lock-extra` may come from it.
+touch index/private-extra
+write_config() {
+  cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+python = "3.12.11"
+"pypi:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], $1 }
+[settings]
+lockfile = true
+minimum_release_age = "0"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
+EOF_CONFIG
+}
+index="{ name = \"private\", url = \"http://127.0.0.1:$port/private/simple/\", explicit = true }"
+write_config "indexes = [$index], sources = { mise-lock-extra = { index = \"private\" } }"
+mise trust
+
+mise lock
+sidecar=$(find .mise/locks/pypi-mise-lock-cli -mindepth 1 -maxdepth 1)
+graph=$sidecar/uv.lock
+# Only the pinned package comes from the private index.
+assert_contains "grep -A3 '^name = \"mise-lock-extra\"' $graph" "registry = \"http://127.0.0.1:$port/private/simple/\""
+assert_contains "grep -A3 '^name = \"mise-lock-cli\"' $graph" "registry = \"http://127.0.0.1:$port/simple/\""
+assert_contains "cat $sidecar/pyproject.toml" 'name = "private"'
+assert_contains "cat $sidecar/pyproject.toml" 'explicit = true'
+assert_contains 'cat mise.lock' 'indexes ='
+assert_contains 'cat mise.lock' 'sources ='
+assert_contains 'mise x --locked -- lock-cli' 'extra=1.0.0'
+
+# Installing replays the graph with the same project file.
+mise uninstall pypi:mise-lock-cli
+mise install --locked pypi:mise-lock-cli
+assert_contains 'mise x --locked -- lock-cli' 'extra=1.0.0'
+
+# The tool itself can come from the private index; the registry never sees its name.
+write_config "indexes = [$index], sources = { mise-lock-cli = { index = \"private\" }, mise-lock-extra = { index = \"private\" } }"
+mise lock
+sidecar=$(find .mise/locks/pypi-mise-lock-cli -mindepth 1 -maxdepth 1 -newer mise.toml)
+assert_contains "grep -A3 '^name = \"mise-lock-cli\"' $sidecar/uv.lock" "registry = \"http://127.0.0.1:$port/private/simple/\""
+
+# A lock made for other indexes or sources does not satisfy the changed tool.
+write_config "indexes = [$index]"
+assert_fail 'mise install --locked pypi:mise-lock-cli' 'is not in the lockfile'
+
+# Misconfiguration is reported before uv runs.
+write_config 'sources = { mise-lock-extra = { index = "private" } }'
+assert_fail 'mise lock' 'names the index private, which indexes does not define'
+write_config "indexes = [$index], sources = { mise-lock-other = { index = \"private\" } }"
+assert_contains 'mise lock 2>&1' 'is not the tool or one of its'
+write_config "indexes = [{ name = \"private\", url = \"http://user:secret@127.0.0.1:$port/private/simple/\" }]"
+assert_fail 'mise lock' 'credential-free http(s) url'
+write_config "indexes = [$index], uvx = false"
+assert_fail 'mise lock' 'cannot be combined with uvx = false'
+write_config "indexes = [$index], uvx_args = \"--no-cache\""
+assert_fail 'mise lock' 'cannot be combined with uvx_args or pipx_args'
