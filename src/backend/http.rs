@@ -1849,8 +1849,11 @@ impl HttpBackend {
             // another tool sharing the extraction once this one is uninstalled.
             // A Windows entry is a copy, which cannot dangle, and its source record has
             // to be spelled through the install path, so only Unix resolves the link.
+            // `bin_path = "."` leaves `.` components, which a source record rejects.
             let src = if cfg!(windows) {
-                src
+                src.components()
+                    .filter(|c| !matches!(c, std::path::Component::CurDir))
+                    .collect::<PathBuf>()
             } else {
                 dunce::canonicalize(&src).unwrap_or(src)
             };
