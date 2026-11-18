@@ -3519,16 +3519,47 @@ fn match_tasks_with_context(
     } else {
         resolve_task_pattern(&td.task, parent_task)
     };
-    let candidates: Vec<&&Task> = if tag_only {
-        tasks.values().unique().collect()
+    let mut candidates: Vec<&Task> = if tag_only {
+        tasks.values().copied().unique().collect()
     } else {
-        tasks.get_matching(&resolved_pattern)?
+        tasks
+            .get_matching(&resolved_pattern)?
+            .into_iter()
+            .copied()
+            .collect()
     };
+    // A bare name in a monorepo task resolves to the parent's project first. When no task there
+    // has that name, fall back to the unscoped name so global tasks stay reachable (#15811).
+    if candidates.is_empty()
+        && !tag_only
+        && resolved_pattern != td.task
+        && !td.task.starts_with(['/', ':', '.'])
+        && !is_workspace_project_task(&td.task)
+    {
+        // Match only unscoped tasks: `get_matching` retries a grouped name with `//` prepended
+        // when the map has monorepo keys, which would run another project's task.
+        let unscoped: BTreeMap<String, &Task> = tasks
+            .iter()
+            .filter(|(k, t)| {
+                // A scoped task is also keyed by its unscoped aliases, so check its name too.
+                !k.starts_with("//")
+                    && !is_workspace_project_task(k)
+                    && !t.name.starts_with("//")
+                    && !is_workspace_project_task(&t.name)
+            })
+            .map(|(k, t)| (k.clone(), *t))
+            .collect();
+        candidates = unscoped
+            .get_matching(&td.task)?
+            .into_iter()
+            .copied()
+            .collect();
+    }
     let matches = candidates
         .into_iter()
         .filter(|t| td.tags.is_empty() || t.has_any_tag(&td.tags))
         .map(|t| {
-            let mut t = (*t).clone();
+            let mut t = t.clone();
             t.args = td.args.clone();
             // Apply env vars from dependency - these affect task identity/deduplication
             if !td.env.is_empty() {
@@ -4072,7 +4103,10 @@ where
         } else if pat.starts_with(':') {
             // Special case: :task should have been expanded before calling get_matching
             // If we reach here, it means the expansion didn't happen properly
-            bail!("':task' pattern should be expanded before matching")
+            bail!(
+                "task pattern '{pat}' is not valid here; use '{}' to run a task in the current project",
+                pat.trim_start_matches(':')
+            )
         } else {
             pat.to_string()
         };

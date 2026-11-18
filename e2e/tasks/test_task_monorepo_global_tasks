@@ -47,4 +47,93 @@ assert_contains "mise tasks --all" "hello"
 echo "=== Test 5: Colon syntax does not fall back to global tasks ==="
 assert_fail "mise run :hello"
 
+# Test 6: A bare dependency falls back to the global task (#15811)
+echo "=== Test 6: depends on a global task from monorepo tasks ==="
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.root-task]
+depends = ["hello"]
+run = "echo root-task-ran"
+TOML
+cat <<'TOML' >packages/foo/mise.toml
+[tasks.foo-task]
+depends = ["hello"]
+run = "echo foo-task-ran"
+TOML
+assert_contains "mise run '//:root-task'" "hello-from-global"
+assert_contains "mise run '//packages/foo:foo-task'" "hello-from-global"
+
+# Test 7: A project task shadows the global task of the same name
+echo "=== Test 7: project task shadows global task ==="
+cat <<'TOML' >>packages/foo/mise.toml
+
+[tasks.hello]
+run = "echo hello-from-project"
+TOML
+assert_contains "mise run '//packages/foo:foo-task'" "hello-from-project"
+
+# Test 8: the fallback never reaches into another project's grouped task
+echo "=== Test 8: no cross-project fallback ==="
+mkdir -p tools
+cat <<'TOML' >tools/mise.toml
+[tasks.install]
+run = "echo tools-install-ran"
+TOML
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "tools"]
+
+[tasks.bad]
+depends = ["tools:install"]
+run = "echo bad-ran"
+TOML
+# The //tools project is loaded, so the old full-map fallback would have run //tools:install.
+assert_contains "mise run '//tools:install'" "tools-install-ran"
+assert_fail "mise run '//:bad'"
+
+# Test 9: an absent optional glob dependency does not run another project's tasks
+echo "=== Test 9: optional glob dependency ==="
+mkdir -p test
+cat <<'TOML' >test/mise.toml
+[tasks.unit]
+run = "echo test-unit-ran"
+
+[tasks.run]
+alias = "test:aliased"
+run = "echo test-aliased-ran"
+TOML
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "tools", "test"]
+
+[tasks.opt]
+depends = [{ task = "test:*", optional = true }]
+run = "echo opt-ran"
+TOML
+assert "mise run '//:opt'" "opt-ran"
+assert_not_contains "mise run '//:opt' 2>&1" "test-unit-ran"
+
+# Test 10: aliases of a project task do not bypass the global-only fallback
+echo "=== Test 10: alias of a project task ==="
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "tools", "test"]
+
+[tasks.opt]
+depends = [{ task = "test:aliased", optional = true }]
+run = "echo opt-ran"
+TOML
+assert "mise run '//:opt'" "opt-ran"
+assert_not_contains "mise run '//:opt' 2>&1" "test-aliased-ran"
+
 echo "=== All monorepo global task tests passed! ==="
