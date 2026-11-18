@@ -589,6 +589,11 @@ impl Backend for JavaPlugin {
                 "tem" => "temurin",
                 _ => vendor, // either same vendor name or unsupported
             };
+            if vendor == "temurin"
+                && let Some(version) = temurin_hotfix_version(version)
+            {
+                return Ok(vec![format!("{vendor}-{version}")]);
+            }
             let mut version = version.split(['+', '-']).collect::<Vec<&str>>()[0];
             // if vendor is zulu, we can only match the major version
             if vendor == "zulu" {
@@ -729,6 +734,23 @@ impl Backend for JavaPlugin {
             })
             .collect()
     }
+}
+
+/// SDKMAN names a Temurin hotfix release with a fourth component, such as `26.0.2.1+1`.
+/// The catalog has no such version: it lists the hotfix as `26.0.2+101`, the hotfix number
+/// followed by the two-digit build. Returns `None` for any other shape.
+fn temurin_hotfix_version(version: &str) -> Option<String> {
+    let (core, build) = version.split_once('+')?;
+    let build: u32 = build.parse().ok()?;
+    let parts = core.split('.').collect::<Vec<_>>();
+    let [major, minor, patch, hotfix] = parts[..] else {
+        return None;
+    };
+    let hotfix: u32 = hotfix.parse().ok()?;
+    if hotfix == 0 || build >= 100 {
+        return None;
+    }
+    Some(format!("{major}.{minor}.{patch}+{}", hotfix * 100 + build))
 }
 
 /// Every metadata entry under its full version string, plus a shorthand entry like
@@ -1208,6 +1230,38 @@ mod tests {
 
     /// A numeric query must not bleed into a longer version: "11.0.1" selects
     /// "11.0.1" and its build numbers, never "11.0.10".
+    #[test]
+    fn temurin_hotfix_versions_use_the_catalog_build_number() {
+        assert_eq!(
+            temurin_hotfix_version("26.0.2.1+1").as_deref(),
+            Some("26.0.2+101")
+        );
+        assert_eq!(
+            temurin_hotfix_version("21.0.12.1+1").as_deref(),
+            Some("21.0.12+101")
+        );
+        assert_eq!(temurin_hotfix_version("21.0.2+13"), None);
+        assert_eq!(temurin_hotfix_version("26.0.2.1"), None);
+        assert_eq!(temurin_hotfix_version("26.0.2.0+1"), None);
+    }
+
+    #[tokio::test]
+    async fn sdkmanrc_temurin_hotfix_maps_to_the_catalog_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let parse = async |contents: &str| {
+            let path = dir.path().join(".sdkmanrc");
+            std::fs::write(&path, contents).unwrap();
+            JavaPlugin::new()
+                ._parse_idiomatic_file(&path)
+                .await
+                .unwrap()
+        };
+        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2+101"]);
+        assert_eq!(parse("java=21.0.2+13-tem\n").await, ["temurin-21.0.2"]);
+        assert_eq!(parse("java=21.0.2.1+1-amzn\n").await, ["corretto-21.0.2.1"]);
+        assert_eq!(parse("java=21.0.2-zulu\n").await, ["zulu-21"]);
+    }
+
     #[test]
     fn numeric_query_does_not_match_a_longer_version() {
         let versions = ["11.0.1", "11.0.1+13", "11.0.10", "11.0.10+9"];
