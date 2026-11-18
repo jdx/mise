@@ -83,7 +83,7 @@ ignore = [
   { id = "RUSTSEC-2026-0403", reason = "zstd-safe legacy frame uninitialized memory advisory; zstd-safe 7.3.0 only remains via zstd 0.13 in aube (decmpfs), rattler and ubi, which use the read decoder and bulk APIs that the advisory does not cover (mise's own zstd is 0.14 with zstd-safe 8.2), and the patched zstd-safe 8 is not semver-compatible with the 7.x that zstd 0.13 pins, so no safe upgrade available" },
   { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar unmaintained - transitive via rattler_package_streaming, which the conda backend uses to unpack conda packages, no safe upgrade available" },
   { id = "RUSTSEC-2026-0441", reason = "pin-utils unmaintained - transitive via wasmtimer in rattler_repodata_gateway, no safe upgrade available" },
-  { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained (it wraps chrono) - transitive via rattler and rattler_repodata_gateway, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained - transitive via rattler and rattler_repodata_gateway, no safe upgrade available" },
   { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained - all versions affected, no safe upgrade available; transitive via built, expr-lang (chrono-tz) and tera" },
   { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained - transitive via expr-lang and tera, no safe upgrade available" },
   { id = "RUSTSEC-2026-0559", reason = "chrono-tz-build unmaintained - build dependency of chrono-tz 0.9 via tera, no safe upgrade available" },
