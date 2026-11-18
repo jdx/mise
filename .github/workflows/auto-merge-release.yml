@@ -1,11 +1,10 @@
 name: auto-merge-release
 
 # reads metadata only; never checks out PR code
-# jactionlint ignore=dangerous-triggers
 on:
   # A draft release PR is an explicit hold. This event disarms a release PR
   # that was armed earlier in the day.
-  pull_request_target:
+  pull_request:
     types: [converted_to_draft]
   schedule:
     # GitHub Actions cron is UTC. Each afternoon hour covers either CDT or CST;
@@ -60,7 +59,7 @@ jobs:
 
           # Draft-conversion events only disarm. Making a draft ready again
           # cannot release it early; only the scheduled run can arm it.
-          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request_target" ]; then
+          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
             echo "Release PR #$PR_NUMBER is ready, but this is not the scheduled arming run"
             exit 0
           fi
