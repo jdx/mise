@@ -100,3 +100,17 @@ if printf '%s\n' "$(mise tasks ls --complete --complete-word '//')" | grep -q '^
   fail "// completion offered the bare name"
 fi
 assert_contains_text "$(mise tasks ls --complete --complete-word '/')" '//\:root-task:'
+
+# `mise run <TAB>` is answered from the mounted `mise tasks --usage` spec, which gets the typed
+# word too: one spelling of the root task, the other config roots under their // paths.
+run_bare="$(mise __complete_word__ --shell fish --line 'mise run ')"
+assert_contains_text "$run_bare" 'root-task'
+assert_contains_text "$run_bare" '//apps/web:update-snapshots'
+assert_not_contains_text "$run_bare" ':root-task'
+run_colon="$(mise __complete_word__ --shell fish --line 'mise run :')"
+assert_contains_text "$run_colon" ':root-task'
+assert_not_contains_text "$run_colon" '//:root-task'
+run_abs="$(mise __complete_word__ --shell fish --line 'mise run /')"
+assert_contains_text "$run_abs" '//:root-task'
+# every spelling still selects the task, so its own arguments keep completing
+assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run //:root-task --')" 'unexpected'

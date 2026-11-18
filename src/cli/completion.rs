@@ -18,12 +18,38 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
         return Cli::completion_request(argv);
     }
 
-    let spec = super::usage::completion_spec();
+    let mut spec = super::usage::completion_spec();
     let restarted = restart_after_task_separator(&spec, &request);
     let request = restarted.as_ref().unwrap_or(&request);
+    // A cursor past the last word is on an empty one.
+    let word = request
+        .split
+        .words
+        .get(request.split.cword)
+        .map_or("", String::as_str);
+    tell_task_mounts_the_word(&mut spec.cmd, word);
     complete_spec(&spec, request)
         .ok()
         .or_else(|| Cli::completion_request(argv))
+}
+
+/// Pass the word being completed to the mounts that list tasks.
+///
+/// A mount's command is fixed text, so without this `mise tasks --usage` cannot tell `mise run
+/// <TAB>` from `mise run //<TAB>` and offers every spelling of every task. With the word it
+/// offers the one that fits, and keeps the others as hidden aliases.
+fn tell_task_mounts_the_word(cmd: &mut usage::SpecCommand, word: &str) {
+    for mount in &mut cmd.mounts {
+        if mount.run == "mise tasks --usage" {
+            mount.run = format!(
+                "mise tasks --usage --complete-word={}",
+                shell_words::quote(word)
+            );
+        }
+    }
+    for sub in cmd.subcommands.values_mut() {
+        tell_task_mounts_the_word(sub, word);
+    }
 }
 
 /// Whether the cursor is on a value a `#[usage(complete = …)]` function answers.

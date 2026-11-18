@@ -326,24 +326,56 @@ impl TasksLs {
                     .var(true)
                     .build(),
             );
-            if let Some(path) = crate::task::extract_monorepo_path(&task.display_name) {
-                let prefixed_aliases: Vec<String> = task_spec
-                    .cmd
-                    .aliases
-                    .iter()
-                    .map(|a| format!("//{}:{}", path, a))
-                    .collect();
-                task_spec.cmd.aliases.extend(prefixed_aliases);
-            }
+            let own_aliases = task_spec.cmd.aliases.clone();
+            let prefixed_aliases: Vec<String> =
+                match crate::task::extract_monorepo_path(&task.display_name) {
+                    Some(path) => own_aliases
+                        .iter()
+                        .map(|a| format!("//{}:{}", path, a))
+                        .collect(),
+                    None => vec![],
+                };
             // Aliases get no `:` form: they exist to save typing, and listing every spelling
             // of every alias crowds the candidates. `mise tasks ls` shows them.
-            if let Some(name) = shorthand_name(current_root.as_deref(), &task) {
-                task_spec.cmd.aliases.push(name);
+            let shorthand = shorthand_name(current_root.as_deref(), &task);
+            let bare = bare_names(current_root.as_deref(), &task);
+            let spellings: Vec<String> = own_aliases
+                .iter()
+                .chain(&prefixed_aliases)
+                .chain(&shorthand)
+                .chain(&bare)
+                .cloned()
+                .collect();
+            match self.complete_word.as_deref() {
+                None => task_spec.cmd.aliases = spellings,
+                Some(word) => {
+                    // Every spelling still selects the task, so the words after it keep
+                    // completing; only the ones that fit the typed word are offered.
+                    let mut offered = completion_names(current_root.as_deref(), &task, word);
+                    if word.starts_with('/') {
+                        offered.extend(prefixed_aliases.iter().cloned());
+                    } else if !word.starts_with(':') {
+                        offered.extend(own_aliases.iter().cloned());
+                    }
+                    let all: Vec<String> = std::iter::once(task_spec.cmd.name.clone())
+                        .chain(spellings)
+                        .unique()
+                        .collect();
+                    let (shown, hidden): (Vec<_>, Vec<_>) =
+                        all.into_iter().partition(|n| offered.contains(n));
+                    match shown.split_first() {
+                        Some((first, rest)) => {
+                            task_spec.cmd.name = first.clone();
+                            task_spec.cmd.aliases = rest.to_vec();
+                        }
+                        None => {
+                            task_spec.cmd.aliases = vec![];
+                            task_spec.cmd.hide = true;
+                        }
+                    }
+                    task_spec.cmd.hidden_aliases = hidden;
+                }
             }
-            task_spec
-                .cmd
-                .aliases
-                .extend(bare_names(current_root.as_deref(), &task));
             usage
                 .cmd
                 .subcommands
