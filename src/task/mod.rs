@@ -3540,7 +3540,13 @@ fn match_tasks_with_context(
         // when the map has monorepo keys, which would run another project's task.
         let unscoped: BTreeMap<String, &Task> = tasks
             .iter()
-            .filter(|(k, _)| !k.starts_with("//") && !is_workspace_project_task(k))
+            .filter(|(k, t)| {
+                // A scoped task is also keyed by its unscoped aliases, so check its name too.
+                !k.starts_with("//")
+                    && !is_workspace_project_task(k)
+                    && !t.name.starts_with("//")
+                    && !is_workspace_project_task(&t.name)
+            })
             .map(|(k, t)| (k.clone(), *t))
             .collect();
         candidates = unscoped

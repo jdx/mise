@@ -103,6 +103,10 @@ mkdir -p test
 cat <<'TOML' >test/mise.toml
 [tasks.unit]
 run = "echo test-unit-ran"
+
+[tasks.run]
+alias = "test:aliased"
+run = "echo test-aliased-ran"
 TOML
 cat <<'TOML' >mise.toml
 monorepo_root = true
@@ -116,5 +120,20 @@ run = "echo opt-ran"
 TOML
 assert "mise run '//:opt'" "opt-ran"
 assert_not_contains "mise run '//:opt' 2>&1" "test-unit-ran"
+
+# Test 10: aliases of a project task do not bypass the global-only fallback
+echo "=== Test 10: alias of a project task ==="
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "tools", "test"]
+
+[tasks.opt]
+depends = [{ task = "test:aliased", optional = true }]
+run = "echo opt-ran"
+TOML
+assert "mise run '//:opt'" "opt-ran"
+assert_not_contains "mise run '//:opt' 2>&1" "test-aliased-ran"
 
 echo "=== All monorepo global task tests passed! ==="
