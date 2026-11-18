@@ -427,17 +427,20 @@ impl Install {
         // `tool@version` replaces the configured request, dropping its `os` option, so judge
         // a named tool by what the config files say about it.
         for ta in expanded_runtimes.iter().filter(|ta| ta.tvr.is_some()) {
-            // The highest-precedence config file that lists the tool decides.
-            let configured = configured_config_files
-                .values()
-                .find_map(|cf| {
-                    cf.to_tool_request_set()
-                        .ok()?
-                        .tools
-                        .get(ta.ba.as_ref())
-                        .cloned()
-                })
-                .unwrap_or_default();
+            // The highest-precedence config file that lists the tool decides. Monorepo
+            // projects are siblings, not a precedence chain, so any of them may supply it.
+            let mut listed = configured_config_files.values().filter_map(|cf| {
+                cf.to_tool_request_set()
+                    .ok()?
+                    .tools
+                    .get(ta.ba.as_ref())
+                    .cloned()
+            });
+            let configured = if self.monorepo {
+                listed.flatten().collect_vec()
+            } else {
+                listed.next().unwrap_or_default()
+            };
             check_named_os(ta, configured)?;
         }
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
