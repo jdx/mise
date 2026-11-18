@@ -2802,6 +2802,8 @@ impl Bootstrap {
             let tasks = config.tasks().await?;
             if tasks.iter().any(|(_, t)| {
                 t.aliases.iter().any(|a| a == "bootstrap")
+                    // `//:bootstrap` is how a monorepo names the root config's `bootstrap` task
+                    || t.name == "//:bootstrap"
                     || (!t.name.contains(':') && t.is_match("bootstrap"))
             }) {
                 // The task `mise run bootstrap` below starts, found the way it finds it, so an
