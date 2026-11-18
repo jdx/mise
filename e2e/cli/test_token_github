@@ -60,6 +60,41 @@ EOF
 assert_contains "mise token github --unmask" "gh-cli-token"
 assert_contains "mise token github --unmask" "gh CLI"
 
+# Test 6b: gh is logged in but keeps its token in the keyring, so hosts.yml has only the user
+cat >"$HOME/.config/gh/hosts.yml" <<'EOF2'
+github.com:
+  user: test
+EOF2
+assert_contains "mise token github 2>&1" "(none)"
+assert_contains "mise token github 2>&1" "keeps its token in the system keyring"
+assert_contains "mise token github 2>&1" "credential_command"
+# the hint goes to stderr, so stdout stays machine-readable
+assert_not_contains "mise token github 2>/dev/null" "keyring"
+# an API alias of the host gets the hint too
+assert_contains "mise token github api.github.com 2>&1" "keeps its token in the system keyring"
+# no hint for a host gh is not logged in to, or when gh tokens are disabled
+assert_not_contains "mise token github ghe.example.com 2>&1" "keyring"
+assert_not_contains "MISE_GITHUB_GH_CLI_TOKENS=false mise token github 2>&1" "keyring"
+# no hint when another source supplies the token
+assert_not_contains "GITHUB_TOKEN=env-token mise token github 2>&1" "keyring"
+# a blank token counts as no token, and a non-string user does not hide other hosts' tokens
+cat >"$HOME/.config/gh/hosts.yml" <<'EOF2'
+github.com:
+  user: test
+  oauth_token: ""
+ghe.example.com:
+  user:
+    nested: value
+  oauth_token: ghe-gh-token
+EOF2
+assert_contains "mise token github 2>&1" "keeps its token in the system keyring"
+assert_contains "mise token github ghe.example.com --unmask" "ghe-gh-token"
+cat >"$HOME/.config/gh/hosts.yml" <<'EOF2'
+github.com:
+  oauth_token: gh-cli-token
+  user: test
+EOF2
+
 # Test 7: Token masking (default, no --unmask)
 assert_not_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise token github" "ghp_abcdefghijklmnop"
 assert_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise token github" "ghp_"

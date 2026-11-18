@@ -100,6 +100,20 @@ impl Github {
                     bail!("no GitHub token found for {}", self.host);
                 }
                 miseprintln!("{}: (none)", self.host);
+                if github::gh_token_in_keyring(&self.host) {
+                    // `cmd` is the default inline shell on Windows and does not expand `$VAR`.
+                    let host_var = if cfg!(windows) {
+                        "%MISE_CREDENTIAL_HOST%"
+                    } else {
+                        "\"$MISE_CREDENTIAL_HOST\""
+                    };
+                    eprintln!(
+                        "hint: gh is logged in to {host} but keeps its token in the system keyring, which mise does not read.\n\
+                         Set `credential_command = 'gh auth token --hostname {host_var}'` under [settings.github].\n\
+                         See https://mise.jdx.dev/dev-tools/github-tokens.html#gh-keyring",
+                        host = self.host
+                    );
+                }
             }
         }
         Ok(())

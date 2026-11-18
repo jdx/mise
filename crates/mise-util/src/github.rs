@@ -2516,7 +2516,7 @@ fn gh_native_hosts_paths() -> Vec<PathBuf> {
     Vec::new()
 }
 
-fn read_gh_hosts() -> Option<HashMap<String, String>> {
+fn read_gh_host_entries() -> Option<HashMap<String, GhHostEntry>> {
     let hosts_path = gh_hosts_path()?;
     let contents = match std::fs::read_to_string(&hosts_path) {
         Ok(c) => c,
@@ -2525,27 +2525,77 @@ fn read_gh_hosts() -> Option<HashMap<String, String>> {
             return None;
         }
     };
-    let hosts: HashMap<String, GhHostEntry> = match crate::yaml::from_str(&contents) {
-        Ok(h) => h,
+    match crate::yaml::from_str(&contents) {
+        Ok(h) => Some(h),
         Err(e) => {
             debug!(
                 "failed to parse gh hosts.yml at {}: {e}",
                 hosts_path.display()
             );
-            return None;
+            None
         }
-    };
+    }
+}
+
+fn read_gh_hosts() -> Option<HashMap<String, String>> {
     Some(
-        hosts
+        read_gh_host_entries()?
             .into_iter()
-            .filter_map(|(host, entry)| entry.oauth_token.map(|token| (host, token)))
+            .filter_map(|(host, entry)| {
+                entry
+                    .oauth_token
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| (host, token))
+            })
             .collect(),
     )
+}
+
+/// Whether gh is logged in to `host` but keeps the token out of `hosts.yml`.
+///
+/// `gh auth login` stores the token in the system keyring (macOS Keychain, Windows Credential
+/// Manager) when one is available, leaving only the user in `hosts.yml`. mise does not run
+/// `gh auth token` on its own, so it finds no token. Callers use this to explain an empty
+/// result; it never runs gh.
+pub fn gh_token_in_keyring(host: &str) -> bool {
+    // Hosts `resolve_token` never looks a token up for: a hint could not change the result.
+    if !Settings::get().github.gh_cli_tokens
+        || is_github_release_asset_host(host)
+        || crate::untrusted_hosts::forge_token_denied(host)
+    {
+        return false;
+    }
+    let Some(hosts) = read_gh_host_entries() else {
+        return false;
+    };
+    // The same hosts `resolve_token` reads, so an alias like `api.github.com` gets the hint too.
+    token_lookup_hosts(host)
+        .into_iter()
+        .filter_map(|lookup_host| hosts.get(lookup_host))
+        .any(GhHostEntry::has_user_without_token)
 }
 
 #[derive(Deserialize)]
 struct GhHostEntry {
     oauth_token: Option<String>,
+    // Any YAML value, so an unexpected type here cannot make the whole file fail to parse and
+    // hide the tokens of other hosts.
+    user: Option<crate::yaml::Value>,
+}
+
+impl GhHostEntry {
+    fn has_user_without_token(&self) -> bool {
+        let has_user = self
+            .user
+            .as_ref()
+            .and_then(crate::yaml::Value::as_str)
+            .is_some_and(|user| !user.trim().is_empty());
+        let has_token = self
+            .oauth_token
+            .as_deref()
+            .is_some_and(|token| !token.trim().is_empty());
+        has_user && !has_token
+    }
 }
 
 /// Serializes env-var mutations across every test module that touches GitHub token
