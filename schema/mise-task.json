@@ -2008,8 +2008,8 @@
           "deprecated": true
         },
         "version_order": {
-          "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions",
-          "enum": ["source", "semver"]
+          "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions, \"published_at\" sorts by release date on github, gitlab and forgejo tools",
+          "enum": ["source", "semver", "published_at"]
         },
         "prerelease": {
           "description": "include pre-release versions when listing versions and resolving latest",

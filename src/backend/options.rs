@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     list_available_platforms_with_key, lookup_platform_key_for_target, lookup_platform_value,
@@ -12,6 +13,10 @@ pub enum VersionOrder {
     #[default]
     Source,
     Semver,
+    /// Oldest to newest by release date, so the last entry is the release
+    /// published most recently whatever its version. Only for backends whose
+    /// listing carries a release date.
+    PublishedAt,
 }
 
 impl VersionOrder {
@@ -20,15 +25,34 @@ impl VersionOrder {
         Self::from_options_or(options, Self::Source)
     }
 
+    /// For a backend whose listing has no release dates: `published_at` is an error.
     pub(crate) fn from_options_or(options: &ToolVersionOptions, default: Self) -> Result<Self> {
+        Self::parse(options, default, false)
+    }
+
+    /// For a backend whose listing carries release dates, so `published_at` is allowed.
+    pub(crate) fn from_dated_options_or(
+        options: &ToolVersionOptions,
+        default: Self,
+    ) -> Result<Self> {
+        Self::parse(options, default, true)
+    }
+
+    fn parse(options: &ToolVersionOptions, default: Self, dated: bool) -> Result<Self> {
+        let expected = if dated {
+            "version_order must be \"source\", \"semver\" or \"published_at\""
+        } else {
+            "version_order must be \"source\" or \"semver\""
+        };
         match options.opts.get("version_order") {
             None => Ok(default),
             Some(toml::Value::String(value)) => match value.as_str() {
                 "source" => Ok(Self::Source),
                 "semver" => Ok(Self::Semver),
-                _ => bail!("version_order must be \"source\" or \"semver\""),
+                "published_at" if dated => Ok(Self::PublishedAt),
+                _ => bail!(expected),
             },
-            Some(_) => bail!("version_order must be \"source\" or \"semver\""),
+            Some(_) => bail!(expected),
         }
     }
 
@@ -36,11 +60,26 @@ impl VersionOrder {
         self.order_by(versions, String::as_str)
     }
 
+    /// Orders a listing that carries release dates. Releases without a usable
+    /// date sort before every dated one, in their source order, so they never
+    /// win `latest` over a release with a known date.
+    pub(crate) fn order_infos(self, versions: Vec<VersionInfo>) -> Vec<VersionInfo> {
+        if self != Self::PublishedAt {
+            return self.order_by(versions, |info| info.version.as_str());
+        }
+        let mut versions = versions;
+        // Stable: equal dates keep their source order.
+        versions.sort_by_key(VersionInfo::created_at_timestamp);
+        versions
+    }
+
     pub(crate) fn order_by<T, F>(self, versions: Vec<T>, version: F) -> Vec<T>
     where
         F: for<'a> Fn(&'a T) -> &'a str,
     {
-        if self == Self::Source {
+        // `PublishedAt` is applied to the dated listing by `order_infos`; the
+        // version lists derived from it are already in that order.
+        if self != Self::Semver {
             return versions;
         }
 
@@ -451,5 +490,43 @@ mod tests {
                 },
             ]
         );
+    }
+
+    fn info(version: &str, created_at: Option<&str>) -> VersionInfo {
+        VersionInfo {
+            version: version.into(),
+            created_at: created_at.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_published_at_orders_by_release_date_not_version() {
+        // GitHub lists the stable 0.170.0 ahead of the alpha published after it.
+        let versions = vec![
+            info("0.171.0-alpha.13", Some("2026-11-18T05:47:55Z")),
+            info("0.170.0", Some("2026-11-18T03:40:48Z")),
+            info("0.171.0-alpha.12", Some("2026-11-17T14:26:49Z")),
+            info("undated", None),
+        ];
+        let ordered: Vec<_> = VersionOrder::PublishedAt
+            .order_infos(versions)
+            .into_iter()
+            .map(|v| v.version)
+            .collect();
+        assert_eq!(
+            ordered,
+            ["undated", "0.171.0-alpha.12", "0.170.0", "0.171.0-alpha.13"]
+        );
+    }
+
+    #[test]
+    fn test_published_at_is_only_accepted_by_dated_backends() {
+        let opts = crate::toolset::parse_tool_options("version_order=published_at");
+        assert_eq!(
+            VersionOrder::from_dated_options_or(&opts, VersionOrder::Source).unwrap(),
+            VersionOrder::PublishedAt
+        );
+        assert!(VersionOrder::from_options_or(&opts, VersionOrder::Source).is_err());
     }
 }

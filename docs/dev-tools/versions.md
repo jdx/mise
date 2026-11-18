@@ -138,11 +138,16 @@ semantic version precedence:
 "github:owner/tool" = { version = "latest", version_order = "semver" }
 ```
 
+On github, gitlab, and forgejo tools, `version_order = "published_at"` sorts by
+release date instead, so `latest` is the release published most recently, even
+when its version number is lower than an earlier one's.
+
 Versions that are not valid semver, such as `nightly`, keep their source order
 ahead of the semantic versions and still match exactly. Build metadata does not
 affect precedence. For `latest`, a release the backend marks as latest, such as
 GitHub's Latest release, still wins unless it has no asset for this tool, which
-happens in repositories that release several products.
+happens in repositories that release several products. Under `version_order = "published_at"` there is no such shortcut: the most
+recently published release wins.
 
 Registry entries set `version_order` for their tools, so a shorthand such as
 `ripgrep` may already use semver ordering. Set `version_order = "source"` to

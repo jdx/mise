@@ -3705,9 +3705,7 @@ pub trait Backend: Debug + Send + Sync {
                 has_local_version_listing_override,
             )
             .await?;
-        Ok(self
-            .version_order(opts)?
-            .order_by(versions, |version| version.version.as_str()))
+        Ok(self.version_order(opts)?.order_infos(versions))
     }
 
     /// List remote versions while selecting candidates with the active request's options.
@@ -3734,9 +3732,7 @@ pub trait Backend: Debug + Send + Sync {
                 has_local_version_listing_override,
             )
             .await?;
-        Ok(self
-            .version_order(opts)?
-            .order_by(versions, |version| version.version.as_str()))
+        Ok(self.version_order(opts)?.order_infos(versions))
     }
 
     /// Common remote-version listing hook for both config- and request-aware callers.
@@ -4871,7 +4867,13 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
         selection_opts: &ToolVersionOptions,
     ) -> bool {
-        query == "latest" && !self.include_prereleases(selection_opts)
+        // `published_at` picks the release published most recently, which is not
+        // necessarily the one the upstream marks as latest.
+        query == "latest"
+            && !self.include_prereleases(selection_opts)
+            && !self
+                .version_order(selection_opts)
+                .is_ok_and(|order| order == VersionOrder::PublishedAt)
     }
 
     /// Get the latest version using the active request's candidate-selection options.

@@ -103,7 +103,7 @@ pub struct ToolOptions {
     /// deprecated alias for minimum_release_age
     #[schemars(extend("deprecated" = true))]
     pub install_before: Option<String>,
-    /// ordering applied to remote versions: "source" keeps the backend's order, "semver" sorts semantic versions
+    /// ordering applied to remote versions: "source" keeps the backend's order, "semver" sorts semantic versions, "published_at" sorts by release date on github, gitlab and forgejo tools
     #[serde(default)]
     #[schemars(schema_with = "tool_options_version_order")]
     pub version_order: Option<toml::Value>,
@@ -520,7 +520,8 @@ fn tool_options_version_order(_: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "enum": [
             "source",
-            "semver"
+            "semver",
+            "published_at"
         ]
     })
 }
