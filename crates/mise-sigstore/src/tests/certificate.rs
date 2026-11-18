@@ -375,3 +375,13 @@ fn signer_workflow_rejects_match_after_at_refs_inside_ref() {
 
     assert!(err.contains("Workflow verification failed"));
 }
+
+#[test]
+fn select_tuf_config_always_uses_mises_http_client() {
+    // The TUF client's own default client cannot fall back to the bundled roots
+    // on a system with no CA certificates, so even the default config needs
+    // mise's (#15774).
+    let default = TufConfig::production();
+    let with_client = crate::trust::with_http_client(TufConfig::production(), None).unwrap();
+    assert_ne!(format!("{default:?}"), format!("{with_client:?}"));
+}
