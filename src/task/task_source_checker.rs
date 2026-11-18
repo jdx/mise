@@ -336,7 +336,11 @@ fn build_segments(
         let builder = builders.last_mut().expect("one builder");
         // Expand braces first: each alternative can reach a different
         // directory (`{../shared,src}/**`), and normalizing resolves its `..`.
-        let expanded = match expand_glob_braces(s) {
+        // Only the entry's own leading `!` negates it, so split it off before
+        // expanding: `{!important,other}.txt` includes a file named
+        // `!important.txt`. An escaped `\!` entry stays literal as written.
+        let (prefix, body) = split_negation(s);
+        let expanded = match expand_glob_braces(body) {
             Ok(expanded) => expanded,
             Err(e) => {
                 // Source matcher construction is infallible to callers. An
@@ -349,7 +353,10 @@ fn build_segments(
             }
         };
         for alternative in expanded {
-            let normalized = normalize_pattern(root, task_cwd, &alternative);
+            let normalized = match prefix {
+                Some(prefix) => normalize_parts(root, task_cwd, prefix, &alternative),
+                None => alternative,
+            };
             if let Err(e) = builder.add_line(None, &normalized)
                 && warn
             {
@@ -507,19 +514,42 @@ fn pattern_from_path(path: &Path) -> Option<String> {
 /// a path above the matcher's root; [`is_source`] passes such absolute paths
 /// through without consulting the matcher instead.
 fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> String {
-    let (prefix, body) = if pattern.starts_with("\\!") {
-        return pattern.to_string();
+    match split_negation(pattern) {
+        (Some(prefix), body) => normalize_parts(match_root, task_cwd, prefix, body),
+        (None, _) => pattern.to_string(),
+    }
+}
+
+/// Splits a source entry into its negation prefix (`"!"` or `""`) and body.
+/// An entry starting with an escaped `\!` has no prefix to split: it is
+/// returned whole with `None`, and callers keep it as written.
+fn split_negation(pattern: &str) -> (Option<&'static str>, &str) {
+    if pattern.starts_with("\\!") {
+        (None, pattern)
     } else if let Some(rest) = pattern.strip_prefix('!') {
-        ("!", rest)
+        (Some("!"), rest)
     } else {
-        ("", pattern)
+        (Some(""), pattern)
+    }
+}
+
+/// [`normalize_pattern`] for an entry already split into its negation
+/// `prefix` and `body`. A `body` starting with `!` names a file, so it is
+/// escaped as `\!` wherever it ends up in the result.
+fn normalize_parts(match_root: &Path, task_cwd: &Path, prefix: &str, body: &str) -> String {
+    let raw = || {
+        if body.starts_with('!') {
+            format!("{prefix}\\{body}")
+        } else {
+            format!("{prefix}{body}")
+        }
     };
     let body_path = Path::new(body);
     // Inspect the pattern as written: `task_cwd` may legitimately contain a
     // glob metacharacter as a literal directory name, and folding it in would
     // make an ordinary `../` entry look like a `..` popping a glob.
     if parent_dir_pops_glob(body_path) {
-        return pattern.to_string();
+        return raw();
     }
     let body_abs = if body_path.is_absolute() {
         body_path.to_path_buf()
@@ -528,13 +558,13 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
     };
     let body_abs = lexical_normalize(&body_abs);
     let Ok(rel) = body_abs.strip_prefix(match_root) else {
-        return pattern.to_string();
+        return raw();
     };
     let Some(rel_str) = pattern_from_path(rel) else {
-        return pattern.to_string();
+        return raw();
     };
     if rel_str.is_empty() {
-        return pattern.to_string();
+        return raw();
     }
     let rel_str = if rel_str.starts_with('!') {
         format!("\\{rel_str}")
@@ -2924,6 +2954,23 @@ mod tests {
         let matcher = build_source_matcher(root, root, &sources);
         assert!(is_source(&matcher, Path::new("/project/!important.txt")));
         assert!(!is_source(&matcher, Path::new("/project/other.txt")));
+    }
+
+    #[test]
+    fn matcher_braced_alternative_starting_with_bang_is_a_filename() {
+        let root = Path::new("/ws");
+        let task_cwd = Path::new("/ws/pkg");
+        let sources = vec!["{!important,other}.txt".to_string()];
+        let matcher = build_source_matcher(root, task_cwd, &sources);
+        assert!(is_source(&matcher, Path::new("/ws/pkg/!important.txt")));
+        assert!(is_source(&matcher, Path::new("/ws/pkg/other.txt")));
+        assert!(!is_source(&matcher, Path::new("/ws/pkg/third.txt")));
+
+        let sources = vec!["**".to_string(), "!{!important,other}.txt".to_string()];
+        let matcher = build_source_matcher(root, root, &sources);
+        assert!(!is_source(&matcher, Path::new("/ws/!important.txt")));
+        assert!(!is_source(&matcher, Path::new("/ws/other.txt")));
+        assert!(is_source(&matcher, Path::new("/ws/third.txt")));
     }
 
     #[test]
