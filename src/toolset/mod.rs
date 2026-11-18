@@ -1393,6 +1393,21 @@ pub async fn prunable_tools_with_sources(
     })
 }
 
+/// Tool versions whose backend-specific satisfaction check already passed in this
+/// process. `mise run` installs missing tools more than once (the config toolset,
+/// then the tasks' tools), and a check can spawn processes (e.g. rustup), so a
+/// passed check is not repeated. The install-marker check still runs every time.
+static VERIFIED_SATISFIED: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
+
+fn satisfied_key(tv: &ToolVersion) -> String {
+    format!(
+        "{}\0{}\0{:?}",
+        tv.ba().full(),
+        tv.install_path().display(),
+        tv.request.options()
+    )
+}
+
 async fn is_version_satisfied(
     config: &Arc<Config>,
     backend: &Arc<dyn Backend>,
@@ -1400,9 +1415,26 @@ async fn is_version_satisfied(
     full_check: bool,
 ) -> bool {
     if full_check {
-        backend
+        let key = satisfied_key(tv);
+        let verified = VERIFIED_SATISFIED
+            .lock()
+            .unwrap()
+            .get_or_insert_default()
+            .contains(&key);
+        if verified {
+            return backend.is_version_installed(config, tv, true);
+        }
+        let satisfied = backend
             .is_install_satisfied_or_false(config, tv, true)
-            .await
+            .await;
+        if satisfied {
+            VERIFIED_SATISFIED
+                .lock()
+                .unwrap()
+                .get_or_insert_default()
+                .insert(key);
+        }
+        satisfied
     } else {
         backend.is_version_installed(config, tv, true)
     }
