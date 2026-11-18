@@ -464,7 +464,7 @@ is never looked up there.
 - `sources` is a table of `package = { index = "name" }`. A package must be the
   tool itself or one of its [`with`](#with) or [`expose`](#expose) requirements,
   and `index` must name an entry of `indexes`. A tool pinned to its own index
-  has its `requires-python` read from that index, never the registry.
+  has its `requires-python` read from that index, never the registry. An index that needs credentials may refuse that read, which uv does with its own `UV_INDEX_*` variables; set `python` then to pick the interpreter.
 
 ```toml
 [tools."pypi:zensical"]

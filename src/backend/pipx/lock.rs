@@ -699,10 +699,27 @@ impl PIPXBackend {
             }
             None => registry.clone(),
         };
-        let root = self
-            .release_python_requirement(&root_registry, &self.tool_name(), &tv.version)
+        let root_pinned = root_registry != registry;
+        let root_package = if root_pinned {
+            super::normalize_package_name(&self.tool_name())
+        } else {
+            self.tool_name()
+        };
+        let root = match self
+            .release_python_requirement(&root_registry, &root_package, &tv.version)
             .await
-            .wrap_err_with(|| format!("failed to lock {}", self.ba.short))?;
+        {
+            Ok(root) => root,
+            // The index may need credentials that only uv reads (UV_INDEX_*), so the
+            // range is best-effort there; the `python` option narrows it by hand.
+            Err(err) if root_pinned => {
+                debug!("no requires-python from the pinned index: {err:#}");
+                String::new()
+            }
+            Err(err) => {
+                return Err(err).wrap_err_with(|| format!("failed to lock {}", self.ba.short));
+            }
+        };
         let mut constraints = vec![">=3.8".to_string()];
         if let Some(selector) = PipxOptions::new(&tv.request.options()).selected_python()? {
             constraints.push(selector.requires_python());
