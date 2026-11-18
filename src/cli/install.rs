@@ -415,12 +415,17 @@ impl Install {
             .iter()
             .filter(|ta| ta.tvr.is_some() && !names_os(ta))
         {
+            // The highest-precedence config file that lists the tool decides.
             let configured = configured_config_files
                 .values()
-                .filter_map(|cf| cf.to_tool_request_set().ok())
-                .filter_map(|cf_trs| cf_trs.tools.get(ta.ba.as_ref()).cloned())
-                .flatten()
-                .collect_vec();
+                .find_map(|cf| {
+                    cf.to_tool_request_set()
+                        .ok()?
+                        .tools
+                        .get(ta.ba.as_ref())
+                        .cloned()
+                })
+                .unwrap_or_default();
             reject_os_excluded(configured)?;
         }
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
