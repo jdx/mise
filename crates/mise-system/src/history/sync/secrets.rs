@@ -36,14 +36,21 @@ static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// A line that looks like it holds a secret. `allowed` are values the user
-/// vouched for (`history.allow_secret_values`): they are blanked out before
-/// the scan, so a line that also holds anything else suspicious still counts.
+/// vouched for (`history.allow_secret_values`). Only a whole value on the
+/// right of `=` or `:` is set aside, never a key name or part of another
+/// value, so a line that also holds anything else suspicious still counts.
 fn suspicious(line: &str, allowed: &[String]) -> bool {
     let mut line = std::borrow::Cow::Borrowed(line);
     for value in allowed.iter().filter(|value| !value.is_empty()) {
-        if line.contains(value.as_str()) {
-            line = std::borrow::Cow::Owned(line.replace(value.as_str(), ""));
+        if !line.contains(value.as_str()) {
+            continue;
         }
+        let whole = Regex::new(&format!(
+            r#"(?P<before>[:=]\s*["']?){}(?P<after>["']|\s|,|;|#|$)"#,
+            regex::escape(value)
+        ))
+        .unwrap();
+        line = std::borrow::Cow::Owned(whole.replace_all(&line, "${before}${after}").into_owned());
     }
     TOKEN_FORMATS.is_match(&line) || ASSIGNMENT.is_match(&line)
 }
@@ -215,6 +222,17 @@ mod tests {
             placeholder,
             &["".to_string(), "ctx7_api_key".to_string()]
         ));
+        // an approved string as a key name, or inside a different value, hides nothing
+        for line in [
+            "\"ctx7_api_key\" = \"abcdefghijkl\"",
+            "ctx7_api_key_token = \"abcdefghijkl\"",
+            "API_KEY = \"xctx7_api_key\"",
+            "API_KEY = \"ctx7_api_key-abcdefghij\"",
+            "API_KEY=ctx7_api_key=abcdefghijkl",
+        ] {
+            assert!(suspicious(line, &allowed), "{line}");
+        }
+        assert!(!suspicious("export API_KEY=ctx7_api_key # note", &allowed));
     }
 
     #[test]

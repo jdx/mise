@@ -220,7 +220,7 @@ in your global config instead of skipping the check:
 allow_secret_values = ["ctx7_api_key"]
 ```
 
-The scan then ignores that value wherever it appears and still checks the rest
+The scan then ignores that value when it is a whole value, never a key name or part of a longer value, and still checks the rest
 of every file. The scan is a safety net for obvious cases,
 not proof that a version is free of secrets.
 
