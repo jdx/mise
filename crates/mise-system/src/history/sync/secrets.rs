@@ -30,7 +30,7 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 /// substitution is not a secret.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}|[^\s"'$`~/#{(<\[;][^\s"';]{0,6};[^\s"']{6,}))"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}|[^\s"'$`~/#{(<\[;][^\s"';]{0,6};[^\s"']+))"#,
     )
     .unwrap()
 });
@@ -53,6 +53,10 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
             continue;
         };
         let text = value.as_str();
+        if found.name("bare").is_some() && text.chars().count() < 8 {
+            // too short to be a secret on its own, as before the pattern spanned `;`
+            continue;
+        }
         // `"key": "value",` and `{ key = "value" }` are structured text, where a
         // comma or closing bracket ends the value. In shell, `KEY="value",more`
         // is one word, so there only whitespace or `;` does. Spaces or a colon
@@ -81,6 +85,16 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
                         && !(structured && matches!(next, ',' | '}' | ']' | ')' | '#'))
                 })
         };
+        if bare && structured {
+            // a plain scalar may hold spaces and `;` and runs to the end of the
+            // line or a ` #` comment; approving it takes the whole scalar
+            let rest = &line[value.start()..];
+            let scalar = rest[..rest.find(" #").unwrap_or(rest.len())].trim_end();
+            if approved(scalar) {
+                covered.push(value.start()..value.start() + scalar.len());
+                continue;
+            }
+        }
         if bare && !structured && text.contains(';') {
             // shell: `KEY=value;next` is two commands. Judge the value alone,
             // then each command after it; no segment holds a separator, so
@@ -183,6 +197,7 @@ mod tests {
             "password: hunter2hunter2",
             "password: abc;defghijkl",
             "password: ab;cdefghijklmnop",
+            "password: ab;cdefg",
             "AWS=AKIAABCDEFGHIJKLMNOP",
             "-----BEGIN OPENSSH PRIVATE KEY-----",
             "secret = 'abcdefgh'",
@@ -340,6 +355,17 @@ mod tests {
         ] {
             assert!(!suspicious(line, &allowed), "{line}");
         }
+        // a plain scalar is approved as a whole, up to a comment
+        let scalar = vec!["ctx7_api_key extra words here".to_string()];
+        assert!(!suspicious(
+            "password: ctx7_api_key extra words here",
+            &scalar
+        ));
+        assert!(!suspicious(
+            "password: ctx7_api_key extra words here # note",
+            &scalar
+        ));
+        assert!(suspicious("password: ctx7_api_key extra words", &scalar));
     }
 
     #[test]
