@@ -29,6 +29,38 @@ use tokio::task::JoinSet;
 /// A tool to lock for a specific lockfile target.
 type LockTool = (crate::args::BackendArg, crate::toolset::ToolVersion);
 
+mod dry_run;
+
+/// Every platform entry locking `tools` on `platforms` resolves: each
+/// supported platform, expanded into the variants its backend locks.
+fn platform_tasks(
+    tools: &[LockTool],
+    platforms: &[Platform],
+) -> Vec<(
+    crate::args::BackendArg,
+    crate::toolset::ToolVersion,
+    Platform,
+)> {
+    let mut tasks = Vec::new();
+    for (ba, tv) in tools {
+        let backend = crate::backend::get(ba);
+        for platform in platforms {
+            if !tv.request.is_os_supported_on(platform) {
+                continue;
+            }
+            let variants = if let Some(ref backend) = backend {
+                backend.platform_variants_for(tv, platform)
+            } else {
+                vec![platform.clone()]
+            };
+            for variant in variants {
+                tasks.push((ba.clone(), tv.clone(), variant));
+            }
+        }
+    }
+    tasks
+}
+
 /// Without its version list a request can only resolve to itself, and that
 /// string is not known to be a version: `4` would be locked as a release that
 /// may not exist. A version the lockfile already holds, or one that is
@@ -314,6 +346,12 @@ pub(crate) struct Lock {
     pub jobs: Option<usize>,
 
     /// Show what would change, without writing anything
+    ///
+    /// Resolves every tool on every platform as `mise lock` would, then lists
+    /// each platform entry as a new entry, a version change, a new platform,
+    /// the fields it would fill or change (such as a missing checksum), or
+    /// unchanged. Like `mise lock`, it may download artifacts to compute
+    /// checksums.
     #[usage(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 
@@ -1168,7 +1206,9 @@ impl Lock {
         self.announce_target(&target, &target_platforms)?;
 
         if self.dry_run {
-            return self.dry_run_target(run, outcome, &target, &target_platforms);
+            return self
+                .dry_run_target(run, outcome, &target, &target_platforms)
+                .await;
         }
         self.generate_target(run, outcome, &target, &target_platforms)
             .await
@@ -1292,7 +1332,9 @@ impl Lock {
         Ok(())
     }
 
-    fn dry_run_target(
+    /// Resolve a target the way `generate_target` does, into a copy of its
+    /// lockfile, and report what writing it would change.
+    async fn dry_run_target(
         &self,
         run: &LockRun<'_>,
         outcome: &mut LockOutcome,
@@ -1304,8 +1346,34 @@ impl Lock {
             tools,
             configured_selectors,
         } = target;
-        self.show_dry_run(tools, target_platforms)?;
         let lockfile = self.read_lockfile(run, lockfile_path)?;
+        let mut resolved = lockfile.clone();
+        let (resolvable, withheld) = Self::without_unrecorded_locked_pins(run, tools).await;
+        let (results, resolution_errors) = self
+            .resolve_into_lockfile(
+                run,
+                &resolvable,
+                target_platforms,
+                &mut resolved,
+                &lockfile,
+                &withheld,
+            )
+            .await?;
+        outcome.resolution_errors.extend(resolution_errors);
+        let stale_versions = self.stale_versions_if_pruned(&lockfile, &resolvable);
+        outcome
+            .platform_regressions
+            .extend(self.platform_regression_errors(&resolved, &stale_versions, &results));
+        if !self.json {
+            let lines = dry_run::entry_changes(
+                &lockfile,
+                &resolved,
+                &resolvable,
+                target_platforms,
+                &stale_versions,
+            );
+            dry_run::show(&lines)?;
+        }
         self.report_lockfile_format(lockfile_path, &lockfile, true)?;
         if self.json {
             outcome
@@ -1317,9 +1385,42 @@ impl Lock {
                 self.stale_entries_if_pruned(&lockfile, configured_selectors.as_ref());
             self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
         }
-        let stale_versions = self.stale_versions_if_pruned(&lockfile, tools);
         self.show_stale_version_prune_message(lockfile_path, &stale_versions, true)?;
         Ok(())
+    }
+
+    /// Resolve `tools` on `target_platforms` into `lockfile`, as this run
+    /// writes them. `previous` is the lockfile as read, which `withheld`
+    /// tools keep their versions from. Returns each platform entry's result
+    /// and the errors that fail the run.
+    async fn resolve_into_lockfile(
+        &self,
+        run: &LockRun<'_>,
+        tools: &[LockTool],
+        target_platforms: &[Platform],
+        lockfile: &mut Lockfile,
+        previous: &Lockfile,
+        withheld: &BTreeSet<String>,
+    ) -> Result<(Vec<LockTaskResult>, Vec<String>)> {
+        if !run.setup.generate {
+            return self
+                .process_tools(&run.settings, tools, target_platforms, lockfile)
+                .await;
+        }
+        *lockfile = lockfile::generate::generate(
+            lockfile,
+            tools,
+            target_platforms,
+            !self.tool.is_empty() || !run.setup.auto_prune,
+            self.platform_selection(&run.settings)?,
+            crate::jobs::resolve(run.settings.jobs, self.jobs),
+            run.setup.installed.unwrap_or_default(),
+        )
+        .await?;
+        for short in withheld {
+            lockfile.restore_missing_versions(previous, short);
+        }
+        Ok((Vec::new(), Vec::new()))
     }
 
     /// After an install, drop the tools whose config sets `tool_config.locked`
@@ -1423,25 +1524,16 @@ impl Lock {
             return Ok(());
         }
 
-        let (results, resolution_errors) = if generate {
-            lockfile = lockfile::generate::generate(
-                &lockfile,
+        let (results, resolution_errors) = self
+            .resolve_into_lockfile(
+                run,
                 tools,
                 target_platforms,
-                !self.tool.is_empty() || !run.setup.auto_prune,
-                self.platform_selection(&run.settings)?,
-                crate::jobs::resolve(run.settings.jobs, self.jobs),
-                run.setup.installed.unwrap_or_default(),
+                &mut lockfile,
+                &previous,
+                &withheld,
             )
             .await?;
-            for short in &withheld {
-                lockfile.restore_missing_versions(&previous, short);
-            }
-            (Vec::new(), Vec::new())
-        } else {
-            self.process_tools(&run.settings, tools, target_platforms, &mut lockfile)
-                .await?
-        };
         let resolution_succeeded = resolution_errors.is_empty();
         outcome.resolution_errors.extend(resolution_errors);
 
@@ -3241,37 +3333,6 @@ impl Lock {
             .map(|(path, _)| path.clone())
     }
 
-    fn show_dry_run(&self, tools: &[LockTool], platforms: &[Platform]) -> Result<()> {
-        if self.json {
-            return Ok(());
-        }
-        miseprintln!("{} Dry run - would update:", style("→").yellow());
-        for (ba, tv) in tools {
-            let backend = crate::backend::get(ba);
-            for platform in platforms {
-                if !tv.request.is_os_supported_on(platform) {
-                    continue;
-                }
-                // Expand platform variants just like process_tools does
-                let variants = if let Some(ref backend) = backend {
-                    backend.platform_variants_for(tv, platform)
-                } else {
-                    vec![platform.clone()]
-                };
-                for variant in variants {
-                    miseprintln!(
-                        "  {} {}@{} for {}",
-                        style("✓").green(),
-                        style(redact_output(&ba.short)).bold(),
-                        tv.version,
-                        style(variant.to_key()).blue()
-                    );
-                }
-            }
-        }
-        Ok(())
-    }
-
     fn platform_selection(&self, settings: &Settings) -> Result<PlatformSelection> {
         Ok(if !self.platform.is_empty() {
             PlatformSelection::Explicit(
@@ -3304,29 +3365,7 @@ impl Lock {
 
         let mpr = MultiProgressReport::get();
 
-        // Collect all platform variants for each tool/platform combination
-        let mut all_tasks: Vec<(
-            crate::args::BackendArg,
-            crate::toolset::ToolVersion,
-            Platform,
-        )> = Vec::new();
-        for (ba, tv) in tools {
-            let backend = crate::backend::get(ba);
-            for platform in platforms {
-                if !tv.request.is_os_supported_on(platform) {
-                    continue;
-                }
-                // Get all variants for this platform from the backend
-                let variants = if let Some(ref backend) = backend {
-                    backend.platform_variants_for(tv, platform)
-                } else {
-                    vec![platform.clone()]
-                };
-                for variant in variants {
-                    all_tasks.push((ba.clone(), tv.clone(), variant));
-                }
-            }
-        }
+        let all_tasks = platform_tasks(tools, platforms);
 
         let total_tasks = all_tasks.len();
         let pr = mpr.add("lock");

@@ -891,7 +891,7 @@ impl PlatformInfo {
 
     /// Whether both describe the same persisted data. Ignores `size`, which is
     /// read from existing lockfiles but never written, and `download_headers`.
-    pub(crate) fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
+    pub fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
         fn persisted(info: &PlatformInfo) -> PlatformInfo {
             let mut info = info.clone();
             info.size = None;
