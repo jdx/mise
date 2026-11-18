@@ -253,6 +253,9 @@ class Pathname
     raise "cannot install #{src}: does not exist" unless src.exist? || src.symlink?
     dest.dirname.mkpath
     FileUtils.mv src.to_s, dest.to_s
+    # Homebrew makes what a formula puts in bin or sbin executable, whatever
+    # mode a download left it with.
+    dest.chmod(0o555) if dest.file? && !dest.symlink? && %w[bin sbin].include?(dest.dirname.basename.to_s)
   end
   private :install_one
 
