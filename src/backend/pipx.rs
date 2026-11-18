@@ -2828,13 +2828,11 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
 
     /// Set the modified time of `backend`'s cached latest releases to `secs` ago.
     fn backdate_cached_latest(backend: &PIPXBackend, secs: u64) {
-        let then = filetime::FileTime::from_system_time(
-            std::time::SystemTime::now() - std::time::Duration::from_secs(secs),
-        );
+        let then = std::time::SystemTime::now() - std::time::Duration::from_secs(secs);
         for entry in std::fs::read_dir(backend.ba().cache_path()).unwrap() {
             let path = entry.unwrap().path();
             if path.to_string_lossy().contains("latest_version_info_") {
-                filetime::set_file_mtime(&path, then).unwrap();
+                crate::file::set_times(&path, None, Some(then)).unwrap();
             }
         }
     }
@@ -2907,11 +2905,9 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                     ..Default::default()
                 }))
                 .unwrap();
-            let then = filetime::FileTime::from_system_time(
-                std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
-            );
+            let then = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
             for entry in std::fs::read_dir(dir.path()).unwrap() {
-                filetime::set_file_mtime(entry.unwrap().path(), then).unwrap();
+                crate::file::set_times(&entry.unwrap().path(), None, Some(then)).unwrap();
             }
         };
         let day_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24));

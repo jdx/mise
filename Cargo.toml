@@ -140,7 +140,6 @@ dunce = "1"
 expr-lang = "2"
 stacker = "0.1"
 eyre = "0.6"
-filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }

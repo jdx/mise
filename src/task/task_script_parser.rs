@@ -1616,7 +1616,8 @@ mod tests {
         const BASELINE: i64 = 1_700_000_000;
 
         fn set_mtime(path: &Path, secs: i64) {
-            filetime::set_file_mtime(path, filetime::FileTime::from_unix_time(secs, 0)).unwrap();
+            let mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs.unsigned_abs());
+            crate::file::set_times(path, None, Some(mtime)).unwrap();
         }
 
         let temp = tempfile::tempdir().unwrap();
@@ -1688,8 +1689,9 @@ mod tests {
     async fn only_changed_reports_every_source_when_the_baseline_explains_none_of_them() {
         let f = changed_since_fixture();
         // Written after both sources, so neither counts as outstanding.
-        let after_both = filetime::FileTime::from_unix_time(1_700_000_000 + 120, 0);
-        filetime::set_file_mtime(&f.marker, after_both).unwrap();
+        let after_both =
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000 + 120);
+        crate::file::set_times(&f.marker, None, Some(after_both)).unwrap();
         let parser = TaskScriptParser::new(Some(f.root.clone())).with_baseline(f.marker.clone());
 
         let rendered = render_sources(parser, &f.task, ONLY_CHANGED).await;
@@ -1709,8 +1711,9 @@ mod tests {
     #[tokio::test]
     async fn a_pass_through_source_does_not_stand_in_for_a_changed_one() {
         let f = changed_since_fixture();
-        let after_both = filetime::FileTime::from_unix_time(1_700_000_000 + 120, 0);
-        filetime::set_file_mtime(&f.marker, after_both).unwrap();
+        let after_both =
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000 + 120);
+        crate::file::set_times(&f.marker, None, Some(after_both)).unwrap();
         let task = Task {
             sources: vec![
                 "stale.txt".to_string(),

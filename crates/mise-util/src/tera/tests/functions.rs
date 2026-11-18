@@ -317,7 +317,8 @@ fn test_file_filters_error_on_bad_file() {
     let dir = tempfile::tempdir().unwrap();
     let old = dir.path().join("old.txt");
     std::fs::write(&old, "").unwrap();
-    filetime::set_file_mtime(&old, filetime::FileTime::from_unix_time(-1, 0)).unwrap();
+    let before_epoch = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1);
+    crate::file::set_times(&old, None, Some(before_epoch)).unwrap();
     let mut context = BASE_CONTEXT.clone();
     context.insert("old", old.to_str().unwrap());
     context.insert("missing", dir.path().join("missing.txt").to_str().unwrap());

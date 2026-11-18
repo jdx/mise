@@ -2523,8 +2523,8 @@ mod tests {
         let before = file_metadatas_to_hash(&[(p.clone(), fs::metadata(&p).unwrap())]);
 
         fs::write(&p, "1.2.4").unwrap();
-        let restored = filetime::FileTime::from_unix_time(1_000_000, 0);
-        filetime::set_file_times(&p, restored, restored).unwrap();
+        let restored = Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000));
+        crate::file::set_times(&p, restored, restored).unwrap();
         let after = file_metadatas_to_hash(&[(p.clone(), fs::metadata(&p).unwrap())]);
 
         assert_eq!(
@@ -2545,9 +2545,14 @@ mod tests {
         fs::write(&p, "x").unwrap();
 
         let stamp = |secs: i64| {
-            let t = filetime::FileTime::from_unix_time(secs, 0);
+            let offset = std::time::Duration::from_secs(secs.unsigned_abs());
+            let t = Some(if secs < 0 {
+                std::time::UNIX_EPOCH - offset
+            } else {
+                std::time::UNIX_EPOCH + offset
+            });
             // a filesystem that cannot store a pre-epoch timestamp is not what this pins down
-            filetime::set_file_times(&p, t, t).ok()?;
+            crate::file::set_times(&p, t, t).ok()?;
             let metadata = fs::metadata(&p).unwrap();
             let mtime = metadata.modified().ok()?;
             Some((mtime, file_metadatas_to_hash(&[(p.clone(), metadata)])))
@@ -2738,16 +2743,16 @@ mod tests {
         let output = dist.join("result.txt");
         fs::create_dir(&dist).unwrap();
         fs::write(&output, "result").unwrap();
-        let file_mtime = filetime::FileTime::from_unix_time(100, 0);
-        let directory_mtime = filetime::FileTime::from_unix_time(200, 0);
-        filetime::set_file_mtime(&output, file_mtime).unwrap();
-        filetime::set_file_mtime(&dist, directory_mtime).unwrap();
+        let file_mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(100);
+        let directory_mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(200);
+        crate::file::set_times(&output, None, Some(file_mtime)).unwrap();
+        crate::file::set_times(&dist, None, Some(directory_mtime)).unwrap();
 
         let modified = get_last_modified(root.path(), &["dist".to_string()])
             .unwrap()
             .unwrap();
 
-        assert_eq!(modified, SystemTime::from(directory_mtime));
+        assert_eq!(modified, directory_mtime);
     }
 
     #[test]
@@ -3241,8 +3246,7 @@ mod tests {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let after = loop {
             std::fs::write(&a, "fail\n").unwrap();
-            filetime::set_file_mtime(&a, filetime::FileTime::from_last_modification_time(&before))
-                .unwrap();
+            crate::file::set_times(&a, None, Some(before.modified().unwrap())).unwrap();
             let after = a.metadata().unwrap();
             if metadata_ctime(&after) != metadata_ctime(&before) {
                 break after;

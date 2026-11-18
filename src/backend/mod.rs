@@ -8699,13 +8699,11 @@ mod latest_version_tests {
                 }])
                 .unwrap();
         }
-        let ten_minutes_ago = filetime::FileTime::from_system_time(
-            std::time::SystemTime::now() - std::time::Duration::from_secs(600),
-        );
+        let ten_minutes_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
         for entry in fs::read_dir(backend.ba().cache_path()).unwrap() {
             let path = entry.unwrap().path();
             if path.to_string_lossy().contains("remote_versions-") {
-                filetime::set_file_mtime(&path, ten_minutes_ago).unwrap();
+                crate::file::set_times(&path, None, Some(ten_minutes_ago)).unwrap();
             }
         }
         // A separate backend, as in a later command, so nothing is in memory.
@@ -8724,13 +8722,11 @@ mod latest_version_tests {
     /// Set the modified time of `backend`'s cached remote-version lists to
     /// `secs` ago.
     fn backdate_remote_versions(backend: &LatestBackend, secs: u64) {
-        let then = filetime::FileTime::from_system_time(
-            std::time::SystemTime::now() - std::time::Duration::from_secs(secs),
-        );
+        let then = std::time::SystemTime::now() - std::time::Duration::from_secs(secs);
         for entry in fs::read_dir(backend.ba().cache_path()).unwrap() {
             let path = entry.unwrap().path();
             if path.to_string_lossy().contains("remote_versions-") {
-                filetime::set_file_mtime(&path, then).unwrap();
+                crate::file::set_times(&path, None, Some(then)).unwrap();
             }
         }
     }

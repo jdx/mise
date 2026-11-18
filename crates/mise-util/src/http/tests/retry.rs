@@ -357,11 +357,9 @@ fn test_cleanup_download_dir_preserves_only_partial_pairs() {
     let expired_state = dir.path().join(".expired.mise-part.json");
     std::fs::write(&expired_partial, b"expired partial").unwrap();
     std::fs::write(&expired_state, b"expired metadata").unwrap();
-    let expired_time = filetime::FileTime::from_system_time(
-        SystemTime::now() - PARTIAL_DOWNLOAD_MAX_AGE - Duration::from_secs(1),
-    );
-    filetime::set_file_mtime(&expired_partial, expired_time).unwrap();
-    filetime::set_file_mtime(&expired_state, expired_time).unwrap();
+    let expired_time = SystemTime::now() - PARTIAL_DOWNLOAD_MAX_AGE - Duration::from_secs(1);
+    crate::file::set_times(&expired_partial, None, Some(expired_time)).unwrap();
+    crate::file::set_times(&expired_state, None, Some(expired_time)).unwrap();
     std::fs::create_dir(dir.path().join("extracted")).unwrap();
 
     cleanup_download_dir(dir.path()).unwrap();

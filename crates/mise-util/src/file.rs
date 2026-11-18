@@ -12,12 +12,11 @@ use std::os::unix::prelude::*;
 use std::rc::Rc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use bzip2::read::BzDecoder;
 use eyre::bail;
 use eyre::{Context, Result};
-use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
 use jdx_tar::{Archive, EntryType, UnpackOptions};
@@ -1098,16 +1097,99 @@ pub fn touch_file(file: &Path) -> Result<()> {
         return Ok(());
     }
     trace!("touch_file {}", file.display());
-    let now = FileTime::now();
-    set_file_times(file, now, now)
+    let now = SystemTime::now();
+    set_times(file, Some(now), Some(now))
         .wrap_err_with(|| format!("failed to touch file: {}", display_path(file)))
 }
 
 pub fn touch_dir(dir: &Path) -> Result<()> {
     trace!("touch {}", dir.display());
-    let now = FileTime::now();
-    set_file_times(dir, now, now)
+    let now = SystemTime::now();
+    set_times(dir, Some(now), Some(now))
         .wrap_err_with(|| format!("failed to touch dir: {}", display_path(dir)))
+}
+
+/// Sets `path`'s access and modification times, following symlinks. A `None` time is left as
+/// it is. Only the right to write attributes is needed, so on Windows this works on a directory
+/// and on a read-only file (git's `.git/objects` files in a zipped checkout, for one), which a
+/// write handle would refuse with "Access is denied".
+pub fn set_times(
+    path: &Path,
+    accessed: Option<SystemTime>,
+    modified: Option<SystemTime>,
+) -> std::io::Result<()> {
+    set_path_times(path, accessed, modified, true)
+}
+
+/// Like [`set_times`], but sets a symlink's own times and leaves its target alone.
+pub fn set_symlink_times(
+    path: &Path,
+    accessed: Option<SystemTime>,
+    modified: Option<SystemTime>,
+) -> std::io::Result<()> {
+    set_path_times(path, accessed, modified, false)
+}
+
+#[cfg(unix)]
+fn set_path_times(
+    path: &Path,
+    accessed: Option<SystemTime>,
+    modified: Option<SystemTime>,
+    follow: bool,
+) -> std::io::Result<()> {
+    use nix::sys::stat::{UtimensatFlags, utimensat};
+    use nix::sys::time::TimeSpec;
+
+    fn spec(time: Option<SystemTime>) -> TimeSpec {
+        match time.map(|time| time.duration_since(SystemTime::UNIX_EPOCH)) {
+            None => TimeSpec::UTIME_OMIT,
+            Some(Ok(after)) => TimeSpec::from_duration(after),
+            Some(Err(before)) => -TimeSpec::from_duration(before.duration()),
+        }
+    }
+    let flag = if follow {
+        UtimensatFlags::FollowSymlink
+    } else {
+        UtimensatFlags::NoFollowSymlink
+    };
+    utimensat(
+        nix::fcntl::AT_FDCWD,
+        path,
+        &spec(accessed),
+        &spec(modified),
+        flag,
+    )?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn set_path_times(
+    path: &Path,
+    accessed: Option<SystemTime>,
+    modified: Option<SystemTime>,
+    follow: bool,
+) -> std::io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_WRITE_ATTRIBUTES,
+    };
+
+    let mut flags = FILE_FLAG_BACKUP_SEMANTICS;
+    if !follow {
+        flags |= FILE_FLAG_OPEN_REPARSE_POINT;
+    }
+    let file = fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .custom_flags(flags)
+        .open(path)?;
+    let mut times = fs::FileTimes::new();
+    if let Some(accessed) = accessed {
+        times = times.set_accessed(accessed);
+    }
+    if let Some(modified) = modified {
+        times = times.set_modified(modified);
+    }
+    file.set_times(times)
 }
 
 /// Synchronizes a directory to disk, ensuring that filesystem metadata changes
@@ -2811,34 +2893,14 @@ fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io:
 }
 
 fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
-    let now = FileTime::now();
+    let now = SystemTime::now();
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         if entry.file_type().is_file() {
-            set_times_through_readonly(entry.path(), now)?;
+            set_times(entry.path(), Some(now), Some(now))?;
         }
     }
     Ok(())
-}
-
-/// Sets a file's times, even when it is read-only. `set_file_times` opens a write handle on
-/// Windows, which a read-only file (git's `.git/objects` files in a zipped checkout, for one)
-/// refuses with "Access is denied". Setting times only needs the right to write attributes.
-#[cfg(windows)]
-fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
-    use std::os::windows::fs::OpenOptionsExt;
-    const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
-    let time = std::time::SystemTime::from(time);
-    let file = fs::OpenOptions::new()
-        .access_mode(FILE_WRITE_ATTRIBUTES)
-        .open(path)?;
-    file.set_times(fs::FileTimes::new().set_accessed(time).set_modified(time))?;
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
-    Ok(set_file_times(path, time, time)?)
 }
 
 fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {

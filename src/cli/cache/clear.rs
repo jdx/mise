@@ -3,7 +3,6 @@ use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all_with_retry};
 use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
-use filetime::set_file_times;
 use itertools::Itertools;
 use walkdir::WalkDir;
 
@@ -86,11 +85,8 @@ impl CacheClear {
                         .filter_map(|e| e.ok())
                         .filter(|e| e.file_type().is_file() || e.file_type().is_dir());
                     for e in files {
-                        set_file_times(
-                            e.path(),
-                            filetime::FileTime::zero(),
-                            filetime::FileTime::zero(),
-                        )?;
+                        let epoch = Some(std::time::UNIX_EPOCH);
+                        crate::file::set_times(e.path(), epoch, epoch)?;
                     }
                 }
             }

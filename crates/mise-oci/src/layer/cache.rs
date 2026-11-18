@@ -196,10 +196,9 @@ mod tests {
         let (second, hit) = build();
         assert!(hit);
         assert_eq!(first.bytes, second.bytes);
-        let mtime =
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&path).unwrap());
+        let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
         std::fs::write(&path, "other").unwrap();
-        filetime::set_file_mtime(&path, mtime).unwrap();
+        mise_util::file::set_times(&path, None, Some(mtime)).unwrap();
         let (changed, hit) = build();
         assert!(!hit);
         assert_ne!(first.digest, changed.digest);

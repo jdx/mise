@@ -1678,8 +1678,8 @@ fn copy_excluded_outputs(
                 directories.push((
                     to,
                     metadata.permissions(),
-                    filetime::FileTime::from_last_access_time(&metadata),
-                    filetime::FileTime::from_last_modification_time(&metadata),
+                    metadata.accessed()?,
+                    metadata.modified()?,
                 ));
             } else if metadata.file_type().is_symlink() {
                 if let Some(parent) = to.parent() {
@@ -1694,17 +1694,13 @@ fn copy_excluded_outputs(
                 }
                 fs::copy(from, &to)?;
                 fs::set_permissions(&to, metadata.permissions())?;
-                filetime::set_file_times(
-                    &to,
-                    filetime::FileTime::from_last_access_time(&metadata),
-                    filetime::FileTime::from_last_modification_time(&metadata),
-                )?;
+                file::set_times(&to, Some(metadata.accessed()?), Some(metadata.modified()?))?;
             }
         }
     }
     for (path, permissions, accessed, modified) in directories.into_iter().rev() {
         fs::set_permissions(&path, permissions)?;
-        filetime::set_file_times(&path, accessed, modified)?;
+        file::set_times(&path, Some(accessed), Some(modified))?;
     }
     Ok(())
 }
@@ -1974,17 +1970,17 @@ mod tests {
     #[test]
     fn cache_limits_remove_oldest_entries_by_size_and_age() {
         let cache_dir = tempfile::tempdir().unwrap();
-        let write_entry = |key: &str, modified: filetime::FileTime| {
+        let write_entry = |key: &str, modified: SystemTime| {
             let manifest = cache_dir.path().join(format!("{key}.json"));
             let archive = cache_dir.path().join(format!("{key}.tar.zst"));
             fs::write(&manifest, [0_u8; 10]).unwrap();
             fs::write(&archive, [0_u8; 5]).unwrap();
-            filetime::set_file_mtime(&manifest, modified).unwrap();
-            filetime::set_file_mtime(&archive, modified).unwrap();
+            file::set_times(&manifest, None, Some(modified)).unwrap();
+            file::set_times(&archive, None, Some(modified)).unwrap();
         };
-        write_entry("oldest", filetime::FileTime::from_unix_time(100, 0));
-        write_entry("middle", filetime::FileTime::from_unix_time(200, 0));
-        write_entry("newest", filetime::FileTime::now());
+        write_entry("oldest", UNIX_EPOCH + Duration::from_secs(100));
+        write_entry("middle", UNIX_EPOCH + Duration::from_secs(200));
+        write_entry("newest", SystemTime::now());
 
         enforce_task_cache_limits(
             cache_dir.path(),
