@@ -1245,6 +1245,23 @@ mod tests {
         assert_eq!(temurin_hotfix_version("26.0.2.0+1"), None);
     }
 
+    #[tokio::test]
+    async fn sdkmanrc_temurin_hotfix_maps_to_the_catalog_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let parse = async |contents: &str| {
+            let path = dir.path().join(".sdkmanrc");
+            std::fs::write(&path, contents).unwrap();
+            JavaPlugin::new()
+                ._parse_idiomatic_file(&path)
+                .await
+                .unwrap()
+        };
+        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2+101"]);
+        assert_eq!(parse("java=21.0.2+13-tem\n").await, ["temurin-21.0.2"]);
+        assert_eq!(parse("java=21.0.2.1+1-amzn\n").await, ["corretto-21.0.2.1"]);
+        assert_eq!(parse("java=21.0.2-zulu\n").await, ["zulu-21"]);
+    }
+
     #[test]
     fn numeric_query_does_not_match_a_longer_version() {
         let versions = ["11.0.1", "11.0.1+13", "11.0.10", "11.0.10+9"];
