@@ -352,11 +352,29 @@ impl TasksLs {
                     // Every spelling still selects the task, so the words after it keep
                     // completing; only the ones that fit the typed word are offered.
                     let mut offered = completion_names(current_root.as_deref(), &task, word);
-                    if word.starts_with('/') {
-                        offered.extend(prefixed_aliases.iter().cloned());
-                    } else if !word.starts_with(':') {
-                        offered.extend(own_aliases.iter().cloned());
-                    }
+                    // An alias is offered under the prefix it is written with, so a path
+                    // alias (`//apps/web:x`) follows `/` and a plain one the bare word.
+                    let kind = |n: &str| match n.as_bytes().first() {
+                        Some(b'/') => '/',
+                        Some(b':') => ':',
+                        _ => ' ',
+                    };
+                    let wanted = match word.as_bytes().first() {
+                        Some(b'/') => '/',
+                        Some(b':') => ':',
+                        _ => ' ',
+                    };
+                    offered.extend(
+                        own_aliases
+                            .iter()
+                            .chain(if wanted == '/' {
+                                &prefixed_aliases[..]
+                            } else {
+                                &[]
+                            })
+                            .filter(|a| kind(a) == wanted)
+                            .cloned(),
+                    );
                     let all: Vec<String> = std::iter::once(task_spec.cmd.name.clone())
                         .chain(spellings)
                         .unique()
