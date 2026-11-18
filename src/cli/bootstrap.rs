@@ -3591,17 +3591,31 @@ fn simulate_dotfiles_dry_run(
         if file.mode != FileMode::Content && !file.source.is_file() {
             continue;
         }
-        if file.mode == FileMode::Template {
-            config_files.shift_remove(&file.target);
-            unavailable_bodies.insert(file.target.clone());
-            debug!(
-                "bootstrap: template config target {} skipped in dry-run config simulation \
-                 because template rendering may execute commands",
-                file.target.display()
-            );
-            continue;
-        }
-        let contents = if file.mode == system::files::FileMode::Content {
+        // a template is rendered only with the renderer that cannot run
+        // commands, read the environment or files, or resolve secrets, so a
+        // preview has no side effects. A template that needs more is not
+        // rendered: its target leaves the simulation, as the file on disk may
+        // be stale
+        let rendered = if file.mode == FileMode::Template {
+            match system::files::render_template_for_oci(config, file) {
+                Ok(body) => Some(body),
+                Err(err) => {
+                    config_files.shift_remove(&file.target);
+                    unavailable_bodies.insert(file.target.clone());
+                    debug!(
+                        "bootstrap: template config target {} not rendered in dry-run config \
+                         simulation: {err}",
+                        file.target.display()
+                    );
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        let contents = if let Some(body) = rendered {
+            Ok(body)
+        } else if file.mode == system::files::FileMode::Content {
             Ok(file.content.clone().expect("inline content"))
         } else {
             crate::file::read_to_string(&file.source)

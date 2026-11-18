@@ -35,3 +35,15 @@ printf '[bootstrap.secrets]\ntok = { env = "E2E_CONFIG_FIRST_TOKEN" }\n[dotfiles
 export E2E_CONFIG_FIRST_TOKEN=abc
 assert_succeed "mise bootstrap --only dotfiles --yes"
 assert "cat ~/.secret" "token=abc"
+
+# a conf.d config rendered from a template that is already in place still has
+# its entries previewed, though a dry run does not render the template
+rm -f ~/.secret ~/.second ~/.greeting "$conf_d"
+tmpl_conf="$MISE_CONFIG_DIR/conf.d/rendered.toml"
+printf '[dotfiles]\n"~/marker.txt" = { content = "hello\\n" }\n' >"$src/rendered.toml.tera"
+printf '[dotfiles]\n"%s" = { source = "%s/rendered.toml.tera", mode = "template" }\n' "$tmpl_conf" "$src" >"$config"
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/marker.txt" "hello"
+rm ~/marker.txt
+assert_contains "mise bootstrap --only dotfiles --dry-run" "marker.txt"
+assert_fail "test -e ~/marker.txt"
