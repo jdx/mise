@@ -44,6 +44,7 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
     let approved = |found: &str| allowed.iter().any(|value| value == found);
     // Where approved values sit, so a token format inside one is covered too.
     let mut covered = Vec::new();
+    let mut end = line.len();
     for found in ASSIGNMENT.captures_iter(line) {
         let Some(value) = ["dq", "sq", "bare"]
             .iter()
@@ -106,18 +107,21 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
         }
         if bare && !structured && text.contains(';') {
             // shell: `KEY=value;next` is two commands. Judge the value alone,
-            // then each command after it; no segment holds a separator, so
-            // none recurses further.
-            let mut parts = text.split(';');
-            let first = parts.next().unwrap_or_default();
+            // then the rest of the line as its own command, quoted values
+            // included, which the capture stopped short of.
+            let first = text.split(';').next().unwrap_or_default();
             if approved(first) && !continues {
                 covered.push(value.start()..value.start() + first.len());
             } else if first.chars().count() >= 8 {
                 return true;
             }
-            if parts.any(|part| suspicious(part, allowed)) {
+            let split = value.start() + first.len() + 1;
+            if suspicious(&line[split..], allowed) {
                 return true;
             }
+            // the rest was judged whole, tokens included
+            end = split;
+            break;
         } else if approved(text) && !continues {
             covered.push(value.range());
         } else {
@@ -126,7 +130,7 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
     }
     // both lists are in line order, so one forward cursor covers them
     let mut next = 0;
-    TOKEN_FORMATS.find_iter(line).any(|found| {
+    TOKEN_FORMATS.find_iter(&line[..end]).any(|found| {
         while covered
             .get(next)
             .is_some_and(|range| range.end <= found.start())
@@ -207,6 +211,8 @@ mod tests {
             "password: ab;cdefghijklmnop",
             "password: ab;cdefg",
             "password: abcdefg;",
+            r#"API_KEY=test;DEPLOY_TOKEN="abcdefghijkl1234""#,
+            "API_KEY=test;DEPLOY_TOKEN=abcdefghijkl1234",
             "password: abcdefg; # note",
             "AWS=AKIAABCDEFGHIJKLMNOP",
             "-----BEGIN OPENSSH PRIVATE KEY-----",
