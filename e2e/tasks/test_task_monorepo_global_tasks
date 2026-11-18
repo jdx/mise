@@ -78,17 +78,23 @@ assert_contains "mise run '//packages/foo:foo-task'" "hello-from-project"
 
 # Test 8: the fallback never reaches into another project's grouped task
 echo "=== Test 8: no cross-project fallback ==="
-cat <<'TOML' >>packages/foo/mise.toml
-
-[tasks."tools:install"]
-run = "echo foo-tools-install"
+mkdir -p tools
+cat <<'TOML' >tools/mise.toml
+[tasks.install]
+run = "echo tools-install-ran"
 TOML
-cat <<'TOML' >>mise.toml
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "tools"]
 
 [tasks.bad]
 depends = ["tools:install"]
 run = "echo bad-ran"
 TOML
+# The //tools project is loaded, so the old full-map fallback would have run //tools:install.
+assert_contains "mise run '//tools:install'" "tools-install-ran"
 assert_fail "mise run '//:bad'"
 
 echo "=== All monorepo global task tests passed! ==="
