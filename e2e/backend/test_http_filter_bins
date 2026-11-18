@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# The http backend's filter_bins option keeps bundled helpers off PATH.
+
+set -euo pipefail
+
+mkdir -p pkg/dist-package
+printf '#!/bin/sh\necho my-tool 1.0.0\n' >pkg/dist-package/my-tool
+printf '#!/bin/sh\necho bundled-node\n' >pkg/dist-package/node
+printf '#!/bin/sh\necho bundled-rg\n' >pkg/dist-package/rg
+mkdir -p pkg/.mise-bins
+printf '#!/bin/sh\necho archive-node\n' >pkg/.mise-bins/node
+chmod +x pkg/dist-package/* pkg/.mise-bins/node
+tar -czf my-tool-1.0.0.tar.gz -C pkg dist-package .mise-bins
+
+cat <<EOF2 >mise.toml
+[tools]
+"http:my-tool" = { version = "1.0.0", url = "file://$PWD/my-tool-1.0.0.tar.gz", strip_components = 0, bin_path = "dist-package", filter_bins = ["my-tool"] }
+EOF2
+
+mise install
+assert "mise x -- my-tool" "my-tool 1.0.0"
+assert_contains "mise bin-paths" ".mise-bins"
+assert_not_contains "mise bin-paths" "dist-package"
+assert_not_contains "ls $(mise bin-paths)" "node"
+
+# Without filter_bins the whole directory is exposed
+cat <<EOF2 >mise.toml
+[tools]
+"http:my-tool-all" = { version = "1.0.0", url = "file://$PWD/my-tool-1.0.0.tar.gz", strip_components = 0, bin_path = "dist-package" }
+EOF2
+mise install
+assert "mise x -- node" "bundled-node"

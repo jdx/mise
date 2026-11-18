@@ -221,6 +221,7 @@ const PLATFORM_TABLES: &[PlatformTable] = &[
             "bin",
             "rename_exe",
             "bin_path",
+            "filter_bins",
             "windows_script_interpreter",
         ],
         local: &[],

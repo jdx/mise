@@ -4,7 +4,6 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
@@ -13,6 +12,7 @@ use crate::backend::static_helpers::{
     template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
+use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::http::{DownloadFileMetadata, HTTP};
@@ -197,6 +197,25 @@ impl<'a> HttpOptions<'a> {
 
     fn bin_path(&self) -> Option<String> {
         self.values.platform_string("bin_path")
+    }
+
+    /// `filter_bins` as a list: a comma-separated string or an array. A platform
+    /// value wins over the top-level one.
+    fn filter_bins(&self) -> Option<Vec<String>> {
+        let parse = |value: Option<&toml::Value>| {
+            let bins: Vec<String> = match value? {
+                toml::Value::String(s) => s.split(',').map(|s| s.trim().to_string()).collect(),
+                toml::Value::Array(a) => a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                    .collect(),
+                _ => return None,
+            };
+            let bins: Vec<String> = bins.into_iter().filter(|s| !s.is_empty()).collect();
+            (!bins.is_empty()).then_some(bins)
+        };
+        parse(self.values.platform_value_without_base("filter_bins"))
+            .or_else(|| parse(self.values.raw().opts.get("filter_bins")))
     }
 
     fn shared_extraction(&self) -> bool {
@@ -572,6 +591,19 @@ impl HttpBackend {
             if let Some(bin_path) = bin_path {
                 parts.push(format!("binpath_{}", hash::hash_blake3_to_str(bin_path)));
             }
+        }
+
+        // `.mise-bins` is written into the (possibly shared) extraction.
+        if let Some(bins) = opts.filter_bins() {
+            // The links point into the directory `bin_path` names.
+            parts.push(format!(
+                "filter_bins_{}",
+                hash::hash_blake3_to_str(&format!(
+                    "{}\n{}",
+                    bins.join("\n"),
+                    bin_path.unwrap_or_default()
+                ))
+            ));
         }
 
         if let Some(interpreter) = opts.windows_script_interpreter() {
@@ -1673,6 +1705,9 @@ impl Backend for HttpBackend {
         }
         self.create_version_alias_symlink(&tv, &cache_plan.key)?;
         tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
+        if let Some(bins) = opts.filter_bins() {
+            self.create_symlink_bin_dir(&tv, &opts, bins)?;
+        }
 
         Ok(tv)
     }
@@ -1706,46 +1741,215 @@ impl Backend for HttpBackend {
         let mut tv = tv.clone();
         tv.install_path = Some(install_path.clone());
 
-        // Check for explicit bin_path
-        if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = render_bin_path(&bin_path_template, &tv)?;
+        // An install made before `filter_bins` was set has no `.mise-bins`; build it
+        // rather than dropping the tool from PATH.
+        // An archive's own `.mise-bins` counts only when `filter_bins` asks for one.
+        // A failed repair is an error: the unfiltered directory would put the bundled
+        // helpers back on PATH.
+        let mut filtered = false;
+        if let Some(bins) = opts.filter_bins() {
+            // Idempotent: it keeps a directory that already holds the right links and
+            // replaces an archive's own or one built for another filter.
+            self.create_symlink_bin_dir(&tv, &opts, bins)
+                .wrap_err_with(|| {
+                    format!(
+                        "could not create {MISE_BINS_DIR}; reinstall {}",
+                        self.ba.tool_name
+                    )
+                })?;
+            filtered = true;
+        }
+        if filtered {
             return Ok(vec![runtime_path_for_install_path(
                 &tv,
-                install_path.join(bin_path),
+                install_path.join(MISE_BINS_DIR),
             )]);
         }
 
-        // Check for bin directory
+        Ok(Self::discover_bin_paths(&opts, &tv)?
+            .into_iter()
+            .map(|path| runtime_path_for_install_path(&tv, path))
+            .collect())
+    }
+}
+
+impl HttpBackend {
+    /// The directories of the install that hold executables, before `filter_bins`.
+    /// `tv.install_path` must be the real install path.
+    fn discover_bin_paths(opts: &HttpOptions<'_>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        let install_path = tv.install_path();
+        if let Some(bin_path_template) = opts.bin_path() {
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
+            return Ok(vec![install_path.join(bin_path)]);
+        }
+
         let bin_dir = install_path.join("bin");
         if bin_dir.exists() {
-            return Ok(vec![runtime_path_for_install_path(
-                &tv,
-                install_path.join("bin"),
-            )]);
+            return Ok(vec![bin_dir]);
         }
 
         // Search subdirectories for bin directories
         let mut paths = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&install_path) {
             for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let sub_bin = path.join("bin");
-                    if sub_bin.exists() {
-                        paths.push(sub_bin);
-                    }
+                let sub_bin = entry.path().join("bin");
+                if entry.path().is_dir() && sub_bin.exists() {
+                    paths.push(sub_bin);
                 }
             }
         }
 
         if paths.is_empty() {
-            Ok(vec![runtime_path_for_install_path(&tv, install_path)])
+            Ok(vec![install_path])
         } else {
-            Ok(paths
-                .into_iter()
-                .map(|path| runtime_path_for_install_path(&tv, path))
-                .collect())
+            Ok(paths)
         }
+    }
+
+    /// Links only the `filter_bins` executables into `.mise-bins`, so bundled helpers
+    /// stay off `PATH`.
+    fn create_symlink_bin_dir(
+        &self,
+        tv: &ToolVersion,
+        opts: &HttpOptions<'_>,
+        bins: Vec<String>,
+    ) -> Result<()> {
+        let install_path = tv.install_path();
+        let symlink_dir = install_path.join(MISE_BINS_DIR);
+
+        let mut src_dirs = Self::discover_bin_paths(opts, tv)?;
+        // The documented lookup: `bin_path`, then `bin/`, then the install root.
+        let bin_dir = install_path.join("bin");
+        if bin_dir.is_dir() && !src_dirs.contains(&bin_dir) {
+            src_dirs.push(bin_dir);
+        }
+        if !src_dirs.contains(&install_path) {
+            src_dirs.push(install_path.clone());
+        }
+
+        let mut wanted = Vec::new();
+        for bin_name in bins {
+            // A name with separators or parent components would resolve outside
+            // the install and symlink an arbitrary file onto PATH.
+            if !file::is_plain_file_name(&bin_name) {
+                warn!("filter_bins: '{bin_name}' must be a plain file name, skipping");
+                continue;
+            }
+            let Some(src) = src_dirs
+                .iter()
+                .map(|dir| dir.join(&bin_name))
+                .find(|src| src.exists())
+            else {
+                warn!(
+                    "Could not find binary '{bin_name}' in install directories. Available paths: {src_dirs:?}"
+                );
+                continue;
+            };
+            // Link the real file: a link through this install's path would dangle for
+            // another tool sharing the extraction once this one is uninstalled.
+            // A Windows entry is a copy, which cannot dangle, and its source record has
+            // to be spelled through the install path, so only Unix resolves the link.
+            // `bin_path = "."` leaves `.` components, which a source record rejects.
+            let src = if cfg!(windows) {
+                src.components()
+                    .filter(|c| !matches!(c, std::path::Component::CurDir))
+                    .collect::<PathBuf>()
+            } else {
+                dunce::canonicalize(&src).unwrap_or(src)
+            };
+            wanted.push((bin_name, src));
+        }
+
+        // The sources must outlive the rebuild below.
+        let real_dir = dunce::canonicalize(&symlink_dir).unwrap_or_else(|_| symlink_dir.clone());
+        if let Some((name, _)) = wanted.iter().find(|(_, src)| {
+            let real = dunce::canonicalize(src).unwrap_or_else(|_| src.clone());
+            without_verbatim_prefix(&real).starts_with(without_verbatim_prefix(&real_dir))
+        }) {
+            bail!(
+                "filter_bins: '{name}' is inside {MISE_BINS_DIR}, which mise reserves; use another bin_path"
+            );
+        }
+
+        // An archive can ship its own `.mise-bins`; keep only a previous run's links.
+        if symlink_dir.exists() && Self::bins_dir_matches(&symlink_dir, &wanted) {
+            return Ok(());
+        }
+        // Build the links aside and publish the finished directory, so a concurrent
+        // command never sees a partial `.mise-bins`.
+        let staging = install_path.join(format!("{MISE_BINS_DIR}.tmp-{}", std::process::id()));
+        file::remove_all(&staging)?;
+        file::create_dir_all(&staging)?;
+        for (name, src) in &wanted {
+            super::mise_bins::link(src, &staging.join(name))?;
+        }
+        if symlink_dir.exists() {
+            file::remove_all(&symlink_dir)?;
+        }
+        if let Err(err) = std::fs::rename(&staging, &symlink_dir) {
+            file::remove_all(&staging)?;
+            // Another process published it first.
+            if !Self::bins_dir_matches(&symlink_dir, &wanted) {
+                return Err(err.into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether the `.mise-bins` entry is our link to `src`.
+    #[cfg(not(windows))]
+    fn entry_links_to(entry: &Path, src: &Path) -> bool {
+        std::fs::read_link(entry).ok().as_deref() == Some(src)
+    }
+
+    /// On Windows an entry is a copy, and its source record says where it came from;
+    /// an archive's own file has none.
+    #[cfg(windows)]
+    fn entry_links_to(entry: &Path, src: &Path) -> bool {
+        let real = |path: &Path| {
+            dunce::canonicalize(path)
+                .ok()
+                .map(|p| without_verbatim_prefix(&p))
+        };
+        super::mise_bins::source_of(entry)
+            .and_then(|source| real(&source))
+            .is_some_and(|source| Some(source) == real(src))
+    }
+
+    /// Whether `dir` holds exactly the links for `wanted`, so it can be kept as it is.
+    fn bins_dir_matches(dir: &Path, wanted: &[(String, PathBuf)]) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        let mut found = 0;
+        for entry in entries.flatten() {
+            // Windows keeps a `.<name>.source` record beside each copy.
+            if cfg!(windows) && entry.file_name().to_string_lossy().ends_with(".source") {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some((_, src)) = wanted.iter().find(|(n, _)| *n == name) else {
+                return false;
+            };
+            if !Self::entry_links_to(&entry.path(), src) {
+                return false;
+            }
+            found += 1;
+        }
+        found == wanted.len()
+    }
+}
+
+/// `path` without a Windows `\\?\` prefix, which `dunce` keeps on long paths, so
+/// two forms of one path compare equal.
+fn without_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path.to_path_buf()
     }
 }
 
@@ -1781,6 +1985,18 @@ fn rename_cache_token(rename: &toml::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn verbatim_prefixes_are_removed_for_comparison() {
+        use super::without_verbatim_prefix as strip;
+        use std::path::Path;
+        assert_eq!(strip(Path::new(r"\\?\C:\a\b")), Path::new(r"C:\a\b"));
+        assert_eq!(
+            strip(Path::new(r"\\?\UNC\srv\share")),
+            Path::new(r"\\srv\share")
+        );
+        assert_eq!(strip(Path::new("/usr/bin")), Path::new("/usr/bin"));
+    }
+
     use super::*;
     use crate::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};

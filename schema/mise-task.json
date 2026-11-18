@@ -2437,6 +2437,20 @@
           "type": "string",
           "description": "directory inside the install that contains binaries (tera templated)"
         },
+        "filter_bins": {
+          "description": "only expose these binaries on PATH",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
         "shared_extraction": {
           "description": "share extracted content between installs with identical artifacts",
           "$ref": "#/$defs/tool_bool"
@@ -3293,6 +3307,9 @@
           },
           "bin_path": {
             "$ref": "#/$defs/tool_http_options/properties/bin_path"
+          },
+          "filter_bins": {
+            "$ref": "#/$defs/tool_http_options/properties/filter_bins"
           },
           "windows_script_interpreter": {
             "$ref": "#/$defs/tool_http_options/properties/windows_script_interpreter"
