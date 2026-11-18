@@ -14,3 +14,13 @@ assert_contains "mise ls dummy --all-sources" "~/workdir/project-b/mise.toml  1"
 assert "mise ls dummy --all-sources --json | jq -r '.[0].sources | length'" "2"
 assert_contains "mise ls dummy --all-sources --json" "project-a/mise.toml"
 assert_contains "mise ls dummy --all-sources --json" "project-b/mise.toml"
+
+# different tools that share a version string each keep their own row
+mkdir -p project-c
+cat >project-c/mise.toml <<'MISE'
+[tools]
+dummy = "1"
+"cargo:mise-test-other" = "1.1.0"
+MISE
+assert_succeed "cd project-c && mise ls --current"
+assert "mise ls --all-sources --json | jq -r 'has(\"dummy\") and has(\"cargo:mise-test-other\")'" "true"
