@@ -667,8 +667,8 @@ fn check_merge_key_has_id(
             ""
         };
         // show the key parts escaped so a control character cannot split the message
-        let shown_path = serde_json::to_string(path_raw)?;
-        let shown_id = serde_json::to_string(id)?;
+        let shown_path = escape_string(path_raw)?;
+        let shown_id = escape_string(id)?;
         bail!(
             "{shown_path}.{shown_id}: {shown_id} was read as the id and {shown_path} as the target, which has no .json, .jsonc, .toml, .yaml, .yml, or .ini extension; if {shown_id} is the file to merge into, the key is missing its /<id> (for example {suggestion}{source_note}){format_alternative}, ignoring entry"
         );
@@ -680,7 +680,13 @@ fn check_merge_key_has_id(
 /// valid TOML basic string, which keys allow; TOML forbids a raw DEL there,
 /// which JSON leaves unescaped.
 fn suggested_key(path_raw: &str, id: &str) -> Result<String> {
-    Ok(serde_json::to_string(&format!("{path_raw}/{id}/shared"))?.replace('\u{7f}', "\\u007F"))
+    escape_string(&format!("{path_raw}/{id}/shared"))
+}
+
+/// `s` as a quoted string with every control character escaped; a JSON string
+/// is also a valid TOML basic string, but JSON leaves DEL raw
+fn escape_string(s: &str) -> Result<String> {
+    Ok(serde_json::to_string(s)?.replace('\u{7f}', "\\u007F"))
 }
 
 /// ids end up inside marker lines — keep them to characters that can't
