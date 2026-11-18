@@ -871,6 +871,59 @@ end
         Ok(())
     }
 
+    /// `bin.install` makes the installed file executable, as Homebrew does,
+    /// but keeps it writable so a later `inreplace` works, even when the source was a plain download with mode 0644. Other
+    /// directories keep the source's mode.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_bin_install_makes_files_executable() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let buildpath = tmp.path().join("build");
+        mise_util::file::create_dir_all(&buildpath)?;
+        mise_util::file::write(&shim, SHIM_RB)?;
+        for name in ["tool", "admin", "data", "nested"] {
+            let src = buildpath.join(name);
+            mise_util::file::write(&src, "#!/bin/sh\n")?;
+            std::fs::set_permissions(&src, std::fs::Permissions::from_mode(0o644))?;
+        }
+        let formula_rb = tmp.path().join("example.rb");
+        mise_util::file::write(
+            &formula_rb,
+            "class Example < Formula\n  def install\n    bin.install \"tool\"\n    inreplace bin/\"tool\", \"sh\", \"bash\"\n    sbin.install \"admin\"\n    pkgshare.install \"data\"\n    (pkgshare/\"bin\").install \"nested\"\n  end\nend\n",
+        )?;
+        let output = std::process::Command::new(&ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CELLAR", tmp.path().join("Cellar"))
+            .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let keg = tmp.path().join("Cellar/example/1.0.0");
+        let mode = |p: &str| -> Result<u32> {
+            Ok(std::fs::metadata(keg.join(p))?.permissions().mode() & 0o777)
+        };
+        assert_eq!(mode("bin/tool")?, 0o755);
+        assert_eq!(mode("sbin/admin")?, 0o755);
+        assert_eq!(mode("share/example/data")?, 0o644);
+        assert_eq!(mode("share/example/bin/nested")?, 0o644);
+        Ok(())
+    }
+
     /// A tap formula's `post_install` can rewrite install names through
     /// Homebrew's vendored ruby-macho. mise has no equivalent, but it does not
     /// relocate source-built kegs either, so each call is skipped with a
