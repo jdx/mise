@@ -1650,14 +1650,16 @@ fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, S
     Ok((python, version.to_string()))
 }
 
-/// What a rolling `latest` points at on its remote, asked once per tool for
+/// What a rolling `latest` points at on its remote, asked once per source for
 /// the life of the process. A scan visits every tracked config, and an
 /// unreachable remote would otherwise cost a timeout for each one, so a failed
 /// lookup is remembered too.
 async fn rolling_head(config: &Arc<Config>, backend: &Arc<dyn Backend>) -> Option<String> {
     static HEADS: std::sync::Mutex<BTreeMap<String, Option<String>>> =
         std::sync::Mutex::new(BTreeMap::new());
-    let key = backend.ba().short.to_string();
+    // Keyed by the full source, since two projects can alias different
+    // remotes to one short name.
+    let key = backend.ba().full();
     if let Some(head) = HEADS.lock().unwrap().get(&key) {
         return head.clone();
     }
