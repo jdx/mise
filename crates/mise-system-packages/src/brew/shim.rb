@@ -43,6 +43,13 @@ MISE_BREW_BUILDPATH = Pathname.new(ENV.fetch("MISE_BREW_BUILDPATH"))
 MISE_BREW_CACHE = Pathname.new(ENV.fetch("MISE_BREW_CACHE"))
 MISE_BREW_MAKE_JOBS = ENV.fetch("MISE_BREW_MAKE_JOBS", "4")
 
+# Homebrew defines these as globals, and tap formulae and their helpers read
+# them directly (e.g. `HOMEBREW_PREFIX.to_s != "/usr/local"`).
+HOMEBREW_PREFIX = MISE_BREW_PREFIX
+HOMEBREW_CELLAR = MISE_BREW_CELLAR
+HOMEBREW_REPOSITORY = MISE_BREW_PREFIX
+HOMEBREW_LIBRARY = MISE_BREW_PREFIX + "Library"
+
 def ohai(*args)
   $stdout.puts "==> #{args.join(" ")}"
   $stdout.flush
