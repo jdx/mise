@@ -336,7 +336,7 @@ never infers a source for it from `dotfiles.root`:
 
 For a path outside your home directory, or one that needs an owner and group,
 use [`[bootstrap.files]`](/bootstrap/files.html#permissions-without-content)
-instead.
+instead. It accepts `permissions` too, as another name for its `mode`.
 
 When a permissions-only target does not exist, apply warns and skips it, and
 `status` counts it as `applied` with the reason

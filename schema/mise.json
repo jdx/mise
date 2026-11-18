@@ -8809,6 +8809,10 @@
               "os": {
                 "description": "OS or OS/arch selectors; entries on other platforms are skipped",
                 "$ref": "#/$defs/os_filter"
+              },
+              "permissions": {
+                "type": "string",
+                "description": "the same as mode, under the name [dotfiles] uses; set only one of the two"
               }
             },
             "allOf": [
@@ -8899,6 +8903,9 @@
                       "required": ["mode"]
                     },
                     {
+                      "required": ["permissions"]
+                    },
+                    {
                       "required": ["owner"]
                     },
                     {
@@ -8913,6 +8920,11 @@
                       "const": false
                     }
                   }
+                }
+              },
+              {
+                "not": {
+                  "required": ["mode", "permissions"]
                 }
               }
             ],
@@ -8967,8 +8979,19 @@
               "os": {
                 "description": "OS or OS/arch selectors; entries on other platforms are skipped",
                 "$ref": "#/$defs/os_filter"
+              },
+              "permissions": {
+                "type": "string",
+                "description": "the same as mode, under the name [dotfiles] uses; set only one of the two"
               }
             },
+            "allOf": [
+              {
+                "not": {
+                  "required": ["mode", "permissions"]
+                }
+              }
+            ],
             "additionalProperties": false
           }
         },

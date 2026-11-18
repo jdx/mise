@@ -41,11 +41,17 @@ use crate::schema::refs;
             "not": {"anyOf": [{"required": ["source"]}, {"required": ["content"]}, {"required": ["block"]}]}
         },
         "then": {
-            "anyOf": [{"required": ["mode"]}, {"required": ["owner"]}, {"required": ["group"]}],
+            "anyOf": [
+                {"required": ["mode"]},
+                {"required": ["permissions"]},
+                {"required": ["owner"]},
+                {"required": ["group"]}
+            ],
             "properties": {"template": {"const": false}, "replace": {"const": false}}
         }
     }
 ]))]
+#[schemars(transform = permissions_alias)]
 pub struct ManagedFileTomlConfig {
     #[serde(default)]
     #[schemars(schema_with = "refs::bootstrap_file_phase")]
@@ -63,6 +69,8 @@ pub struct ManagedFileTomlConfig {
     /// group that should own the file; left as it is when unset
     pub group: Option<String>,
     /// octal permissions such as "0640"; defaults to "0644" for a file with source or content, or one a block creates, otherwise left as it is
+    // `permissions` is the key [dotfiles] uses for the same thing.
+    #[serde(alias = "permissions")]
     pub mode: Option<String>,
     /// render source or content with mise's template engine; without it, template syntax is written unchanged
     #[serde(default)]
@@ -88,6 +96,7 @@ pub struct ManagedFileTomlConfig {
 
 /// directory whose owner, group, and mode mise manages, keyed by an absolute or ~/ target path
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
+#[schemars(transform = permissions_alias)]
 pub struct ManagedDirectoryTomlConfig {
     #[serde(default)]
     #[schemars(schema_with = "refs::bootstrap_file_phase")]
@@ -97,6 +106,7 @@ pub struct ManagedDirectoryTomlConfig {
     /// group that should own the directory; left as it is when unset, and parents mise creates get the system defaults
     pub group: Option<String>,
     /// octal permissions such as "0755"; defaults to "0755"
+    #[serde(alias = "permissions")]
     pub mode: Option<String>,
     /// present creates the directory with any missing parents; absent removes it, which must then be empty unless recursive is set
     #[serde(default)]
@@ -120,4 +130,58 @@ pub struct ManagedDirectoryTomlConfig {
 // `ManagedState` lives in mise-bootstrap, which does not depend on schemars.
 fn managed_state(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({"type": "string", "enum": ["present", "absent"]})
+}
+
+// serde reads `permissions` as an alias of `mode`, which schemars does not describe: declare the
+// key, and that an entry sets only one of the two.
+fn permissions_alias(schema: &mut schemars::Schema) {
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+    if let Some(properties) = object
+        .get_mut("properties")
+        .and_then(|properties| properties.as_object_mut())
+        && let Some(mode) = properties.get("mode").cloned()
+    {
+        let mut permissions = mode;
+        if let Some(permissions) = permissions.as_object_mut() {
+            permissions.insert(
+                "description".into(),
+                "the same as mode, under the name [dotfiles] uses; set only one of the two".into(),
+            );
+        }
+        properties.insert("permissions".into(), permissions);
+    }
+    let both = serde_json::json!({"not": {"required": ["mode", "permissions"]}});
+    match object.get_mut("allOf").and_then(|all| all.as_array_mut()) {
+        Some(all) => all.push(both),
+        None => {
+            object.insert("allOf".into(), serde_json::json!([both]));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permissions_is_an_alias_of_mode() {
+        let file: ManagedFileTomlConfig = toml::from_str(r#"permissions = "0600""#).unwrap();
+        assert_eq!(file.mode.as_deref(), Some("0600"));
+        assert_eq!(
+            file,
+            toml::from_str::<ManagedFileTomlConfig>(r#"mode = "0600""#).unwrap()
+        );
+        let directory: ManagedDirectoryTomlConfig =
+            toml::from_str(r#"permissions = "0700""#).unwrap();
+        assert_eq!(directory.mode.as_deref(), Some("0700"));
+    }
+
+    #[test]
+    fn mode_and_permissions_together_are_refused() {
+        let both = "mode = \"0600\"\npermissions = \"0600\"";
+        assert!(toml::from_str::<ManagedFileTomlConfig>(both).is_err());
+        assert!(toml::from_str::<ManagedDirectoryTomlConfig>(both).is_err());
+    }
 }
