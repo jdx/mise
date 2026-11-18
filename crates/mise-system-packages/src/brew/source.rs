@@ -833,7 +833,7 @@ end
         let buildpath = tmp.path().join("build");
         mise_util::file::create_dir_all(&buildpath)?;
         mise_util::file::write(&shim, SHIM_RB)?;
-        for name in ["tool", "admin", "data"] {
+        for name in ["tool", "admin", "data", "nested"] {
             let src = buildpath.join(name);
             mise_util::file::write(&src, "#!/bin/sh\n")?;
             std::fs::set_permissions(&src, std::fs::Permissions::from_mode(0o644))?;
@@ -841,7 +841,7 @@ end
         let formula_rb = tmp.path().join("example.rb");
         mise_util::file::write(
             &formula_rb,
-            "class Example < Formula\n  def install\n    bin.install \"tool\"\n    inreplace bin/\"tool\", \"sh\", \"bash\"\n    sbin.install \"admin\"\n    pkgshare.install \"data\"\n  end\nend\n",
+            "class Example < Formula\n  def install\n    bin.install \"tool\"\n    inreplace bin/\"tool\", \"sh\", \"bash\"\n    sbin.install \"admin\"\n    pkgshare.install \"data\"\n    (pkgshare/\"bin\").install \"nested\"\n  end\nend\n",
         )?;
         let output = std::process::Command::new(&ruby)
             .arg(&shim)
@@ -867,6 +867,7 @@ end
         assert_eq!(mode("bin/tool")?, 0o755);
         assert_eq!(mode("sbin/admin")?, 0o755);
         assert_eq!(mode("share/example/data")?, 0o644);
+        assert_eq!(mode("share/example/bin/nested")?, 0o644);
         Ok(())
     }
 

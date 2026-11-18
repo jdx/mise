@@ -253,10 +253,12 @@ class Pathname
     raise "cannot install #{src}: does not exist" unless src.exist? || src.symlink?
     dest.dirname.mkpath
     FileUtils.mv src.to_s, dest.to_s
-    # Homebrew makes what a formula puts in bin or sbin executable, whatever
+    # Homebrew makes what a formula puts in its own bin or sbin executable, whatever
     # mode a download left it with. Owner write stays so a later inreplace or
     # write in the same install still works.
-    dest.chmod(0o755) if dest.file? && !dest.symlink? && %w[bin sbin].include?(dest.dirname.basename.to_s)
+    keg = MISE_BREW_CELLAR + MISE_BREW_NAME + MISE_BREW_PKG_VERSION
+    exec_dirs = [keg + "bin", keg + "sbin"].map { |dir| dir.cleanpath.to_s }
+    dest.chmod(0o755) if dest.file? && !dest.symlink? && exec_dirs.include?(dest.dirname.cleanpath.to_s)
   end
   private :install_one
 
