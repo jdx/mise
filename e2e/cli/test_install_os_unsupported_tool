@@ -53,3 +53,7 @@ assert_fail_contains "mise install github:jdx/mise-test-fixtures@1.0.0" "no-such
 # an explicit os option that excludes this platform is rejected too
 assert_fail_contains "mise install 'github:jdx/mise-test-fixtures[os=no-such-os]@1.0.0'" "no-such-os"
 assert_fail_contains "mise x 'github:jdx/mise-test-fixtures[os=no-such-os]@1.0.0' -- true" "no-such-os"
+
+# without a version too, even when the config does not restrict the tool
+rm -f mise.local.toml
+assert_fail_contains "mise install 'github:jdx/mise-test-fixtures[os=no-such-os]'" "no-such-os"

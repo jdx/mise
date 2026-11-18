@@ -426,7 +426,10 @@ impl Install {
             .collect();
         // `tool@version` replaces the configured request, dropping its `os` option, so judge
         // a named tool by what the config files say about it.
-        for ta in expanded_runtimes.iter().filter(|ta| ta.tvr.is_some()) {
+        for ta in expanded_runtimes
+            .iter()
+            .filter(|ta| ta.tvr.is_some() || names_os(ta))
+        {
             // The highest-precedence config file that lists the tool decides. Monorepo
             // projects are siblings, so the union of their effective requests decides.
             let configured = match &monorepo_union {
