@@ -88,3 +88,26 @@ assert "readlink $shimdir/aliasbin" "$(which mise)"
 (cd "$other" && mise reshim)
 assert "readlink $shimdir/aliasbin" "$(which mise)"
 (cd "$PWD/proj4" && assert "$shimdir/aliasbin" "alias bin")
+
+# In safe mode a global config's `path:` alias still counts when a tracked project selects
+# it, so a reshim from elsewhere keeps the shim.
+mkdir -p "$PWD/galiastool/bin" "$PWD/proj5"
+cat >"$PWD/galiastool/bin/galiasbin" <<'SH'
+#!/usr/bin/env bash
+echo "global alias bin"
+SH
+chmod +x "$PWD/galiastool/bin/galiasbin"
+mkdir -p "$HOME/.config/mise"
+cat >>"$HOME/.config/mise/config.toml" <<EOF2
+
+[tool_alias."github:jdx/galiastool".versions]
+gl = "path:$PWD/galiastool/bin"
+EOF2
+cat >"$PWD/proj5/mise.toml" <<EOF2
+[tools]
+"github:jdx/galiastool" = "gl"
+EOF2
+(cd "$PWD/proj5" && mise reshim)
+assert "readlink $shimdir/galiasbin" "$(which mise)"
+(cd "$other" && MISE_SAFE=1 mise reshim)
+assert "readlink $shimdir/galiasbin" "$(which mise)"

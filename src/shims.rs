@@ -1966,6 +1966,9 @@ async fn get_desired_shims(
         let file_aliases = cf.aliases().ok();
         for request in set.tools.values().flatten() {
             // An alias such as `node = "local"` can stand for a `path:` version.
+            // A path from a config-level alias is not the request file's to name: the global
+            // config's alias stays valid in safe mode even when a project selects it.
+            let mut global_alias = false;
             let request = match request {
                 crate::toolset::ToolRequest::Version { version, .. } => request
                     .backend()
@@ -1977,6 +1980,7 @@ async fn get_desired_shims(
                             .and_then(|a| a.get(&b.ba().short))
                             .and_then(|a| a.versions.get(version))
                             .cloned();
+                        global_alias = own.is_none();
                         own.or_else(|| config.resolve_static_alias(&b, version).ok().flatten())
                     })
                     .filter(|v| v.starts_with("path:"))
@@ -2002,7 +2006,7 @@ async fn get_desired_shims(
             };
             let Some(request) = request else { continue };
             if request.is_os_supported()
-                && !request.ignored_in_safe_mode()
+                && (global_alias || !request.ignored_in_safe_mode())
                 && !toolset.is_disabled(request.ba())
                 && let Ok(backend) = request.backend()
             {
