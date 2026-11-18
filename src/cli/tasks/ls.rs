@@ -66,6 +66,10 @@ pub(crate) struct TasksLs {
     #[usage(long, hide = true)]
     pub complete: bool,
 
+    /// The word being completed, so `--complete` offers only the spellings that fit it
+    #[usage(long, hide = true, value_name = "WORD")]
+    pub complete_word: Option<String>,
+
     /// Show hidden tasks
     #[usage(long, verbatim_doc_comment)]
     pub hidden: bool,
@@ -123,6 +127,7 @@ impl TasksLs {
         self.extended |= later.extended;
         self.all |= later.all;
         self.complete |= later.complete;
+        self.complete_word = later.complete_word.or(self.complete_word);
         self.hidden |= later.hidden;
         self.name_only |= later.name_only;
         self.no_header |= later.no_header;
@@ -147,6 +152,7 @@ impl TasksLs {
             || self.extended
             || self.all
             || self.complete
+            || self.complete_word.is_some()
             || self.hidden
             || self.name_only
             || self.no_header
@@ -248,6 +254,7 @@ impl TasksLs {
 
     fn complete(&self, config: &Config, tasks: Vec<Task>) -> Result<()> {
         let current_root = current_root_prefix(config);
+        let word = self.complete_word.as_deref().unwrap_or_default();
         for t in tasks {
             // One line per task: a line break in a description would start a candidate of
             // its own, and a name with a control character cannot be completed anyway.
@@ -257,10 +264,8 @@ impl TasksLs {
                 .map(|c| if c.is_control() { ' ' } else { c })
                 .collect();
             let description = description.replace(":", "\\:");
-            let spellings = shorthand_name(current_root.as_deref(), &t)
-                .into_iter()
-                .chain(bare_names(current_root.as_deref(), &t));
-            for name in std::iter::once(t.display_name.clone()).chain(spellings) {
+            let names = completion_names(current_root.as_deref(), &t, word);
+            for name in names {
                 if name.chars().any(char::is_control) {
                     continue;
                 }
@@ -289,6 +294,18 @@ impl TasksLs {
     async fn display_usage(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         let mut usage = usage::Spec::default();
         let current_root = current_root_prefix(config);
+        // Every task's own name, so an alias another task owns as a name is never offered
+        // for the alias's task: a name wins when the task runs, and must when it completes.
+        let task_names: std::collections::HashSet<String> = tasks
+            .iter()
+            .flat_map(|t| {
+                let bare = current_root
+                    .as_deref()
+                    .and_then(|r| t.display_name.strip_prefix(r))
+                    .map(str::to_string);
+                std::iter::once(t.display_name.clone()).chain(bare)
+            })
+            .collect();
         for task in tasks {
             // Without experimental a `git::` file was not fetched, so its `#USAGE` header is
             // unknown; complete the task from its TOML metadata alone.
@@ -321,24 +338,87 @@ impl TasksLs {
                     .var(true)
                     .build(),
             );
-            if let Some(path) = crate::task::extract_monorepo_path(&task.display_name) {
-                let prefixed_aliases: Vec<String> = task_spec
-                    .cmd
-                    .aliases
-                    .iter()
-                    .map(|a| format!("//{}:{}", path, a))
-                    .collect();
-                task_spec.cmd.aliases.extend(prefixed_aliases);
-            }
+            let declared_aliases = task_spec.cmd.aliases.clone();
+            let qualified: Vec<String> =
+                match crate::task::extract_monorepo_path(&task.display_name) {
+                    Some(path) => declared_aliases
+                        .iter()
+                        .map(|a| format!("//{}:{}", path, a))
+                        .collect(),
+                    None => vec![],
+                };
+            // An alias another task owns as a name is not offered for this one: a name wins
+            // when the task runs, and must when it completes. Each full spelling is checked,
+            // so `//apps/web:build` survives even though a root task is named `build`.
+            let own_aliases: Vec<String> = declared_aliases
+                .into_iter()
+                .filter(|a| !task_names.contains(a))
+                .collect();
+            let prefixed_aliases: Vec<String> = qualified
+                .into_iter()
+                .filter(|a| !task_names.contains(a))
+                .collect();
             // Aliases get no `:` form: they exist to save typing, and listing every spelling
             // of every alias crowds the candidates. `mise tasks ls` shows them.
-            if let Some(name) = shorthand_name(current_root.as_deref(), &task) {
-                task_spec.cmd.aliases.push(name);
+            let shorthand = shorthand_names(current_root.as_deref(), &task);
+            let bare = bare_names(current_root.as_deref(), &task);
+            // The task's own names come first and its aliases last, so the primary name of a
+            // command is never an alias that another task owns as its name.
+            let spellings: Vec<String> = bare
+                .iter()
+                .chain(&shorthand)
+                .chain(&own_aliases)
+                .chain(&prefixed_aliases)
+                .cloned()
+                .collect();
+            match self.complete_word.as_deref() {
+                None => task_spec.cmd.aliases = spellings,
+                Some(word) => {
+                    // Every spelling still selects the task, so the words after it keep
+                    // completing; only the ones that fit the typed word are offered.
+                    let mut offered = completion_names(current_root.as_deref(), &task, word);
+                    // An alias is offered under the prefix it is written with, so a path
+                    // alias (`//apps/web:x`) follows `/` and a plain one the bare word.
+                    let kind = |n: &str| match n.as_bytes().first() {
+                        Some(b'/') => '/',
+                        Some(b':') => ':',
+                        _ => ' ',
+                    };
+                    let wanted = match word.as_bytes().first() {
+                        Some(b'/') => '/',
+                        Some(b':') => ':',
+                        _ => ' ',
+                    };
+                    offered.extend(
+                        own_aliases
+                            .iter()
+                            .chain(if wanted == '/' {
+                                &prefixed_aliases[..]
+                            } else {
+                                &[]
+                            })
+                            .filter(|a| kind(a) == wanted)
+                            .cloned(),
+                    );
+                    let all: Vec<String> = std::iter::once(task_spec.cmd.name.clone())
+                        .chain(spellings)
+                        .unique()
+                        .collect();
+                    let (shown, hidden): (Vec<_>, Vec<_>) =
+                        all.into_iter().partition(|n| offered.contains(n));
+                    match shown.split_first() {
+                        Some((first, rest)) => {
+                            task_spec.cmd.name = first.clone();
+                            task_spec.cmd.aliases = rest.to_vec();
+                        }
+                        None => {
+                            task_spec.cmd.aliases = vec![];
+                            task_spec.cmd.hide = true;
+                        }
+                    }
+                    task_spec.cmd.hidden_aliases = hidden;
+                }
             }
-            task_spec
-                .cmd
-                .aliases
-                .extend(bare_names(current_root.as_deref(), &task));
             usage
                 .cmd
                 .subcommands
@@ -485,6 +565,52 @@ fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
 /// `:task` stands for. `None` outside a monorepo, where `:task` names nothing.
 fn current_root_prefix(config: &Config) -> Option<String> {
     crate::task::expand_colon_task_syntax(":", config).ok()
+}
+
+/// The spellings of `task` to offer while `word` is being completed.
+///
+/// A task of the current config root has several spellings that run the same task (`test`,
+/// `:test`, `//:test`), so offering all of them buries the list in duplicates. The prefix the
+/// user typed says which one they want: `/` or `//` the absolute path, `:` the name qualified for the
+/// current root, anything else (including nothing) the shortest name. A task of another config
+/// root has no shorter spelling, so it keeps its `//` path.
+fn completion_names(current_root: Option<&str>, task: &Task, word: &str) -> Vec<String> {
+    let display = || task.display_name.clone();
+    // A lone `/` is on its way to `//`, so it asks for the absolute path too.
+    let names = if word.starts_with('/') {
+        vec![display()]
+    } else if word.starts_with(':') {
+        shorthand_names(current_root, task)
+    } else {
+        let mut names = bare_names(current_root, task);
+        // A task with no bare name is only reachable under its display name. One with a bare
+        // name offers its display name (`node:web#build`) only once the typed word starts it:
+        // for an empty word the shortest name is the one spelling.
+        if names.is_empty()
+            || (!task.display_name.starts_with("//")
+                && !word.is_empty()
+                && task.display_name.starts_with(word))
+        {
+            names.insert(0, display());
+        }
+        names
+    };
+    names.into_iter().unique().collect()
+}
+
+/// The `:name` spellings of a task of the current config root.
+///
+/// A task outside the root's own namespace (an inferred `node:web#build`) has no shorthand from
+/// its display name, but `:build` expands to the same `//apps/web:build` as `build` does, so it
+/// takes one for each bare name it is reachable by.
+fn shorthand_names(current_root: Option<&str>, task: &Task) -> Vec<String> {
+    match shorthand_name(current_root, task) {
+        Some(name) => vec![name],
+        None => bare_names(current_root, task)
+            .into_iter()
+            .map(|n| format!(":{n}"))
+            .collect(),
+    }
 }
 
 /// `:task` for a task of the current config root.

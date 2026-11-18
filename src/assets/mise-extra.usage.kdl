@@ -55,7 +55,7 @@ complete "installed_tool" run="mise ls -i | awk '{print $1}' | uniq"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote -- {{words[PREV] | shell_quote}}"
 complete "setting" run="mise settings --complete" descriptions=#true
-complete "task" run="mise tasks ls --complete" descriptions=#true
+complete "task" run="mise tasks ls --complete --complete-word {{words[CURRENT] | shell_quote}}" descriptions=#true
 complete "tool" run="mise search --complete -- {{words[CURRENT] | shell_quote}}" descriptions=#true
 complete "env_var" run=#"mise set --complete | awk '{print $1"="}'"#
 complete "env_key" run="mise set --complete"

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# A task named like another task's alias keeps its own spec: `test` wins over `tests`' alias.
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'TOML' >mise.toml
+[tasks.test]
+usage = 'flag "--real-flag"'
+run = 'echo real'
+
+[tasks.tests]
+alias = "test"
+usage = 'flag "--other-flag"'
+run = 'echo other'
+TOML
+
+assert "mise -q test" "real"
+flags="$(mise __complete_word__ --shell fish --line 'mise run test --')"
+assert_contains_text "$flags" '--real-flag'
+assert_not_contains_text "$flags" '--other-flag'
+
+# The same holds when the aliased task sorts before the task that owns the name
+cat <<'TOML' >mise.toml
+[tasks.alpha]
+alias = "zeta"
+usage = 'flag "--alpha-flag"'
+run = 'echo alpha'
+
+[tasks.zeta]
+usage = 'flag "--zeta-flag"'
+run = 'echo zeta'
+TOML
+
+assert "mise -q zeta" "zeta"
+flags="$(mise __complete_word__ --shell fish --line 'mise run zeta --')"
+assert_contains_text "$flags" '--zeta-flag'
+assert_not_contains_text "$flags" '--alpha-flag'
+
+# A qualified alias keeps completing when only its bare spelling clashes with a root task
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*"]
+
+[tasks.build]
+run = 'echo root'
+TOML
+mkdir -p apps/web
+cat <<'TOML' >apps/web/mise.toml
+[tasks.bundle]
+alias = "build"
+usage = 'flag "--web-flag"'
+run = 'echo web'
+TOML
+
+flags="$(mise __complete_word__ --shell fish --line 'mise run //apps/web:build --')"
+assert_contains_text "$flags" '--web-flag'

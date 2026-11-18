@@ -211,7 +211,7 @@ complete installed_tool run="mise ls -i | awk '{print $1}' | uniq"
 complete plugin run="mise plugins --core --user"
 complete prefix run="mise ls-remote -- {{words[PREV] | shell_quote}}"
 complete setting run="mise settings --complete" descriptions=#true
-complete task run="mise tasks ls --complete" descriptions=#true
+complete task run="mise tasks ls --complete --complete-word {{words[CURRENT] | shell_quote}}" descriptions=#true
 complete tool run="mise search --complete -- {{words[CURRENT] | shell_quote}}" descriptions=#true
 complete env_var run="mise set --complete | awk '{print $1\"=\"}'"
 complete env_key run="mise set --complete"
@@ -7022,6 +7022,9 @@ Removed in mise 2027.7.0.
     flag "-x --extended" help="Show all columns"
     flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
     flag --complete help="Display tasks for usage completion" hide=#true
+    flag --complete-word help="The word being completed, so `--complete` offers only the spellings that fit it" hide=#true {
+        arg <WORD>
+    }
     flag --hidden help="Show hidden tasks"
     flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
         conflicts "--json" "--extended" "--usage"
@@ -7271,6 +7274,9 @@ Removed in mise 2027.7.0.
         flag "-x --extended" help="Show all columns"
         flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
         flag --complete help="Display tasks for usage completion" hide=#true
+        flag --complete-word help="The word being completed, so `--complete` offers only the spellings that fit it" hide=#true {
+            arg <WORD>
+        }
         flag --hidden help="Show hidden tasks"
         flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
             conflicts "--json" "--extended" "--usage"

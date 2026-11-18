@@ -14,6 +14,10 @@ config_roots = ["apps/*"]
 
 [tasks.root-task]
 run = 'echo root'
+
+[tasks.flagged]
+usage = 'flag "--verbose-flag"'
+run = 'true'
 CONFIG
 
 # App subproject task that should appear in completions. Its sources/outputs
@@ -83,3 +87,34 @@ assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update m
 assert_not_contains "mise task ls --complete" '//apps/broken\:broken-task'
 assert_not_contains "mise task ls --complete" '//apps/broken\:broken-included-task'
 assert_not_contains "mise task ls --complete" '//apps/broken\:broken-script'
+
+# The word being completed picks which spelling of a task is offered:
+# `mise run <TAB>` the shortest name, `:<TAB>` the root-qualified one, `//<TAB>` the path.
+rm -rf apps/broken
+bare="$(mise tasks ls --complete --complete-word '')"
+assert_contains_text "$bare" 'root-task:'
+assert_not_contains_text "$bare" ':root-task:'
+assert_not_contains_text "$bare" '//\:root-task'
+# a task of another config root keeps its // path: it has no shorter spelling
+assert_contains_text "$bare" '//apps/web\:update-snapshots:'
+assert_contains_text "$(mise tasks ls --complete --complete-word ':')" '\:root-task:'
+assert_not_contains_text "$(mise tasks ls --complete --complete-word ':')" '//\:root-task'
+assert_contains_text "$(mise tasks ls --complete --complete-word '//')" '//\:root-task:'
+if printf '%s\n' "$(mise tasks ls --complete --complete-word '//')" | grep -q '^root-task:'; then
+  fail "// completion offered the bare name"
+fi
+assert_contains_text "$(mise tasks ls --complete --complete-word '/')" '//\:root-task:'
+
+# `mise run <TAB>` is answered from the mounted `mise tasks --usage` spec, which gets the typed
+# word too: one spelling of the root task, the other config roots under their // paths.
+run_bare="$(mise __complete_word__ --shell fish --line 'mise run ')"
+assert_contains_text "$run_bare" 'root-task'
+assert_contains_text "$run_bare" '//apps/web:update-snapshots'
+assert_not_contains_text "$run_bare" ':root-task'
+run_colon="$(mise __complete_word__ --shell fish --line 'mise run :')"
+assert_contains_text "$run_colon" ':root-task'
+assert_not_contains_text "$run_colon" '//:root-task'
+run_abs="$(mise __complete_word__ --shell fish --line 'mise run /')"
+assert_contains_text "$run_abs" '//:root-task'
+# every spelling still selects the task, so its own arguments keep completing
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run //:flagged --')" '--verbose-flag'
