@@ -42,15 +42,33 @@ static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
 /// line still counts.
 fn suspicious(line: &str, allowed: &[String]) -> bool {
     let approved = |found: &str| allowed.iter().any(|value| value == found);
-    TOKEN_FORMATS
-        .find_iter(line)
-        .any(|found| !approved(found.as_str()))
-        || ASSIGNMENT.captures_iter(line).any(|found| {
-            let value = ["dq", "sq", "bare"]
-                .iter()
-                .find_map(|name| found.name(name))
-                .map_or("", |value| value.as_str());
-            !approved(value)
+    // Where approved values sit, so a token format inside one is covered too.
+    let mut covered = Vec::new();
+    let mut flagged = false;
+    for found in ASSIGNMENT.captures_iter(line) {
+        let Some(value) = ["dq", "sq", "bare"]
+            .iter()
+            .find_map(|name| found.name(name))
+        else {
+            continue;
+        };
+        // an unquoted value may run into a shell separator: `KEY=value; next`
+        let text = match found.name("bare") {
+            Some(_) => value.as_str().trim_end_matches([';', ',']),
+            None => value.as_str(),
+        };
+        if approved(text) {
+            covered.push(value.range());
+        } else {
+            flagged = true;
+        }
+    }
+    flagged
+        || TOKEN_FORMATS.find_iter(line).any(|found| {
+            !approved(found.as_str())
+                && !covered
+                    .iter()
+                    .any(|range| range.start <= found.start() && found.end() <= range.end)
         })
 }
 
@@ -233,10 +251,21 @@ mod tests {
         ] {
             assert!(suspicious(line, &allowed), "{line}");
         }
+        // a token format inside an approved whole value is covered, one outside is not
+        let bearer = vec!["Bearer ghp_000000000000000000000000000000".to_string()];
+        assert!(!suspicious(
+            "API_TOKEN=\"Bearer ghp_000000000000000000000000000000\"",
+            &bearer
+        ));
+        assert!(suspicious(
+            "API_TOKEN=\"Bearer ghp_000000000000000000000000000000\" X=ghp_111111111111111111111111111111",
+            &bearer
+        ));
         // a neighbouring benign assignment is not read as the approved key's value
         for line in [
             "export API_KEY=ctx7_api_key # note",
             "export API_KEY=ctx7_api_key EDITOR=vim",
+            "export API_KEY=ctx7_api_key; echo ready",
             "API_KEY='ctx7_api_key'",
         ] {
             assert!(!suspicious(line, &allowed), "{line}");
