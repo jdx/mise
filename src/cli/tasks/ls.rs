@@ -338,21 +338,26 @@ impl TasksLs {
                     .var(true)
                     .build(),
             );
-            let own_aliases: Vec<String> = task_spec
-                .cmd
-                .aliases
-                .iter()
-                .filter(|a| !task_names.contains(*a))
-                .cloned()
-                .collect();
-            let prefixed_aliases: Vec<String> =
+            let declared_aliases = task_spec.cmd.aliases.clone();
+            let qualified: Vec<String> =
                 match crate::task::extract_monorepo_path(&task.display_name) {
-                    Some(path) => own_aliases
+                    Some(path) => declared_aliases
                         .iter()
                         .map(|a| format!("//{}:{}", path, a))
                         .collect(),
                     None => vec![],
                 };
+            // An alias another task owns as a name is not offered for this one: a name wins
+            // when the task runs, and must when it completes. Each full spelling is checked,
+            // so `//apps/web:build` survives even though a root task is named `build`.
+            let own_aliases: Vec<String> = declared_aliases
+                .into_iter()
+                .filter(|a| !task_names.contains(a))
+                .collect();
+            let prefixed_aliases: Vec<String> = qualified
+                .into_iter()
+                .filter(|a| !task_names.contains(a))
+                .collect();
             // Aliases get no `:` form: they exist to save typing, and listing every spelling
             // of every alias crowds the candidates. `mise tasks ls` shows them.
             let shorthand = shorthand_names(current_root.as_deref(), &task);

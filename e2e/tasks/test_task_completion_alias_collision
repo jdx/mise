@@ -35,3 +35,24 @@ assert "mise -q zeta" "zeta"
 flags="$(mise __complete_word__ --shell fish --line 'mise run zeta --')"
 assert_contains_text "$flags" '--zeta-flag'
 assert_not_contains_text "$flags" '--alpha-flag'
+
+# A qualified alias keeps completing when only its bare spelling clashes with a root task
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*"]
+
+[tasks.build]
+run = 'echo root'
+TOML
+mkdir -p apps/web
+cat <<'TOML' >apps/web/mise.toml
+[tasks.bundle]
+alias = "build"
+usage = 'flag "--web-flag"'
+run = 'echo web'
+TOML
+
+flags="$(mise __complete_word__ --shell fish --line 'mise run //apps/web:build --')"
+assert_contains_text "$flags" '--web-flag'
