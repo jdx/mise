@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# An inactive shim falls back to a system binary. Resolving it must not run
+# the rust backend's rustup checks (`rustup show profile`, `rustup component
+# list`) for tools unrelated to the shim: they spawn rustup on every call.
+
+unset CARGO_HOME RUSTUP_HOME MISE_CARGO_HOME MISE_RUSTUP_HOME
+
+ORIGINAL_PATH=$PATH
+PREFIX="$PWD/provider"
+STATE="$PREFIX/state"
+mkdir -p "$PREFIX/bin" "$STATE" "$PWD/home/active" "$PWD/home/inactive" "$PWD/system"
+
+# A fake rustup proxy that logs every call.
+cat >"$PREFIX/bin/rustup-init" <<PROXY
+#!/usr/bin/env bash
+case "\$(basename "\$0")" in
+rustup)
+	echo "\$*" >>"$STATE/rustup.log"
+	case "\${1:-} \${2:-}" in
+	"--version ") echo "rustup 1.0.0 (fake)" ;;
+	"show profile") echo minimal ;;
+	"toolchain install") mkdir -p "$STATE/toolchains/\$3" ;;
+	"component list" | "target list") ;;
+	esac
+	;;
+rustc | cargo)
+	if [[ ! -d "$STATE/toolchains/\$RUSTUP_TOOLCHAIN" ]]; then
+		echo "error: toolchain '\$RUSTUP_TOOLCHAIN' is not installed" >&2
+		exit 1
+	fi
+	echo "\$(basename "\$0") \$RUSTUP_TOOLCHAIN (fake)"
+	;;
+esac
+PROXY
+chmod +x "$PREFIX/bin/rustup-init"
+for command in rustup cargo rustc; do
+  ln -s rustup-init "$PREFIX/bin/$command"
+done
+
+# A system binary the shim falls back to.
+cat >"$PWD/system/dummy" <<'EOF2'
+#!/usr/bin/env bash
+echo "system dummy"
+EOF2
+chmod +x "$PWD/system/dummy"
+
+export HOME="$PWD/home"
+export PATH="$MISE_DATA_DIR/shims:$PWD/system:$PREFIX/bin:$ORIGINAL_PATH"
+export MISE_OFFLINE=1
+
+cat >"$HOME/mise.toml" <<EOF2
+[tools]
+rust = "1.2.3"
+EOF2
+cat >"$HOME/active/mise.toml" <<EOF2
+[tools]
+dummy = "1.0.0"
+EOF2
+
+mise trust "$HOME/mise.toml"
+mise trust "$HOME/active/mise.toml"
+(cd "$HOME/active" && mise install)
+mise reshim
+
+# The shim is inactive here: dummy is installed but not configured.
+cd "$HOME/inactive" || exit 1
+: >"$STATE/rustup.log"
+assert_contains "$MISE_DATA_DIR/shims/dummy" "system dummy"
+# grep -c prints 0 on no match but exits 1, so mask the status.
+assert "grep -c -e ^show.profile -e ^component.list $STATE/rustup.log || true" "0"

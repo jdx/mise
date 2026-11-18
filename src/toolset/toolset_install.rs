@@ -36,8 +36,19 @@ impl Toolset {
         config: &Arc<Config>,
         bin_name: &str,
     ) -> Result<Option<ToolVersion>> {
+        // Only versions that could provide this bin need the backend-specific
+        // satisfaction check; running it for every tool would spawn e.g. rustup
+        // on each shim call.
+        let may_provide = |tv: &ToolVersion| {
+            tv.request.options().lazy == Some(true)
+                || tv.ba().matches_bin_name(bin_name)
+                || tv
+                    .ba()
+                    .registry_tool()
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        };
         let mut providers = self
-            .list_missing_versions_for_install(config)
+            .list_missing_versions_checking(config, may_provide)
             .await
             .into_iter()
             .filter_map(|tv| {
@@ -1070,15 +1081,19 @@ impl Toolset {
         // been installed. Prefer those configured providers, applying registry override order,
         // before falling back to executable discovery from existing installs.
         let mut plugins = IndexSet::new();
+        // Only the registry providers of this bin need the backend-specific
+        // satisfaction check. Running it for every configured tool would spawn
+        // e.g. rustup on each inactive shim call.
+        let provides_bin = |tv: &ToolVersion| {
+            REGISTRY
+                .get(&tv.ba().short)
+                .is_some_and(|tool| tool.provides_bin(bin_name))
+        };
         let mut registry_providers = self
-            .list_missing_versions_for_install(config)
+            .list_missing_versions_checking(config, provides_bin)
             .await
             .into_iter()
-            .filter(|tv| {
-                REGISTRY
-                    .get(&tv.ba().short)
-                    .is_some_and(|tool| tool.provides_bin(bin_name))
-            })
+            .filter(provides_bin)
             .filter(|tv| match &Settings::get().auto_install_disable_tools {
                 Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
                 None => true,
@@ -1122,7 +1137,7 @@ impl Toolset {
         // Install missing versions for backends that provide this bin
         for plugin in plugins {
             let versions = self
-                .list_missing_versions_for_install(config)
+                .list_missing_versions_checking(config, |tv| tv.ba() == &**plugin.ba())
                 .await
                 .into_iter()
                 .filter(|tv| tv.ba() == &**plugin.ba())
