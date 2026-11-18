@@ -195,10 +195,13 @@ impl Exec {
         };
         // A named tool the config scopes to another platform with `os` must not reach the backend.
         let config_trs = config.get_tool_request_set().await?;
-        for ta in tool_args.iter().filter(|ta| !super::install::names_os(ta)) {
-            if let Some(requests) = config_trs.tools.get(ta.ba.as_ref()) {
-                super::install::reject_os_excluded(requests.clone())?;
-            }
+        for ta in tool_args {
+            let configured = config_trs
+                .tools
+                .get(ta.ba.as_ref())
+                .cloned()
+                .unwrap_or_default();
+            super::install::check_named_os(ta, configured)?;
         }
         let build = async |config: &Arc<Config>| {
             ToolsetBuilder::new()

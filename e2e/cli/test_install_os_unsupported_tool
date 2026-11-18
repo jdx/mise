@@ -49,3 +49,7 @@ cat >mise.local.toml <<'TOML'
 "github:jdx/mise-test-fixtures" = { version = "latest", os = ["no-such-os"] }
 TOML
 assert_fail_contains "mise install github:jdx/mise-test-fixtures@1.0.0" "no-such-os"
+
+# an explicit os option that excludes this platform is rejected too
+assert_fail_contains "mise install 'github:jdx/mise-test-fixtures[os=no-such-os]@1.0.0'" "no-such-os"
+assert_fail_contains "mise x 'github:jdx/mise-test-fixtures[os=no-such-os]@1.0.0' -- true" "no-such-os"

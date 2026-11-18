@@ -149,6 +149,21 @@ pub(crate) fn names_os(ta: &ToolArg) -> bool {
     ta.ba.opts().os.is_some() || ta.tvr.as_ref().is_some_and(|tr| tr.os().is_some())
 }
 
+/// Reject a named tool its `os` option excludes from this platform: the argument's own
+/// option when it has one, else what the config says.
+pub(crate) fn check_named_os(ta: &ToolArg, configured: Vec<ToolRequest>) -> Result<()> {
+    if names_os(ta) {
+        let tr = match &ta.tvr {
+            Some(tr) => tr.clone(),
+            None => ToolRequest::new(ta.ba.clone(), "latest", ToolSource::Argument)?,
+        };
+        reject_os_excluded(vec![tr])?;
+    } else {
+        reject_os_excluded(configured)?;
+    }
+    Ok(())
+}
+
 /// Drop requests the tool's `os` option excludes from this platform. A named
 /// tool with no supported request left is an error, so it never reaches the
 /// backend; a tool with some supported requests installs those.
@@ -411,10 +426,7 @@ impl Install {
             .collect();
         // `tool@version` replaces the configured request, dropping its `os` option, so judge
         // a named tool by what the config files say about it.
-        for ta in expanded_runtimes
-            .iter()
-            .filter(|ta| ta.tvr.is_some() && !names_os(ta))
-        {
+        for ta in expanded_runtimes.iter().filter(|ta| ta.tvr.is_some()) {
             // The highest-precedence config file that lists the tool decides.
             let configured = configured_config_files
                 .values()
@@ -426,7 +438,7 @@ impl Install {
                         .cloned()
                 })
                 .unwrap_or_default();
-            reject_os_excluded(configured)?;
+            check_named_os(ta, configured)?;
         }
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
         extend_toolset(&mut ts, &task_requests);
