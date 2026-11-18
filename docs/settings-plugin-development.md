@@ -43,15 +43,17 @@ experimental = true
 blur = true
 ```
 
-Preview first, then apply and check that the value stuck. `status` and the dry
-run call only `SettingsRead`, so the apply is what tests `SettingsWrite`:
+Pick a value that differs from the current one: mise calls `SettingsWrite` only
+for keys that differ, so the dry run must list a change. Then apply and check
+that the value stuck. Name the plugin so other settings sections are left
+alone:
 
 ```sh
 mise plugins link desk ./mise-desk
-mise bootstrap settings status
-mise bootstrap settings apply --dry-run
-mise bootstrap settings apply
-mise bootstrap settings status --missing
+mise bootstrap settings status desk
+mise bootstrap settings apply --dry-run desk
+mise bootstrap settings apply desk
+mise bootstrap settings status --missing desk
 ```
 
 ## mise.plugin.toml {#mise-plugin-toml}
