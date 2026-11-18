@@ -9473,7 +9473,7 @@
                   },
                   "state": {
                     "type": "string",
-                    "description": "desired package state; pacman, scoop, snap, and zypper support absent",
+                    "description": "desired package state; macports, pacman, scoop, snap, and zypper support absent",
                     "enum": ["present", "absent"],
                     "default": "present"
                   },
