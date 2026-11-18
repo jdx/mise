@@ -635,9 +635,17 @@ fn check_merge_key_has_id(
         || entry.line.is_some()
         || entry.position.is_some()
         || entry.comment.is_some()
-        || (entry.source.is_none()
-            && crate::files::implied_source(&crate::files::resolve_target_arg(path_raw)).is_err())
     {
+        return Ok(());
+    }
+    // without a source the target must imply one. The key as parsed may not
+    // (the home directory itself has none) while the corrected key does, so
+    // the hint stays when either does; a format only fixes the parsed target.
+    let implies_source = |target: &str| {
+        crate::files::implied_source(&crate::files::resolve_target_arg(target)).is_ok()
+    };
+    let parsed_has_source = entry.source.is_some() || implies_source(path_raw);
+    if !parsed_has_source && !implies_source(&format!("{path_raw}/{id}")) {
         return Ok(());
     }
     let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
@@ -645,9 +653,12 @@ fn check_merge_key_has_id(
     if id_looks_like_file && target_is_unformatted {
         // the suggested key is TOML, so quote and escape it as a TOML key; a
         // JSON string is also a valid TOML basic string, which keys allow
-        let suggestion = serde_json::to_string(&format!("{path_raw}/{id}/shared"))?;
+        // (TOML also forbids a raw DEL there, which JSON leaves unescaped)
+        let suggestion =
+            serde_json::to_string(&format!("{path_raw}/{id}/shared"))?.replace('\u{7f}', "\\u007F");
         // a format only helps when the parsed id would be accepted as it is
-        let format_alternative = if is_valid_id(id) {
+        // and the parsed target can get a source
+        let format_alternative = if is_valid_id(id) && parsed_has_source {
             ", otherwise set a format"
         } else {
             ""
@@ -2523,20 +2534,56 @@ mod tests {
     }
 
     #[test]
+    fn the_missing_id_hint_stays_when_only_the_corrected_key_implies_a_source() {
+        // `$HOME/settings.toml` parses as target $HOME, which has no implied
+        // source, while `$HOME/settings.toml/shared` does
+        let key = format!("{}/settings.toml", mise_util::dirs::HOME.display());
+        let (path, id) = split_edit_key(&key).unwrap();
+        let entry: EditTomlEntry = toml::from_str("merge = true").unwrap();
+        let err = resolve_entry(
+            &path,
+            id,
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        );
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("missing its /<id>"), "{err}");
+        // a format cannot give $HOME itself a source
+        assert!(!err.contains("set a format"), "{err}");
+    }
+
+    #[test]
+    fn the_suggested_key_escapes_delete() {
+        let key = "~/.config/app\u{7f}local/settings.toml";
+        let (path, id) = split_edit_key(key).unwrap();
+        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
+        let err = resolve_entry(
+            &path,
+            id,
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        );
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("app\\u007Flocal"), "{err}");
+    }
+
+    #[test]
     fn other_merge_errors_are_reported_before_the_missing_id() {
         for (key, entry, reason) in [
             (
-                "~/.config/app/settings.toml",
+                "~/.config/app/settings.toml".to_string(),
                 "source = \"s\"\nmerge = true\nline = \"x\"",
                 "block or line",
             ),
             (
-                "/etc/app/settings.toml",
+                format!("{OUTSIDE_HOME}/app/settings.toml"),
                 "merge = true",
                 "source is required",
             ),
         ] {
-            let (path, id) = split_edit_key(key).unwrap();
+            let (path, id) = split_edit_key(&key).unwrap();
             let entry: EditTomlEntry = toml::from_str(entry).unwrap();
             let err = resolve_entry(
                 &path,
