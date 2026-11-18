@@ -1408,6 +1408,32 @@ fn satisfied_key(tv: &ToolVersion) -> String {
     )
 }
 
+/// Runs `check` unless a check for `key` already passed in this process, in which
+/// case only `marker` (the install-marker check) decides.
+async fn check_once(
+    key: String,
+    marker: impl FnOnce() -> bool,
+    check: impl std::future::Future<Output = bool>,
+) -> bool {
+    let verified = VERIFIED_SATISFIED
+        .lock()
+        .unwrap()
+        .get_or_insert_default()
+        .contains(&key);
+    if verified {
+        return marker();
+    }
+    let satisfied = check.await;
+    if satisfied {
+        VERIFIED_SATISFIED
+            .lock()
+            .unwrap()
+            .get_or_insert_default()
+            .insert(key);
+    }
+    satisfied
+}
+
 async fn is_version_satisfied(
     config: &Arc<Config>,
     backend: &Arc<dyn Backend>,
@@ -1415,26 +1441,12 @@ async fn is_version_satisfied(
     full_check: bool,
 ) -> bool {
     if full_check {
-        let key = satisfied_key(tv);
-        let verified = VERIFIED_SATISFIED
-            .lock()
-            .unwrap()
-            .get_or_insert_default()
-            .contains(&key);
-        if verified {
-            return backend.is_version_installed(config, tv, true);
-        }
-        let satisfied = backend
-            .is_install_satisfied_or_false(config, tv, true)
-            .await;
-        if satisfied {
-            VERIFIED_SATISFIED
-                .lock()
-                .unwrap()
-                .get_or_insert_default()
-                .insert(key);
-        }
-        satisfied
+        check_once(
+            satisfied_key(tv),
+            || backend.is_version_installed(config, tv, true),
+            backend.is_install_satisfied_or_false(config, tv, true),
+        )
+        .await
     } else {
         backend.is_version_installed(config, tv, true)
     }
@@ -1814,6 +1826,43 @@ mod tests {
     use crate::args::BackendArg;
     use crate::backend::arg_to_backend;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[tokio::test]
+    async fn check_once_repeats_a_passed_check_only_as_a_marker_check() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let key = "check_once_test_pass".to_string();
+        let checks = AtomicUsize::new(0);
+        let run = |marker: bool| {
+            check_once(key.clone(), move || marker, async {
+                checks.fetch_add(1, SeqCst);
+                true
+            })
+        };
+        assert!(run(true).await);
+        assert!(run(true).await);
+        assert_eq!(checks.load(SeqCst), 1, "a passed check is not repeated");
+        assert!(
+            !run(false).await,
+            "a removed install marker is still noticed"
+        );
+        assert_eq!(checks.load(SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn check_once_retries_after_a_failed_check() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let key = "check_once_test_fail".to_string();
+        let checks = AtomicUsize::new(0);
+        for _ in 0..2 {
+            let ok = check_once(key.clone(), || true, async {
+                checks.fetch_add(1, SeqCst);
+                false
+            })
+            .await;
+            assert!(!ok);
+        }
+        assert_eq!(checks.load(SeqCst), 2);
+    }
 
     #[test]
     fn test_prune_exclude_matches_short_and_full_names() {
