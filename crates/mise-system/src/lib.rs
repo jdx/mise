@@ -2503,7 +2503,8 @@ fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
         packages::snap::validate_name(name)?;
     }
     if mgr == "macports" {
-        packages::macports::validate_name(name)?;
+        // `use` passes `name@version`; the version is split off later
+        packages::macports::validate_name(name.rsplit_once('@').map_or(name, |(name, _)| name))?;
     }
     Ok(())
 }

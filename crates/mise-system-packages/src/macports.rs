@@ -132,14 +132,16 @@ impl InstalledPort<'_> {
 fn parse_line(line: &str) -> Option<InstalledPort<'_>> {
     let (name, rest) = line.strip_prefix("  ")?.split_once(" @")?;
     let (spec, flags) = rest.split_once(' ').unwrap_or((rest, ""));
-    // Variants (`+name`, or `-name` for a negated one) start at the first `+`
-    // or `-`; their names may contain `_`. The revision is the last `_<digits>`
-    // before them, and a version may itself contain `_`.
-    let release = spec.split(['+', '-']).next()?;
-    let (version, revision) = release.rsplit_once('_')?;
-    if revision.is_empty() || !revision.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
+    // The revision is the first `_<digits>` that ends the release: followed by
+    // a variant (`+name`, or `-name` for a negated one) or by nothing. A
+    // version may contain `-` or `_` itself, so neither is split on blindly;
+    // variant names may contain `_`, so they come later.
+    let (version, revision) = spec.match_indices('_').find_map(|(index, _)| {
+        let after = &spec[index + 1..];
+        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+        let ends = matches!(after.as_bytes().get(digits), None | Some(b'+' | b'-'));
+        (digits > 0 && ends).then(|| (&spec[..index], &after[..digits]))
+    })?;
     Some(InstalledPort {
         name,
         spec,
@@ -281,8 +283,11 @@ impl SystemPackageManager for MacportsManager {
         let mut args = vec!["-N".to_string(), "uninstall".to_string()];
         for (pkg, status) in pkgs.iter().zip(&installed) {
             args.push(pkg.name.clone());
-            if let PackageState::Installed { version } = &status.state {
-                args.push(format!("@{version}"));
+            // a pin that does not match the active spec still removes it
+            if let PackageState::Installed { version: spec }
+            | PackageState::VersionMismatch { installed: spec } = &status.state
+            {
+                args.push(format!("@{spec}"));
             }
         }
         run(&port, args, opts)
@@ -331,6 +336,9 @@ mod tests {
         // a version that itself contains `_<digits>` keeps it
         let underscored = parse_line("  tool @1_2_3+x_4 (active)").unwrap();
         assert_eq!((underscored.version, underscored.revision), ("1_2", "3"));
+        // a version may contain `-`
+        let hyphenated = parse_line("  tool @1.0-beta_0 (active)").unwrap();
+        assert_eq!((hyphenated.version, hyphenated.revision), ("1.0-beta", "0"));
     }
 
     #[test]

@@ -96,7 +96,7 @@ assert_fail "PORT_EXIT=1 mise bootstrap packages apply macports:missing --yes"
 # A failed sync stops the install: only the sync is attempted.
 : >"$HOME/port-log"
 assert_fail "SYNC_EXIT=1 mise bootstrap packages apply macports:missing --update --yes"
-assert "cat '/home/coder/port-log'" "-N sync"
+assert "cat '$HOME/port-log'" "-N sync"
 
 # Registry failures cannot be mistaken for missing ports and trigger installs.
 touch "$HOME/port-error"
