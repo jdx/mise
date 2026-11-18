@@ -2,10 +2,12 @@ name: auto-merge-release
 
 # reads metadata only; never checks out PR code
 on:
-  # A draft release PR is an explicit hold. This event disarms a release PR
-  # that was armed earlier in the day.
+  # A draft release PR is an explicit hold. converted_to_draft disarms a release
+  # PR that was armed earlier in the day. GitHub does not start pull_request
+  # runs while the PR has merge conflicts, so ready_for_review disarms it again
+  # in case that event was missed; scheduled runs also disarm drafts.
   pull_request:
-    types: [converted_to_draft]
+    types: [converted_to_draft, ready_for_review]
   schedule:
     # GitHub Actions cron is UTC. Each afternoon hour covers either CDT or CST;
     # the local-time guard ignores the non-matching hour. The later minutes are
@@ -57,9 +59,14 @@ jobs:
             exit 0
           fi
 
-          # Draft-conversion events only disarm. Making a draft ready again
-          # cannot release it early; only the scheduled run can arm it.
+          # Pull request events only disarm. Making a draft ready again cannot
+          # release it early; only the scheduled run can arm it, so any
+          # auto-merge still armed from before the draft is cleared here.
           if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
+            if [ "$AUTO_MERGE" = true ]; then
+              gh pr merge "$PR_NUMBER" -R jdx/mise --disable-auto
+              echo "Disabled stale auto-merge for ready release PR #$PR_NUMBER"
+            fi
             echo "Release PR #$PR_NUMBER is ready, but this is not the scheduled arming run"
             exit 0
           fi
