@@ -1979,9 +1979,18 @@ async fn get_desired_shims(
                             .cloned();
                         own.or_else(|| config.resolve_static_alias(&b, version).ok().flatten())
                     })
-                    .and_then(|v| v.strip_prefix("path:").map(PathBuf::from))
-                    .and_then(|p| std::fs::canonicalize(p).ok())
-                    .map(|p| request.to_path(p)),
+                    .filter(|v| v.starts_with("path:"))
+                    // Parsed against the request's source, so `~` and relative paths follow
+                    // that config rather than the current directory.
+                    .and_then(|v| {
+                        crate::toolset::ToolRequest::new(
+                            request.ba().clone(),
+                            &v,
+                            request.source().clone(),
+                        )
+                        .ok()
+                    })
+                    .filter(|r| matches!(r, crate::toolset::ToolRequest::Path { .. })),
                 crate::toolset::ToolRequest::Path { .. } => Some(request.clone()),
                 _ => None,
             };

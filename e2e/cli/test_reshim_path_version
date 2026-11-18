@@ -73,7 +73,7 @@ SH
 chmod +x "$PWD/aliastool/bin/aliasbin"
 cat >"$PWD/proj4/mise.toml" <<EOF2
 [tool_alias."github:jdx/aliastool".versions]
-local = "path:$PWD/aliastool/bin"
+local = "path:../aliastool/bin"
 
 [tools]
 "github:jdx/aliastool" = "local"
