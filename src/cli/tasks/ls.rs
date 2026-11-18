@@ -337,7 +337,7 @@ impl TasksLs {
                 };
             // Aliases get no `:` form: they exist to save typing, and listing every spelling
             // of every alias crowds the candidates. `mise tasks ls` shows them.
-            let shorthand = shorthand_name(current_root.as_deref(), &task);
+            let shorthand = shorthand_names(current_root.as_deref(), &task);
             let bare = bare_names(current_root.as_deref(), &task);
             let spellings: Vec<String> = own_aliases
                 .iter()
@@ -555,7 +555,7 @@ fn completion_names(current_root: Option<&str>, task: &Task, word: &str) -> Vec<
     let names = if word.starts_with('/') {
         vec![display()]
     } else if word.starts_with(':') {
-        shorthand_name(current_root, task).into_iter().collect()
+        shorthand_names(current_root, task)
     } else {
         let mut names = bare_names(current_root, task);
         // A task with no bare name is only reachable under its display name. One with a bare
@@ -571,6 +571,21 @@ fn completion_names(current_root: Option<&str>, task: &Task, word: &str) -> Vec<
         names
     };
     names.into_iter().unique().collect()
+}
+
+/// The `:name` spellings of a task of the current config root.
+///
+/// A task outside the root's own namespace (an inferred `node:web#build`) has no shorthand from
+/// its display name, but `:build` expands to the same `//apps/web:build` as `build` does, so it
+/// takes one for each bare name it is reachable by.
+fn shorthand_names(current_root: Option<&str>, task: &Task) -> Vec<String> {
+    match shorthand_name(current_root, task) {
+        Some(name) => vec![name],
+        None => bare_names(current_root, task)
+            .into_iter()
+            .map(|n| format!(":{n}"))
+            .collect(),
+    }
 }
 
 /// `:task` for a task of the current config root.

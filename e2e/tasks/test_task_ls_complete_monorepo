@@ -14,6 +14,10 @@ config_roots = ["apps/*"]
 
 [tasks.root-task]
 run = 'echo root'
+
+[tasks.flagged]
+usage = 'flag "--verbose-flag"'
+run = 'true'
 CONFIG
 
 # App subproject task that should appear in completions. Its sources/outputs
@@ -113,4 +117,4 @@ assert_not_contains_text "$run_colon" '//:root-task'
 run_abs="$(mise __complete_word__ --shell fish --line 'mise run /')"
 assert_contains_text "$run_abs" '//:root-task'
 # every spelling still selects the task, so its own arguments keep completing
-assert_not_contains_text "$(mise __complete_word__ --shell fish --line 'mise run //:root-task --')" 'unexpected'
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run //:flagged --')" '--verbose-flag'
