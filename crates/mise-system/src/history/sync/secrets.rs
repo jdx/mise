@@ -143,6 +143,19 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
             } else if first.chars().count() >= 8 {
                 return Scan::Flagged;
             }
+            // `password=abc;actual-secret` (ini, `.env`) keeps the `;` in the
+            // value: a lone word that ends the command is not a command
+            let rest = &line[value.start() + first.len() + 1..];
+            let word_end = rest
+                .find(|c: char| c == ';' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let word = &rest[..word_end];
+            if (word_end == rest.len() || rest[word_end..].starts_with(';'))
+                && word.chars().count() >= 8
+                && !word.contains('=')
+            {
+                return Scan::Flagged;
+            }
             end = value.start() + first.len() + 1;
             next_command = true;
             break;
@@ -242,6 +255,8 @@ mod tests {
             "password: ab;cdefghijklmnop",
             "password: ab;cdefg",
             "password: abcdefg;",
+            "password=abc;actual-secret",
+            "DB_PASSWORD=ab;cdefghijklmn",
             r#"API_KEY=test;DEPLOY_TOKEN="abcdefghijkl1234""#,
             "API_KEY=test;DEPLOY_TOKEN=abcdefghijkl1234",
             "password: abcdefg; # note",
