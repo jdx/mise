@@ -2516,7 +2516,7 @@ fn gh_native_hosts_paths() -> Vec<PathBuf> {
     Vec::new()
 }
 
-fn read_gh_hosts() -> Option<HashMap<String, String>> {
+fn read_gh_host_entries() -> Option<HashMap<String, GhHostEntry>> {
     let hosts_path = gh_hosts_path()?;
     let contents = match std::fs::read_to_string(&hosts_path) {
         Ok(c) => c,
@@ -2525,27 +2525,53 @@ fn read_gh_hosts() -> Option<HashMap<String, String>> {
             return None;
         }
     };
-    let hosts: HashMap<String, GhHostEntry> = match crate::yaml::from_str(&contents) {
-        Ok(h) => h,
+    match crate::yaml::from_str(&contents) {
+        Ok(h) => Some(h),
         Err(e) => {
             debug!(
                 "failed to parse gh hosts.yml at {}: {e}",
                 hosts_path.display()
             );
-            return None;
+            None
         }
-    };
+    }
+}
+
+fn read_gh_hosts() -> Option<HashMap<String, String>> {
     Some(
-        hosts
+        read_gh_host_entries()?
             .into_iter()
             .filter_map(|(host, entry)| entry.oauth_token.map(|token| (host, token)))
             .collect(),
     )
 }
 
+/// Whether gh is logged in to `host` but keeps the token out of `hosts.yml`.
+///
+/// `gh auth login` stores the token in the system keyring (macOS Keychain, Windows Credential
+/// Manager) when one is available, leaving only the user in `hosts.yml`. mise does not run
+/// `gh auth token` on its own, so it finds no token. Callers use this to explain an empty
+/// result; it never runs gh.
+pub fn gh_token_in_keyring(host: &str) -> bool {
+    if !Settings::get().github.gh_cli_tokens {
+        return false;
+    }
+    read_gh_host_entries()
+        .and_then(|mut hosts| hosts.remove(host))
+        .is_some_and(|entry| entry.has_user_without_token())
+}
+
 #[derive(Deserialize)]
 struct GhHostEntry {
     oauth_token: Option<String>,
+    user: Option<String>,
+}
+
+impl GhHostEntry {
+    fn has_user_without_token(&self) -> bool {
+        let present = |v: &Option<String>| v.as_deref().is_some_and(|s| !s.trim().is_empty());
+        present(&self.user) && !present(&self.oauth_token)
+    }
 }
 
 /// Serializes env-var mutations across every test module that touches GitHub token
