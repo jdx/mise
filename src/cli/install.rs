@@ -577,6 +577,23 @@ impl Install {
                 }
             }
         }
+        for tr in &requests {
+            if !tr.is_os_supported() {
+                let os = tr.os().as_ref().map(|os| os.join(", ")).unwrap_or_default();
+                if os.is_empty() {
+                    eyre::bail!(
+                        "{} is not available on {}",
+                        tr.ba().short,
+                        *crate::platform::OS
+                    );
+                }
+                eyre::bail!(
+                    "{} is not available on {}: its `os` option lists {os}",
+                    tr.ba().short,
+                    *crate::platform::OS
+                );
+            }
+        }
         Ok(requests)
     }
 

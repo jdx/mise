@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# naming a tool whose `os` option excludes this platform must fail clearly
+# and never reach the backend
+
+cat >mise.toml <<'TOML'
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "latest", os = ["no-such-os"] }
+TOML
+
+# a bare install skips the excluded tool
+assert "mise install --dry-run" ""
+
+# naming it is an error that names the tool and its configured os list
+assert_fail_contains "mise install github:jdx/mise-test-fixtures" "no-such-os"
+assert_fail_contains "mise install --dry-run github:jdx/mise-test-fixtures" "github:jdx/mise-test-fixtures"

@@ -333,7 +333,7 @@ impl ToolRequest {
         config.tool_config_locked(source)
     }
 
-    pub(crate) fn os(&self) -> &Option<Vec<String>> {
+    pub fn os(&self) -> &Option<Vec<String>> {
         &self.resolved_options().effective().os
     }
     pub fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
