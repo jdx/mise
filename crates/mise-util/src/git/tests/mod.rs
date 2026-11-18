@@ -419,10 +419,15 @@ fn head_helpers_do_not_panic_on_an_empty_repo() {
     let status = Command::new("git")
         .args(["-c", "init.defaultBranch=main", "init", "-q"])
         .current_dir(tmp.path())
+        // Other tests here set these in the process environment.
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
         .status()
         .unwrap();
     assert!(status.success());
     let git = Git::new(tmp.path());
+    // Exercise the gix path, not the git CLI fallback.
+    assert!(git.repo().is_ok());
     assert!(git.current_sha().is_err());
     assert!(git.current_sha_short().is_err());
     assert_eq!(git.current_branch().unwrap(), "main");
