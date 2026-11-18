@@ -496,12 +496,13 @@ fn current_root_prefix(config: &Config) -> Option<String> {
 ///
 /// A task of the current config root has several spellings that run the same task (`test`,
 /// `:test`, `//:test`), so offering all of them buries the list in duplicates. The prefix the
-/// user typed says which one they want: `//` the absolute path, `:` the name qualified for the
+/// user typed says which one they want: `/` or `//` the absolute path, `:` the name qualified for the
 /// current root, anything else (including nothing) the shortest name. A task of another config
 /// root has no shorter spelling, so it keeps its `//` path.
 fn completion_names(current_root: Option<&str>, task: &Task, word: &str) -> Vec<String> {
     let display = || task.display_name.clone();
-    let names = if word.starts_with("//") {
+    // A lone `/` is on its way to `//`, so it asks for the absolute path too.
+    let names = if word.starts_with('/') {
         vec![display()]
     } else if word.starts_with(':') {
         shorthand_name(current_root, task).into_iter().collect()

@@ -99,3 +99,4 @@ assert_contains_text "$(mise tasks ls --complete --complete-word '//')" '//\:roo
 if printf '%s\n' "$(mise tasks ls --complete --complete-word '//')" | grep -q '^root-task:'; then
   fail "// completion offered the bare name"
 fi
+assert_contains_text "$(mise tasks ls --complete --complete-word '/')" '//\:root-task:'
