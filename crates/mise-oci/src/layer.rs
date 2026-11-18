@@ -958,6 +958,22 @@ fn relocated_script_contents(
         return Ok(None);
     }
 
+    // uv writes `#!/bin/sh` and puts the interpreter on a second
+    // `'''exec' '<python>' "$0" "$@"` line when the path is too long for a
+    // shebang, so that line holds a host path too.
+    let mut pending = Vec::new();
+    if line.starts_with(b"#!/bin/sh") {
+        let mut second = Vec::new();
+        reader.read_until(b'\n', &mut second)?;
+        if second.starts_with(b"'''exec' ") && second.ends_with(b"\n") {
+            line.extend_from_slice(&second);
+        } else {
+            // Not a uv launcher: relocate the first line as before and
+            // pass the consumed line through unchanged.
+            pending = second;
+        }
+    }
+
     let mut shebang = String::from_utf8_lossy(&line).into_owned();
     let original = shebang.clone();
     for (host, image) in &relocation.paths {
@@ -980,7 +996,9 @@ fn relocated_script_contents(
         // a relocated tar header with a wrapped size.
         return Ok(None);
     };
-    let contents = Cursor::new(shebang.into_bytes()).chain(reader);
+    let contents = Cursor::new(shebang.into_bytes())
+        .chain(Cursor::new(pending))
+        .chain(reader);
     Ok(Some(RelocatedFileContents {
         size,
         reader: Box::new(contents),
@@ -1743,6 +1761,96 @@ mod tests {
         assert!(pyvenv_contents.contains(
             "command = /mise/installs/python/3.14.3/bin/python -m venv /mise/installs/pipx-gitlabcis/1.20.0/gitlabcis\n"
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relocates_uv_long_path_launcher() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let pipx = dir.path().join("installs/pipx-sqlfluff/4.4.0");
+        fs::create_dir_all(pipx.join("bin")).unwrap();
+        let launcher = pipx.join("bin/sqlfluff");
+        fs::write(
+            &launcher,
+            format!(
+                "#!/bin/sh\n'''exec' '{}' \"$0\" \"$@\"\n' '''\nimport sys\n",
+                pipx.join(".mise-uv/.venv/bin/python").display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let relocation = ToolRelocation::new(vec![(
+            pipx.clone(),
+            PathBuf::from("/mise/installs/pipx-sqlfluff/4.4.0"),
+        )]);
+        let blob = build_relocated_tool_layer_from_dir(
+            &pipx,
+            "mise/installs/pipx-sqlfluff/4.4.0",
+            LayerOwner::default(),
+            &relocation,
+        )
+        .unwrap();
+
+        let mut archive = Archive::new(flate2::read::GzDecoder::new(blob.bytes.as_slice()));
+        let mut contents = String::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            if entry
+                .path()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with("bin/sqlfluff")
+            {
+                entry.read_to_string(&mut contents).unwrap();
+            }
+        }
+        assert_eq!(
+            contents,
+            "#!/bin/sh\n'''exec' '/mise/installs/pipx-sqlfluff/4.4.0/.mise-uv/.venv/bin/python' \"$0\" \"$@\"\n' '''\nimport sys\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeps_second_line_of_plain_sh_script_when_relocating_first_line() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let tool = dir.path().join("installs/demo/1.0.0");
+        fs::create_dir_all(tool.join("bin")).unwrap();
+        let script = tool.join("bin/demo");
+        fs::write(&script, format!("#!/bin/sh{}\necho hi\n", tool.display())).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let relocation = ToolRelocation::new(vec![(
+            tool.clone(),
+            PathBuf::from("/mise/installs/demo/1.0.0"),
+        )]);
+        let blob = build_relocated_tool_layer_from_dir(
+            &tool,
+            "mise/installs/demo/1.0.0",
+            LayerOwner::default(),
+            &relocation,
+        )
+        .unwrap();
+
+        let mut archive = Archive::new(flate2::read::GzDecoder::new(blob.bytes.as_slice()));
+        let mut contents = String::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            if entry
+                .path()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with("bin/demo")
+            {
+                entry.read_to_string(&mut contents).unwrap();
+            }
+        }
+        assert_eq!(contents, "#!/bin/sh/mise/installs/demo/1.0.0\necho hi\n");
     }
 
     #[cfg(unix)]

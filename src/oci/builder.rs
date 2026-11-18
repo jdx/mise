@@ -39,7 +39,7 @@ pub(crate) const ANNOTATION_TOOL_PLUGIN: &str = "dev.mise.tool.plugin";
 /// Marks a layer holding a vfox plugin's sources under `<mount>/plugins/`.
 pub(crate) const ANNOTATION_PLUGIN: &str = "dev.mise.plugin";
 
-const TOOL_LAYER_RELOCATION_VERSION: &str = "2";
+const TOOL_LAYER_RELOCATION_VERSION: &str = "3";
 
 /// Options passed to the builder from the CLI.
 #[derive(Debug, Clone)]
