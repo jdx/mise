@@ -15,15 +15,17 @@ assert_fail_contains "mise install github:jdx/mise-test-fixtures" "no-such-os"
 assert_fail_contains "mise install --dry-run github:jdx/mise-test-fixtures" "github:jdx/mise-test-fixtures"
 assert_fail_contains "mise x github:jdx/mise-test-fixtures -- true" "no-such-os"
 
-# a tool with a supported version row still installs that row when named
+# a tool with a supported version row installs only that row when named
 cat >mise.toml <<'TOML'
 [tools]
 "github:jdx/mise-test-fixtures" = [
-  { version = "1.0.0", os = ["no-such-os"] },
+  { version = "0.0.1-excluded", os = ["no-such-os"] },
   { version = "1.0.0" },
 ]
 TOML
-assert_succeed "mise install --dry-run github:jdx/mise-test-fixtures"
+out=$(mise install --dry-run github:jdx/mise-test-fixtures 2>&1)
+assert_contains "echo '$out'" "1.0.0"
+assert_not_contains "echo '$out'" "0.0.1-excluded"
 
 # an explicit version still picks up the configured os option
 cat >mise.toml <<'TOML'
@@ -31,3 +33,8 @@ cat >mise.toml <<'TOML'
 "github:jdx/mise-test-fixtures" = { version = "latest", os = ["no-such-os"] }
 TOML
 assert_fail_contains "mise install github:jdx/mise-test-fixtures@1.0.0" "no-such-os"
+
+# an explicit os option on the argument overrides the configured one
+os=linux
+[[ "$(uname)" == Darwin ]] && os=macos
+assert_succeed "mise install --dry-run 'github:jdx/mise-test-fixtures[os=$os]@1.0.0'"

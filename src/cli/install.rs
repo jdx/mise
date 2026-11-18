@@ -144,6 +144,11 @@ pub(crate) struct Install {
     yes: bool,
 }
 
+/// Whether the argument spells its own `os` option, which then overrides the config's.
+pub(crate) fn names_os(ta: &ToolArg) -> bool {
+    ta.ba.opts().os.is_some() || ta.tvr.as_ref().is_some_and(|tr| tr.os().is_some())
+}
+
 /// Drop requests the tool's `os` option excludes from this platform. A named
 /// tool with no supported request left is an error, so it never reaches the
 /// backend; a tool with some supported requests installs those.
@@ -406,7 +411,10 @@ impl Install {
             .collect();
         // `tool@version` replaces the configured request, dropping its `os` option, so judge
         // a named tool by what the config files say about it.
-        for ta in expanded_runtimes.iter().filter(|ta| ta.tvr.is_some()) {
+        for ta in expanded_runtimes
+            .iter()
+            .filter(|ta| ta.tvr.is_some() && !names_os(ta))
+        {
             let configured = configured_config_files
                 .values()
                 .filter_map(|cf| cf.to_tool_request_set().ok())
