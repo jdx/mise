@@ -30,39 +30,28 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 /// substitution is not a secret.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"[^"$`~/\s][^"]{7,}|'[^'$`~/\s][^']{7,}|[^\s"'$`~/#{(<\[][^\s"']{7,})"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[][^\s"']{7,}))"#,
     )
     .unwrap()
 });
 
-/// The pattern for each approved value, built once per audit: the value as a
-/// whole on the right of `=` or `:`.
-fn approvals(values: &[String]) -> Vec<Regex> {
-    values
-        .iter()
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            Regex::new(&format!(
-                r#"(?P<before>[:=]\s*["']?){}(?P<after>["']|\s|,|;|#|$)"#,
-                regex::escape(value)
-            ))
-            .unwrap()
-        })
-        .collect()
-}
-
 /// A line that looks like it holds a secret. `allowed` are values the user
-/// vouched for (`history.allow_secret_values`). Only a whole value on the
-/// right of `=` or `:` is set aside, never a key name or part of another
-/// value, so a line that also holds anything else suspicious still counts.
-fn suspicious(line: &str, allowed: &[Regex]) -> bool {
-    let mut line = std::borrow::Cow::Borrowed(line);
-    for whole in allowed {
-        if let std::borrow::Cow::Owned(replaced) = whole.replace_all(&line, "${before}${after}") {
-            line = std::borrow::Cow::Owned(replaced);
-        }
-    }
-    TOKEN_FORMATS.is_match(&line) || ASSIGNMENT.is_match(&line)
+/// vouched for (`history.allow_secret_values`). The line is judged as it is;
+/// a finding is set aside only when its whole value, or the whole token, is
+/// one of them. A key name, part of a longer value, or anything else on the
+/// line still counts.
+fn suspicious(line: &str, allowed: &[String]) -> bool {
+    let approved = |found: &str| allowed.iter().any(|value| value == found);
+    TOKEN_FORMATS
+        .find_iter(line)
+        .any(|found| !approved(found.as_str()))
+        || ASSIGNMENT.captures_iter(line).any(|found| {
+            let value = ["dq", "sq", "bare"]
+                .iter()
+                .find_map(|name| found.name(name))
+                .map_or("", |value| value.as_str());
+            !approved(value)
+        })
 }
 
 /// Fail when a version that is not yet on the origin looks like it holds a
@@ -76,7 +65,6 @@ pub(crate) fn audit_unpublished(
     upstream: Option<&str>,
     allowed: &[String],
 ) -> Result<()> {
-    let allowed = approvals(allowed);
     let commits = match upstream {
         Some(upstream) => repo.rev_list_after(head, upstream)?,
         None => repo.rev_list(head, usize::MAX)?,
@@ -105,7 +93,7 @@ pub(crate) fn audit_unpublished(
                 continue;
             }
             let text = String::from_utf8_lossy(&bytes);
-            if let Some(line) = text.lines().position(|line| suspicious(line, &allowed)) {
+            if let Some(line) = text.lines().position(|line| suspicious(line, allowed)) {
                 bail!(
                     "cannot publish: line {} of {} in saved version {} looks like a secret. Removing it from the file does not remove it from saved versions. Rotate the secret and remove that history (see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history), then set `encrypt = true` on the file so later saves are protected, run `mise dot sync --allow-plaintext-history` to publish it anyway, or list a harmless value in `history.allow_secret_values`",
                     line + 1,
@@ -216,7 +204,7 @@ mod tests {
 
     #[test]
     fn an_allowed_value_is_blanked_and_nothing_else() {
-        let allowed = approvals(&["ctx7_api_key".to_string()]);
+        let allowed = vec!["ctx7_api_key".to_string()];
         let placeholder = "\"CONTEXT7_API_KEY\" = \"ctx7_api_key\"";
         assert!(suspicious(placeholder, &[]));
         assert!(!suspicious(placeholder, &allowed));
@@ -231,7 +219,7 @@ mod tests {
         ));
         assert!(!suspicious(
             placeholder,
-            &approvals(&["".to_string(), "ctx7_api_key".to_string()])
+            &["".to_string(), "ctx7_api_key".to_string()]
         ));
         // an approved string as a key name, or inside a different value, hides nothing
         for line in [
@@ -240,10 +228,19 @@ mod tests {
             "API_KEY = \"xctx7_api_key\"",
             "API_KEY = \"ctx7_api_key-abcdefghij\"",
             "API_KEY=ctx7_api_key=abcdefghijkl",
+            "API_KEY=\"ctx7_api_key abcdefghijkl\"",
+            "export API_KEY=ctx7_api_key B_TOKEN=abcdefghijkl",
         ] {
             assert!(suspicious(line, &allowed), "{line}");
         }
-        assert!(!suspicious("export API_KEY=ctx7_api_key # note", &allowed));
+        // a neighbouring benign assignment is not read as the approved key's value
+        for line in [
+            "export API_KEY=ctx7_api_key # note",
+            "export API_KEY=ctx7_api_key EDITOR=vim",
+            "API_KEY='ctx7_api_key'",
+        ] {
+            assert!(!suspicious(line, &allowed), "{line}");
+        }
     }
 
     #[test]
