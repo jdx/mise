@@ -3519,11 +3519,21 @@ fn match_tasks_with_context(
     } else {
         resolve_task_pattern(&td.task, parent_task)
     };
-    let candidates: Vec<&&Task> = if tag_only {
+    let mut candidates: Vec<&&Task> = if tag_only {
         tasks.values().unique().collect()
     } else {
         tasks.get_matching(&resolved_pattern)?
     };
+    // A bare name in a monorepo task resolves to the parent's project first. When no task there
+    // has that name, fall back to the unscoped name so global tasks stay reachable (#15811).
+    if candidates.is_empty()
+        && !tag_only
+        && resolved_pattern != td.task
+        && !td.task.starts_with(['/', ':', '.'])
+        && !is_workspace_project_task(&td.task)
+    {
+        candidates = tasks.get_matching(&td.task)?;
+    }
     let matches = candidates
         .into_iter()
         .filter(|t| td.tags.is_empty() || t.has_any_tag(&td.tags))
@@ -4072,7 +4082,10 @@ where
         } else if pat.starts_with(':') {
             // Special case: :task should have been expanded before calling get_matching
             // If we reach here, it means the expansion didn't happen properly
-            bail!("':task' pattern should be expanded before matching")
+            bail!(
+                "task pattern '{pat}' is not valid here; use '{}' to run a task in the current project",
+                pat.trim_start_matches(':')
+            )
         } else {
             pat.to_string()
         };

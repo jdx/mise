@@ -47,4 +47,33 @@ assert_contains "mise tasks --all" "hello"
 echo "=== Test 5: Colon syntax does not fall back to global tasks ==="
 assert_fail "mise run :hello"
 
+# Test 6: A bare dependency falls back to the global task (#15811)
+echo "=== Test 6: depends on a global task from monorepo tasks ==="
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.root-task]
+depends = ["hello"]
+run = "echo root-task-ran"
+TOML
+cat <<'TOML' >packages/foo/mise.toml
+[tasks.foo-task]
+depends = ["hello"]
+run = "echo foo-task-ran"
+TOML
+assert_contains "mise run '//:root-task'" "hello-from-global"
+assert_contains "mise run '//packages/foo:foo-task'" "hello-from-global"
+
+# Test 7: A project task shadows the global task of the same name
+echo "=== Test 7: project task shadows global task ==="
+cat <<'TOML' >>packages/foo/mise.toml
+
+[tasks.hello]
+run = "echo hello-from-project"
+TOML
+assert_contains "mise run '//packages/foo:foo-task'" "hello-from-project"
+
 echo "=== All monorepo global task tests passed! ==="
