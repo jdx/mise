@@ -77,7 +77,18 @@ assert_not_contains "mise token github ghe.example.com 2>&1" "keyring"
 assert_not_contains "MISE_GITHUB_GH_CLI_TOKENS=false mise token github 2>&1" "keyring"
 # no hint when another source supplies the token
 assert_not_contains "GITHUB_TOKEN=env-token mise token github 2>&1" "keyring"
-rm "$HOME/.config/gh/hosts.yml"
+# a blank token counts as no token, and a non-string user does not hide other hosts' tokens
+cat >"$HOME/.config/gh/hosts.yml" <<'EOF2'
+github.com:
+  user: test
+  oauth_token: ""
+ghe.example.com:
+  user:
+    nested: value
+  oauth_token: ghe-gh-token
+EOF2
+assert_contains "mise token github 2>&1" "keeps its token in the system keyring"
+assert_contains "mise token github ghe.example.com --unmask" "ghe-gh-token"
 cat >"$HOME/.config/gh/hosts.yml" <<'EOF2'
 github.com:
   oauth_token: gh-cli-token
