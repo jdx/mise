@@ -1,4 +1,5 @@
 backends = ["github:reylosql/reylo"]
+bins = ["reylo"]
 description = "Import .sql files into TypeScript with full type inference and zero codegen"
 test = { cmd = "reylo --version", expected = "reylo {{version}}" }
 version_order = "semver"
