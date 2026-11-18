@@ -1853,10 +1853,9 @@ impl HttpBackend {
 
         // The sources must outlive the rebuild below.
         let real_dir = dunce::canonicalize(&symlink_dir).unwrap_or_else(|_| symlink_dir.clone());
-        if let Some((name, _)) = wanted
-            .iter()
-            .find(|(_, src)| dunce::simplified(src).starts_with(dunce::simplified(&real_dir)))
-        {
+        if let Some((name, _)) = wanted.iter().find(|(_, src)| {
+            without_verbatim_prefix(src).starts_with(without_verbatim_prefix(&real_dir))
+        }) {
             bail!(
                 "filter_bins: '{name}' is inside {MISE_BINS_DIR}, which mise reserves; use another bin_path"
             );
@@ -1887,6 +1886,21 @@ impl HttpBackend {
         Ok(())
     }
 
+    /// Whether the `.mise-bins` entry is our link to `src`.
+    #[cfg(not(windows))]
+    fn entry_links_to(entry: &Path, src: &Path) -> bool {
+        std::fs::read_link(entry).ok().as_deref() == Some(src)
+    }
+
+    /// On Windows an entry is a copy, and its source record says where it came from;
+    /// an archive's own file has none.
+    #[cfg(windows)]
+    fn entry_links_to(entry: &Path, src: &Path) -> bool {
+        super::mise_bins::source_of(entry)
+            .and_then(|source| dunce::canonicalize(source).ok())
+            .is_some_and(|source| without_verbatim_prefix(&source) == without_verbatim_prefix(src))
+    }
+
     /// Whether `dir` holds exactly the links for `wanted`, so it can be kept as it is.
     fn bins_dir_matches(dir: &Path, wanted: &[(String, PathBuf)]) -> bool {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -1902,14 +1916,25 @@ impl HttpBackend {
             let Some((_, src)) = wanted.iter().find(|(n, _)| *n == name) else {
                 return false;
             };
-            // On Windows an entry is a copy beside a source record, which cannot be
-            // told from an archive's own file, so only the names are compared.
-            if !cfg!(windows) && std::fs::read_link(entry.path()).ok().as_ref() != Some(src) {
+            if !Self::entry_links_to(&entry.path(), src) {
                 return false;
             }
             found += 1;
         }
         found == wanted.len()
+    }
+}
+
+/// `path` without a Windows `\\?\` prefix, which `dunce` keeps on long paths, so
+/// two forms of one path compare equal.
+fn without_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path.to_path_buf()
     }
 }
 
@@ -1945,6 +1970,18 @@ fn rename_cache_token(rename: &toml::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn verbatim_prefixes_are_removed_for_comparison() {
+        use super::without_verbatim_prefix as strip;
+        use std::path::Path;
+        assert_eq!(strip(Path::new(r"\\?\C:\a\b")), Path::new(r"C:\a\b"));
+        assert_eq!(
+            strip(Path::new(r"\\?\UNC\srv\share")),
+            Path::new(r"\\srv\share")
+        );
+        assert_eq!(strip(Path::new("/usr/bin")), Path::new("/usr/bin"));
+    }
+
     use super::*;
     use crate::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
