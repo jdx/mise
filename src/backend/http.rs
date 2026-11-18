@@ -1842,14 +1842,12 @@ impl HttpBackend {
             };
             // Link the real file: a link through this install's path would dangle for
             // another tool sharing the extraction once this one is uninstalled.
-            let src = src.canonicalize().unwrap_or(src);
+            let src = dunce::canonicalize(&src).unwrap_or(src);
             wanted.push((bin_name, src));
         }
 
         // The sources must outlive the rebuild below.
-        let real_dir = symlink_dir
-            .canonicalize()
-            .unwrap_or_else(|_| symlink_dir.clone());
+        let real_dir = dunce::canonicalize(&symlink_dir).unwrap_or_else(|_| symlink_dir.clone());
         if let Some((name, _)) = wanted.iter().find(|(_, src)| src.starts_with(&real_dir)) {
             bail!(
                 "filter_bins: '{name}' is inside {MISE_BINS_DIR}, which mise reserves; use another bin_path"
