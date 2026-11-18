@@ -66,6 +66,10 @@ pub(crate) struct TasksLs {
     #[usage(long, hide = true)]
     pub complete: bool,
 
+    /// The word being completed, so `--complete` offers only the spellings that fit it
+    #[usage(long, hide = true, value_name = "WORD")]
+    pub complete_word: Option<String>,
+
     /// Show hidden tasks
     #[usage(long, verbatim_doc_comment)]
     pub hidden: bool,
@@ -123,6 +127,7 @@ impl TasksLs {
         self.extended |= later.extended;
         self.all |= later.all;
         self.complete |= later.complete;
+        self.complete_word = later.complete_word.or(self.complete_word);
         self.hidden |= later.hidden;
         self.name_only |= later.name_only;
         self.no_header |= later.no_header;
@@ -147,6 +152,7 @@ impl TasksLs {
             || self.extended
             || self.all
             || self.complete
+            || self.complete_word.is_some()
             || self.hidden
             || self.name_only
             || self.no_header
@@ -248,6 +254,7 @@ impl TasksLs {
 
     fn complete(&self, config: &Config, tasks: Vec<Task>) -> Result<()> {
         let current_root = current_root_prefix(config);
+        let word = self.complete_word.as_deref().unwrap_or_default();
         for t in tasks {
             // One line per task: a line break in a description would start a candidate of
             // its own, and a name with a control character cannot be completed anyway.
@@ -257,10 +264,8 @@ impl TasksLs {
                 .map(|c| if c.is_control() { ' ' } else { c })
                 .collect();
             let description = description.replace(":", "\\:");
-            let spellings = shorthand_name(current_root.as_deref(), &t)
-                .into_iter()
-                .chain(bare_names(current_root.as_deref(), &t));
-            for name in std::iter::once(t.display_name.clone()).chain(spellings) {
+            let names = completion_names(current_root.as_deref(), &t, word);
+            for name in names {
                 if name.chars().any(char::is_control) {
                     continue;
                 }
@@ -485,6 +490,31 @@ fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
 /// `:task` stands for. `None` outside a monorepo, where `:task` names nothing.
 fn current_root_prefix(config: &Config) -> Option<String> {
     crate::task::expand_colon_task_syntax(":", config).ok()
+}
+
+/// The spellings of `task` to offer while `word` is being completed.
+///
+/// A task of the current config root has several spellings that run the same task (`test`,
+/// `:test`, `//:test`), so offering all of them buries the list in duplicates. The prefix the
+/// user typed says which one they want: `//` the absolute path, `:` the name qualified for the
+/// current root, anything else (including nothing) the shortest name. A task of another config
+/// root has no shorter spelling, so it keeps its `//` path.
+fn completion_names(current_root: Option<&str>, task: &Task, word: &str) -> Vec<String> {
+    let display = || task.display_name.clone();
+    let names = if word.starts_with("//") {
+        vec![display()]
+    } else if word.starts_with(':') {
+        shorthand_name(current_root, task).into_iter().collect()
+    } else {
+        let mut names = bare_names(current_root, task);
+        // A name outside the root (`node:web#build`) is its own shortest spelling, and a task
+        // with no bare name is only reachable under its display name.
+        if names.is_empty() || !task.display_name.starts_with("//") {
+            names.insert(0, display());
+        }
+        names
+    };
+    names.into_iter().unique().collect()
 }
 
 /// `:task` for a task of the current config root.
