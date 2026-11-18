@@ -432,6 +432,65 @@ impl<'a> RustOptions<'a> {
 }
 
 impl RustPlugin {
+    /// The part of the satisfaction check that asks rustup.
+    async fn rustup_state_satisfied(
+        &self,
+        tv: &ToolVersion,
+        runtime: &RustRuntime,
+    ) -> Result<bool> {
+        let raw_opts = tv.request.options();
+        let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
+        let effective_profile = match profile {
+            Some(profile) => profile,
+            None => self.rustup_default_profile(tv, runtime)?,
+        };
+        let effective_profile = normalize_rustup_profile(&effective_profile)?;
+
+        // Query components even when none were explicitly requested. This
+        // verifies that rustup still has the toolchain represented by mise's
+        // install symlink after restoring only mise's data directory.
+        let Some(installed_components) = self.rustup_installed_items(tv, "component", runtime)?
+        else {
+            return Ok(false);
+        };
+
+        let mut required_components = components.unwrap_or_default();
+        required_components.extend(profile_components(effective_profile));
+        required_components.sort();
+        required_components.dedup();
+
+        if !required_components.is_empty() {
+            let missing = self.missing_components(&required_components, &installed_components);
+            if !missing.is_empty() {
+                debug!(
+                    "{} missing rustup component(s): {}",
+                    tv.style(),
+                    missing.join(", ")
+                );
+                return Ok(false);
+            }
+        }
+
+        if let Some(targets) = targets
+            && !targets.is_empty()
+        {
+            let Some(installed) = self.rustup_installed_items(tv, "target", runtime)? else {
+                return Ok(false);
+            };
+            let missing = self.missing_targets(&targets, &installed);
+            if !missing.is_empty() {
+                debug!(
+                    "{} missing rustup target(s): {}",
+                    tv.style(),
+                    missing.join(", ")
+                );
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
     pub(super) fn new() -> Self {
         Self {
             ba: plugins::core::new_backend_arg("rust").into(),
@@ -733,57 +792,15 @@ impl Backend for RustPlugin {
             return Ok(false);
         }
 
-        let raw_opts = tv.request.options();
-        let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
-        let effective_profile = match profile {
-            Some(profile) => profile,
-            None => self.rustup_default_profile(tv, &runtime)?,
-        };
-        let effective_profile = normalize_rustup_profile(&effective_profile)?;
-
-        // Query components even when none were explicitly requested. This
-        // verifies that rustup still has the toolchain represented by mise's
-        // install symlink after restoring only mise's data directory.
-        let Some(installed_components) = self.rustup_installed_items(tv, "component", &runtime)?
-        else {
-            return Ok(false);
-        };
-
-        let mut required_components = components.unwrap_or_default();
-        required_components.extend(profile_components(effective_profile));
-        required_components.sort();
-        required_components.dedup();
-
-        if !required_components.is_empty() {
-            let missing = self.missing_components(&required_components, &installed_components);
-            if !missing.is_empty() {
-                debug!(
-                    "{} missing rustup component(s): {}",
-                    tv.style(),
-                    missing.join(", ")
-                );
-                return Ok(false);
-            }
-        }
-
-        if let Some(targets) = targets
-            && !targets.is_empty()
-        {
-            let Some(installed) = self.rustup_installed_items(tv, "target", &runtime)? else {
-                return Ok(false);
-            };
-            let missing = self.missing_targets(&targets, &installed);
-            if !missing.is_empty() {
-                debug!(
-                    "{} missing rustup target(s): {}",
-                    tv.style(),
-                    missing.join(", ")
-                );
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+        // `mise run` checks the same toolchain more than once and the rustup queries
+        // spawn processes, so a passed check is not repeated. The runtime homes are part
+        // of the key because they decide which rustup state is queried.
+        let key = format!(
+            "{runtime:?}\0{}\0{:?}",
+            tv.install_path().display(),
+            tv.request.options()
+        );
+        check_once(key, self.rustup_state_satisfied(tv, &runtime)).await
     }
 
     fn resolve_lockfile_options(
@@ -1463,6 +1480,34 @@ async fn lock_rust_state_identities(mut identities: Vec<PathBuf>) -> Result<Vec<
     .await?
 }
 
+/// Rust toolchains whose rustup state check already passed in this process.
+static VERIFIED_RUSTUP_STATE: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+    std::sync::Mutex::new(None);
+
+/// Runs `check` unless a check for `key` already passed in this process.
+async fn check_once(
+    key: String,
+    check: impl std::future::Future<Output = Result<bool>>,
+) -> Result<bool> {
+    if VERIFIED_RUSTUP_STATE
+        .lock()
+        .unwrap()
+        .get_or_insert_default()
+        .contains(&key)
+    {
+        return Ok(true);
+    }
+    let satisfied = check.await?;
+    if satisfied {
+        VERIFIED_RUSTUP_STATE
+            .lock()
+            .unwrap()
+            .get_or_insert_default()
+            .insert(key);
+    }
+    Ok(satisfied)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RustHomes {
     cargo: PathBuf,
@@ -2010,6 +2055,47 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
     use confique::Layer;
+
+    #[tokio::test]
+    async fn check_once_repeats_a_passed_check_only_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let checks = AtomicUsize::new(0);
+        for _ in 0..2 {
+            let ok = check_once("check_once_test_pass".into(), async {
+                checks.fetch_add(1, SeqCst);
+                Ok(true)
+            })
+            .await
+            .unwrap();
+            assert!(ok);
+        }
+        assert_eq!(checks.load(SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn check_once_retries_a_failed_check_and_keys_are_separate() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let checks = AtomicUsize::new(0);
+        for _ in 0..2 {
+            let ok = check_once("check_once_test_fail".into(), async {
+                checks.fetch_add(1, SeqCst);
+                Ok(false)
+            })
+            .await
+            .unwrap();
+            assert!(!ok);
+        }
+        assert_eq!(checks.load(SeqCst), 2);
+        // A passed check under another key (e.g. other rust homes) is not reused.
+        let other = check_once("check_once_test_other".into(), async {
+            checks.fetch_add(1, SeqCst);
+            Ok(true)
+        })
+        .await
+        .unwrap();
+        assert!(other);
+        assert_eq!(checks.load(SeqCst), 3);
+    }
 
     #[test]
     fn test_parse_stable_manifest_version() {
