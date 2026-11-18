@@ -841,12 +841,15 @@ mod tests {
                 .collect()
         };
         let ordered = names(packages::builtin_managers());
-        let pos = |n: &str| ordered.iter().position(|x| x == n).unwrap();
+        let pos = |n: &str| ordered.iter().position(|x| x == n);
+        // brew is only built on unix
+        let Some(brew) = pos("brew") else { return };
         for native in NATIVE_MANAGERS {
-            assert!(pos(native) < pos("brew"), "{native} must precede brew");
+            let native = pos(native).unwrap_or_else(|| panic!("{native} is a builtin manager"));
+            assert!(native < brew, "{} must precede brew", ordered[native]);
         }
         // non-native managers keep their relative order
-        assert!(pos("brew") < pos("flatpak"));
+        assert!(brew < pos("flatpak").unwrap());
     }
 
     #[tokio::test]
