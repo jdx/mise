@@ -5,9 +5,12 @@
 //! matches it, since git does not ignore tracked files either. Only the
 //! repository's own rules apply: every `.gitignore` in the work tree and
 //! `.git/info/exclude`. The user's global excludes file is left out so that
-//! what counts as a source is the same on every machine.
+//! what counts as a source is the same on every machine. Inside a submodule or
+//! another nested repository, that repository's index and rules apply, as in
+//! git.
 
 use crate::task::task_source_checker::lexical_normalize;
+use gix::bstr::BString;
 use ignore::Match;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::collections::HashMap;
@@ -34,6 +37,9 @@ pub(crate) struct GitIgnored {
     info_exclude: Gitignore,
     /// The rules of each directory's `.gitignore`, read on first use.
     dirs: Mutex<HashMap<PathBuf, Arc<Gitignore>>>,
+    /// The nested repositories (submodules and the like) below the work tree,
+    /// keyed by their path relative to it and opened on first use.
+    nested: Mutex<HashMap<PathBuf, Option<Arc<GitIgnored>>>>,
 }
 
 impl GitIgnored {
@@ -89,6 +95,7 @@ impl GitIgnored {
             ignore_case,
             info_exclude,
             dirs: Mutex::new(HashMap::new()),
+            nested: Mutex::new(HashMap::new()),
         })
     }
 
@@ -126,12 +133,34 @@ impl GitIgnored {
         for (i, part) in parts.iter().enumerate() {
             let parent = prefix.clone();
             prefix.push(part);
-            let as_dir = i + 1 < parts.len() || is_dir;
-            if self.rules_ignore(&parent, &prefix, as_dir) == Some(true) {
+            let last = i + 1 == parts.len();
+            let as_dir = !last || is_dir;
+            // A submodule is tracked as a single index entry, which no rule
+            // can ignore.
+            let gitlink = as_dir && self.is_tracked(&prefix, false);
+            if !gitlink && self.rules_ignore(&parent, &prefix, as_dir) == Some(true) {
                 return true;
+            }
+            // Below a nested repository, its own index and rules decide.
+            if !last && self.workdir.join(&prefix).join(".git").exists() {
+                return self
+                    .nested_repo(&prefix)
+                    .is_some_and(|nested| nested.is_ignored(&path, is_dir));
             }
         }
         false
+    }
+
+    fn nested_repo(&self, relative: &Path) -> Option<Arc<GitIgnored>> {
+        let mut nested = self.nested.lock().unwrap_or_else(|e| e.into_inner());
+        nested
+            .entry(relative.to_path_buf())
+            .or_insert_with(|| {
+                Self::discover(&self.workdir.join(relative))
+                    .filter(|repo| repo.workdir != self.workdir)
+                    .map(Arc::new)
+            })
+            .clone()
     }
 
     fn relative(&self, path: &Path) -> Option<PathBuf> {
@@ -147,11 +176,13 @@ impl GitIgnored {
             return false;
         };
         if is_dir {
+            let mut prefix = key;
+            prefix.push(b'/');
             self.index
-                .prefixed_entries(format!("{key}/").as_str().into())
+                .prefixed_entries(prefix.as_ref())
                 .is_some_and(|entries| !entries.is_empty())
         } else {
-            self.index.entry_by_path(key.as_str().into()).is_some()
+            self.index.entry_by_path(key.as_ref()).is_some()
         }
     }
 
@@ -212,17 +243,12 @@ fn read_rules(dir: &Path, file: &Path, ignore_case: bool) -> Gitignore {
     })
 }
 
-/// The path as the git index spells it: `/`-separated and relative to the
-/// work tree root.
-fn index_path(relative: &Path) -> Option<String> {
-    let mut key = String::new();
-    for component in relative.components() {
-        if !key.is_empty() {
-            key.push('/');
-        }
-        key.push_str(component.as_os_str().to_str()?);
-    }
-    Some(key)
+/// The path as the git index spells it: the path's bytes, `/`-separated and
+/// relative to the work tree root. `None` only for a Windows path that is not
+/// valid Unicode, which git cannot track.
+fn index_path(relative: &Path) -> Option<BString> {
+    let bytes = gix::path::into_bstr(relative).ok()?;
+    Some(gix::path::to_unix_separators_on_windows(bytes).into_owned())
 }
 
 fn absolute(path: &Path) -> PathBuf {
@@ -303,6 +329,69 @@ mod tests {
         assert!(!ignored.is_ignored(&root.join("out/tracked.js"), false));
         assert!(ignored.is_ignored(&root.join("out/untracked.js"), false));
         assert!(!ignored.is_ignored(&root.join("out"), true));
+    }
+
+    #[test]
+    fn a_nested_repository_uses_its_own_index_and_rules() {
+        let tmp = repo();
+        let root = tmp.path();
+        write(&root.join(".gitignore"), "*.txt\nsub\n");
+        let sub = root.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        git(&sub, &["init", "-q"]);
+        write(&sub.join(".gitignore"), "gen/\n");
+        write(&sub.join("gen/tracked.js"), "x");
+        write(&sub.join("gen/untracked.js"), "x");
+        write(&sub.join("notes.txt"), "x");
+        git(&sub, &["add", "-f", "gen/tracked.js"]);
+        git(&sub, &["commit", "-q", "-m", "init"]);
+        // Track `sub` in the outer repository as a submodule entry.
+        git(root, &["add", "-f", "sub"]);
+        let ignored = GitIgnored::discover(root).unwrap();
+        assert!(!ignored.is_ignored(&sub.join("gen/tracked.js"), false));
+        assert!(ignored.is_ignored(&sub.join("gen/untracked.js"), false));
+        // The outer `*.txt` rule does not reach into the nested repository,
+        // and the outer `sub` rule does not ignore a tracked submodule.
+        assert!(!ignored.is_ignored(&sub.join("notes.txt"), false));
+        assert!(!ignored.is_ignored(&sub, true));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tracked_file_with_a_non_utf8_name_is_not_ignored() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        let tmp = repo();
+        let root = tmp.path();
+        let name = OsStr::from_bytes(b"out/caf\xe9.js");
+        write(&root.join(name), "x");
+        git(root, &["add", "out"]);
+        write(&root.join(".gitignore"), "out/\n");
+        let ignored = GitIgnored::discover(root).unwrap();
+        assert!(!ignored.is_ignored(&root.join(name), false));
+    }
+
+    #[test]
+    fn the_entry_applies_to_sources_outside_the_root() {
+        use crate::task::task_source_checker::{build_source_matcher, is_source};
+        let tmp = repo();
+        let root = tmp.path();
+        write(&root.join(".gitignore"), "out/\n");
+        let pkg = root.join("pkg");
+        fs::create_dir_all(&pkg).unwrap();
+        let is = |sources: &[&str], path: &str| {
+            let sources = sources.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            is_source(
+                &build_source_matcher(&pkg, &pkg, &sources),
+                &root.join(path),
+            )
+        };
+        let sources = ["../shared/**", GITIGNORE_ENTRY];
+        assert!(is(&sources, "shared/src/a.js"));
+        assert!(!is(&sources, "shared/out/b.js"));
+        assert!(is(&[GITIGNORE_ENTRY, "../shared/**"], "shared/out/b.js"));
+        // Without the entry, a file the glob found outside the root is kept.
+        assert!(is(&["../shared/**"], "shared/out/b.js"));
     }
 
     #[test]

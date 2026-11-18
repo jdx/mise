@@ -815,7 +815,8 @@ tracks stays a source even when an ignore rule matches it.
 mise reads the repository's own rules: every `.gitignore` in the work tree and
 `.git/info/exclude`. It leaves out your global excludes file
 (`core.excludesFile`), so the same files count as sources on every machine.
-Files inside `.git` are always excluded. Outside a git work tree, the entry
+Inside a submodule, that submodule's own rules and tracked files apply, as in
+git. Files inside `.git` are always excluded. Outside a git work tree, the entry
 excludes nothing. mise still walks ignored directories to find the files in
 them, so add `!**/node_modules/**` as well to skip a large directory.
 `mise watch` ignores what git ignores already; see [`watch`](#watch).

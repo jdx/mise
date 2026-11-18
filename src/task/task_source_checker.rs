@@ -206,49 +206,74 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
 /// the matcher keeps the globs between two such entries in their own
 /// [`Gitignore`] segment.
 pub(crate) struct SourceMatcher {
-    root: PathBuf,
-    /// The glob entries, split at each `!@gitignore`. Every segment but
-    /// the first follows one.
-    segments: Vec<Gitignore>,
+    inner: Segments,
+    /// The same entries anchored at a directory that also holds every entry
+    /// reaching outside `inner`'s root (`../shared/**`). Present only when
+    /// `sources` has a `!@gitignore` entry, so that the entry also applies to
+    /// files found outside the root.
+    outer: Option<Segments>,
     /// Present when `sources` has a `!@gitignore` entry and the match root
     /// is in a git work tree.
     gitignored: Option<Arc<GitIgnored>>,
 }
 
+/// Glob entries anchored at `root`, split at each `!@gitignore`. Every
+/// segment but the first follows one.
+struct Segments {
+    root: PathBuf,
+    segments: Vec<Gitignore>,
+}
+
 impl SourceMatcher {
     fn empty(root: &Path) -> Self {
         Self {
-            root: root.to_path_buf(),
-            segments: vec![],
+            inner: Segments {
+                root: root.to_path_buf(),
+                segments: vec![],
+            },
+            outer: None,
             gitignored: None,
         }
     }
 
     /// The directory relative patterns are anchored at.
     pub(crate) fn path(&self) -> &Path {
-        &self.root
+        &self.inner.root
     }
 
     /// Whether `sources` select `path`.
     pub(crate) fn matched(&self, path: &Path, is_dir: bool) -> bool {
-        for (i, segment) in self.segments.iter().enumerate().rev() {
+        self.decide(&self.inner, path, is_dir).unwrap_or(false)
+    }
+
+    /// Whether `sources` select `path`, an absolute path outside the root.
+    /// `None` when no entry decides it.
+    fn matched_outside(&self, path: &Path) -> Option<bool> {
+        let outer = self.outer.as_ref()?;
+        if !path.starts_with(&outer.root) {
+            return None;
+        }
+        self.decide(outer, path, false)
+    }
+
+    fn decide(&self, segments: &Segments, path: &Path, is_dir: bool) -> Option<bool> {
+        for (i, segment) in segments.segments.iter().enumerate().rev() {
             // Globs are stored inverted, the way `Override` stores them: a
             // source pattern is an ignore rule and a `!` entry a whitelist.
             match segment.matched(path, is_dir) {
-                ignore::Match::Ignore(_) => return true,
-                ignore::Match::Whitelist(_) => return false,
+                ignore::Match::Ignore(_) => return Some(true),
+                ignore::Match::Whitelist(_) => return Some(false),
                 ignore::Match::None => {}
             }
             if i > 0
-                && self
-                    .gitignored
-                    .as_ref()
-                    .is_some_and(|gitignored| gitignored.is_ignored(&self.root.join(path), is_dir))
+                && self.gitignored.as_ref().is_some_and(|gitignored| {
+                    gitignored.is_ignored(&segments.root.join(path), is_dir)
+                })
             {
-                return false;
+                return Some(false);
             }
         }
-        false
+        None
     }
 }
 
@@ -270,8 +295,35 @@ pub(crate) fn build_source_matcher(
     task_cwd: &Path,
     sources: &[String],
 ) -> SourceMatcher {
+    let Some(inner) = build_segments(match_root, task_cwd, sources, true) else {
+        return SourceMatcher::empty(match_root);
+    };
+    if inner.segments.len() < 2 {
+        return SourceMatcher {
+            inner,
+            outer: None,
+            gitignored: None,
+        };
+    }
+    let outer = outer_root(match_root, task_cwd, sources)
+        .and_then(|root| build_segments(&root, task_cwd, sources, false));
+    SourceMatcher {
+        inner,
+        outer,
+        gitignored: GitIgnored::discover(match_root).map(Arc::new),
+    }
+}
+
+/// Build the segments of `sources` anchored at `root`. `None`, after a
+/// warning when `warn` is set, if the matcher cannot be built.
+fn build_segments(
+    root: &Path,
+    task_cwd: &Path,
+    sources: &[String],
+    warn: bool,
+) -> Option<Segments> {
     let segment_builder = || {
-        let mut builder = GitignoreBuilder::new(match_root);
+        let mut builder = GitignoreBuilder::new(root);
         builder.allow_unclosed_class(false);
         builder
     };
@@ -282,43 +334,70 @@ pub(crate) fn build_source_matcher(
             continue;
         }
         let builder = builders.last_mut().expect("one builder");
-        let normalized = normalize_pattern(match_root, task_cwd, s);
+        let normalized = normalize_pattern(root, task_cwd, s);
         let expanded = match expand_glob_braces(&normalized) {
             Ok(expanded) => expanded,
             Err(e) => {
                 // Source matcher construction is infallible to callers. An
                 // invalid pattern is skipped so freshness falls back to stale
                 // when no sources can be enumerated.
-                warn!("invalid source pattern {s:?}: {e}");
+                if warn {
+                    warn!("invalid source pattern {s:?}: {e}");
+                }
                 continue;
             }
         };
         for normalized in expanded {
-            if let Err(e) = builder.add_line(None, &normalized) {
+            if let Err(e) = builder.add_line(None, &normalized)
+                && warn
+            {
                 warn!("invalid source pattern {s:?}: {e}");
             }
         }
     }
-    let segments = match builders
+    match builders
         .iter()
         .map(|b| b.build())
         .collect::<Result<Vec<_>, _>>()
     {
-        Ok(segments) => segments,
+        Ok(segments) => Some(Segments {
+            root: root.to_path_buf(),
+            segments,
+        }),
         Err(e) => {
-            warn!("failed to build source matcher: {e}");
-            return SourceMatcher::empty(match_root);
+            if warn {
+                warn!("failed to build source matcher: {e}");
+            }
+            None
         }
-    };
-    let gitignored = (segments.len() > 1)
-        .then(|| GitIgnored::discover(match_root))
-        .flatten()
-        .map(Arc::new);
-    SourceMatcher {
-        root: match_root.to_path_buf(),
-        segments,
-        gitignored,
     }
+}
+
+/// The nearest directory that holds `match_root` and the literal part of every
+/// entry reaching outside it, or `None` when no entry does.
+fn outer_root(match_root: &Path, task_cwd: &Path, sources: &[String]) -> Option<PathBuf> {
+    let mut root = match_root.to_path_buf();
+    for s in sources {
+        if is_gitignore_entry(s) || s.starts_with("\\!") {
+            continue;
+        }
+        let body = Path::new(s.strip_prefix('!').unwrap_or(s));
+        if parent_dir_pops_glob(body) {
+            continue;
+        }
+        let base = lexical_normalize(&task_cwd.join(body))
+            .components()
+            .take_while(|c| {
+                !c.as_os_str()
+                    .to_string_lossy()
+                    .contains(['*', '?', '[', '{'])
+            })
+            .collect::<PathBuf>();
+        while !base.starts_with(&root) {
+            root = root.parent()?.to_path_buf();
+        }
+    }
+    (root != match_root).then_some(root)
 }
 
 /// Resolve `.` and `..` in `path` without consulting the filesystem.
@@ -465,11 +544,11 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
 /// Absolute paths that don't fall under the matcher's root are out of
 /// gitignore's domain — no pattern matches them, so the matcher would
 /// silently drop a file the glob legitimately included. Trust the glob in
-/// that case.
+/// that case, unless `!@gitignore` decides the path.
 pub(crate) fn is_source(matcher: &SourceMatcher, path: &Path) -> bool {
     let path = lexical_normalize(path);
     if path.is_absolute() && !path.starts_with(matcher.path()) {
-        return true;
+        return matcher.matched_outside(&path).unwrap_or(true);
     }
     matcher.matched(&path, false)
 }
