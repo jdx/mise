@@ -89,6 +89,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'if command -v entire-brain >/dev/null 2>&1; then exec entire-brain hook pre-edit --claude-hook; fi; if command -v entire >/dev/null 2>&1; then exec entire brain hook pre-edit --claude-hook; fi; exit 0'"
+          }
+        ]
       }
     ],
     "SessionEnd": [
