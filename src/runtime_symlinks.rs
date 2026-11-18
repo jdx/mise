@@ -11,7 +11,7 @@ use crate::semver::{split_version_prefix, version_sort_key};
 use crate::toolset::{
     ConfigScope, ResolveOptions, ToolRequest, Toolset, ToolsetBuilder, install_state,
 };
-use crate::{env, file};
+use crate::{dirs, env, file};
 use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -40,7 +40,7 @@ pub(crate) async fn rebuild_for_backends(
             .map(move |installs_dir| (backend.clone(), installs_dir))
     });
     run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
-        let shared = installs_dir != backend.ba().installs_path();
+        let shared = !is_own_installs_dir(backend.ba(), &installs_dir);
         let global = if shared {
             system.as_ref()
         } else {
@@ -119,6 +119,13 @@ fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
     dirs
 }
 
+/// Whether `installs_dir` is this tool's dir in the user's own installs root.
+/// `installs_path()` cannot say: install state points a tool installed only in
+/// a shared dir at that shared dir.
+fn is_own_installs_dir(ba: &crate::args::BackendArg, installs_dir: &Path) -> bool {
+    installs_dir == dirs::INSTALLS.join(ba.tool_dir_name())
+}
+
 fn rebuild_symlinks_in_dir(
     config: &Config,
     ts: &Toolset,
@@ -126,7 +133,7 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    if installs_dir == backend.ba().installs_path() {
+    if is_own_installs_dir(backend.ba(), installs_dir) {
         crate::install_layout::resolver::heal_links(backend.ba());
     }
     let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
@@ -279,7 +286,7 @@ fn list_symlinks_for_dir(
     // name is the user's and stays untouched.
     let global_link = installs_dir.join(GLOBAL_LINK);
     if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
-        let shared = installs_dir != backend.ba().installs_path();
+        let shared = !is_own_installs_dir(backend.ba(), installs_dir);
         // A shared dir this process can neither write nor elevate for cannot
         // take a new target or a new link: writing would only fail the install.
         let frozen = shared && !can_modify(installs_dir);
