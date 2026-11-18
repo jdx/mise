@@ -429,7 +429,9 @@ mod tests {
         assert!(!ignored.is_ignored(&root.join("pkg/src/a.js"), false));
     }
 
-    #[cfg(unix)]
+    // APFS refuses file names that are not UTF-8 (EILSEQ), so macOS cannot
+    // create the fixture.
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn a_tracked_file_with_a_non_utf8_name_is_not_ignored() {
         use std::ffi::OsStr;
