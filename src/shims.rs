@@ -1990,7 +1990,13 @@ async fn get_desired_shims(
                         )
                         .ok()
                     })
-                    .filter(|r| matches!(r, crate::toolset::ToolRequest::Path { .. })),
+                    .and_then(|r| match r {
+                        // Keep the original request's options and lockfile scope.
+                        crate::toolset::ToolRequest::Path { path, .. } => {
+                            Some(request.to_path(path))
+                        }
+                        _ => None,
+                    }),
                 crate::toolset::ToolRequest::Path { .. } => Some(request.clone()),
                 _ => None,
             };
