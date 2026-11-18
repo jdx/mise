@@ -18,3 +18,14 @@ git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am v2
 
 assert_contains "mise x 'npm:git+file://$repo@latest' -- gitpkg" "gitpkg-v2"
 assert_contains "mise x 'npm:git+file://$repo@v1' -- gitpkg" "gitpkg-v1"
+
+# prune keeps the commit that `latest` resolves to and lists older ones
+spec="npm:git+file://$repo"
+head1="$(git -C "$repo" rev-parse HEAD)"
+mise use "$spec@latest"
+printf '#!/bin/sh\necho gitpkg-v3\n' >"$repo/bin/gitpkg.sh"
+git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am v3
+head2="$(git -C "$repo" rev-parse HEAD)"
+mise install "$spec@latest" --force
+assert_contains "mise prune --tools --dry-run 2>&1" "gitpkg@$head1 is prunable"
+assert_not_contains "mise prune --tools --dry-run 2>&1" "gitpkg@$head2 is prunable"
