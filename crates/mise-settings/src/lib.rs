@@ -502,6 +502,26 @@ pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, s
     serde_json::from_str(input)
 }
 
+/// Parse `task.lock_pools` from an environment variable: either the JSON object
+/// `{"cpu":"8"}` or the shorter `cpu=8,gpu=1`.
+pub fn parse_lock_pools(input: &str) -> Result<IndexMap<String, String>, std::io::Error> {
+    let invalid = |msg: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg);
+    let input = input.trim();
+    if input.starts_with('{') {
+        return serde_json::from_str(input).map_err(|e| invalid(e.to_string()));
+    }
+    let mut pools = IndexMap::new();
+    for entry in input.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+        let Some((name, slots)) = entry.split_once('=') else {
+            return Err(invalid(format!(
+                "expected NAME=SLOTS, such as cpu=8, not {entry:?}"
+            )));
+        };
+        pools.insert(name.trim().to_string(), slots.trim().to_string());
+    }
+    Ok(pools)
+}
+
 /// Parse a path list from an environment variable using the OS-native path
 /// separator (`:` on Unix, `;` on Windows). This correctly handles Windows
 /// absolute paths whose drive letters contain `:` (e.g. `C:\foo`).

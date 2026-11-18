@@ -4489,8 +4489,14 @@ cpu = "8"
 Set it once per machine, in the global config, rather than per project: runs
 that disagree on how many slots a pool has can exceed the smaller number
 between them. A task whose `count` is above the pool's slots takes all of them.
+
+`mise settings set task.lock_pools.cpu 8` sets one pool and keeps the others.
+`MISE_TASK_LOCK_POOLS` takes `cpu=8,gpu=1` or a JSON object such as
+`{"cpu":"8"}`, so one run can size a pool without a config file.
 """
+env = "MISE_TASK_LOCK_POOLS"
 optional = true
+parse_env = "parse_lock_pools"
 type = "IndexMap<String, String>"
 
 [task.lock_timeout]

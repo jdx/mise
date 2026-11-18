@@ -28,6 +28,7 @@ const parseEnvLabels: Record<string, string> = {
   list_by_os_path_separator:
     "separated by <code>:</code> (<code>;</code> on Windows)",
   parse_url_replacements: "a JSON object",
+  parse_lock_pools: "NAME=SLOTS pairs separated by commas, or a JSON object",
 };
 
 const typeLabels: Record<string, string> = {
