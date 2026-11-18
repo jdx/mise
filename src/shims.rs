@@ -1996,6 +1996,7 @@ async fn get_desired_shims(
             };
             let Some(request) = request else { continue };
             if request.is_os_supported()
+                && !request.ignored_in_safe_mode()
                 && !toolset.is_disabled(request.ba())
                 && let Ok(backend) = request.backend()
             {

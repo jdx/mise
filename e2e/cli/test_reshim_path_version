@@ -29,7 +29,12 @@ assert "$shimdir/localtool" "local tool"
 
 # A project's `path:` entry for the same tool hides the global one in the merged
 # toolset, but the global tool's shims must survive a reshim in that project.
-mkdir -p "$PWD/globaltool/bin" "$PWD/proj"
+mkdir -p "$PWD/globaltool/bin" "$PWD/childtool/bin" "$PWD/proj"
+cat >"$PWD/childtool/bin/childbin" <<'SH'
+#!/usr/bin/env bash
+echo "child bin"
+SH
+chmod +x "$PWD/childtool/bin/childbin"
 cat >"$PWD/globaltool/bin/globalbin" <<'SH'
 #!/usr/bin/env bash
 echo "global bin"
@@ -42,11 +47,11 @@ cat >"$HOME/.config/mise/config.toml" <<EOF2
 EOF2
 cat >"$PWD/proj/mise.toml" <<EOF2
 [tools]
-"github:jdx/overridden" = "path:$PWD/localtool/bin"
+"github:jdx/overridden" = "path:$PWD/childtool/bin"
 EOF2
 (cd "$PWD/proj" && mise reshim)
 assert "$shimdir/globalbin" "global bin"
-assert "$shimdir/localtool" "local tool"
+(cd "$PWD/proj" && assert "$shimdir/childbin" "child bin")
 
 # A tool excluded by disable_tools must not get shims from another project's config.
 mkdir -p "$PWD/disabledtool/bin" "$PWD/proj2" "$PWD/proj3"
