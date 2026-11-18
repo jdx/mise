@@ -498,12 +498,10 @@ fn resolve_entry(
         },
         EditTomlEntry::Table(table) => table,
     };
-    if entry.merge.is_some() {
-        check_merge_key_has_id(path_raw, &id, &path, &entry)?;
+    if let Some(merge) = &entry.merge {
+        check_merge_key_has_id(path_raw, &id, &path, &entry, merge)?;
     }
-    // ids end up inside marker lines — keep them to characters that can't
-    // collide with the marker syntax itself
-    if id.is_empty() || !id.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c)) {
+    if !is_valid_id(&id) {
         bail!(
             "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
         );
@@ -623,15 +621,36 @@ fn check_merge_key_has_id(
     id: &str,
     path: &Path,
     entry: &EditTomlTable,
+    merge: &MergeSetting,
 ) -> Result<()> {
+    // an invalid merge setting is the error to report; the key is no help then
+    if !matches!(merge, MergeSetting::Bool(true))
+        && !matches!(merge, MergeSetting::Mode(mode) if mode == "missing")
+    {
+        return Ok(());
+    }
     let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
     let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
     if id_looks_like_file && target_is_unformatted {
+        // the suggested key is TOML, so quote and escape it as TOML
+        let suggestion = toml::Value::String(format!("{path_raw}/{id}/shared"));
+        // a format only helps when the parsed id would be accepted as it is
+        let format_alternative = if is_valid_id(id) {
+            ", otherwise set a format"
+        } else {
+            ""
+        };
         bail!(
-            "\"{path_raw}\".{id}: \"{id}\" was read as the id and \"{path_raw}\" as the target, which has no .json, .jsonc, .toml, .yaml, .yml, or .ini extension; if \"{id}\" is the file to merge into, the key is missing its /<id> (for example \"{path_raw}/{id}/shared\"), otherwise set a format, ignoring entry"
+            "\"{path_raw}\".{id}: \"{id}\" was read as the id and \"{path_raw}\" as the target, which has no .json, .jsonc, .toml, .yaml, .yml, or .ini extension; if \"{id}\" is the file to merge into, the key is missing its /<id> (for example {suggestion}){format_alternative}, ignoring entry"
         );
     }
     Ok(())
+}
+
+/// ids end up inside marker lines — keep them to characters that can't
+/// collide with the marker syntax itself
+fn is_valid_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c))
 }
 
 /// the operation for `{ source = "...", merge = true }`
@@ -2449,10 +2468,25 @@ mod tests {
 
     #[test]
     fn a_merge_key_without_an_id_names_the_missing_id() {
-        // a name with a space would fail the id check if that ran first
-        for key in [
-            "~/.config/app/settings.toml",
-            "~/.config/app/user settings.toml",
+        // a name with a space would fail the id check if that ran first, and
+        // a format would not fix it, so only a valid id offers one
+        for (key, suggestion, offers_format) in [
+            (
+                "~/.config/app/settings.toml",
+                "\"~/.config/app/settings.toml/shared\"",
+                true,
+            ),
+            (
+                "~/.config/app/user settings.toml",
+                "\"~/.config/app/user settings.toml/shared\"",
+                false,
+            ),
+            // the suggestion is a TOML string, so a quote cannot end it early
+            (
+                "~/.config/app\"data/settings.toml",
+                "'~/.config/app\"data/settings.toml/shared'",
+                true,
+            ),
         ] {
             // the key is split at its last `/`, as the parser does
             let (path, id) = split_edit_key(key).unwrap();
@@ -2466,9 +2500,24 @@ mod tests {
             );
             let err = err.unwrap_err().to_string();
             assert!(err.contains("missing its /<id>"), "{err}");
-            assert!(err.contains(&format!("{key}/shared")), "{err}");
-            assert!(err.contains("set a format"), "{err}");
+            assert!(err.contains(suggestion), "{err}");
+            assert_eq!(err.contains("set a format"), offers_format, "{err}");
         }
+    }
+
+    #[test]
+    fn an_invalid_merge_setting_is_reported_before_the_missing_id() {
+        let (path, id) = split_edit_key("~/.config/app/settings.toml").unwrap();
+        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = false").unwrap();
+        let err = resolve_entry(
+            &path,
+            id,
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        );
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("merge must be true"), "{err}");
     }
 
     #[test]
