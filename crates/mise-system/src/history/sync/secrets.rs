@@ -30,7 +30,7 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 /// substitution is not a secret.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}|[^\s"'$`~/#{(<\[;][^\s"';]{0,6};[^\s"']+))"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}|[^\s"'$`~/#{(<\[;][^\s"';]{0,6};[^\s"']*))"#,
     )
     .unwrap()
 });
@@ -206,6 +206,8 @@ mod tests {
             "password: abc;defghijkl",
             "password: ab;cdefghijklmnop",
             "password: ab;cdefg",
+            "password: abcdefg;",
+            "password: abcdefg; # note",
             "AWS=AKIAABCDEFGHIJKLMNOP",
             "-----BEGIN OPENSSH PRIVATE KEY-----",
             "secret = 'abcdefgh'",
