@@ -146,7 +146,8 @@ pub(crate) struct Install {
 
 /// Whether the argument spells its own `os` option, which then overrides the config's.
 pub(crate) fn names_os(ta: &ToolArg) -> bool {
-    ta.ba.opts().os.is_some() || ta.tvr.as_ref().is_some_and(|tr| tr.os().is_some())
+    // Only an option typed on the command line counts, not one an alias or config supplies.
+    ta.ba.explicit_opts().is_some_and(|opts| opts.os.is_some())
 }
 
 /// Reject a named tool its `os` option excludes from this platform: the argument's own
