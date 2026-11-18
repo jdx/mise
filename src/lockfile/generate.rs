@@ -1007,8 +1007,9 @@ fn slsa_signer_hint(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> &'
         && old.provenance.as_ref().is_some_and(ProvenanceType::is_slsa)
         && new.provenance.is_none()
     {
-        ", or set slsa_signer_identity and slsa_signer_issuer in the tool options so the \
-         SLSA provenance can be verified and recorded again"
+        ", or, if the recipe names the SLSA provenance asset but no signer, set \
+         slsa_signer_identity and slsa_signer_issuer in the tool options so the SLSA \
+         provenance can be verified and recorded again"
     } else {
         ""
     }
