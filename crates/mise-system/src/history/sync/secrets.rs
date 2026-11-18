@@ -58,7 +58,14 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
             Some(_) => value.as_str().strip_suffix(';').unwrap_or(value.as_str()),
             None => value.as_str(),
         };
-        if approved(text) {
+        // a quoted value ends at its closing quote, and a word that continues
+        // right after it (`"changeme"-more`) is still part of the value
+        let continues = found.name("bare").is_none()
+            && line[value.end()..]
+                .get(1..)
+                .and_then(|rest| rest.chars().next())
+                .is_some_and(|next| !next.is_whitespace() && next != ';');
+        if approved(text) && !continues {
             covered.push(value.range());
         } else {
             flagged = true;
@@ -248,6 +255,8 @@ mod tests {
             "API_KEY = \"ctx7_api_key-abcdefghij\"",
             "API_KEY=ctx7_api_key=abcdefghijkl",
             "password: ctx7_api_key,",
+            "API_KEY=\"ctx7_api_key\"-actual-secret",
+            "API_KEY='ctx7_api_key'extra",
             "API_KEY=\"ctx7_api_key abcdefghijkl\"",
             "export API_KEY=ctx7_api_key B_TOKEN=abcdefghijkl",
         ] {
@@ -269,6 +278,7 @@ mod tests {
             "export API_KEY=ctx7_api_key EDITOR=vim",
             "export API_KEY=ctx7_api_key; echo ready",
             "API_KEY='ctx7_api_key'",
+            "API_KEY=\"ctx7_api_key\"; echo ready",
         ] {
             assert!(!suspicious(line, &allowed), "{line}");
         }
