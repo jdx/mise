@@ -1650,6 +1650,28 @@ fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, S
     Ok((python, version.to_string()))
 }
 
+/// What a rolling `latest` points at on its remote, asked once per source for
+/// the life of the process. A scan visits every tracked config, and an
+/// unreachable remote would otherwise cost a timeout for each one, so a failed
+/// lookup is remembered too.
+async fn rolling_head(config: &Arc<Config>, backend: &Arc<dyn Backend>) -> Option<String> {
+    static HEADS: std::sync::Mutex<BTreeMap<String, Option<String>>> =
+        std::sync::Mutex::new(BTreeMap::new());
+    // Keyed by the full source, since two projects can alias different
+    // remotes to one short name.
+    let key = backend.ba().full();
+    if let Some(head) = HEADS.lock().unwrap().get(&key) {
+        return head.clone();
+    }
+    let head = backend
+        .resolve_channel_version(config, "latest")
+        .await
+        .ok()
+        .flatten();
+    HEADS.lock().unwrap().insert(key, head.clone());
+    head
+}
+
 async fn collect_needed_versions(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -1685,6 +1707,31 @@ async fn collect_needed_versions(
                 .entry(needed_key(&runtime))
                 .or_default()
                 .insert(source.to_path_buf());
+        }
+        // A rolling channel (an unpinned git source's HEAD) that stayed the
+        // literal `latest` matches no installed commit. Ask the remote what it
+        // points at now, and keep that commit when it is installed. Without an
+        // answer, or when it is not installed, keep every installation of the
+        // tool rather than risk removing the one in use.
+        if offline
+            && tv.version == "latest"
+            && let Ok(backend) = tv.backend()
+            && backend.is_rolling_channel("latest")
+        {
+            let head = rolling_head(config, &backend).await;
+            let mut current = tv.clone();
+            let installed = head.is_some_and(|head| {
+                current.version = head;
+                current.install_path().exists()
+            });
+            if installed {
+                needed
+                    .entry(needed_key(&current))
+                    .or_default()
+                    .insert(source.to_path_buf());
+            } else {
+                keep_every_installation(&tv.ba().short, source, needed);
+            }
         }
         // Offline can't resolve `sub-N:latest` to a concrete version
         // (no remote latest available). Conservatively protect every
