@@ -52,9 +52,10 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
         else {
             continue;
         };
-        // an unquoted value may run into a shell separator: `KEY=value; next`
+        // an unquoted value may run into a shell command separator: `KEY=value; next`.
+        // Other punctuation, a comma included, is part of the value.
         let text = match found.name("bare") {
-            Some(_) => value.as_str().trim_end_matches([';', ',']),
+            Some(_) => value.as_str().strip_suffix(';').unwrap_or(value.as_str()),
             None => value.as_str(),
         };
         if approved(text) {
@@ -246,6 +247,7 @@ mod tests {
             "API_KEY = \"xctx7_api_key\"",
             "API_KEY = \"ctx7_api_key-abcdefghij\"",
             "API_KEY=ctx7_api_key=abcdefghijkl",
+            "password: ctx7_api_key,",
             "API_KEY=\"ctx7_api_key abcdefghijkl\"",
             "export API_KEY=ctx7_api_key B_TOKEN=abcdefghijkl",
         ] {
