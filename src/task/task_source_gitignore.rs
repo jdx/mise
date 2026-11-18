@@ -127,6 +127,18 @@ impl GitIgnored {
         if self.is_tracked(&relative, is_dir) {
             return false;
         }
+        // Below a submodule the outer repository tracks, the submodule's own
+        // index and rules decide, even when an outer rule ignores a directory
+        // above it.
+        let mut prefix = PathBuf::new();
+        for part in &parts[..parts.len() - 1] {
+            prefix.push(part);
+            if self.is_tracked(&prefix, false)
+                && let Some(nested) = self.nested_repo(&prefix)
+            {
+                return nested.is_ignored(&path, is_dir);
+            }
+        }
         // Git does not look inside an ignored directory, so a rule cannot
         // re-include a file below one.
         let mut prefix = PathBuf::new();
@@ -360,6 +372,24 @@ mod tests {
     }
 
     #[test]
+    fn a_tracked_submodule_below_an_ignored_directory_keeps_its_files() {
+        let tmp = repo();
+        let root = tmp.path();
+        write(&root.join(".gitignore"), "vendor/\n");
+        let sub = root.join("vendor/sub");
+        fs::create_dir_all(&sub).unwrap();
+        git(&sub, &["init", "-q"]);
+        write(&sub.join("src.js"), "x");
+        git(&sub, &["add", "src.js"]);
+        git(&sub, &["commit", "-q", "-m", "init"]);
+        git(root, &["add", "-f", "vendor/sub"]);
+        write(&root.join("vendor/other.js"), "x");
+        let ignored = GitIgnored::discover(root).unwrap();
+        assert!(!ignored.is_ignored(&sub.join("src.js"), false));
+        assert!(ignored.is_ignored(&root.join("vendor/other.js"), false));
+    }
+
+    #[test]
     fn a_stray_git_entry_does_not_hide_the_outer_rules() {
         let tmp = repo();
         let root = tmp.path();
@@ -404,6 +434,9 @@ mod tests {
         assert!(is(&sources, "shared/src/a.js"));
         assert!(!is(&sources, "shared/out/b.js"));
         assert!(is(&[GITIGNORE_ENTRY, "../shared/**"], "shared/out/b.js"));
+        let braced = ["{../shared,src}/**", GITIGNORE_ENTRY];
+        assert!(!is(&braced, "shared/out/b.js"));
+        assert!(is(&braced, "shared/src/a.js"));
         // Without the entry, a file the glob found outside the root is kept.
         assert!(is(&["../shared/**"], "shared/out/b.js"));
     }

@@ -381,20 +381,27 @@ fn outer_root(match_root: &Path, task_cwd: &Path, sources: &[String]) -> Option<
         if is_gitignore_entry(s) || s.starts_with("\\!") {
             continue;
         }
-        let body = Path::new(s.strip_prefix('!').unwrap_or(s));
-        if parent_dir_pops_glob(body) {
+        let body = s.strip_prefix('!').unwrap_or(s);
+        // Each brace alternative can reach a different directory.
+        let Ok(alternatives) = expand_glob_braces(body) else {
             continue;
-        }
-        let base = lexical_normalize(&task_cwd.join(body))
-            .components()
-            .take_while(|c| {
-                !c.as_os_str()
-                    .to_string_lossy()
-                    .contains(['*', '?', '[', '{'])
-            })
-            .collect::<PathBuf>();
-        while !base.starts_with(&root) {
-            root = root.parent()?.to_path_buf();
+        };
+        for alternative in alternatives {
+            let alternative = Path::new(&alternative);
+            if parent_dir_pops_glob(alternative) {
+                continue;
+            }
+            let base = lexical_normalize(&task_cwd.join(alternative))
+                .components()
+                .take_while(|c| {
+                    !c.as_os_str()
+                        .to_string_lossy()
+                        .contains(['*', '?', '[', '{'])
+                })
+                .collect::<PathBuf>();
+            while !base.starts_with(&root) {
+                root = root.parent()?.to_path_buf();
+            }
         }
     }
     (root != match_root).then_some(root)
