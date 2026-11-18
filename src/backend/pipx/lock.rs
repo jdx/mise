@@ -197,6 +197,11 @@ impl PIPXBackend {
     /// Whether installing `tv` needs a uv dependency graph: its lockfile
     /// revision records one, or a new resolution would create one.
     pub(crate) fn uv_graph_required(&self, config: &Config, tv: &ToolVersion) -> Result<bool> {
+        // Index sources reach uv only through the graph's project file, so a tool
+        // that sets them has no version-only install.
+        if PipxOptions::new(&tv.request.options()).has_index_options() {
+            return Ok(true);
+        }
         let revision = self.uv_lockfile_version(config, tv)?;
         Ok(revision.is_some_and(|v| v >= 2)
             || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
@@ -435,6 +440,20 @@ impl PIPXBackend {
         let mut requirements = vec![self.lock_requirement(tv)?];
         requirements.extend(opts.with()?);
         requirements.extend(opts.expose()?);
+        // uv applies a source to direct dependencies only, and rejects one for
+        // anything else, so name the mistake before uv does.
+        let direct = requirements
+            .iter()
+            .filter_map(|requirement| PipxOptions::requirement_package_name(requirement))
+            .map(super::normalize_package_name)
+            .collect::<Vec<_>>();
+        for (normalized, (package, _)) in opts.sources()? {
+            if !direct.contains(&normalized) {
+                bail!(
+                    "source {package} is not the tool or one of its `with` or `expose` requirements"
+                );
+            }
+        }
         Ok(requirements)
     }
 
@@ -663,6 +682,7 @@ impl PIPXBackend {
         let uv = self.lock_uv_program(config).await?;
         let registry = self.get_registry_url(config).await?;
         let requirements = self.lock_requirements(tv)?;
+        let sources = PipxOptions::new(&tv.request.options()).sources()?;
         let root = self
             .release_python_requirement(&registry, &self.tool_name(), &tv.version)
             .await
@@ -685,6 +705,11 @@ impl PIPXBackend {
             let Some((package, version)) = pinned_requirement(requirement) else {
                 continue;
             };
+            // A package pinned to its own index is not looked up on the registry:
+            // that would send its name to an index that must never serve it.
+            if sources.contains_key(&super::normalize_package_name(package)) {
+                continue;
+            }
             let mut release = self
                 .release_python_requirement(&registry, package, version)
                 .await;
@@ -718,6 +743,9 @@ impl PIPXBackend {
             }
             .into(),
         );
+        if let Some(tool) = PipxOptions::new(&tv.request.options()).uv_project_tool()? {
+            project.insert("tool".into(), tool.into());
+        }
         let temp = tempfile::tempdir()?;
         crate::file::write(
             temp.path().join("pyproject.toml"),
@@ -792,6 +820,11 @@ impl PIPXBackend {
         if project.get("dependencies").and_then(toml::Value::as_array) != Some(&expected)
             || project.get("name").and_then(toml::Value::as_str) != Some(PROJECT_NAME)
             || project.get("requires-python") != lock.graph.get("requires-python")
+            || lock.project.get("tool")
+                != PipxOptions::new(&tv.request.options())
+                    .uv_project_tool()?
+                    .map(toml::Value::Table)
+                    .as_ref()
         {
             bail!(
                 "Python lock does not match the requested tool; run `mise lock --bump {}`",
@@ -892,7 +925,11 @@ impl PIPXBackend {
         }
         validate_portable_urls(&toml::Value::Table(lock.graph.clone()))?;
         // No arbitrary project settings or build systems are accepted from a lockfile.
-        if lock.project.len() != 1 || project.len() != 4 {
+        // The only other table is the `tool` one the tool's options generate, which
+        // was already compared with them above.
+        if lock.project.len() != 1 + usize::from(lock.project.contains_key("tool"))
+            || project.len() != 4
+        {
             bail!("unsupported Python lock project settings");
         }
         Ok(())

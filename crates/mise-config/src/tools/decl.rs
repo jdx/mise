@@ -42,6 +42,26 @@ pub struct HttpHeaderValue(pub String);
 #[derive(JsonSchema)]
 pub struct HttpHeaderForwardHosts(pub OneOrManyStrings);
 
+/// a uv package index
+#[derive(JsonSchema)]
+pub struct PypiIndex {
+    /// unique index name: ASCII letters, digits, dashes and underscores
+    pub name: String,
+    /// index url, without credentials
+    pub url: String,
+    /// only use this index for packages pinned to it in sources
+    #[serde(default)]
+    #[schemars(schema_with = "refs::tool_bool")]
+    pub explicit: Option<bool>,
+}
+
+/// the index a package is installed from
+#[derive(JsonSchema)]
+pub struct PypiSource {
+    /// name of an entry in indexes
+    pub index: String,
+}
+
 /// value of this aqua registry template variable
 #[derive(JsonSchema)]
 pub struct AquaVarValue(pub String);
@@ -348,6 +368,10 @@ pub struct ToolPypiOptions {
     /// uv prerelease policy for dependency resolution (requires uv)
     #[schemars(extend("enum" = ["disallow", "allow", "if-necessary", "explicit"]))]
     pub dependency_prereleases: Option<String>,
+    /// extra uv package indexes: an array of { name, url, explicit } tables (requires uv and a dependency graph)
+    pub indexes: Option<Vec<PypiIndex>>,
+    /// pin packages to a named entry of indexes: a table of package = { index = "name" } (requires uv and a dependency graph)
+    pub sources: Option<std::collections::BTreeMap<String, PypiSource>>,
     /// mise-managed CPython version for this tool (minor or exact patch)
     pub python: Option<String>,
     /// distribution name for git sources, used to attach extras

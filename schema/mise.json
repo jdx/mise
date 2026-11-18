@@ -6238,6 +6238,46 @@
           "description": "uv prerelease policy for dependency resolution (requires uv)",
           "enum": ["disallow", "allow", "if-necessary", "explicit"]
         },
+        "indexes": {
+          "type": "array",
+          "description": "extra uv package indexes: an array of { name, url, explicit } tables (requires uv and a dependency graph)",
+          "items": {
+            "type": "object",
+            "description": "a uv package index",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "unique index name: ASCII letters, digits, dashes and underscores"
+              },
+              "url": {
+                "type": "string",
+                "description": "index url, without credentials"
+              },
+              "explicit": {
+                "description": "only use this index for packages pinned to it in sources",
+                "$ref": "#/$defs/tool_bool"
+              }
+            },
+            "required": ["name", "url"],
+            "additionalProperties": false
+          }
+        },
+        "sources": {
+          "type": "object",
+          "description": "pin packages to a named entry of indexes: a table of package = { index = \"name\" } (requires uv and a dependency graph)",
+          "additionalProperties": {
+            "type": "object",
+            "description": "the index a package is installed from",
+            "properties": {
+              "index": {
+                "type": "string",
+                "description": "name of an entry in indexes"
+              }
+            },
+            "required": ["index"],
+            "additionalProperties": false
+          }
+        },
         "python": {
           "type": "string",
           "description": "mise-managed CPython version for this tool (minor or exact patch)"

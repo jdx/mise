@@ -123,7 +123,7 @@ class Handler(BaseHTTPRequestHandler):
             package = path.strip('/').split('/')[-1].replace('-', '_')
             # A registry that hosts only its own package and 404s for the rest.
             private = path.startswith('/private/')
-            hosted = ['mise_lock_cli'] + (['mise_lock_dep'] if (root / 'private-dep').exists() else [])
+            hosted = ['mise_lock_cli'] + (['mise_lock_dep'] if (root / 'private-dep').exists() else []) + (['mise_lock_extra'] if (root / 'private-extra').exists() else [])
             if private and package not in hosted:
                 self.send_error(404)
                 return

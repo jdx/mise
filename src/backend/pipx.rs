@@ -181,16 +181,160 @@ impl<'a> PipxOptions<'a> {
         Ok(value)
     }
 
+    /// The value of a table-shaped option, accepted as TOML or as a JSON string.
+    fn structured(&self, key: &str) -> Result<Option<toml::Value>> {
+        match self.values.raw().opts.get(key) {
+            None => Ok(None),
+            Some(toml::Value::String(value)) => {
+                Ok(Some(serde_json::from_str(value).map_err(|err| {
+                    eyre!("{key} must be valid TOML or JSON: {err}")
+                })?))
+            }
+            Some(value) => Ok(Some(value.clone())),
+        }
+    }
+
+    /// Package indexes for uv (`[[tool.uv.index]]` in the tool's project).
+    fn indexes(&self) -> Result<Vec<toml::Table>> {
+        let Some(value) = self.structured("indexes")? else {
+            return Ok(Vec::new());
+        };
+        let toml::Value::Array(entries) = value else {
+            bail!("indexes must be an array of tables with name and url");
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut indexes = Vec::new();
+        for entry in entries {
+            let toml::Value::Table(entry) = entry else {
+                bail!("indexes must be an array of tables with name and url");
+            };
+            if let Some(key) = entry
+                .keys()
+                .find(|key| !matches!(key.as_str(), "name" | "url" | "explicit"))
+            {
+                bail!("indexes entries accept only name, url and explicit, not {key}");
+            }
+            let name = entry.get("name").and_then(toml::Value::as_str);
+            let Some(name) = name.filter(|name| {
+                !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            }) else {
+                bail!(
+                    "indexes entries need a name of ASCII letters, digits, dashes and underscores"
+                );
+            };
+            if !seen.insert(name.to_string()) {
+                bail!("indexes names must be unique; {name} is repeated");
+            }
+            let url = entry.get("url").and_then(toml::Value::as_str);
+            let Some(url) = url.and_then(|url| url::Url::parse(url).ok()) else {
+                bail!("index {name} needs a url");
+            };
+            if !matches!(url.scheme(), "https" | "http")
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.query().is_some()
+            {
+                bail!(
+                    "index {name} must be a credential-free http(s) url; configure authentication through uv's environment instead"
+                );
+            }
+            if entry.get("explicit").is_some_and(|v| !v.is_bool()) {
+                bail!("index {name}: explicit must be a boolean");
+            }
+            indexes.push(entry);
+        }
+        Ok(indexes)
+    }
+
+    /// The index each package is pinned to, keyed by normalized package name
+    /// and holding the name as written.
+    fn sources(&self) -> Result<BTreeMap<String, (String, String)>> {
+        let Some(value) = self.structured("sources")? else {
+            return Ok(BTreeMap::new());
+        };
+        let toml::Value::Table(entries) = value else {
+            bail!("sources must be a table of package = {{ index = \"name\" }}");
+        };
+        let indexes = self.indexes()?;
+        let mut sources = BTreeMap::new();
+        for (package, source) in entries {
+            let index = source
+                .as_table()
+                .filter(|table| table.len() == 1)
+                .and_then(|table| table.get("index"))
+                .and_then(toml::Value::as_str);
+            let Some(index) = index else {
+                bail!("source {package} must be a table with only an index name");
+            };
+            if !indexes
+                .iter()
+                .any(|entry| entry.get("name").and_then(toml::Value::as_str) == Some(index))
+            {
+                bail!("source {package} names the index {index}, which indexes does not define");
+            }
+            if sources
+                .insert(
+                    normalize_package_name(&package),
+                    (package.clone(), index.to_string()),
+                )
+                .is_some()
+            {
+                bail!("sources names {package} more than once");
+            }
+        }
+        Ok(sources)
+    }
+
+    fn has_index_options(&self) -> bool {
+        let opts = &self.values.raw().opts;
+        opts.contains_key("indexes") || opts.contains_key("sources")
+    }
+
+    /// The `[tool]` table of the tool's synthetic uv project, when indexes or
+    /// sources are configured.
+    fn uv_project_tool(&self) -> Result<Option<toml::Table>> {
+        let indexes = self.indexes()?;
+        let sources = self.sources()?;
+        if indexes.is_empty() && sources.is_empty() {
+            return Ok(None);
+        }
+        let mut uv = toml::Table::new();
+        if !indexes.is_empty() {
+            uv.insert(
+                "index".into(),
+                toml::Value::Array(indexes.into_iter().map(toml::Value::Table).collect()),
+            );
+        }
+        if !sources.is_empty() {
+            let mut table = toml::Table::new();
+            for (package, index) in sources.into_values() {
+                let mut source = toml::Table::new();
+                source.insert("index".into(), index.into());
+                table.insert(package, source.into());
+            }
+            uv.insert("sources".into(), table.into());
+        }
+        let mut tool = toml::Table::new();
+        tool.insert("uv".into(), uv.into());
+        Ok(Some(tool))
+    }
+
     fn has_uv_only_options(&self) -> Result<bool> {
         Ok(!self.with()?.is_empty()
             || !self.expose()?.is_empty()
-            || self.dependency_prereleases()?.is_some())
+            || self.dependency_prereleases()?.is_some()
+            || self.has_index_options())
     }
 
     fn validate_semantic(&self) -> Result<()> {
         self.with()?;
         self.exposed_package_names()?;
         self.dependency_prereleases()?;
+        self.indexes()?;
+        self.sources()?;
         self.registry_index_priority()?;
         if self.selected_python()?.is_some() {
             for args in [self.uvx_args(), self.pipx_args()].into_iter().flatten() {
@@ -199,8 +343,18 @@ impl<'a> PipxOptions<'a> {
                 }
             }
         }
+        if self.has_index_options()
+            && [self.uvx_args(), self.pipx_args()]
+                .into_iter()
+                .flatten()
+                .any(|args| !args.trim().is_empty())
+        {
+            bail!("indexes and sources cannot be combined with uvx_args or pipx_args");
+        }
         if self.has_uv_only_options()? && self.uvx_disabled() {
-            bail!("with, expose, and dependency_prereleases cannot be combined with uvx = false");
+            bail!(
+                "with, expose, dependency_prereleases, indexes, and sources cannot be combined with uvx = false"
+            );
         }
         Ok(())
     }
@@ -269,8 +423,16 @@ impl<'a> PipxOptions<'a> {
                 result.insert(key.to_string(), serde_json::to_string(&values)?);
             }
         }
+        for key in ["indexes", "sources"] {
+            if let Some(value) = self.structured(key)? {
+                result.insert(key.to_string(), serde_json::to_string(&value)?);
+            }
+        }
         for key in install_time_option_keys() {
-            if matches!(key.as_str(), "extras" | "with" | "expose") {
+            if matches!(
+                key.as_str(),
+                "extras" | "with" | "expose" | "indexes" | "sources"
+            ) {
                 continue;
             }
             if let Some(value) = self.values.raw().get_string(&key) {
@@ -760,9 +922,15 @@ impl Backend for PIPXBackend {
         } else {
             None
         };
+        if options.has_index_options() {
+            bail!(
+                "{} sets indexes or sources, which uv applies only through a dependency graph; run `mise lock` with uv, and do not set uvx_args or pipx_args",
+                self.ba.short
+            );
+        }
         if options.has_uv_only_options()? && uv_program.is_none() {
             bail!(
-                "{} semantic options (`with`, `expose`, and `dependency_prereleases`) require uv; install uv and ensure uvx is enabled",
+                "{} semantic options (`with`, `expose`, `dependency_prereleases`, `indexes`, and `sources`) require uv; install uv and ensure uvx is enabled",
                 self.ba.short
             );
         }
@@ -977,6 +1145,21 @@ impl Backend for PIPXBackend {
     }
 }
 
+/// PEP 503 name normalization, for comparing package names.
+pub(crate) fn normalize_package_name(name: &str) -> String {
+    let mut normalized = String::with_capacity(name.len());
+    for c in name.chars() {
+        if matches!(c, '-' | '_' | '.') {
+            if !normalized.ends_with('-') {
+                normalized.push('-');
+            }
+        } else {
+            normalized.push(c.to_ascii_lowercase());
+        }
+    }
+    normalized
+}
+
 /// The `pypi.registry_url` default: PyPI itself.
 const DEFAULT_REGISTRY_URL: &str = "https://pypi.org/pypi/{}/json";
 
@@ -987,6 +1170,8 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "with".into(),
         "expose".into(),
         "dependency_prereleases".into(),
+        "indexes".into(),
+        "sources".into(),
         "package_name".into(),
         "pipx_args".into(),
         "uvx_args".into(),

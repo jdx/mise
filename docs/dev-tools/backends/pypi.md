@@ -310,6 +310,8 @@ described under [tool options](/dev-tools/#tool-options).
 | `with`                   | uv                        |
 | `expose`                 | uv 0.8.5 or later         |
 | `dependency_prereleases` | uv                        |
+| `indexes`                | uv, dependency graph      |
+| `sources`                | uv, dependency graph      |
 | `python`                 | uv and pipx               |
 | `uvx_args`               | uv, version-only installs |
 | `uvx`                    | chooses pipx when `false` |
@@ -447,6 +449,45 @@ locking a graph and in version-only installs.
 "pypi:azure-cli" = { version = "latest", dependency_prereleases = "allow" }
 ```
 
+### `indexes` and `sources` {#indexes-and-sources}
+
+Pin individual packages to a package index, as uv's
+[`tool.uv.index`](https://docs.astral.sh/uv/concepts/indexes/#defining-an-index) and
+[`tool.uv.sources`](https://docs.astral.sh/uv/concepts/indexes/#pinning-a-package-to-an-index)
+do. `registry_url` replaces the index for the whole dependency graph; these
+options send only the named packages to a private index, so a public dependency
+is never looked up there.
+
+- `indexes` is an array of `{ name, url, explicit }` tables. Names are unique and
+  use ASCII letters, digits, dashes and underscores. `explicit = true` makes uv
+  use the index only for packages pinned to it.
+- `sources` is a table of `package = { index = "name" }`. A package must be the
+  tool itself or one of its [`with`](#with) or [`expose`](#expose) requirements,
+  and `index` must name an entry of `indexes`.
+
+```toml
+[tools."pypi:zensical"]
+version = "0.1.1"
+with = ["my-zensical-theme==1.2.3"]
+indexes = [{ name = "private", url = "https://pypi.example.com/simple/", explicit = true }]
+sources = { my-zensical-theme = { index = "private" } }
+```
+
+uv reads these from the project file of the tool's dependency graph, so they need
+uv and a graph: `mise lock` writes it, and `mise install` creates it when the
+lockfile is enabled. A tool that sets them is never installed version-only, and
+cannot be combined with `uvx = false`, `uvx_args` or `pipx_args`. Index URLs
+cannot contain credentials or a query string, because the lockfile records
+them. Provide credentials through uv's
+[environment variables](https://docs.astral.sh/uv/concepts/indexes/#providing-credentials),
+such as `UV_INDEX_PRIVATE_USERNAME` and `UV_INDEX_PRIVATE_PASSWORD` for an index
+named `private`; set them in `install_env` or the environment.
+
+mise does not read the Python requirement of a pinned `with` package from the
+registry, since that would send its name there. When the package supports a
+narrower range of Python than the tool, set [`python`](#choosing-python) so the
+graph resolves for it.
+
 ### `uvx_args`
 
 Additional arguments for `uv tool install` in version-only installs. They
@@ -484,11 +525,11 @@ import Settings from '/components/settings.vue';
 
 ## Troubleshooting
 
-| Message                                                                  | What to do                                                                                |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `<tool> has no uv dependency graph; run mise lock`                       | The lockfile has no graph for the tool. Run `mise lock`, then install again.              |
-| `semantic options (with, expose, and dependency_prereleases) require uv` | Add `uv` to `[tools]`, and make sure neither `uvx = false` nor `pypi.uvx = false` is set. |
-| `pipx is required to install <tool> but was not found`                   | Add `pipx` to `[tools]`, or `uv` unless the tool sets `uvx = false`.                      |
-| A tool stops working after a Python change                               | Reinstall it; see [Python upgrades](#python-upgrades).                                    |
+| Message                                                                                    | What to do                                                                                |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `<tool> has no uv dependency graph; run mise lock`                                         | The lockfile has no graph for the tool. Run `mise lock`, then install again.              |
+| `semantic options (with, expose, dependency_prereleases, indexes, and sources) require uv` | Add `uv` to `[tools]`, and make sure neither `uvx = false` nor `pypi.uvx = false` is set. |
+| `pipx is required to install <tool> but was not found`                                     | Add `pipx` to `[tools]`, or `uv` unless the tool sets `uvx = false`.                      |
+| A tool stops working after a Python change                                                 | Reinstall it; see [Python upgrades](#python-upgrades).                                    |
 
 Implementation: [`src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
