@@ -180,16 +180,78 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
         ),
         (
             AssetLibc::Gnu,
-            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc|manylinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:gnu(?:eabi(?:hf)?)?|glibc|manylinux(?:[0-9_]+)?)(?:\b|_)")
+                .unwrap(),
         ),
         (
             AssetLibc::Musl,
-            Regex::new(r"(?i)(?:\b|_)(?:musl|musllinux(?:[0-9_]+)?)(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:musl(?:eabi(?:hf)?)?|musllinux(?:[0-9_]+)?)(?:\b|_)")
+                .unwrap(),
         ),
     ]
 });
 
+/// `asset` with the tool's own name stripped from the front, when it starts with it as
+/// a whole token, so platform tokens inside the tool name are not read as the asset's.
+fn strip_tool_name<'a>(asset: &'a str, tool_name: Option<&str>) -> &'a str {
+    let Some(tool_name) = tool_name.filter(|name| !name.is_empty()) else {
+        return asset;
+    };
+    let Some(prefix) = asset.get(..tool_name.len()) else {
+        return asset;
+    };
+    if !prefix.eq_ignore_ascii_case(tool_name) {
+        return asset;
+    }
+    let rest = &asset[tool_name.len()..];
+    // Only strip when the tool name is a complete leading token, i.e. it ends
+    // at a separator or version boundary. Otherwise the prefix would cut
+    // through a longer first token (e.g. tool name "win" inside
+    // "windows-...") and corrupt detection. Mirrors the boundary handling in
+    // asset_matches_preferred_name.
+    match rest.chars().next() {
+        None => rest,
+        Some(c) if c == '-' || c == '_' || c == '.' || c.is_ascii_digit() => rest,
+        _ => asset,
+    }
+}
+
+/// The Linux libc an asset name declares, as `"gnu"` or `"musl"`, if it names one.
+/// A libc token in the leading `tool_name` does not count.
+pub(crate) fn linux_libc_named_by(asset: &str, tool_name: &str) -> Option<&'static str> {
+    let asset = strip_tool_name(asset, Some(tool_name));
+    LIBC_PATTERNS
+        .iter()
+        .find(|(_, pattern)| pattern.is_match(asset))
+        .and_then(|(libc, _)| match libc {
+            AssetLibc::Gnu => Some("gnu"),
+            AssetLibc::Musl => Some("musl"),
+            AssetLibc::Msvc => None,
+        })
+}
+
 // ========== AssetPicker (from asset_detector) ==========
+
+/// The libc qualifier to match a target's assets against when the tool's `libc` option is
+/// `tool_libc`, and whether the option chose it (which makes the choice strict).
+///
+/// A libc the target platform names wins, as it does for aqua: a lockfile entry is keyed
+/// by the platform, so `libc = "glibc"` must not put a gnu build under `linux-x64-musl`,
+/// and a musl host (Alpine, or `libc = "musl"` in settings) stays musl. The option only
+/// applies to Linux.
+pub(crate) fn tool_target_libc(
+    target: &PlatformTarget,
+    tool_libc: Option<&str>,
+) -> (Option<String>, bool) {
+    let qualifier = target.qualifier().map(str::to_string);
+    match (tool_libc, target.libc()) {
+        (Some(libc), None) if target.os_name() == "linux" => (Some(libc.to_string()), true),
+        (Some(libc), Some(platform)) if target.os_name() == "linux" => {
+            (qualifier, platform == libc)
+        }
+        _ => (qualifier, false),
+    }
+}
 
 /// Automatically detects the best asset for the current platform
 pub(crate) struct AssetPicker {
@@ -208,6 +270,9 @@ pub(crate) struct AssetPicker {
     /// regex validity a local property of the picker rather than something that
     /// depends on call ordering between binary and provenance selection.
     matching_regex: Option<Result<Regex, String>>,
+    /// Refuse assets named for a libc other than `target_libc`, set when the tool's
+    /// `libc` option chose it.
+    strict_libc: bool,
 }
 
 impl AssetPicker {
@@ -233,7 +298,15 @@ impl AssetPicker {
             preferred_name: None,
             matching: None,
             matching_regex: None,
+            strict_libc: false,
         }
+    }
+
+    /// Refuse assets named for a libc other than the target's, instead of only
+    /// scoring them lower.
+    pub(crate) fn with_strict_libc(mut self, strict_libc: bool) -> Self {
+        self.strict_libc = strict_libc;
+        self
     }
 
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
@@ -346,6 +419,7 @@ impl AssetPicker {
             .filter(|(score, asset)| {
                 *score > 0
                     && !self.has_arch_mismatch(asset)
+                    && self.fits_strict_libc(asset)
                     && !is_non_executable_asset(asset)
                     && !is_metadata_asset(asset)
             })
@@ -421,11 +495,16 @@ impl AssetPicker {
             }
         };
 
-        // Score by platform match only (no format/build penalties)
+        // Score by platform match only (no format/build penalties). On Linux the libc counts
+        // too, so a musl build gets the musl provenance; one that names no libc scores 0 and
+        // still serves as the shared fallback.
         let mut scored: Vec<(i32, &String)> = candidates
             .into_iter()
             .map(|asset| {
-                let score = self.score_os_match(asset) + self.score_arch_match(asset);
+                let mut score = self.score_os_match(asset) + self.score_arch_match(asset);
+                if self.target_os == "linux" {
+                    score += self.score_libc_match(asset);
+                }
                 (score, asset)
             })
             .collect();
@@ -465,26 +544,7 @@ impl AssetPicker {
     /// as the asset's platform. Falls back to the full asset when no preferred
     /// name is set or the asset does not start with it.
     fn platform_part<'a>(&self, asset: &'a str) -> &'a str {
-        let Some(preferred_name) = self.preferred_name.as_deref() else {
-            return asset;
-        };
-        let Some(prefix) = asset.get(..preferred_name.len()) else {
-            return asset;
-        };
-        if !prefix.eq_ignore_ascii_case(preferred_name) {
-            return asset;
-        }
-        let rest = &asset[preferred_name.len()..];
-        // Only strip when the tool name is a complete leading token, i.e. it ends
-        // at a separator or version boundary. Otherwise the prefix would cut
-        // through a longer first token (e.g. preferred_name "win" inside
-        // "windows-...") and corrupt detection. Mirrors the boundary handling in
-        // asset_matches_preferred_name.
-        match rest.chars().next() {
-            None => rest,
-            Some(c) if c == '-' || c == '_' || c == '.' || c.is_ascii_digit() => rest,
-            _ => asset,
-        }
+        strip_tool_name(asset, self.preferred_name.as_deref())
     }
 
     fn score_os_match(&self, asset: &str) -> i32 {
@@ -548,6 +608,15 @@ impl AssetPicker {
 
     fn has_arch_mismatch(&self, asset: &str) -> bool {
         self.score_arch_match(asset) < 0
+    }
+
+    fn has_libc_mismatch(&self, asset: &str) -> bool {
+        self.target_os == "linux" && self.score_libc_match(asset) < 0
+    }
+
+    /// Whether `asset` may be picked when the tool's `libc` option made the libc strict.
+    fn fits_strict_libc(&self, asset: &str) -> bool {
+        !self.strict_libc || !self.has_libc_mismatch(asset)
     }
 
     fn score_libc_match(&self, asset: &str) -> i32 {
@@ -985,6 +1054,8 @@ pub(crate) struct AssetMatcher {
     matching: Option<String>,
     /// Regex an asset name must match (ubi's `matching_regex`)
     matching_regex: Option<String>,
+    /// Whether the tool's `libc` option chose `target_libc`
+    strict_libc: bool,
 }
 
 impl AssetMatcher {
@@ -998,6 +1069,18 @@ impl AssetMatcher {
         self.target_os = Some(target.os_name().to_string());
         self.target_arch = Some(target.arch_name().to_string());
         self.target_libc = target.qualifier().map(|s| s.to_string());
+        self
+    }
+
+    /// Configure for a target platform, with the tool's `libc` option applied (see
+    /// [`tool_target_libc`]).
+    pub(crate) fn for_tool_target(
+        mut self,
+        target: &PlatformTarget,
+        tool_libc: Option<&str>,
+    ) -> Self {
+        self = self.for_target(target);
+        (self.target_libc, self.strict_libc) = tool_target_libc(target, tool_libc);
         self
     }
 
@@ -1085,6 +1168,7 @@ impl AssetMatcher {
         Some(
             AssetPicker::with_libc(os.clone(), arch.clone(), self.target_libc.clone())
                 .with_no_app(self.no_app)
+                .with_strict_libc(self.strict_libc)
                 .with_preferred_name(self.preferred_name.clone().unwrap_or_default())
                 .with_matching(self.matching.clone().unwrap_or_default())
                 .with_matching_regex(self.matching_regex.clone().unwrap_or_default()),
@@ -1125,10 +1209,15 @@ impl AssetMatcher {
             } else {
                 format!("\nNote: filtered by {}", active_filters.join(", "))
             };
+            let libc_note = match (&self.target_libc, self.strict_libc) {
+                (Some(libc), true) => format!("-{libc} (set by the tool's `libc` option)"),
+                _ => String::new(),
+            };
             let message = format!(
-                "No matching asset found for platform {}-{}{}\nAvailable assets:\n{}",
+                "No matching asset found for platform {}-{}{}{}\nAvailable assets:\n{}",
                 os,
                 arch,
+                libc_note,
                 filter_note,
                 assets.join("\n")
             );
@@ -3465,5 +3554,131 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert_eq!(asset_pattern_hint("tool-[0-9]*.zip"), "");
         // `.*` is a valid glob suffix, not a regex signal.
         assert_eq!(asset_pattern_hint("tool-linux-x64.*"), "");
+    }
+
+    #[test]
+    fn test_tool_libc_option_chooses_the_linux_asset() {
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        assert_eq!(
+            tool_target_libc(&target("linux-x64"), Some("musl")),
+            (Some("musl".to_string()), true)
+        );
+        assert_eq!(tool_target_libc(&target("linux-x64"), None), (None, false));
+        // A musl platform stays musl, and the option is Linux-only.
+        assert_eq!(
+            tool_target_libc(&target("linux-x64-musl"), Some("gnu")),
+            (Some("musl".to_string()), false)
+        );
+        assert_eq!(
+            tool_target_libc(&target("linux-x64-musl"), Some("musl")),
+            (Some("musl".to_string()), true)
+        );
+        assert_eq!(
+            tool_target_libc(&target("macos-arm64"), Some("musl")),
+            (None, false)
+        );
+
+        let both = vec![
+            "fnox-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "fnox-x86_64-unknown-linux-musl.tar.gz".to_string(),
+            "fnox-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+        let pick = |tool_libc: Option<&str>, assets: &[String]| {
+            AssetMatcher::new()
+                .for_tool_target(&target("linux-x64"), tool_libc)
+                .pick_from(assets)
+                .map(|m| m.name)
+        };
+        assert_eq!(
+            pick(None, &both).unwrap(),
+            "fnox-x86_64-unknown-linux-gnu.tar.gz"
+        );
+        assert_eq!(
+            pick(Some("musl"), &both).unwrap(),
+            "fnox-x86_64-unknown-linux-musl.tar.gz"
+        );
+        // A release with only the other libc's build is refused, not installed.
+        let gnu_only = vec!["fnox-x86_64-unknown-linux-gnu.tar.gz".to_string()];
+        let err = pick(Some("musl"), &gnu_only).unwrap_err();
+        assert!(err.to_string().contains("`libc` option"), "{err}");
+        // An asset that names no libc still fits.
+        let plain = vec!["fnox-linux-x86_64.tar.gz".to_string()];
+        assert_eq!(
+            pick(Some("gnu"), &plain).unwrap(),
+            "fnox-linux-x86_64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_libc_named_by_skips_the_tool_name() {
+        assert_eq!(
+            linux_libc_named_by("gnu-tool-linux-x64-musl.tar.gz", "gnu-tool"),
+            Some("musl")
+        );
+        assert_eq!(
+            linux_libc_named_by("gnu-tool-linux-x64.tar.gz", "gnu-tool"),
+            None
+        );
+        assert_eq!(
+            linux_libc_named_by("musl-tool-linux-x64-gnu.tar.gz", "MUSL-tool"),
+            Some("gnu")
+        );
+        // A name that only starts with the tool name inside a longer token is not stripped.
+        assert_eq!(linux_libc_named_by("gnutls-linux-x64.tar.gz", "gnu"), None);
+        assert_eq!(
+            linux_libc_named_by("tool-linux-x64-musl.tar.gz", ""),
+            Some("musl")
+        );
+    }
+
+    #[test]
+    fn test_tool_libc_option_reads_arm_eabi_suffixes() {
+        let strict = |libc: &str, asset: &str| {
+            AssetPicker::with_libc("linux".into(), "arm".into(), Some(libc.into()))
+                .with_strict_libc(true)
+                .pick_best_asset(&[asset.to_string()])
+        };
+        for gnu in [
+            "tool-armv7-unknown-linux-gnueabihf.tar.gz",
+            "tool-arm-unknown-linux-gnueabi.tar.gz",
+        ] {
+            assert_eq!(strict("musl", gnu), None, "{gnu}");
+            assert_eq!(strict("gnu", gnu).as_deref(), Some(gnu));
+        }
+        for musl in [
+            "tool-armv7-unknown-linux-musleabihf.tar.gz",
+            "tool-arm-unknown-linux-musleabi.tar.gz",
+        ] {
+            assert_eq!(strict("gnu", musl), None, "{musl}");
+            assert_eq!(strict("musl", musl).as_deref(), Some(musl));
+        }
+    }
+
+    #[test]
+    fn test_tool_libc_option_ranks_provenance_by_libc() {
+        let gnu = "tool-x86_64-unknown-linux-gnu.intoto.jsonl".to_string();
+        let musl = "tool-x86_64-unknown-linux-musl.intoto.jsonl".to_string();
+        let picker =
+            |libc: &str| AssetPicker::with_libc("linux".into(), "x86_64".into(), Some(libc.into()));
+        for assets in [
+            vec![gnu.clone(), musl.clone()],
+            vec![musl.clone(), gnu.clone()],
+        ] {
+            assert_eq!(
+                picker("musl").pick_best_provenance(&assets),
+                Some(musl.clone())
+            );
+            assert_eq!(
+                picker("gnu").pick_best_provenance(&assets),
+                Some(gnu.clone())
+            );
+        }
+        // A shared provenance file that names no libc is still picked.
+        let shared = vec!["multiple.intoto.jsonl".to_string()];
+        assert_eq!(
+            picker("musl").pick_best_provenance(&shared),
+            Some("multiple.intoto.jsonl".to_string())
+        );
     }
 }

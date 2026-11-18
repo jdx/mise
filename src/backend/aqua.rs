@@ -82,19 +82,9 @@ impl<'a> AquaOptions<'a> {
         self.values.bool("symlink_bins")
     }
 
-    /// The per-tool `libc` option, normalized to `gnu` or `musl`. It makes Linux asset
-    /// selection strict for this tool, like the `libc` setting does for every tool.
+    /// The per-tool `libc` option, normalized to `gnu` or `musl`.
     fn libc(&self) -> Result<Option<&'static str>> {
-        let Some(value) = self.values.raw().opts.get("libc") else {
-            return Ok(None);
-        };
-        match value.as_str() {
-            Some("gnu" | "glibc") => Ok(Some("gnu")),
-            Some("musl") => Ok(Some("musl")),
-            _ => bail!(
-                "invalid aqua `libc` option {value}: expected \"glibc\", \"gnu\", or \"musl\""
-            ),
-        }
+        self.values.libc("aqua")
     }
 
     /// The per-tool `slsa_signer_identity` and `slsa_signer_issuer` options. They supply the

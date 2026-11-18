@@ -89,6 +89,16 @@ impl<'a> GitBackendOptions<'a> {
         }
     }
 
+    /// The per-tool `libc` option, normalized to `gnu` or `musl`.
+    fn libc(&self) -> Result<Option<&'static str>> {
+        let backend = match self.default_api_url {
+            DEFAULT_GITLAB_API_BASE_URL => "gitlab",
+            DEFAULT_FORGEJO_API_BASE_URL => "forgejo",
+            _ => "github",
+        };
+        self.values.libc(backend)
+    }
+
     fn raw(&self) -> &'a ToolVersionOptions {
         self.values.raw()
     }
@@ -317,6 +327,34 @@ impl<'a> GitBackendOptions<'a> {
         }
     }
 
+    /// The libc a provenance picker matches for `target`, so the provenance follows
+    /// the archive that was picked. A Linux archive that names its libc decides, however
+    /// it was chosen. Otherwise the `libc` option applies, unless `asset_pattern`, a
+    /// direct `url` or an explicit URL chose the archive without it.
+    fn libc_for_provenance(
+        &self,
+        target: &PlatformTarget,
+        explicit_pattern: bool,
+        asset_name: &str,
+        tool_name: &str,
+    ) -> Result<Option<String>> {
+        let tool_libc = self.libc()?;
+        if target.os_name() == "linux"
+            && let Some(libc) = asset_matcher::linux_libc_named_by(asset_name, tool_name)
+        {
+            return Ok(Some(libc.to_string()));
+        }
+        let picked_without_option = explicit_pattern
+            || self.asset_pattern_for_target(target).is_some()
+            || self.direct_url_for_target(target).is_some();
+        let tool_libc = if picked_without_option {
+            None
+        } else {
+            tool_libc
+        };
+        Ok(asset_matcher::tool_target_libc(target, tool_libc).0)
+    }
+
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
         if self.api_url() != self.default_api_url {
@@ -349,6 +387,10 @@ impl<'a> GitBackendOptions<'a> {
         }
         if let Some(value) = self.matching_regex() {
             result.insert("matching_regex".to_string(), value.to_string());
+        }
+        // `resolve_lockfile_options` rejects an invalid value before this runs.
+        if let Ok(Some(libc)) = self.libc() {
+            result.insert("libc".to_string(), libc.to_string());
         }
         result
     }
@@ -579,6 +621,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "bin".into(),
         "rename_exe".into(),
         "bin_path".into(),
+        "libc".into(),
     ]
 }
 
@@ -1111,6 +1154,8 @@ impl Backend for UnifiedGitBackend {
         {
             asset_matcher::validate_matching_regex(opts.matching_regex())?;
         }
+        // A locked URL below skips asset selection, where an invalid `libc` would fail.
+        opts.libc()?;
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
@@ -1230,7 +1275,11 @@ impl Backend for UnifiedGitBackend {
         target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
-        Ok(self.options(&raw_opts).lockfile_options(target))
+        let opts = self.options(&raw_opts);
+        // Fail here rather than drop the option: an entry locked without `libc` would
+        // otherwise still match, and the install would reuse its URL.
+        opts.libc()?;
+        Ok(opts.lockfile_options(target))
     }
 
     /// Resolve platform-specific lock information for cross-platform lockfile generation.
@@ -1669,8 +1718,14 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                target.qualifier().map(|s| s.to_string()),
+                opts.libc_for_provenance(
+                    target,
+                    explicit_pattern,
+                    &asset.name,
+                    &self.preferred_asset_name(),
+                )?,
             )
+            .with_preferred_name(self.preferred_asset_name())
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
             if let Some(provenance_name) = pick_slsa_provenance(&picker, &asset_names, &asset.name)
@@ -1803,8 +1858,14 @@ impl UnifiedGitBackend {
             let picker = AssetPicker::with_libc(
                 target.os_name().to_string(),
                 target.arch_name().to_string(),
-                target.qualifier().map(|s| s.to_string()),
+                opts.libc_for_provenance(
+                    target,
+                    verification.explicit_pattern,
+                    &asset.name,
+                    &self.preferred_asset_name(),
+                )?,
             )
+            .with_preferred_name(self.preferred_asset_name())
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
 
@@ -2535,7 +2596,7 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
-            .for_target(target)
+            .for_tool_target(target, opts.libc()?)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
             .with_matching(opts.matching().unwrap_or_default())
@@ -2640,7 +2701,7 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
-            .for_target(target)
+            .for_tool_target(target, opts.libc()?)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
             .with_matching(opts.matching().unwrap_or_default())
@@ -2747,7 +2808,7 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection for target platform
         let asset_name = asset_matcher::AssetMatcher::new()
-            .for_target(target)
+            .for_tool_target(target, opts.libc()?)
             .with_no_app(opts.no_app_for_target(target))
             .with_preferred_name(self.preferred_asset_name())
             .with_matching(opts.matching().unwrap_or_default())
@@ -3375,8 +3436,15 @@ impl UnifiedGitBackend {
         let picker = AssetPicker::with_libc(
             current_platform.os_name().to_string(),
             current_platform.arch_name().to_string(),
-            current_platform.qualifier().map(|s| s.to_string()),
+            opts.libc_for_provenance(
+                &current_platform,
+                verification.explicit_pattern,
+                asset_name,
+                &self.preferred_asset_name(),
+            )
+            .map_err(|e| VerificationStatus::Error(e.to_string()))?,
         )
+        .with_preferred_name(self.preferred_asset_name())
         .with_matching(matching.unwrap_or_default())
         .with_matching_regex(matching_regex.unwrap_or_default());
 
@@ -4441,6 +4509,29 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         );
     }
 
+    /// A libc token in the tool's own name must not rank the provenance files, in either
+    /// listing order, when no sidecar is named after the archive.
+    #[test]
+    fn test_slsa_provenance_ignores_libc_in_the_tool_name() {
+        let picker = AssetPicker::with_libc(
+            "linux".to_string(),
+            "x86_64".to_string(),
+            Some("musl".to_string()),
+        )
+        .with_preferred_name("gnu-tool");
+        let gnu = "gnu-tool-linux-x64-gnu.intoto.jsonl".to_string();
+        let musl = "gnu-tool-linux-x64-musl.intoto.jsonl".to_string();
+        for assets in [
+            vec![gnu.clone(), musl.clone()],
+            vec![musl.clone(), gnu.clone()],
+        ] {
+            assert_eq!(
+                pick_slsa_provenance(&picker, &assets, "gnu-tool-linux-x64-musl.tar.gz").as_deref(),
+                Some(musl.as_str())
+            );
+        }
+    }
+
     /// An artifact whose name looks like provenance must not be offered as its own
     /// provenance: downloading it a second time would replace the verified file.
     #[test]
@@ -4940,6 +5031,146 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_libc_option_is_validated_and_locked() {
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let libc_opts = |value: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert("libc".to_string(), toml::Value::String(value.to_string()));
+            opts
+        };
+        let backend = create_test_backend();
+        let glibc = libc_opts("glibc");
+        assert_eq!(backend.options(&glibc).libc().unwrap(), Some("gnu"));
+        assert_eq!(
+            backend.options(&glibc).lockfile_options(&linux).get("libc"),
+            Some(&"gnu".to_string())
+        );
+        let musl = libc_opts("musl");
+        assert_eq!(
+            backend.options(&musl).lockfile_options(&linux).get("libc"),
+            Some(&"musl".to_string())
+        );
+        let unset = ToolVersionOptions::default();
+        assert!(
+            !backend
+                .options(&unset)
+                .lockfile_options(&linux)
+                .contains_key("libc")
+        );
+
+        let bad = libc_opts("uclibc");
+        let err = backend.options(&bad).libc().unwrap_err();
+        assert!(
+            err.to_string().contains("invalid github `libc` option"),
+            "{err}"
+        );
+        let gitlab = UnifiedGitBackend::from_arg(BackendArg::from("gitlab:o/r"));
+        let err = gitlab.options(&bad).libc().unwrap_err();
+        assert!(
+            err.to_string().contains("invalid gitlab `libc` option"),
+            "{err}"
+        );
+        // Locking fails rather than dropping the option, so an older entry without it
+        // cannot match and hand the install its URL.
+        let mut request = ToolRequest::new(
+            backend.ba().clone(),
+            "1.0.0",
+            crate::toolset::ToolSource::Unknown,
+        )
+        .unwrap();
+        request.set_options(bad.clone());
+        let err = backend
+            .resolve_lockfile_options(&request, &linux)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("invalid github `libc` option"),
+            "{err}"
+        );
+        assert!(
+            !backend
+                .options(&bad)
+                .lockfile_options(&linux)
+                .contains_key("libc")
+        );
+
+        // Provenance follows the libc the picked archive names. When it names none, the
+        // tool's libc applies, except when `asset_pattern` or a `url` picked the binary.
+        let provenance_libc = |opts: &ToolVersionOptions, explicit: bool, asset: &str| {
+            backend
+                .options(opts)
+                .libc_for_provenance(&linux, explicit, asset, &backend.preferred_asset_name())
+                .unwrap()
+        };
+        assert_eq!(
+            provenance_libc(&musl, false, "tool-linux-musl.tar.gz").as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            provenance_libc(&musl, true, "tool-linux-gnu.tar.gz").as_deref(),
+            Some("gnu")
+        );
+        assert_eq!(provenance_libc(&musl, true, "tool-linux.tar.gz"), None);
+        assert_eq!(
+            provenance_libc(&musl, false, "tool-linux.tar.gz").as_deref(),
+            Some("musl")
+        );
+        // A direct platform `url` to a musl archive on a glibc host, with no sidecar named after
+        // it: the musl provenance still outranks the gnu one.
+        let mut direct = ToolVersionOptions::default();
+        direct.opts.insert(
+            "platform_linux_x64_url".to_string(),
+            toml::Value::String("https://example.com/tool-linux-musl.tar.gz".to_string()),
+        );
+        let libc = provenance_libc(&direct, false, "tool-linux-musl.tar.gz");
+        assert_eq!(libc.as_deref(), Some("musl"));
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), libc);
+        let assets = vec![
+            "tool-linux-gnu.intoto.jsonl".to_string(),
+            "tool-linux-musl.intoto.jsonl".to_string(),
+        ];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-musl.tar.gz").as_deref(),
+            Some("tool-linux-musl.intoto.jsonl")
+        );
+        let mut direct_plain = libc_opts("musl");
+        direct_plain.opts.insert(
+            "platform_linux_x64_url".to_string(),
+            toml::Value::String("https://example.com/tool.tar.gz".to_string()),
+        );
+        assert_eq!(provenance_libc(&direct_plain, false, "tool.tar.gz"), None);
+        let mut patterned = libc_opts("musl");
+        patterned.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-linux-gnu.tar.gz".to_string()),
+        );
+        assert_eq!(
+            provenance_libc(&patterned, false, "tool-linux-gnu.tar.gz").as_deref(),
+            Some("gnu")
+        );
+        // Without the option, an `asset_pattern` that picks the musl archive on a glibc
+        // host ranks the musl provenance first.
+        let mut musl_pattern = ToolVersionOptions::default();
+        musl_pattern.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-linux-musl.tar.gz".to_string()),
+        );
+        let libc = provenance_libc(&musl_pattern, false, "tool-linux-musl.tar.gz");
+        assert_eq!(libc.as_deref(), Some("musl"));
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), libc);
+        let assets = vec![
+            "tool-linux-gnu.tar.gz".to_string(),
+            "tool-linux-gnu.tar.gz.intoto.jsonl".to_string(),
+            "tool-linux-musl.tar.gz".to_string(),
+            "tool-linux-musl.tar.gz.intoto.jsonl".to_string(),
+        ];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-musl.tar.gz").as_deref(),
+            Some("tool-linux-musl.tar.gz.intoto.jsonl")
+        );
     }
 
     #[test]

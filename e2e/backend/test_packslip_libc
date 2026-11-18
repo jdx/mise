@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# fnox ships both a gnu and a musl build for Linux. Without `libc`, mise picks the gnu
+# build on an unqualified Linux platform; with `libc = "musl"`, it picks the musl build
+# through packslip (the registry's backend) and through github.
+export MISE_LOCKFILE=1
+export MISE_MINIMUM_RELEASE_AGE=0
+
+RELEASE_URL="https://github.com/jdx/fnox/releases/download/v1.48.0"
+
+# packslip, default: the gnu build
+cat <<'EOF_MISE' >mise.toml
+[tools]
+fnox = "1.48.0"
+EOF_MISE
+touch mise.lock
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" "fnox-x86_64-unknown-linux-gnu.tar.gz"
+assert_not_contains "cat mise.lock" "unknown-linux-musl"
+
+# packslip, libc = "musl": the musl build, and the option is locked
+cat <<'EOF_MISE' >mise.toml
+[tools]
+fnox = { version = "1.48.0", libc = "musl" }
+EOF_MISE
+rm -f mise.lock
+touch mise.lock
+mise lock --platform linux-x64,linux-arm64
+assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/fnox"'
+assert_contains "cat mise.lock" 'libc = "musl"'
+assert_contains "cat mise.lock" "fnox-x86_64-unknown-linux-musl.tar.gz"
+assert_contains "cat mise.lock" "fnox-aarch64-unknown-linux-musl.tar.gz"
+assert_not_contains "cat mise.lock" "unknown-linux-gnu"
+
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  mise install --force fnox
+  assert_contains "cat $MISE_DATA_DIR/installs/fnox/1.48.0/.mise-packslip-artifact" "fnox-x86_64-unknown-linux-musl.tar.gz"
+  assert_contains "mise x -- fnox --version" "1.48.0"
+fi
+
+# github, default: the gnu build
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"github:jdx/fnox" = "1.48.0"
+EOF_MISE
+rm -f mise.lock
+touch mise.lock
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" "url = \"$RELEASE_URL/fnox-x86_64-unknown-linux-gnu.tar.gz\""
+assert_not_contains "cat mise.lock" "unknown-linux-musl"
+
+# github, libc = "musl": the musl build, and the option is locked
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"github:jdx/fnox" = { version = "1.48.0", libc = "musl" }
+EOF_MISE
+rm -f mise.lock
+touch mise.lock
+mise lock --platform linux-x64,linux-arm64
+assert_contains "cat mise.lock" 'libc = "musl"'
+assert_contains "cat mise.lock" "url = \"$RELEASE_URL/fnox-x86_64-unknown-linux-musl.tar.gz\""
+assert_contains "cat mise.lock" "url = \"$RELEASE_URL/fnox-aarch64-unknown-linux-musl.tar.gz\""
+assert_not_contains "cat mise.lock" "unknown-linux-gnu"
+
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  mise install --force github:jdx/fnox
+  assert_contains "mise x -- fnox --version" "1.48.0"
+fi
+
+# An invalid value is refused. `mise lock` in merge mode skips a tool it cannot resolve,
+# so the install shows the error.
+# schema: invalid
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"github:jdx/fnox" = { version = "1.48.0", libc = "uclibc" }
+EOF_MISE
+rm -f mise.lock
+touch mise.lock
+assert_fail "mise install --force github:jdx/fnox" "invalid github"
