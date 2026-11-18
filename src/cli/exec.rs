@@ -578,8 +578,12 @@ impl Exec {
         // parse_command synthesized `shell + [flags.., body]`. A positional
         // command must not be reinterpreted as a shell body.
         // `_.path` directories the caller's PATH may already hold. They stay ahead of
-        // the tool bins when `exec_program` resolves the program.
-        let configured_paths = config.path_dirs().await?.clone();
+        // inherited directories when `exec_program` resolves the program.
+        let mut configured_paths = config.path_dirs().await?.clone();
+        // Tool bins too: the caller's PATH may hold one without mise's activation state (a
+        // scrubbed child of an activated shell), and it must still beat another tool's bundled
+        // binary, such as the npm tool over Node's npm.
+        configured_paths.extend(ts.list_paths(&config).await);
         exec_program(
             program,
             args,
@@ -778,8 +782,8 @@ pub(crate) struct ExecExtras<'a> {
     /// Variable names to take back out of mise's own environment when the exec fails.
     pub scrub_on_failure: &'a [String],
     /// `_.path` directories from the config (not the `position = "append"` ones, which rank with the
-    /// tool paths). The caller's PATH may already hold them, but they
-    /// still rank as mise-added when the program is resolved.
+    /// tool paths) and the toolset's bin directories. The caller's PATH may already hold them, but
+    /// they still rank as mise-added when the program is resolved.
     pub configured_paths: &'a [std::path::PathBuf],
 }
 
