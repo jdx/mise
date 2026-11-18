@@ -3592,11 +3592,12 @@ fn simulate_dotfiles_dry_run(
             continue;
         }
         if file.mode == FileMode::Template {
-            config_files.shift_remove(&file.target);
+            // the template is not rendered, so the file it last produced is the
+            // best prediction: keeping it previews the entries it declares
             unavailable_bodies.insert(file.target.clone());
             debug!(
-                "bootstrap: template config target {} skipped in dry-run config simulation \
-                 because template rendering may execute commands",
+                "bootstrap: template config target {} not rendered in dry-run config \
+                 simulation because template rendering may execute commands",
                 file.target.display()
             );
             continue;
