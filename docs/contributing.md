@@ -517,9 +517,9 @@ first; when only Markdown pages changed,
 ## Pull request titles and descriptions {#pull-request-titles-and-descriptions}
 
 PR titles follow [Conventional Commits](https://www.conventionalcommits.org/).
-The `conventional-commits` workflow checks the title when a PR is opened,
-edited, reopened, or updated. PRs are squash-merged, so CI does not check
-intermediate commit messages, though they should use the same format.
+CI does not check the title, so follow the format yourself. PRs are squash-merged,
+so intermediate commit messages are not checked either, though they should use
+the same format.
 
 ```text
 <type>[(scope)][!]: <description>
