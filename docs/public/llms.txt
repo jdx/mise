@@ -128,6 +128,7 @@
 - [dnf](https://mise.jdx.dev/bootstrap/packages/dnf.html): The dnf manager installs packages on Fedora, RHEL, CentOS Stream, Rocky Linux, AlmaLinux, and other distributions that use dnf. It uses sudo when mise is not running as root.
 - [flatpak](https://mise.jdx.dev/bootstrap/packages/flatpak.html): The flatpak manager installs Flatpak apps and runtimes into the system-wide installation, and flatpak-user installs them for the current user. Both use the flatpak command.
 - [macos-app](https://mise.jdx.dev/bootstrap/packages/macos-app.html): The macos-app manager installs an app bundle from a download you declare, for a vendor or internal app that has no Homebrew cask.
+- [macports](https://mise.jdx.dev/bootstrap/packages/macports.html): The macports manager installs and removes MacPorts ports on macOS with port. It uses sudo when mise is not running as root.
 - [mas](https://mise.jdx.dev/bootstrap/packages/mas.html): The mas manager installs Mac App Store apps with the mas command. Each package name is the app's numeric App Store ID, such as 497799835 for Xcode.
 - [nix](https://mise.jdx.dev/bootstrap/packages/nix.html): The nix manager installs packages into your user's Nix profile with nix profile install. It works on Linux and macOS, on NixOS or not.
 - [pacman](https://mise.jdx.dev/bootstrap/packages/pacman.html): The pacman manager installs and removes packages on Arch Linux, Manjaro, EndeavourOS, and other Arch-based distributions. It uses sudo when mise is not running as root. For AUR packages, use aur.

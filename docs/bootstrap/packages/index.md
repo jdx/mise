@@ -75,6 +75,7 @@ prerequisites, package names, and the commands mise runs.
 | [`flatpak`](/bootstrap/packages/flatpak.html)               | Linux with `flatpak`; system-wide installation    | No                                                  | No                 | No                                        |
 | [`flatpak-user`](/bootstrap/packages/flatpak.html)          | Linux with `flatpak`; per-user installation       | No                                                  | No                 | No                                        |
 | [`macos-app`](/bootstrap/packages/macos-app.html)           | macOS                                             | Required                                            | No                 | No                                        |
+| [`macports`](/bootstrap/packages/macports.html)             | macOS with MacPorts                               | No                                                  | Yes                | No                                        |
 | [`mas`](/bootstrap/packages/mas.html)                       | macOS with `mas` from mise `[tools]` or on `PATH` | No                                                  | No                 | No                                        |
 | [`nix`](/bootstrap/packages/nix.html)                       | Linux and macOS with `nix` on `PATH`              | No; pin the flake source instead                    | No                 | No; can export to NixOS                   |
 | [`pacman`](/bootstrap/packages/pacman.html)                 | Arch-based Linux                                  | No                                                  | Yes                | No                                        |
@@ -142,18 +143,18 @@ to change the order; the list names the only managers an unprefixed key may use.
 
 ### Entry options
 
-| Key                         | Managers                    | Meaning                                                                                                                                                                                                                            |
-| --------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`                   | All                         | `"latest"` (the default) or a [version pin](#version-pins) in the manager's own format.                                                                                                                                            |
-| `os`                        | All                         | Install only on these operating systems; see [By operating system](#by-operating-system).                                                                                                                                          |
-| `env`                       | All                         | Install only when one of these [config environments](/configuration/environments.html) is active; see [By config environment](#by-config-environment).                                                                             |
-| `names`                     | Unprefixed keys             | Package name per manager, such as `{ apt = "libssl-dev" }`; see [Unprefixed packages](#unprefixed-packages).                                                                                                                       |
-| `state`                     | pacman, scoop, snap, zypper | `"present"` (the default) or `"absent"`; see [Remove packages](#remove-a-package-declaratively).                                                                                                                                   |
-| `adopt`                     | brew-cask, macos-app        | Take over an identical app that is already installed instead of replacing it; see [brew-cask](/bootstrap/packages/brew-cask.html#adopt-an-existing-app) and [macos-app](/bootstrap/packages/macos-app.html#adopt-an-existing-app). |
-| `appdir`                    | brew-cask                   | Application directory for this cask; see [Application directory](/bootstrap/packages/brew-cask.html#overriding-the-application-directory).                                                                                         |
-| `url`, `sha256`, `artifact` | macos-app                   | The download to install; see [Declare a download](/bootstrap/packages/macos-app.html#declare-a-download).                                                                                                                          |
-| `channel`                   | snap                        | Channel to install from and track, such as `"22/stable"`; see [Channels](/bootstrap/packages/snap.html#channels).                                                                                                                  |
-| `classic`                   | snap                        | Install with classic confinement; see [Classic confinement](/bootstrap/packages/snap.html#classic-confinement).                                                                                                                    |
+| Key                         | Managers                              | Meaning                                                                                                                                                                                                                            |
+| --------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                   | All                                   | `"latest"` (the default) or a [version pin](#version-pins) in the manager's own format.                                                                                                                                            |
+| `os`                        | All                                   | Install only on these operating systems; see [By operating system](#by-operating-system).                                                                                                                                          |
+| `env`                       | All                                   | Install only when one of these [config environments](/configuration/environments.html) is active; see [By config environment](#by-config-environment).                                                                             |
+| `names`                     | Unprefixed keys                       | Package name per manager, such as `{ apt = "libssl-dev" }`; see [Unprefixed packages](#unprefixed-packages).                                                                                                                       |
+| `state`                     | macports, pacman, scoop, snap, zypper | `"present"` (the default) or `"absent"`; see [Remove packages](#remove-a-package-declaratively).                                                                                                                                   |
+| `adopt`                     | brew-cask, macos-app                  | Take over an identical app that is already installed instead of replacing it; see [brew-cask](/bootstrap/packages/brew-cask.html#adopt-an-existing-app) and [macos-app](/bootstrap/packages/macos-app.html#adopt-an-existing-app). |
+| `appdir`                    | brew-cask                             | Application directory for this cask; see [Application directory](/bootstrap/packages/brew-cask.html#overriding-the-application-directory).                                                                                         |
+| `url`, `sha256`, `artifact` | macos-app                             | The download to install; see [Declare a download](/bootstrap/packages/macos-app.html#declare-a-download).                                                                                                                          |
+| `channel`                   | snap                                  | Channel to install from and track, such as `"22/stable"`; see [Channels](/bootstrap/packages/snap.html#channels).                                                                                                                  |
+| `classic`                   | snap                                  | Install with classic confinement; see [Classic confinement](/bootstrap/packages/snap.html#classic-confinement).                                                                                                                    |
 
 mise warns about and ignores `adopt`, `appdir`, `url`, `sha256`, `artifact`,
 `channel`, and `classic` on managers that do not use them. Any other key makes the config file fail to
@@ -239,7 +240,7 @@ manager with `--manager` is an error.
 
 ## Remove packages {#remove-a-package-declaratively}
 
-`pacman`, `scoop`, `snap`, and `zypper` accept `state = "absent"`:
+`macports`, `pacman`, `scoop`, `snap`, and `zypper` accept `state = "absent"`:
 
 ```toml
 [bootstrap.packages]
@@ -316,7 +317,7 @@ prompt but does not supply a sudo password.
 
 `--update` refreshes the manager's package metadata first, for example with
 `apt-get update`, `apk add --update-cache`, `dnf install --refresh`,
-`pacman -Sy`, `zypper refresh`, `scoop update`, or `winget source update`.
+`pacman -Sy`, `port sync`, `zypper refresh`, `scoop update`, or `winget source update`.
 `brew`, `brew-cask`, `choco`, `macos-app`, `flatpak`, `mas`, and `snap` ignore it.
 
 Packages named on the command line, such as `apt:curl`, are installed without
@@ -419,7 +420,7 @@ see [Locate an installed formula](/bootstrap/packages/brew.html#locate-an-instal
 
 ## Root privileges and sudo {#sudo}
 
-apk, apt, dnf, pacman, snap, and zypper need root to change packages. When mise is
+apk, apt, dnf, macports, pacman, snap, and zypper need root to change packages. When mise is
 not running as root, it runs their commands through `sudo` and logs each
 command first. In an interactive terminal, sudo can prompt for your password.
 Without a terminal, mise checks for passwordless sudo and, when there is none,

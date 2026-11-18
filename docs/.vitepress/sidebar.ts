@@ -234,6 +234,7 @@ export const sidebar: SidebarItem[] = [
           { text: "dnf", link: "/bootstrap/packages/dnf" },
           { text: "flatpak", link: "/bootstrap/packages/flatpak" },
           { text: "macos-app", link: "/bootstrap/packages/macos-app" },
+          { text: "macports", link: "/bootstrap/packages/macports" },
           { text: "mas", link: "/bootstrap/packages/mas" },
           { text: "nix", link: "/bootstrap/packages/nix" },
           { text: "pacman", link: "/bootstrap/packages/pacman" },

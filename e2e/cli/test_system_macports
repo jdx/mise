@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# macports only runs on macOS; status and unavailability are covered in
+# test_system_status
+if [[ "$(uname)" != "Darwin" ]]; then
+  exit 0
+fi
+
+# Exercise the real CLI and subprocess boundary with a fake port and sudo.
+mkdir -p "$HOME/macports-bin"
+export PATH="$HOME/macports-bin:$PATH"
+export MISE_SYSTEM_PACKAGES_SUDO=true
+touch "$HOME/port-state" "$HOME/port-log"
+cat >"$HOME/macports-bin/port" <<'SH'
+#!/bin/sh
+if [ "$1" = -q ] && [ "$2" = installed ]; then
+  [ "$LC_ALL" = C ] || exit 2
+  if [ -f "$HOME/port-error" ]; then
+    echo 'Error: registry is corrupt' >&2
+    exit 1
+  fi
+  cat "$HOME/port-state"
+  exit 0
+fi
+echo "$*" >> "$HOME/port-log"
+exit "${PORT_EXIT:-0}"
+SH
+cat >"$HOME/macports-bin/sudo" <<'SH'
+#!/bin/sh
+if [ "$1" = -n ] && [ "$2" = true ]; then
+  exit 0
+fi
+exec "$@"
+SH
+chmod +x "$HOME/macports-bin/"*
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"macports:git" = "latest"
+"macports:ripgrep" = "latest"
+"macports:bc" = { state = "absent" }
+TOML
+
+# Only the active installation counts: the inactive ripgrep is missing.
+printf '  git @2.47.0_0+perl5_34 (active)\n  ripgrep @14.0.0_0\n  bc @1.07.1_0 (active)\n' >"$HOME/port-state"
+assert_fail "mise bootstrap packages status --missing"
+assert_contains "mise bootstrap packages apply --dry-run" 'port -N install ripgrep'
+assert_contains "mise bootstrap packages apply --dry-run --update" 'port -N sync'
+assert_contains "mise bootstrap packages apply --dry-run" 'port -N uninstall bc'
+assert_succeed "test ! -s '$HOME/port-log'"
+
+assert_succeed "mise bootstrap packages apply --yes --update"
+assert "cat '$HOME/port-log'" $'-N sync\n-N install ripgrep\n-N uninstall bc'
+
+# A satisfied config is a no-op.
+printf '  git @2.47.0_0 (active)\n  ripgrep @14.0.0_0 (active)\n' >"$HOME/port-state"
+: >"$HOME/port-log"
+assert_succeed "mise bootstrap packages status --missing"
+assert_succeed "mise bootstrap packages apply --yes"
+assert_succeed "test ! -s '$HOME/port-log'"
+
+# Upgrade syncs first and only touches installed ports.
+assert_succeed "mise bootstrap packages upgrade --yes"
+assert "cat '$HOME/port-log'" $'-N sync\n-N upgrade git ripgrep'
+
+# Names port would read as something else never reach it.
+: >"$HOME/port-log"
+assert_fail_contains "mise bootstrap packages apply macports:outdated --yes" "pseudo-name"
+assert_fail_contains "mise bootstrap packages apply macports:+universal --yes" "not a valid port name"
+assert_succeed "test ! -s '$HOME/port-log'"
+
+# A real port failure propagates.
+assert_fail "PORT_EXIT=1 mise bootstrap packages apply macports:missing --yes"
+
+# Registry failures cannot be mistaken for missing ports and trigger installs.
+touch "$HOME/port-error"
+: >"$HOME/port-log"
+assert_fail_contains "mise bootstrap packages apply macports:missing --yes" 'registry is corrupt'
+assert_succeed "test ! -s '$HOME/port-log'"

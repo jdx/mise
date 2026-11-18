@@ -59,7 +59,7 @@ pub struct PackageOptionsTomlConfig {
     /// snap only: install with classic confinement
     #[serde(default)]
     pub classic: Option<bool>,
-    /// desired package state; pacman, scoop, snap, and zypper support absent
+    /// desired package state; macports, pacman, scoop, snap, and zypper support absent
     #[serde(default)]
     pub state: PackageDesiredStateTomlConfig,
     /// package names per manager for a key without a manager prefix, e.g. { apt = "libssl-dev", dnf = "openssl-devel" }; a manager not listed uses the key as the name

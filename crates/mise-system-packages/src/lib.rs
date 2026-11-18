@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, choco, flatpak, flatpak-user, macos-app, mas, scoop, snap, winget, zypper) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, choco, flatpak, flatpak-user, macos-app, macports, mas, scoop, snap, winget, zypper) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -24,6 +24,7 @@ pub mod dnf;
 pub mod dnf_repos;
 pub(crate) mod flatpak;
 pub mod host;
+pub(crate) mod macports;
 pub mod mas;
 pub mod nix;
 pub mod options;
@@ -438,6 +439,7 @@ pub fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(dnf::DnfManager::new()),
         Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(flatpak::FlatpakManager::new_user()),
+        Arc::new(macports::MacportsManager),
         Arc::new(mas::MasManager::new()),
         Arc::new(nix::NixManager),
         Arc::new(pacman::PacmanManager::new()),
