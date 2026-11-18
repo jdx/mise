@@ -44,7 +44,6 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
     let approved = |found: &str| allowed.iter().any(|value| value == found);
     // Where approved values sit, so a token format inside one is covered too.
     let mut covered = Vec::new();
-    let mut flagged = false;
     for found in ASSIGNMENT.captures_iter(line) {
         let Some(value) = ["dq", "sq", "bare"]
             .iter()
@@ -52,6 +51,16 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
         else {
             continue;
         };
+        // inside a scalar that was approved as a whole
+        let whole = found.get(0).map_or(0..0, |whole| whole.range());
+        if covered
+            .last()
+            .is_some_and(|range: &std::ops::Range<usize>| {
+                range.start <= whole.start && whole.end <= range.end
+            })
+        {
+            continue;
+        }
         let text = value.as_str();
         if found.name("bare").is_some() && text.chars().count() < 8 {
             // too short to be a secret on its own, as before the pattern spanned `;`
@@ -103,18 +112,17 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
             let first = parts.next().unwrap_or_default();
             if approved(first) && !continues {
                 covered.push(value.start()..value.start() + first.len());
-            } else {
-                flagged = true;
+            } else if first.chars().count() >= 8 {
+                return true;
             }
-            flagged = flagged || parts.any(|part| suspicious(part, allowed));
+            if parts.any(|part| suspicious(part, allowed)) {
+                return true;
+            }
         } else if approved(text) && !continues {
             covered.push(value.range());
         } else {
-            flagged = true;
+            return true;
         }
-    }
-    if flagged {
-        return true;
     }
     // both lists are in line order, so one forward cursor covers them
     let mut next = 0;
@@ -355,6 +363,12 @@ mod tests {
         ] {
             assert!(!suspicious(line, &allowed), "{line}");
         }
+        assert!(!suspicious("API_KEY=test;echo ready", &[]));
+        let both = vec!["samplevalue api_key=another-example".to_string()];
+        assert!(!suspicious(
+            "password: samplevalue api_key=another-example",
+            &both
+        ));
         // a plain scalar is approved as a whole, up to a comment
         let scalar = vec!["ctx7_api_key extra words here".to_string()];
         assert!(!suspicious(
