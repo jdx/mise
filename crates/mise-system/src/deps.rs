@@ -502,12 +502,27 @@ fn extract_version(text: &str) -> Option<String> {
     RE.find(text).map(|m| m.as_str().to_string())
 }
 
+/// Linux distribution package managers. They are tried before every other
+/// manager so a host's own manager wins over Homebrew, which mise can bootstrap
+/// on any Linux box. Packages brew installs live under its own prefix, which the
+/// system `pkg-config` and compiler do not search.
+const NATIVE_MANAGERS: &[&str] = &["apk", "apt", "dnf", "pacman", "zypper"];
+
+/// Stable-sort `managers` so the distribution's own managers come first and the
+/// rest keep their relative order.
+fn ordered_managers(
+    mut managers: Vec<Arc<dyn SystemPackageManager>>,
+) -> Vec<Arc<dyn SystemPackageManager>> {
+    managers.sort_by_key(|m| !NATIVE_MANAGERS.contains(&m.name()));
+    managers
+}
+
 /// Pick the first available, settings-enabled package manager that has a hint
 /// for `dep`. Mirrors the manager selection [`crate`] applies so we
 /// never propose a manager the driver would reject.
 pub async fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManager>> {
     let enabled = Settings::get().system_packages.managers.clone();
-    for m in packages::all_managers() {
+    for m in ordered_managers(packages::all_managers()) {
         let name = m.name();
         if enabled
             .as_ref()
@@ -815,6 +830,23 @@ mod tests {
             .into_iter()
             .collect(),
         }
+    }
+
+    #[test]
+    fn test_native_managers_come_before_brew() {
+        let names = |managers: Vec<Arc<dyn SystemPackageManager>>| -> Vec<String> {
+            ordered_managers(managers)
+                .iter()
+                .map(|m| m.name().to_string())
+                .collect()
+        };
+        let ordered = names(packages::builtin_managers());
+        let pos = |n: &str| ordered.iter().position(|x| x == n).unwrap();
+        for native in NATIVE_MANAGERS {
+            assert!(pos(native) < pos("brew"), "{native} must precede brew");
+        }
+        // non-native managers keep their relative order
+        assert!(pos("brew") < pos("flatpak"));
     }
 
     #[tokio::test]
