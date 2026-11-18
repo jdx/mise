@@ -2,7 +2,7 @@ use crate::semver::{
     build_metadata_is_older, chunkify_version, semver_precedence_cmp, split_version_prefix,
 };
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
-use crate::{Result, backend::ABackend, config::Config};
+use crate::{Result, backend::ABackend, backend::options::VersionOrder, config::Config};
 use serde::Serialize;
 use std::{
     cmp::Ordering,
@@ -163,7 +163,12 @@ impl OutdatedInfo {
             oi.tool_request = ToolRequest::new_with_options(backend, &oi.latest, options, source)?;
             oi.tool_request.set_lockfile_scope(lockfile_scope);
         }
-        let unordered = t.versions_are_unordered(&oi.tool_version.request.version());
+        // Release dates, not version numbers, say which release is newer under
+        // `version_order = "published_at"`, so a differing candidate is an update
+        // even when its version number is lower.
+        let unordered = t.versions_are_unordered(&oi.tool_version.request.version())
+            || t.version_order(&oi.tool_request.options())
+                .is_ok_and(|order| order == VersionOrder::PublishedAt);
         if oi
             .current
             .as_ref()
@@ -559,6 +564,14 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn published_at_treats_a_lower_version_as_an_update() {
+        // Ordered by version, 2.0.0 is current; ordered by publication, 1.9.1 is newer.
+        assert!(is_up_to_date(false, "2.0.0", "1.9.1"));
+        assert!(!is_up_to_date(true, "2.0.0", "1.9.1"));
+        assert!(is_up_to_date(true, "1.9.1", "1.9.1"));
+    }
+
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
     use test_log::test;
