@@ -74,11 +74,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
+      - run: rustup update stable --no-self-update && rustup default stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: build
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release') }}
-      - run: rustup update stable --no-self-update && rustup default stable
       - run: cargo build --all-features --ignore-rust-version
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
