@@ -295,8 +295,9 @@ To include prereleases for every tool, set the
 
 #### `version_order` {#version-order}
 
-By default, `mise ls-remote` lists releases in the order GitHub returns them,
-which usually, but not always, matches publication order. Set `version_order = "semver"` when a repository publishes backports after
+By default, `mise ls-remote` lists releases oldest first, following GitHub's
+newest-first release order reversed, which usually, but not always, matches
+publication order. Set `version_order = "semver"` when a repository publishes backports after
 newer releases, so that the list and prefixes such as `1.2` follow semantic
 version order:
 
