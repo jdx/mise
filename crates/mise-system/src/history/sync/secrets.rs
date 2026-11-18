@@ -120,7 +120,12 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
             // a plain scalar may hold spaces and `;` and runs to the end of the
             // line or a ` #` comment; approving it takes the whole scalar
             let rest = &line[value.start()..];
-            let scalar = rest[..rest.find(" #").unwrap_or(rest.len())].trim_end();
+            // a comment starts at a `#` after a space or tab
+            let comment = rest
+                .match_indices('#')
+                .find(|(at, _)| rest[..*at].ends_with([' ', '\t']))
+                .map_or(rest.len(), |(at, _)| at);
+            let scalar = rest[..comment].trim_end();
             if approved(scalar) {
                 covered.push(value.start()..value.start() + scalar.len());
                 continue;
@@ -409,6 +414,11 @@ mod tests {
         assert!(!suspicious(
             "password: samplevalue api_key=another-example",
             &both
+        ));
+        // a tab before the comment ends the scalar like a space does
+        assert!(!suspicious(
+            "password: ctx7_api_key\t# note",
+            &["ctx7_api_key".to_string()]
         ));
         // a value past the capture cap is not approved by its prefix
         let prefix = format!("ab;{}", "x".repeat(256));
