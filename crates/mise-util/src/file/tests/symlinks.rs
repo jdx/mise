@@ -738,3 +738,66 @@ fn failed_junction_creation_leaves_no_placeholder_directory() {
     assert!(make_symlink(&target, &link).is_err());
     assert!(link.is_dir());
 }
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_rebases_absolute_links_into_the_tree() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(root.join("opt/pkg/bin")).unwrap();
+    fs::create_dir_all(root.join("usr/bin")).unwrap();
+    fs::write(root.join("opt/pkg/bin/tool"), "tool").unwrap();
+    symlink("/opt/pkg/bin/tool", root.join("usr/bin/tool")).unwrap();
+
+    ensure_symlinks_stay_within(&root).unwrap();
+
+    assert_eq!(
+        fs::read_link(root.join("usr/bin/tool")).unwrap(),
+        PathBuf::from("../../opt/pkg/bin/tool")
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("usr/bin/tool")).unwrap(),
+        "tool"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_still_refuses_absolute_links_not_in_the_tree() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(root.join("opt/pkg")).unwrap();
+    fs::create_dir_all(root.join("usr/bin")).unwrap();
+    // Missing from the tree, even though it may exist on the host.
+    symlink("/etc/passwd", root.join("usr/bin/passwd")).unwrap();
+    let err = ensure_symlinks_stay_within(&root).unwrap_err();
+    assert!(format!("{err:#}").contains("points outside of"));
+    fs::remove_file(root.join("usr/bin/passwd")).unwrap();
+
+    // In the tree, but only as a link that leaves it.
+    symlink("/etc/passwd", root.join("opt/pkg/escape")).unwrap();
+    symlink("/opt/pkg/escape", root.join("usr/bin/escape")).unwrap();
+    let err = ensure_symlinks_stay_within(&root).unwrap_err();
+    assert!(format!("{err:#}").contains("points outside of"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_rebases_chained_absolute_links() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(root.join("opt/pkg")).unwrap();
+    fs::write(root.join("opt/pkg/tool-real"), "tool").unwrap();
+    symlink("/opt/pkg/tool-real", root.join("opt/pkg/tool")).unwrap();
+    symlink("/opt/pkg/tool", root.join("tool")).unwrap();
+
+    ensure_symlinks_stay_within(&root).unwrap();
+
+    assert_eq!(fs::read_to_string(root.join("tool")).unwrap(), "tool");
+}

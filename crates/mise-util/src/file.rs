@@ -3206,10 +3206,18 @@ pub fn is_safe_relative_path(path: &str) -> bool {
 /// Each target is resolved component by component, following every link on the
 /// way, so chains and links through linked directories are checked; components
 /// that do not exist are taken as written.
+///
+/// On Unix, an absolute link whose target (read as a path below `root`) exists
+/// inside the tree is first rewritten to a relative link, because packages that
+/// ship an `/opt/<name>` tree link into it with absolute paths. The rewritten
+/// link is checked like any other, and an absolute link to a path that is not in
+/// the tree is left as it is and refused.
 pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
     if fs::symlink_metadata(root)?.file_type().is_symlink() {
         bail!("{} is a symlink", display_path(root));
     }
+    #[cfg(unix)]
+    rebase_absolute_symlinks_into_tree(root)?;
     let real_root = root.canonicalize()?;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -3233,6 +3241,58 @@ pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Rewrites absolute symlinks whose target exists inside `root` (as `root` plus
+/// the target) to relative links, so an archive that links `usr/bin/tool` to
+/// `/opt/pkg/bin/tool` installs with a link into its own tree. Links to paths
+/// that are not in the tree, contain `..`, or would still leave `root` once
+/// rewritten are left untouched for [`ensure_symlinks_stay_within`] to refuse.
+#[cfg(unix)]
+fn rebase_absolute_symlinks_into_tree(root: &Path) -> Result<()> {
+    let real_root = root.canonicalize()?;
+    // A link can depend on another absolute link that is rewritten later in the
+    // walk, so repeat until a pass rewrites nothing. Each rewrite turns an
+    // absolute link relative, so this ends.
+    loop {
+        let mut rewrote = false;
+        let mut dirs = vec![root.to_path_buf()];
+        while let Some(dir) = dirs.pop() {
+            for entry in fs::read_dir(&dir)? {
+                let path = entry?.path();
+                let kind = fs::symlink_metadata(&path)?.file_type();
+                if kind.is_dir() {
+                    dirs.push(path);
+                    continue;
+                }
+                if !kind.is_symlink() {
+                    continue;
+                }
+                let target = fs::read_link(&path)?;
+                let Ok(inner) = target.strip_prefix("/") else {
+                    continue;
+                };
+                let Some(inner) = inner.to_str().filter(|inner| is_safe_relative_path(inner))
+                else {
+                    continue;
+                };
+                let candidate = root.join(inner);
+                if fs::symlink_metadata(&candidate).is_err() {
+                    continue;
+                }
+                let parent = path.parent().unwrap_or(root);
+                let replacement = relative_path(parent, &candidate);
+                let base = parent.canonicalize()?;
+                if link_target_stays_within(&real_root, root, &base, &replacement) {
+                    make_symlink(&replacement, &path)?;
+                    rewrote = true;
+                }
+            }
+        }
+        if !rewrote {
+            return Ok(());
+        }
+    }
 }
 
 /// Rewrites absolute symlinks in a guest root filesystem to relative links.
