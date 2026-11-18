@@ -42,5 +42,4 @@ url = "2"
 walkdir = "2"
 
 [dev-dependencies]
-filetime = "0.2"
 mockito = "1"

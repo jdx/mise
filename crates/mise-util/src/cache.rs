@@ -809,12 +809,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = refresh_cache(dir.path(), Duration::from_secs(3600));
         cache.write(&"written".to_string()).unwrap();
-        let ten_minutes_ago = filetime::FileTime::from_system_time(
-            std::time::SystemTime::now() - Duration::from_secs(600),
-        );
+        let ten_minutes_ago = std::time::SystemTime::now() - Duration::from_secs(600);
         // The file name carries the build's cache keys, so find it.
         for entry in fs::read_dir(dir.path()).unwrap() {
-            filetime::set_file_mtime(entry.unwrap().path(), ten_minutes_ago).unwrap();
+            crate::file::set_times(&entry.unwrap().path(), None, Some(ten_minutes_ago)).unwrap();
         }
 
         let val = cache
@@ -993,11 +991,11 @@ mod tests {
     }
 
     /// Backdates a path's own timestamps, leaving anything it links to alone.
-    /// `set_symlink_file_times` opens a Windows reparse point without following
+    /// `set_symlink_times` opens a Windows reparse point without following
     /// it, so this describes the entry itself on every platform.
     fn backdate(path: &Path) {
-        let stale = filetime::FileTime::from_unix_time(0, 0);
-        filetime::set_symlink_file_times(path, stale, stale).unwrap();
+        let stale = Some(std::time::UNIX_EPOCH);
+        crate::file::set_symlink_times(path, stale, stale).unwrap();
     }
 
     #[cfg(unix)]

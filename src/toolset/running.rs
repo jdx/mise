@@ -325,8 +325,6 @@ mod tests {
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, SystemTime};
 
-    use filetime::FileTime;
-
     use super::*;
 
     /// Kills the child when a test ends, including when an assertion fails.
@@ -400,8 +398,7 @@ mod tests {
     }
 
     fn link_written_at(link: &Path, at: SystemTime) {
-        let at = FileTime::from_system_time(at);
-        filetime::set_symlink_file_times(link, at, at).unwrap();
+        crate::file::set_symlink_times(link, Some(at), Some(at)).unwrap();
     }
 
     #[cfg(target_os = "macos")]

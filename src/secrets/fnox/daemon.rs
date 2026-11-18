@@ -841,16 +841,16 @@ mod tests {
         async fn status_line_names_the_protocol() {
             let d = daemon(
                 Some(Response::Hello {
-                    protocol: 7,
-                    min_protocol: 7,
-                    fnox_version: "1.43.0".into(),
+                    protocol: 8,
+                    min_protocol: 8,
+                    fnox_version: "1.50.0".into(),
                     pid: 1,
                 }),
                 true,
             );
             assert_eq!(
                 d.source.daemon_line(&catalog(), LIMIT).await.unwrap(),
-                "daemon: running (protocol 7)"
+                "daemon: running (protocol 8)"
             );
             d.requests.join().unwrap();
         }

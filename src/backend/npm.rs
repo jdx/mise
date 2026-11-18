@@ -5543,7 +5543,7 @@ pkg@1.2.0 '1.2.0'
         // A reinstall adds or removes entries, which moves the store's mtime.
         std::fs::create_dir_all(store.join("other@1.0.0")).unwrap();
         let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
-        filetime::set_file_mtime(&store, filetime::FileTime::from_system_time(later)).unwrap();
+        crate::file::set_times(&store, None, Some(later)).unwrap();
         assert!(!aube_health_marker_matches(tmp.path()));
 
         write_aube_health_marker(tmp.path());
