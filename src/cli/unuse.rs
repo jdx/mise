@@ -79,8 +79,77 @@ impl Unuse {
                 );
             }
         }
-        let cf = self.get_config_file(&config).await?;
-        let system_config = config::is_system_config(cf.get_path());
+        let cfs = self.get_config_files(&config).await?;
+        let system_config = cfs.iter().any(|cf| config::is_system_config(cf.get_path()));
+        let mut removed: Vec<&ToolArg> = vec![];
+        for cf in &cfs {
+            // Re-read under the lock, as `mise use` does, so a concurrent edit is kept.
+            let (_lock, cf) = config_file::lock_and_parse_or_init(cf.get_path()).await?;
+            let removed_here = self.remove_from(cf.as_ref())?;
+            if !removed_here.is_empty() {
+                cf.save()?;
+                let removals = removed_here.iter().join(", ");
+                info!("removed: {removals} from {}", display_path(cf.get_path()));
+            }
+            for ta in removed_here {
+                if !removed
+                    .iter()
+                    .any(|r| r.ba == ta.ba && r.version == ta.version)
+                {
+                    removed.push(ta);
+                }
+            }
+        }
+        if removed.is_empty() {
+            debug!("no tools to remove");
+            let files = cfs.iter().map(|cf| display_path(cf.get_path())).join(", ");
+            warn!("no matching tool request found in {files}; nothing was removed");
+        }
+
+        let (prune_tools, prune_versions) = if self.no_prune {
+            (vec![], vec![])
+        } else {
+            self.prune_scope(&config, requests).await?
+        };
+        if !prune_tools.is_empty() || !prune_versions.is_empty() {
+            prune_scoped(
+                &config,
+                prune_tools.iter().map(|ba| ba.as_ref()).collect(),
+                prune_versions,
+                false,
+            )
+            .await?;
+        }
+        if !removed.is_empty() || !self.no_prune {
+            let shim_scope = match (system_config, self.no_prune) {
+                (true, false) => shims::ShimScope::Both,
+                (true, true) => shims::ShimScope::System,
+                (false, _) => shims::ShimScope::User,
+            };
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks_for_scope(&config, ts, shim_scope).await?;
+            // Only an edited config changes what the lockfile should contain;
+            // pruning installed versions does not. Under
+            // `lockfile_mode = "generate"` nothing else rebuilds the file here,
+            // so without this the removed tool's entry — and the dependency
+            // sidecar it points at — survive until the next install.
+            if !removed.is_empty() {
+                config::generate_lockfiles_after_changes(
+                    &config,
+                    &[],
+                    crate::lockfile::LockfileUpdateMode::Normal,
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Removes the requested tools from one config file, returning the
+    /// arguments that matched something in it. The caller saves the file.
+    fn remove_from(&self, cf: &dyn ConfigFile) -> Result<Vec<&ToolArg>> {
         let tools = cf.to_tool_request_set()?.tools;
         let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
@@ -136,53 +205,7 @@ impl Unuse {
                 cf.replace_versions(ba, remaining)?;
             }
         }
-        if removed.is_empty() {
-            debug!("no tools to remove");
-        } else {
-            cf.save()?;
-            let removals = removed.iter().join(", ");
-            info!("removed: {removals} from {}", display_path(cf.get_path()));
-        }
-
-        let (prune_tools, prune_versions) = if self.no_prune {
-            (vec![], vec![])
-        } else {
-            self.prune_scope(&config, requests).await?
-        };
-        if !prune_tools.is_empty() || !prune_versions.is_empty() {
-            prune_scoped(
-                &config,
-                prune_tools.iter().map(|ba| ba.as_ref()).collect(),
-                prune_versions,
-                false,
-            )
-            .await?;
-        }
-        if !removed.is_empty() || !self.no_prune {
-            let shim_scope = match (system_config, self.no_prune) {
-                (true, false) => shims::ShimScope::Both,
-                (true, true) => shims::ShimScope::System,
-                (false, _) => shims::ShimScope::User,
-            };
-            let config = Config::reset().await?;
-            let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks_for_scope(&config, ts, shim_scope).await?;
-            // Only an edited config changes what the lockfile should contain;
-            // pruning installed versions does not. Under
-            // `lockfile_mode = "generate"` nothing else rebuilds the file here,
-            // so without this the removed tool's entry — and the dependency
-            // sidecar it points at — survive until the next install.
-            if !removed.is_empty() {
-                config::generate_lockfiles_after_changes(
-                    &config,
-                    &[],
-                    crate::lockfile::LockfileUpdateMode::Normal,
-                )
-                .await?;
-            }
-        }
-
-        Ok(())
+        Ok(removed)
     }
 
     /// What to prune afterwards: every unused version of a tool named without a
@@ -256,12 +279,12 @@ impl Unuse {
         Ok((tools, versions))
     }
 
-    async fn get_config_file(&self, config: &Config) -> Result<Arc<dyn ConfigFile>> {
+    async fn get_config_files(&self, config: &Config) -> Result<Vec<Arc<dyn ConfigFile>>> {
         let cwd = env::current_dir()?;
         let path = if self.override_file {
             config::override_config_path(self.env.as_deref())?
         } else if self.global {
-            config::global_config_path()
+            return self.global_config_files(config).await;
         } else if let Some(p) = &self.path {
             let p = p.absolutize()?.to_path_buf();
             if p.is_dir() {
@@ -277,7 +300,7 @@ impl Unuse {
                 cwd.join(format!("mise.{env}.toml"))
             }
         } else if env::in_home_dir() {
-            config::global_config_path()
+            return self.global_config_files(config).await;
         } else {
             // The override file is never picked implicitly; `--override` names it.
             for cf in config
@@ -291,11 +314,38 @@ impl Unuse {
                     .keys()
                     .any(|ba| self.installed_tool.iter().any(|ta| &ta.ba == ba))
                 {
-                    return config_file::parse(cf.get_path()).await;
+                    return Ok(vec![config_file::parse(cf.get_path()).await?]);
                 }
             }
             config::local_toml_config_path()
         };
-        config_file::parse_or_init(&path).await
+        Ok(vec![config_file::parse_or_init(&path).await?])
+    }
+
+    /// Every global config file that declares one of the tools, wherever
+    /// `mise use -g` put it (for example through `write_targets.tools`);
+    /// the default global config when none does.
+    async fn global_config_files(&self, config: &Config) -> Result<Vec<Arc<dyn ConfigFile>>> {
+        let mut files = vec![];
+        for (path, cf) in &config.config_files {
+            if !config::is_global_config(path)
+                || config::is_system_config(path)
+                || config::is_override_config(path)
+            {
+                continue;
+            }
+            if cf
+                .to_tool_request_set()?
+                .tools
+                .keys()
+                .any(|ba| self.installed_tool.iter().any(|ta| &ta.ba == ba))
+            {
+                files.push(config_file::parse(path).await?);
+            }
+        }
+        if files.is_empty() {
+            files.push(config_file::parse_or_init(&config::global_config_path()).await?);
+        }
+        Ok(files)
     }
 }

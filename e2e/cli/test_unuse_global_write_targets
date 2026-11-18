@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# `unuse --global` edits the global file that declares the tool, wherever
+# `use --global` put it, like `use --global --remove` does.
+mkdir -p "$MISE_CONFIG_DIR/conf.d"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF2
+[settings.write_targets]
+tools = "$MISE_CONFIG_DIR/conf.d/tools.toml"
+EOF2
+
+mise use --global dummy@system
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/tools.toml" 'dummy = "system"'
+assert_contains "mise unuse --global --no-prune dummy 2>&1" "removed: dummy"
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/tools.toml" 'dummy'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy'
+
+# A tool declared in several global files is removed from all of them.
+printf '[tools]\ndummy = "system"\n' >"$MISE_CONFIG_DIR/conf.d/tools.toml"
+printf '[tools]\ndummy = "system"\n' >"$MISE_CONFIG_DIR/conf.d/other.toml"
+mise unuse --global --no-prune dummy
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/tools.toml" 'dummy'
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/other.toml" 'dummy'
+
+# Nothing declared anywhere: say so instead of exiting silently.
+assert_contains "mise unuse --global --no-prune dummy 2>&1" "no matching tool request found"
