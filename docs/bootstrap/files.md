@@ -22,6 +22,18 @@ makes `mise bootstrap`, `mise bootstrap plan`, and
 [`mise bootstrap files`](/cli/bootstrap/files.html) fail, so give entries in a
 shared config an [`os` selector](#choose-platforms) such as `unix`.
 
+`[dotfiles]` spells some of the same things differently, because its `mode`
+chooses how a file is deployed:
+
+| To                             | `[bootstrap.files]`              | `[dotfiles]`           |
+| ------------------------------ | -------------------------------- | ---------------------- |
+| Set permissions                | `mode = "0600"` or `permissions` | `permissions = "0600"` |
+| Render a template              | `template = true`                | `mode = "template"`    |
+| Remove the file                | `state = "absent"`               | `mode = "absent"`      |
+| Remove it when it is empty     | `remove_empty = true`            | `remove_empty = true`  |
+| Set an owner or a group        | `owner`, `group`                 | Not available          |
+| Link to a file in a repository | Not available                    | `mode = "symlink"`     |
+
 ## Example
 
 ```toml
@@ -432,6 +444,7 @@ contents, declare it absent with `recursive = true`.
 | `owner`        | both        | User name                                                                   | Not managed                                               |
 | `group`        | both        | Group name                                                                  | Not managed                                               |
 | `mode`         | both        | Octal string, such as `"0640"`                                              | `"0644"` for files with content, `"0755"` for directories |
+| `permissions`  | both        | Another name for `mode`, as in `[dotfiles]`; set only one of the two        |                                                           |
 | `state`        | both        | `"present"` or `"absent"`                                                   | `"present"`                                               |
 | `recursive`    | directories | `true` deletes contents; only with `state = "absent"`                       | `false`                                                   |
 | `replace`      | both        | `true` replaces a path of another type                                      | `false`                                                   |

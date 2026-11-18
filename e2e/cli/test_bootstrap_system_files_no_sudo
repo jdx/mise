@@ -176,6 +176,32 @@ EOF
 assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "its content is not managed by mise"
 assert_fail "test -e '$missing_file'"
 
+# permissions is another name for mode, as in [dotfiles].
+alias_dir="$PWD/alias-dir"
+alias_file="$alias_dir/alias.conf"
+cat <<EOF >mise.toml
+[bootstrap.directories."$alias_dir"]
+permissions = "0700"
+
+[bootstrap.files."$alias_file"]
+content = "alias"
+permissions = "0600"
+EOF
+
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "stat -c %a '$alias_dir'" "700"
+assert "stat -c %a '$alias_file'" "600"
+
+# schema: invalid
+cat <<EOF >mise.toml
+[bootstrap.files."$alias_file"]
+content = "alias"
+mode = "0600"
+permissions = "0600"
+EOF
+
+assert_fail "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+
 # Removing a module never deletes a file whose content mise does not manage.
 : >mise.toml
 cat <<EOF >mise.perms.toml

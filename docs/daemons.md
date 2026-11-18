@@ -10,6 +10,12 @@ installs their tools and gives them the project's environment, and
 [pitchfork](https://pitchfork.jdx.dev/) supervises the processes and their
 readiness checks.
 
+Daemons belong to a project: you start them with `mise daemons start`, a task
+can start the ones it needs, and each worktree can have its own. To keep a program running on a
+machine from login, whatever project you are in, declare a
+[user service](/bootstrap/services.html#user-services) in
+`[bootstrap.services]` instead.
+
 ::: warning Experimental
 Daemon support can change in any release. Enable it with `experimental = true`
 under `[settings]`.

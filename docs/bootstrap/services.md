@@ -19,6 +19,7 @@ something in the background; pick the one that fits:
 | Use systemd features such as timers, dependencies, or hardening       | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)  |
 | Use launchd features such as calendar schedules or queue directories  | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html) |
 | Run containers                                                        | [`[bootstrap.compose]`](/bootstrap/compose.html)              |
+| Run a project's database or development server while you work on it   | [`[daemons]`](/daemons.html)                                  |
 
 ## User services
 
