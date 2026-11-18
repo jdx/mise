@@ -44,6 +44,7 @@ jobs:
           git_commit_gpgsign: true
           git_tag_gpgsign: true
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: rustup update stable --no-self-update && rustup default stable && rustup component add rustfmt clippy
       - run: cargo build --all-features --ignore-rust-version && cp target/debug/mise "$HOME"/bin
       - uses: ./.github/actions/mise-tools
         with:

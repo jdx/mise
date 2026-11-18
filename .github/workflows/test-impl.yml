@@ -97,6 +97,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - run: rustup update stable --no-self-update && rustup default stable && rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: build
@@ -199,6 +200,7 @@ jobs:
           cache-generation: unit-macos-v1
       - name: Install test tools
         run: brew install fd tmux
+      - run: rustup update stable --no-self-update && rustup default stable && rustup component add rustfmt clippy
       - run: |
           mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -269,6 +271,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - run: rustup update stable --no-self-update && rustup default stable && rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: lint
