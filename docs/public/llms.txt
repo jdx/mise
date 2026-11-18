@@ -189,6 +189,7 @@
 - [Backend plugins](https://mise.jdx.dev/backend-plugin-development.html): A backend plugin is a set of Lua hooks that installs many tools under one prefix. Users write my-backend:some-tool, where my-backend is the name they installed the plugin under.
 - [Environment plugins](https://mise.jdx.dev/env-plugin-development.html): An environment plugin adds a directive to [env] whose Lua hooks return environment variables and PATH entries.
 - [Package manager plugins](https://mise.jdx.dev/package-plugin-development.html): A package manager plugin adds a manager to [bootstrap.packages] for packages that belong to another program, such as VS Code extensions, gh extensions or Helm plugins.
+- [Settings plugins](https://mise.jdx.dev/settings-plugin-development.html): A settings plugin applies the settings of one program or desktop, such as a Linux distro's appearance settings, from a [bootstrap.settings.<plugin>] section.
 - [Plugin Lua reference](https://mise.jdx.dev/plugin-lua-modules.html): mise runs every Lua plugin hook (tool, backend, environment and package plugins) in an embedded Lua 5.1 interpreter.
 - [Publishing plugins](https://mise.jdx.dev/plugin-publishing.html): You publish a mise plugin by putting it where users can fetch it: a Git repository pinned by tag, or a signed packslip archive.
 - [asdf plugins (legacy)](https://mise.jdx.dev/asdf-legacy-plugins.html): asdf plugins are Git repositories of shell scripts (bin/list-all, bin/install and others) that follow the asdf plugin interface.

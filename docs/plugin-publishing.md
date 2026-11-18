@@ -69,6 +69,7 @@ Then run the checks for your plugin type. The names are placeholders:
 | Backend         | `mise ls-remote test-plugin:example`, `mise use test-plugin:example@1.0.0`, `mise exec -- example --version`                                                                                                                                                               |
 | Environment     | Add `_.test-plugin = { ... }` under `[env]`, then check `mise env --json` or `mise exec -- printenv MY_VAR`.                                                                                                                                                               |
 | Package manager | Follow the testing advice in [package manager plugins](/package-plugin-development.html).                                                                                                                                                                                  |
+| Settings        | Link the plugin, then run `mise bootstrap settings apply --dry-run` and `mise bootstrap settings status`; see [settings plugins](/settings-plugin-development.html). |
 
 Test a fixed tool version rather than `latest`, so a new upstream release does
 not change the result. The command after `mise exec --` must name the tool's

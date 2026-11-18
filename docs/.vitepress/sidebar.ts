@@ -350,6 +350,7 @@ export const sidebar: SidebarItem[] = [
             text: "Package manager plugins",
             link: "/package-plugin-development",
           },
+          { text: "Settings plugins", link: "/settings-plugin-development" },
           { text: "Plugin Lua reference", link: "/plugin-lua-modules" },
           { text: "Publishing plugins", link: "/plugin-publishing" },
         ],

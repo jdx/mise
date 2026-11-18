@@ -33,11 +33,12 @@ The [registry](/registry.html) is not a catalog of plugins.
 | Backend         | A family of tools under one prefix                         | `[tools]` `"my-backend:some-tool" = "1.2.0"`                  | [Backend plugins](/backend-plugin-development.html)         |
 | Environment     | Environment variables and `PATH` entries; installs nothing | `[env]` `_.my-env-plugin = { api_url = "..." }`               | [Environment plugins](/env-plugin-development.html)         |
 | Package manager | Packages owned by another program, such as VS Code         | `[bootstrap.packages]` `"vscode:ms-python.python" = "latest"` | [Package manager plugins](/package-plugin-development.html) |
+| Settings        | Settings of another program, such as a Linux desktop       | `[bootstrap.settings.desk]` `appearance.blur = true`          | [Settings plugins](/settings-plugin-development.html)       |
 | asdf (legacy)   | One tool, through shell scripts; Linux and macOS only      | `[tools]` `my-tool = "1.2.0"`                                 | [asdf plugins (legacy)](/asdf-legacy-plugins.html)          |
 
 Lua plugins are [vfox](https://vfox.dev) plugins: tool plugins use the vfox
-hooks, so most vfox plugins work in mise. Backend, environment and package
-manager hooks are mise additions that the vfox CLI does not run.
+hooks, so most vfox plugins work in mise. Backend, environment, package
+manager and settings hooks are mise additions that the vfox CLI does not run.
 
 The Lua runtime is built into mise on Linux, macOS and Windows. A plugin still
 decides which platforms it supports, through the downloads it picks and the
