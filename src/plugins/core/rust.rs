@@ -2228,12 +2228,16 @@ rustup - up to date : 1.29.1
 
     #[test]
     fn rustup_check_names_follow_the_configured_host() {
+        // A configured host that differs from the one mise was built for. It
+        // must not equal TARGET, or the two names collapse into one.
+        let other_host = if TARGET.starts_with("aarch64") {
+            "x86_64-unknown-linux-musl"
+        } else {
+            "aarch64-unknown-linux-musl"
+        };
         assert_eq!(
-            rustup_check_toolchain_names("stable", Some("x86_64-unknown-linux-musl")),
-            vec![
-                "stable-x86_64-unknown-linux-musl".to_string(),
-                format!("stable-{TARGET}")
-            ]
+            rustup_check_toolchain_names("stable", Some(other_host)),
+            vec![format!("stable-{other_host}"), format!("stable-{TARGET}")]
         );
         assert_eq!(
             rustup_check_toolchain_names("stable", None),
