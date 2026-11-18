@@ -69,8 +69,26 @@ assert_fail_contains "mise bootstrap packages apply macports:outdated --yes" "ps
 assert_fail_contains "mise bootstrap packages apply macports:+universal --yes" "not a valid port name"
 assert_succeed "test ! -s '$HOME/port-log'"
 
-# A real port failure propagates.
+# A pin cannot be installed: it is skipped and the rest still installs.
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"macports:git" = "2.47.0"
+"macports:ripgrep" = "latest"
+TOML
+printf '  git @2.46.0_0 (active)\n' >"$HOME/port-state"
+: >"$HOME/port-log"
+assert_contains "mise bootstrap packages status" "version mismatch"
+assert_contains "mise bootstrap packages apply --dry-run" "port -N install ripgrep"
+assert_succeed "mise bootstrap packages apply --yes"
+assert "cat '$HOME/port-log'" "-N install ripgrep"
+
+# With nothing installed, port prints a message and exits 0.
+echo "None of the specified ports are installed." >"$HOME/port-state"
+assert_fail "mise bootstrap packages status --missing"
+
+# A real port failure propagates, including a failed sync.
 assert_fail "PORT_EXIT=1 mise bootstrap packages apply macports:missing --yes"
+assert_fail "PORT_EXIT=1 mise bootstrap packages apply macports:missing --update --yes"
 
 # Registry failures cannot be mistaken for missing ports and trigger installs.
 touch "$HOME/port-error"
