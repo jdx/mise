@@ -125,12 +125,15 @@ impl InstalledPort<'_> {
 fn parse_line(line: &str) -> Option<InstalledPort<'_>> {
     let (name, rest) = line.strip_prefix("  ")?.split_once(" @")?;
     let (spec, flags) = rest.split_once(' ').unwrap_or((rest, ""));
-    // variants follow the first `+` and may contain `_` themselves
-    let release = spec.split('+').next().unwrap_or(spec);
-    let (version, revision) = release.rsplit_once('_')?;
-    if revision.is_empty() || !revision.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
+    // The revision is the first `_<digits>` that ends the release: followed
+    // by a variant (`+name` or `-name`, the latter for a negated one) or by
+    // nothing. Variant names may contain `_` themselves, so they come later.
+    let (version, revision) = spec.match_indices('_').find_map(|(index, _)| {
+        let after = &spec[index + 1..];
+        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+        let ends = matches!(after.as_bytes().get(digits), None | Some(b'+' | b'-'));
+        (digits > 0 && ends).then(|| (&spec[..index], &after[..digits]))
+    })?;
     Some(InstalledPort {
         name,
         spec,
@@ -302,6 +305,12 @@ mod tests {
         );
         assert!(parse_line("The following ports are currently installed:").is_none());
         assert!(parse_line("  foo @1.0").is_none());
+
+        // negated variants print with `-`
+        let negated = parse_line("  git @2.47.0_0-x11 (active)").unwrap();
+        assert_eq!((negated.version, negated.revision), ("2.47.0", "0"));
+        let mixed = parse_line("  git @2.47.0_1-x11+perl5_34 (active)").unwrap();
+        assert_eq!((mixed.version, mixed.revision), ("2.47.0", "1"));
     }
 
     #[test]
