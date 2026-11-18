@@ -564,8 +564,12 @@ fn detect_active_mapper() -> Option<PathMapper> {
     Some(mapper)
 }
 
+/// The executable of the process that launched this one, looking through any
+/// `mise.exe` in between. Shims (Scoop's `shims\\mise.exe`, for one) start the
+/// real mise as a child, so the immediate parent is the shim, not the shell.
 #[cfg(all(windows, not(test)))]
 fn parent_executable() -> Option<PathBuf> {
+    use std::collections::HashMap;
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
@@ -588,39 +592,52 @@ fn parent_executable() -> Option<PathBuf> {
         dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
         ..Default::default()
     };
+    let mut parents = HashMap::new();
     // SAFETY: entry is initialized, correctly sized, and writable.
     let mut found = unsafe { Process32FirstW(snapshot.as_raw_handle(), &mut entry) } != 0;
-    while found && entry.th32ProcessID != std::process::id() {
+    while found {
+        parents.insert(entry.th32ProcessID, entry.th32ParentProcessID);
         // SAFETY: the snapshot remains alive and entry remains writable.
         found = unsafe { Process32NextW(snapshot.as_raw_handle(), &mut entry) } != 0;
     }
-    if !found {
-        return None;
+
+    let mut pid = std::process::id();
+    // A shim chain is short; the bound also guards against pid reuse cycles.
+    for _ in 0..4 {
+        pid = *parents.get(&pid)?;
+        // SAFETY: query-only access, with no inherited handle and no pointer arguments.
+        let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if process.is_null() {
+            return None;
+        }
+        // SAFETY: the valid process handle is freshly allocated and uniquely owned.
+        let process = unsafe { OwnedHandle::from_raw_handle(process) };
+        let mut image = vec![0u16; 32768];
+        let mut len = image.len() as u32;
+        // SAFETY: image has len writable UTF-16 elements and the handle remains alive.
+        if unsafe {
+            QueryFullProcessImageNameW(process.as_raw_handle(), 0, image.as_mut_ptr(), &mut len)
+        } == 0
+        {
+            return None;
+        }
+        let exe: PathBuf = std::ffi::OsString::from_wide(&image[..len as usize]).into();
+        if !is_mise_launcher(&exe) {
+            return Some(exe);
+        }
     }
-    // SAFETY: query-only access, with no inherited handle and no pointer arguments.
-    let process = unsafe {
-        OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION,
-            0,
-            entry.th32ParentProcessID,
-        )
-    };
-    if process.is_null() {
-        return None;
-    }
-    // SAFETY: the valid process handle is freshly allocated and uniquely owned.
-    let process = unsafe { OwnedHandle::from_raw_handle(process) };
-    let mut image = vec![0u16; 32768];
-    let mut len = image.len() as u32;
-    // SAFETY: image has len writable UTF-16 elements and the handle remains alive.
-    if unsafe {
-        QueryFullProcessImageNameW(process.as_raw_handle(), 0, image.as_mut_ptr(), &mut len)
-    } == 0
-    {
-        return None;
-    }
-    Some(std::ffi::OsString::from_wide(&image[..len as usize]).into())
+    None
 }
+
+/// A `mise.exe` between mise and its shell is a shim re-launching mise.
+#[cfg(any(windows, test))]
+fn is_mise_launcher(executable: &Path) -> bool {
+    executable
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("mise.exe"))
+}
+
 #[cfg(any(windows, test))]
 fn runtime_root(executable: &Path) -> Option<(RuntimeKind, PathBuf)> {
     let name = executable.file_name()?.to_str()?.to_ascii_lowercase();
@@ -883,6 +900,14 @@ mod tests {
             mapper.windows_to_posix(r"C:\Users\someone\AppData\Local\Temp\bin"),
             "/tmp/bin"
         );
+    }
+
+    #[test]
+    fn a_mise_shim_is_looked_through() {
+        assert!(is_mise_launcher(Path::new("D:/Scoop/shims/mise.exe")));
+        assert!(is_mise_launcher(Path::new("mise.EXE")));
+        assert!(!is_mise_launcher(Path::new("bash.exe")));
+        assert!(!is_mise_launcher(Path::new("mise-shim.exe")));
     }
 
     #[test]
