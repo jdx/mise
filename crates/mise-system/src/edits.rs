@@ -651,11 +651,7 @@ fn check_merge_key_has_id(
     let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
     let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
     if id_looks_like_file && target_is_unformatted {
-        // the suggested key is TOML, so quote and escape it as a TOML key; a
-        // JSON string is also a valid TOML basic string, which keys allow
-        // (TOML also forbids a raw DEL there, which JSON leaves unescaped)
-        let suggestion =
-            serde_json::to_string(&format!("{path_raw}/{id}/shared"))?.replace('\u{7f}', "\\u007F");
+        let suggestion = suggested_key(path_raw, id)?;
         // a format only helps when the parsed id would be accepted as it is
         // and the parsed target can get a source
         let format_alternative = if is_valid_id(id) && parsed_has_source {
@@ -668,6 +664,13 @@ fn check_merge_key_has_id(
         );
     }
     Ok(())
+}
+
+/// the corrected key, written as a quoted TOML key. A JSON string is also a
+/// valid TOML basic string, which keys allow; TOML forbids a raw DEL there,
+/// which JSON leaves unescaped.
+fn suggested_key(path_raw: &str, id: &str) -> Result<String> {
+    Ok(serde_json::to_string(&format!("{path_raw}/{id}/shared"))?.replace('\u{7f}', "\\u007F"))
 }
 
 /// ids end up inside marker lines — keep them to characters that can't
@@ -2551,6 +2554,23 @@ mod tests {
         assert!(err.contains("missing its /<id>"), "{err}");
         // a format cannot give $HOME itself a source
         assert!(!err.contains("set a format"), "{err}");
+    }
+
+    #[test]
+    fn the_suggested_key_parses_back_to_the_original_path() {
+        for path in [
+            "~/.config/app",
+            "~/.config/app\"data",
+            "~/.config/app\nlocal",
+            "~/.config/app\u{7f}local",
+            "~/.config/app\\local",
+            "~/.config/app\tlocal",
+        ] {
+            let key = suggested_key(path, "settings.toml").unwrap();
+            let table: toml::Table = toml::from_str(&format!("{key} = true")).unwrap();
+            let keys: Vec<_> = table.keys().cloned().collect();
+            assert_eq!(keys, [format!("{path}/settings.toml/shared")], "{key}");
+        }
     }
 
     #[test]
