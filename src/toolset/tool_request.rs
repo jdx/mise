@@ -775,11 +775,30 @@ impl ToolRequest {
         require_prefix_boundary: bool,
         alias_resolved: bool,
     ) -> Result<Option<LockfileTool>> {
+        self.lockfile_resolve_for_target(
+            config,
+            prefix,
+            require_prefix_boundary,
+            alias_resolved,
+            &PlatformTarget::from_current(),
+        )
+    }
+
+    /// Like [`Self::lockfile_resolve_with_prefix`], selecting the entry by the
+    /// lock options of `target` rather than of the current platform, as a
+    /// locked install there would.
+    pub(crate) fn lockfile_resolve_for_target(
+        &self,
+        config: &Config,
+        prefix: &str,
+        require_prefix_boundary: bool,
+        alias_resolved: bool,
+        target: &PlatformTarget,
+    ) -> Result<Option<LockfileTool>> {
         let backend = self.backend().ok();
         let (request_options, legacy_options_fallback) = if let Some(backend) = &backend {
-            let target = PlatformTarget::from_current();
             (
-                backend.lockfile_options(self, &target)?,
+                backend.lockfile_options(self, target)?,
                 backend.lockfile_options_are_host_specific(),
             )
         } else {
@@ -798,6 +817,7 @@ impl ToolRequest {
                 legacy_options_fallback,
                 backend: backend.as_deref(),
                 selection_options: &self.options(),
+                target,
             },
         )
     }

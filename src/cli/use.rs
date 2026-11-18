@@ -331,6 +331,7 @@ impl Use {
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
             keep_moved_alias_pins: false,
+            locked: false,
         };
         let versions: Vec<_> = self
             .tools

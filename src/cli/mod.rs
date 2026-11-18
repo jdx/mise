@@ -20,6 +20,10 @@ static CLI_SETTING_PROPS: &[PropMeta] = &[
         cli: &["--no-cache"],
         ..PropMeta::new("task.remote_no_cache", Ty::Bool)
     },
+    PropMeta {
+        cli: &["--check"],
+        ..PropMeta::new("offline", Ty::Bool)
+    },
 ];
 const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
 
@@ -34,6 +38,7 @@ fn command_local_settings(layer: &usage_rs::config::CliLayer) -> Result<Settings
     let mut s = SettingsPartial::empty();
     s.truncate = get_bool("truncate");
     s.task.remote_no_cache = get_bool("task.remote_no_cache");
+    s.offline = get_bool("offline");
     Ok(s)
 }
 
@@ -474,7 +479,8 @@ impl Commands {
     /// an all-project tracked-config scan or mutate installed tools. Deferred
     /// cleanup will run on the next ordinary command instead. The cleanup also
     /// loads the current directory's config, which `trust` and `untrust` are
-    /// deciding about and so must not load.
+    /// deciding about and so must not load. `lock --check` only reads the
+    /// lockfile, so it must not uninstall tools either.
     fn allows_tool_purgatory_auto_prune(&self) -> bool {
         !matches!(
             self,
@@ -488,7 +494,7 @@ impl Commands {
                 | Self::ToolUpdate(_)
                 | Self::Trust(_)
                 | Self::Untrust(_)
-        )
+        ) && !matches!(self, Self::Lock(cmd) if cmd.check)
     }
 
     /// Whether running this command is the user's decision to run the project's code. Asking a
@@ -2074,6 +2080,15 @@ mod tests {
     }
 
     #[test]
+    fn lock_check_flag_sets_offline_before_config_loads() {
+        let offline = |args: &[&str]| parse_command_local_settings(args).offline;
+        assert_eq!(offline(&["mise", "lock"]), None);
+        assert_eq!(offline(&["mise", "lock", "--check"]), Some(true));
+        // Another command's `--check` is its own.
+        assert_eq!(offline(&["mise", "fmt", "--check"]), None);
+    }
+
+    #[test]
     fn dry_run_flag_scan_handles_nested_clusters_and_separator() {
         let args = |args: &[&str]| args.iter().map(ToString::to_string).collect::<Vec<_>>();
 
@@ -2150,6 +2165,19 @@ mod tests {
                 .as_ref()
                 .is_some_and(Commands::allows_tool_purgatory_auto_prune)
         );
+    }
+
+    #[test]
+    fn lock_check_does_not_allow_tool_purgatory_auto_prune() {
+        let allows = |args: &[&str]| {
+            parse_cli(args)
+                .unwrap()
+                .command
+                .as_ref()
+                .is_some_and(Commands::allows_tool_purgatory_auto_prune)
+        };
+        assert!(!allows(&["mise", "lock", "--check"]));
+        assert!(allows(&["mise", "lock"]));
     }
 
     #[test]

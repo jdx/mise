@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+
+# `mise lock --check` fails, listing each problem, when a locked install would
+# reject the lockfile, and passes when it is complete. It never writes.
+
+export MISE_LOCKFILE=1
+# The harness pins merge mode; generate, the default, requires checksums.
+export MISE_LOCKFILE_MODE=generate
+
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.7.1"
+TOML
+
+assert_fail_contains "mise lock --check --platform linux-x64" "the lockfile does not exist"
+assert "test ! -f mise.lock"
+
+mise lock --platform linux-x64
+assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 tool version, 1 platform entry)"
+assert_contains "mise lock --check --json" '"platform": "linux-x64"'
+assert_contains "mise lock --check --json" '"problems": []'
+
+# A platform mise lock would add has no URL to download.
+assert_fail_contains "mise lock --check --platform linux-x64,macos-arm64" "No lockfile URL found for jq@1.7.1 on platform macos-arm64"
+
+# A missing checksum fails, and the lockfile is left as it is.
+sed -i.bak '/^checksum = /d' mise.lock
+cp mise.lock before.lock
+assert_fail_contains "mise lock --check" "No lockfile checksum found for jq@1.7.1 on platform linux-x64"
+assert_fail_contains "mise lock --check" "to update the lockfile"
+assert_fail_contains "mise lock --check --json" '"problems": ['
+assert "cmp before.lock mise.lock"
+
+# A request bumped in mise.toml but not in the lockfile fails.
+mise lock --platform linux-x64
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.6"
+TOML
+cp mise.lock before.lock
+assert_fail_contains "mise lock --check" "jq@1.6 is not in the lockfile"
+assert "cmp before.lock mise.lock"
+
+# Like a locked install, the check enforces only the scopes locked_scopes names.
+assert_contains "MISE_LOCKED_SCOPES=global mise lock --check" "mise.lock is up to date"
+
+# Offline, sub-1:latest has nothing to subtract from, so it needs an entry.
+cat <<'TOML' >mise.toml
+[tools]
+jq = "sub-1:latest"
+TOML
+assert_fail_contains "mise lock --check" "jq@sub-1:latest is not in the lockfile"
+
+assert_fail_contains "mise lock --check --bump" "cannot be combined with --bump"
+assert_fail_contains "mise lock --check jq@1.6" "name the tool without a version"
+
+# A tool whose os option rules out every checked platform is not checked.
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.7.1"
+yq = { version = "4.44.1", os = ["windows"] }
+TOML
+assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 tool version, 1 platform entry)"
+
+# A checksum the download could not be verified against fails.
+cp mise.lock good.lock
+sed -i.bak 's/^checksum = "[a-z0-9]*:/checksum = "/' mise.lock
+assert_fail_contains "mise lock --check" "Invalid lockfile checksum"
+# So does one whose algorithm mise cannot compute.
+sed 's/^checksum = "[a-z0-9]*:/checksum = "no-such-algorithm:/' good.lock >mise.lock
+assert_fail_contains "mise lock --check" "Invalid lockfile checksum"
+cp good.lock mise.lock
+
+# A remote task include is skipped rather than fetched.
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.7.1"
+
+[task_config]
+includes = ["git::https://127.0.0.1:1/does-not-exist.git//tasks?ref=v1"]
+TOML
+assert_contains "GIT_TERMINAL_PROMPT=0 MISE_EXPERIMENTAL=1 mise lock --check 2>&1" "skipping remote task include"
+assert_contains "GIT_TERMINAL_PROMPT=0 MISE_EXPERIMENTAL=1 mise lock --check 2>&1" "mise.lock is up to date"
+
+# A revision 2 lockfile must record the dependency graph an npm tool replays.
+mkdir missing-graph
+cat <<'TOML' >missing-graph/mise.toml
+[tools]
+"npm:cowsay" = "1.5.0"
+TOML
+cat <<'TOML' >missing-graph/mise.lock
+lockfile_version = 2
+
+[[tools."npm:cowsay"]]
+version = "1.5.0"
+backend = "npm:cowsay"
+specifiers = ["1.5.0"]
+TOML
+assert_fail_contains "cd missing-graph && mise lock --check --platform linux-x64" "has no embedded-aube dependency graph"
+
+# System versions need no lockfile.
+mkdir system-only
+cat <<'TOML' >system-only/mise.toml
+[tools]
+jq = "system"
+TOML
+assert_contains "cd system-only && mise lock --check --platform linux-x64" "is up to date"
+assert "test ! -f system-only/mise.lock"
+# Nor an entry in an existing lockfile, even without the tool's plugin.
+cat <<'TOML' >system-only/mise.toml
+[tools]
+"asdf:mise-plugins/mise-tiny" = "system"
+TOML
+touch system-only/mise.lock
+assert_contains "cd system-only && mise lock --check --platform linux-x64" "is up to date"
+
+# A tool stub mise.lock lists is checked like a configured tool.
+mkdir -p stub/bin
+cd stub || exit 1
+echo '[tools]' >mise.toml
+cat >bin/jq <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+
+tool = "jq"
+version = "1.7.1"
+EOF
+mise generate tool-stub bin/jq --lock
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
+assert_contains "MISE_OFFLINE=1 mise lock --check" "mise.lock is up to date (1 tool version"
+sed -i.bak 's/^version = "1.7.1"/version = "1.6"/' bin/jq
+assert_fail_contains "mise lock --check" "jq@1.6 is not in the lockfile"
+cd .. || exit 1
+# Each case below has its own project, with nothing inherited from this one.
+cp mise.lock jq.lock
+rm mise.lock
+echo '[tools]' >mise.toml
+
+# A full backend name selects the tool configured by its shorthand, and an
+# argument that names no configured tool fails instead of passing.
+mkdir named
+cd named || exit 1
+cat <<'TOML' >mise.toml
+[tools]
+jq = "1.7.1"
+TOML
+cp ../jq.lock mise.lock
+jq_full=$(mise tool jq --backend)
+assert_contains "MISE_OFFLINE=1 mise lock --check $jq_full" "mise.lock is up to date (1 tool version"
+assert_fail_contains "mise lock --check not-a-tool" "cannot check not-a-tool: not configured in this project"
+cd .. || exit 1
+
+# Every artifact a GitHub tool downloads needs a well-formed checksum, and
+# the lockfile must list one per additional_asset_patterns entry.
+mkdir extra
+cd extra || exit 1
+cat <<'TOML' >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+additional_asset_patterns = ["fd-8.7.0.tar.gz"]
+TOML
+cat <<'TOML' >good.lock
+lockfile_version = 4
+
+[[tools."github:jdx/mise-test-fixtures"]]
+version = "1.0.0"
+backend = "github:jdx/mise-test-fixtures"
+specifiers = ["1.0.0"]
+
+[tools."github:jdx/mise-test-fixtures".options]
+additional_asset_patterns = "fd-8.7.0.tar.gz"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+
+[tools."github:jdx/mise-test-fixtures"."platforms.linux-x64"]
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"
+
+[[tools."github:jdx/mise-test-fixtures"."platforms.linux-x64".additional_artifacts]]
+checksum = "sha256:230cf587de59730a1d7f9c49004f301292927621a336578723518fc9d03f4824"
+url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/fd-8.7.0.tar.gz"
+TOML
+cp good.lock mise.lock
+assert_contains "MISE_OFFLINE=1 mise lock --check --platform linux-x64" "mise.lock is up to date (1 tool version, 1 platform entry)"
+sed 's/^checksum = "sha256:230c/checksum = "230c/' good.lock >mise.lock
+assert_fail_contains "mise lock --check --platform linux-x64" "Invalid lockfile checksum"
+grep -v -e 'additional_artifacts' -e '230cf587' -e '^url = .*fd-8.7.0.tar.gz"$' good.lock >mise.lock
+assert_fail_contains "mise lock --check --platform linux-x64" "No matching complete lockfile artifact list found"
+cd .. || exit 1
+
+# A platform whose options differ from this host's is checked against the
+# entry locked with its own options, even when the host has none.
+mkdir cross
+cd cross || exit 1
+cat <<'TOML' >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+platforms.macos-arm64.asset_pattern = "hello-world-1.0.0.tar.gz"
+TOML
+cat <<'TOML' >mise.lock
+lockfile_version = 4
+
+[[tools."github:jdx/mise-test-fixtures"]]
+version = "1.0.0"
+backend = "github:jdx/mise-test-fixtures"
+specifiers = ["1.0.0"]
+
+[tools."github:jdx/mise-test-fixtures".options]
+asset_pattern = "hello-world-1.0.0.tar.gz"
+
+[tools."github:jdx/mise-test-fixtures"."platforms.macos-arm64"]
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"
+TOML
+assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "mise.lock is up to date (1 tool version, 1 platform entry)"
+# In a lockfile without request bindings, an alias to a prefix selects the
+# matching entry among several locked versions.
+cat <<'TOML' >mise.toml
+[tool_alias."github:jdx/mise-test-fixtures".versions]
+old = "prefix:1"
+
+[tools."github:jdx/mise-test-fixtures"]
+version = "old"
+platforms.macos-arm64.asset_pattern = "hello-world-1.0.0.tar.gz"
+TOML
+cat <<'TOML' >mise.lock
+[[tools."github:jdx/mise-test-fixtures"]]
+version = "1.0.0"
+backend = "github:jdx/mise-test-fixtures"
+
+[tools."github:jdx/mise-test-fixtures".options]
+asset_pattern = "hello-world-1.0.0.tar.gz"
+
+[tools."github:jdx/mise-test-fixtures"."platforms.macos-arm64"]
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"
+
+[[tools."github:jdx/mise-test-fixtures"]]
+version = "2.0.0"
+backend = "github:jdx/mise-test-fixtures"
+
+[tools."github:jdx/mise-test-fixtures".options]
+asset_pattern = "hello-world-1.0.0.tar.gz"
+
+[tools."github:jdx/mise-test-fixtures"."platforms.macos-arm64"]
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+url = "https://github.com/jdx/mise-test-fixtures/releases/download/v2.0.0/hello-world-1.0.0.tar.gz"
+TOML
+assert_contains "MISE_OFFLINE=1 mise lock --check --platform macos-arm64" "mise.lock is up to date (1 tool version, 1 platform entry)"
+cd .. || exit 1
+
+# The Python a pipx tool selects is skipped with the tool its os option rules out.
+mkdir pipx-os
+cat <<'TOML' >pipx-os/mise.toml
+[tools]
+"pipx:black" = { version = "24.10.0", python = "3.12", os = ["windows"] }
+TOML
+assert_succeed "cd pipx-os && MISE_OFFLINE=1 mise lock --check --platform linux-x64"
+assert "test ! -f pipx-os/mise.lock"
+
+# Offline, a remote config include is never fetched.
+mkdir remote-include
+cat <<'TOML' >remote-include/mise.toml
+include = ["git::https://127.0.0.1:1/does-not-exist.git//mise.toml?ref=main"]
+
+[tools]
+jq = "1.7.1"
+TOML
+assert_fail_contains "cd remote-include && GIT_TERMINAL_PROMPT=0 mise lock --check" "is not cached, and mise is offline"
+
+# Without its plugin, a config alias still finds the version an unbound
+# lockfile entry pins, as a locked install would once the plugin is installed.
+mkdir alias
+cat <<'TOML' >alias/mise.toml
+[tool_alias.tiny.versions]
+my = "1.0.0"
+
+[tools]
+tiny = "my"
+TOML
+cat <<'TOML' >alias/mise.lock
+[[tools.tiny]]
+version = "1.0.0"
+backend = "vfox:jdx/vfox-tiny"
+TOML
+assert_fail_contains "cd alias && mise lock --check --platform linux-x64" "No lockfile URL found for tiny@1.0.0 on platform linux-x64"
+# An alias to a prefix matches the pinned versions on a separator boundary.
+mkdir alias-prefix
+cat <<'TOML' >alias-prefix/mise.toml
+[tool_alias.tiny.versions]
+old = "prefix:1"
+
+[tools]
+tiny = "old"
+TOML
+cat <<'TOML' >alias-prefix/mise.lock
+[[tools.tiny]]
+version = "1.0.0"
+backend = "vfox:jdx/vfox-tiny"
+
+[[tools.tiny]]
+version = "2.0.0"
+backend = "vfox:jdx/vfox-tiny"
+TOML
+assert_fail_contains "cd alias-prefix && mise lock --check --platform linux-x64" "No lockfile URL found for tiny@1.0.0 on platform linux-x64"

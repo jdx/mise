@@ -6,6 +6,7 @@ use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::args::BackendArg;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{self, ABackend, VersionInfo};
 use crate::config::env_directive::EnvValue;
 use crate::config::{Config, Settings, SettingsExt};
@@ -235,6 +236,25 @@ impl ToolVersion {
         if let Some(plugin) = backend.plugin()
             && !plugin.is_installed()
         {
+            // Without the plugin only the config's aliases expand. The
+            // lockfile may still pin what one of them means, as it would be
+            // found once the plugin is installed.
+            let (lock_query, lock_prefix_boundary) = lock_query(&linked_query);
+            if opts.use_locked_version
+                && matches!(request, ToolRequest::Version { .. })
+                && linked_query != request.version()
+                && !has_linked_version(request.ba(), lock_query)
+                && let Some(lt) = request.lockfile_resolve_with_prefix(
+                    config,
+                    lock_query,
+                    lock_prefix_boundary,
+                    opts.keep_moved_alias_pins || Self::resolution_locked(config, &request, &opts),
+                )?
+            {
+                return Ok(
+                    Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date)
+                );
+            }
             let tv = Self::new(request.clone(), request.version());
             return Ok(tv.with_before_date(opts.before_date));
         }
@@ -328,6 +348,34 @@ impl ToolVersion {
         self
     }
 
+    /// The version a locked install on `target` would take for `request`
+    /// from the lockfile, selected by that platform's lock options. `None`
+    /// when no entry matches.
+    pub async fn resolve_locked_for_target(
+        config: &Arc<Config>,
+        request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<Option<Self>> {
+        let version = request.version();
+        let (query, boundary, alias_resolved) = match request {
+            ToolRequest::Prefix { prefix, .. } => (prefix.clone(), true, false),
+            _ => {
+                let resolved = match request.backend() {
+                    Ok(backend) => config
+                        .resolve_alias(&backend, &version)
+                        .await
+                        .unwrap_or_else(|_| version.clone()),
+                    Err(_) => version.clone(),
+                };
+                let (query, boundary) = lock_query(&resolved);
+                (query.to_string(), boundary, resolved != version)
+            }
+        };
+        Ok(request
+            .lockfile_resolve_for_target(config, &query, boundary, alias_resolved, target)?
+            .map(|lt| Self::from_lockfile(request.clone(), lt)))
+    }
+
     fn from_lockfile(mut request: ToolRequest, lt: LockfileTool) -> Self {
         if let Some(backend_full) = &lt.backend {
             let backend = Arc::new(BackendArg::new(
@@ -362,6 +410,15 @@ impl ToolVersion {
 
     pub fn resolved_from_lockfile(&self) -> bool {
         self.resolved_from_lockfile
+    }
+
+    /// Why each dependency graph the lockfile records for this version cannot
+    /// be read: a sidecar that is missing, unreadable, or edited since its
+    /// digest was recorded.
+    pub fn locked_graph_errors(&self) -> Vec<eyre::Report> {
+        let aube = self.aube_lock.as_ref().and_then(|g| g.load().err());
+        let uv = self.uv_lock.as_ref().and_then(|g| g.load().err());
+        aube.into_iter().chain(uv).collect()
     }
 
     /// Whether the request named this exact release, e.g. `hk = "2.0.1"` in
@@ -692,6 +749,7 @@ impl ToolVersion {
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
             keep_moved_alias_pins: base_opts.keep_moved_alias_pins,
+            locked: false,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -800,7 +858,7 @@ impl ToolVersion {
     /// order, forbid resolving this request outside the lockfile.
     fn locked_by(config: &Config, request: &ToolRequest, opts: &ResolveOptions) -> (bool, bool) {
         let invocation_locked =
-            config.invocation_locked_for(request.source(), Settings::get().locked);
+            opts.locked || config.invocation_locked_for(request.source(), Settings::get().locked);
         let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
         (invocation_locked, tool_config_locked)
     }
@@ -863,10 +921,7 @@ impl ToolVersion {
         // concrete versions (#5781). Config-level `prefix:...` strings always
         // parse into ToolRequest::Prefix, so a Version request only carries
         // this scheme via an alias.
-        let (lock_query, lock_prefix_boundary) = match v.strip_prefix("prefix:") {
-            Some(p) => (p, true),
-            None => (v.as_str(), false),
-        };
+        let (lock_query, lock_prefix_boundary) = lock_query(&v);
         if opts.use_locked_version
             && !has_linked_version(request.ba(), lock_query)
             && let Some(lt) = request.lockfile_resolve_with_prefix(
@@ -1559,6 +1614,10 @@ pub struct ResolveOptions {
     /// sets it so the upgrade binds the alias to that pin instead of
     /// re-resolving it.
     pub keep_moved_alias_pins: bool,
+    /// Resolve as `--locked` does, whatever the settings say: a request the
+    /// lockfile does not hold fails with `Error::NotInLockfile`.
+    /// `mise lock --check` sets it.
+    pub locked: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1581,6 +1640,7 @@ impl Default for ResolveOptions {
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
             keep_moved_alias_pins: false,
+            locked: false,
         }
     }
 }
@@ -1630,6 +1690,16 @@ impl ResolveOptions {
 /// to an external absolute path, as opposed to runtime symlinks or mise-managed
 /// install/cache links. A link that `version` cannot select (`node@22` linked while the
 /// config asks for `24.21.0`) is not a candidate, so it must not displace the lockfile.
+/// The lockfile query for what an alias expanded to: a `prefix:` selector
+/// matches the bare prefix on a separator boundary, since the lockfile
+/// stores concrete versions (#5781).
+fn lock_query(version: &str) -> (&str, bool) {
+    match version.strip_prefix("prefix:") {
+        Some(prefix) => (prefix, true),
+        None => (version, false),
+    }
+}
+
 fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
     if install_state::get_tool_full(&ba.short)
         .is_some_and(|installed| installed != ba.full_without_opts())

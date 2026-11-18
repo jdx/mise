@@ -92,6 +92,14 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
     if !is_due(pin, age, ttl) {
         return Ok((cache.clone(), file::read_to_string(&cache)?));
     }
+    // Offline mode makes no network requests: it keeps the cached copy, and
+    // a fragment never fetched has none to fall back on.
+    if Settings::try_get().is_ok_and(|s| s.offline()) {
+        if age.is_none() {
+            bail!("config include {reference} is not cached, and mise is offline");
+        }
+        return Ok((cache.clone(), file::read_to_string(&cache)?));
+    }
     file::create_dir_all(cache.parent().unwrap())?;
     // A body is only cached once it is known to load, so a bad edit upstream
     // can never replace a copy that works.

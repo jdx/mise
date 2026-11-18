@@ -5876,6 +5876,9 @@ pub(crate) struct LockedVersionQuery<'a> {
     pub(crate) legacy_options_fallback: bool,
     pub(crate) backend: Option<&'a dyn Backend>,
     pub(crate) selection_options: &'a ToolVersionOptions,
+    /// The platform whose lock options select the entry: the current one,
+    /// except for `mise lock --check` on another platform.
+    pub(crate) target: &'a PlatformTarget,
 }
 
 pub(crate) fn get_locked_version(
@@ -5893,6 +5896,7 @@ pub(crate) fn get_locked_version(
         legacy_options_fallback,
         backend,
         selection_options,
+        target,
     } = query;
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
@@ -5940,12 +5944,9 @@ pub(crate) fn get_locked_version(
             // The registry's options are for the backend it chose. Another
             // backend would read them as its own settings and never match.
             let options = if !request.registry_options_are_not_for(full) {
-                backend.lockfile_options(request, &PlatformTarget::from_current())?
+                backend.lockfile_options(request, target)?
             } else {
-                backend.lockfile_options(
-                    &request.without_registry_options(),
-                    &PlatformTarget::from_current(),
-                )?
+                backend.lockfile_options(&request.without_registry_options(), target)?
             };
             return Ok(Some((
                 options,

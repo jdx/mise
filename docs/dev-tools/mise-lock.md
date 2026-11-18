@@ -185,6 +185,7 @@ lockfile = false
 | Move `mise.lock` to the newest allowed version without installing    | `mise lock --bump node`  |
 | Lock an exact version without changing a prefix request              | `mise lock node@24.11.0` |
 | Install the versions `mise.lock` records                             | `mise install --locked`  |
+| Check that `mise.lock` is up to date, without changing it            | `mise lock --check`      |
 
 ### Previewing changes
 
@@ -443,6 +444,60 @@ In a Dockerfile, copy `mise.lock` with `mise.toml` before `mise install`, and
 
 See [Continuous integration](/continuous-integration.html) for complete
 workflows.
+
+### Checking the lockfile {#checking-the-lockfile}
+
+`mise lock --check` fails when `mise.lock` is behind `mise.toml`, so a pull
+request that changes one without the other fails in CI instead of at install
+time. It reads only the lockfile: it runs in [offline](/configuration/settings.html#offline)
+mode and writes nothing. For every configured tool, including the tools tasks
+declare and the [tool stubs](/dev-tools/tool-stubs.html) the lockfile lists, on
+each platform `mise lock` would lock, it reports what `mise install --locked`
+would reject:
+
+- a request with no matching locked version, such as `node = "26"` while
+  `mise.lock` still holds 24.11.0 (an update bot that bumps only `mise.toml`)
+- a platform entry without a download URL, with a malformed checksum, without
+  the extra artifacts a GitHub tool's `additional_asset_patterns` download, or
+  without a checksum when
+  [`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)
+  applies
+- a [dependency graph](#dependency-graphs) that a locked install needs and
+  the lockfile does not record, or a sidecar that is missing, was edited, or
+  does not describe the locked package
+
+```sh
+mise lock --check
+```
+
+```text
+mise ERROR ~/src/app/mise.lock would fail a locked install:
+  - jq@1.6 is not in the lockfile
+  - No lockfile checksum found for yq@4.44.1 on platform linux-x64 (https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64) (--locked mode)
+hint: run `mise lock` to update the lockfile
+```
+
+The platforms are the [`lockfile_platforms`](/configuration/settings.html#lockfile_platforms)
+setting plus the current platform when that setting is set, else the
+platforms already in the lockfile; pass `--platform` to choose others. A tool that does not support one of them fails
+the check unless its `os` option excludes that platform. Each platform is
+checked against the entry a locked install there would use, so a tool that
+locks one entry per Linux distro, such as `core:swift`, is checked per distro,
+and a tool with a per-platform `asset_pattern` is checked against the entry
+locked for that platform even when the current platform has none.
+The Python that a `pipx` tool selects is checked with it. Like a locked install,
+the check enforces only the scopes in
+[`locked_scopes`](/configuration/settings.html#locked_scopes) and the tools under
+`tool_config.locked`, and never the global override config. `--json` prints one
+object per platform entry with its `problems`, and still exits non-zero when
+there are any.
+
+Remote [task includes](/tasks/task-discovery.html#remote-git-includes)
+(`git::`, `oci::` and `zip::`) are skipped with a warning, because fetching
+them is a network request, so the tools their tasks declare are not checked.
+A remote config [include](/configuration.html#include) is read from its
+cached copy, and the check fails when it was never fetched. Naming a tool that
+is not configured fails, as it does for `mise lock`.
 
 ## Backend support
 
