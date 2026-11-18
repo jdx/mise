@@ -401,7 +401,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:c72401f209065266836ee568237ff87d327516ee28be9afa674069ed40ca2a05
+    container: ghcr.io/jdx/mise:rpm@sha256:e43dd709d1be95b27426196ee04dfb616318e5870fc759fffd0e52473e36f33e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -427,7 +427,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:adc5907ac962280220fe9c7bdb178f58fd033d45cba62645d14ada3e6d39211e
+    container: ghcr.io/jdx/mise:deb@sha256:de253f281604af021ac43f9c735aa122dcc6aa1b40fe92e5fccd7b3b76fd97aa
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
