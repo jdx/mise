@@ -659,8 +659,18 @@ fn check_merge_key_has_id(
         } else {
             ""
         };
+        // the corrected target may sit where no source can be inferred
+        let source_note = if entry.source.is_none() && !implies_source(&format!("{path_raw}/{id}"))
+        {
+            " together with an explicit source"
+        } else {
+            ""
+        };
+        // show the key parts escaped so a control character cannot split the message
+        let shown_path = serde_json::to_string(path_raw)?;
+        let shown_id = serde_json::to_string(id)?;
         bail!(
-            "\"{path_raw}\".{id}: \"{id}\" was read as the id and \"{path_raw}\" as the target, which has no .json, .jsonc, .toml, .yaml, .yml, or .ini extension; if \"{id}\" is the file to merge into, the key is missing its /<id> (for example {suggestion}){format_alternative}, ignoring entry"
+            "{shown_path}.{shown_id}: {shown_id} was read as the id and {shown_path} as the target, which has no .json, .jsonc, .toml, .yaml, .yml, or .ini extension; if {shown_id} is the file to merge into, the key is missing its /<id> (for example {suggestion}{source_note}){format_alternative}, ignoring entry"
         );
     }
     Ok(())
