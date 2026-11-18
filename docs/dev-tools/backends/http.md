@@ -123,7 +123,7 @@ the install fails with an error that lists the platforms that have one.
 
 Other download options can be set per platform the same way: `checksum`,
 `checksum_url`, `size`, `headers`, `format`, `strip_components`, `bin_path`,
-`bin`, `rename_exe` and `windows_script_interpreter`. A platform value overrides
+`bin`, `rename_exe`, `filter_bins` and `windows_script_interpreter`. A platform value overrides
 the top-level one:
 
 ```toml
@@ -534,6 +534,22 @@ bin_path = "bin"
 When `bin_path` is not set, mise puts `bin/` in the install directory on `PATH`
 if it exists, otherwise the `bin/` directory of every immediate subdirectory
 that has one, and otherwise the install directory.
+
+### `filter_bins` {#filter-bins}
+
+Only these executables go on `PATH`, as a string or an array. mise links them
+into a `.mise-bins` directory, looking in `bin_path`, `bin/` and the install
+directory, and puts only that directory on `PATH`. Use it when an archive
+bundles helpers or its own runtime, such as a private `node`, that would
+otherwise shadow the ones you installed.
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
+bin_path = "dist"
+filter_bins = ["my-tool"]
+```
 
 ### `bin`
 

@@ -4,7 +4,6 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
@@ -13,6 +12,7 @@ use crate::backend::static_helpers::{
     template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
+use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::http::{DownloadFileMetadata, HTTP};
@@ -197,6 +197,25 @@ impl<'a> HttpOptions<'a> {
 
     fn bin_path(&self) -> Option<String> {
         self.values.platform_string("bin_path")
+    }
+
+    /// `filter_bins` as a list: a comma-separated string or an array. A platform
+    /// value wins over the top-level one.
+    fn filter_bins(&self) -> Option<Vec<String>> {
+        let parse = |value: Option<&toml::Value>| {
+            let bins: Vec<String> = match value? {
+                toml::Value::String(s) => s.split(',').map(|s| s.trim().to_string()).collect(),
+                toml::Value::Array(a) => a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                    .collect(),
+                _ => return None,
+            };
+            let bins: Vec<String> = bins.into_iter().filter(|s| !s.is_empty()).collect();
+            (!bins.is_empty()).then_some(bins)
+        };
+        parse(self.values.platform_value_without_base("filter_bins"))
+            .or_else(|| parse(self.values.raw().opts.get("filter_bins")))
     }
 
     fn shared_extraction(&self) -> bool {
@@ -572,6 +591,14 @@ impl HttpBackend {
             if let Some(bin_path) = bin_path {
                 parts.push(format!("binpath_{}", hash::hash_blake3_to_str(bin_path)));
             }
+        }
+
+        // `.mise-bins` is written into the (possibly shared) extraction.
+        if let Some(bins) = opts.filter_bins() {
+            parts.push(format!(
+                "filter_bins_{}",
+                hash::hash_blake3_to_str(&bins.join("\n"))
+            ));
         }
 
         if let Some(interpreter) = opts.windows_script_interpreter() {
@@ -1673,6 +1700,9 @@ impl Backend for HttpBackend {
         }
         self.create_version_alias_symlink(&tv, &cache_plan.key)?;
         tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
+        if let Some(bins) = opts.filter_bins() {
+            self.create_symlink_bin_dir(&tv, &opts, bins)?;
+        }
 
         Ok(tv)
     }
@@ -1706,46 +1736,93 @@ impl Backend for HttpBackend {
         let mut tv = tv.clone();
         tv.install_path = Some(install_path.clone());
 
-        // Check for explicit bin_path
-        if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = render_bin_path(&bin_path_template, &tv)?;
+        if opts.filter_bins().is_some() || install_path.join(MISE_BINS_DIR).is_dir() {
             return Ok(vec![runtime_path_for_install_path(
                 &tv,
-                install_path.join(bin_path),
+                install_path.join(MISE_BINS_DIR),
             )]);
         }
 
-        // Check for bin directory
+        Ok(Self::discover_bin_paths(&opts, &tv)?
+            .into_iter()
+            .map(|path| runtime_path_for_install_path(&tv, path))
+            .collect())
+    }
+}
+
+impl HttpBackend {
+    /// The directories of the install that hold executables, before `filter_bins`.
+    /// `tv.install_path` must be the real install path.
+    fn discover_bin_paths(opts: &HttpOptions<'_>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        let install_path = tv.install_path();
+        if let Some(bin_path_template) = opts.bin_path() {
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
+            return Ok(vec![install_path.join(bin_path)]);
+        }
+
         let bin_dir = install_path.join("bin");
         if bin_dir.exists() {
-            return Ok(vec![runtime_path_for_install_path(
-                &tv,
-                install_path.join("bin"),
-            )]);
+            return Ok(vec![bin_dir]);
         }
 
         // Search subdirectories for bin directories
         let mut paths = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&install_path) {
             for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let sub_bin = path.join("bin");
-                    if sub_bin.exists() {
-                        paths.push(sub_bin);
-                    }
+                let sub_bin = entry.path().join("bin");
+                if entry.path().is_dir() && sub_bin.exists() {
+                    paths.push(sub_bin);
                 }
             }
         }
 
         if paths.is_empty() {
-            Ok(vec![runtime_path_for_install_path(&tv, install_path)])
+            Ok(vec![install_path])
         } else {
-            Ok(paths
-                .into_iter()
-                .map(|path| runtime_path_for_install_path(&tv, path))
-                .collect())
+            Ok(paths)
         }
+    }
+
+    /// Links only the `filter_bins` executables into `.mise-bins`, so bundled helpers
+    /// stay off `PATH`.
+    fn create_symlink_bin_dir(
+        &self,
+        tv: &ToolVersion,
+        opts: &HttpOptions<'_>,
+        bins: Vec<String>,
+    ) -> Result<()> {
+        let install_path = tv.install_path();
+        let symlink_dir = install_path.join(MISE_BINS_DIR);
+        file::create_dir_all(&symlink_dir)?;
+
+        let mut src_dirs = Self::discover_bin_paths(opts, tv)?;
+        if !src_dirs.contains(&install_path) {
+            src_dirs.push(install_path);
+        }
+
+        for bin_name in bins {
+            // A name with separators or parent components would resolve outside
+            // the install and symlink an arbitrary file onto PATH.
+            if !file::is_plain_file_name(&bin_name) {
+                warn!("filter_bins: '{bin_name}' must be a plain file name, skipping");
+                continue;
+            }
+            let Some(src) = src_dirs
+                .iter()
+                .map(|dir| dir.join(&bin_name))
+                .find(|src| src.exists())
+            else {
+                warn!(
+                    "Could not find binary '{bin_name}' in install directories. Available paths: {src_dirs:?}"
+                );
+                continue;
+            };
+            let dst = symlink_dir.join(&bin_name);
+            if !dst.exists() {
+                super::mise_bins::link(&src, &dst)?;
+            }
+        }
+        Ok(())
     }
 }
 

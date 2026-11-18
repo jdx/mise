@@ -219,6 +219,8 @@ pub struct ToolHttpOptions {
     pub rename_exe: Option<RenameExe>,
     /// directory inside the install that contains binaries (tera templated)
     pub bin_path: Option<String>,
+    /// only expose these binaries on PATH
+    pub filter_bins: Option<OneOrManyStrings>,
     /// share extracted content between installs with identical artifacts
     #[serde(default)]
     #[schemars(schema_with = "refs::tool_bool")]
