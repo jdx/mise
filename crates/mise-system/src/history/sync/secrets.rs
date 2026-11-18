@@ -83,8 +83,12 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
                             && !(structured && matches!(next, ',' | '}' | ']' | ')'))
                     })
             };
+        if ended && suspicious(&value.as_str()[text.len() + 1..], allowed) {
+            // the command after the separator is judged on its own
+            flagged = true;
+        }
         if approved(text) && !continues {
-            covered.push(value.range());
+            covered.push(value.start()..value.start() + text.len());
         } else {
             flagged = true;
         }
@@ -276,6 +280,8 @@ mod tests {
             "API_KEY=\"ctx7_api_key\"-actual-secret",
             "API_KEY='ctx7_api_key'extra",
             "API_KEY=\"ctx7_api_key\",actual-secret",
+            "API_KEY=ctx7_api_key;B_TOKEN=abcdefghijkl",
+            "API_KEY=ctx7_api_key;X=ghp_111111111111111111111111111111",
             "API_KEY=\"ctx7_api_key\"#actual-secret",
             "API_KEY=ctx7_api_key'additional'",
             "API_KEY=\"ctx7_api_key abcdefghijkl\"",
