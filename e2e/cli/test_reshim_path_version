@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# A `path:` version is an external directory with no install dir, so reshim
+# must still create shims for the executables in it.
+
+shimdir="$MISE_DATA_DIR/shims"
+
+mkdir -p "$PWD/localtool/bin"
+cat >"$PWD/localtool/bin/localtool" <<'SH'
+#!/usr/bin/env bash
+echo "local tool"
+SH
+chmod +x "$PWD/localtool/bin/localtool"
+
+cat >mise.toml <<EOF2
+[tools]
+"github:jdx/localtool" = "path:$PWD/localtool/bin"
+EOF2
+
+mise reshim
+assert "readlink $shimdir/localtool" "$(which mise)"
+assert "mise x -- localtool" "local tool"

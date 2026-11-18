@@ -1939,6 +1939,25 @@ async fn get_desired_shims(
                 .flat_map(|b| platform_shim_names(_mise_bin, &b)),
         );
     }
+    // A `path:` version is an external directory, so it has no install directory for the
+    // listing above to find. Its bins still need shims.
+    for (t, tv) in toolset.list_current_versions() {
+        if !matches!(tv.request, crate::toolset::ToolRequest::Path { .. })
+            || !shim_scope_contains_request(scope, &tv.request)
+        {
+            continue;
+        }
+        let bins = list_tool_bins(config, t.clone(), &tv)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("Error listing bin paths for {}: {:#}", tv, e);
+                Vec::new()
+            });
+        shims.extend(
+            bins.into_iter()
+                .flat_map(|b| platform_shim_names(_mise_bin, &b)),
+        );
+    }
     for request in toolset.list_current_requests() {
         if !shim_scope_contains_request(scope, request) {
             continue;
