@@ -30,7 +30,7 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 /// substitution is not a secret.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}))"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}|[^\s"'$`~/#{(<\[;][^\s"';]{0,6};[^\s"']{6,}))"#,
     )
     .unwrap()
 });
@@ -83,13 +83,23 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
             flagged = true;
         }
     }
-    flagged
-        || TOKEN_FORMATS.find_iter(line).any(|found| {
-            !approved(found.as_str())
-                && !covered
-                    .iter()
-                    .any(|range| range.start <= found.start() && found.end() <= range.end)
-        })
+    if flagged {
+        return true;
+    }
+    // both lists are in line order, so one forward cursor covers them
+    let mut next = 0;
+    TOKEN_FORMATS.find_iter(line).any(|found| {
+        while covered
+            .get(next)
+            .is_some_and(|range| range.end <= found.start())
+        {
+            next += 1;
+        }
+        let inside = covered
+            .get(next)
+            .is_some_and(|range| range.start <= found.start() && found.end() <= range.end);
+        !approved(found.as_str()) && !inside
+    })
 }
 
 /// Fail when a version that is not yet on the origin looks like it holds a
@@ -155,6 +165,7 @@ mod tests {
             "export GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
             "export OPENAI_API_KEY=\"abcd1234efgh\"",
             "password: hunter2hunter2",
+            "password: abc;defghijkl",
             "AWS=AKIAABCDEFGHIJKLMNOP",
             "-----BEGIN OPENSSH PRIVATE KEY-----",
             "secret = 'abcdefgh'",
