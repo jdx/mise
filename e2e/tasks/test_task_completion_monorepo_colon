@@ -70,9 +70,13 @@ assert_contains_text "$(mise __complete_word__ --shell zsh --line 'mise run :env
 assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise //:env:upd')" '//:env:update'
 assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run //')" $'//:env:update\tBump the lockfile'
 # An empty word offers the one shortest spelling, not the absolute and shorthand forms too
-run_all="$(mise __complete_word__ --shell fish --line 'mise run ')"
-assert_contains_text "$run_all" $'env:update\tBump the lockfile'
-assert_not_contains_text "$run_all" '//:env:update'
+run_all="$(
+  printf '\n'
+  mise __complete_word__ --shell fish --line 'mise run '
+)"
+assert_contains_text "$run_all" $'\nenv:update\tBump the lockfile'
+assert_not_contains_text "$run_all" $'\n:env:update'
+assert_not_contains_text "$run_all" $'\n//:env:update'
 
 # Tasks of other config roots have no shorthand here
 assert_not_contains_text "$root_shorthands" ':build'
