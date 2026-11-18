@@ -633,6 +633,16 @@ fn merge_op(
     if entry.position.is_some() || entry.comment.is_some() {
         bail!("\"{path_raw}\".{id}: position and comment do not apply to merge, ignoring entry");
     }
+    // the key is split at its last `/`, so a key written without an id reads
+    // as `<parent dir>/<file name>`; name the missing id instead of blaming
+    // the format or failing later on a directory
+    let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
+    let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
+    if id_looks_like_file && (target_is_unformatted || path.is_dir()) {
+        bail!(
+            "\"{path_raw}\".{id}: the key is missing its /<id> segment, so \"{id}\" was read as the id and \"{path_raw}\" as the target; did you mean \"{path_raw}/{id}/<id>\" (for example \"{path_raw}/{id}/shared\"), ignoring entry"
+        );
+    }
     // like a symlink entry, an omitted source is the target's path under
     // dotfiles.root
     let source = match &entry.source {
@@ -2421,6 +2431,35 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("true or \"missing\""), "{err}");
+    }
+
+    #[test]
+    fn a_merge_key_without_an_id_names_the_missing_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = format!("{}/settings.toml", dir.path().display());
+        for (key, entry) in [
+            // no format: the target has no extension
+            (
+                "~/.config/app/settings.toml".to_string(),
+                "source = \"s\"\nmerge = true",
+            ),
+            // a format hides that, but the target is a directory
+            (existing, "source = \"s\"\nmerge = true\nformat = \"toml\""),
+        ] {
+            // the key is split at its last `/`, as the parser does
+            let (path, id) = split_edit_key(&key).unwrap();
+            let entry: EditTomlEntry = toml::from_str(entry).unwrap();
+            let err = resolve_entry(
+                &path,
+                id,
+                entry,
+                Path::new("/cfg"),
+                Path::new("/cfg/mise.toml"),
+            );
+            let err = err.unwrap_err().to_string();
+            assert!(err.contains("missing its /<id>"), "{err}");
+            assert!(err.contains(&format!("{key}/shared")), "{err}");
+        }
     }
 
     #[test]
