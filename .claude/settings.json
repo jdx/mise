@@ -89,6 +89,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'if command -v entire-brain >/dev/null 2>&1; then exec entire-brain hook pre-edit --claude-hook; fi; for b in \"${ENTIRE_PLUGIN_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/entire/plugins}/bin/entire-brain\" \"$LOCALAPPDATA/entire/plugins/bin/entire-brain.exe\"; do if [ -x \"$b\" ]; then exec \"$b\" hook pre-edit --claude-hook; fi; done; exit 0'"
+          }
+        ]
       }
     ],
     "SessionEnd": [

@@ -345,3 +345,8 @@ The debug `mise` binary is already on PATH. Prefer `mise run …` for project ta
 - Isolated e2e uses `env -i` and a fake `HOME`, so the agent's mise shims are not on PATH. Tests install their own tools. Host packages (zsh, fish, python3, jq, git) still need to be on `/usr/bin`
 - If GitHub API calls 429, run `export GITHUB_TOKEN="$(gh auth token)"; export MISE_GITHUB_TOKEN="$GITHUB_TOKEN"`
 - A leftover `/tmp/mise.toml` will fail the harness; remove it if that error appears
+
+<!-- entire-agent:begin -->
+Read .entire/agent-guide.md for this repository's workflow, source inspection, and verification guidance.
+@.entire/agent-guide.md
+<!-- entire-agent:end -->
