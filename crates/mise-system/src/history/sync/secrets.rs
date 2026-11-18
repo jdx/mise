@@ -138,7 +138,9 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
             // the capture may be capped; only the whole scalar can be approved
             return Scan::Flagged;
         }
-        if bare && !structured && text.contains(';') {
+        // a value approved whole,  and all, is not split
+        let whole_approved = approved(text) && !continues && ends_value(&line[value.end()..]);
+        if bare && !structured && text.contains(';') && !whole_approved {
             // shell: `KEY=value;next` is two commands. Judge the value alone,
             // then the rest of the line as its own command, quoted values
             // included, which the capture stopped short of.
@@ -158,7 +160,6 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
             if (word_end == rest.len() || rest[word_end..].starts_with(';'))
                 && word.chars().count() >= 8
                 && !word.contains('=')
-                && !(approved(text) && !continues && ends_value(&line[value.end()..]))
             {
                 return Scan::Flagged;
             }
@@ -439,6 +440,13 @@ mod tests {
         // a literal value holding `;` is approved as a whole, in ini or shell
         let literal = vec!["abc;actual-secret".to_string()];
         assert!(!suspicious("password=abc;actual-secret", &literal));
+        // an approved whole value is not split or scanned for what it holds
+        let holding = vec!["a;DEPLOY_TOKEN=abcdefghijkl1234".to_string()];
+        assert!(!suspicious(
+            "API_KEY=a;DEPLOY_TOKEN=abcdefghijkl1234",
+            &holding
+        ));
+        assert!(suspicious("API_KEY=a;DEPLOY_TOKEN=abcdefghijkl1234", &[]));
         assert!(suspicious("password=abc;actual-secret-more", &literal));
         assert!(suspicious(r#"password=abc;actual-secret"more""#, &literal));
         // a tab before the comment ends the scalar like a space does
