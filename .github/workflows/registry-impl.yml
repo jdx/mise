@@ -78,6 +78,7 @@ jobs:
         with:
           shared-key: build
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release') }}
+      - run: rustup update stable --no-self-update
       - run: cargo build --all-features --ignore-rust-version
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
