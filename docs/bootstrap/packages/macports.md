@@ -28,7 +28,7 @@ in shell profiles, so mise also looks there directly. On other machines, its
 entries show as [`skipped`](/bootstrap/packages/#choose-platforms).
 
 mise does not install MacPorts. To set it up on a new Mac, install it from a
-[`pre-packages` hook](/bootstrap/#hooks) with the
+[`pre-packages` hook](/bootstrap.html#hooks) with the
 [MacPorts installer package](https://www.macports.org/install.php).
 
 `macports` is not in the default order for
