@@ -593,11 +593,16 @@ async fn run_staged(
     } else {
         project
     };
-    let mut argv = vec![
-        "env".to_string(),
-        format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
-    ];
-    argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    let mut argv = vec!["env".to_string()];
+    if session.host.mise_env.is_empty() {
+        // Clear an inherited value, but let the host's own miserc choose.
+        // `env` only takes -u before NAME=VALUE words.
+        argv.extend(["-u".to_string(), "MISE_ENV".to_string()]);
+    }
+    argv.push(format!("MISE_TRUSTED_CONFIG_PATHS={project}"));
+    if !session.host.mise_env.is_empty() {
+        argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    }
     if preview_setup {
         argv.push(format!("MISE_CONFIG_DIR={project}"));
         argv.push(format!("MISE_GLOBAL_CONFIG_FILE={project}/config.toml"));

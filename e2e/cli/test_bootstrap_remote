@@ -188,7 +188,8 @@ assert_contains "cat $ssh_log" "$HOME/.local/bin/mise version"
 
 : >"$ssh_log"
 assert_succeed "MISE_ENV=unexpected mise bootstrap remote layered --dry-run --yes"
-assert_contains "cat $ssh_log" "'MISE_ENV=' $HOME/.local/bin/mise --cd"
+assert_contains "cat $ssh_log" "env -u MISE_ENV 'MISE_TRUSTED_CONFIG_PATHS="
+assert_not_contains "cat $ssh_log" "MISE_ENV="
 assert_not_contains "cat $ssh_log" "MISE_ENV=unexpected"
 
 : >"$ssh_log"

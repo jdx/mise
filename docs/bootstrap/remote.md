@@ -93,7 +93,9 @@ These rules decide each host's final settings:
   inventory that lives in global config. A host's `exclude` adds to them.
 - When two config files declare the same host name, the more local one wins.
 - `mise_env` is passed to the host's `mise bootstrap` as `MISE_ENV`.
-  `--remote-env <ENV>` replaces it for every selected host.
+  `--remote-env <ENV>` replaces it for every selected host. When neither is
+  set, mise clears any inherited `MISE_ENV` on the host and the host's own
+  [miserc](/configuration/environments.html) chooses the environments.
 - mise checks only the hosts you select, and it checks all of them, with
   command-line overrides applied, before it opens any connection. A stale entry
   you did not select does not block a run, and an invalid selected one cannot
@@ -303,7 +305,8 @@ mise bootstrap remote cache --remote-env linux,server
 
 mise does not copy your local environment to the host. A local `-E` only
 changes which local config files mise reads; the host loads the environments in
-`mise_env` or `--remote-env`. [Secret inputs](/bootstrap/secrets.html) set on
+`mise_env` or `--remote-env`, or the host's own miserc `env` when neither is
+set. [Secret inputs](/bootstrap/secrets.html) set on
 this machine are not available there either. Use `--prompt-secrets` for an
 attended run, or make the values available on the host.
 
