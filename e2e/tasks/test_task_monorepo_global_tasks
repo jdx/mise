@@ -76,4 +76,19 @@ run = "echo hello-from-project"
 TOML
 assert_contains "mise run '//packages/foo:foo-task'" "hello-from-project"
 
+# Test 8: the fallback never reaches into another project's grouped task
+echo "=== Test 8: no cross-project fallback ==="
+cat <<'TOML' >>packages/foo/mise.toml
+
+[tasks."tools:install"]
+run = "echo foo-tools-install"
+TOML
+cat <<'TOML' >>mise.toml
+
+[tasks.bad]
+depends = ["tools:install"]
+run = "echo bad-ran"
+TOML
+assert_fail "mise run '//:bad'"
+
 echo "=== All monorepo global task tests passed! ==="

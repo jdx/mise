@@ -3519,10 +3519,14 @@ fn match_tasks_with_context(
     } else {
         resolve_task_pattern(&td.task, parent_task)
     };
-    let mut candidates: Vec<&&Task> = if tag_only {
-        tasks.values().unique().collect()
+    let mut candidates: Vec<&Task> = if tag_only {
+        tasks.values().copied().unique().collect()
     } else {
-        tasks.get_matching(&resolved_pattern)?
+        tasks
+            .get_matching(&resolved_pattern)?
+            .into_iter()
+            .copied()
+            .collect()
     };
     // A bare name in a monorepo task resolves to the parent's project first. When no task there
     // has that name, fall back to the unscoped name so global tasks stay reachable (#15811).
@@ -3532,13 +3536,24 @@ fn match_tasks_with_context(
         && !td.task.starts_with(['/', ':', '.'])
         && !is_workspace_project_task(&td.task)
     {
-        candidates = tasks.get_matching(&td.task)?;
+        // Match only unscoped tasks: `get_matching` retries a grouped name with `//` prepended
+        // when the map has monorepo keys, which would run another project's task.
+        let unscoped: BTreeMap<String, &Task> = tasks
+            .iter()
+            .filter(|(k, _)| !k.starts_with("//") && !is_workspace_project_task(k))
+            .map(|(k, t)| (k.clone(), *t))
+            .collect();
+        candidates = unscoped
+            .get_matching(&td.task)?
+            .into_iter()
+            .copied()
+            .collect();
     }
     let matches = candidates
         .into_iter()
         .filter(|t| td.tags.is_empty() || t.has_any_tag(&td.tags))
         .map(|t| {
-            let mut t = (*t).clone();
+            let mut t = t.clone();
             t.args = td.args.clone();
             // Apply env vars from dependency - these affect task identity/deduplication
             if !td.env.is_empty() {
