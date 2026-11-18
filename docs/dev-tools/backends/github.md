@@ -107,7 +107,7 @@ such as `postinstall` and `os`, are described in
 | [`version_prefix`](#version-prefix)                                                          | Read versions from tags with a prefix other than `v`               |
 | [`version_regex`](#version-regex)                                                            | List only the release tags that match a pattern                    |
 | [`prerelease`](#prerelease)                                                                  | Include prereleases                                                |
-| [`version_order`](#version-order)                                                            | Order versions by semantic version                                 |
+| [`version_order`](#version-order)                                                            | Order versions by semantic version or publication date             |
 | [`url`](#platform-specific-urls)                                                             | Download a URL instead of a release asset on one platform          |
 | [`format`](#format)                                                                          | Set the archive format                                             |
 | [`strip_components`](#strip-components)                                                      | Remove leading directories when extracting                         |
@@ -307,6 +307,21 @@ version order:
 
 `latest` still resolves to the release GitHub or Forgejo marks as latest when
 there is one. See [version ordering](/dev-tools/versions.html#version-ordering).
+
+The listing follows the order GitHub returns, which does not always match
+publication time: a stable release cut from an older commit can be listed
+before a prerelease published after it. Set `version_order = "published_at"`
+to sort by publication date, oldest to newest, so `latest` is the release
+published most recently, whatever its version number. It is meant for
+`prerelease = true`, to follow a repository's stable and alpha channels
+together:
+
+```toml
+[tools]
+"github:openai/codex" = { version = "latest", prerelease = true, version_prefix = "rust-v", version_order = "published_at" }
+```
+
+A release without a publication date sorts before every dated one.
 
 ### Per-platform options
 

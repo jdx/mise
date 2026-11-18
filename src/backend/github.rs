@@ -717,7 +717,10 @@ fn forgejo_release_has_assets(release: &forgejo::ForgejoRelease) -> bool {
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
-        VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
+        VersionOrder::from_dated_options_or(
+            opts,
+            self.ba.registry_version_order().unwrap_or_default(),
+        )
     }
 
     fn option_spec(&self) -> Option<crate::backend::OptionSpec> {

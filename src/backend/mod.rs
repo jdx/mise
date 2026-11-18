@@ -3705,9 +3705,7 @@ pub trait Backend: Debug + Send + Sync {
                 has_local_version_listing_override,
             )
             .await?;
-        Ok(self
-            .version_order(opts)?
-            .order_by(versions, |version| version.version.as_str()))
+        Ok(self.version_order(opts)?.order_infos(versions))
     }
 
     /// List remote versions while selecting candidates with the active request's options.
@@ -3734,9 +3732,7 @@ pub trait Backend: Debug + Send + Sync {
                 has_local_version_listing_override,
             )
             .await?;
-        Ok(self
-            .version_order(opts)?
-            .order_by(versions, |version| version.version.as_str()))
+        Ok(self.version_order(opts)?.order_infos(versions))
     }
 
     /// Common remote-version listing hook for both config- and request-aware callers.
