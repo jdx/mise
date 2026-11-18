@@ -7,8 +7,10 @@ mkdir -p pkg/dist-package
 printf '#!/bin/sh\necho my-tool 1.0.0\n' >pkg/dist-package/my-tool
 printf '#!/bin/sh\necho bundled-node\n' >pkg/dist-package/node
 printf '#!/bin/sh\necho bundled-rg\n' >pkg/dist-package/rg
-chmod +x pkg/dist-package/*
-tar -czf my-tool-1.0.0.tar.gz -C pkg dist-package
+mkdir -p pkg/.mise-bins
+printf '#!/bin/sh\necho archive-node\n' >pkg/.mise-bins/node
+chmod +x pkg/dist-package/* pkg/.mise-bins/node
+tar -czf my-tool-1.0.0.tar.gz -C pkg dist-package .mise-bins
 
 cat <<EOF2 >mise.toml
 [tools]

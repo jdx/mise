@@ -595,9 +595,14 @@ impl HttpBackend {
 
         // `.mise-bins` is written into the (possibly shared) extraction.
         if let Some(bins) = opts.filter_bins() {
+            // The links point into the directory `bin_path` names.
             parts.push(format!(
                 "filter_bins_{}",
-                hash::hash_blake3_to_str(&bins.join("\n"))
+                hash::hash_blake3_to_str(&format!(
+                    "{}\n{}",
+                    bins.join("\n"),
+                    bin_path.unwrap_or_default()
+                ))
             ));
         }
 
@@ -1736,7 +1741,22 @@ impl Backend for HttpBackend {
         let mut tv = tv.clone();
         tv.install_path = Some(install_path.clone());
 
-        if opts.filter_bins().is_some() || install_path.join(MISE_BINS_DIR).is_dir() {
+        // An install made before `filter_bins` was set has no `.mise-bins`; build it
+        // rather than dropping the tool from PATH.
+        // An archive's own `.mise-bins` counts only when `filter_bins` asks for one.
+        let filtered = opts.filter_bins().is_some_and(|bins| {
+            if !install_path.join(MISE_BINS_DIR).is_dir()
+                && install_path.is_dir()
+                && let Err(err) = self.create_symlink_bin_dir(&tv, &opts, bins)
+            {
+                warn!(
+                    "could not create {MISE_BINS_DIR} for {}: {err}",
+                    self.ba.tool_name
+                );
+            }
+            install_path.join(MISE_BINS_DIR).is_dir()
+        });
+        if filtered {
             return Ok(vec![runtime_path_for_install_path(
                 &tv,
                 install_path.join(MISE_BINS_DIR),
@@ -1793,13 +1813,13 @@ impl HttpBackend {
     ) -> Result<()> {
         let install_path = tv.install_path();
         let symlink_dir = install_path.join(MISE_BINS_DIR);
-        file::create_dir_all(&symlink_dir)?;
 
         let mut src_dirs = Self::discover_bin_paths(opts, tv)?;
         if !src_dirs.contains(&install_path) {
             src_dirs.push(install_path);
         }
 
+        let mut wanted = Vec::new();
         for bin_name in bins {
             // A name with separators or parent components would resolve outside
             // the install and symlink an arbitrary file onto PATH.
@@ -1817,12 +1837,44 @@ impl HttpBackend {
                 );
                 continue;
             };
-            let dst = symlink_dir.join(&bin_name);
-            if !dst.exists() {
+            // Link the real file: a link through this install's path would dangle for
+            // another tool sharing the extraction once this one is uninstalled.
+            let src = src.canonicalize().unwrap_or(src);
+            wanted.push((bin_name, src));
+        }
+
+        // An archive can ship its own `.mise-bins`; keep only a previous run's links.
+        if symlink_dir.exists() && !Self::bins_dir_matches(&symlink_dir, &wanted) {
+            file::remove_all(&symlink_dir)?;
+        }
+        file::create_dir_all(&symlink_dir)?;
+        for (name, src) in wanted {
+            let dst = symlink_dir.join(&name);
+            if dst.symlink_metadata().is_err() {
                 super::mise_bins::link(&src, &dst)?;
             }
         }
         Ok(())
+    }
+
+    /// Whether `dir` holds exactly the links for `wanted`, so it can be kept as it is.
+    fn bins_dir_matches(dir: &Path, wanted: &[(String, PathBuf)]) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        let mut found = 0;
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some((_, src)) = wanted.iter().find(|(n, _)| *n == name) else {
+                return false;
+            };
+            // A copy (Windows) cannot be told from an archive's own file.
+            if std::fs::read_link(entry.path()).ok().as_ref() != Some(src) {
+                return false;
+            }
+            found += 1;
+        }
+        found == wanted.len()
     }
 }
 
