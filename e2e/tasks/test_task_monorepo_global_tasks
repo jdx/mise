@@ -97,4 +97,24 @@ TOML
 assert_contains "mise run '//tools:install'" "tools-install-ran"
 assert_fail "mise run '//:bad'"
 
+# Test 9: an absent optional glob dependency does not run another project's tasks
+echo "=== Test 9: optional glob dependency ==="
+mkdir -p test
+cat <<'TOML' >test/mise.toml
+[tasks.unit]
+run = "echo test-unit-ran"
+TOML
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "tools", "test"]
+
+[tasks.opt]
+depends = [{ task = "test:*", optional = true }]
+run = "echo opt-ran"
+TOML
+assert "mise run '//:opt'" "opt-ran"
+assert_not_contains "mise run '//:opt' 2>&1" "test-unit-ran"
+
 echo "=== All monorepo global task tests passed! ==="
