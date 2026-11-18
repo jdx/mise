@@ -9506,15 +9506,7 @@ pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str>
     }
 }
 
-pub fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
-    match backend {
-        "dotnet-core" => "dotnet",
-        "nodejs" => "node",
-        "golang" => "go",
-        _ => backend.trim_start_matches("core:"),
-    }
-    .into()
-}
+pub use mise_config::tools::unalias_backend;
 
 #[test]
 fn test_unalias_backend() {

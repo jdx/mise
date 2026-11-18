@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOT'
+[tools]
+node = "20.0.0"
+go = "1.22.0"
+tiny = "1.0.0"
+EOT
+
+# Legacy spellings that [tools] accepts (nodejs, golang, core:node) name the same
+# tool in the filters.
+export MISE_ENABLE_TOOLS=nodejs
+assert_contains "mise ls" "node"
+assert_not_contains "mise ls" "tiny"
+assert_not_contains "mise ls" "go "
+
+export MISE_ENABLE_TOOLS=golang,core:nodejs
+assert_contains "mise ls" "node"
+assert_contains "mise ls" "go "
+assert_not_contains "mise ls" "tiny"
+
+unset MISE_ENABLE_TOOLS
+export MISE_DISABLE_TOOLS=nodejs
+assert_not_contains "mise ls" "node"
+assert_contains "mise ls" "tiny"
