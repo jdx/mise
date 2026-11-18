@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+
+# A `path:` version is an external directory with no install dir, so reshim
+# must still create shims for the executables in it.
+
+shimdir="$MISE_DATA_DIR/shims"
+
+mkdir -p "$PWD/localtool/bin"
+cat >"$PWD/localtool/bin/localtool" <<'SH'
+#!/usr/bin/env bash
+echo "local tool"
+SH
+chmod +x "$PWD/localtool/bin/localtool"
+
+cat >mise.toml <<EOF2
+[tools]
+"github:jdx/localtool" = "path:$PWD/localtool/bin"
+EOF2
+
+mise reshim
+assert "readlink $shimdir/localtool" "$(which mise)"
+assert "$shimdir/localtool" "local tool"
+
+# Reshimming from an unrelated directory must keep the shim of the tracked config.
+other="$(mktemp -d)"
+(cd "$other" && mise reshim)
+assert "readlink $shimdir/localtool" "$(which mise)"
+assert "$shimdir/localtool" "local tool"
+
+# A project's `path:` entry for the same tool hides the global one in the merged
+# toolset, but the global tool's shims must survive a reshim in that project.
+mkdir -p "$PWD/globaltool/bin" "$PWD/childtool/bin" "$PWD/proj"
+cat >"$PWD/childtool/bin/childbin" <<'SH'
+#!/usr/bin/env bash
+echo "child bin"
+SH
+chmod +x "$PWD/childtool/bin/childbin"
+cat >"$PWD/globaltool/bin/globalbin" <<'SH'
+#!/usr/bin/env bash
+echo "global bin"
+SH
+chmod +x "$PWD/globaltool/bin/globalbin"
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<EOF2
+[tools]
+"github:jdx/overridden" = "path:$PWD/globaltool/bin"
+EOF2
+cat >"$PWD/proj/mise.toml" <<EOF2
+[tools]
+"github:jdx/overridden" = "path:$PWD/childtool/bin"
+EOF2
+(cd "$PWD/proj" && mise reshim)
+assert "$shimdir/globalbin" "global bin"
+(cd "$PWD/proj" && assert "$shimdir/childbin" "child bin")
+
+# A tool excluded by disable_tools must not get shims from another project's config.
+mkdir -p "$PWD/disabledtool/bin" "$PWD/proj2" "$PWD/proj3"
+cat >"$PWD/disabledtool/bin/disabledbin" <<'SH'
+#!/usr/bin/env bash
+echo "disabled bin"
+SH
+chmod +x "$PWD/disabledtool/bin/disabledbin"
+cat >"$PWD/proj2/mise.toml" <<EOF2
+[tools]
+"github:jdx/disabledtool" = "path:$PWD/disabledtool/bin"
+EOF2
+(cd "$PWD/proj2" && mise reshim)
+assert "readlink $shimdir/disabledbin" "$(which mise)"
+(cd "$PWD/proj3" && MISE_DISABLE_TOOLS=github:jdx/disabledtool mise reshim --force)
+assert_fail "test -e $shimdir/disabledbin"
+
+# An alias standing for a `path:` version keeps its shims when reshimming elsewhere.
+mkdir -p "$PWD/aliastool/bin" "$PWD/proj4"
+cat >"$PWD/aliastool/bin/aliasbin" <<'SH'
+#!/usr/bin/env bash
+echo "alias bin"
+SH
+chmod +x "$PWD/aliastool/bin/aliasbin"
+cat >"$PWD/proj4/mise.toml" <<EOF2
+[tool_alias."github:jdx/aliastool".versions]
+local = "path:../aliastool/bin"
+
+[tools]
+"github:jdx/aliastool" = "local"
+EOF2
+(cd "$PWD/proj4" && mise reshim)
+assert "readlink $shimdir/aliasbin" "$(which mise)"
+(cd "$other" && mise reshim)
+assert "readlink $shimdir/aliasbin" "$(which mise)"
+(cd "$PWD/proj4" && assert "$shimdir/aliasbin" "alias bin")
+
+# In safe mode a global config's `path:` alias still counts when a tracked project selects
+# it, so a reshim from elsewhere keeps the shim.
+mkdir -p "$PWD/galiastool/bin" "$PWD/proj5"
+cat >"$PWD/galiastool/bin/galiasbin" <<'SH'
+#!/usr/bin/env bash
+echo "global alias bin"
+SH
+chmod +x "$PWD/galiastool/bin/galiasbin"
+mkdir -p "$HOME/.config/mise"
+cat >>"$HOME/.config/mise/config.toml" <<EOF2
+
+[tool_alias."github:jdx/galiastool".versions]
+gl = "path:$PWD/galiastool/bin"
+EOF2
+cat >"$PWD/proj5/mise.toml" <<EOF2
+[tools]
+"github:jdx/galiastool" = "gl"
+EOF2
+(cd "$PWD/proj5" && mise reshim)
+assert "readlink $shimdir/galiasbin" "$(which mise)"
+(cd "$other" && MISE_SAFE=1 mise reshim)
+assert "readlink $shimdir/galiasbin" "$(which mise)"
+
+# A project alias of the same name is ignored in safe mode, so the global one still applies.
+mkdir -p "$PWD/evilalias/bin"
+cat >"$PWD/proj5/mise.toml" <<EOF2
+[tool_alias."github:jdx/galiastool".versions]
+gl = "path:$PWD/evilalias/bin"
+
+[tools]
+"github:jdx/galiastool" = "gl"
+EOF2
+(cd "$other" && MISE_SAFE=1 mise reshim --force)
+assert "readlink $shimdir/galiasbin" "$(which mise)"
+
+# A project alias to a regular version is ignored too when global config declares the tool.
+mkdir -p "$PWD/emptybin"
+mkdir -p "$HOME/.config/mise/conf.d"
+cat >"$HOME/.config/mise/conf.d/galias.toml" <<EOF2
+[tools]
+"github:jdx/galiastool" = "path:$PWD/emptybin"
+EOF2
+cat >"$PWD/proj5/mise.toml" <<EOF2
+[tool_alias."github:jdx/galiastool".versions]
+gl = "1.2.3"
+
+[tools]
+"github:jdx/galiastool" = "gl"
+EOF2
+(cd "$other" && MISE_SAFE=1 mise reshim --force)
+assert "readlink $shimdir/galiasbin" "$(which mise)"
+
+# A disabled backend's path: tools get no shims.
+mkdir -p "$PWD/nobackend/bin" "$PWD/proj6"
+cat >"$PWD/nobackend/bin/nobackendbin" <<'SH'
+#!/usr/bin/env bash
+echo "nobackend"
+SH
+chmod +x "$PWD/nobackend/bin/nobackendbin"
+cat >"$PWD/proj6/mise.toml" <<EOF2
+[tools]
+"github:jdx/nobackend" = "path:$PWD/nobackend/bin"
+EOF2
+(cd "$PWD/proj6" && mise reshim)
+assert "readlink $shimdir/nobackendbin" "$(which mise)"
+(cd "$other" && MISE_DISABLE_BACKENDS=github mise reshim --force)
+assert_fail "test -e $shimdir/nobackendbin"
+(cd "$PWD/proj6" && mise reshim)
+assert "readlink $shimdir/nobackendbin" "$(which mise)"
+(cd "$PWD/proj6" && MISE_DISABLE_BACKENDS=github mise reshim --force)
+assert_fail "test -e $shimdir/nobackendbin"
+
+# A tracked project's templated version does not hide its literal path: tool.
+mkdir -p "$PWD/tmplbin/bin" "$PWD/proj7"
+cat >"$PWD/tmplbin/bin/tmplbinbin" <<'SH'
+#!/usr/bin/env bash
+echo "tmpl"
+SH
+chmod +x "$PWD/tmplbin/bin/tmplbinbin"
+cat >"$PWD/proj7/mise.toml" <<EOF2
+[vars]
+nv = "20"
+
+[tools]
+"github:jdx/tmplbin" = "path:$PWD/tmplbin/bin"
+"github:jdx/tmplother" = "{{ vars.nv }}"
+EOF2
+(cd "$PWD/proj7" && mise reshim)
+assert "readlink $shimdir/tmplbinbin" "$(which mise)"
+(cd "$other" && mise reshim --force)
+assert "readlink $shimdir/tmplbinbin" "$(which mise)"

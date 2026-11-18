@@ -1939,6 +1939,126 @@ async fn get_desired_shims(
                 .flat_map(|b| platform_shim_names(_mise_bin, &b)),
         );
     }
+    // A `path:` version is an external directory, so it has no install directory for the
+    // listing above to find. Its bins still need shims. Reshim prunes every shim it cannot
+    // account for, so tracked configs outside the current directory count too: a reshim from
+    // project B must not delete the shims of project A's `path:` tools.
+    // Loaded configs count as well as tracked ones: `Toolset::merge` keeps one entry per
+    // backend, so a project's `path:` entry can hide the global config's for the same tool.
+    let mut path_versions = toolset.list_current_versions();
+    let tracked = config
+        .get_tracked_config_files()
+        .await
+        .wrap_err("failed to load tracked configs for path: shims")?;
+    let config_files = config.config_files.iter().chain(
+        tracked
+            .iter()
+            .filter(|(path, _)| !config.config_files.contains_key(*path)),
+    );
+    // Safe mode also ignores every project alias of a tool that global config declares
+    // (see `load_aliases`), so those fall back to the global alias.
+    let global_tools: BTreeSet<String> = if Settings::safe_mode() {
+        config_files
+            .clone()
+            .filter(|(path, _)| crate::config::is_global_config(path))
+            .flat_map(|(_, cf)| cf.tool_backends())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    for (path, cf) in config_files {
+        // A tool whose version uses a template (such as `{{ vars.x }}`) may need the project's
+        // own context; keep the tools that do not, so their shims survive.
+        let set = match cf
+            .to_tool_request_set()
+            .or_else(|_| cf.to_tool_request_set_skipping_templated())
+        {
+            Ok(set) => set,
+            Err(err) => {
+                debug!("ignoring tools of {}: {err:#}", display_path(path));
+                continue;
+            }
+        };
+        let file_aliases = cf.aliases().ok();
+        for request in set.tools.values().flatten() {
+            // An alias such as `node = "local"` can stand for a `path:` version.
+            // A path from a config-level alias is not the request file's to name: the global
+            // config's alias stays valid in safe mode even when a project selects it.
+            let mut global_alias = false;
+            let request = match request {
+                crate::toolset::ToolRequest::Version { version, .. } => request
+                    .backend()
+                    .ok()
+                    .and_then(|b| {
+                        // The project's own aliases first: they are not in the current config.
+                        let own = file_aliases
+                            .as_ref()
+                            .and_then(|a| a.get(&b.ba().short))
+                            .and_then(|a| a.versions.get(version))
+                            .cloned()
+                            // Safe mode ignores a project's `path:` alias (see `load_aliases`),
+                            // so the global alias of the same name applies instead.
+                            .filter(|v| {
+                                !(Settings::safe_mode()
+                                    && !crate::config::is_global_config(path)
+                                    && (global_tools.contains(&b.ba().short)
+                                        || crate::config::config_file::version_requires_trust(v)))
+                            });
+                        global_alias = own.is_none();
+                        own.or_else(|| config.resolve_static_alias(&b, version).ok().flatten())
+                    })
+                    .filter(|v| v.starts_with("path:"))
+                    // Parsed against the request's source, so `~` and relative paths follow
+                    // that config rather than the current directory.
+                    .and_then(|v| {
+                        crate::toolset::ToolRequest::new(
+                            request.ba().clone(),
+                            &v,
+                            request.source().clone(),
+                        )
+                        .ok()
+                    })
+                    .and_then(|r| match r {
+                        // Keep the original request's options and lockfile scope.
+                        crate::toolset::ToolRequest::Path { path, .. } => {
+                            Some(request.to_path(path))
+                        }
+                        _ => None,
+                    }),
+                crate::toolset::ToolRequest::Path { .. } => Some(request.clone()),
+                _ => None,
+            };
+            let Some(request) = request else { continue };
+            if request.is_os_supported()
+                && (global_alias || !request.ignored_in_safe_mode())
+                && !toolset.is_disabled(request.ba())
+                && !crate::backend::is_disabled_backend_type(&request.ba().backend_type())
+                && let Ok(backend) = request.backend()
+            {
+                let tv = ToolVersion::new(request.clone(), request.version());
+                path_versions.push((backend, tv));
+            }
+        }
+    }
+    for (t, tv) in path_versions {
+        if !matches!(tv.request, crate::toolset::ToolRequest::Path { .. })
+            || !shim_scope_contains_request(scope, &tv.request)
+            // The current toolset is not filtered by `disable_backends`.
+            || crate::backend::is_disabled_backend_type(&tv.request.ba().backend_type())
+        {
+            continue;
+        }
+        let bins = list_tool_bins(config, t.clone(), &tv)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("Error listing bin paths for {}: {:#}", tv, e);
+                Vec::new()
+            });
+        shims.extend(
+            bins.into_iter()
+                .flat_map(|b| platform_shim_names(_mise_bin, &b)),
+        );
+    }
     for request in toolset.list_current_requests() {
         if !shim_scope_contains_request(scope, request) {
             continue;
