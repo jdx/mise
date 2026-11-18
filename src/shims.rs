@@ -1955,6 +1955,17 @@ async fn get_desired_shims(
             .iter()
             .filter(|(path, _)| !config.config_files.contains_key(*path)),
     );
+    // Safe mode also ignores every project alias of a tool that global config declares
+    // (see `load_aliases`), so those fall back to the global alias.
+    let global_tools: BTreeSet<String> = if Settings::safe_mode() {
+        config_files
+            .clone()
+            .filter(|(path, _)| crate::config::is_global_config(path))
+            .flat_map(|(_, cf)| cf.tool_backends())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
     for (path, cf) in config_files {
         let set = match cf.to_tool_request_set() {
             Ok(set) => set,
@@ -1985,7 +1996,8 @@ async fn get_desired_shims(
                             .filter(|v| {
                                 !(Settings::safe_mode()
                                     && !crate::config::is_global_config(path)
-                                    && crate::config::config_file::version_requires_trust(v))
+                                    && (global_tools.contains(&b.ba().short)
+                                        || crate::config::config_file::version_requires_trust(v)))
                             });
                         global_alias = own.is_none();
                         own.or_else(|| config.resolve_static_alias(&b, version).ok().flatten())

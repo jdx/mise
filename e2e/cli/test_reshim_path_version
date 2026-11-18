@@ -123,3 +123,20 @@ gl = "path:$PWD/evilalias/bin"
 EOF2
 (cd "$other" && MISE_SAFE=1 mise reshim --force)
 assert "readlink $shimdir/galiasbin" "$(which mise)"
+
+# A project alias to a regular version is ignored too when global config declares the tool.
+mkdir -p "$PWD/emptybin"
+mkdir -p "$HOME/.config/mise/conf.d"
+cat >"$HOME/.config/mise/conf.d/galias.toml" <<EOF2
+[tools]
+"github:jdx/galiastool" = "path:$PWD/emptybin"
+EOF2
+cat >"$PWD/proj5/mise.toml" <<EOF2
+[tool_alias."github:jdx/galiastool".versions]
+gl = "1.2.3"
+
+[tools]
+"github:jdx/galiastool" = "gl"
+EOF2
+(cd "$other" && MISE_SAFE=1 mise reshim --force)
+assert "readlink $shimdir/galiasbin" "$(which mise)"
