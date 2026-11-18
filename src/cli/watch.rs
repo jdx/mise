@@ -8,7 +8,7 @@ use crate::env;
 use crate::env_diff::EnvMap;
 use crate::request_exit;
 use crate::task::task_source_checker::task_cwd;
-use crate::task::{Deps, Task};
+use crate::task::{Deps, Task, is_gitignore_entry};
 use crate::toolset::ToolsetBuilder;
 use console::style;
 use eyre::{WrapErr, bail};
@@ -191,7 +191,15 @@ impl Watch {
             // `..` or an absolute path.
             let mut parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
                 .iter()
-                .map(|(t, cwd)| t.sources.iter().map(|s| parse_source(s, cwd)).collect())
+                .map(|(t, cwd)| {
+                    // watchexec applies the VCS ignores itself, unless a task
+                    // turns them off.
+                    t.sources
+                        .iter()
+                        .filter(|s| !is_gitignore_entry(s))
+                        .map(|s| parse_source(s, cwd))
+                        .collect()
+                })
                 .collect();
             // If no task declared any sources, opt out of source-based
             // watching entirely and let watchexec apply its defaults.

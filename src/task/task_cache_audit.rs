@@ -2,7 +2,7 @@ use crate::config::{Config, Settings};
 #[cfg(target_os = "linux")]
 use crate::file;
 use crate::task::Task;
-use crate::task::task_source_checker::lexical_normalize;
+use crate::task::task_source_checker::{SourceMatcher, lexical_normalize};
 #[cfg(target_os = "linux")]
 use crate::task::task_source_checker::{
     build_output_matcher, build_source_matcher, task_cwd, task_source_match_root,
@@ -74,7 +74,7 @@ pub(crate) struct TaskCacheAudit {
     trace_timed_out: NamedTempFile,
     root: PathBuf,
     source_root: PathBuf,
-    sources: Override,
+    sources: SourceMatcher,
     outputs: Override,
     config_sources: BTreeSet<PathBuf>,
 }
@@ -283,7 +283,7 @@ impl TaskCacheAudit {
         kind == AccessKind::Read
             && path
                 .strip_prefix(&self.source_root)
-                .is_ok_and(|relative| matches_override(&self.sources, relative))
+                .is_ok_and(|relative| matches_sources(&self.sources, relative))
     }
 }
 
@@ -372,6 +372,10 @@ async fn wait_for_file(path: &Path, timeout: Duration) -> bool {
     })
     .await
     .is_ok()
+}
+
+fn matches_sources(matcher: &SourceMatcher, path: &Path) -> bool {
+    matcher.matched(path, false) || matcher.matched(path, true)
 }
 
 fn matches_override(matcher: &Override, path: &Path) -> bool {

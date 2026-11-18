@@ -5191,6 +5191,9 @@ impl ResolvedTaskInputs {
 }
 
 fn anchor_task_input(root: &Path, input: &str) -> String {
+    if crate::task::is_gitignore_entry(input) {
+        return input.to_string();
+    }
     let (exclude, input) = input
         .strip_prefix('!')
         .map(|input| (true, input))

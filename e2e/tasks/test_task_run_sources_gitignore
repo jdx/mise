@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# `!@gitignore` in `sources` drops the files git ignores from what the entries
+# before it matched; later entries can add paths back.
+
+git init -q
+git config user.email test@example.com
+git config user.name Test
+
+cat <<'EOF' >.gitignore
+out/
+dist/
+EOF
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+sources = ["pkg/**", "!@gitignore", "pkg/dist/**"]
+outputs = ["built.txt"]
+run = "echo built > built.txt && echo built"
+EOF
+
+mkdir -p pkg/src
+echo a >pkg/src/a.txt
+assert "mise -q build" "built"
+assert_empty "mise -q build"
+
+# Writing a file git ignores does not make the task stale.
+sleep 1
+mkdir -p pkg/out
+echo 1 >pkg/out/generated.js
+assert_empty "mise -q build"
+
+# A later entry adds an ignored path back.
+sleep 1
+mkdir -p pkg/dist
+echo 1 >pkg/dist/bundle.js
+assert "mise -q build" "built"
+assert_empty "mise -q build"
+
+# A tracked file stays a source even when a rule matches it.
+git add -f pkg/out/generated.js
+sleep 1
+echo 2 >pkg/out/generated.js
+assert "mise -q build" "built"
+
+# task_source_files() lists what the freshness check reads.
+cat <<'EOF' >mise.toml
+[tasks.srcs]
+sources = ["pkg/**", "!@gitignore"]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+EOF
+echo 1 >pkg/out/other.js
+assert_contains "mise -q run --force srcs" "pkg/src/a.txt"
+assert_contains "mise -q run --force srcs" "pkg/out/generated.js"
+assert_not_contains "mise -q run --force srcs" "pkg/out/other.js"
+assert_not_contains "mise -q run --force srcs" "pkg/dist/bundle.js"

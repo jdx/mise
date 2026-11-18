@@ -794,6 +794,33 @@ off, and `task_source_files()` still walks excluded directories. An entry
 without the trailing `/**`, such as `!**/node_modules`, excludes only the paths it
 matches, so files below them can still be sources and mise still walks them.
 
+#### Excluding files git ignores
+
+The entry `!@gitignore` excludes the files git ignores from what the entries
+before it matched, such as installed dependencies, build output, and editor
+caches. Like a `!` pattern, it is evaluated in order, so a later entry can
+include an ignored path again. That matters when one task's ignored output is
+another task's input:
+
+```mise-toml
+[tasks.build]
+sources = ["pkg/**", "!@gitignore", "pkg/dist/**"]
+run = "npm run build"
+```
+
+Here a file under `pkg/` is a source unless git ignores it, and every file
+under `pkg/dist/` is a source even though `.gitignore` lists `dist/`. A file git
+tracks stays a source even when an ignore rule matches it.
+
+mise reads the repository's own rules: every `.gitignore` in the work tree and
+`.git/info/exclude`. It leaves out your global excludes file
+(`core.excludesFile`), so the same files count as sources on every machine.
+Inside a submodule, that submodule's own rules and tracked files apply, as in
+git. Files inside `.git` are always excluded. Outside a git work tree, the entry
+excludes nothing. mise still walks ignored directories to find the files in
+them, so add `!**/node_modules/**` as well to skip a large directory.
+`mise watch` ignores what git ignores already; see [`watch`](#watch).
+
 #### Dependency invalidation
 
 When a dependency with `sources` runs or restores its outputs, every task that

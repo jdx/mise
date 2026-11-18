@@ -64,6 +64,7 @@ pub mod task_run_log;
 pub mod task_scheduler;
 mod task_script_parser;
 pub mod task_source_checker;
+mod task_source_gitignore;
 pub(crate) mod task_sources;
 pub(crate) mod task_template;
 pub mod task_tool_installer;
@@ -80,6 +81,7 @@ pub(crate) use task_load_context::monorepo_scope;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task};
 pub use task_output::{TaskOutput, TaskOutputExt};
 pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
+pub use task_source_gitignore::is_gitignore_entry;
 pub(crate) use task_template::TaskTemplate;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
