@@ -83,6 +83,8 @@ impl Unuse {
         let system_config = cfs.iter().any(|cf| config::is_system_config(cf.get_path()));
         let mut removed: Vec<&ToolArg> = vec![];
         for cf in &cfs {
+            // Re-read under the lock, as `mise use` does, so a concurrent edit is kept.
+            let (_lock, cf) = config_file::lock_and_parse_or_init(cf.get_path()).await?;
             let removed_here = self.remove_from(cf.as_ref())?;
             if !removed_here.is_empty() {
                 cf.save()?;
@@ -101,7 +103,7 @@ impl Unuse {
         if removed.is_empty() {
             debug!("no tools to remove");
             let files = cfs.iter().map(|cf| display_path(cf.get_path())).join(", ");
-            warn!("none of the given tools are declared in {files}; nothing was removed");
+            warn!("no matching tool request found in {files}; nothing was removed");
         }
 
         let (prune_tools, prune_versions) = if self.no_prune {
