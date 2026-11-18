@@ -111,3 +111,15 @@ EOF2
 assert "readlink $shimdir/galiasbin" "$(which mise)"
 (cd "$other" && MISE_SAFE=1 mise reshim)
 assert "readlink $shimdir/galiasbin" "$(which mise)"
+
+# A project alias of the same name is ignored in safe mode, so the global one still applies.
+mkdir -p "$PWD/evilalias/bin"
+cat >"$PWD/proj5/mise.toml" <<EOF2
+[tool_alias."github:jdx/galiastool".versions]
+gl = "path:$PWD/evilalias/bin"
+
+[tools]
+"github:jdx/galiastool" = "gl"
+EOF2
+(cd "$other" && MISE_SAFE=1 mise reshim --force)
+assert "readlink $shimdir/galiasbin" "$(which mise)"

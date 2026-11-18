@@ -1979,7 +1979,14 @@ async fn get_desired_shims(
                             .as_ref()
                             .and_then(|a| a.get(&b.ba().short))
                             .and_then(|a| a.versions.get(version))
-                            .cloned();
+                            .cloned()
+                            // Safe mode ignores a project's `path:` alias (see `load_aliases`),
+                            // so the global alias of the same name applies instead.
+                            .filter(|v| {
+                                !(Settings::safe_mode()
+                                    && !crate::config::is_global_config(path)
+                                    && crate::config::config_file::version_requires_trust(v))
+                            });
                         global_alias = own.is_none();
                         own.or_else(|| config.resolve_static_alias(&b, version).ok().flatten())
                     })
