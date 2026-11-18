@@ -1940,8 +1940,37 @@ async fn get_desired_shims(
         );
     }
     // A `path:` version is an external directory, so it has no install directory for the
-    // listing above to find. Its bins still need shims.
-    for (t, tv) in toolset.list_current_versions() {
+    // listing above to find. Its bins still need shims. Reshim prunes every shim it cannot
+    // account for, so tracked configs outside the current directory count too: a reshim from
+    // project B must not delete the shims of project A's `path:` tools.
+    let mut path_versions = toolset.list_current_versions();
+    match config.get_tracked_config_files().await {
+        Ok(tracked) => {
+            for (path, cf) in &tracked {
+                if config.config_files.contains_key(path) {
+                    continue;
+                }
+                let set = match cf.to_tool_request_set() {
+                    Ok(set) => set,
+                    Err(err) => {
+                        debug!("ignoring tools of {}: {err:#}", display_path(path));
+                        continue;
+                    }
+                };
+                for request in set.tools.values().flatten() {
+                    if matches!(request, crate::toolset::ToolRequest::Path { .. })
+                        && request.is_os_supported()
+                        && let Ok(backend) = request.backend()
+                    {
+                        let tv = ToolVersion::new(request.clone(), request.version());
+                        path_versions.push((backend, tv));
+                    }
+                }
+            }
+        }
+        Err(err) => debug!("ignoring tracked configs for path: shims: {err:#}"),
+    }
+    for (t, tv) in path_versions {
         if !matches!(tv.request, crate::toolset::ToolRequest::Path { .. })
             || !shim_scope_contains_request(scope, &tv.request)
         {

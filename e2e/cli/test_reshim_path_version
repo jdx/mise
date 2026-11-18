@@ -19,4 +19,10 @@ EOF2
 
 mise reshim
 assert "readlink $shimdir/localtool" "$(which mise)"
-assert "mise x -- localtool" "local tool"
+assert "$shimdir/localtool" "local tool"
+
+# Reshimming from an unrelated directory must keep the shim of the tracked config.
+other="$(mktemp -d)"
+(cd "$other" && mise reshim)
+assert "readlink $shimdir/localtool" "$(which mise)"
+assert "$shimdir/localtool" "local tool"
