@@ -1399,12 +1399,18 @@ pub async fn prunable_tools_with_sources(
 /// passed check is not repeated. The install-marker check still runs every time.
 static VERIFIED_SATISFIED: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
 
-fn satisfied_key(tv: &ToolVersion) -> String {
+/// Backend checks consult the lock policy of the request's source and the lock graphs, so a
+/// locked and an unlocked check of the same installation must not share an entry.
+fn satisfied_key(config: &Config, tv: &ToolVersion) -> String {
     format!(
-        "{}\0{}\0{:?}",
+        "{}\0{}\0{:?}\0{}\0{}\0{}\0{}",
         tv.ba().full(),
         tv.install_path().display(),
-        tv.request.options()
+        tv.request.options(),
+        config.invocation_locked_for(tv.request.source(), Settings::get().locked),
+        tv.request.tool_config_locked(config, true),
+        tv.uv_lock.is_some(),
+        tv.aube_lock.is_some(),
     )
 }
 
@@ -1442,7 +1448,7 @@ async fn is_version_satisfied(
 ) -> bool {
     if full_check {
         check_once(
-            satisfied_key(tv),
+            satisfied_key(config, tv),
             || backend.is_version_installed(config, tv, true),
             backend.is_install_satisfied_or_false(config, tv, true),
         )
