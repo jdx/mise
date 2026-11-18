@@ -122,3 +122,31 @@ assert_fail "MISE_CONFIG_DIR='$broken' mise env" "Invalid TOML"
 assert_succeed "MISE_CONFIG_DIR='$broken' mise bootstrap --update --yes --only task"
 assert "git -C '$broken' rev-parse HEAD" "$(git -C "$broken_repo" rev-parse HEAD)"
 assert "cat ~/broken-seen" "1"
+
+# The same recovery for --from: the source checkout holds a commit whose
+# config does not parse and is linked into the global config.
+from_repo="$PWD/from-source"
+mkdir -p "$from_repo"
+git -C "$from_repo" init -q -b main
+git -C "$from_repo" config user.email test@example.com
+git -C "$from_repo" config user.name "mise test"
+printf '[env]\nFIXED = "0"\n' >"$from_repo/config.toml"
+git -C "$from_repo" add config.toml
+git -C "$from_repo" commit -qm initial
+from_dir="$HOME/from-checkout"
+git clone -q "$from_repo" "$from_dir"
+printf '[env\nFIXED = "0"\n' >"$from_repo/config.toml"
+git -C "$from_repo" commit -qam broken
+git -C "$from_dir" pull -q --ff-only
+cat <<'EOF2' >"$from_repo/config.toml"
+[env]
+FIXED = "1"
+
+[tasks.bootstrap]
+run = 'echo "$FIXED" > ~/from-seen'
+EOF2
+git -C "$from_repo" commit -qam fix
+assert_fail "MISE_CONFIG_DIR='$from_dir' mise env" "Invalid TOML"
+assert_succeed "MISE_CONFIG_DIR='$from_dir' mise bootstrap --from '$from_repo' --from-dir '$from_dir' --update --yes --only task"
+assert "git -C '$from_dir' rev-parse HEAD" "$(git -C "$from_repo" rev-parse HEAD)"
+assert "cat ~/from-seen" "1"
