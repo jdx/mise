@@ -334,8 +334,9 @@ fn build_segments(
             continue;
         }
         let builder = builders.last_mut().expect("one builder");
-        let normalized = normalize_pattern(root, task_cwd, s);
-        let expanded = match expand_glob_braces(&normalized) {
+        // Expand braces first: each alternative can reach a different
+        // directory (`{../shared,src}/**`), and normalizing resolves its `..`.
+        let expanded = match expand_glob_braces(s) {
             Ok(expanded) => expanded,
             Err(e) => {
                 // Source matcher construction is infallible to callers. An
@@ -347,7 +348,8 @@ fn build_segments(
                 continue;
             }
         };
-        for normalized in expanded {
+        for alternative in expanded {
+            let normalized = normalize_pattern(root, task_cwd, &alternative);
             if let Err(e) = builder.add_line(None, &normalized)
                 && warn
             {

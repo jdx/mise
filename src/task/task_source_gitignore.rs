@@ -437,6 +437,10 @@ mod tests {
         let braced = ["{../shared,src}/**", GITIGNORE_ENTRY];
         assert!(!is(&braced, "shared/out/b.js"));
         assert!(is(&braced, "shared/src/a.js"));
+        // A later braced entry adds an ignored file outside the root back.
+        let later = ["src/**", GITIGNORE_ENTRY, "{../shared,src}/**"];
+        assert!(is(&later, "shared/out/input.js"));
+        assert!(!is(&later, "pkg/out/c.js"));
         // Without the entry, a file the glob found outside the root is kept.
         assert!(is(&["../shared/**"], "shared/out/b.js"));
     }
