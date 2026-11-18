@@ -1393,72 +1393,16 @@ pub async fn prunable_tools_with_sources(
     })
 }
 
-/// Rust tool versions whose rustup-backed satisfaction check already passed in this
-/// process. `mise run` installs missing tools more than once (the config toolset,
-/// then the tasks' tools), and a check can spawn processes (e.g. rustup), so a
-/// passed check is not repeated. The install-marker check still runs every time.
-static VERIFIED_SATISFIED: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
-
-/// Backend checks consult the lock policy of the request's source and the lock graphs, so a
-/// locked and an unlocked check of the same installation must not share an entry.
-fn satisfied_key(config: &Config, tv: &ToolVersion) -> String {
-    format!(
-        "{}\0{}\0{:?}\0{}\0{}\0{}\0{}",
-        tv.ba().full(),
-        tv.install_path().display(),
-        tv.request.options(),
-        config.invocation_locked_for(tv.request.source(), Settings::get().locked),
-        tv.request.tool_config_locked(config, true),
-        tv.uv_lock.is_some(),
-        tv.aube_lock.is_some(),
-    )
-}
-
-/// Runs `check` unless a check for `key` already passed in this process, in which
-/// case only `marker` (the install-marker check) decides.
-async fn check_once(
-    key: String,
-    marker: impl FnOnce() -> bool,
-    check: impl std::future::Future<Output = bool>,
-) -> bool {
-    let verified = VERIFIED_SATISFIED
-        .lock()
-        .unwrap()
-        .get_or_insert_default()
-        .contains(&key);
-    if verified {
-        return marker();
-    }
-    let satisfied = check.await;
-    if satisfied {
-        VERIFIED_SATISFIED
-            .lock()
-            .unwrap()
-            .get_or_insert_default()
-            .insert(key);
-    }
-    satisfied
-}
-
 async fn is_version_satisfied(
     config: &Arc<Config>,
     backend: &Arc<dyn Backend>,
     tv: &ToolVersion,
     full_check: bool,
 ) -> bool {
-    if full_check && backend.ba().short != "rust" {
-        // Other backends' checks depend on the request (source, lockfile graph
-        // preparation), which a shared cache entry would hide.
+    if full_check {
         backend
             .is_install_satisfied_or_false(config, tv, true)
             .await
-    } else if full_check {
-        check_once(
-            satisfied_key(config, tv),
-            || backend.is_version_installed(config, tv, true),
-            backend.is_install_satisfied_or_false(config, tv, true),
-        )
-        .await
     } else {
         backend.is_version_installed(config, tv, true)
     }
@@ -1838,43 +1782,6 @@ mod tests {
     use crate::args::BackendArg;
     use crate::backend::arg_to_backend;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
-
-    #[tokio::test]
-    async fn check_once_repeats_a_passed_check_only_as_a_marker_check() {
-        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-        let key = "check_once_test_pass".to_string();
-        let checks = AtomicUsize::new(0);
-        let run = |marker: bool| {
-            check_once(key.clone(), move || marker, async {
-                checks.fetch_add(1, SeqCst);
-                true
-            })
-        };
-        assert!(run(true).await);
-        assert!(run(true).await);
-        assert_eq!(checks.load(SeqCst), 1, "a passed check is not repeated");
-        assert!(
-            !run(false).await,
-            "a removed install marker is still noticed"
-        );
-        assert_eq!(checks.load(SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn check_once_retries_after_a_failed_check() {
-        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-        let key = "check_once_test_fail".to_string();
-        let checks = AtomicUsize::new(0);
-        for _ in 0..2 {
-            let ok = check_once(key.clone(), || true, async {
-                checks.fetch_add(1, SeqCst);
-                false
-            })
-            .await;
-            assert!(!ok);
-        }
-        assert_eq!(checks.load(SeqCst), 2);
-    }
 
     #[test]
     fn test_prune_exclude_matches_short_and_full_names() {
