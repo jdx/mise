@@ -146,7 +146,8 @@ keep their top level to function definitions.
 | [Settings](/settings-plugin-development.html)       | `settings_read.lua`, `settings_write.lua`                                  | none                                                                                           |
 
 mise decides a plugin's type from these files. A plugin with
-`hooks/backend_install.lua` is a backend plugin. One with both
+`hooks/backend_install.lua` is a backend plugin, whatever other hooks it has.
+One with both
 `hooks/settings_read.lua` and `hooks/settings_write.lua` is a settings plugin.
 One with both `hooks/package_install.lua` and `hooks/package_installed.lua` is a
 package manager plugin. Any other plugin with a `metadata.lua` is a tool or environment

@@ -228,6 +228,12 @@ export const anchorRedirects = {
     "/bootstrap/secrets.html#supply-values",
   "/bootstrap/services.html#status-and-apply":
     "/bootstrap/services.html#preview-and-apply",
+  "/bootstrap/settings-plugins.html#rules":
+    "/settings-plugin-development.html#rules",
+  "/bootstrap/settings-plugins.html#settingsread":
+    "/settings-plugin-development.html#settingsread",
+  "/bootstrap/settings-plugins.html#settingswrite":
+    "/settings-plugin-development.html#settingswrite",
   "/bootstrap/setup.html#choose-when-to-sync":
     "/dotfiles/sync.html#choose-a-sync-mode",
   "/bootstrap/setup.html#resolve-a-conflict":

@@ -25,19 +25,40 @@ mise-desk/
     └── settings_write.lua   # write changed values
 ```
 
-Link your working copy under the name users write in the section, and preview
-before you change anything:
+mise treats a directory with `metadata.lua` and both `hooks/settings_read.lua`
+and `hooks/settings_write.lua` as a settings plugin. A directory that also has
+`hooks/backend_install.lua` is a backend plugin instead, so keep a settings
+plugin in its own repository.
+
+Link your working copy under the name users write in the section. mise runs the
+plugin only for a section that names it, so declare one with a setting that is
+safe to change, and turn on
+[`experimental`](/configuration/settings.html#experimental):
+
+```toml
+[settings]
+experimental = true
+
+[bootstrap.settings.desk.appearance]
+blur = true
+```
+
+Preview first, then apply and check that the value stuck. `status` and the dry
+run call only `SettingsRead`, so the apply is what tests `SettingsWrite`:
 
 ```sh
 mise plugins link desk ./mise-desk
 mise bootstrap settings status
 mise bootstrap settings apply --dry-run
+mise bootstrap settings apply
+mise bootstrap settings status --missing
 ```
 
 ## mise.plugin.toml {#mise-plugin-toml}
 
-`mise.plugin.toml` needs a `[bootstrap-settings]` table, which marks the
-directory as a settings plugin. It accepts the same keys as
+`mise.plugin.toml` is optional. Its `[bootstrap-settings]` table describes the
+plugin's needs; it does not decide the plugin's type, which comes from its
+hooks. The table accepts the same keys as
 [`[package-manager]`](/package-plugin-development.html#mise-plugin-toml) except
 `supports_version_pins`:
 
