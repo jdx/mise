@@ -35,22 +35,32 @@ static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 
+/// The pattern for each approved value, built once per audit: the value as a
+/// whole on the right of `=` or `:`.
+fn approvals(values: &[String]) -> Vec<Regex> {
+    values
+        .iter()
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            Regex::new(&format!(
+                r#"(?P<before>[:=]\s*["']?){}(?P<after>["']|\s|,|;|#|$)"#,
+                regex::escape(value)
+            ))
+            .unwrap()
+        })
+        .collect()
+}
+
 /// A line that looks like it holds a secret. `allowed` are values the user
 /// vouched for (`history.allow_secret_values`). Only a whole value on the
 /// right of `=` or `:` is set aside, never a key name or part of another
 /// value, so a line that also holds anything else suspicious still counts.
-fn suspicious(line: &str, allowed: &[String]) -> bool {
+fn suspicious(line: &str, allowed: &[Regex]) -> bool {
     let mut line = std::borrow::Cow::Borrowed(line);
-    for value in allowed.iter().filter(|value| !value.is_empty()) {
-        if !line.contains(value.as_str()) {
-            continue;
+    for whole in allowed {
+        if let std::borrow::Cow::Owned(replaced) = whole.replace_all(&line, "${before}${after}") {
+            line = std::borrow::Cow::Owned(replaced);
         }
-        let whole = Regex::new(&format!(
-            r#"(?P<before>[:=]\s*["']?){}(?P<after>["']|\s|,|;|#|$)"#,
-            regex::escape(value)
-        ))
-        .unwrap();
-        line = std::borrow::Cow::Owned(whole.replace_all(&line, "${before}${after}").into_owned());
     }
     TOKEN_FORMATS.is_match(&line) || ASSIGNMENT.is_match(&line)
 }
@@ -66,6 +76,7 @@ pub(crate) fn audit_unpublished(
     upstream: Option<&str>,
     allowed: &[String],
 ) -> Result<()> {
+    let allowed = approvals(allowed);
     let commits = match upstream {
         Some(upstream) => repo.rev_list_after(head, upstream)?,
         None => repo.rev_list(head, usize::MAX)?,
@@ -94,7 +105,7 @@ pub(crate) fn audit_unpublished(
                 continue;
             }
             let text = String::from_utf8_lossy(&bytes);
-            if let Some(line) = text.lines().position(|line| suspicious(line, allowed)) {
+            if let Some(line) = text.lines().position(|line| suspicious(line, &allowed)) {
                 bail!(
                     "cannot publish: line {} of {} in saved version {} looks like a secret. Removing it from the file does not remove it from saved versions. Rotate the secret and remove that history (see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history), then set `encrypt = true` on the file so later saves are protected, run `mise dot sync --allow-plaintext-history` to publish it anyway, or list a harmless value in `history.allow_secret_values`",
                     line + 1,
@@ -205,7 +216,7 @@ mod tests {
 
     #[test]
     fn an_allowed_value_is_blanked_and_nothing_else() {
-        let allowed = vec!["ctx7_api_key".to_string()];
+        let allowed = approvals(&["ctx7_api_key".to_string()]);
         let placeholder = "\"CONTEXT7_API_KEY\" = \"ctx7_api_key\"";
         assert!(suspicious(placeholder, &[]));
         assert!(!suspicious(placeholder, &allowed));
@@ -220,7 +231,7 @@ mod tests {
         ));
         assert!(!suspicious(
             placeholder,
-            &["".to_string(), "ctx7_api_key".to_string()]
+            &approvals(&["".to_string(), "ctx7_api_key".to_string()])
         ));
         // an approved string as a key name, or inside a different value, hides nothing
         for line in [
