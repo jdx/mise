@@ -13,6 +13,15 @@ assert_not_contains "mise settings get task.lock_pools" "cpu"
 assert_contains "mise settings get task.lock_pools" "gpu"
 assert_fail "mise settings set task.nothing.cpu 8" "Unknown setting"
 
+# An entry name may hold dots, like the URL keys of url_replacements.
+mise settings set 'url_replacements.https://github.com/' 'https://mirror.example/'
+assert_contains "mise settings get url_replacements" "https://github.com/"
+mise settings unset 'url_replacements.https://github.com/'
+assert_not_contains "mise settings get url_replacements" "github.com"
+
 # MISE_TASK_LOCK_POOLS takes NAME=SLOTS pairs or a JSON object.
-assert_contains "MISE_TASK_LOCK_POOLS=cpu=8,gpu=2 mise settings get task.lock_pools" "cpu"
-assert_contains "MISE_TASK_LOCK_POOLS='{\"cpu\":\"6\"}' mise settings get task.lock_pools" "6"
+export MISE_TASK_LOCK_POOLS="cpu=8,gpu=2"
+assert "mise settings get task.lock_pools.cpu" "8"
+assert "mise settings get task.lock_pools.gpu" "2"
+export MISE_TASK_LOCK_POOLS='{"cpu":"6"}'
+assert "mise settings get task.lock_pools.cpu" "6"

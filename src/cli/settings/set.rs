@@ -203,7 +203,9 @@ pub(super) fn set(
             // Keep the map's other entries: write into it, creating it when absent.
             let map = settings
                 .entry(key)
-                .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                .or_insert(toml_edit::Item::Value(toml_edit::Value::InlineTable(
+                    toml_edit::InlineTable::new(),
+                )))
                 .as_table_like_mut()
                 .ok_or_else(|| eyre!("Setting {key} is not a table"))?;
             map.insert(entry, value.into());
