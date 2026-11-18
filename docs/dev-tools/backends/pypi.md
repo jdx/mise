@@ -458,9 +458,16 @@ do. `registry_url` replaces the index for the whole dependency graph; these
 options send only the named packages to a private index, so a public dependency
 is never looked up there.
 
-- `indexes` is an array of `{ name, url, explicit }` tables. Names are unique and
-  use ASCII letters, digits, dashes and underscores. `explicit = true` makes uv
-  use the index only for packages pinned to it.
+- `indexes` is an array of `{ name, url, explicit, exclude-newer }` tables. Names
+  are unique and use ASCII letters, digits, dashes and underscores.
+  `explicit = true` makes uv use the index only for packages pinned to it.
+  `exclude-newer = false` exempts the index from
+  [`minimum_release_age`](#minimum-release-age), as uv's
+  [per-index `exclude-newer`](https://docs.astral.sh/uv/concepts/indexes/#configuring-exclude-newer-for-an-index)
+  does. Use it for an index that serves no upload times, such as a PEP 503 HTML
+  index like GitLab's: uv treats every release from it as newer than the cutoff,
+  so the graph cannot resolve. Only `false` is accepted; set time-based cutoffs
+  with `minimum_release_age`.
 - `sources` is a table of `package = { index = "name" }`. A package must be the
   tool itself or one of its [`with`](#with) or [`expose`](#expose) requirements,
   and `index` must name an entry of `indexes`. A tool pinned to its own index

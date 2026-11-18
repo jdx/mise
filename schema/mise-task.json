@@ -2830,6 +2830,11 @@
               "explicit": {
                 "description": "only use this index for packages pinned to it in sources",
                 "$ref": "#/$defs/tool_bool"
+              },
+              "exclude-newer": {
+                "type": "boolean",
+                "description": "false skips the minimum_release_age cutoff for this index, which serves no upload times",
+                "const": false
               }
             },
             "required": ["name", "url"],

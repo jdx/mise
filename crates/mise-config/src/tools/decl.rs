@@ -53,6 +53,10 @@ pub struct PypiIndex {
     #[serde(default)]
     #[schemars(schema_with = "refs::tool_bool")]
     pub explicit: Option<bool>,
+    /// false skips the minimum_release_age cutoff for this index, which serves no upload times
+    #[serde(default, rename = "exclude-newer")]
+    #[schemars(extend("const" = false))]
+    pub exclude_newer: Option<bool>,
 }
 
 /// the index a package is installed from

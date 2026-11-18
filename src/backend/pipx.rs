@@ -210,9 +210,11 @@ impl<'a> PipxOptions<'a> {
             };
             if let Some(key) = entry
                 .keys()
-                .find(|key| !matches!(key.as_str(), "name" | "url" | "explicit"))
+                .find(|key| !matches!(key.as_str(), "name" | "url" | "explicit" | "exclude-newer"))
             {
-                bail!("indexes entries accept only name, url and explicit, not {key}");
+                bail!(
+                    "indexes entries accept only name, url, explicit and exclude-newer, not {key}"
+                );
             }
             let name = entry.get("name").and_then(toml::Value::as_str);
             let Some(name) = name.filter(|name| {
@@ -243,6 +245,14 @@ impl<'a> PipxOptions<'a> {
             }
             if entry.get("explicit").is_some_and(|v| !v.is_bool()) {
                 bail!("index {name}: explicit must be a boolean");
+            }
+            if entry
+                .get("exclude-newer")
+                .is_some_and(|v| v.as_bool() != Some(false))
+            {
+                bail!(
+                    "index {name}: exclude-newer only accepts false; set a release-age cutoff with minimum_release_age"
+                );
             }
             indexes.push(entry);
         }
@@ -3260,6 +3270,26 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             toml::Value::Array(vec![toml::Value::Integer(1)]),
         );
         assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+    }
+
+    #[test]
+    fn test_index_exclude_newer_accepts_only_false() {
+        let indexes = |value: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts.insert(
+                "indexes".to_string(),
+                toml::Value::String(format!(
+                    r#"[{{"name":"p","url":"https://p.example/simple/","exclude-newer":{value}}}]"#
+                )),
+            );
+            PipxOptions::new(&opts).indexes()
+        };
+        let accepted = indexes("false").unwrap();
+        assert_eq!(accepted[0].get("exclude-newer"), Some(&false.into()));
+        for rejected in ["true", r#""7 days""#] {
+            let err = indexes(rejected).unwrap_err().to_string();
+            assert!(err.contains("minimum_release_age"), "{err}");
+        }
     }
 
     #[test]
