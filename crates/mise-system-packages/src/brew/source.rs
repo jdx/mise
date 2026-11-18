@@ -431,6 +431,10 @@ fn build_env(
         [
             ("MISE_BREW_PREFIX", prefix.display().to_string()),
             ("MISE_BREW_CELLAR", prefix::cellar().display().to_string()),
+            (
+                "MISE_BREW_REPOSITORY",
+                prefix::repository().display().to_string(),
+            ),
             ("MISE_BREW_FORMULA_FILE", formula_rb.display().to_string()),
             ("MISE_BREW_NAME", rf.formula.name.clone()),
             ("MISE_BREW_VERSION", stable_version),
@@ -654,6 +658,55 @@ end
             )?,
             "completions fish\n"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_defines_homebrew_constants() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let formula_rb = tmp.path().join("example.rb");
+        let buildpath = tmp.path().join("build");
+        let cellar = tmp.path().join("Cellar");
+        mise_util::file::create_dir_all(&buildpath)?;
+        mise_util::file::write(&shim, SHIM_RB)?;
+        mise_util::file::write(
+            &formula_rb,
+            r#"class Example < Formula
+  def install
+    raise "prefix" unless HOMEBREW_PREFIX.to_s == ENV["MISE_BREW_PREFIX"]
+    raise "cellar" unless HOMEBREW_CELLAR.to_s == ENV["MISE_BREW_CELLAR"]
+    raise "repository" unless HOMEBREW_REPOSITORY.to_s == ENV["MISE_BREW_REPOSITORY"]
+    raise "library" unless HOMEBREW_LIBRARY.to_s == ENV["MISE_BREW_REPOSITORY"] + "/Library"
+    (prefix/"passed").write("ok")
+  end
+end
+"#,
+        )?;
+
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CELLAR", &cellar)
+            .env("MISE_BREW_REPOSITORY", tmp.path().join("Homebrew"))
+            .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(cellar.join("example/1.0.0/passed").exists());
         Ok(())
     }
 

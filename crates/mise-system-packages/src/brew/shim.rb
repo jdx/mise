@@ -11,6 +11,8 @@
 # environment variables:
 #   MISE_BREW_PREFIX        Homebrew prefix (/opt/homebrew, ...)
 #   MISE_BREW_CELLAR        <prefix>/Cellar
+#   MISE_BREW_REPOSITORY    Homebrew repository (== prefix on macOS,
+#                           <prefix>/Homebrew on Linux); optional
 #   MISE_BREW_FORMULA_FILE  path to the formula .rb (sha-verified by Rust)
 #   MISE_BREW_NAME          canonical formula name
 #   MISE_BREW_VERSION       upstream version ("2.12.3")
@@ -42,6 +44,13 @@ MISE_BREW_PKG_VERSION = ENV.fetch("MISE_BREW_PKG_VERSION")
 MISE_BREW_BUILDPATH = Pathname.new(ENV.fetch("MISE_BREW_BUILDPATH"))
 MISE_BREW_CACHE = Pathname.new(ENV.fetch("MISE_BREW_CACHE"))
 MISE_BREW_MAKE_JOBS = ENV.fetch("MISE_BREW_MAKE_JOBS", "4")
+
+# Homebrew defines these as globals, and tap formulae and their helpers read
+# them directly (e.g. `HOMEBREW_PREFIX.to_s != "/usr/local"`).
+HOMEBREW_PREFIX = MISE_BREW_PREFIX
+HOMEBREW_CELLAR = MISE_BREW_CELLAR
+HOMEBREW_REPOSITORY = Pathname.new(ENV.fetch("MISE_BREW_REPOSITORY", MISE_BREW_PREFIX.to_s))
+HOMEBREW_LIBRARY = HOMEBREW_REPOSITORY + "Library"
 
 def ohai(*args)
   $stdout.puts "==> #{args.join(" ")}"
