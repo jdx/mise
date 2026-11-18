@@ -4,10 +4,24 @@
 RUST_TEST_THREADS = '1'
 
 [target.aarch64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=/STACK:8000000"]
+# crt-static: link the C runtime into the exe so it starts on Windows Server Core
+# images, which ship without the VC++ redistributable (vcruntime140.dll).
+rustflags = [
+  "-C",
+  "link-arg=/STACK:8000000",
+  "-C",
+  "target-feature=+crt-static",
+]
 [target.aarch64-pc-windows-gnu]
 rustflags = ["-C", "link-arg=-Wl,--stack,8000000"]
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=/STACK:8000000"]
+# crt-static: link the C runtime into the exe so it starts on Windows Server Core
+# images, which ship without the VC++ redistributable (vcruntime140.dll).
+rustflags = [
+  "-C",
+  "link-arg=/STACK:8000000",
+  "-C",
+  "target-feature=+crt-static",
+]
 [target.x86_64-pc-windows-gnu]
 rustflags = ["-C", "link-arg=-Wl,--stack,8000000"]

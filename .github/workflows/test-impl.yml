@@ -128,7 +128,7 @@ jobs:
       # only) use its shared mbx cache.
       MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
       MBX_TARGET_VIEWS: "0"
-      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -D warnings
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -C target-feature=+crt-static -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -478,7 +478,7 @@ jobs:
       # only) use its shared mbx cache.
       MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
       MBX_TARGET_VIEWS: "0"
-      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -D warnings
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -C target-feature=+crt-static -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
