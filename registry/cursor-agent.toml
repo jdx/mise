@@ -12,6 +12,7 @@ platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"]
 
 [backends.options]
 bin_path = "dist-package"
+filter_bins = ["cursor-agent"]
 strip_components = 0
 # Upstream does not publish a version index; the install script is rendered
 # with the current version, so extract it from there (same idea as claude's
