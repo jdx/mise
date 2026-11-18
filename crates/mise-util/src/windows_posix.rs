@@ -572,14 +572,28 @@ fn parent_executable() -> Option<PathBuf> {
     use std::collections::HashMap;
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Foundation::{FILETIME, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
         TH32CS_SNAPPROCESS,
     };
     use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+        GetCurrentProcess, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        QueryFullProcessImageNameW,
     };
+
+    fn created(process: *mut std::ffi::c_void) -> Option<u64> {
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut creation, mut exit, mut kernel, mut user) = (zero, zero, zero, zero);
+        // SAFETY: the handle is valid and every out pointer is writable.
+        let ok =
+            unsafe { GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) };
+        (ok != 0)
+            .then(|| (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+    }
 
     // SAFETY: no pointers are passed; validate the returned handle before owning it.
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
@@ -602,6 +616,8 @@ fn parent_executable() -> Option<PathBuf> {
     }
 
     let mut pid = std::process::id();
+    // SAFETY: the pseudo handle for the current process needs no closing.
+    let mut child_created = created(unsafe { GetCurrentProcess() })?;
     // A shim chain is short; the bound also guards against pid reuse cycles.
     for _ in 0..4 {
         pid = *parents.get(&pid)?;
@@ -612,6 +628,13 @@ fn parent_executable() -> Option<PathBuf> {
         }
         // SAFETY: the valid process handle is freshly allocated and uniquely owned.
         let process = unsafe { OwnedHandle::from_raw_handle(process) };
+        // A parent that started after its child is an unrelated process that
+        // reused the pid of a parent which has exited.
+        let parent_created = created(process.as_raw_handle())?;
+        if parent_created > child_created {
+            return None;
+        }
+        child_created = parent_created;
         let mut image = vec![0u16; 32768];
         let mut len = image.len() as u32;
         // SAFETY: image has len writable UTF-16 elements and the handle remains alive.
