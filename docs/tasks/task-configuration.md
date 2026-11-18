@@ -367,7 +367,12 @@ For how mise schedules tasks from these properties, see
 - **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string }, optional?: bool })[]`
 
 Tasks that must finish before this task runs. When several tasks share a
-dependency, it runs once. mise runs whatever it can in parallel, up to
+dependency, it runs once. Two entries share a dependency only when the task
+name, arguments, and `env` all match: `build` and `build --release` are two
+separate runs, including when you run `mise run build --release` and another
+task depends on plain `build`. To get one run, give every dependent the same
+arguments, for example by forwarding them with
+`depends = ['build {% if usage.release %}--release{% endif %}']`. mise runs whatever it can in parallel, up to
 [`jobs`](/configuration/settings.html#jobs) tasks at a time.
 
 Each entry is a task name, an alias, or a
