@@ -431,6 +431,10 @@ fn build_env(
         [
             ("MISE_BREW_PREFIX", prefix.display().to_string()),
             ("MISE_BREW_CELLAR", prefix::cellar().display().to_string()),
+            (
+                "MISE_BREW_REPOSITORY",
+                prefix::repository().display().to_string(),
+            ),
             ("MISE_BREW_FORMULA_FILE", formula_rb.display().to_string()),
             ("MISE_BREW_NAME", rf.formula.name.clone()),
             ("MISE_BREW_VERSION", stable_version),
@@ -676,8 +680,8 @@ end
   def install
     raise "prefix" unless HOMEBREW_PREFIX.to_s == ENV["MISE_BREW_PREFIX"]
     raise "cellar" unless HOMEBREW_CELLAR.to_s == ENV["MISE_BREW_CELLAR"]
-    HOMEBREW_LIBRARY.to_s
-    HOMEBREW_REPOSITORY.to_s
+    raise "repository" unless HOMEBREW_REPOSITORY.to_s == ENV["MISE_BREW_REPOSITORY"]
+    raise "library" unless HOMEBREW_LIBRARY.to_s == ENV["MISE_BREW_REPOSITORY"] + "/Library"
     (prefix/"passed").write("ok")
   end
 end
@@ -689,6 +693,7 @@ end
             .current_dir(&buildpath)
             .env("MISE_BREW_PREFIX", tmp.path())
             .env("MISE_BREW_CELLAR", &cellar)
+            .env("MISE_BREW_REPOSITORY", tmp.path().join("Homebrew"))
             .env("MISE_BREW_FORMULA_FILE", &formula_rb)
             .env("MISE_BREW_NAME", "example")
             .env("MISE_BREW_VERSION", "1.0.0")
