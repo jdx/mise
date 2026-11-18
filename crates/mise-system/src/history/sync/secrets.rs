@@ -140,7 +140,9 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
         }
         // a value approved whole,  and all, is not split
         let whole_approved = approved(text) && !continues && ends_value(&line[value.end()..]);
-        if bare && !structured && text.contains(';') && !whole_approved {
+        // the capture stops before a `;` or holds a short value and the `;`
+        let semicolon = text.contains(';') || line[value.end()..].starts_with(';');
+        if bare && !structured && semicolon && !whole_approved {
             // shell: `KEY=value;next` is two commands. Judge the value alone,
             // then the rest of the line as its own command, quoted values
             // included, which the capture stopped short of.
@@ -152,7 +154,15 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
             }
             // `password=abc;actual-secret` (ini, `.env`) keeps the `;` in the
             // value: a lone word that ends the command is not a command
-            let rest = &line[value.start() + first.len() + 1..];
+            let rest = line.get(value.start() + first.len() + 1..).unwrap_or("");
+            // `password=abcdefg;` is an 8 character value in ini and `.env`
+            let tail = rest.trim_start();
+            if !approved(first)
+                && first.chars().count() + 1 >= 8
+                && (tail.is_empty() || tail.starts_with('#'))
+            {
+                return Scan::Flagged;
+            }
             let word_end = rest
                 .find(|c: char| c == ';' || c.is_whitespace())
                 .unwrap_or(rest.len());
@@ -388,6 +398,8 @@ mod tests {
             "API_KEY=ctx7_api_key;DEPLOY_TOKEN=abcdefghijkl1234",
             "API_KEY=ctx7_api_key;DEPLOY_TOKEN=\"abcdefghijkl1234\"",
             "password: ctx7_api_key;sample-tail",
+            "password=ctx7_api_key;actual-secret",
+            "API_KEY=ctx7_api_key;actual-secret",
             "password: ctx7_api_key extra words here",
             "API_KEY=ctx7_api_key;DEPLOY_TOKEN=abcdefghijkl1234x",
             "export \"API_KEY\"=\"ctx7_api_key\",sample-tail",
@@ -425,6 +437,9 @@ mod tests {
             assert!(!suspicious(line, &allowed), "{line}");
         }
         assert!(!suspicious("API_KEY=test;echo ready", &[]));
+        // `password=abcdefg;` is an 8 character value in ini and `.env`
+        assert!(suspicious("password=abcdefg;", &[]));
+        assert!(suspicious("password=abcdefg; # note", &[]));
         // many commands on one line neither nest calls nor hide a later secret
         let long = "API_KEY=a;".repeat(20_000);
         assert!(!suspicious(&long, &[]));
