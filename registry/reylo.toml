@@ -1,4 +1,6 @@
-backends = ["github:reylosql/reylo"]
+backends = [
+  { full = "github:reylosql/reylo", options = { matching_regex = "^reylo-(darwin|linux|win32)-" } },
+]
 bins = ["reylo"]
 description = "Import .sql files into TypeScript with full type inference and zero codegen"
 test = { cmd = "reylo --version", expected = "reylo {{version}}" }
