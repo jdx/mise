@@ -44,22 +44,32 @@ impl InstallInto {
     pub(crate) async fn run(self) -> Result<()> {
         let install_path = self.path.absolutize()?.into_owned();
         let config = Config::get().await?;
+        // install-into calls the backend directly, skipping the toolset
+        // install's check, so refuse a backend the settings rule out here.
+        // Check after loading the config, so `[tool_alias]` picks the backend.
+        crate::backend::ensure_backend_enabled(&self.tool.ba.backend_type())?;
         let ts = Arc::new(
             ToolsetBuilder::new()
                 .with_args(std::slice::from_ref(&self.tool))
                 .build(&config)
                 .await?,
         );
-        let mut tv = ts
+        let Some(tv) = ts
             .versions
             .get(self.tool.ba.as_ref())
             .ok_or_else(|| eyre!("Tool not found"))?
             .versions
             .first()
-            .unwrap()
-            .clone();
+        else {
+            // resolution failed and only warned; the backend says why, such as
+            // no registry backend that enable_backends allows
+            self.tool.ba.backend()?;
+            bail!("no version of {} resolved", self.tool);
+        };
+        let mut tv = tv.clone();
         let before_date = tv.before_date;
         let backend = tv.backend()?;
+        crate::backend::ensure_backend_enabled(&backend.get_type())?;
         let mpr = MultiProgressReport::get();
         let install_ctx = InstallContext {
             config: config.clone(),

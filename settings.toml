@@ -753,6 +753,24 @@ See [`download_cache`](#download_cache).
 env = "MISE_DOWNLOAD_CACHE_MAX_SIZE"
 type = "String"
 
+[enable_backends]
+default = []
+description = "Allowlist of backends mise may resolve and install tools with, such as `core` or `aqua`."
+docs = """
+When the list is empty, every backend is allowed. Once it has entries, a tool
+whose backend is not listed fails to resolve, and a registry shorthand skips to
+its next allowed backend. Core tools such as `node` use the `core` backend.
+[`disable_backends`](#disable_backends) still applies on top of this list. A
+vfox backend plugin is allowed by its plugin name.
+
+This checks the backend a tool is configured with, not tools a backend runs
+itself, such as the `node` that the `npm` backend uses.
+"""
+env = "MISE_ENABLE_BACKENDS"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [enable_tools]
 description = "Allowlist of configured tools mise uses; other tools are ignored."
 docs = """

@@ -9,7 +9,7 @@ use xx::regex;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::registry::RegistryTool;
 use crate::tool_catalog::{ToolCatalogEntry, ToolCatalogSource};
-use crate::{config::Settings, ui::table::MiseTable};
+use crate::ui::table::MiseTable;
 
 #[derive(Debug, Clone, usage_rs::ValueEnum)]
 pub(crate) enum MatchType {
@@ -284,12 +284,17 @@ fn get_description(tool: &RegistryTool) -> String {
     // is only a guess (e.g. http:oc would otherwise become github.com/oc)
     let backend = match tool.url {
         Some(url) => url.to_string(),
-        None => get_backends(tool.backends())
-            .iter()
-            .filter(|b| !Settings::get().disable_backends.contains(b))
-            .map(|b| b.to_string())
-            .next()
-            .unwrap_or_default(),
+        None => get_backends(
+            tool.backends()
+                .into_iter()
+                .filter(|b| {
+                    crate::backend::is_backend_name_allowed(b.split(':').next().unwrap_or(b))
+                })
+                .collect(),
+        )
+        .into_iter()
+        .next()
+        .unwrap_or_default(),
     };
     format_description(description, &backend)
 }

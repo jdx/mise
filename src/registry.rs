@@ -877,9 +877,7 @@ impl RegistryTool {
                 .map(|b| b.to_string())
                 .collect::<HashSet<_>>();
             time!("disable_backends");
-            for backend in &Settings::get().disable_backends {
-                backend_types.remove(backend);
-            }
+            backend_types.retain(|backend| crate::backend::is_backend_name_allowed(backend));
             time!("disable_backends");
             if cfg!(windows) {
                 backend_types.remove("asdf");

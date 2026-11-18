@@ -90,7 +90,7 @@ pub async fn search(query: &str) -> Vec<ToolCatalogEntry> {
         .iter()
         .filter(|(plugin_name, plugin_type)| {
             **plugin_type == PluginType::VfoxBackend
-                && !settings.disable_backends.contains(*plugin_name)
+                && crate::backend::is_backend_name_allowed(plugin_name)
         })
         .filter_map(|(plugin_name, _)| {
             if !backend_query_targets_plugin(plugin_name, query) {
@@ -174,7 +174,7 @@ async fn search_backend_registry(
     if query.is_empty()
         || !PACKAGE_REGISTRY_BACKENDS.contains(&backend_type)
         || settings.offline()
-        || settings.disable_backends.iter().any(|b| b == backend)
+        || !crate::backend::is_backend_name_allowed(backend)
         || (backend_type.is_experimental() && !settings.experimental)
         // crates.io results would not be installable from another registry
         || (backend_type == BackendType::Cargo && settings.cargo.registry_name.is_some())
