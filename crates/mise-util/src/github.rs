@@ -1590,6 +1590,28 @@ pub async fn get_release_with_build_revision_status(
     use_versions_host: bool,
 ) -> Result<(GithubRelease, bool)> {
     let releases = list_releases(repo).await?;
+    pick_release_with_build_revision_status(releases, repo, version, use_versions_host).await
+}
+
+/// Like [`get_release_with_build_revision_status`] but also considers releases
+/// flagged `prerelease: true`, for repos that publish previews that way.
+#[cfg_attr(windows, allow(dead_code))]
+pub async fn get_release_including_prereleases_with_build_revision_status(
+    repo: &str,
+    version: &str,
+    use_versions_host: bool,
+) -> Result<(GithubRelease, bool)> {
+    let releases = list_releases_including_prereleases(repo).await?;
+    pick_release_with_build_revision_status(releases, repo, version, use_versions_host).await
+}
+
+#[cfg_attr(windows, allow(dead_code))]
+async fn pick_release_with_build_revision_status(
+    releases: Vec<GithubRelease>,
+    repo: &str,
+    version: &str,
+    use_versions_host: bool,
+) -> Result<(GithubRelease, bool)> {
     match pick_best_numeric_build_revision(releases.clone(), version) {
         Some(release) => Ok((release, true)),
         None => match pick_best_build_revision(releases, version) {
