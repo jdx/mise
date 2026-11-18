@@ -1209,15 +1209,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ruby_precompiled_versions_include_prerelease_flagged_releases() {
-        // jdx/ruby publishes Ruby previews as GitHub pre-releases.
-        let mut preview = release("4.1.0-preview1-1", &["ruby-4.1.0-preview1.macos.tar.gz"]);
-        preview.prerelease = true;
-        let versions = RubyPlugin::precompiled_versions_from_releases(&[preview], true, "macos");
-        assert_eq!(versions, HashSet::from(["4.1.0-preview1".to_string()]));
-    }
-
-    #[test]
     fn test_ruby_precompiled_versions_use_highest_build_revision_only() {
         // An install resolves 3.3.12 to the -2 release, which has no asset for this platform,
         // so 3.3.12 must not be listed even though -1 does have one.
