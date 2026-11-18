@@ -392,8 +392,10 @@ impl Git {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
-            let id = head.id();
-            let sha = id.unwrap().to_string()[..7].to_string();
+            let id = head
+                .id()
+                .ok_or_else(|| eyre::eyre!("repository {} has no commit at HEAD", dir.display()))?;
+            let sha = id.to_string()[..7].to_string();
             debug!("current sha for {dir:?}: {sha}");
             return Ok(sha);
         }
