@@ -31,7 +31,7 @@
     "@jdxcode/docs-releases": "0.1",
     "@lezer/highlight": "1",
     "@resvg/resvg-js": "^2.6.2",
-    "@tsconfig/node24": "^24.0.0",
+    "@tsconfig/node26": "^26.0.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.0.0",
     "esbuild": "^0.28.2",
