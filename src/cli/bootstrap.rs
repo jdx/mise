@@ -2951,10 +2951,24 @@ impl Bootstrap {
         // process records the bootstrap itself, so it is a generation of its
         // own. A checkout reused as-is changes nothing and records nothing.
         let mutates_checkout = !reuse_checkout || self.update;
-        let generation = if mutates_checkout {
-            Some(OperationScope::begin("bootstrap --from", self.dry_run).await?)
+        // Opening the scope reads the config the existing checkout holds,
+        // which a broken commit stops from loading; the pull is how the fix
+        // arrives. So when only that config fails to load, pull without the
+        // history record, but still under the operation lock. Any other
+        // error opening the scope, such as a lock timeout, stops the run.
+        let (generation, fallback_lock) = if !mutates_checkout {
+            (None, None)
+        } else if reuse_checkout && !self.dry_run && system::host::config().await.is_err() {
+            debug!("bootstrap: pulling the source without a history record");
+            (
+                None,
+                Some(system::history::scope::hold_operation_lock().await?),
+            )
         } else {
-            None
+            (
+                Some(OperationScope::begin("bootstrap --from", self.dry_run).await?),
+                None,
+            )
         };
         let checked_out = checkout_bootstrap_repository(
             &url,
@@ -2976,6 +2990,9 @@ impl Bootstrap {
                 Err(err) => generation.finish(Some(format!("{err:#}")), None),
             }
         }
+        // the child takes the operation lock for its own record, so the
+        // fallback lock must not outlive the checkout
+        drop(fallback_lock);
         if !checked_out? {
             return Ok(());
         }
