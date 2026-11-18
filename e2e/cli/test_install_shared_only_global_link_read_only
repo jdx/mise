@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# e2e:non-root
+# A tool installed only in another user's read-only installs dir keeps that
+# dir's `global` link, as the system installs dir and as a shared install dir.
+# Regression test for https://github.com/jdx/mise/issues/15814
+
+if [[ $(id -u) == 0 ]]; then
+  echo "skipping: root can write the shared installs dir"
+  exit 0
+fi
+
+# The administrator's own mise, with its own data and config.
+ADMIN="$HOME/admin"
+ADMIN_INSTALLS="$ADMIN/data/installs"
+mkdir -p "$ADMIN/data/plugins" "$ADMIN/config" "$ADMIN/cache" "$ADMIN/state"
+ln -s "$MISE_DATA_DIR/plugins/dummy" "$ADMIN/data/plugins/dummy"
+ln -s "$MISE_DATA_DIR/plugins/needs-dummy" "$ADMIN/data/plugins/needs-dummy"
+cat >"$ADMIN/config/config.toml" <<'TOML'
+[tools]
+dummy = "1.0.0"
+TOML
+admin_mise() {
+  MISE_DATA_DIR="$ADMIN/data" MISE_CONFIG_DIR="$ADMIN/config" \
+    MISE_CACHE_DIR="$ADMIN/cache" MISE_STATE_DIR="$ADMIN/state" mise "$@"
+}
+admin_mise install dummy@1.0.0
+admin_mise install needs-dummy@1.0.0
+assert "readlink $ADMIN_INSTALLS/dummy/global" "./1.0.0"
+assert_fail "test -L $ADMIN_INSTALLS/needs-dummy/global"
+
+# This user's config drops dummy and selects needs-dummy, which only the
+# administrator's dir holds.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+needs-dummy = "1.0.0"
+TOML
+chmod -R a-w "$ADMIN"
+trap 'chmod -R u+w "$ADMIN" 2>/dev/null || true' EXIT
+
+assert_succeed "MISE_SYSTEM_INSTALLS_DIR=$ADMIN_INSTALLS MISE_SYSTEM_PACKAGES_SUDO=false mise install tiny@1.0.0"
+assert "readlink $ADMIN_INSTALLS/dummy/global" "./1.0.0"
+assert_fail "test -L $ADMIN_INSTALLS/needs-dummy/global"
+
+assert_succeed "MISE_SHARED_INSTALL_DIRS=$ADMIN_INSTALLS mise install tiny@2.1.0"
+assert "readlink $ADMIN_INSTALLS/dummy/global" "./1.0.0"
+assert_fail "test -L $ADMIN_INSTALLS/needs-dummy/global"
