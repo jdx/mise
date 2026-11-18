@@ -53,6 +53,15 @@ if (-not $ShimText.Contains("mise-shim-version:")) {
     Write-Error "mise-shim.exe has no mise-shim-version tag"
     exit 1
 }
+# The binaries must link the C runtime statically. A vcruntime140.dll import makes them fail to
+# start (0xC0000135, no message) on Windows Server Core, which has no VC++ redistributable.
+foreach ($Exe in @("mise.exe", "mise-shim.exe")) {
+    $ExeText = [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes("dist/mise/bin/$Exe"))
+    if ($ExeText -match "(?i)vcruntime140") {
+        Write-Error "$Exe imports vcruntime140.dll; the C runtime must be linked statically"
+        exit 1
+    }
+}
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
 Set-Location dist
