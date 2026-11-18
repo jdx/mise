@@ -1,0 +1,4 @@
+backends = ["aqua:nextest-rs/nextest/cargo-nextest"]
+description = "A next-generation test runner for Rust"
+test = { cmd = "cargo-nextest nextest --version", expected = "cargo-nextest {{version}}" }
+version_order = "semver"
