@@ -26,3 +26,24 @@ other="$(mktemp -d)"
 (cd "$other" && mise reshim)
 assert "readlink $shimdir/localtool" "$(which mise)"
 assert "$shimdir/localtool" "local tool"
+
+# A project's `path:` entry for the same tool hides the global one in the merged
+# toolset, but the global tool's shims must survive a reshim in that project.
+mkdir -p "$PWD/globaltool/bin" "$PWD/proj"
+cat >"$PWD/globaltool/bin/globalbin" <<'SH'
+#!/usr/bin/env bash
+echo "global bin"
+SH
+chmod +x "$PWD/globaltool/bin/globalbin"
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<EOF2
+[tools]
+"github:jdx/overridden" = "path:$PWD/globaltool/bin"
+EOF2
+cat >"$PWD/proj/mise.toml" <<EOF2
+[tools]
+"github:jdx/overridden" = "path:$PWD/localtool/bin"
+EOF2
+(cd "$PWD/proj" && mise reshim)
+assert "$shimdir/globalbin" "global bin"
+assert "$shimdir/localtool" "local tool"
