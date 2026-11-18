@@ -91,6 +91,11 @@ fn git_tracks_head(name: &str) -> bool {
     is_git_spec(name) && !name.contains('#')
 }
 
+/// File in a git source's installs directory naming the commit that the last
+/// install of `latest` resolved to. Commit-named installs alone cannot say,
+/// since an explicit pin to an older commit looks the same.
+const GIT_HEAD_MARKER: &str = ".head";
+
 /// Whether `s` is a full git object name, which is what `git_head` returns.
 fn is_commit_hash(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
@@ -1287,7 +1292,7 @@ impl Backend for NPMBackend {
         // the literal `latest` as missing.
         //
         // A git source that follows its default branch installs the commit
-        // `HEAD` pointed at, so the newest commit-named install is the latest.
+        // `HEAD` pointed at; that commit is recorded when `latest` installs it.
         // Without this, `mise prune` resolves `latest` offline to the literal
         // string, matches no installed commit, and removes the active one.
         let name = self.tool_name();
@@ -1300,13 +1305,18 @@ impl Backend for NPMBackend {
         let installs = crate::toolset::install_state::get_tool(&self.ba().short)
             .and_then(|tool| tool.installs_path)
             .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
+        if !is_tarball {
+            // A commit-named install may be a pinned ref rather than `HEAD`, so
+            // use the commit an install of `latest` recorded.
+            let head = crate::file::read_to_string(installs.join(GIT_HEAD_MARKER)).ok()?;
+            let head = head.trim();
+            return (is_commit_hash(head) && installs.join(head).exists())
+                .then(|| head.to_string());
+        }
         crate::file::dir_subdirs(&installs)
             .unwrap_or_default()
             .into_iter()
             .filter(|v| !v.starts_with('.') && v != "latest")
-            // Installs of a pinned tag or branch share the directory; only a
-            // commit hash can be what `HEAD` resolved to.
-            .filter(|v| is_tarball || is_commit_hash(v))
             .filter(|v| !crate::runtime_symlinks::is_runtime_symlink(&installs.join(v)))
             .filter(|v| {
                 // An identity-layout version is a link, and its marker is
@@ -1706,6 +1716,7 @@ impl Backend for NPMBackend {
                 }
             }
         }
+        self.record_git_head_install(&tv);
         Ok(tv)
     }
 
@@ -2032,6 +2043,21 @@ impl NPMBackend {
         } else {
             validate_registry_version(&name, &tv.version)?;
             Ok(tv.version.clone())
+        }
+    }
+
+    /// Remember which commit an install of `latest` produced, so offline
+    /// resolution and `mise prune` can tell it from an explicitly pinned one.
+    fn record_git_head_install(&self, tv: &ToolVersion) {
+        if !git_tracks_head(&self.tool_name())
+            || tv.request.version() != "latest"
+            || !is_commit_hash(&tv.version)
+        {
+            return;
+        }
+        let marker = self.ba().installs_path().join(GIT_HEAD_MARKER);
+        if let Err(err) = crate::file::write(&marker, &tv.version) {
+            debug!("could not record the installed HEAD commit: {err:#}");
         }
     }
 

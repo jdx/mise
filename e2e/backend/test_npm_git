@@ -29,3 +29,8 @@ head2="$(git -C "$repo" rev-parse HEAD)"
 mise install "$spec@latest" --force
 assert_contains "mise prune --tools --dry-run 2>&1" "gitpkg@$head1 is prunable"
 assert_not_contains "mise prune --tools --dry-run 2>&1" "gitpkg@$head2 is prunable"
+
+# an explicit pin to an older commit installed later must not displace latest
+mise install "$spec@$head1"
+assert_contains "mise prune --tools --dry-run 2>&1" "gitpkg@v1 is prunable"
+assert_not_contains "mise prune --tools --dry-run 2>&1" "gitpkg@$head2 is prunable"
