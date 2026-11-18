@@ -1744,18 +1744,21 @@ impl Backend for HttpBackend {
         // An install made before `filter_bins` was set has no `.mise-bins`; build it
         // rather than dropping the tool from PATH.
         // An archive's own `.mise-bins` counts only when `filter_bins` asks for one.
-        let filtered = opts.filter_bins().is_some_and(|bins| {
-            if !install_path.join(MISE_BINS_DIR).is_dir()
-                && install_path.is_dir()
-                && let Err(err) = self.create_symlink_bin_dir(&tv, &opts, bins)
-            {
-                warn!(
-                    "could not create {MISE_BINS_DIR} for {}: {err}",
-                    self.ba.tool_name
-                );
+        // A failed repair is an error: the unfiltered directory would put the bundled
+        // helpers back on PATH.
+        let mut filtered = false;
+        if let Some(bins) = opts.filter_bins() {
+            if !install_path.join(MISE_BINS_DIR).is_dir() {
+                self.create_symlink_bin_dir(&tv, &opts, bins)
+                    .wrap_err_with(|| {
+                        format!(
+                            "could not create {MISE_BINS_DIR}; reinstall {}",
+                            self.ba.tool_name
+                        )
+                    })?;
             }
-            install_path.join(MISE_BINS_DIR).is_dir()
-        });
+            filtered = true;
+        }
         if filtered {
             return Ok(vec![runtime_path_for_install_path(
                 &tv,
@@ -1816,7 +1819,7 @@ impl HttpBackend {
 
         let mut src_dirs = Self::discover_bin_paths(opts, tv)?;
         if !src_dirs.contains(&install_path) {
-            src_dirs.push(install_path);
+            src_dirs.push(install_path.clone());
         }
 
         let mut wanted = Vec::new();
@@ -1843,15 +1846,36 @@ impl HttpBackend {
             wanted.push((bin_name, src));
         }
 
+        // The sources must outlive the rebuild below.
+        let real_dir = symlink_dir
+            .canonicalize()
+            .unwrap_or_else(|_| symlink_dir.clone());
+        if let Some((name, _)) = wanted.iter().find(|(_, src)| src.starts_with(&real_dir)) {
+            bail!(
+                "filter_bins: '{name}' is inside {MISE_BINS_DIR}, which mise reserves; use another bin_path"
+            );
+        }
+
         // An archive can ship its own `.mise-bins`; keep only a previous run's links.
-        if symlink_dir.exists() && !Self::bins_dir_matches(&symlink_dir, &wanted) {
+        if symlink_dir.exists() && Self::bins_dir_matches(&symlink_dir, &wanted) {
+            return Ok(());
+        }
+        // Build the links aside and publish the finished directory, so a concurrent
+        // command never sees a partial `.mise-bins`.
+        let staging = install_path.join(format!("{MISE_BINS_DIR}.tmp-{}", std::process::id()));
+        file::remove_all(&staging)?;
+        file::create_dir_all(&staging)?;
+        for (name, src) in &wanted {
+            super::mise_bins::link(src, &staging.join(name))?;
+        }
+        if symlink_dir.exists() {
             file::remove_all(&symlink_dir)?;
         }
-        file::create_dir_all(&symlink_dir)?;
-        for (name, src) in wanted {
-            let dst = symlink_dir.join(&name);
-            if dst.symlink_metadata().is_err() {
-                super::mise_bins::link(&src, &dst)?;
+        if let Err(err) = std::fs::rename(&staging, &symlink_dir) {
+            file::remove_all(&staging)?;
+            // Another process published it first.
+            if !Self::bins_dir_matches(&symlink_dir, &wanted) {
+                return Err(err.into());
             }
         }
         Ok(())
