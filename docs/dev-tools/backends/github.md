@@ -295,8 +295,8 @@ To include prereleases for every tool, set the
 
 #### `version_order` {#version-order}
 
-By default, `mise ls-remote` lists releases in the order they were published.
-Set `version_order = "semver"` when a repository publishes backports after
+By default, `mise ls-remote` lists releases in the order GitHub returns them,
+which usually, but not always, matches publication order. Set `version_order = "semver"` when a repository publishes backports after
 newer releases, so that the list and prefixes such as `1.2` follow semantic
 version order:
 
@@ -306,11 +306,10 @@ version order:
 ```
 
 `latest` still resolves to the release GitHub or Forgejo marks as latest when
-there is one. See [version ordering](/dev-tools/versions.html#version-ordering).
+there is one, except under `published_at` below. See [version ordering](/dev-tools/versions.html#version-ordering).
 
-The listing follows the order GitHub returns, which does not always match
-publication time: a stable release cut from an older commit can be listed
-before a prerelease published after it. Set `version_order = "published_at"`
+A stable release cut from an older commit can be listed before a prerelease
+published after it. Set `version_order = "published_at"`
 to sort by publication date, oldest to newest, so `latest` is the release
 published most recently, whatever its version number. It is meant for
 `prerelease = true`, to follow a repository's stable and alpha channels

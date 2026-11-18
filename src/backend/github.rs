@@ -1018,12 +1018,6 @@ impl Backend for UnifiedGitBackend {
             return Ok(None);
         }
 
-        // `published_at` picks the release published most recently, which is not
-        // necessarily the one the owner marked as "Latest".
-        if self.version_order(opts.raw())? == VersionOrder::PublishedAt {
-            return Ok(None);
-        }
-
         // The `/releases/latest` shortcut has to reject an asset-less release for
         // the same reason the full listing does, or `latest` would resolve to a
         // version the listing no longer offers and the install would fail with

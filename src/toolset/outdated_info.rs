@@ -139,7 +139,14 @@ impl OutdatedInfo {
             };
             latest_query = prefix.clone().unwrap_or_else(|| "latest".to_string());
             // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
-            t.latest_version(config, prefix, opts.before_date).await
+            t.latest_version_with_selection_options(
+                config,
+                prefix,
+                &tv.request.options(),
+                opts.before_date,
+                false,
+            )
+            .await
         } else {
             latest_query = tv.request.version();
             tv.latest_version_with_opts(config, opts)

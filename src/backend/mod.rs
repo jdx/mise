@@ -4867,7 +4867,13 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
         selection_opts: &ToolVersionOptions,
     ) -> bool {
-        query == "latest" && !self.include_prereleases(selection_opts)
+        // `published_at` picks the release published most recently, which is not
+        // necessarily the one the upstream marks as latest.
+        query == "latest"
+            && !self.include_prereleases(selection_opts)
+            && !self
+                .version_order(selection_opts)
+                .is_ok_and(|order| order == VersionOrder::PublishedAt)
     }
 
     /// Get the latest version using the active request's candidate-selection options.
