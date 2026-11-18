@@ -478,13 +478,6 @@ fn resolve_entry(
     if path.is_relative() {
         bail!("path \"{path_raw}\" must be absolute or start with ~/, ignoring entry");
     }
-    // ids end up inside marker lines — keep them to characters that can't
-    // collide with the marker syntax itself
-    if id.is_empty() || !id.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c)) {
-        bail!(
-            "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
-        );
-    }
     let mut origin = ResourceOrigin {
         config: config_path.to_path_buf(),
         config_root: crate::host::config_root(config_path),
@@ -505,6 +498,16 @@ fn resolve_entry(
         },
         EditTomlEntry::Table(table) => table,
     };
+    if entry.merge.is_some() {
+        check_merge_key_has_id(path_raw, &id, &path, &entry)?;
+    }
+    // ids end up inside marker lines — keep them to characters that can't
+    // collide with the marker syntax itself
+    if id.is_empty() || !id.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c)) {
+        bail!(
+            "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
+        );
+    }
     if let Some(merge) = &entry.merge {
         let op = merge_op(path_raw, &id, &path, &entry, merge, base, &mut origin)?;
         return Ok(EditRequest {
@@ -610,6 +613,27 @@ fn resolve_entry(
     })
 }
 
+/// the key is split at its last `/`, so a key written without an id reads as
+/// `<parent dir>/<file name>`; name the missing id instead of blaming the
+/// format. Only the key is checked: whether the target is a directory depends
+/// on the filesystem, and a whole-file entry may replace it before this edit
+/// runs.
+fn check_merge_key_has_id(
+    path_raw: &str,
+    id: &str,
+    path: &Path,
+    entry: &EditTomlTable,
+) -> Result<()> {
+    let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
+    let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
+    if id_looks_like_file && target_is_unformatted {
+        bail!(
+            "\"{path_raw}\".{id}: \"{id}\" was read as the id and \"{path_raw}\" as the target, which has no .json, .jsonc, .toml, .yaml, .yml, or .ini extension; if \"{id}\" is the file to merge into, the key is missing its /<id> (for example \"{path_raw}/{id}/shared\"), otherwise set a format, ignoring entry"
+        );
+    }
+    Ok(())
+}
+
 /// the operation for `{ source = "...", merge = true }`
 fn merge_op(
     path_raw: &str,
@@ -632,18 +656,6 @@ fn merge_op(
     }
     if entry.position.is_some() || entry.comment.is_some() {
         bail!("\"{path_raw}\".{id}: position and comment do not apply to merge, ignoring entry");
-    }
-    // the key is split at its last `/`, so a key written without an id reads
-    // as `<parent dir>/<file name>`; name the missing id instead of blaming
-    // the format. Only the key is checked: whether the target is a directory
-    // depends on the filesystem, and a whole-file entry may replace it before
-    // this edit runs
-    let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
-    let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
-    if id_looks_like_file && target_is_unformatted {
-        bail!(
-            "\"{path_raw}\".{id}: the key is missing its /<id> segment, so \"{id}\" was read as the id and \"{path_raw}\" as the target; did you mean \"{path_raw}/{id}/<id>\" (for example \"{path_raw}/{id}/shared\"), ignoring entry"
-        );
     }
     // like a symlink entry, an omitted source is the target's path under
     // dotfiles.root
@@ -2437,20 +2449,26 @@ mod tests {
 
     #[test]
     fn a_merge_key_without_an_id_names_the_missing_id() {
-        let key = "~/.config/app/settings.toml";
-        // the key is split at its last `/`, as the parser does
-        let (path, id) = split_edit_key(key).unwrap();
-        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
-        let err = resolve_entry(
-            &path,
-            id,
-            entry,
-            Path::new("/cfg"),
-            Path::new("/cfg/mise.toml"),
-        );
-        let err = err.unwrap_err().to_string();
-        assert!(err.contains("missing its /<id>"), "{err}");
-        assert!(err.contains(&format!("{key}/shared")), "{err}");
+        // a name with a space would fail the id check if that ran first
+        for key in [
+            "~/.config/app/settings.toml",
+            "~/.config/app/user settings.toml",
+        ] {
+            // the key is split at its last `/`, as the parser does
+            let (path, id) = split_edit_key(key).unwrap();
+            let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
+            let err = resolve_entry(
+                &path,
+                id,
+                entry,
+                Path::new("/cfg"),
+                Path::new("/cfg/mise.toml"),
+            );
+            let err = err.unwrap_err().to_string();
+            assert!(err.contains("missing its /<id>"), "{err}");
+            assert!(err.contains(&format!("{key}/shared")), "{err}");
+            assert!(err.contains("set a format"), "{err}");
+        }
     }
 
     #[test]
