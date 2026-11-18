@@ -478,13 +478,6 @@ fn resolve_entry(
     if path.is_relative() {
         bail!("path \"{path_raw}\" must be absolute or start with ~/, ignoring entry");
     }
-    // ids end up inside marker lines — keep them to characters that can't
-    // collide with the marker syntax itself
-    if id.is_empty() || !id.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c)) {
-        bail!(
-            "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
-        );
-    }
     let mut origin = ResourceOrigin {
         config: config_path.to_path_buf(),
         config_root: crate::host::config_root(config_path),
@@ -505,6 +498,14 @@ fn resolve_entry(
         },
         EditTomlEntry::Table(table) => table,
     };
+    if let Some(merge) = &entry.merge {
+        check_merge_key_has_id(path_raw, &id, &path, &entry, merge)?;
+    }
+    if !is_valid_id(&id) {
+        bail!(
+            "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
+        );
+    }
     if let Some(merge) = &entry.merge {
         let op = merge_op(path_raw, &id, &path, &entry, merge, base, &mut origin)?;
         return Ok(EditRequest {
@@ -608,6 +609,90 @@ fn resolve_entry(
         origin,
         group: None,
     })
+}
+
+/// the key is split at its last `/`, so a key written without an id reads as
+/// `<parent dir>/<file name>`; name the missing id instead of blaming the
+/// format. Only the key is checked: whether the target is a directory depends
+/// on the filesystem, and a whole-file entry may replace it before this edit
+/// runs.
+fn check_merge_key_has_id(
+    path_raw: &str,
+    id: &str,
+    path: &Path,
+    entry: &EditTomlTable,
+    merge: &MergeSetting,
+) -> Result<()> {
+    // an invalid merge setting is the error to report; the key is no help then
+    if !matches!(merge, MergeSetting::Bool(true))
+        && !matches!(merge, MergeSetting::Mode(mode) if mode == "missing")
+    {
+        return Ok(());
+    }
+    // every other error merge_op reports comes first: none of them is fixed by
+    // adding an id or a format
+    if entry.block.is_some()
+        || entry.line.is_some()
+        || entry.position.is_some()
+        || entry.comment.is_some()
+    {
+        return Ok(());
+    }
+    // without a source the target must imply one. The key as parsed may not
+    // (the home directory itself has none) while the corrected key does, so
+    // the hint stays when either does; a format only fixes the parsed target.
+    let implies_source = |target: &str| {
+        crate::files::implied_source(&crate::files::resolve_target_arg(target)).is_ok()
+    };
+    let parsed_has_source = entry.source.is_some() || implies_source(path_raw);
+    if !parsed_has_source && !implies_source(&format!("{path_raw}/{id}")) {
+        return Ok(());
+    }
+    let id_looks_like_file = Format::from_path(Path::new(id)).is_some();
+    let target_is_unformatted = entry.format.is_none() && Format::from_path(path).is_none();
+    if id_looks_like_file && target_is_unformatted {
+        let suggestion = suggested_key(path_raw, id)?;
+        // a format only helps when the parsed id would be accepted as it is
+        // and the parsed target can get a source
+        let format_alternative = if is_valid_id(id) && parsed_has_source {
+            ", otherwise set a format"
+        } else {
+            ""
+        };
+        // the corrected target may sit where no source can be inferred
+        let source_note = if entry.source.is_none() && !implies_source(&format!("{path_raw}/{id}"))
+        {
+            " together with an explicit source"
+        } else {
+            ""
+        };
+        // show the key parts escaped so a control character cannot split the message
+        let shown_path = escape_string(path_raw)?;
+        let shown_id = escape_string(id)?;
+        bail!(
+            "{shown_path}.{shown_id}: {shown_id} was read as the id and {shown_path} as the target, which has no .json, .jsonc, .toml, .yaml, .yml, or .ini extension; if {shown_id} is the file to merge into, the key is missing its /<id> (for example {suggestion}{source_note}){format_alternative}, ignoring entry"
+        );
+    }
+    Ok(())
+}
+
+/// the corrected key, written as a quoted TOML key. A JSON string is also a
+/// valid TOML basic string, which keys allow; TOML forbids a raw DEL there,
+/// which JSON leaves unescaped.
+fn suggested_key(path_raw: &str, id: &str) -> Result<String> {
+    escape_string(&format!("{path_raw}/{id}/shared"))
+}
+
+/// `s` as a quoted string with every control character escaped; a JSON string
+/// is also a valid TOML basic string, but JSON leaves DEL raw
+fn escape_string(s: &str) -> Result<String> {
+    Ok(serde_json::to_string(s)?.replace('\u{7f}', "\\u007F"))
+}
+
+/// ids end up inside marker lines — keep them to characters that can't
+/// collide with the marker syntax itself
+fn is_valid_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_alphanumeric() || "_-.".contains(c))
 }
 
 /// the operation for `{ source = "...", merge = true }`
@@ -2421,6 +2506,167 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("true or \"missing\""), "{err}");
+    }
+
+    #[test]
+    fn a_merge_key_without_an_id_names_the_missing_id() {
+        // a name with a space would fail the id check if that ran first, and
+        // a format would not fix it, so only a valid id offers one
+        for (key, suggestion, offers_format) in [
+            (
+                "~/.config/app/settings.toml",
+                "\"~/.config/app/settings.toml/shared\"",
+                true,
+            ),
+            (
+                "~/.config/app/user settings.toml",
+                "\"~/.config/app/user settings.toml/shared\"",
+                false,
+            ),
+            // the suggestion is a TOML key, so a quote or a newline is escaped
+            (
+                "~/.config/app\"data/settings.toml",
+                "\"~/.config/app\\\"data/settings.toml/shared\"",
+                true,
+            ),
+            (
+                "~/.config/app\nlocal/settings.toml",
+                "\"~/.config/app\\nlocal/settings.toml/shared\"",
+                true,
+            ),
+        ] {
+            // the key is split at its last `/`, as the parser does
+            let (path, id) = split_edit_key(key).unwrap();
+            let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
+            let err = resolve_entry(
+                &path,
+                id,
+                entry,
+                Path::new("/cfg"),
+                Path::new("/cfg/mise.toml"),
+            );
+            let err = err.unwrap_err().to_string();
+            assert!(err.contains("missing its /<id>"), "{err}");
+            assert!(err.contains(suggestion), "{err}");
+            assert_eq!(err.contains("set a format"), offers_format, "{err}");
+        }
+    }
+
+    #[test]
+    fn the_missing_id_hint_stays_when_only_the_corrected_key_implies_a_source() {
+        // `$HOME/settings.toml` parses as target $HOME, which has no implied
+        // source, while `$HOME/settings.toml/shared` does
+        let key = format!("{}/settings.toml", mise_util::dirs::HOME.display());
+        let (path, id) = split_edit_key(&key).unwrap();
+        let entry: EditTomlEntry = toml::from_str("merge = true").unwrap();
+        let err = resolve_entry(
+            &path,
+            id,
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        );
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("missing its /<id>"), "{err}");
+        // a format cannot give $HOME itself a source
+        assert!(!err.contains("set a format"), "{err}");
+    }
+
+    #[test]
+    fn the_suggested_key_parses_back_to_the_original_path() {
+        for path in [
+            "~/.config/app",
+            "~/.config/app\"data",
+            "~/.config/app\nlocal",
+            "~/.config/app\u{7f}local",
+            "~/.config/app\\local",
+            "~/.config/app\tlocal",
+        ] {
+            let key = suggested_key(path, "settings.toml").unwrap();
+            let table: toml::Table = toml::from_str(&format!("{key} = true")).unwrap();
+            let keys: Vec<_> = table.keys().cloned().collect();
+            assert_eq!(keys, [format!("{path}/settings.toml/shared")], "{key}");
+        }
+    }
+
+    #[test]
+    fn the_suggested_key_escapes_delete() {
+        let key = "~/.config/app\u{7f}local/settings.toml";
+        let (path, id) = split_edit_key(key).unwrap();
+        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
+        let err = resolve_entry(
+            &path,
+            id,
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        );
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("app\\u007Flocal"), "{err}");
+    }
+
+    #[test]
+    fn other_merge_errors_are_reported_before_the_missing_id() {
+        for (key, entry, reason) in [
+            (
+                "~/.config/app/settings.toml".to_string(),
+                "source = \"s\"\nmerge = true\nline = \"x\"",
+                "block or line",
+            ),
+            (
+                format!("{OUTSIDE_HOME}/app/settings.toml"),
+                "merge = true",
+                "source is required",
+            ),
+        ] {
+            let (path, id) = split_edit_key(&key).unwrap();
+            let entry: EditTomlEntry = toml::from_str(entry).unwrap();
+            let err = resolve_entry(
+                &path,
+                id,
+                entry,
+                Path::new("/cfg"),
+                Path::new("/cfg/mise.toml"),
+            );
+            let err = err.unwrap_err().to_string();
+            assert!(err.contains(reason), "{err}");
+        }
+    }
+
+    #[test]
+    fn an_invalid_merge_setting_is_reported_before_the_missing_id() {
+        let (path, id) = split_edit_key("~/.config/app/settings.toml").unwrap();
+        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = false").unwrap();
+        let err = resolve_entry(
+            &path,
+            id,
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        );
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("merge must be true"), "{err}");
+    }
+
+    #[test]
+    fn a_merge_key_with_an_id_that_looks_like_a_file_is_not_refused() {
+        // `~/settings.toml/defaults.toml` is a valid key even while
+        // `~/settings.toml` is a directory that a whole-file entry replaces
+        let dir = tempfile::tempdir().unwrap();
+        let target = format!("{}/settings.toml", dir.path().display());
+        file::create_dir_all(&target).unwrap();
+        let (path, id) = split_edit_key(&format!("{target}/defaults.toml")).unwrap();
+        let entry: EditTomlEntry = toml::from_str("source = \"s\"\nmerge = true").unwrap();
+        assert!(
+            resolve_entry(
+                &path,
+                id,
+                entry,
+                Path::new("/cfg"),
+                Path::new("/cfg/mise.toml")
+            )
+            .is_ok()
+        );
     }
 
     #[test]
