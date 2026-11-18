@@ -2556,9 +2556,14 @@ pub fn gh_token_in_keyring(host: &str) -> bool {
     if !Settings::get().github.gh_cli_tokens {
         return false;
     }
-    read_gh_host_entries()
-        .and_then(|mut hosts| hosts.remove(host))
-        .is_some_and(|entry| entry.has_user_without_token())
+    let Some(hosts) = read_gh_host_entries() else {
+        return false;
+    };
+    // The same hosts `resolve_token` reads, so an alias like `api.github.com` gets the hint too.
+    token_lookup_hosts(host)
+        .into_iter()
+        .filter_map(|lookup_host| hosts.get(lookup_host))
+        .any(GhHostEntry::has_user_without_token)
 }
 
 #[derive(Deserialize)]
