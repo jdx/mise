@@ -30,7 +30,7 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 /// substitution is not a secret.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}|[^\s"'$`~/#{(<\[;][^\s"';]{0,6};[^\s"']*))"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}|[^\s"'$`~/#{(<\[;][^\s"';]{0,6};[^\s"']{0,256}))"#,
     )
     .unwrap()
 });
@@ -41,10 +41,31 @@ static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
 /// one of them. A key name, part of a longer value, or anything else on the
 /// line still counts.
 fn suspicious(line: &str, allowed: &[String]) -> bool {
+    // a shell line is several commands; judge each in turn, without nesting
+    let mut rest = line;
+    loop {
+        match scan(rest, allowed) {
+            Scan::Flagged => return true,
+            Scan::Clean => return false,
+            Scan::Next(from) => rest = &rest[from..],
+        }
+    }
+}
+
+/// What `scan` found in a line.
+enum Scan {
+    Flagged,
+    Clean,
+    /// Clean up to here; the rest of the line is another shell command.
+    Next(usize),
+}
+
+fn scan(line: &str, allowed: &[String]) -> Scan {
     let approved = |found: &str| allowed.iter().any(|value| value == found);
     // Where approved values sit, so a token format inside one is covered too.
     let mut covered = Vec::new();
     let mut end = line.len();
+    let mut next_command = false;
     for found in ASSIGNMENT.captures_iter(line) {
         let Some(value) = ["dq", "sq", "bare"]
             .iter()
@@ -113,24 +134,20 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
             if approved(first) && !continues {
                 covered.push(value.start()..value.start() + first.len());
             } else if first.chars().count() >= 8 {
-                return true;
+                return Scan::Flagged;
             }
-            let split = value.start() + first.len() + 1;
-            if suspicious(&line[split..], allowed) {
-                return true;
-            }
-            // the rest was judged whole, tokens included
-            end = split;
+            end = value.start() + first.len() + 1;
+            next_command = true;
             break;
         } else if approved(text) && !continues {
             covered.push(value.range());
         } else {
-            return true;
+            return Scan::Flagged;
         }
     }
     // both lists are in line order, so one forward cursor covers them
     let mut next = 0;
-    TOKEN_FORMATS.find_iter(&line[..end]).any(|found| {
+    let flagged = TOKEN_FORMATS.find_iter(&line[..end]).any(|found| {
         while covered
             .get(next)
             .is_some_and(|range| range.end <= found.start())
@@ -141,7 +158,14 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
             .get(next)
             .is_some_and(|range| range.start <= found.start() && found.end() <= range.end);
         !approved(found.as_str()) && !inside
-    })
+    });
+    if flagged {
+        Scan::Flagged
+    } else if next_command {
+        Scan::Next(end)
+    } else {
+        Scan::Clean
+    }
 }
 
 /// Fail when a version that is not yet on the origin looks like it holds a
@@ -372,6 +396,13 @@ mod tests {
             assert!(!suspicious(line, &allowed), "{line}");
         }
         assert!(!suspicious("API_KEY=test;echo ready", &[]));
+        // many commands on one line neither nest calls nor hide a later secret
+        let long = "API_KEY=a;".repeat(100_000);
+        assert!(!suspicious(&long, &[]));
+        assert!(suspicious(
+            &format!("{long}DEPLOY_TOKEN=abcdefghijkl1234"),
+            &[]
+        ));
         let both = vec!["samplevalue api_key=another-example".to_string()];
         assert!(!suspicious(
             "password: samplevalue api_key=another-example",
