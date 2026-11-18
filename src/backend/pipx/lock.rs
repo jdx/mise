@@ -683,8 +683,24 @@ impl PIPXBackend {
         let registry = self.get_registry_url(config).await?;
         let requirements = self.lock_requirements(tv)?;
         let sources = PipxOptions::new(&tv.request.options()).sources()?;
+        // A tool pinned to its own index is looked up there: its name must never
+        // reach the registry, which may not host it at all.
+        let root_registry = match sources.get(&super::normalize_package_name(&self.tool_name())) {
+            Some((_, index)) => {
+                let tool_options = tv.request.options();
+                let url = PipxOptions::new(&tool_options)
+                    .indexes()?
+                    .iter()
+                    .find(|table| table.get("name").and_then(toml::Value::as_str) == Some(index))
+                    .and_then(|table| table.get("url").and_then(toml::Value::as_str))
+                    .ok_or_else(|| eyre!("index {index} is not defined"))?
+                    .to_string();
+                format!("{}/{{}}/", url.trim_end_matches('/'))
+            }
+            None => registry.clone(),
+        };
         let root = self
-            .release_python_requirement(&registry, &self.tool_name(), &tv.version)
+            .release_python_requirement(&root_registry, &self.tool_name(), &tv.version)
             .await
             .wrap_err_with(|| format!("failed to lock {}", self.ba.short))?;
         let mut constraints = vec![">=3.8".to_string()];

@@ -463,7 +463,8 @@ is never looked up there.
   use the index only for packages pinned to it.
 - `sources` is a table of `package = { index = "name" }`. A package must be the
   tool itself or one of its [`with`](#with) or [`expose`](#expose) requirements,
-  and `index` must name an entry of `indexes`.
+  and `index` must name an entry of `indexes`. A tool pinned to its own index
+  has its `requires-python` read from that index, never the registry.
 
 ```toml
 [tools."pypi:zensical"]

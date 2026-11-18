@@ -99,7 +99,10 @@ export const values: Record<string, string> = {
   "tools.<pypi:…>.dependency_prereleases": '"allow"',
   "tools.<pypi:…>.indexes":
     '[{ name = "private", url = "https://pypi.example.com/simple/", explicit = true }]',
+  "tools.<pypi:…>.indexes[].name": '"private"',
   "tools.<pypi:…>.sources": '{ my-package = { index = "private" } }',
+  "tools.<pypi:…>.sources.<key>": '{ index = "private" }',
+  "tools.<pypi:…>.sources.<key>.index": '"private"',
   "tools.<pypi:…>.python": '"3.12"',
   "tools.<pypi:…>.package_name": '"my-tool"',
   "tools.<pypi:…>.pipx_args": '"--pip-args=--no-cache-dir"',

@@ -46,6 +46,12 @@ mise uninstall pypi:mise-lock-cli
 mise install --locked pypi:mise-lock-cli
 assert_contains 'mise x --locked -- lock-cli' 'extra=1.0.0'
 
+# The tool itself can come from the private index; the registry never sees its name.
+write_config "indexes = [$index], sources = { mise-lock-cli = { index = \"private\" }, mise-lock-extra = { index = \"private\" } }"
+mise lock
+sidecar=$(find .mise/locks/pypi-mise-lock-cli -mindepth 1 -maxdepth 1 -newer mise.toml)
+assert_contains "grep -A3 '^name = \"mise-lock-cli\"' $sidecar/uv.lock" "registry = \"http://127.0.0.1:$port/private/simple/\""
+
 # A lock made for other indexes or sources does not satisfy the changed tool.
 write_config "indexes = [$index]"
 assert_fail 'mise install --locked pypi:mise-lock-cli' 'is not in the lockfile'
