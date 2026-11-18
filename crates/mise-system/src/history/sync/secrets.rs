@@ -64,7 +64,9 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
             && line[value.end()..]
                 .get(1..)
                 .and_then(|rest| rest.chars().next())
-                .is_some_and(|next| !next.is_whitespace() && next != ';');
+                .is_some_and(|next| {
+                    !next.is_whitespace() && !matches!(next, ';' | ',' | '}' | ']' | ')' | '#')
+                });
         if approved(text) && !continues {
             covered.push(value.range());
         } else {
@@ -279,6 +281,9 @@ mod tests {
             "export API_KEY=ctx7_api_key; echo ready",
             "API_KEY='ctx7_api_key'",
             "API_KEY=\"ctx7_api_key\"; echo ready",
+            "\"API_KEY\": \"ctx7_api_key\",",
+            "{ \"API_KEY\": \"ctx7_api_key\" }",
+            "{\"API_KEY\":\"ctx7_api_key\"}",
         ] {
             assert!(!suspicious(line, &allowed), "{line}");
         }
