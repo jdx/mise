@@ -35,19 +35,29 @@ static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 
-/// A line that looks like it holds a secret.
-fn suspicious(line: &str) -> bool {
-    TOKEN_FORMATS.is_match(line) || ASSIGNMENT.is_match(line)
+/// A line that looks like it holds a secret. `allowed` are values the user
+/// vouched for (`history.allow_secret_values`): they are blanked out before
+/// the scan, so a line that also holds anything else suspicious still counts.
+fn suspicious(line: &str, allowed: &[String]) -> bool {
+    let mut line = std::borrow::Cow::Borrowed(line);
+    for value in allowed.iter().filter(|value| !value.is_empty()) {
+        if line.contains(value.as_str()) {
+            line = std::borrow::Cow::Owned(line.replace(value.as_str(), ""));
+        }
+    }
+    TOKEN_FORMATS.is_match(&line) || ASSIGNMENT.is_match(&line)
 }
 
 /// Fail when a version that is not yet on the origin looks like it holds a
 /// secret. `upstream` is the origin's head; with none, every version counts.
 /// Anything the origin already has is not rescanned, so a leak that was
 /// published cannot block every later sync. Values are never printed.
+/// `allowed` lists values that are known to be harmless, such as a placeholder.
 pub(crate) fn audit_unpublished(
     repo: &HistoryRepo,
     head: &str,
     upstream: Option<&str>,
+    allowed: &[String],
 ) -> Result<()> {
     let commits = match upstream {
         Some(upstream) => repo.rev_list_after(head, upstream)?,
@@ -77,9 +87,9 @@ pub(crate) fn audit_unpublished(
                 continue;
             }
             let text = String::from_utf8_lossy(&bytes);
-            if let Some(line) = text.lines().position(suspicious) {
+            if let Some(line) = text.lines().position(|line| suspicious(line, allowed)) {
                 bail!(
-                    "cannot publish: line {} of {} in saved version {} looks like a secret. Removing it from the file does not remove it from saved versions. Rotate the secret and remove that history (see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history), then set `encrypt = true` on the file so later saves are protected, or run `mise dot sync --allow-plaintext-history` to publish it anyway",
+                    "cannot publish: line {} of {} in saved version {} looks like a secret. Removing it from the file does not remove it from saved versions. Rotate the secret and remove that history (see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history), then set `encrypt = true` on the file so later saves are protected, run `mise dot sync --allow-plaintext-history` to publish it anyway, or list a harmless value in `history.allow_secret_values`",
                     line + 1,
                     entry.path,
                     &commit[..commit.len().min(12)]
@@ -107,7 +117,7 @@ mod tests {
             "DB_PASSWORD=\"correct horse battery staple\"",
             "token: 'two words here'",
         ] {
-            assert!(suspicious(line), "{line}");
+            assert!(suspicious(line, &[]), "{line}");
         }
         for line in [
             "keybind = ctrl+shift+c=copy_to_clipboard",
@@ -123,7 +133,7 @@ mod tests {
             "secret = \"/run/secrets/app-secret\"",
             "export DB_PASSWORD=\"$DB_PASSWORD_FILE contents\"",
         ] {
-            assert!(!suspicious(line), "{line}");
+            assert!(!suspicious(line, &[]), "{line}");
         }
     }
 
@@ -150,14 +160,14 @@ mod tests {
         let leaked = commit(&repo, None, b"export MY_TOKEN=abcdefghijkl\n");
         let removed = commit(&repo, Some(&leaked), b"alias ll=ls\n");
 
-        let err = audit_unpublished(&repo, &removed, None).unwrap_err();
+        let err = audit_unpublished(&repo, &removed, None, &[]).unwrap_err();
         let message = err.to_string();
         assert!(message.contains("line 1 of home/.bashrc"), "{message}");
         assert!(!message.contains("abcdefghijkl"), "{message}");
 
         // once the origin has the leaking version it no longer blocks
-        audit_unpublished(&repo, &removed, Some(&removed)).unwrap();
-        audit_unpublished(&repo, &removed, Some(&leaked)).unwrap();
+        audit_unpublished(&repo, &removed, Some(&removed), &[]).unwrap();
+        audit_unpublished(&repo, &removed, Some(&leaked), &[]).unwrap();
     }
 
     #[test]
@@ -171,7 +181,7 @@ mod tests {
         let published = commit(&repo, Some(&removed), b"alias la=ls\n");
         let resaved = commit(&repo, Some(&published), b"export MY_TOKEN=abcdefghijkl\n");
         // the origin has the leaking contents in an earlier commit, not its newest tree
-        audit_unpublished(&repo, &resaved, Some(&published)).unwrap();
+        audit_unpublished(&repo, &resaved, Some(&published), &[]).unwrap();
     }
 
     #[test]
@@ -181,8 +191,40 @@ mod tests {
             .unwrap()
             .unwrap();
         let clean = commit(&repo, None, b"alias ll=ls\n");
-        audit_unpublished(&repo, &clean, None).unwrap();
+        audit_unpublished(&repo, &clean, None, &[]).unwrap();
         let binary = commit(&repo, Some(&clean), b"\0export MY_TOKEN=abcdefghijkl\n");
-        audit_unpublished(&repo, &binary, Some(&clean)).unwrap();
+        audit_unpublished(&repo, &binary, Some(&clean), &[]).unwrap();
+    }
+
+    #[test]
+    fn an_allowed_value_is_blanked_and_nothing_else() {
+        let allowed = vec!["ctx7_api_key".to_string()];
+        let placeholder = "\"CONTEXT7_API_KEY\" = \"ctx7_api_key\"";
+        assert!(suspicious(placeholder, &[]));
+        assert!(!suspicious(placeholder, &allowed));
+        // the same name with another value, and another secret on the line, still count
+        assert!(suspicious(
+            "\"CONTEXT7_API_KEY\" = \"ctx7_other_key\"",
+            &allowed
+        ));
+        assert!(suspicious(
+            "A_KEY=ctx7_api_key B_TOKEN=abcdefghijkl",
+            &allowed
+        ));
+        assert!(!suspicious(
+            placeholder,
+            &["".to_string(), "ctx7_api_key".to_string()]
+        ));
+    }
+
+    #[test]
+    fn an_allowed_value_unblocks_the_audit() {
+        let temporary = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(temporary.path())
+            .unwrap()
+            .unwrap();
+        let saved = commit(&repo, None, b"KEY_X_TOKEN = \"placeholder-1\"\n");
+        assert!(audit_unpublished(&repo, &saved, None, &[]).is_err());
+        audit_unpublished(&repo, &saved, None, &["placeholder-1".to_string()]).unwrap();
     }
 }

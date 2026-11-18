@@ -210,7 +210,18 @@ still holds it, and encrypting the file only protects later saves. Rotate the
 secret, [remove the plaintext from history](#remove-plaintext-from-history),
 and encrypt the file before you save it again. To publish anyway, use [`--allow-plaintext-history`](#allow-plaintext-history),
 which skips this check along with the encryption check. Versions the origin
-already has are not read again. The scan is a safety net for obvious cases,
+already has are not read again. When the scan flags a harmless value, such as a
+placeholder in an app's config, list it in
+[`history.allow_secret_values`](/configuration/settings.html#history.allow_secret_values)
+in your global config instead of skipping the check:
+
+```toml [~/.config/mise/config.toml]
+[settings.history]
+allow_secret_values = ["ctx7_api_key"]
+```
+
+The scan then ignores that value wherever it appears and still checks the rest
+of every file. The scan is a safety net for obvious cases,
 not proof that a version is free of secrets.
 
 ### Allow plaintext history {#allow-plaintext-history}

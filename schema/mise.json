@@ -2353,6 +2353,14 @@
               "description": "Allow publishing or applying history that holds plaintext copies of files now marked for encryption, or publishing versions that look like they contain secrets.",
               "type": "boolean"
             },
+            "allow_secret_values": {
+              "default": [],
+              "description": "Values the secret scan of saved versions accepts, such as a known placeholder.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "describe_command": {
               "default": "",
               "description": "Command, such as an AI agent, that writes the description of each checkpoint the history watcher saves.",

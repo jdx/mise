@@ -86,7 +86,12 @@ pub(crate) fn build(
     };
     if !allow_plaintext_history {
         super::files::audit_history(repo, &candidate.commit, &Default::default())?;
-        super::secrets::audit_unpublished(repo, &candidate.commit, upstream)?;
+        super::secrets::audit_unpublished(
+            repo,
+            &candidate.commit,
+            upstream,
+            &mise_settings::Settings::get().history.allow_secret_values,
+        )?;
     }
     candidate.adopt(repo)?;
     Ok(Some(candidate.commit))
