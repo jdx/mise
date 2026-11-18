@@ -63,7 +63,10 @@ jobs:
           # release it early; only the scheduled run can arm it, so any
           # auto-merge still armed from before the draft is cleared here.
           if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
-            if [ "$AUTO_MERGE" = true ]; then
+            # Only the release PR's own events may disarm it; an unrelated PR
+            # being marked ready must not cancel an armed release.
+            if [ "$AUTO_MERGE" = true ] && [ "$EVENT_HEAD_REF" = release ] \
+              && [ "$EVENT_HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
               gh pr merge "$PR_NUMBER" -R jdx/mise --disable-auto
               echo "Disabled stale auto-merge for ready release PR #$PR_NUMBER"
             fi
@@ -157,3 +160,5 @@ jobs:
           }
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
