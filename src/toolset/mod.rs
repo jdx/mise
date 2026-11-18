@@ -230,7 +230,14 @@ impl Toolset {
                     if Error::is_required_channel_resolution_err(&err) {
                         return Err(err);
                     }
-                    if Error::is_not_in_lockfile(&err) && !opts.warn_not_in_lockfile {
+                    // A tool whose `os` excludes this host is never installed or
+                    // used here, so the lockfile holding nothing for it is no
+                    // problem worth a warning.
+                    let os_excluded = !tvl.requests.is_empty()
+                        && tvl.requests.iter().all(|r| !r.is_os_supported());
+                    if Error::is_not_in_lockfile(&err)
+                        && (!opts.warn_not_in_lockfile || os_excluded)
+                    {
                         debug!("Failed to resolve tool version list for {ba}: {err}");
                     } else {
                         // warn_once: a command may resolve the same toolset more than
