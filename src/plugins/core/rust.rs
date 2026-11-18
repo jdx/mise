@@ -131,6 +131,40 @@ fn cutoff_search_dates(
     (first..=lookback_days).filter_map(move |n| day.checked_sub(jiff::Span::new().days(n)).ok())
 }
 
+/// What a search through the dated manifests ended with.
+#[derive(Debug, PartialEq, Eq)]
+enum DatedBuildSearch {
+    Found(jiff::civil::Date),
+    NotFound,
+    /// The deadline passed before every date was tried, so absence is not established.
+    OutOfTime,
+}
+
+/// The first of `dates` that `exists` accepts, giving up once `deadline` passes.
+async fn search_dated_builds<F, Fut>(
+    dates: impl Iterator<Item = jiff::civil::Date>,
+    deadline: tokio::time::Instant,
+    mut exists: F,
+) -> DatedBuildSearch
+where
+    F: FnMut(jiff::civil::Date) -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    for date in dates {
+        // `timeout_at` accepts a future that is already ready even after the deadline, so a probe
+        // that finished just in time must not start the next one on an expired budget.
+        if tokio::time::Instant::now() >= deadline {
+            return DatedBuildSearch::OutOfTime;
+        }
+        match tokio::time::timeout_at(deadline, exists(date)).await {
+            Ok(true) => return DatedBuildSearch::Found(date),
+            Ok(false) => {}
+            Err(_) => return DatedBuildSearch::OutOfTime,
+        }
+    }
+    DatedBuildSearch::NotFound
+}
+
 /// The date of the build a `nightly-YYYY-MM-DD` version names, which is in the name itself.
 fn dated_nightly_created_at(version: &str) -> Option<String> {
     let date = version.strip_prefix("nightly-")?.parse().ok()?;
@@ -917,20 +951,32 @@ impl Backend for RustPlugin {
             return Ok(Some(format!("{version}-{date}")));
         }
         let server = rustup_dist_server(&config_env);
-        for date in cutoff_search_dates(day, includes_day, cutoff_lookback_days(version)) {
+        // One deadline covers the whole search, so a mirror that is slow or answers every date
+        // with an error costs the configured budget, not one request per day of the window.
+        let deadline =
+            tokio::time::Instant::now() + Settings::get().fetch_remote_versions_timeout();
+        let dates = cutoff_search_dates(day, includes_day, cutoff_lookback_days(version));
+        let found = search_dated_builds(dates, deadline, |date| {
             let url = dated_channel_manifest_url_for(server.as_deref(), version, date);
-            if HTTP_FETCH
-                .head(&url)
-                .await
-                .is_ok_and(|rsp| rsp.status().is_success())
-            {
-                return Ok(Some(format!("{version}-{date}")));
+            async move {
+                HTTP_FETCH
+                    .head(&url)
+                    .await
+                    .is_ok_and(|rsp| rsp.status().is_success())
             }
+        })
+        .await;
+        match found {
+            DatedBuildSearch::Found(date) => Ok(Some(format!("{version}-{date}"))),
+            DatedBuildSearch::OutOfTime => bail!(
+                "could not verify the rust {version} build the release-age cutoff allows within {:?}; raise fetch_remote_versions_timeout or check the rustup dist server",
+                Settings::get().fetch_remote_versions_timeout()
+            ),
+            DatedBuildSearch::NotFound => bail!(
+                "no rust {version} build found within {} days before the release-age cutoff",
+                cutoff_lookback_days(version)
+            ),
         }
-        bail!(
-            "no rust {version} build found within {} days before the release-age cutoff",
-            cutoff_lookback_days(version)
-        )
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
@@ -2093,6 +2139,56 @@ mod tests {
         let mid_day = cutoff_search_dates(day, false, 3).collect::<Vec<_>>();
         assert_eq!(mid_day.first(), Some(&jiff::civil::date(2026, 11, 8)));
         assert_eq!(mid_day.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn the_archive_search_stops_when_the_deadline_passes() {
+        let day = jiff::civil::date(2026, 11, 9);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(50);
+        let mut probes = 0;
+        let result = search_dated_builds(cutoff_search_dates(day, false, 90), deadline, |_| {
+            probes += 1;
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                false
+            }
+        })
+        .await;
+        assert_eq!(result, DatedBuildSearch::OutOfTime);
+        assert!(probes < 5, "probed {probes} dates past the deadline");
+    }
+
+    #[tokio::test]
+    async fn the_archive_search_does_not_probe_once_the_deadline_has_passed() {
+        let day = jiff::civil::date(2026, 11, 9);
+        let deadline = tokio::time::Instant::now();
+        let mut probes = 0;
+        let result = search_dated_builds(cutoff_search_dates(day, false, 90), deadline, |_| {
+            probes += 1;
+            async { true }
+        })
+        .await;
+        assert_eq!(result, DatedBuildSearch::OutOfTime);
+        assert_eq!(probes, 0);
+    }
+
+    #[tokio::test]
+    async fn the_archive_search_returns_the_newest_date_that_exists() {
+        let day = jiff::civil::date(2026, 11, 9);
+        let want = jiff::civil::date(2026, 11, 6);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let found = search_dated_builds(
+            cutoff_search_dates(day, false, 90),
+            deadline,
+            |d| async move { d <= want },
+        )
+        .await;
+        assert_eq!(found, DatedBuildSearch::Found(want));
+        let none = search_dated_builds(cutoff_search_dates(day, false, 3), deadline, |_| async {
+            false
+        })
+        .await;
+        assert_eq!(none, DatedBuildSearch::NotFound);
     }
 
     #[test]
