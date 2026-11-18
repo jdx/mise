@@ -125,6 +125,8 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
                 covered.push(value.start()..value.start() + scalar.len());
                 continue;
             }
+            // the capture may be capped; only the whole scalar can be approved
+            return Scan::Flagged;
         }
         if bare && !structured && text.contains(';') {
             // shell: `KEY=value;next` is two commands. Judge the value alone,
@@ -408,6 +410,13 @@ mod tests {
             "password: samplevalue api_key=another-example",
             &both
         ));
+        // a value past the capture cap is not approved by its prefix
+        let prefix = format!("ab;{}", "x".repeat(256));
+        assert!(suspicious(
+            &format!("password: {prefix}#actual-secret"),
+            &[prefix.clone()]
+        ));
+        assert!(!suspicious(&format!("password: {prefix}"), &[prefix]));
         // a plain scalar is approved as a whole, up to a comment
         let scalar = vec!["ctx7_api_key extra words here".to_string()];
         assert!(!suspicious(
