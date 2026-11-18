@@ -492,7 +492,7 @@ fn normalize_tool_names(tools: &BTreeSet<String>) -> BTreeSet<String> {
         .iter()
         .map(|t| t.trim())
         .filter(|t| !t.is_empty())
-        .map(str::to_string)
+        .map(|t| mise_config::tools::unalias_backend(t).into_owned())
         .collect()
 }
 

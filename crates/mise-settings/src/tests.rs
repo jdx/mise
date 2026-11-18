@@ -136,6 +136,23 @@ fn test_normalize_tool_names() {
 }
 
 #[test]
+fn test_normalize_tool_names_resolves_aliases() {
+    let tools = BTreeSet::from([
+        "nodejs".to_string(),
+        "golang".to_string(),
+        "core:ruby".to_string(),
+        "dotnet-core".to_string(),
+    ]);
+    let expected = BTreeSet::from([
+        "node".to_string(),
+        "go".to_string(),
+        "ruby".to_string(),
+        "dotnet".to_string(),
+    ]);
+    assert_eq!(normalize_tool_names(&tools), expected);
+}
+
+#[test]
 fn test_list_by_os_path_separator_empty() {
     let result: Result<Vec<PathBuf>, _> = list_by_os_path_separator("");
     assert!(result.is_ok());

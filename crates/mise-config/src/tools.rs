@@ -18,6 +18,18 @@ pub(crate) mod schema;
 pub(crate) use schema::defs as schema_defs;
 pub(crate) use schema::task_tool_patterns;
 
+/// Resolves a legacy tool spelling to the name mise keys it by: `nodejs` is `node`, `golang`
+/// is `go`, `dotnet-core` is `dotnet`, and a `core:` prefix is dropped.
+pub fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
+    match backend {
+        "dotnet-core" => "dotnet",
+        "nodejs" => "node",
+        "golang" => "go",
+        _ => backend.trim_start_matches("core:"),
+    }
+    .into()
+}
+
 /// The option sets a tool may take, generated from the types in `decl.rs`, keyed by their
 /// `$defs` names. A backend's tool composes them with `allOf`, which closes the result with
 /// `unevaluatedProperties`, so closing each here as well would reject the keys the others add.
