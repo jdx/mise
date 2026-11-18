@@ -26,7 +26,8 @@ pub struct RemoteHost {
     pub port: Option<u16>,
     pub identity_file: Option<PathBuf>,
     pub source: PathBuf,
-    pub mise_env: Vec<String>,
+    /// `None` leaves environment selection to the host; `Some(vec![])` selects none.
+    pub mise_env: Option<Vec<String>>,
     pub copy_links: bool,
     pub copy_link: Vec<PathBuf>,
     pub exclude: Vec<String>,
@@ -132,9 +133,7 @@ pub fn hosts_from_config(
                 port: host.port,
                 identity_file,
                 source,
-                mise_env: host
-                    .mise_env
-                    .unwrap_or_else(|| default_mise_env.clone().unwrap_or_default()),
+                mise_env: host.mise_env.or_else(|| default_mise_env.clone()),
                 copy_links: host.copy_links.unwrap_or(default_copy_links),
                 copy_link: dedupe_paths(copy_link),
                 exclude: dedupe(exclude),
@@ -179,7 +178,7 @@ pub fn ad_hoc_host(
         port: None,
         identity_file: None,
         source,
-        mise_env: vec![],
+        mise_env: None,
         copy_links: false,
         copy_link: vec![],
         exclude: dedupe(
@@ -205,7 +204,7 @@ impl RemoteHost {
             self.source = absolutize(source)?;
         }
         if let Some(mise_env) = &overrides.mise_env {
-            self.mise_env.clone_from(mise_env);
+            self.mise_env = Some(mise_env.clone());
         }
         if overrides.copy_links {
             self.copy_links = true;
@@ -334,7 +333,7 @@ impl RemoteHost {
         for exclude in &self.exclude {
             validate_value("archive exclude", exclude)?;
         }
-        for env in &self.mise_env {
+        for env in self.mise_env.iter().flatten() {
             validate_value("mise environment", env)?;
             if env.contains(',') {
                 bail!("remote mise environment cannot contain a comma: {env}");
@@ -594,14 +593,17 @@ async fn run_staged(
         project
     };
     let mut argv = vec!["env".to_string()];
-    if session.host.mise_env.is_empty() {
-        // Clear an inherited value, but let the host's own miserc choose.
-        // `env` only takes -u before NAME=VALUE words.
-        argv.extend(["-u".to_string(), "MISE_ENV".to_string()]);
+    if session.host.mise_env.is_none() {
+        // Clear inherited values, including the aliases mise falls back to, but let the
+        // host's own miserc choose. `env` only takes -u before NAME=VALUE words.
+        for name in ["MISE_ENV", "MISE_PROFILE", "MISE_ENVIRONMENT"] {
+            argv.extend(["-u".to_string(), name.to_string()]);
+        }
     }
     argv.push(format!("MISE_TRUSTED_CONFIG_PATHS={project}"));
-    if !session.host.mise_env.is_empty() {
-        argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    if let Some(mise_env) = &session.host.mise_env {
+        // An explicit empty list selects no environments; the empty value masks the aliases.
+        argv.push(format!("MISE_ENV={}", mise_env.join(",")));
     }
     if preview_setup {
         argv.push(format!("MISE_CONFIG_DIR={project}"));

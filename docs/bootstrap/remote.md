@@ -94,8 +94,10 @@ These rules decide each host's final settings:
 - When two config files declare the same host name, the more local one wins.
 - `mise_env` is passed to the host's `mise bootstrap` as `MISE_ENV`.
   `--remote-env <ENV>` replaces it for every selected host. When neither is
-  set, mise clears any inherited `MISE_ENV` on the host and the host's own
-  [miserc](/configuration/environments.html) chooses the environments.
+  set, mise clears any inherited `MISE_ENV`, `MISE_PROFILE`, and
+  `MISE_ENVIRONMENT` on the host and the host's own
+  [miserc](/configuration/environments.html) chooses the environments. An
+  explicit `mise_env = []` selects no environments instead.
 - mise checks only the hosts you select, and it checks all of them, with
   command-line overrides applied, before it opens any connection. A stale entry
   you did not select does not block a run, and an invalid selected one cannot

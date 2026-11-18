@@ -138,6 +138,11 @@ cat >"$HOME/.config/mise/config.toml" <<'EOF'
 [bootstrap.remote.hosts.layered]
 host = "layered.test"
 remote_mise = "~/.local/bin/mise"
+
+[bootstrap.remote.hosts.no-envs]
+host = "no-envs.test"
+remote_mise = "~/.local/bin/mise"
+mise_env = []
 EOF
 
 cp source/mise.toml mise.toml
@@ -179,7 +184,7 @@ assert_not_contains "cat $ssh_log" "MISE_ENV=server,linux"
 assert_succeed "mise bootstrap remote relative --all --dry-run --yes"
 assert \
   "grep \"sh -c 'set -eu\" $ssh_log | awk '{ for (i = 1; i <= NF; i++) if (\$i ~ /\\.test$/) print \$i }'" \
-  $'relative.test\nubuntu@example.test\ninstaller.test\ncopy-links.test\nlayered.test'
+  $'relative.test\nubuntu@example.test\ninstaller.test\ncopy-links.test\nlayered.test\nno-envs.test'
 assert_fail "test -d $remote_stage"
 
 : >"$ssh_log"
@@ -188,9 +193,15 @@ assert_contains "cat $ssh_log" "$HOME/.local/bin/mise version"
 
 : >"$ssh_log"
 assert_succeed "MISE_ENV=unexpected mise bootstrap remote layered --dry-run --yes"
-assert_contains "cat $ssh_log" "env -u MISE_ENV 'MISE_TRUSTED_CONFIG_PATHS="
+assert_contains "cat $ssh_log" "env -u MISE_ENV -u MISE_PROFILE -u MISE_ENVIRONMENT 'MISE_TRUSTED_CONFIG_PATHS="
 assert_not_contains "cat $ssh_log" "MISE_ENV="
 assert_not_contains "cat $ssh_log" "MISE_ENV=unexpected"
+
+# an explicit empty list selects no environments, unlike an absent one
+: >"$ssh_log"
+assert_succeed "MISE_ENV=unexpected mise bootstrap remote no-envs --dry-run --yes"
+assert_contains "cat $ssh_log" "'MISE_ENV=' $HOME/.local/bin/mise --cd"
+assert_not_contains "cat $ssh_log" "-u MISE_ENV"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote --host root@ad-hoc.test --source . --remote-mise $HOME/.local/bin/mise --dry-run --yes"
