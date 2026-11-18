@@ -56,7 +56,7 @@ every tool you run in the project.
 mise use fnox
 ```
 
-mise needs fnox 1.39.0 or newer, and 1.43.0 or newer to read from fnox's
+mise needs fnox 1.39.0 or newer, and 1.50.0 or newer to read from fnox's
 daemon. It looks for the fnox CLI in the project's tools first, then on `PATH`.
 
 ### 2. Name fnox as the source and grant a key
@@ -374,8 +374,8 @@ lists them.
 ### Caching with the fnox daemon {#caching-with-the-fnox-daemon}
 
 When fnox's daemon is running and has your values cached, mise reads them
-straight from the daemon's socket. This needs fnox 1.43.0 or newer, whose daemon
-speaks protocol 7:
+straight from the daemon's socket. This needs fnox 1.50.0 or newer, whose daemon
+speaks protocol 8:
 
 ```toml [fnox.toml]
 root = true
@@ -394,7 +394,7 @@ enabled = true
   does not need a lease.
 - mise runs the fnox CLI and does not use the daemon when fnox's config sets
   `[daemon] enabled = false` or `FNOX_DAEMON=0` is set, when no daemon is
-  running (a daemon from fnox before 1.43.0 listens on a socket mise does not
+  running (a daemon from fnox before 1.50.0 listens on a socket mise does not
   look for, so it counts as not running), when the daemon speaks a different
   protocol or its socket is not owned by you, in CI or without a terminal, and
   on Windows, which has no fnox daemon. mise reads fnox's own decision from
@@ -527,7 +527,7 @@ MISE_DEBUG=1 mise run deploy          # how mise called fnox, and whether the da
 list them. It never shows values.
 
 ```text
-fnox · profile dev · ~/src/app (mise.toml) · fnox 1.43.0 · daemon: running (protocol 7)
+fnox · profile dev · ~/src/app (mise.toml) · fnox 1.50.0 · daemon: running (protocol 8)
 KEY                ENV    FILE  SCOPES     TASKS   DESCRIPTION
 AWS_ACCESS_KEY_ID  -      no    run, exec          (lease aws)
 DATABASE_URL       true   no    run, exec  deploy  app database
@@ -565,8 +565,8 @@ stderr as warnings with a suggestion; the exit code stays 0.
     "declared_in": ["/home/me/src/app/mise.toml"],
     "profile": "dev",
     "tool": {
-      "path": "/home/me/.local/share/mise/installs/fnox/1.43.0/fnox",
-      "version": "1.43.0"
+      "path": "/home/me/.local/share/mise/installs/fnox/1.50.0/fnox",
+      "version": "1.50.0"
     }
   },
   "keys": [
