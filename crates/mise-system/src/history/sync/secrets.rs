@@ -52,6 +52,11 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
     }
 }
 
+/// Whether what follows a captured value ends it: nothing, or whitespace.
+fn ends_value(rest: &str) -> bool {
+    rest.chars().next().is_none_or(char::is_whitespace)
+}
+
 /// What `scan` found in a line.
 enum Scan {
     Flagged,
@@ -153,7 +158,7 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
             if (word_end == rest.len() || rest[word_end..].starts_with(';'))
                 && word.chars().count() >= 8
                 && !word.contains('=')
-                && !approved(text)
+                && !(approved(text) && !continues && ends_value(&line[value.end()..]))
             {
                 return Scan::Flagged;
             }
@@ -435,6 +440,7 @@ mod tests {
         let literal = vec!["abc;actual-secret".to_string()];
         assert!(!suspicious("password=abc;actual-secret", &literal));
         assert!(suspicious("password=abc;actual-secret-more", &literal));
+        assert!(suspicious(r#"password=abc;actual-secret"more""#, &literal));
         // a tab before the comment ends the scalar like a space does
         assert!(!suspicious(
             "password: ctx7_api_key\t# note",
