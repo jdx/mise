@@ -91,16 +91,6 @@ fn git_tracks_head(name: &str) -> bool {
     is_git_spec(name) && !name.contains('#')
 }
 
-/// File in a git source's installs directory naming the commit that the last
-/// install of `latest` resolved to. Commit-named installs alone cannot say,
-/// since an explicit pin to an older commit looks the same.
-const GIT_HEAD_MARKER: &str = ".head";
-
-/// Whether `s` is a full git object name, which is what `git_head` returns.
-fn is_commit_hash(s: &str) -> bool {
-    matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
 /// The remote to query for a git source's refs, without any `#ref` fragment.
 fn git_remote(name: &str) -> String {
     let url = name.split('#').next().unwrap_or(name);
@@ -1290,54 +1280,40 @@ impl Backend for NPMBackend {
         // digests have no order, so the latest is the one installed last. This
         // lets `hook-env`, which resolves offline, find it instead of reporting
         // the literal `latest` as missing.
-        //
-        // A git source that follows its default branch installs the commit
-        // `HEAD` pointed at; that commit is recorded when `latest` installs it.
-        // Without this, `mise prune` resolves `latest` offline to the literal
-        // string, matches no installed commit, and removes the active one.
-        let name = self.tool_name();
-        let is_tarball = is_tarball_spec(&name);
-        if !is_tarball && !git_tracks_head(&name) {
-            return None;
+        if is_tarball_spec(&self.tool_name()) {
+            // Install state records the directory that supplied the tool, which
+            // is a shared or system one when nothing is installed for the user.
+            let installs = crate::toolset::install_state::get_tool(&self.ba().short)
+                .and_then(|tool| tool.installs_path)
+                .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
+            return crate::file::dir_subdirs(&installs)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|v| !v.starts_with('.') && v != "latest")
+                .filter(|v| !crate::runtime_symlinks::is_runtime_symlink(&installs.join(v)))
+                .filter(|v| {
+                    // An identity-layout version is a link, and its marker is
+                    // keyed by the installation the link names.
+                    let key = crate::install_layout::resolver::link_target(&installs.join(v))
+                        .and_then(|install| {
+                            install.file_name().map(|n| n.to_string_lossy().to_string())
+                        })
+                        .unwrap_or_else(|| v.clone());
+                    !crate::toolset::install_state::is_incomplete(self.ba(), &key)
+                })
+                .filter_map(|v| {
+                    let modified = installs
+                        .join(&v)
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .ok()?;
+                    Some((modified, v))
+                })
+                .max()
+                .map(|(_, v)| v);
         }
-        // Install state records the directory that supplied the tool, which
-        // is a shared or system one when nothing is installed for the user.
-        let installs = crate::toolset::install_state::get_tool(&self.ba().short)
-            .and_then(|tool| tool.installs_path)
-            .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
-        if !is_tarball {
-            // A commit-named install may be a pinned ref rather than `HEAD`, so
-            // use the commit an install of `latest` recorded.
-            let head = crate::file::read_to_string(installs.join(GIT_HEAD_MARKER)).ok()?;
-            let head = head.trim();
-            return (is_commit_hash(head) && installs.join(head).exists())
-                .then(|| head.to_string());
-        }
-        crate::file::dir_subdirs(&installs)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|v| !v.starts_with('.') && v != "latest")
-            .filter(|v| !crate::runtime_symlinks::is_runtime_symlink(&installs.join(v)))
-            .filter(|v| {
-                // An identity-layout version is a link, and its marker is
-                // keyed by the installation the link names.
-                let key = crate::install_layout::resolver::link_target(&installs.join(v))
-                    .and_then(|install| {
-                        install.file_name().map(|n| n.to_string_lossy().to_string())
-                    })
-                    .unwrap_or_else(|| v.clone());
-                !crate::toolset::install_state::is_incomplete(self.ba(), &key)
-            })
-            .filter_map(|v| {
-                let modified = installs
-                    .join(&v)
-                    .metadata()
-                    .and_then(|m| m.modified())
-                    .ok()?;
-                Some((modified, v))
-            })
-            .max()
-            .map(|(_, v)| v)
+        // Installed commits do not record whether they came from a rolling HEAD.
+        None
     }
 
     async fn resolve_channel_version(
@@ -1716,7 +1692,6 @@ impl Backend for NPMBackend {
                 }
             }
         }
-        self.record_git_head_install(&tv);
         Ok(tv)
     }
 
@@ -2043,21 +2018,6 @@ impl NPMBackend {
         } else {
             validate_registry_version(&name, &tv.version)?;
             Ok(tv.version.clone())
-        }
-    }
-
-    /// Remember which commit an install of `latest` produced, so offline
-    /// resolution and `mise prune` can tell it from an explicitly pinned one.
-    fn record_git_head_install(&self, tv: &ToolVersion) {
-        if !git_tracks_head(&self.tool_name())
-            || tv.request.version() != "latest"
-            || !is_commit_hash(&tv.version)
-        {
-            return;
-        }
-        let marker = self.ba().installs_path().join(GIT_HEAD_MARKER);
-        if let Err(err) = crate::file::write(&marker, &tv.version) {
-            debug!("could not record the installed HEAD commit: {err:#}");
         }
     }
 
@@ -3995,15 +3955,6 @@ mod tests {
             );
         }
         assert!(error.contains("git ls-remote 127.0.0.1:mise-git-head-does-not-exist?"));
-    }
-
-    #[test]
-    fn commit_hash_names_only_full_object_ids() {
-        assert!(is_commit_hash(&"a".repeat(40)));
-        assert!(is_commit_hash(&"0".repeat(64)));
-        for name in ["v1.2.0", "main", "abc123", &"g".repeat(40), "latest"] {
-            assert!(!is_commit_hash(name), "{name}");
-        }
     }
 
     #[test]

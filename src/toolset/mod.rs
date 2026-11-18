@@ -1686,6 +1686,35 @@ async fn collect_needed_versions(
                 .or_default()
                 .insert(source.to_path_buf());
         }
+        // A rolling channel (an unpinned git source's HEAD) that stayed the
+        // literal `latest` matches no installed commit. Ask the remote what it
+        // points at now, and keep that commit when it is installed. Without an
+        // answer, or when it is not installed, keep every installation of the
+        // tool rather than risk removing the one in use.
+        if offline
+            && tv.version == "latest"
+            && let Ok(backend) = tv.backend()
+            && backend.is_rolling_channel("latest")
+        {
+            let head = backend
+                .resolve_channel_version(config, "latest")
+                .await
+                .ok()
+                .flatten();
+            let mut current = tv.clone();
+            let installed = head.is_some_and(|head| {
+                current.version = head;
+                current.install_path().exists()
+            });
+            if installed {
+                needed
+                    .entry(needed_key(&current))
+                    .or_default()
+                    .insert(source.to_path_buf());
+            } else {
+                keep_every_installation(&tv.ba().short, source, needed);
+            }
+        }
         // Offline can't resolve `sub-N:latest` to a concrete version
         // (no remote latest available). Conservatively protect every
         // installed version of this backend so we don't delete the
