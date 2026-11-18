@@ -33,7 +33,9 @@ graph TD
 - A task starts only after all of its prerequisites succeed.
 - Tasks with no path between them run in parallel, up to `--jobs` (the
   [`jobs`](/configuration/settings.html#jobs) setting).
-- A task that several others depend on runs once.
+- A task that several others depend on runs once, as long as they request it
+  with the same arguments and `env`. `build` and `build --release` are separate
+  runs.
 - A graph with a cycle is rejected before any task runs.
 - A failed task stops the run, so its dependents do not start, unless you pass
   `--continue-on-error`. See
