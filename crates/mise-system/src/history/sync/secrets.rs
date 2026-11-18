@@ -30,7 +30,7 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 /// substitution is not a secret.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[][^\s"']{7,}))"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"(?P<dq>[^"$`~/\s][^"]{7,})|'(?P<sq>[^'$`~/\s][^']{7,})|(?P<bare>[^\s"'$`~/#{(<\[;][^\s"';]{7,}))"#,
     )
     .unwrap()
 });
@@ -52,43 +52,33 @@ fn suspicious(line: &str, allowed: &[String]) -> bool {
         else {
             continue;
         };
-        // an unquoted value ends at a shell command separator, which needs no
-        // space after it: `KEY=value;next`.
-        let (text, ended) = match found.name("bare") {
-            Some(_) => match value.as_str().split_once(';') {
-                Some((before, _)) => (before, true),
-                None => (value.as_str(), false),
-            },
-            None => (value.as_str(), false),
-        };
+        let text = value.as_str();
         // `"key": "value",` and `{ key = "value" }` are structured text, where a
         // comma or closing bracket ends the value. In shell, `KEY="value",more`
-        // is one word, so there only whitespace or `;` does.
+        // is one word, so there only whitespace or `;` does. Spaces or a colon
+        // around the separator are the evidence; a quoted name alone is not.
         let before = &line[found.get(0).map_or(0, |whole| whole.start())..value.start()];
         let before = before.strip_suffix(['"', '\'']).unwrap_or(before);
-        let structured =
-            before.contains(|c: char| c == ':' || c == '"' || c == '\'' || c.is_whitespace());
+        let structured = before.contains(|c: char| c == ':' || c.is_whitespace());
         // a word that continues right after the value (`"changeme"-more`,
-        // `changeme'more'`) is still part of it
-        let continues = !ended
-            && if found.name("bare").is_some() {
-                line[value.end()..].starts_with(['"', '\''])
-            } else {
-                line[value.end()..]
-                    .get(1..)
-                    .and_then(|rest| rest.chars().next())
-                    .is_some_and(|next| {
-                        !next.is_whitespace()
-                            && next != ';'
-                            && !(structured && matches!(next, ',' | '}' | ']' | ')' | '#'))
-                    })
-            };
-        if ended && suspicious(&value.as_str()[text.len() + 1..], allowed) {
-            // the command after the separator is judged on its own
-            flagged = true;
-        }
+        // `changeme'more'`) is still part of it. An unquoted value stops at a
+        // shell separator (`KEY=value;next`), but in structured text a `;` is
+        // part of the value, so the capture is incomplete.
+        let continues = if found.name("bare").is_some() {
+            line[value.end()..].starts_with(['"', '\''])
+                || (structured && line[value.end()..].starts_with(';'))
+        } else {
+            line[value.end()..]
+                .get(1..)
+                .and_then(|rest| rest.chars().next())
+                .is_some_and(|next| {
+                    !next.is_whitespace()
+                        && next != ';'
+                        && !(structured && matches!(next, ',' | '}' | ']' | ')' | '#'))
+                })
+        };
         if approved(text) && !continues {
-            covered.push(value.start()..value.start() + text.len());
+            covered.push(value.range());
         } else {
             flagged = true;
         }
@@ -284,6 +274,9 @@ mod tests {
             "API_KEY=ctx7_api_key;X=ghp_111111111111111111111111111111",
             "API_KEY=\"ctx7_api_key\"#actual-secret",
             "API_KEY=ctx7_api_key;DEPLOY_TOKEN=abcdefghijkl1234",
+            "API_KEY=ctx7_api_key;DEPLOY_TOKEN=\"abcdefghijkl1234\"",
+            "password: ctx7_api_key;sample-tail",
+            "export \"API_KEY\"=\"ctx7_api_key\",sample-tail",
             "API_KEY=ctx7_api_key'additional'",
             "API_KEY=\"ctx7_api_key abcdefghijkl\"",
             "export API_KEY=ctx7_api_key B_TOKEN=abcdefghijkl",
