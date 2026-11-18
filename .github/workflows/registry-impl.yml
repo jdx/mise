@@ -74,7 +74,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-      - run: rustup update stable --no-self-update && rustup default stable
+      - run: rustup update stable --no-self-update && rustup default stable && rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: build
