@@ -193,6 +193,13 @@ impl Exec {
         } else {
             &shim_task_tools
         };
+        // A named tool the config scopes to another platform with `os` must not reach the backend.
+        let config_trs = config.get_tool_request_set().await?;
+        for ta in tool_args {
+            if let Some(requests) = config_trs.tools.get(ta.ba.as_ref()) {
+                super::install::reject_os_excluded(requests.clone())?;
+            }
+        }
         let build = async |config: &Arc<Config>| {
             ToolsetBuilder::new()
                 .with_args(tool_args)

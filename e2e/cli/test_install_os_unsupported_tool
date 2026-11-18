@@ -8,8 +8,19 @@ cat >mise.toml <<'TOML'
 TOML
 
 # a bare install skips the excluded tool
-assert "mise install --dry-run" ""
+assert_empty "mise install --dry-run"
 
 # naming it is an error that names the tool and its configured os list
 assert_fail_contains "mise install github:jdx/mise-test-fixtures" "no-such-os"
 assert_fail_contains "mise install --dry-run github:jdx/mise-test-fixtures" "github:jdx/mise-test-fixtures"
+assert_fail_contains "mise x github:jdx/mise-test-fixtures -- true" "no-such-os"
+
+# a tool with a supported version row still installs that row when named
+cat >mise.toml <<'TOML'
+[tools]
+"github:jdx/mise-test-fixtures" = [
+  { version = "1.0.0", os = ["no-such-os"] },
+  { version = "1.0.0" },
+]
+TOML
+assert_succeed "mise install --dry-run github:jdx/mise-test-fixtures"

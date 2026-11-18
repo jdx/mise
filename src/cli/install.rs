@@ -144,6 +144,33 @@ pub(crate) struct Install {
     yes: bool,
 }
 
+/// Drop requests the tool's `os` option excludes from this platform. A named
+/// tool with no supported request left is an error, so it never reaches the
+/// backend; a tool with some supported requests installs those.
+pub(crate) fn reject_os_excluded(requests: Vec<ToolRequest>) -> Result<Vec<ToolRequest>> {
+    let (supported, excluded): (Vec<_>, Vec<_>) =
+        requests.into_iter().partition(|tr| tr.is_os_supported());
+    for tr in &excluded {
+        if supported.iter().any(|s| s.ba().short == tr.ba().short) {
+            continue;
+        }
+        let os = tr.os().as_ref().map(|os| os.join(", ")).unwrap_or_default();
+        if os.is_empty() {
+            eyre::bail!(
+                "{} is not available on {}",
+                tr.ba().short,
+                *crate::platform::OS
+            );
+        }
+        eyre::bail!(
+            "{} is not available on {}: its `os` option lists {os}",
+            tr.ba().short,
+            *crate::platform::OS
+        );
+    }
+    Ok(supported)
+}
+
 impl Install {
     /// a bare `mise install` (install everything missing from config), as run
     /// by `mise bootstrap`
@@ -577,23 +604,7 @@ impl Install {
                 }
             }
         }
-        for tr in &requests {
-            if !tr.is_os_supported() {
-                let os = tr.os().as_ref().map(|os| os.join(", ")).unwrap_or_default();
-                if os.is_empty() {
-                    eyre::bail!(
-                        "{} is not available on {}",
-                        tr.ba().short,
-                        *crate::platform::OS
-                    );
-                }
-                eyre::bail!(
-                    "{} is not available on {}: its `os` option lists {os}",
-                    tr.ba().short,
-                    *crate::platform::OS
-                );
-            }
-        }
+        let requests = reject_os_excluded(requests)?;
         Ok(requests)
     }
 
