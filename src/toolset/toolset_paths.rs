@@ -144,7 +144,7 @@ impl Toolset {
     /// Returns paths separated by their source: (user_configured_paths, tool_paths)
     /// User-configured paths should never be filtered, while tool paths should be filtered
     /// if they duplicate entries in the original PATH.
-    pub async fn list_final_paths_split(
+    pub(crate) async fn list_final_paths_split(
         &self,
         config: &Arc<Config>,
         env_results: EnvResults,

@@ -373,8 +373,12 @@ impl Exec {
 
         crate::shims::ensure_command_wrapper_shims(&config, &ts)?;
 
-        let (mut env, env_remove) = measure!("env_with_path", {
-            ts.env_with_path_and_removals(&config).await?
+        // `configured_paths` is every directory mise puts ahead of the inherited PATH: `_.path`
+        // entries, the uv venv, tool-added paths and tool bins. The caller's PATH may hold one
+        // without mise's activation state (a scrubbed child of an activated shell), and it must
+        // still beat another tool's bundled binary, such as the npm tool over Node's npm.
+        let (mut env, env_remove, configured_paths) = measure!("env_with_path", {
+            ts.env_with_path_removals_and_paths(&config).await?
         });
         env.extend(wrapper_env);
         // Only this command is for the supervisor's context. A `mise x` the daemon
@@ -577,18 +581,6 @@ impl Exec {
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
         // command must not be reinterpreted as a shell body.
-        let configured_paths = if program.contains(['/', '\\']) {
-            // A path names its binary directly; there is no lookup to rank.
-            config.path_dirs().await?.clone()
-        } else {
-            // Every directory mise puts ahead of the inherited PATH: `_.path` entries, the
-            // uv venv, tool-added paths and tool bins. The caller's PATH may hold one without
-            // mise's activation state (a scrubbed child of an activated shell), and it must
-            // still beat another tool's bundled binary, such as the npm tool over Node's npm.
-            let (_, env_results) = ts.final_env(&config).await?;
-            let (user_paths, tool_paths) = ts.list_final_paths_split(&config, env_results).await?;
-            user_paths.into_iter().chain(tool_paths).collect()
-        };
         exec_program(
             program,
             args,
