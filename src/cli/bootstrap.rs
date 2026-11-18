@@ -2956,7 +2956,7 @@ impl Bootstrap {
         // arrives. So when only that config fails to load, pull without the
         // history record, but still under the operation lock. Any other
         // error opening the scope, such as a lock timeout, stops the run.
-        let (generation, _lock) = if !mutates_checkout {
+        let (generation, fallback_lock) = if !mutates_checkout {
             (None, None)
         } else if reuse_checkout && !self.dry_run && system::host::config().await.is_err() {
             debug!("bootstrap: pulling the source without a history record");
@@ -2990,6 +2990,9 @@ impl Bootstrap {
                 Err(err) => generation.finish(Some(format!("{err:#}")), None),
             }
         }
+        // the child takes the operation lock for its own record, so the
+        // fallback lock must not outlive the checkout
+        drop(fallback_lock);
         if !checked_out? {
             return Ok(());
         }
