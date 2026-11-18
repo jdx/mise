@@ -540,9 +540,14 @@ fn completion_names(current_root: Option<&str>, task: &Task, word: &str) -> Vec<
         shorthand_name(current_root, task).into_iter().collect()
     } else {
         let mut names = bare_names(current_root, task);
-        // A name outside the root (`node:web#build`) is its own shortest spelling, and a task
-        // with no bare name is only reachable under its display name.
-        if names.is_empty() || !task.display_name.starts_with("//") {
+        // A task with no bare name is only reachable under its display name. One with a bare
+        // name offers its display name (`node:web#build`) only once the typed word starts it:
+        // for an empty word the shortest name is the one spelling.
+        if names.is_empty()
+            || (!task.display_name.starts_with("//")
+                && !word.is_empty()
+                && task.display_name.starts_with(word))
+        {
             names.insert(0, display());
         }
         names
