@@ -427,7 +427,7 @@ impl Install {
             .collect();
         // `tool@version` replaces the configured request, dropping its `os` option, so judge
         // a named tool by what the config files say about it.
-        for ta in expanded_runtimes
+        for ta in ToolArg::double_tool_condition(&expanded_runtimes)?
             .iter()
             .filter(|ta| ta.tvr.is_some() || names_os(ta))
         {
@@ -626,17 +626,22 @@ impl Install {
         runtimes: &[ToolArg],
     ) -> Result<Vec<ToolRequest>> {
         let mut requests = vec![];
+        // Arguments that spell their own `os` were checked by `check_named_os`, and it
+        // overrides whatever the config says about the tool.
+        let mut overridden = vec![];
         for ta in ToolArg::double_tool_condition(runtimes)? {
+            let mut mine = vec![];
+            let named_os = names_os(&ta);
             match ta.tvr {
                 // user provided an explicit version
-                Some(tv) => requests.push(tv),
+                Some(tv) => mine.push(tv),
                 None => {
                     match ts.versions.get(ta.ba.as_ref()) {
                         // the tool is in config so fetch the params from config
                         // this may match multiple versions of one tool (e.g.: python)
                         Some(tvl) => {
                             for tvr in &tvl.requests {
-                                requests.push(tvr.clone());
+                                mine.push(tvr.clone());
                             }
                         }
                         // In normal install mode, a bare tool absent from config defaults to
@@ -647,13 +652,19 @@ impl Install {
                             }
                             let tvr =
                                 ToolRequest::new(ta.ba.clone(), "latest", ToolSource::Argument)?;
-                            requests.push(tvr);
+                            mine.push(tvr);
                         }
                     }
                 }
             }
+            if named_os {
+                overridden.extend(mine);
+            } else {
+                requests.extend(mine);
+            }
         }
-        let requests = reject_os_excluded(requests)?;
+        let mut requests = reject_os_excluded(requests)?;
+        requests.extend(overridden);
         Ok(requests)
     }
 

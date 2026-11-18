@@ -194,12 +194,18 @@ impl Exec {
             &shim_task_tools
         };
         // A named tool the config scopes to another platform with `os` must not reach the backend.
-        let config_trs = config.get_tool_request_set().await?;
+        // Read the config files, not the merged set: an env var version replaces the entry.
         for ta in tool_args {
-            let configured = config_trs
-                .tools
-                .get(ta.ba.as_ref())
-                .cloned()
+            let configured = config
+                .config_files
+                .values()
+                .find_map(|cf| {
+                    cf.to_tool_request_set()
+                        .ok()?
+                        .tools
+                        .get(ta.ba.as_ref())
+                        .cloned()
+                })
                 .unwrap_or_default();
             super::install::check_named_os(ta, configured)?;
         }

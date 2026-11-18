@@ -57,3 +57,10 @@ assert_fail_contains "mise x 'github:jdx/mise-test-fixtures[os=no-such-os]@1.0.0
 # without a version too, even when the config does not restrict the tool
 rm -f mise.local.toml
 assert_fail_contains "mise install 'github:jdx/mise-test-fixtures[os=no-such-os]'" "no-such-os"
+
+# separate tool and version arguments are checked too
+cat >mise.toml <<'TOML'
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "latest", os = ["no-such-os"] }
+TOML
+assert_fail_contains "mise install github:jdx/mise-test-fixtures 1.0.0" "no-such-os"
