@@ -22,6 +22,10 @@ if [ "$1" = -q ] && [ "$2" = installed ]; then
   cat "$HOME/port-state"
   exit 0
 fi
+if [ "$2" = sync ] && [ -n "$SYNC_EXIT" ]; then
+  echo "$*" >> "$HOME/port-log"
+  exit "$SYNC_EXIT"
+fi
 echo "$*" >> "$HOME/port-log"
 exit "${PORT_EXIT:-0}"
 SH
@@ -46,11 +50,11 @@ printf '  git @2.47.0_0+perl5_34 (active)\n  ripgrep @14.0.0_0\n  bc @1.07.1_0 (
 assert_fail "mise bootstrap packages status --missing"
 assert_contains "mise bootstrap packages apply --dry-run" 'port -N install ripgrep'
 assert_contains "mise bootstrap packages apply --dry-run --update" 'port -N sync'
-assert_contains "mise bootstrap packages apply --dry-run" 'port -N uninstall bc'
+assert_contains "mise bootstrap packages apply --dry-run" 'port -N uninstall bc @1.07.1_0'
 assert_succeed "test ! -s '$HOME/port-log'"
 
 assert_succeed "mise bootstrap packages apply --yes --update"
-assert "cat '$HOME/port-log'" $'-N uninstall bc\n-N sync\n-N install ripgrep'
+assert "cat '$HOME/port-log'" $'-N uninstall bc @1.07.1_0\n-N sync\n-N install ripgrep'
 
 # A satisfied config is a no-op.
 printf '  git @2.47.0_0 (active)\n  ripgrep @14.0.0_0 (active)\n' >"$HOME/port-state"
@@ -82,13 +86,17 @@ assert_contains "mise bootstrap packages apply --dry-run" "port -N install ripgr
 assert_succeed "mise bootstrap packages apply --yes"
 assert "cat '$HOME/port-log'" "-N install ripgrep"
 
-# With nothing installed, port prints a message and exits 0.
-echo "None of the specified ports are installed." >"$HOME/port-state"
+# With nothing installed, port -q prints nothing and exits 0.
+: >"$HOME/port-state"
 assert_fail "mise bootstrap packages status --missing"
+assert "mise bootstrap packages status --json | jq -r '.macports.packages[] | select(.package == \"git\") | .state'" "missing"
 
 # A real port failure propagates, including a failed sync.
 assert_fail "PORT_EXIT=1 mise bootstrap packages apply macports:missing --yes"
-assert_fail "PORT_EXIT=1 mise bootstrap packages apply macports:missing --update --yes"
+# A failed sync stops the install: only the sync is attempted.
+: >"$HOME/port-log"
+assert_fail "SYNC_EXIT=1 mise bootstrap packages apply macports:missing --update --yes"
+assert "cat '/home/coder/port-log'" "-N sync"
 
 # Registry failures cannot be mistaken for missing ports and trigger installs.
 touch "$HOME/port-error"

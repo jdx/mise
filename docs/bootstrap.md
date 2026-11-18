@@ -210,7 +210,7 @@ These flags change what the selected parts do:
 
 The metadata refresh depends on the manager: apk adds `--update-cache`; apt runs
 `apt-get update`; dnf, nix, and AUR helpers add `--refresh`; pacman runs
-`pacman -Sy`; macports runs `port sync`; zypper runs `zypper refresh`; scoop runs `scoop update`; and
+`pacman -Sy`; macports runs `port sync` before installing; zypper runs `zypper refresh`; scoop runs `scoop update`; and
 winget runs `winget source update`. Homebrew, Chocolatey, Flatpak, `macos-app`, and mas
 have no separate refresh.
 

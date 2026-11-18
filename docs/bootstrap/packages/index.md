@@ -317,7 +317,7 @@ prompt but does not supply a sudo password.
 
 `--update` refreshes the manager's package metadata first, for example with
 `apt-get update`, `apk add --update-cache`, `dnf install --refresh`,
-`pacman -Sy`, `port sync`, `zypper refresh`, `scoop update`, or `winget source update`.
+`pacman -Sy`, `port sync` (before installing), `zypper refresh`, `scoop update`, or `winget source update`.
 `brew`, `brew-cask`, `choco`, `macos-app`, `flatpak`, `mas`, and `snap` ignore it.
 
 Packages named on the command line, such as `apt:curl`, are installed without

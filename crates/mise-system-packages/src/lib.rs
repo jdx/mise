@@ -24,7 +24,7 @@ pub mod dnf;
 pub mod dnf_repos;
 pub(crate) mod flatpak;
 pub mod host;
-pub(crate) mod macports;
+pub mod macports;
 pub mod mas;
 pub mod nix;
 pub mod options;

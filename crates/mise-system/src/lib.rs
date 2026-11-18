@@ -2502,6 +2502,9 @@ fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
     if mgr == "snap" {
         packages::snap::validate_name(name)?;
     }
+    if mgr == "macports" {
+        packages::macports::validate_name(name)?;
+    }
     Ok(())
 }
 

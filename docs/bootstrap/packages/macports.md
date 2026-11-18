@@ -5,8 +5,8 @@ description: "Install and remove MacPorts ports on macOS with port from mise.tom
 # MacPorts (macports)
 
 The `macports` manager installs and removes [MacPorts](https://www.macports.org/)
-ports on macOS with `port`. It uses [sudo](/bootstrap/packages/#sudo) when mise
-is not running as root.
+ports on macOS with `port`. When mise is not running as root, it runs `port`
+through [sudo](/bootstrap/packages/#sudo) by default.
 
 ```toml
 [bootstrap.packages]
@@ -25,7 +25,8 @@ mise bootstrap packages apply --manager macports
 The manager is available on macOS when `port` is on `PATH` or at
 `/opt/local/bin/port`. The MacPorts installer adds that directory to `PATH` only
 in shell profiles, so mise also looks there directly. On other machines, its
-entries show as [`skipped`](/bootstrap/packages/#choose-platforms).
+entries show as [`skipped`](/bootstrap/packages/#choose-platforms), but
+`apply --manager macports` fails with `macports is not available`.
 
 mise does not install MacPorts. To set it up on a new Mac, install it from a
 [`pre-packages` hook](/bootstrap.html#hooks) with the
@@ -59,9 +60,9 @@ entry with a pin is skipped by `apply` with a warning.
 | ------------------------------- | ---------------------------------------------- |
 | Check installed state (no sudo) | `port -q installed <ports>`                    |
 | Install                         | `port -N install <ports>`                      |
-| `apply --update`                | `port -N sync` first                           |
+| `apply --update`                | `port -N sync` before an install               |
 | Upgrade                         | `port -N sync`, then `port -N upgrade <ports>` |
-| Remove                          | `port -N uninstall <ports>`                    |
+| Remove                          | `port -N uninstall <port> @<active version>`   |
 
 `-N` makes `port` fail instead of asking a question. `sync` refreshes the ports
 tree only; mise never runs `port selfupdate`, so it does not upgrade MacPorts
@@ -77,6 +78,8 @@ but inactive is reported as missing, and `port install` activates it again.
 "macports:bc" = { state = "absent" }
 ```
 
-`apply` runs `port -N uninstall` for an installed port. `port` refuses to
+`apply` runs `port -N uninstall <port> @<version>` for an installed port, naming the
+active version so an older inactive one left by an upgrade cannot make the name
+ambiguous. `port` refuses to
 uninstall a port that other installed ports depend on, and mise reports that
 error; mise does not pass `--follow-dependents`.

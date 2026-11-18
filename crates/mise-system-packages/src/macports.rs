@@ -42,7 +42,9 @@ fn port_bin() -> Option<PathBuf> {
     if !cfg!(target_os = "macos") {
         return None;
     }
-    mise_util::file::which("port").or_else(|| {
+    // `file::which` caches a miss for the whole process, which would hide a
+    // `port` that a `pre-packages` hook installs after an earlier check.
+    mise_util::file::which_spawnable("port").or_else(|| {
         let default = PathBuf::from(DEFAULT_PORT);
         (default.is_file() && mise_util::file::is_executable(&default)).then_some(default)
     })
@@ -59,23 +61,24 @@ fn port_path() -> Result<String> {
 /// (`+name`), version selectors (`@1.0`), globs and `field:value` selectors, so
 /// a name that is not a plain port name must never reach it. Port names are
 /// letters, digits, and `.`, `_`, `+`, `-`, and cannot start with a symbol.
-fn validate_names(pkgs: &[PackageRequest]) -> Result<()> {
-    for pkg in pkgs {
-        let name = &pkg.name;
-        let plain = name.starts_with(|c: char| c.is_ascii_alphanumeric())
-            && name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'));
-        if !plain {
-            bail!(
-                "'macports:{name}' is not a valid port name; use letters, digits, '.', '_', '+', and '-', starting with a letter or digit"
-            );
-        }
-        if RESERVED_NAMES.contains(&name.to_ascii_lowercase().as_str()) {
-            bail!("'macports:{name}' is a port pseudo-name or operator, not a port");
-        }
+pub fn validate_name(name: &str) -> Result<()> {
+    let plain = name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'));
+    if !plain {
+        bail!(
+            "'macports:{name}' is not a valid port name; use letters, digits, '.', '_', '+', and '-', starting with a letter or digit"
+        );
+    }
+    if RESERVED_NAMES.contains(&name.to_ascii_lowercase().as_str()) {
+        bail!("'macports:{name}' is a port pseudo-name or operator, not a port");
     }
     Ok(())
+}
+
+fn validate_names(pkgs: &[PackageRequest]) -> Result<()> {
+    pkgs.iter().try_for_each(|pkg| validate_name(&pkg.name))
 }
 
 /// `port -N <action> <names>`; `-N` makes port fail instead of prompting.
@@ -268,7 +271,18 @@ impl SystemPackageManager for MacportsManager {
         }
         validate_names(pkgs)?;
         let port = port_path()?;
-        run(&port, args("uninstall", pkgs), opts)
+        // After an upgrade an older version may stay installed and inactive;
+        // `port -N uninstall git` then refuses the ambiguous name. Name the
+        // active version so exactly that registry entry is removed.
+        let installed = self.installed(pkgs).await?;
+        let mut args = vec!["-N".to_string(), "uninstall".to_string()];
+        for (pkg, status) in pkgs.iter().zip(&installed) {
+            args.push(pkg.name.clone());
+            if let PackageState::Installed { version } = &status.state {
+                args.push(format!("@{version}"));
+            }
+        }
+        run(&port, args, opts)
     }
 }
 
