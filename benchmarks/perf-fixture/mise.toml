@@ -8,7 +8,7 @@
 [tools]
 node = "26.13.1"
 python = "3.15.2"
-go = "1.27.3"
+go = "1.27.4"
 
 [env]
 BENCH_FIXTURE = "1"
