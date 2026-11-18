@@ -153,6 +153,7 @@ fn scan(line: &str, allowed: &[String]) -> Scan {
             if (word_end == rest.len() || rest[word_end..].starts_with(';'))
                 && word.chars().count() >= 8
                 && !word.contains('=')
+                && !approved(text)
             {
                 return Scan::Flagged;
             }
@@ -430,6 +431,10 @@ mod tests {
             "password: samplevalue api_key=another-example",
             &both
         ));
+        // a literal value holding `;` is approved as a whole, in ini or shell
+        let literal = vec!["abc;actual-secret".to_string()];
+        assert!(!suspicious("password=abc;actual-secret", &literal));
+        assert!(suspicious("password=abc;actual-secret-more", &literal));
         // a tab before the comment ends the scalar like a space does
         assert!(!suspicious(
             "password: ctx7_api_key\t# note",
