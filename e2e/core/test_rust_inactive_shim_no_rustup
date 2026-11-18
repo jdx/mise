@@ -65,7 +65,7 @@ mise reshim
 
 # The shim is inactive here: dummy is installed but not configured.
 cd "$HOME/inactive" || exit 1
-checks="grep -c -e ^show.profile -e ^component.list $STATE/rustup.log"
-before=$(eval "$checks" || true)
+: >"$STATE/rustup.log"
 assert_contains "$MISE_DATA_DIR/shims/dummy" "system dummy"
-assert "$checks" "$before"
+# grep -c prints 0 on no match but exits 1, so mask the status.
+assert "grep -c -e ^show.profile -e ^component.list $STATE/rustup.log || true" "0"
