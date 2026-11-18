@@ -13,10 +13,8 @@ name: release-window
 #
 # To release now anyway, add the `release-now` label to the release PR.
 
-# reads only PR metadata and executes no untrusted code
-# jactionlint ignore=dangerous-triggers
 on:
-  pull_request_target:
+  pull_request:
     # Report required checks for stacked PRs targeting any base branch.
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]
   schedule:
@@ -42,7 +40,8 @@ concurrency:
 
 jobs:
   status:
-    if: github.repository == 'jdx/mise'
+    # A fork's pull_request run has a read-only token and cannot set statuses.
+    if: github.repository == 'jdx/mise' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -96,7 +95,7 @@ jobs:
             release_sha=""
           fi
 
-          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ]; then
             sha="$HEAD_SHA"
             if [ "$HEAD_REF" != "release" ] || [ "$HEAD_REPO" != "$REPO" ]; then
               # Runs for other PRs are not serialized with the release runs, so

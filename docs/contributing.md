@@ -517,9 +517,9 @@ first; when only Markdown pages changed,
 ## Pull request titles and descriptions {#pull-request-titles-and-descriptions}
 
 PR titles follow [Conventional Commits](https://www.conventionalcommits.org/).
-The `conventional-commits` workflow checks the title when a PR is opened,
-edited, reopened, or updated. PRs are squash-merged, so CI does not check
-intermediate commit messages, though they should use the same format.
+CI does not check the title, so follow the format yourself. PRs are squash-merged,
+so intermediate commit messages are not checked either, though they should use
+the same format.
 
 ```text
 <type>[(scope)][!]: <description>
@@ -675,8 +675,8 @@ See [Backends](/dev-tools/backends/) for how mise picks a backend.
 ## CI and releases {#ci-and-releases}
 
 CI builds and tests on Linux, macOS, and Windows, runs the full E2E suite on
-Linux in parallel tranches, and checks Clippy, dependencies, the minimum Rust
-version, and the PR title. A change under `registry/` also runs
+Linux in parallel tranches, and checks Clippy, dependencies, and the minimum
+Rust version. A change under `registry/` also runs
 `mise test-tool` for the entries it adds or changes.
 
 mise versions are CalVer (`YYYY.M.PATCH`) and releases are automated. The

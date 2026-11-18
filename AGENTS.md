@@ -184,10 +184,9 @@ SHOULD use the same format:
 - `chore(ci): add FORGEJO_TOKEN for API authentication`
 - `registry: add miller`
 
-CI validates the pull request title and re-runs when it is edited. Intermediate
-commit subjects are not checked because pull requests are squash-merged. CI
-mechanically checks the allowed type, syntax, and lowercase- or acronym-leading description;
-imperative mood and breaking-change details remain review rules.
+Titles are not checked by CI, so follow this format yourself. Intermediate
+commit subjects are not checked either because pull requests are squash-merged.
+Imperative mood and breaking-change details remain review rules.
 
 ### PR titles and descriptions are release-note inputs
 
