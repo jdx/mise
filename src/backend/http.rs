@@ -1748,15 +1748,15 @@ impl Backend for HttpBackend {
         // helpers back on PATH.
         let mut filtered = false;
         if let Some(bins) = opts.filter_bins() {
-            if !install_path.join(MISE_BINS_DIR).is_dir() {
-                self.create_symlink_bin_dir(&tv, &opts, bins)
-                    .wrap_err_with(|| {
-                        format!(
-                            "could not create {MISE_BINS_DIR}; reinstall {}",
-                            self.ba.tool_name
-                        )
-                    })?;
-            }
+            // Idempotent: it keeps a directory that already holds the right links and
+            // replaces an archive's own or one built for another filter.
+            self.create_symlink_bin_dir(&tv, &opts, bins)
+                .wrap_err_with(|| {
+                    format!(
+                        "could not create {MISE_BINS_DIR}; reinstall {}",
+                        self.ba.tool_name
+                    )
+                })?;
             filtered = true;
         }
         if filtered {
@@ -1818,6 +1818,11 @@ impl HttpBackend {
         let symlink_dir = install_path.join(MISE_BINS_DIR);
 
         let mut src_dirs = Self::discover_bin_paths(opts, tv)?;
+        // The documented lookup: `bin_path`, then `bin/`, then the install root.
+        let bin_dir = install_path.join("bin");
+        if bin_dir.is_dir() && !src_dirs.contains(&bin_dir) {
+            src_dirs.push(bin_dir);
+        }
         if !src_dirs.contains(&install_path) {
             src_dirs.push(install_path.clone());
         }
@@ -1848,7 +1853,10 @@ impl HttpBackend {
 
         // The sources must outlive the rebuild below.
         let real_dir = dunce::canonicalize(&symlink_dir).unwrap_or_else(|_| symlink_dir.clone());
-        if let Some((name, _)) = wanted.iter().find(|(_, src)| src.starts_with(&real_dir)) {
+        if let Some((name, _)) = wanted
+            .iter()
+            .find(|(_, src)| dunce::simplified(src).starts_with(dunce::simplified(&real_dir)))
+        {
             bail!(
                 "filter_bins: '{name}' is inside {MISE_BINS_DIR}, which mise reserves; use another bin_path"
             );
@@ -1886,12 +1894,17 @@ impl HttpBackend {
         };
         let mut found = 0;
         for entry in entries.flatten() {
+            // Windows keeps a `.<name>.source` record beside each copy.
+            if cfg!(windows) && entry.file_name().to_string_lossy().ends_with(".source") {
+                continue;
+            }
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some((_, src)) = wanted.iter().find(|(n, _)| *n == name) else {
                 return false;
             };
-            // A copy (Windows) cannot be told from an archive's own file.
-            if std::fs::read_link(entry.path()).ok().as_ref() != Some(src) {
+            // On Windows an entry is a copy beside a source record, which cannot be
+            // told from an archive's own file, so only the names are compared.
+            if !cfg!(windows) && std::fs::read_link(entry.path()).ok().as_ref() != Some(src) {
                 return false;
             }
             found += 1;
