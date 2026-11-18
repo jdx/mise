@@ -577,13 +577,18 @@ impl Exec {
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
         // command must not be reinterpreted as a shell body.
-        // `_.path` directories the caller's PATH may already hold. They stay ahead of
-        // inherited directories when `exec_program` resolves the program.
-        let mut configured_paths = config.path_dirs().await?.clone();
-        // Tool bins too: the caller's PATH may hold one without mise's activation state (a
-        // scrubbed child of an activated shell), and it must still beat another tool's bundled
-        // binary, such as the npm tool over Node's npm.
-        configured_paths.extend(ts.list_paths(&config).await);
+        let configured_paths = if program.contains(['/', '\\']) {
+            // A path names its binary directly; there is no lookup to rank.
+            config.path_dirs().await?.clone()
+        } else {
+            // Every directory mise puts ahead of the inherited PATH: `_.path` entries, the
+            // uv venv, tool-added paths and tool bins. The caller's PATH may hold one without
+            // mise's activation state (a scrubbed child of an activated shell), and it must
+            // still beat another tool's bundled binary, such as the npm tool over Node's npm.
+            let (_, env_results) = ts.final_env(&config).await?;
+            let (user_paths, tool_paths) = ts.list_final_paths_split(&config, env_results).await?;
+            user_paths.into_iter().chain(tool_paths).collect()
+        };
         exec_program(
             program,
             args,
@@ -781,9 +786,9 @@ impl Drop for ScrubOnDrop<'_> {
 pub(crate) struct ExecExtras<'a> {
     /// Variable names to take back out of mise's own environment when the exec fails.
     pub scrub_on_failure: &'a [String],
-    /// `_.path` directories from the config (not the `position = "append"` ones, which rank with the
-    /// tool paths) and the toolset's bin directories. The caller's PATH may already hold them, but
-    /// they still rank as mise-added when the program is resolved.
+    /// Every directory mise puts ahead of the inherited PATH: `_.path` entries, the uv venv,
+    /// tool-added paths and tool bins. The caller's PATH may already hold them, but they still
+    /// rank as mise-added when the program is resolved.
     pub configured_paths: &'a [std::path::PathBuf],
 }
 
