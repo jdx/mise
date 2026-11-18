@@ -228,6 +228,7 @@ impl CondaBackend {
             virtual_packages,
             locked_packages: vec![],
             pinned_packages: vec![],
+            additional_packages: vec![],
             constraints: vec![],
             timeout: None,
             channel_priority: ChannelPriority::Strict,
