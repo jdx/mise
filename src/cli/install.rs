@@ -404,6 +404,17 @@ impl Install {
             .filter(|t| !configured_tools.contains(*t))
             .cloned()
             .collect();
+        // `tool@version` replaces the configured request, dropping its `os` option, so judge
+        // a named tool by what the config files say about it.
+        for ta in expanded_runtimes.iter().filter(|ta| ta.tvr.is_some()) {
+            let configured = configured_config_files
+                .values()
+                .filter_map(|cf| cf.to_tool_request_set().ok())
+                .filter_map(|cf_trs| cf_trs.tools.get(ta.ba.as_ref()).cloned())
+                .flatten()
+                .collect_vec();
+            reject_os_excluded(configured)?;
+        }
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
         extend_toolset(&mut ts, &task_requests);
         let mut tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;

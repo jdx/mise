@@ -24,3 +24,10 @@ cat >mise.toml <<'TOML'
 ]
 TOML
 assert_succeed "mise install --dry-run github:jdx/mise-test-fixtures"
+
+# an explicit version still picks up the configured os option
+cat >mise.toml <<'TOML'
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "latest", os = ["no-such-os"] }
+TOML
+assert_fail_contains "mise install github:jdx/mise-test-fixtures@1.0.0" "no-such-os"
