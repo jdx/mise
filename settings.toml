@@ -1700,6 +1700,33 @@ env = "MISE_HISTORY_ALLOW_PLAINTEXT_HISTORY"
 global_only = true
 type = "Bool"
 
+[history.allow_secret_values]
+default = []
+description = "Values the secret scan of saved versions accepts, such as a known placeholder."
+docs = """
+Before a push, mise refuses to publish saved versions with lines that look like
+secrets. A value listed here is ignored by that scan when it is a whole value, so a
+file that holds a harmless placeholder such as `ctx7_api_key` stops blocking
+the sync, while the scan still covers everything else in it:
+
+```toml [~/.config/mise/config.toml]
+[settings.history]
+allow_secret_values = ["ctx7_api_key"]
+```
+
+Each entry is matched literally and has to be the whole value after `=` or `:`,
+not the key name or part of a longer value. A line that also holds another suspicious value is still refused. Unlike
+[`history.allow_plaintext_history`](#history.allow_plaintext_history), this does
+not skip the check for files that are now encrypted. mise ignores this setting
+in project config. See
+[Secrets in saved versions](/dotfiles/encryption.html#secrets-in-saved-versions).
+"""
+env = "MISE_HISTORY_ALLOW_SECRET_VALUES"
+global_only = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [history.describe_command]
 default = ""
 description = "Command, such as an AI agent, that writes the description of each checkpoint the history watcher saves."
