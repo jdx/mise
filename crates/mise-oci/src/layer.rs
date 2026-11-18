@@ -958,6 +958,19 @@ fn relocated_script_contents(
         return Ok(None);
     }
 
+    // uv writes `#!/bin/sh` and puts the interpreter on a second
+    // `'''exec' '<python>' "$0" "$@"` line when the path is too long for a
+    // shebang, so that line holds a host path too.
+    if line.starts_with(b"#!/bin/sh") {
+        let mut second = Vec::new();
+        reader.read_until(b'\n', &mut second)?;
+        if second.starts_with(b"'''exec' ") && second.ends_with(b"\n") {
+            line.extend_from_slice(&second);
+        } else {
+            return Ok(None);
+        }
+    }
+
     let mut shebang = String::from_utf8_lossy(&line).into_owned();
     let original = shebang.clone();
     for (host, image) in &relocation.paths {
@@ -1743,6 +1756,56 @@ mod tests {
         assert!(pyvenv_contents.contains(
             "command = /mise/installs/python/3.14.3/bin/python -m venv /mise/installs/pipx-gitlabcis/1.20.0/gitlabcis\n"
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relocates_uv_long_path_launcher() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let pipx = dir.path().join("installs/pipx-sqlfluff/4.4.0");
+        fs::create_dir_all(pipx.join("bin")).unwrap();
+        let launcher = pipx.join("bin/sqlfluff");
+        fs::write(
+            &launcher,
+            format!(
+                "#!/bin/sh\n'''exec' '{}' \"$0\" \"$@\"\n' '''\nimport sys\n",
+                pipx.join(".mise-uv/.venv/bin/python").display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let relocation = ToolRelocation::new(vec![(
+            pipx.clone(),
+            PathBuf::from("/mise/installs/pipx-sqlfluff/4.4.0"),
+        )]);
+        let blob = build_relocated_tool_layer_from_dir(
+            &pipx,
+            "mise/installs/pipx-sqlfluff/4.4.0",
+            LayerOwner::default(),
+            &relocation,
+        )
+        .unwrap();
+
+        let mut archive = Archive::new(flate2::read::GzDecoder::new(blob.bytes.as_slice()));
+        let mut contents = String::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            if entry
+                .path()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with("bin/sqlfluff")
+            {
+                entry.read_to_string(&mut contents).unwrap();
+            }
+        }
+        assert_eq!(
+            contents,
+            "#!/bin/sh\n'''exec' '/mise/installs/pipx-sqlfluff/4.4.0/.mise-uv/.venv/bin/python' \"$0\" \"$@\"\n' '''\nimport sys\n"
+        );
     }
 
     #[cfg(unix)]
