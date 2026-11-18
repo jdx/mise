@@ -1847,14 +1847,21 @@ impl HttpBackend {
             };
             // Link the real file: a link through this install's path would dangle for
             // another tool sharing the extraction once this one is uninstalled.
-            let src = dunce::canonicalize(&src).unwrap_or(src);
+            // A Windows entry is a copy, which cannot dangle, and its source record has
+            // to be spelled through the install path, so only Unix resolves the link.
+            let src = if cfg!(windows) {
+                src
+            } else {
+                dunce::canonicalize(&src).unwrap_or(src)
+            };
             wanted.push((bin_name, src));
         }
 
         // The sources must outlive the rebuild below.
         let real_dir = dunce::canonicalize(&symlink_dir).unwrap_or_else(|_| symlink_dir.clone());
         if let Some((name, _)) = wanted.iter().find(|(_, src)| {
-            without_verbatim_prefix(src).starts_with(without_verbatim_prefix(&real_dir))
+            let real = dunce::canonicalize(src).unwrap_or_else(|_| src.clone());
+            without_verbatim_prefix(&real).starts_with(without_verbatim_prefix(&real_dir))
         }) {
             bail!(
                 "filter_bins: '{name}' is inside {MISE_BINS_DIR}, which mise reserves; use another bin_path"
@@ -1896,9 +1903,14 @@ impl HttpBackend {
     /// an archive's own file has none.
     #[cfg(windows)]
     fn entry_links_to(entry: &Path, src: &Path) -> bool {
+        let real = |path: &Path| {
+            dunce::canonicalize(path)
+                .ok()
+                .map(|p| without_verbatim_prefix(&p))
+        };
         super::mise_bins::source_of(entry)
-            .and_then(|source| dunce::canonicalize(source).ok())
-            .is_some_and(|source| without_verbatim_prefix(&source) == without_verbatim_prefix(src))
+            .and_then(|source| real(&source))
+            .is_some_and(|source| Some(source) == real(src))
     }
 
     /// Whether `dir` holds exactly the links for `wanted`, so it can be kept as it is.
