@@ -209,6 +209,8 @@ fn keep_receipt_dependencies(
             let identity = full_name
                 .strip_prefix("homebrew/core/")
                 .unwrap_or(full_name);
+            // Temporary: guarded by `remove_by!` id `legacy-brew-receipt-tap-names`
+            // in src/migrate.rs.
             // Receipts written by older mise name a tap formula by its short
             // name, so a bare name matches by name; a qualified one must match
             // the installed identity exactly.
