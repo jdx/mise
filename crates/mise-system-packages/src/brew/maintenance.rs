@@ -205,12 +205,11 @@ fn keep_receipt_dependencies(
             .filter_map(|dep| dep.full_name.as_deref())
         {
             // A receipt names a tap formula by its full name and a core one by
-            // its short name, so match either form of an installed formula.
-            let short = full_name.rsplit('/').next().unwrap_or(full_name);
-            for dep in formulae
-                .iter()
-                .filter(|f| f.package_name() == full_name || f.name == short)
-            {
+            // its short name, which is also how `package_name` spells them.
+            let identity = full_name
+                .strip_prefix("homebrew/core/")
+                .unwrap_or(full_name);
+            for dep in formulae.iter().filter(|f| f.package_name() == identity) {
                 if kept.insert(dep.package_name()) {
                     queue.push(dep);
                 }
@@ -654,6 +653,38 @@ mod tests {
                     name: "unused".to_string(),
                     version: "1.0.0".to_string(),
                     keg: unused,
+                }],
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_does_not_keep_a_core_formula_for_a_tap_receipt_dependency() -> Result<()> {
+        let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "app",
+            "1.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"acme/tools/widget"}]}"#,
+        )?;
+        let widget = write_keg(
+            tmp.path(),
+            "widget",
+            "2.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let keep = HashSet::from(["app".to_string()]);
+
+        assert_eq!(
+            prune_plan_from_linked_formulae(&keep)?,
+            PrunePlan {
+                remove: vec![PruneCandidate {
+                    name: "widget".to_string(),
+                    version: "2.0.0".to_string(),
+                    keg: widget,
                 }],
             }
         );
