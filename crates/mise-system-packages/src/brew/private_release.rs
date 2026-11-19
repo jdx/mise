@@ -95,15 +95,14 @@ pub(super) async fn download(
             asset.name
         );
     };
+    let asset_url = url::Url::parse(&format!("{api}/releases/assets/{}", found.id))?;
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT, HeaderValue::from_static("application/octet-stream"));
-    HTTP.download_file_with_headers(
-        format!("{api}/releases/assets/{}", found.id),
-        dest,
-        &headers,
-        pr,
-    )
-    .await?;
+    // `download_file_with_headers` sends only what it is given, so layer the
+    // GitHub credentials for the API host under the `Accept` header.
+    let headers = mise_util::http::with_host_auth(&asset_url, &headers)?;
+    HTTP.download_file_with_headers(asset_url, dest, &headers, pr)
+        .await?;
     if let Err(err) = mise_util::hash::ensure_checksum(dest, sha256, pr, "sha256") {
         let _ = mise_util::file::remove_file(dest);
         return Err(err);

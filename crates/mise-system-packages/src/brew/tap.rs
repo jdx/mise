@@ -1890,6 +1890,29 @@ end
 
     const BUILD_SHIM_RB: &str = include_str!("shim.rb");
 
+    /// A tap's custom download strategy has to load under both shims: the
+    /// metadata one reads the formula, and the build one loads it again for
+    /// `install`. A stub missing from the build shim fails after the download.
+    #[test]
+    fn download_strategy_stubs_match_across_shims() {
+        fn stubs(src: &str) -> Vec<&str> {
+            src.lines()
+                .skip_while(|l| !l.starts_with("module Kernel"))
+                .take_while(|l| !l.starts_with("class GitDownloadStrategy"))
+                .chain(
+                    src.lines()
+                        .filter(|l| l.starts_with("class GitDownloadStrategy")),
+                )
+                .collect()
+        }
+        let metadata = stubs(METADATA_SHIM_RB);
+        assert_eq!(metadata, stubs(BUILD_SHIM_RB));
+        assert!(
+            metadata.contains(&"class GitHubPrivateRepositoryReleaseDownloadStrategy < GitHubPrivateRepositoryDownloadStrategy; end"),
+            "missing the release strategy stub: {metadata:?}"
+        );
+    }
+
     /// Both shims define the `Language::*` namespace, and they have to stay in
     /// step. A mixin that resolves while extracting metadata but not during a
     /// source build would fail late, as a NameError, after the download has
