@@ -154,6 +154,10 @@ async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<
     // One at a time, and the clock starts after the wait: every due tool gets a
     // process, and they would otherwise spend each other's time.
     let _queue = tool_update::lock_background_update()?;
+    if let Err(err) = super::self_update::update_before_tools().await {
+        tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err:#}")));
+        return Err(err);
+    }
     let started = std::time::Instant::now();
     let mut update =
         Tick::start(update_command(&[&tool.ba.short, "--id", &tool_id])).inspect_err(|err| {
@@ -262,6 +266,8 @@ async fn update_due_tools() -> Result<()> {
         debug!("tool-update: skipped, `locked` is set");
         return Ok(());
     }
+    // Tools update with the new mise, or not at all this time.
+    super::self_update::update_before_tools().await?;
     let config = Config::get().await?;
     let global = ToolsetBuilder::new()
         .with_scope(ConfigScope::GlobalOnly)

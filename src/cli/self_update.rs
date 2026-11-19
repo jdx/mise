@@ -129,6 +129,62 @@ pub(crate) async fn maybe_auto_update(
     reexec(args, original_cwd)
 }
 
+/// Updates mise to the newest release, failing if it can't.
+pub(crate) async fn update_now() -> Result<()> {
+    SelfUpdate {
+        version: None,
+        force: false,
+        yes: true,
+        no_plugins: false,
+        minimum_release_age: None,
+    }
+    .run()
+    .await
+}
+
+/// Updates mise before an automatic tool update when
+/// `tool_update.self_update_first` is on, so the tools update with the new
+/// binary. Unlike [`maybe_auto_update`] it never re-executes and reports a
+/// failed update, so the caller can skip the tools.
+pub(crate) async fn update_before_tools() -> Result<()> {
+    let settings = Settings::get();
+    if !settings.tool_update.self_update_first
+        || !settings.self_update.auto.is_on()
+        || settings.offline()
+        || settings.prefer_offline()
+        || settings.ci
+        || ci_info::is_ci()
+        || !SelfUpdate::is_available()
+    {
+        return Ok(());
+    }
+    let lock_path = crate::dirs::CACHE.join("auto-update");
+    let Some(_lock) = crate::lock_file::LockFile::new(&lock_path).try_lock()? else {
+        debug!("skipping mise update before tools because another mise process is updating");
+        return Ok(());
+    };
+    let last_check_path = crate::dirs::CACHE.join("auto-update-last-check");
+    let check_duration = settings.self_update_check_duration()?;
+    if !auto_update_check_due(&last_check_path, check_duration) {
+        return Ok(());
+    }
+    crate::file::write(&last_check_path, "")?;
+    let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
+        return Ok(());
+    };
+    let update = SelfUpdate {
+        version: Some(version),
+        force: false,
+        yes: true,
+        no_plugins: true,
+        minimum_release_age: None,
+    };
+    update
+        .run_with_age_policy(true)
+        .await
+        .map_err(|err| eyre::eyre!("updating mise before the tools failed: {err:#}"))
+}
+
 /// Returns whether the automatic-update attempt marker has expired.
 fn auto_update_check_due(path: &std::path::Path, duration: Duration) -> bool {
     crate::file::modified_duration(path).map_or(true, |age| age >= duration)
