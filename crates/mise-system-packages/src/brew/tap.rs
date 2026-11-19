@@ -1198,12 +1198,24 @@ end
             "widget",
             &format!(
                 "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
-                 sha256 \"{SHA}\"\n  bottle do\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
                  pour_bottle? only_if: :clt_installed\nend\n"
             ),
         )
         .await?;
         assert!(f.bottle.is_empty());
+        // The same formula without the restriction declares its bottle, so the
+        // assertion above is the restriction's doing and not a missing root.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\"\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle_files().is_some_and(|files| !files.is_empty()));
 
         // A homebrew- prefixed ghcr.io repository is registered without it.
         let f = formula_metadata(
@@ -1228,7 +1240,8 @@ end
             "widget",
             &format!(
                 "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
-                 sha256 \"{SHA}\"\n  bottle do\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
                  def post_install\n    system \"true\"\n  end\nend\n"
             ),
         )
@@ -1856,8 +1869,12 @@ end
 
     /// `Version` splits a hyphen-joined numeric version (a date) on its
     /// hyphens and any other on its dots, as the build shim's accessors do.
-    #[test]
-    fn build_shim_version_splits_date_versions_by_component() {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn build_shim_version_splits_date_versions_by_component() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
         let class = BUILD_SHIM_RB
             .lines()
             .skip_while(|l| *l != "class Version")
@@ -1869,7 +1886,7 @@ end
             "{class}\nd = Version.new('2024-01-31'); v = Version.new('1.2.3')\n\
              puts [d.major, d.minor, d.patch, d.major_minor, v.major, v.minor, v.major_minor].join(' ')"
         );
-        let out = std::process::Command::new("ruby")
+        let out = std::process::Command::new(&ruby)
             .args(["-e", &script])
             .output()
             .expect("run ruby");
@@ -1882,6 +1899,7 @@ end
             String::from_utf8_lossy(&out.stdout).trim(),
             "2024 01 31 2024-01 1 2 1.2"
         );
+        Ok(())
     }
 
     /// A tap's custom download strategy has to load under both shims: the
