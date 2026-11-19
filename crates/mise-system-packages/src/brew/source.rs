@@ -1116,4 +1116,192 @@ end
         );
         assert_eq!(std::fs::read(keg.join("empty")).unwrap(), b"");
     }
+    /// A PEP 517 project that builds with an in-tree backend, so the sdist
+    /// needs no setuptools: `--no-build-isolation` installs only see the venv.
+    fn python_project(name: &str, module: &str, entry: &str, body: &str) -> Vec<(String, String)> {
+        const BACKEND: &str = r#"import base64, hashlib, os, zipfile
+
+NAME = "@NAME@"
+MODULE = "@MODULE@"
+ENTRY = "@ENTRY@"
+
+
+def get_requires_for_build_wheel(config_settings=None):
+    return []
+
+
+def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
+    dist = NAME + "-1.0.dist-info"
+    files = {
+        MODULE + ".py": open(MODULE + ".py", "rb").read(),
+        dist + "/METADATA": ("Metadata-Version: 2.1\nName: " + NAME + "\nVersion: 1.0\n").encode(),
+        dist + "/WHEEL": b"Wheel-Version: 1.0\nGenerator: t\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+    }
+    if ENTRY:
+        files[dist + "/entry_points.txt"] = ("[console_scripts]\n" + ENTRY + "\n").encode()
+    record = ""
+    for n, d in files.items():
+        digest = base64.urlsafe_b64encode(hashlib.sha256(d).digest()).rstrip(b"=").decode()
+        record += "%s,sha256=%s,%d\n" % (n, digest, len(d))
+    files[dist + "/RECORD"] = (record + dist + "/RECORD,,\n").encode()
+    wheel = NAME + "-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(os.path.join(wheel_directory, wheel), "w") as z:
+        for n, d in files.items():
+            z.writestr(n, d)
+    return wheel
+"#;
+        vec![
+            (
+                "pyproject.toml".into(),
+                "[build-system]\nrequires = []\nbuild-backend = \"backend\"\nbackend-path = [\".\"]\n"
+                    .into(),
+            ),
+            (
+                "backend.py".into(),
+                BACKEND
+                    .replace("@NAME@", name)
+                    .replace("@MODULE@", module)
+                    .replace("@ENTRY@", entry),
+            ),
+            (format!("{module}.py"), body.into()),
+        ]
+    }
+
+    /// `virtualenv_install_with_resources` (qmk, and most Python CLI formulae):
+    /// each resource sdist is verified and installed into a venv under the
+    /// keg's libexec, the formula's own source is installed after them, and its
+    /// console scripts are linked into the keg's bin. The download cache is
+    /// pre-seeded, and pip runs with `--no-index`, so nothing reaches a network.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_virtualenv_install_with_resources() {
+        use flate2::{Compression, write::GzEncoder};
+        use sha2::{Digest, Sha256};
+
+        let ruby = super::super::tap::test_ruby()
+            .await
+            .unwrap()
+            .expect("this test needs a ruby on PATH or an installed mise ruby");
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = tmp.path().join("cache");
+        mise_util::file::create_dir_all(&cache).unwrap();
+
+        let dep = python_project(
+            "fakedep",
+            "fakedep",
+            "",
+            "GREETING = 'hello from fakedep'\n",
+        );
+        let mut builder = jdx_tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
+        for (path, content) in &dep {
+            let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
+            header.set_size(content.len() as u64);
+            header.set_mode(0o644);
+            builder
+                .append_data(
+                    &mut header,
+                    format!("fakedep-1.0/{path}"),
+                    content.as_bytes(),
+                )
+                .unwrap();
+        }
+        let sdist = builder.into_inner().unwrap().finish().unwrap();
+        let sha256 = hex::encode(Sha256::digest(&sdist));
+        std::fs::write(cache.join(format!("{sha256}--fakedep-1.0.tar.gz")), &sdist).unwrap();
+
+        // a pure-Python wheel resource must be installed as the file, not unzipped
+        let wheel_path = tmp.path().join("fakewheel-1.0-py3-none-any.whl");
+        let made = std::process::Command::new("python3")
+            .args(["-c", "import sys, zipfile\nz = zipfile.ZipFile(sys.argv[1], \"w\")\nz.writestr(\"fakewheel.py\", \"WHEEL_GREETING = \x27and fakewheel\x27\\n\")\nz.writestr(\"fakewheel-1.0.dist-info/METADATA\", \"Metadata-Version: 2.1\\nName: fakewheel\\nVersion: 1.0\\n\")\nz.writestr(\"fakewheel-1.0.dist-info/WHEEL\", \"Wheel-Version: 1.0\\nGenerator: t\\nRoot-Is-Purelib: true\\nTag: py3-none-any\\n\")\nz.writestr(\"fakewheel-1.0.dist-info/RECORD\", \"\")\nz.close()"])
+            .arg(&wheel_path)
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        assert!(made.success(), "this test needs python3 on PATH");
+        let wheel = std::fs::read(&wheel_path).unwrap();
+        let wheel_sha256 = hex::encode(Sha256::digest(&wheel));
+        std::fs::write(
+            cache.join(format!("{wheel_sha256}--fakewheel-1.0-py3-none-any.whl")),
+            &wheel,
+        )
+        .unwrap();
+
+        // the formula's own source, staged by Rust before the shim runs
+        let buildpath = tmp.path().join("build");
+        mise_util::file::create_dir_all(&buildpath).unwrap();
+        for (path, content) in python_project(
+            "fakeapp",
+            "fakeapp",
+            "fakeapp = fakeapp:main",
+            "import fakedep, fakewheel\n\n\ndef main():\n    print(fakedep.GREETING, fakewheel.WHEEL_GREETING)\n",
+        ) {
+            std::fs::write(buildpath.join(path), content).unwrap();
+        }
+
+        let formula = tmp.path().join("example.rb");
+        std::fs::write(
+            &formula,
+            format!(
+                r#"class Example < Formula
+  include Language::Python::Virtualenv
+  depends_on "python@3.99"
+
+  resource "fakedep" do
+    url "https://example.invalid/fakedep-1.0.tar.gz"
+    sha256 "{sha256}"
+  end
+
+  resource "fakewheel" do
+    url "https://example.invalid/fakewheel-1.0-py3-none-any.whl"
+    sha256 "{wheel_sha256}"
+  end
+
+  def install
+    virtualenv_install_with_resources
+  end
+end
+"#
+            ),
+        )
+        .unwrap();
+        let shim = tmp.path().join("shim.rb");
+        std::fs::write(&shim, SHIM_RB).unwrap();
+
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path().join("prefix"))
+            .env("MISE_BREW_CELLAR", tmp.path().join("Cellar"))
+            .env("MISE_BREW_FORMULA_FILE", &formula)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", &cache)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let keg = tmp.path().join("Cellar/example/1.0.0");
+        let link = keg.join("bin/fakeapp");
+        assert!(
+            link.symlink_metadata().unwrap().file_type().is_symlink(),
+            "console script was not linked into bin"
+        );
+        assert!(
+            !keg.join("bin/python").exists(),
+            "only the formula's console scripts belong in bin"
+        );
+        let run = std::process::Command::new(&link).output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&run.stdout).trim(),
+            "hello from fakedep and fakewheel",
+            "{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+    }
 }
