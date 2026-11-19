@@ -273,9 +273,16 @@ async fn update_due_tools() -> Result<()> {
     // still runs the old code, so a pass that updated mise continues in a
     // new one. The failure of a mise update is recorded for `mise doctor`.
     if super::self_update::update_before_tools().await? {
-        return Tick::start(update_command(&["--due"]))?
-            .wait(TICK_TIMEOUT)
-            .await;
+        // Not a `Tick`: that starts its own process group, which the watcher
+        // could no longer stop. This child stays in this pass's group (and job
+        // on Windows), so a timeout or shutdown of the pass reaches it too.
+        let mut command = update_command(&["--due"]);
+        command.env("MISE_TASK_PGID_MANAGED", "1");
+        let status = tokio::process::Command::from(command).status().await?;
+        if !status.success() {
+            bail!("updating due tools with the new mise failed ({status})");
+        }
+        return Ok(());
     }
     let config = Config::get().await?;
     let global = ToolsetBuilder::new()

@@ -111,6 +111,8 @@ pub(crate) async fn maybe_auto_update(
     // version cache so a shorter-lived `mise version` lookup cannot make this
     // due check accept stale data and advance the marker for another interval.
     let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
+        // Up to date: a mise update that failed before is no longer in the way.
+        crate::tool_update::record_result(crate::tool_update::SELF_UPDATE_ID, &Ok(()));
         return Ok(());
     };
 
@@ -125,6 +127,8 @@ pub(crate) async fn maybe_auto_update(
         debug!("automatic mise update failed: {err:#}");
         return Ok(());
     }
+    // A failed update recorded for `tool_update.self_update_first` is over.
+    crate::tool_update::record_result(crate::tool_update::SELF_UPDATE_ID, &Ok(()));
     drop(update_lock);
     reexec(args, original_cwd)
 }
