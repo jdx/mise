@@ -1249,6 +1249,16 @@ end
         runner.apply_sandbox().await?;
         let json = runner.read().await?;
         let _: Cask = serde_json::from_str(&json)?;
+        // A version with no dots is read when it ends the filename, as
+        // Homebrew's stem parsers do (`Version.detect` returns "210130").
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://github.com/o/r/archive/refs/tags/LUFA-210130.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("210130"));
+
         let metadata: serde_json::Value = serde_json::from_str(&json)?;
         assert_eq!(metadata["token"], "widget");
         assert_eq!(metadata["version"], "1.2.3");
