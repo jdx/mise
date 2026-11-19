@@ -1205,6 +1205,23 @@ end
         )
         .await?;
         assert!(f.bottle.is_empty());
+        // A tap that defines the strategy itself, with its own superclass, loads.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class GitHubPrivateRepositoryReleaseDownloadStrategy < CurlDownloadStrategy; end\n\
+                 class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://github.com/acme/tools/releases/download/v1\", \
+                 using: GitHubPrivateRepositoryReleaseDownloadStrategy\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["arm64_sequoia"].using.as_deref(),
+            Some("GitHubPrivateRepositoryReleaseDownloadStrategy")
+        );
         // A symbol strategy is not one mise can run, so it builds from source too.
         let f = formula_metadata(
             &ruby,
@@ -1995,7 +2012,9 @@ end
         let metadata = stubs(METADATA_SHIM_RB);
         assert_eq!(metadata, stubs(BUILD_SHIM_RB));
         assert!(
-            metadata.contains(&"class GitHubPrivateRepositoryReleaseDownloadStrategy < GitHubPrivateRepositoryDownloadStrategy; end"),
+            metadata
+                .iter()
+                .any(|l| l.trim() == "when :GitHubPrivateRepositoryReleaseDownloadStrategy"),
             "missing the release strategy stub: {metadata:?}"
         );
     }

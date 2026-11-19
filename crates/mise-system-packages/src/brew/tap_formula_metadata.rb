@@ -165,8 +165,22 @@ end
 class CurlDownloadStrategy < AbstractDownloadStrategy; end
 class NoUnzipCurlDownloadStrategy < CurlDownloadStrategy; end
 class CurlGitHubPackagesDownloadStrategy < CurlDownloadStrategy; end
-class GitHubPrivateRepositoryDownloadStrategy < CurlDownloadStrategy; end
-class GitHubPrivateRepositoryReleaseDownloadStrategy < GitHubPrivateRepositoryDownloadStrategy; end
+# A tap may define these itself with its own superclass (`class X <
+# CurlDownloadStrategy`), which a predefined class would reject as a superclass
+# mismatch. They are created only when a formula refers to one that no file
+# has defined.
+class Object
+  def self.const_missing(name)
+    case name
+    when :GitHubPrivateRepositoryDownloadStrategy
+      const_set(name, Class.new(CurlDownloadStrategy))
+    when :GitHubPrivateRepositoryReleaseDownloadStrategy
+      const_set(name, Class.new(GitHubPrivateRepositoryDownloadStrategy))
+    else
+      super
+    end
+  end
+end
 class VCSDownloadStrategy < AbstractDownloadStrategy; end
 class GitDownloadStrategy < VCSDownloadStrategy; end
 

@@ -185,6 +185,17 @@ pub(super) async fn build(
         mise_util::file::remove_all(&build_root)?;
     }
     mise_util::file::create_dir_all(&build_root)?;
+    // A private release's contents must not be readable by other local users,
+    // so the tree they are extracted into is owner-only.
+    #[cfg(unix)]
+    if formula
+        .urls
+        .get("stable")
+        .is_some_and(|u| u.using.is_some())
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&build_root, std::fs::Permissions::from_mode(0o700))?;
+    }
     pr.set_message("extract source".to_string());
     let buildpath = stage_source(&archive, &build_root, &source_basename(formula))?;
     let shim_path = build_root.join("mise-brew-shim.rb");
