@@ -1205,6 +1205,16 @@ end
         )
         .await?;
         assert!(f.bottle.is_empty());
+        // A symbol strategy is not one mise can run, so it builds from source too.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", using: :nounzip\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
         // The options may also arrive as a positional hash.
         let f = formula_metadata(
             &ruby,

@@ -57,8 +57,8 @@ pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> 
         |b: &BottleFile| b.using.is_none() || super::private_release::is_release_url(&b.url);
     if is_tap {
         let cellar = prefix::cellar();
-        pick_tap_bottle(files, tag::cask_variation_tag().as_deref(), |b| {
-            cellar_fits(&b.cellar, &cellar) && fetchable(b)
+        pick_tap_bottle(files, tag::cask_variation_tag().as_deref(), |t, b| {
+            cellar_fits(t, &b.cellar, &cellar) && fetchable(b)
         })
     } else {
         tag::select(files).filter(|(_, b)| fetchable(b))
@@ -70,15 +70,15 @@ pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> 
 ///
 /// A bottle that declares no `cellar:` is pinned to Homebrew's default Cellar
 /// for its platform, which is the empty string here.
-fn cellar_fits(bottle_cellar: &str, cellar: &Path) -> bool {
+fn cellar_fits(tag: &str, bottle_cellar: &str, cellar: &Path) -> bool {
     if bottle_cellar.is_empty() {
-        return [
-            "/opt/homebrew/Cellar",
-            "/usr/local/Cellar",
-            "/home/linuxbrew/.linuxbrew/Cellar",
-        ]
-        .iter()
-        .any(|default| Path::new(default) == cellar);
+        let default = match tag {
+            "all" => return true,
+            t if t.ends_with("_linux") => "/home/linuxbrew/.linuxbrew/Cellar",
+            t if t.starts_with("arm64_") => "/opt/homebrew/Cellar",
+            _ => "/usr/local/Cellar",
+        };
+        return Path::new(default) == cellar;
     }
     bottle_cellar.starts_with(':') || Path::new(bottle_cellar) == cellar
 }
@@ -88,12 +88,12 @@ fn cellar_fits(bottle_cellar: &str, cellar: &Path) -> bool {
 fn pick_tap_bottle<'a>(
     files: &'a HashMap<String, BottleFile>,
     host: Option<&str>,
-    usable: impl Fn(&BottleFile) -> bool,
+    usable: impl Fn(&str, &BottleFile) -> bool,
 ) -> Option<(String, &'a BottleFile)> {
     host.into_iter().chain(["all"]).find_map(|tag| {
         files
             .get(tag)
-            .filter(|f| usable(f))
+            .filter(|f| usable(tag, f))
             .map(|f| (tag.to_string(), f))
     })
 }
@@ -635,7 +635,7 @@ mod tests {
     fn a_tap_bottle_needs_the_exact_host_tag_or_all() {
         let bottle = |tags: &[&str]| formula(tags).bottle_files().unwrap().clone();
         let pick = |tags: &[&str], host: Option<&str>| {
-            pick_tap_bottle(&bottle(tags), host, |_| true).map(|(tag, _)| tag)
+            pick_tap_bottle(&bottle(tags), host, |_, _| true).map(|(tag, _)| tag)
         };
         assert_eq!(pick(&["all"], None).as_deref(), Some("all"));
         assert_eq!(
@@ -660,13 +660,28 @@ mod tests {
     #[test]
     fn a_pinned_cellar_must_match_the_install_cellar() {
         let cellar = Path::new("/opt/homebrew/Cellar");
-        assert!(cellar_fits(":any", cellar));
-        assert!(cellar_fits(":any_skip_relocation", cellar));
-        assert!(cellar_fits("/opt/homebrew/Cellar", cellar));
-        assert!(!cellar_fits("/usr/local/Cellar", cellar));
+        assert!(cellar_fits("arm64_tahoe", ":any", cellar));
+        assert!(cellar_fits("arm64_tahoe", ":any_skip_relocation", cellar));
+        assert!(cellar_fits("arm64_tahoe", "/opt/homebrew/Cellar", cellar));
+        assert!(!cellar_fits("arm64_tahoe", "/usr/local/Cellar", cellar));
         // no `cellar:` declared means the platform default
-        assert!(cellar_fits("", cellar));
-        assert!(!cellar_fits("", Path::new("/srv/brew/Cellar")));
+        assert!(cellar_fits("arm64_tahoe", "", cellar));
+        assert!(
+            !cellar_fits("sequoia", "", cellar),
+            "intel default is /usr/local"
+        );
+        assert!(cellar_fits("sequoia", "", Path::new("/usr/local/Cellar")));
+        assert!(cellar_fits(
+            "x86_64_linux",
+            "",
+            Path::new("/home/linuxbrew/.linuxbrew/Cellar")
+        ));
+        assert!(cellar_fits("all", "", Path::new("/srv/brew/Cellar")));
+        assert!(!cellar_fits(
+            "arm64_tahoe",
+            "",
+            Path::new("/srv/brew/Cellar")
+        ));
     }
 
     #[test]
@@ -677,8 +692,8 @@ mod tests {
             .clone();
         files.get_mut("arm64_tahoe").unwrap().cellar = "/srv/brew/Cellar".to_string();
         let cellar = Path::new("/opt/homebrew/Cellar");
-        let pick = pick_tap_bottle(&files, Some("arm64_tahoe"), |b| {
-            cellar_fits(&b.cellar, cellar)
+        let pick = pick_tap_bottle(&files, Some("arm64_tahoe"), |t, b| {
+            cellar_fits(t, &b.cellar, cellar)
         });
         assert_eq!(pick.map(|(tag, _)| tag).as_deref(), Some("all"));
     }

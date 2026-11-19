@@ -197,6 +197,9 @@ class BottleSpec
     end
 
     @root_url_value = value.to_s
+    # A symbol such as `:nounzip` is not a strategy mise can run, so it counts
+    # as an unsupported option and the bottle builds from source.
+    options = options.merge(using: using) unless using.nil? || using.is_a?(Class)
     @root_url_options = options
     @using_value = download_strategy_name(using)
   end
