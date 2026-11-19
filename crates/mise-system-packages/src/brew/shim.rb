@@ -260,8 +260,8 @@ class Version
   def major = token(0)
   def minor = token(1)
   def patch = token(2)
-  def major_minor = Version.new(parts[0, 2].to_a.join(separator))
-  def major_minor_patch = Version.new(parts[0, 3].to_a.join(separator))
+  def major_minor = Version.new(parts[0, 2].to_a.map { |t| t.match?(/\A[0-9]+\z/) ? t.to_i.to_s : t }.join("."))
+  def major_minor_patch = Version.new(parts[0, 3].to_a.map { |t| t.match?(/\A[0-9]+\z/) ? t.to_i.to_s : t }.join("."))
   def csv = @version.split(",").map { |part| Version.new(part) }
 
   private

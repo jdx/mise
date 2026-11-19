@@ -45,7 +45,14 @@ pub(super) fn has_bottle(formula: &Formula) -> bool {
     // per-tag `variations`, so a bottle for an older tag could miss a
     // dependency that tag needs. Build those from source instead.
     let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
-    !(is_tap && selected != "all" && selected != tag::host_tag())
+    !is_tap || tap_bottle_fits_host(&selected, tag::cask_variation_tag().as_deref())
+}
+
+/// A tap bottle is safe when it is version-independent or built for exactly
+/// this host; `host` is `None` on a macOS release mise does not know, where
+/// the nearest older tag may need a dependency the host does not.
+fn tap_bottle_fits_host(selected: &str, host: Option<&str>) -> bool {
+    selected == "all" || host == Some(selected)
 }
 
 /// why `has_bottle` is false, for log/dry-run output
@@ -579,6 +586,15 @@ mod tests {
             tap_git_head: Some("abc123".to_string()),
             post_install_steps: vec![],
         }
+    }
+
+    #[test]
+    fn a_tap_bottle_needs_the_exact_host_tag() {
+        assert!(tap_bottle_fits_host("all", None));
+        assert!(tap_bottle_fits_host("arm64_sequoia", Some("arm64_sequoia")));
+        assert!(!tap_bottle_fits_host("arm64_sequoia", Some("arm64_tahoe")));
+        // an unknown macOS release has no exact tag, so no versioned bottle fits
+        assert!(!tap_bottle_fits_host("arm64_tahoe", None));
     }
 
     #[test]
