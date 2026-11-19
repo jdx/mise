@@ -428,9 +428,17 @@ root.activate
 # until code requires it, so activate those too.
 until (unresolved = Gem::Specification.unresolved_deps).empty?
   dep = unresolved.values.first
-  spec = dep.to_spec
   unresolved.delete(dep.name)
-  spec.activate unless Gem.loaded_specs[spec.name]
+  next if Gem.loaded_specs[dep.name]
+  # Newest first, skipping candidates that conflict with what is already
+  # activated, as a runtime `require` would.
+  activated = dep.matching_specs(true).sort_by(&:version).reverse.any? do |spec|
+    spec.activate
+    true
+  rescue Gem::LoadError
+    false
+  end
+  warn "mise: could not resolve #{dep}" unless activated
 end
 # Only now: requiring this default gem activates it, which would clash with a
 # dependency version the tool pins.
