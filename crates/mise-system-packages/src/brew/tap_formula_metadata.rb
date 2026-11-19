@@ -301,6 +301,8 @@ def version_from_basename(url)
   match = basename.match(/(?:^|[-_v])([0-9]+(?:\.[0-9A-Za-z]+)+(?:[-_.][0-9A-Za-z]+)*)/)
   # Homebrew's stem parsers accept a version with no dots when it ends the
   # name, e.g. LUFA-210130 or lame-398.
+  # A complete date is the version, not its last field.
+  match ||= basename.match(/[-_]v?([0-9]{4}-[0-9]{2}-[0-9]{2})\z/)
   match ||= basename.match(/[-_]v?([0-9]+)\z/)
   match && match[1]
 end
