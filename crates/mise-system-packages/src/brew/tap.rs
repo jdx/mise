@@ -2,9 +2,9 @@
 //!
 //! Homebrew does not publish JSON API metadata for most taps. For those taps,
 //! fetch the formula definition and evaluate only its metadata DSL with mise's
-//! own Ruby shim. The resulting formula deliberately has no bottles: source
-//! installation is the portable fallback and avoids duplicating Homebrew's
-//! bottle URL construction rules.
+//! own Ruby shim. The shim also reads the formula's `bottle do` block and builds
+//! the bottle URLs with Homebrew's rules; a formula without one is built from
+//! source.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1116,6 +1116,72 @@ end
         Ok(serde_json::from_str(&runner.read().await?)?)
     }
 
+    /// A tap's `bottle do` block becomes bottle files using Homebrew's URL rules.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn reads_bottles_declared_by_the_tap() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const BOTTLE: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let widget = |bottle: &str| {
+            format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  revision 1\n  bottle do\n{bottle}  end\nend\n"
+            )
+        };
+
+        // Default root: the tap's own GitHub release for this version, with
+        // the rebuild number in the filename.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    rebuild 2\n    sha256 cellar: :any_skip_relocation, arm64_sequoia: \"{BOTTLE}\"\n    sha256 x86_64_linux: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        let files = f.bottle_files().expect("bottle files");
+        let arm = &files["arm64_sequoia"];
+        assert_eq!(arm.cellar, ":any_skip_relocation");
+        assert_eq!(arm.sha256, BOTTLE);
+        assert_eq!(
+            arm.url,
+            "https://github.com/acme/homebrew-tools/releases/download/widget-1.2.3_1/widget-1.2.3_1.arm64_sequoia.bottle.2.tar.gz"
+        );
+        assert_eq!(files["x86_64_linux"].cellar, ":any");
+
+        // A ghcr.io root is addressed by blob digest.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://ghcr.io/v2/acme/tools\"\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["arm64_sequoia"].url,
+            format!("https://ghcr.io/v2/acme/tools/widget/blobs/sha256:{BOTTLE}")
+        );
+
+        // A custom root serves one tarball per tag.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://dl.example.com/bottles/\"\n    sha256 \"{BOTTLE}\" => :sonoma\n"
+            )),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["sonoma"].url,
+            "https://dl.example.com/bottles/widget-1.2.3_1.sonoma.bottle.tar.gz"
+        );
+        Ok(())
+    }
+
     /// None of these formulae declare a `version`, so they pin the URL
     /// heuristics themselves. Every expectation below is what Homebrew's own
     /// `Version.detect` returns for the same URL.
@@ -1183,6 +1249,16 @@ end
         .await?;
         assert_eq!(f.versions.stable.as_deref(), Some("1.21.4"));
 
+        // A version with no dots is read when it ends the filename, as
+        // Homebrew's stem parsers do (`Version.detect` returns "210130").
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://github.com/o/r/archive/refs/tags/LUFA-210130.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("210130"));
+
         // An explicit `version` still wins over both heuristics.
         let f = formula_metadata(
             &ruby,
@@ -1249,16 +1325,6 @@ end
         runner.apply_sandbox().await?;
         let json = runner.read().await?;
         let _: Cask = serde_json::from_str(&json)?;
-        // A version with no dots is read when it ends the filename, as
-        // Homebrew's stem parsers do (`Version.detect` returns "210130").
-        let f = formula_metadata(
-            &ruby,
-            "widget",
-            &widget("https://github.com/o/r/archive/refs/tags/LUFA-210130.tar.gz"),
-        )
-        .await?;
-        assert_eq!(f.versions.stable.as_deref(), Some("210130"));
-
         let metadata: serde_json::Value = serde_json::from_str(&json)?;
         assert_eq!(metadata["token"], "widget");
         assert_eq!(metadata["version"], "1.2.3");
@@ -1370,6 +1436,69 @@ end"##,
                 {"uninstall": {"pkgutil": "com.example.widget"}}
             ])
         );
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn serializes_cask_command_wrappers() -> Result<()> {
+        use super::super::cask::cask_artifacts;
+
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(CASK_METADATA_SHIM_RB)
+            .stdin_string(
+                r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget.tar.gz"
+  app "widget.app"
+  command_wrapper "widget",
+                  executable: "#{appdir}/widget.app/Contents/MacOS/widget",
+                  args:       ["--cli", :fast],
+                  env:        { "WIDGET_CLI" => "1" }
+  command_wrapper "inline", content: "echo hi"
+end"##,
+            )
+            .env("MISE_BREW_TOKEN", "widget")
+            .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+            .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+            .env("MISE_BREW_TAP_COMMIT", "fixture")
+            .env("MISE_BREW_MACOS_VERSION", "26")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", "aarch64");
+        let output = runner.read().await?;
+        let cask: Cask = serde_json::from_str(&output)?;
+        let metadata: serde_json::Value = serde_json::from_str(&output)?;
+        assert_eq!(
+            metadata["artifacts"],
+            serde_json::json!([
+                {"app": ["widget.app"]},
+                {"command_wrapper": ["widget", {
+                    "executable": "$APPDIR/widget.app/Contents/MacOS/widget",
+                    "args": ["--cli", "fast"],
+                    "env": {"WIDGET_CLI": "1"}
+                }]},
+                {"command_wrapper": ["inline", {"content": "echo hi"}]}
+            ])
+        );
+        let wrappers = cask_artifacts(&cask)?.command_wrappers;
+        assert_eq!(wrappers.len(), 2);
+        assert_eq!(wrappers[0].name, "widget");
+        assert_eq!(
+            wrappers[0].executable.as_deref(),
+            Some("$APPDIR/widget.app/Contents/MacOS/widget")
+        );
+        assert_eq!(wrappers[0].args, vec!["--cli", "fast"]);
+        assert_eq!(
+            wrappers[0].env.get("WIDGET_CLI").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(wrappers[1].content.as_deref(), Some("echo hi"));
         Ok(())
     }
 
