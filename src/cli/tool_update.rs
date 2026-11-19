@@ -154,6 +154,9 @@ async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<
     // One at a time, and the clock starts after the wait: every due tool gets a
     // process, and they would otherwise spend each other's time.
     let _queue = tool_update::lock_background_update()?;
+    // The update below runs in a new process, which is the new mise when this
+    // one replaced it. A failure is also recorded for the tool, so `mise
+    // doctor` shows why it did not update.
     if let Err(err) = super::self_update::update_before_tools().await {
         tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err:#}")));
         return Err(err);
@@ -266,8 +269,14 @@ async fn update_due_tools() -> Result<()> {
         debug!("tool-update: skipped, `locked` is set");
         return Ok(());
     }
-    // Tools update with the new mise, or not at all this time.
-    super::self_update::update_before_tools().await?;
+    // Tools update with the new mise, or not at all this time. This process
+    // still runs the old code, so a pass that updated mise continues in a
+    // new one. The failure of a mise update is recorded for `mise doctor`.
+    if super::self_update::update_before_tools().await? {
+        return Tick::start(update_command(&["--due"]))?
+            .wait(TICK_TIMEOUT)
+            .await;
+    }
     let config = Config::get().await?;
     let global = ToolsetBuilder::new()
         .with_scope(ConfigScope::GlobalOnly)

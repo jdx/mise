@@ -145,8 +145,16 @@ pub(crate) async fn update_now() -> Result<()> {
 /// Updates mise before an automatic tool update when
 /// `tool_update.self_update_first` is on, so the tools update with the new
 /// binary. Unlike [`maybe_auto_update`] it never re-executes and reports a
-/// failed update, so the caller can skip the tools.
-pub(crate) async fn update_before_tools() -> Result<()> {
+/// failed update, so the caller can skip the tools. Returns whether mise was
+/// updated, in which case this process still runs the old code and the caller
+/// must continue in a new one.
+///
+/// A failed update is recorded for `mise doctor` and stays in force until a
+/// later check succeeds, so every tool in the interval is skipped, not just
+/// the first.
+pub(crate) async fn update_before_tools() -> Result<bool> {
+    use crate::tool_update::{SELF_UPDATE_ID, record_result, recorded_failure};
+
     let settings = Settings::get();
     if !settings.tool_update.self_update_first
         || !settings.self_update.auto.is_on()
@@ -156,33 +164,46 @@ pub(crate) async fn update_before_tools() -> Result<()> {
         || ci_info::is_ci()
         || !SelfUpdate::is_available()
     {
-        return Ok(());
+        return Ok(false);
     }
     let lock_path = crate::dirs::CACHE.join("auto-update");
     let Some(_lock) = crate::lock_file::LockFile::new(&lock_path).try_lock()? else {
-        debug!("skipping mise update before tools because another mise process is updating");
-        return Ok(());
+        // The tools must not update under a mise that is being replaced.
+        bail!("another mise process is updating mise; skipping the tool updates this time");
     };
     let last_check_path = crate::dirs::CACHE.join("auto-update-last-check");
     let check_duration = settings.self_update_check_duration()?;
     if !auto_update_check_due(&last_check_path, check_duration) {
-        return Ok(());
+        return match recorded_failure(SELF_UPDATE_ID) {
+            Some(failure) => bail!("{}", failure.error),
+            None => Ok(false),
+        };
     }
-    crate::file::write(&last_check_path, "")?;
-    let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
-        return Ok(());
-    };
-    let update = SelfUpdate {
-        version: Some(version),
-        force: false,
-        yes: true,
-        no_plugins: true,
-        minimum_release_age: None,
-    };
-    update
-        .run_with_age_policy(true)
-        .await
-        .map_err(|err| eyre::eyre!("updating mise before the tools failed: {err:#}"))
+    let result = async {
+        crate::file::write(&last_check_path, "")?;
+        let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
+            return Ok(false);
+        };
+        let update = SelfUpdate {
+            version: Some(version),
+            force: false,
+            yes: true,
+            no_plugins: true,
+            minimum_release_age: None,
+        };
+        update.run_with_age_policy(true).await?;
+        Ok(true)
+    }
+    .await
+    .map_err(|err: eyre::Report| eyre::eyre!("updating mise before the tools failed: {err:#}"));
+    record_result(
+        SELF_UPDATE_ID,
+        &result
+            .as_ref()
+            .map(|_| ())
+            .map_err(|e| eyre::eyre!("{e:#}")),
+    );
+    result
 }
 
 /// Returns whether the automatic-update attempt marker has expired.
