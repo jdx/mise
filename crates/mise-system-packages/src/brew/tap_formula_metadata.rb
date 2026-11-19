@@ -366,8 +366,7 @@ raise "could not infer formula version; add an explicit version declaration" if 
 
 # Homebrew's bottle URL rules (Library/Homebrew/bottle.rb): a ghcr.io root is
 # an OCI registry addressed by blob digest, anything else serves one tarball per
-# tag named name-version.tag.bottle[.rebuild].tar.gz. The root defaults to the
-# tap's own GitHub release for this version.
+# tag named name-version.tag.bottle[.rebuild].tar.gz.
 def bottle_metadata(klass, version)
   spec = klass.bottle_spec
   return {} if spec.nil? || spec.entries.empty?
@@ -378,13 +377,12 @@ def bottle_metadata(klass, version)
   # as an overriding `pour_bottle?` method.
   return {} if klass.pour_bottle_restricted? || klass.instance_methods(false).include?(:pour_bottle?)
 
-  # the GitHub repository the tap is fetched from, which a custom tap URL
-  # makes differ from the tap's name
-  tap_owner, tap_name = ENV.fetch("MISE_BREW_TAP").split("/", 2)
-  repository = ENV.fetch("MISE_BREW_TAP_REPOSITORY", "#{tap_owner}/homebrew-#{tap_name}")
   pkg_version = klass.revision_value.to_i > 0 ? "#{version}_#{klass.revision_value}" : version
-  root = spec.root_url_value ||
-         "https://github.com/#{repository}/releases/download/#{FORMULA_NAME}-#{pkg_version}"
+  # Homebrew resolves an omitted root through `bottle_domain`, which mise does
+  # not model, so a rootless declaration stays on the source path.
+  return {} if spec.root_url_value.to_s.empty?
+
+  root = spec.root_url_value
   root = root.chomp("/")
   rebuild = spec.rebuild_value > 0 ? "#{spec.rebuild_value}." : ""
   files = spec.entries.to_h do |tag, entry|

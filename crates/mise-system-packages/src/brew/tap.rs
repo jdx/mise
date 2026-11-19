@@ -55,9 +55,6 @@ struct TapSource {
     raw_base: String,
     api_base: String,
     commit: String,
-    /// `owner/repo` on GitHub that the tap is fetched from, which a custom
-    /// `tap_url` makes differ from the tap's own name.
-    repository: String,
     /// A checkout of the tap at `commit`, for a formula that reads its files.
     checkout: Option<PathBuf>,
 }
@@ -122,7 +119,6 @@ async fn evaluate_formula(
         .envs([
             ("MISE_BREW_NAME", name.to_string()),
             ("MISE_BREW_TAP", format!("{owner}/{tap}")),
-            ("MISE_BREW_TAP_REPOSITORY", tap_source.repository.clone()),
             ("MISE_BREW_SOURCE_PATH", source_path.clone()),
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
@@ -298,7 +294,6 @@ async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Re
         raw_base: raw_base.trim_end_matches("/HEAD").to_string() + "/" + &commit.sha,
         api_base,
         commit: commit.sha,
-        repository: format!("{repo_owner}/{repo}"),
         checkout: None,
     })
 }
@@ -865,7 +860,6 @@ mod tests {
                 api_base: format!("{}/api/{directory}", server.url()),
                 raw_base: format!("{}/raw/{directory}/deadbeef", server.url()),
                 commit: "deadbeef".to_string(),
-                repository: "acme/homebrew-tools".to_string(),
                 checkout: None,
             };
             let (root_entries, source_path, encoded_path) = if directory.is_empty() {
@@ -1138,13 +1132,13 @@ end
             )
         };
 
-        // Default root: the tap's own GitHub release for this version, with
-        // the rebuild number in the filename.
+        // A custom root serves one tarball per tag, with the rebuild number in
+        // the filename.
         let f = formula_metadata(
             &ruby,
             "widget",
             &widget(&format!(
-                "    rebuild 2\n    sha256 cellar: :any_skip_relocation, arm64_sequoia: \"{BOTTLE}\"\n    sha256 x86_64_linux: \"{BOTTLE}\"\n"
+                "    root_url \"https://example.com/bottles\"\n    rebuild 2\n    sha256 cellar: :any_skip_relocation, arm64_sequoia: \"{BOTTLE}\"\n    sha256 x86_64_linux: \"{BOTTLE}\"\n"
             )),
         )
         .await?;
@@ -1154,7 +1148,7 @@ end
         assert_eq!(arm.sha256, BOTTLE);
         assert_eq!(
             arm.url,
-            "https://github.com/acme/homebrew-tools/releases/download/widget-1.2.3_1/widget-1.2.3_1.arm64_sequoia.bottle.2.tar.gz"
+            "https://example.com/bottles/widget-1.2.3_1.arm64_sequoia.bottle.2.tar.gz"
         );
         assert_eq!(files["x86_64_linux"].cellar, ":any");
 
@@ -1172,35 +1166,31 @@ end
             format!("https://ghcr.io/v2/acme/tools/widget/blobs/sha256:{BOTTLE}")
         );
 
-        // The default root follows the repository the tap is fetched from, and
-        // a block-wide `cellar` applies to the older checksum form.
-        let source = widget(&format!(
-            "    cellar :any_skip_relocation\n    sha256 \"{BOTTLE}\" => :sonoma\n"
-        ));
-        let mut runner = CmdLineRunner::new(&ruby)
-            .arg("--disable-gems")
-            .arg("-e")
-            .arg(METADATA_SHIM_RB)
-            .stdin_string(source)
-            .env("MISE_BREW_NAME", "widget")
-            .env("MISE_BREW_TAP", "acme/tools")
-            .env("MISE_BREW_TAP_REPOSITORY", "example/custom")
-            .env("MISE_BREW_SOURCE_PATH", "Formula/widget.rb")
-            .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
-            .env("MISE_BREW_TAP_COMMIT", "deadbeef")
-            .env("MISE_BREW_MACOS_VERSION", "15.3")
-            .env("MISE_BREW_OS", "macos")
-            .env("MISE_BREW_ARCH", std::env::consts::ARCH)
-            .with_sandbox(metadata_sandbox()?);
-        runner.apply_sandbox().await?;
-        let f: Formula = serde_json::from_str(&runner.read().await?)?;
+        // A block-wide `cellar` applies to the older checksum form.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\"\n    cellar :any_skip_relocation\n    sha256 \"{BOTTLE}\" => :sonoma\n"
+            )),
+        )
+        .await?;
         let sonoma = &f.bottle_files().unwrap()["sonoma"];
         assert_eq!(sonoma.cellar, ":any_skip_relocation");
-        assert!(
-            sonoma
-                .url
-                .starts_with("https://github.com/example/custom/releases/download/widget-1.2.3_1/")
+        assert_eq!(
+            sonoma.url,
+            "https://example.com/bottles/widget-1.2.3_1.sonoma.bottle.tar.gz"
         );
+
+        // Homebrew resolves a missing root through `bottle_domain`, which mise
+        // does not model, so the formula builds from source.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!("    sha256 arm64_sequoia: \"{BOTTLE}\"\n")),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
 
         // A bottle restriction is not evaluated, so the formula builds from source.
         let f = formula_metadata(
