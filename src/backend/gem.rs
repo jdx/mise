@@ -438,10 +438,12 @@ Gem.loaded_specs.each_value do |spec|
   %W[gems/#{name} specifications/#{name}.gemspec cache/#{name}.gem].each do |rel|
     copy.call(File.join(base, rel), File.join(home, rel))
   end
+  # `extension_dir` can lie outside `base_dir` (`Gem.default_ext_dir_for`), so
+  # ask the copied specification where its own extensions belong.
   ext = spec.extension_dir
   if ext && File.exist?(ext)
-    ext = File.realpath(ext)
-    copy.call(ext, File.join(home, ext.delete_prefix(base + "/"))) if ext.start_with?(base + "/")
+    copied = Gem::Specification.load(File.join(home, "specifications", name + ".gemspec"))
+    copy.call(ext, copied.extension_dir) if copied
   end
 end"#;
 
