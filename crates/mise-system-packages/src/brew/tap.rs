@@ -1150,7 +1150,7 @@ end
             arm.url,
             "https://example.com/bottles/widget-1.2.3_1.arm64_sequoia.bottle.2.tar.gz"
         );
-        assert_eq!(files["x86_64_linux"].cellar, ":any");
+        assert_eq!(files["x86_64_linux"].cellar, "");
 
         // A ghcr.io root is addressed by blob digest.
         let f = formula_metadata(

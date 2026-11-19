@@ -51,20 +51,35 @@ pub(super) fn has_bottle(formula: &Formula) -> bool {
 pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> {
     let files = formula.bottle_files()?;
     let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
-    let picked = if is_tap {
-        pick_tap_bottle(files, tag::cask_variation_tag().as_deref())
-            .filter(|(_, b)| cellar_fits(&b.cellar, &prefix::cellar()))
-    } else {
-        tag::select(files)
-    };
     // A bottle that names a download strategy is fetched as a GitHub release
     // asset; one hosted anywhere else is built from source instead.
-    picked.filter(|(_, b)| b.using.is_none() || super::private_release::is_release_url(&b.url))
+    let fetchable =
+        |b: &BottleFile| b.using.is_none() || super::private_release::is_release_url(&b.url);
+    if is_tap {
+        let cellar = prefix::cellar();
+        pick_tap_bottle(files, tag::cask_variation_tag().as_deref(), |b| {
+            cellar_fits(&b.cellar, &cellar) && fetchable(b)
+        })
+    } else {
+        tag::select(files).filter(|(_, b)| fetchable(b))
+    }
 }
 
 /// A bottle pinned to a Cellar path (`/opt/homebrew/Cellar`) only works when
 /// that is where mise installs; `:any` and `:any_skip_relocation` relocate.
+///
+/// A bottle that declares no `cellar:` is pinned to Homebrew's default Cellar
+/// for its platform, which is the empty string here.
 fn cellar_fits(bottle_cellar: &str, cellar: &Path) -> bool {
+    if bottle_cellar.is_empty() {
+        return [
+            "/opt/homebrew/Cellar",
+            "/usr/local/Cellar",
+            "/home/linuxbrew/.linuxbrew/Cellar",
+        ]
+        .iter()
+        .any(|default| Path::new(default) == cellar);
+    }
     bottle_cellar.starts_with(':') || Path::new(bottle_cellar) == cellar
 }
 
@@ -73,10 +88,14 @@ fn cellar_fits(bottle_cellar: &str, cellar: &Path) -> bool {
 fn pick_tap_bottle<'a>(
     files: &'a HashMap<String, BottleFile>,
     host: Option<&str>,
+    usable: impl Fn(&BottleFile) -> bool,
 ) -> Option<(String, &'a BottleFile)> {
-    host.into_iter()
-        .chain(["all"])
-        .find_map(|tag| files.get(tag).map(|f| (tag.to_string(), f)))
+    host.into_iter().chain(["all"]).find_map(|tag| {
+        files
+            .get(tag)
+            .filter(|f| usable(f))
+            .map(|f| (tag.to_string(), f))
+    })
 }
 
 /// why `has_bottle` is false, for log/dry-run output
@@ -616,7 +635,7 @@ mod tests {
     fn a_tap_bottle_needs_the_exact_host_tag_or_all() {
         let bottle = |tags: &[&str]| formula(tags).bottle_files().unwrap().clone();
         let pick = |tags: &[&str], host: Option<&str>| {
-            pick_tap_bottle(&bottle(tags), host).map(|(tag, _)| tag)
+            pick_tap_bottle(&bottle(tags), host, |_| true).map(|(tag, _)| tag)
         };
         assert_eq!(pick(&["all"], None).as_deref(), Some("all"));
         assert_eq!(
@@ -645,6 +664,23 @@ mod tests {
         assert!(cellar_fits(":any_skip_relocation", cellar));
         assert!(cellar_fits("/opt/homebrew/Cellar", cellar));
         assert!(!cellar_fits("/usr/local/Cellar", cellar));
+        // no `cellar:` declared means the platform default
+        assert!(cellar_fits("", cellar));
+        assert!(!cellar_fits("", Path::new("/srv/brew/Cellar")));
+    }
+
+    #[test]
+    fn an_incompatible_exact_tag_bottle_falls_back_to_all() {
+        let mut files = formula(&["arm64_tahoe", "all"])
+            .bottle_files()
+            .unwrap()
+            .clone();
+        files.get_mut("arm64_tahoe").unwrap().cellar = "/srv/brew/Cellar".to_string();
+        let cellar = Path::new("/opt/homebrew/Cellar");
+        let pick = pick_tap_bottle(&files, Some("arm64_tahoe"), |b| {
+            cellar_fits(&b.cellar, cellar)
+        });
+        assert_eq!(pick.map(|(tag, _)| tag).as_deref(), Some("all"));
     }
 
     #[test]
