@@ -622,8 +622,14 @@ pub(super) fn write_receipt(
         .filter(|other| declared.contains(other.formula.name.as_str()))
         .filter_map(|dep| {
             let pkg_version = dep.formula.pkg_version().ok()?;
+            // Homebrew names a core formula by its short name and a tap
+            // formula by `user/repo/name`.
+            let full_name = match dep.formula.tap.as_deref() {
+                Some(tap) if tap != "homebrew/core" => format!("{tap}/{}", dep.formula.name),
+                _ => dep.formula.name.clone(),
+            };
             Some(json!({
-                "full_name": dep.formula.name,
+                "full_name": full_name,
                 "version": dep.formula.versions.stable,
                 "revision": dep.formula.revision,
                 "pkg_version": pkg_version,

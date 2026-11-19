@@ -209,7 +209,18 @@ fn keep_receipt_dependencies(
             let identity = full_name
                 .strip_prefix("homebrew/core/")
                 .unwrap_or(full_name);
-            for dep in formulae.iter().filter(|f| f.package_name() == identity) {
+            // Receipts written by older mise name a tap formula by its short
+            // name, so a bare name matches by name; a qualified one must match
+            // the installed identity exactly.
+            let qualified = identity.contains('/');
+            let matches = |f: &InstalledFormula| {
+                if qualified {
+                    f.package_name() == identity
+                } else {
+                    f.name == identity
+                }
+            };
+            for dep in formulae.iter().filter(|f| matches(f)) {
                 if kept.insert(dep.package_name()) {
                     queue.push(dep);
                 }
