@@ -389,7 +389,7 @@ def bottle_metadata(klass, version)
   return {} if spec.nil? || spec.entries.empty?
   # A pour runs no Ruby, so a formula with a `post_install` hook stays on the
   # source path, where the shim runs it, rather than appear installed without it.
-  return {} if klass.instance_methods(false).include?(:post_install)
+  return {} if klass.method_defined?(:post_install)
   # Likewise for a bottle restriction, declared as `pour_bottle? only_if:` or
   # as an overriding `pour_bottle?` method.
   return {} if klass.pour_bottle_restricted? || klass.instance_methods(false).include?(:pour_bottle?)
@@ -430,6 +430,7 @@ metadata = {
   "dependencies" => klass.runtime_dependencies || [],
   "build_dependencies" => klass.build_dependencies || [],
   "bottle" => bottle_metadata(klass, version),
+  "from_tap_source" => true,
   "urls" => { "stable" => { "url" => klass.source_url, "checksum" => klass.source_sha256 } },
   "ruby_source_path" => ENV.fetch("MISE_BREW_SOURCE_PATH"),
   "ruby_source_checksum" => { "sha256" => ENV.fetch("MISE_BREW_SOURCE_CHECKSUM") },

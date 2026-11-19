@@ -1279,6 +1279,21 @@ end
         )
         .await?;
         assert!(f.bottle.is_empty());
+        assert!(f.from_tap_source);
+
+        // A hook mixed in from a module counts too.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "module Hooks\n  def post_install\n    system \"true\"\n  end\nend\n\
+                 class Widget < Formula\n  include Hooks\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
 
         // A custom root serves one tarball per tag.
         let f = formula_metadata(

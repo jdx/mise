@@ -43,21 +43,22 @@ pub(super) fn has_bottle(formula: &Formula) -> bool {
 
 /// The bottle to pour for `formula` on this host, as `(tag, bottle)`.
 ///
-/// Core formulae pick the newest tag that is not newer than the host, and
-/// resolve dependencies through per-tag `variations`. A tap formula's
-/// dependencies are evaluated for this host and carry no `variations`, so only
+/// Core formulae and published API JSON pick the newest tag that is not newer
+/// than the host, and resolve dependencies through per-tag `variations`.
+/// Metadata mise extracted from a tap's formula source has its
+/// dependencies evaluated for this host and carries no `variations`, so only
 /// a version-independent bottle or one built for exactly this host is safe; a
 /// bottle for an older tag could miss a dependency that tag needs.
 pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> {
     let files = formula.bottle_files()?;
     let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
-    if is_tap {
-        let cellar = prefix::cellar();
+    let cellar = prefix::cellar();
+    if formula.from_tap_source {
         pick_tap_bottle(files, tag::cask_variation_tag().as_deref(), |t, b| {
             cellar_fits(t, &b.cellar, &cellar)
         })
     } else {
-        tag::select(files)
+        tag::select(files).filter(|(t, b)| !is_tap || cellar_fits(t, &b.cellar, &cellar))
     }
 }
 
@@ -588,6 +589,7 @@ mod tests {
         Formula {
             name: "test".to_string(),
             tap: None,
+            from_tap_source: false,
             aliases: vec![],
             oldnames: vec![],
             versions: Versions {
@@ -691,17 +693,23 @@ mod tests {
         if let Some(older) = tag::candidates().into_iter().filter(|t| t != "all").nth(1) {
             let mut tap = formula(&[older.as_str()]);
             assert!(has_bottle(&tap), "core formulae use per-tag variations");
+            // Published tap JSON carries correct variations, so it may pour an older tag.
             tap.tap = Some("acme/tools".to_string());
+            assert!(has_bottle(&tap));
+            tap.tap = Some("acme/tools".to_string());
+            tap.from_tap_source = true;
             assert!(!has_bottle(&tap));
         }
         // The exact tag exists only on a host mise knows.
         if let Some(host) = tag::cask_variation_tag() {
             let mut tap = formula(&[host.as_str()]);
             tap.tap = Some("acme/tools".to_string());
+            tap.from_tap_source = true;
             assert!(has_bottle(&tap));
         }
         let mut tap = formula(&["all"]);
         tap.tap = Some("acme/tools".to_string());
+        tap.from_tap_source = true;
         assert!(has_bottle(&tap));
     }
 
