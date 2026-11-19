@@ -188,8 +188,13 @@ class BottleSpec
 
   # `using:` names a download strategy, recorded separately; any other option
   # (`headers:`, ...) changes how the bottle is fetched.
-  def root_url(value = nil, using: nil, **options)
+  def root_url(value = nil, positional_options = nil, using: nil, **options)
     return if value.nil?
+
+    if positional_options.is_a?(Hash)
+      options = positional_options.merge(options)
+      using ||= options.delete(:using)
+    end
 
     @root_url_value = value.to_s
     @root_url_options = options

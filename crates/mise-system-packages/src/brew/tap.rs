@@ -1194,6 +1194,16 @@ end
         )
         .await?;
         assert!(f.bottle.is_empty());
+        // The options may also arrive as a positional hash.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", {{ headers: [\"X-Access: 1\"] }}\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
 
         let f = formula_metadata(
             &ruby,
