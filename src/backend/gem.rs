@@ -419,7 +419,6 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
 /// `GEM_HOME` (and are not default gems, which ship inside every Ruby) into
 /// `GEM_HOME`, so the tool does not depend on one Ruby patch's gem directory.
 const VENDOR_DEPENDENCIES: &str = r#"require "rubygems"
-require "fileutils"
 home = File.realpath(Gem.dir)
 root = Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MISE_GEM_VERSION"))
 # Activating the root makes RubyGems resolve one mutually compatible set of
@@ -433,6 +432,9 @@ until (unresolved = Gem::Specification.unresolved_deps).empty?
   unresolved.delete(dep.name)
   spec.activate unless Gem.loaded_specs[spec.name]
 end
+# Only now: requiring this default gem activates it, which would clash with a
+# dependency version the tool pins.
+require "fileutils"
 Gem.loaded_specs.each_value do |spec|
   next if spec.equal?(root) || spec.default_gem?
   base = File.realpath(spec.base_dir)
