@@ -51,11 +51,14 @@ pub(super) fn has_bottle(formula: &Formula) -> bool {
 pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> {
     let files = formula.bottle_files()?;
     let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
-    if is_tap {
+    let picked = if is_tap {
         pick_tap_bottle(files, tag::cask_variation_tag().as_deref())
     } else {
         tag::select(files)
-    }
+    };
+    // A bottle that names a download strategy is fetched as a GitHub release
+    // asset; one hosted anywhere else is built from source instead.
+    picked.filter(|(_, b)| b.using.is_none() || super::private_release::is_release_url(&b.url))
 }
 
 /// `host` is `None` on a macOS release mise does not know, where no versioned
@@ -646,6 +649,29 @@ mod tests {
         let mut tap = formula(&["all"]);
         tap.tap = Some("acme/tools".to_string());
         assert!(has_bottle(&tap));
+    }
+
+    #[test]
+    fn a_bottle_with_a_download_strategy_needs_a_github_release_url() {
+        let mut f = formula(&["all"]);
+        let bottle = f
+            .bottle
+            .get_mut("stable")
+            .unwrap()
+            .files
+            .get_mut("all")
+            .unwrap();
+        bottle.using = Some("PrivateStrategy".to_string());
+        assert!(!has_bottle(&f), "a host mise cannot authenticate to");
+        let bottle = f
+            .bottle
+            .get_mut("stable")
+            .unwrap()
+            .files
+            .get_mut("all")
+            .unwrap();
+        bottle.url = "https://github.com/acme/tools/releases/download/v1/w.tar.gz".to_string();
+        assert!(has_bottle(&f));
     }
 
     #[test]

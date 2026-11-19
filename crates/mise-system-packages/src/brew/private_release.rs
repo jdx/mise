@@ -24,8 +24,12 @@ struct ReleaseAsset {
 }
 
 fn parse_release_url(url: &str) -> Option<ReleaseAsset> {
-    let rest = url.strip_prefix("https://github.com/")?;
-    let mut parts = rest.split('/');
+    // Parsing the URL drops any query string or fragment from the asset name.
+    let url = url::Url::parse(url).ok()?;
+    if url.scheme() != "https" || url.host_str() != Some("github.com") {
+        return None;
+    }
+    let mut parts = url.path_segments()?;
     let (owner, repo) = (parts.next()?, parts.next()?);
     if parts.next()? != "releases" || parts.next()? != "download" {
         return None;
@@ -84,13 +88,8 @@ pub(super) async fn download(
     let release: Release = HTTP_FETCH
         .json(format!(
             "{api}/releases/tags/{}",
-            // GitHub reads a slash in a tag as part of the path.
-            asset
-                .tag
-                .split('/')
-                .map(|s| urlencoding::encode(s).into_owned())
-                .collect::<Vec<_>>()
-                .join("/")
+            // The tag is one path segment, so a slash in it is escaped.
+            urlencoding::encode(&asset.tag)
         ))
         .await
         .wrap_err_with(|| {
@@ -145,6 +144,16 @@ mod tests {
             parse_release_url("https://github.com/acme/tools/releases/download/w-1.tar.gz"),
             None
         );
+    }
+
+    #[test]
+    fn ignores_a_query_string_and_fragment() {
+        let asset = parse_release_url(
+            "https://github.com/acme/tools/releases/download/v1/w-1.tar.gz?download=1#x",
+        )
+        .unwrap();
+        assert_eq!(asset.name, "w-1.tar.gz");
+        assert_eq!(asset.tag, "v1");
     }
 
     #[test]
