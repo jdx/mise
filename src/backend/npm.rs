@@ -4216,6 +4216,23 @@ packages:
     }
 
     #[test]
+    fn git_head_and_tarball_versions_are_unordered() {
+        for tool in [
+            "git+ssh://git@github.com/o/r.git",
+            "github:o/r",
+            "https://example.com/r@1.tgz",
+        ] {
+            assert!(
+                create_npm_git_backend(tool).versions_are_unordered("latest"),
+                "{tool}"
+            );
+        }
+        // A pinned ref and a registry package keep their ordering.
+        assert!(!create_npm_git_backend("github:o/r#v1").versions_are_unordered("latest"));
+        assert!(!create_npm_backend("left-pad").versions_are_unordered("latest"));
+    }
+
+    #[test]
     fn latest_installed_version_ignores_latest_symlink_into_prerelease() {
         let tmp = tempfile::tempdir().unwrap();
         let installs_path = tmp.path().join("installs/npm-happy-latest-link");
