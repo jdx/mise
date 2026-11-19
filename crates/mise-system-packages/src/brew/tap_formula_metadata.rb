@@ -153,8 +153,10 @@ class BottleSpec
     @entries = {}
   end
 
-  def root_url(value = nil, **options)
+  def root_url(value = nil, positional_options = nil, **options)
     return if value.nil?
+
+    options = positional_options.merge(options) if positional_options.is_a?(Hash)
 
     @root_url_value = value.to_s
     @root_url_options = options

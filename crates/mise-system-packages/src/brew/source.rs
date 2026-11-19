@@ -53,9 +53,16 @@ pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> 
     let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
     if is_tap {
         pick_tap_bottle(files, tag::cask_variation_tag().as_deref())
+            .filter(|(_, b)| cellar_fits(&b.cellar, &prefix::cellar()))
     } else {
         tag::select(files)
     }
+}
+
+/// A bottle pinned to a Cellar path (`/opt/homebrew/Cellar`) only works when
+/// that is where mise installs; `:any` and `:any_skip_relocation` relocate.
+fn cellar_fits(bottle_cellar: &str, cellar: &Path) -> bool {
+    bottle_cellar.starts_with(':') || Path::new(bottle_cellar) == cellar
 }
 
 /// `host` is `None` on a macOS release mise does not know, where no versioned
@@ -617,6 +624,15 @@ mod tests {
             pick(&["arm64_tahoe", "all"], Some("arm64_tahoe")).as_deref(),
             Some("arm64_tahoe")
         );
+    }
+
+    #[test]
+    fn a_pinned_cellar_must_match_the_install_cellar() {
+        let cellar = Path::new("/opt/homebrew/Cellar");
+        assert!(cellar_fits(":any", cellar));
+        assert!(cellar_fits(":any_skip_relocation", cellar));
+        assert!(cellar_fits("/opt/homebrew/Cellar", cellar));
+        assert!(!cellar_fits("/usr/local/Cellar", cellar));
     }
 
     #[test]
