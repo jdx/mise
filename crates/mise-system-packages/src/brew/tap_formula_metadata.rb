@@ -392,7 +392,7 @@ def bottle_metadata(klass, version)
   return {} if klass.method_defined?(:post_install)
   # Likewise for a bottle restriction, declared as `pour_bottle? only_if:` or
   # as an overriding `pour_bottle?` method.
-  return {} if klass.pour_bottle_restricted? || klass.instance_methods(false).include?(:pour_bottle?)
+  return {} if klass.pour_bottle_restricted? || klass.method_defined?(:pour_bottle?)
 
   pkg_version = klass.revision_value.to_i > 0 ? "#{version}_#{klass.revision_value}" : version
   # Homebrew resolves an omitted root through `bottle_domain`, which mise does
