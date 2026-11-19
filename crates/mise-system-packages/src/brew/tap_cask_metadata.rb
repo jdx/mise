@@ -256,6 +256,21 @@ class CaskMetadata
     @artifacts << { "generate_completions_from_executable" => value }
   end
 
+  # `command_wrapper "name", executable: "...", args: [...], env: {...}` or
+  # `content: "..."`. The Rust side validates the options, so only stringify
+  # them here, as for the other artifacts that take symbols.
+  def command_wrapper(name, **options)
+    value = options.each_with_object({}) do |(key, option), acc|
+      acc[key.to_s] =
+        case option
+        when Array then option.map(&:to_s)
+        when Hash then option.to_h { |k, v| [k.to_s, v.to_s] }
+        else option.to_s
+        end
+    end
+    @artifacts << { "command_wrapper" => [name.to_s, value] }
+  end
+
   def installer(**values) = @artifacts << { "installer" => values }
   def artifact(source, target: nil) = add_artifact("artifact", source, target)
   def uninstall(**values) = @artifacts << { "uninstall" => values }
