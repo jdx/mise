@@ -38,10 +38,14 @@ pub(super) fn has_bottle(formula: &Formula) -> bool {
     {
         return false;
     }
-    formula
-        .bottle_files()
-        .and_then(|files| tag::select(files))
-        .is_some()
+    let Some((selected, _)) = formula.bottle_files().and_then(tag::select) else {
+        return false;
+    };
+    // A tap formula's dependencies are evaluated for this host and carry no
+    // per-tag `variations`, so a bottle for an older tag could miss a
+    // dependency that tag needs. Build those from source instead.
+    let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
+    !(is_tap && selected != "all" && selected != tag::host_tag())
 }
 
 /// why `has_bottle` is false, for log/dry-run output
@@ -575,6 +579,24 @@ mod tests {
             tap_git_head: Some("abc123".to_string()),
             post_install_steps: vec![],
         }
+    }
+
+    #[test]
+    fn a_tap_bottle_for_another_tag_builds_from_source() {
+        // Only macOS has tags older than the host's.
+        if let Some(older) = tag::candidates().into_iter().filter(|t| t != "all").nth(1) {
+            let mut tap = formula(&[older.as_str()]);
+            assert!(has_bottle(&tap), "core formulae use per-tag variations");
+            tap.tap = Some("acme/tools".to_string());
+            assert!(!has_bottle(&tap));
+        }
+        let host = tag::host_tag();
+        let mut tap = formula(&[host.as_str()]);
+        tap.tap = Some("acme/tools".to_string());
+        assert!(has_bottle(&tap));
+        let mut tap = formula(&["all"]);
+        tap.tap = Some("acme/tools".to_string());
+        assert!(has_bottle(&tap));
     }
 
     #[test]
