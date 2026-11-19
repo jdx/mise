@@ -1209,6 +1209,23 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
         let sha256 = hex::encode(Sha256::digest(&sdist));
         std::fs::write(cache.join(format!("{sha256}--fakedep-1.0.tar.gz")), &sdist).unwrap();
 
+        // a pure-Python wheel resource must be installed as the file, not unzipped
+        let wheel_path = tmp.path().join("fakewheel-1.0-py3-none-any.whl");
+        let made = std::process::Command::new("python3")
+            .args(["-c", "import sys, zipfile\nz = zipfile.ZipFile(sys.argv[1], \"w\")\nz.writestr(\"fakewheel.py\", \"WHEEL_GREETING = \x27and fakewheel\x27\\n\")\nz.writestr(\"fakewheel-1.0.dist-info/METADATA\", \"Metadata-Version: 2.1\\nName: fakewheel\\nVersion: 1.0\\n\")\nz.writestr(\"fakewheel-1.0.dist-info/WHEEL\", \"Wheel-Version: 1.0\\nGenerator: t\\nRoot-Is-Purelib: true\\nTag: py3-none-any\\n\")\nz.writestr(\"fakewheel-1.0.dist-info/RECORD\", \"\")\nz.close()"])
+            .arg(&wheel_path)
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        assert!(made.success(), "this test needs python3 on PATH");
+        let wheel = std::fs::read(&wheel_path).unwrap();
+        let wheel_sha256 = hex::encode(Sha256::digest(&wheel));
+        std::fs::write(
+            cache.join(format!("{wheel_sha256}--fakewheel-1.0-py3-none-any.whl")),
+            &wheel,
+        )
+        .unwrap();
+
         // the formula's own source, staged by Rust before the shim runs
         let buildpath = tmp.path().join("build");
         mise_util::file::create_dir_all(&buildpath).unwrap();
@@ -1216,7 +1233,7 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
             "fakeapp",
             "fakeapp",
             "fakeapp = fakeapp:main",
-            "import fakedep\n\n\ndef main():\n    print(fakedep.GREETING)\n",
+            "import fakedep, fakewheel\n\n\ndef main():\n    print(fakedep.GREETING, fakewheel.WHEEL_GREETING)\n",
         ) {
             std::fs::write(buildpath.join(path), content).unwrap();
         }
@@ -1232,6 +1249,11 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
   resource "fakedep" do
     url "https://example.invalid/fakedep-1.0.tar.gz"
     sha256 "{sha256}"
+  end
+
+  resource "fakewheel" do
+    url "https://example.invalid/fakewheel-1.0-py3-none-any.whl"
+    sha256 "{wheel_sha256}"
   end
 
   def install
@@ -1277,7 +1299,7 @@ end
         let run = std::process::Command::new(&link).output().unwrap();
         assert_eq!(
             String::from_utf8_lossy(&run.stdout).trim(),
-            "hello from fakedep",
+            "hello from fakedep and fakewheel",
             "{}",
             String::from_utf8_lossy(&run.stderr)
         );

@@ -619,7 +619,16 @@ module Language
 
         def pip_install(targets, build_isolation: true)
           Array(targets).flatten.each do |target|
-            if target.is_a?(Resource)
+            if target.is_a?(Resource) && target.url.to_s.end_with?(".whl")
+              # a pure-Python wheel is installed as the file itself, under its
+              # own name (pip validates it); staging would unzip it
+              wheel = MiseDownload.fetch(target.url, target.sha256, "resource #{target.name}")
+              Dir.mktmpdir("mise-wheel-") do |dir|
+                named = Pathname.new(dir) + File.basename(URI(target.url).path)
+                FileUtils.cp wheel, named
+                do_install(named, build_isolation)
+              end
+            elsif target.is_a?(Resource)
               target.stage { do_install(Pathname.pwd, build_isolation) }
             else
               do_install(target, build_isolation)
