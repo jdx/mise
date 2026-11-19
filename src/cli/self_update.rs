@@ -162,7 +162,9 @@ pub(crate) async fn update_now() -> Result<()> {
 /// later check succeeds, so every tool in the interval is skipped, not just
 /// the first.
 pub(crate) async fn update_before_tools() -> Result<bool> {
-    use crate::tool_update::{SELF_UPDATE_ID, record_result, recorded_failure};
+    use crate::tool_update::{
+        SELF_UPDATE_ID, record_result, recorded_failure, recorded_failure_age,
+    };
 
     let settings = Settings::get();
     if !settings.tool_update.self_update_first
@@ -182,7 +184,13 @@ pub(crate) async fn update_before_tools() -> Result<bool> {
     };
     let last_check_path = crate::dirs::CACHE.join("auto-update-last-check");
     let check_duration = settings.self_update_check_duration()?;
-    if !auto_update_check_due(&last_check_path, check_duration) {
+    // A check made after the failure that did not clear it (an interactive one
+    // whose lookup failed) leaves the failure out of date: check again now
+    // instead of skipping the tools until the interval is up.
+    let failure_outdated = recorded_failure_age(SELF_UPDATE_ID)
+        .zip(crate::file::modified_duration(&last_check_path).ok())
+        .is_some_and(|(failure, check)| failure > check);
+    if !failure_outdated && !auto_update_check_due(&last_check_path, check_duration) {
         return match recorded_failure(SELF_UPDATE_ID) {
             Some(failure) => bail!("{}", failure.error),
             None => Ok(false),

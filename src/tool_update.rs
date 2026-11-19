@@ -483,6 +483,11 @@ pub fn failures(global: &Toolset) -> Vec<Failure> {
         .collect()
 }
 
+/// How long ago `tool_id`'s recorded failure was written.
+pub fn recorded_failure_age(tool_id: &str) -> Option<Duration> {
+    file::modified_duration(&StatePaths::new(tool_id).failure).ok()
+}
+
 /// The recorded failure of `tool_id`'s last update, if it has not succeeded since.
 pub fn recorded_failure(tool_id: &str) -> Option<Failure> {
     serde_json::from_str(&file::read_to_string(StatePaths::new(tool_id).failure).ok()?).ok()
