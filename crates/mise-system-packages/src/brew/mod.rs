@@ -40,6 +40,7 @@ mod maintenance;
 mod post_install;
 mod pour;
 mod prefix;
+mod private_release;
 mod relocate;
 mod resolve;
 mod source;

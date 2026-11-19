@@ -1116,6 +1116,42 @@ end
         Ok(serde_json::from_str(&runner.read().await?)?)
     }
 
+    /// A tap's own download strategy class is recorded for the source and the
+    /// bottles, while a symbol option such as `:nounzip` is not.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn records_custom_download_strategies() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let source = format!(
+            "require \"download_strategy\"\n\
+             class PrivateStrategy < CurlDownloadStrategy\n  def initialize(url, name, version, **meta)\n    super\n  end\nend\n\
+             class Widget < Formula\n  url \"https://github.com/acme/tools/releases/download/v1/widget-1.2.3.tar.gz\",\n      using: PrivateStrategy\n  \
+             sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://github.com/acme/tools/releases/download/v1\", using: PrivateStrategy\n    \
+             sha256 arm64_sequoia: \"{SHA}\"\n  end\nend\n"
+        );
+        let f = formula_metadata(&ruby, "widget", &source).await?;
+        let stable = f.stable_url().unwrap();
+        assert_eq!(stable.using.as_deref(), Some("PrivateStrategy"));
+        assert_eq!(
+            f.bottle_files().unwrap()["arm64_sequoia"].using.as_deref(),
+            Some("PrivateStrategy")
+        );
+
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\", using: :nounzip\n  sha256 \"{SHA}\"\nend\n"
+            ),
+        )
+        .await?;
+        assert_eq!(f.stable_url().unwrap().using, None);
+        Ok(())
+    }
+
     /// A tap's `bottle do` block becomes bottle files using Homebrew's URL rules.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]

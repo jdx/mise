@@ -63,11 +63,15 @@ pub(super) fn check_buildable(formula: &Formula) -> Result<()> {
         bail!("{}: formula has no stable source URL", formula.name);
     };
     if let Some(using) = &src.using {
-        bail!(
-            "{}: source uses the {using:?} download strategy, which mise cannot build from \
-             (and no bottle exists for this machine)",
-            formula.name,
-        );
+        // A name with no leading colon is a download strategy class from a tap;
+        // mise fetches its GitHub release assets itself.
+        if using.starts_with(':') || !super::private_release::is_release_url(&src.url) {
+            bail!(
+                "{}: source uses the {using:?} download strategy, which mise cannot build from \
+                 (and no bottle exists for this machine)",
+                formula.name,
+            );
+        }
     }
     if src.checksum.is_none() {
         bail!("{}: source archive has no sha256 in the API", formula.name);
@@ -283,7 +287,11 @@ async fn fetch_source(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBu
     pr.set_message(format!("download {basename}"));
     // GNU formulae point at ftpmirror.gnu.org, which may redirect to a
     // plain-HTTP mirror; brew follows it, and the pinned sha256 makes it safe.
-    mise_util::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
+    if src.using.is_some() {
+        super::private_release::download(&src.url, &dest, sha256, Some(pr)).await?;
+    } else {
+        mise_util::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
+    }
     Ok(dest)
 }
 
@@ -527,6 +535,7 @@ mod tests {
                         cellar: ":any".to_string(),
                         url: "https://example.com/bottle.tar.gz".to_string(),
                         sha256: "0".repeat(64),
+                        using: None,
                     },
                 )
             })
