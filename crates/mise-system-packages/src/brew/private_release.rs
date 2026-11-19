@@ -114,12 +114,26 @@ pub(super) async fn download(
     // `download_file_with_headers` sends only what it is given, so layer the
     // GitHub credentials for the API host under the `Accept` header.
     let headers = mise_util::http::with_host_auth(&asset_url, &headers)?;
-    HTTP.download_file_with_headers(asset_url, dest, &headers, pr)
+    // A private archive must not be readable by other local users while it is
+    // written, so stage it in an owner-only directory (`tempdir_in` is 0700)
+    // and move it into place once it has passed the checksum.
+    let parent = dest.parent().unwrap_or_else(|| Path::new("."));
+    mise_util::file::create_dir_all(parent)?;
+    let stage = tempfile::Builder::new()
+        .prefix(".mise-private-")
+        .tempdir_in(parent)?;
+    let staged = stage
+        .path()
+        .join(dest.file_name().unwrap_or_else(|| "download".as_ref()));
+    HTTP.download_file_with_headers(asset_url, &staged, &headers, pr)
         .await?;
-    if let Err(err) = mise_util::hash::ensure_checksum(dest, sha256, pr, "sha256") {
-        let _ = mise_util::file::remove_file(dest);
-        return Err(err);
+    mise_util::hash::ensure_checksum(&staged, sha256, pr, "sha256")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o600))?;
     }
+    std::fs::rename(&staged, dest)?;
     Ok(())
 }
 
