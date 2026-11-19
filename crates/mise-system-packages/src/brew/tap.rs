@@ -1322,6 +1322,20 @@ end
         .await?;
         assert!(f.bottle.is_empty());
 
+        // So does a `pour_bottle?` restriction mixed in from a module.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "module Policy\n  def pour_bottle?\n    false\n  end\nend\n\
+                 class Widget < Formula\n  include Policy\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
         // A custom root serves one tarball per tag.
         let f = formula_metadata(
             &ruby,
