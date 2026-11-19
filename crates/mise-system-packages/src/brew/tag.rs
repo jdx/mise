@@ -6,12 +6,9 @@
 //! to the version-independent `all` tag. Linux bottles have a single
 //! per-architecture tag (`x86_64_linux`, `arm64_linux`).
 
-use std::collections::HashMap;
 use std::sync::LazyLock as Lazy;
 
 use mise_util::cmd::cmd;
-
-use super::api::BottleFile;
 
 /// macOS major version -> bottle tag suffix, newest first
 const MACOS_VERSIONS: &[(u32, &str)] = &[
@@ -53,14 +50,6 @@ pub(super) fn candidates() -> Vec<String> {
     };
     tags.push("all".to_string());
     tags
-}
-
-/// Pick the best bottle for this machine from a formula's `files` map.
-/// Returns the tag and the bottle entry.
-pub(super) fn select(files: &HashMap<String, BottleFile>) -> Option<(String, &BottleFile)> {
-    candidates()
-        .into_iter()
-        .find_map(|tag| files.get(&tag).map(|f| (tag, f)))
 }
 
 /// The host's tag for cask `variations`, or `None` on a macOS release mise

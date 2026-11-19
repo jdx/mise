@@ -58,7 +58,13 @@ pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> 
             cellar_fits(t, &b.cellar, &cellar)
         })
     } else {
-        tag::select(files).filter(|(t, b)| !is_tap || cellar_fits(t, &b.cellar, &cellar))
+        // the newest tag whose bottle fits, so one that does not is skipped
+        tag::candidates().into_iter().find_map(|t| {
+            files
+                .get(&t)
+                .filter(|b| !is_tap || cellar_fits(&t, &b.cellar, &cellar))
+                .map(|b| (t, b))
+        })
     }
 }
 
@@ -685,6 +691,24 @@ mod tests {
             cellar_fits(t, &b.cellar, cellar)
         });
         assert_eq!(pick.map(|(tag, _)| tag).as_deref(), Some("all"));
+    }
+
+    #[test]
+    fn published_tap_json_skips_a_misfit_tag_for_a_later_one() {
+        let tags: Vec<String> = tag::candidates();
+        if tags.len() < 2 || tags[1] == "all" {
+            return;
+        }
+        let mut tap = formula(&[tags[0].as_str(), tags[1].as_str()]);
+        tap.tap = Some("acme/tools".to_string());
+        tap.bottle
+            .get_mut("stable")
+            .unwrap()
+            .files
+            .get_mut(&tags[0])
+            .unwrap()
+            .cellar = "/srv/brew/Cellar".to_string();
+        assert_eq!(select_bottle(&tap).map(|(t, _)| t), Some(tags[1].clone()));
     }
 
     #[test]
