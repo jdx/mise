@@ -391,7 +391,7 @@ def version_from_basename(url)
   # Hyphen-joined numbers, such as a date or 398-1, are one version.
   match ||= basename.match(/(?:\A|[-_])v?([0-9]{4}-[0-9]{2}-[0-9]{2})\z/)
   match ||= basename.match(/(?:\A|[-_])v?([0-9]+(?:-[0-9]+)+)\z/)
-  match ||= basename.match(/[-_]v?([0-9]+)\z/)
+  match ||= basename.match(/(?:\A|[-_])v?([0-9]+)\z/)
   match && match[1]
 end
 
