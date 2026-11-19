@@ -1184,6 +1184,17 @@ end
 
         // Homebrew resolves a missing root through `bottle_domain`, which mise
         // does not model, so the formula builds from source.
+        // A root that needs extra request options stays on the source path.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", headers: [\"X-Access: 1\"]\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
         let f = formula_metadata(
             &ruby,
             "widget",

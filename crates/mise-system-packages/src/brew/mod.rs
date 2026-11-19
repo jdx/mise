@@ -238,7 +238,7 @@ impl BrewManager {
             .iter()
             .map(|rf| {
                 source::has_bottle(&rf.formula)
-                    .then(|| rf.formula.bottle_files().and_then(tag::select))
+                    .then(|| source::select_bottle(&rf.formula))
                     .flatten()
                     .map(|(tag, bottle)| (tag.to_string(), bottle.clone()))
             })

@@ -179,15 +179,20 @@ def download_strategy_name(using) = using.is_a?(Class) ? using.name : nil
 # hosted, the rebuild number, and one checksum per platform tag. Anything else
 # in the block (`cellar` aside) carries no metadata mise needs.
 class BottleSpec
-  attr_reader :root_url_value, :rebuild_value, :cellar_value, :entries, :using_value
+  attr_reader :root_url_value, :root_url_options, :rebuild_value, :cellar_value, :entries, :using_value
 
   def initialize
     @rebuild_value = 0
     @entries = {}
   end
 
-  def root_url(value = nil, using: nil, **)
-    @root_url_value = value.to_s unless value.nil?
+  # `using:` names a download strategy, recorded separately; any other option
+  # (`headers:`, ...) changes how the bottle is fetched.
+  def root_url(value = nil, using: nil, **options)
+    return if value.nil?
+
+    @root_url_value = value.to_s
+    @root_url_options = options
     @using_value = download_strategy_name(using)
   end
   def rebuild(value = nil) = (@rebuild_value = value.to_i unless value.nil?)
@@ -423,6 +428,9 @@ def bottle_metadata(klass, version)
   # Homebrew resolves an omitted root through `bottle_domain`, which mise does
   # not model, so a rootless declaration stays on the source path.
   return {} if spec.root_url_value.to_s.empty?
+  # Options such as `headers:` change how the bottle is fetched, and mise's
+  # downloader cannot send them, so the formula builds from source.
+  return {} unless spec.root_url_options.to_h.empty?
 
   root = spec.root_url_value
   root = root.chomp("/")
