@@ -146,7 +146,7 @@ end
 # hosted, the rebuild number, and one checksum per platform tag. Anything else
 # in the block (`cellar` aside) carries no metadata mise needs.
 class BottleSpec
-  attr_reader :root_url_value, :rebuild_value, :entries
+  attr_reader :root_url_value, :rebuild_value, :cellar_value, :entries
 
   def initialize
     @rebuild_value = 0
@@ -155,13 +155,13 @@ class BottleSpec
 
   def root_url(value = nil, **) = (@root_url_value = value.to_s unless value.nil?)
   def rebuild(value = nil) = (@rebuild_value = value.to_i unless value.nil?)
-  def cellar(*) = nil
+  def cellar(value = nil) = (@cellar_value = value unless value.nil?)
 
   # `sha256 cellar: :any, arm64_sonoma: "<hex>"`, or the older
   # `sha256 "<hex>" => :sonoma`
   def sha256(spec = nil, **options)
     spec = options if spec.nil?
-    cellar = spec[:cellar] || ":any"
+    cellar = spec[:cellar] || @cellar_value || ":any"
     cellar = ":#{cellar}" if cellar.is_a?(Symbol)
     spec.each do |key, value|
       next if key == :cellar
@@ -365,10 +365,13 @@ def bottle_metadata(klass, version)
   spec = klass.bottle_spec
   return {} if spec.nil? || spec.entries.empty?
 
+  # the GitHub repository the tap is fetched from, which a custom tap URL
+  # makes differ from the tap's name
   tap_owner, tap_name = ENV.fetch("MISE_BREW_TAP").split("/", 2)
+  repository = ENV.fetch("MISE_BREW_TAP_REPOSITORY", "#{tap_owner}/homebrew-#{tap_name}")
   pkg_version = klass.revision_value.to_i > 0 ? "#{version}_#{klass.revision_value}" : version
   root = spec.root_url_value ||
-         "https://github.com/#{tap_owner}/homebrew-#{tap_name}/releases/download/#{FORMULA_NAME}-#{pkg_version}"
+         "https://github.com/#{repository}/releases/download/#{FORMULA_NAME}-#{pkg_version}"
   root = root.chomp("/")
   rebuild = spec.rebuild_value > 0 ? "#{spec.rebuild_value}." : ""
   files = spec.entries.to_h do |tag, entry|
