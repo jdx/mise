@@ -422,15 +422,10 @@ const VENDOR_DEPENDENCIES: &str = r#"require "rubygems"
 require "fileutils"
 home = File.realpath(Gem.dir)
 root = Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MISE_GEM_VERSION"))
-seen = {}
-queue = [root]
-while (spec = queue.shift)
-  next if seen[spec.full_name]
-  seen[spec.full_name] = true
-  spec.runtime_dependencies.each do |dep|
-    found = dep.matching_specs(true).max_by(&:version)
-    queue << found if found
-  end
+# Activating the root makes RubyGems resolve one mutually compatible set of
+# dependencies, the same one the tool loads at runtime.
+root.activate
+Gem.loaded_specs.each_value do |spec|
   next if spec.equal?(root) || spec.default_gem?
   base = File.realpath(spec.base_dir)
   next if base == home
@@ -443,8 +438,10 @@ while (spec = queue.shift)
   %W[gems/#{name} specifications/#{name}.gemspec cache/#{name}.gem].each do |rel|
     copy.call(File.join(base, rel), File.join(home, rel))
   end
-  Dir.glob(File.join(base, "extensions", "*", "*", name)).each do |dir|
-    copy.call(dir, File.join(home, dir.delete_prefix(base + "/")))
+  ext = spec.extension_dir
+  if ext && File.exist?(ext)
+    ext = File.realpath(ext)
+    copy.call(ext, File.join(home, ext.delete_prefix(base + "/"))) if ext.start_with?(base + "/")
   end
 end"#;
 
