@@ -418,7 +418,8 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
 /// Copies the runtime dependencies of `$MISE_GEM_NAME` that resolve outside
 /// `GEM_HOME` (and are not default gems, which ship inside every Ruby) into
 /// `GEM_HOME`, so the tool does not depend on one Ruby patch's gem directory.
-const VENDOR_DEPENDENCIES: &str = r#"require "fileutils"
+const VENDOR_DEPENDENCIES: &str = r#"require "rubygems"
+require "fileutils"
 home = File.realpath(Gem.dir)
 root = Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MISE_GEM_VERSION"))
 seen = {}
