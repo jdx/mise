@@ -1856,8 +1856,12 @@ end
 
     /// `Version` splits a hyphen-joined numeric version (a date) on its
     /// hyphens and any other on its dots, as the build shim's accessors do.
-    #[test]
-    fn build_shim_version_splits_date_versions_by_component() {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn build_shim_version_splits_date_versions_by_component() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
         let class = BUILD_SHIM_RB
             .lines()
             .skip_while(|l| *l != "class Version")
@@ -1869,7 +1873,7 @@ end
             "{class}\nd = Version.new('2024-01-31'); v = Version.new('1.2.3')\n\
              puts [d.major, d.minor, d.patch, d.major_minor, v.major, v.minor, v.major_minor].join(' ')"
         );
-        let out = std::process::Command::new("ruby")
+        let out = std::process::Command::new(&ruby)
             .args(["-e", &script])
             .output()
             .expect("run ruby");
@@ -1882,6 +1886,7 @@ end
             String::from_utf8_lossy(&out.stdout).trim(),
             "2024 01 31 2024-01 1 2 1.2"
         );
+        Ok(())
     }
 
     /// Both shims define the `Language::*` namespace, and they have to stay in
