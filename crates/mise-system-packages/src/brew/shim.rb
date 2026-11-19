@@ -595,8 +595,11 @@ module Language
     # The subset of Library/Homebrew/language/python.rb that
     # `virtualenv_install_with_resources` needs. Like Homebrew, each resource is
     # staged and installed on its own, in declaration order, with `--no-deps`
-    # and `--no-binary :all:`, so a build never pulls anything from an index
-    # and every sdist was verified against the sha256 the formula declares.
+    # and `--no-binary :all:`, so every runtime package is a resource whose
+    # sha256 the formula declares. Like Homebrew, pip builds in an isolated
+    # environment by default, so a build backend such as setuptools or hatchling
+    # is fetched by pip itself; `build_isolation: false` uses only what the venv
+    # already has, with no index access.
     module Virtualenv
       class Virtualenv
         attr_reader :root
@@ -614,12 +617,12 @@ module Language
           @formula.system @python, *args, @root.to_s
         end
 
-        def pip_install(targets, build_isolation: false)
+        def pip_install(targets, build_isolation: true)
           Array(targets).flatten.each do |target|
             if target.is_a?(Resource)
-              target.stage { do_install(Pathname.pwd) }
+              target.stage { do_install(Pathname.pwd, build_isolation) }
             else
-              do_install(target)
+              do_install(target, build_isolation)
             end
           end
         end
@@ -638,12 +641,12 @@ module Language
 
         # The venv has no pip of its own (`--without-pip`); the interpreter it
         # was created from installs into it, as Homebrew does.
-        def do_install(target)
+        def do_install(target, build_isolation)
           venv_python = (@root + "bin/python").to_s
-          @formula.system @python, "-m", "pip", "--python=#{venv_python}", "install",
-                          "-v", "--no-deps", "--no-binary=:all:", "--no-build-isolation",
-                          "--no-index", "--ignore-installed", "--disable-pip-version-check",
-                          target.to_s
+          args = ["-v", "--no-deps", "--no-binary=:all:", "--ignore-installed",
+                  "--disable-pip-version-check"]
+          args += ["--no-build-isolation", "--no-index"] unless build_isolation
+          @formula.system @python, "-m", "pip", "--python=#{venv_python}", "install", *args, target.to_s
         end
       end
 
@@ -661,9 +664,12 @@ module Language
         first = Array(start_with).map(&:to_s)
         last = Array(end_with).map(&:to_s)
         pending = resources.reject { |r| excluded.include?(r.name) }
-        ordered = pending.select { |r| first.include?(r.name) } +
-                  pending.reject { |r| first.include?(r.name) || last.include?(r.name) } +
-                  pending.select { |r| last.include?(r.name) }
+        by_name = pending.to_h { |r| [r.name, r] }
+        # start_with/end_with are ordered lists: honor the order given, not the
+        # declaration order
+        head = first.filter_map { |n| by_name[n] }
+        tail = last.filter_map { |n| by_name[n] }
+        ordered = head + (pending - head - tail) + tail
         venv.pip_install ordered
         venv.pip_install_and_link buildpath
         venv
