@@ -313,14 +313,16 @@ fn is_homebrew_install() -> bool {
 }
 
 pub(crate) async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
-    if let Some(latest) = get_latest_version(cache_duration)
+    lookup_new_version(cache_duration).await.flatten()
+}
+
+/// Like [`check_for_new_version`], but tells a failed lookup (`None`) from a
+/// successful one that found nothing newer (`Some(None)`).
+pub(crate) async fn lookup_new_version(cache_duration: Duration) -> Option<Option<String>> {
+    let latest = get_latest_version(cache_duration)
         .await
-        .and_then(Versioning::new)
-        && *V < latest
-    {
-        return Some(latest.to_string());
-    }
-    None
+        .and_then(Versioning::new)?;
+    Some((*V < latest).then(|| latest.to_string()))
 }
 
 /// A build newer than the newest release past the age gate has nothing newer to

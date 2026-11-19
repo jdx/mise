@@ -110,10 +110,15 @@ pub(crate) async fn maybe_auto_update(
     // The marker above is the auto-update throttle. Bypass the separate shared
     // version cache so a shorter-lived `mise version` lookup cannot make this
     // due check accept stale data and advance the marker for another interval.
-    let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
+    let version = match crate::cli::version::lookup_new_version(Duration::ZERO).await {
+        Some(Some(version)) => version,
         // Up to date: a mise update that failed before is no longer in the way.
-        crate::tool_update::record_result(crate::tool_update::SELF_UPDATE_ID, &Ok(()));
-        return Ok(());
+        Some(None) => {
+            crate::tool_update::record_result(crate::tool_update::SELF_UPDATE_ID, &Ok(()));
+            return Ok(());
+        }
+        // A failed lookup says nothing about an earlier failed update.
+        None => return Ok(()),
     };
 
     let update = SelfUpdate {
@@ -184,8 +189,14 @@ pub(crate) async fn update_before_tools() -> Result<bool> {
         };
     }
     let result = async {
+        // A failed lookup leaves the check due, so the next pass tries again,
+        // and skips the tools meanwhile: they are not updated under a mise
+        // that was never checked.
+        let Some(version) = crate::cli::version::lookup_new_version(Duration::ZERO).await else {
+            bail!("could not check for a new mise release");
+        };
         crate::file::write(&last_check_path, "")?;
-        let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
+        let Some(version) = version else {
             return Ok(false);
         };
         let update = SelfUpdate {
