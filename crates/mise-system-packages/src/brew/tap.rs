@@ -1202,6 +1202,35 @@ end
                 .starts_with("https://github.com/example/custom/releases/download/widget-1.2.3_1/")
         );
 
+        // A bottle restriction is not evaluated, so the formula builds from source.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 pour_bottle? only_if: :clt_installed\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
+        // A homebrew- prefixed ghcr.io repository is registered without it.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://ghcr.io/v2/acme/homebrew-tools\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["arm64_sequoia"].url,
+            format!("https://ghcr.io/v2/acme/tools/widget/blobs/sha256:{BOTTLE}")
+        );
+
         // A `post_install` hook only runs on the source path, so such a
         // formula declares no bottles.
         let f = formula_metadata(

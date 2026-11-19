@@ -292,6 +292,11 @@ class Formula
 
     def resource(*) = nil
     def patch(*) = nil
+    # `pour_bottle? only_if: ...` restricts when a bottle may be used; mise does
+    # not evaluate it, so such a formula stays on the source path.
+    def pour_bottle?(*, **) = (@pour_bottle_restricted = true)
+    def pour_bottle_restricted? = @pour_bottle_restricted || false
+
     def bottle(*, &block)
       return unless block
       @bottle_spec ||= BottleSpec.new
@@ -369,6 +374,9 @@ def bottle_metadata(klass, version)
   # A pour runs no Ruby, so a formula with a `post_install` hook stays on the
   # source path, where the shim runs it, rather than appear installed without it.
   return {} if klass.instance_methods(false).include?(:post_install)
+  # Likewise for a bottle restriction, declared as `pour_bottle? only_if:` or
+  # as an overriding `pour_bottle?` method.
+  return {} if klass.pour_bottle_restricted? || klass.instance_methods(false).include?(:pour_bottle?)
 
   # the GitHub repository the tap is fetched from, which a custom tap URL
   # makes differ from the tap's name
@@ -382,7 +390,10 @@ def bottle_metadata(klass, version)
   files = spec.entries.to_h do |tag, entry|
     url = if root.start_with?("https://ghcr.io/v2/")
       image = FORMULA_NAME.tr("@", "/").tr("+", "x")
-      "#{root}/#{image}/blobs/sha256:#{entry["sha256"]}"
+      # Homebrew names the registry repository acme/tools for a root of
+      # ghcr.io/v2/acme/homebrew-tools.
+      registry = root.sub(%r{\Ahttps://ghcr\.io/v2/([^/]+)/homebrew-}, 'https://ghcr.io/v2/\1/')
+      "#{registry}/#{image}/blobs/sha256:#{entry["sha256"]}"
     else
       "#{root}/#{FORMULA_NAME}-#{pkg_version}.#{tag}.bottle.#{rebuild}tar.gz"
     end
