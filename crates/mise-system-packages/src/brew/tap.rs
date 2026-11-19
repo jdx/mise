@@ -1854,6 +1854,36 @@ end
 
     const BUILD_SHIM_RB: &str = include_str!("shim.rb");
 
+    /// `Version` splits a hyphen-joined numeric version (a date) on its
+    /// hyphens and any other on its dots, as the build shim's accessors do.
+    #[test]
+    fn build_shim_version_splits_date_versions_by_component() {
+        let class = BUILD_SHIM_RB
+            .lines()
+            .skip_while(|l| *l != "class Version")
+            .take_while(|l| *l != "end")
+            .chain(["end"])
+            .collect::<Vec<_>>()
+            .join("\n");
+        let script = format!(
+            "{class}\nd = Version.new('2024-01-31'); v = Version.new('1.2.3')\n\
+             puts [d.major, d.minor, d.patch, d.major_minor, v.major, v.minor, v.major_minor].join(' ')"
+        );
+        let out = std::process::Command::new("ruby")
+            .args(["-e", &script])
+            .output()
+            .expect("run ruby");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "2024 01 31 2024-01 1 2 1.2"
+        );
+    }
+
     /// Both shims define the `Language::*` namespace, and they have to stay in
     /// step. A mixin that resolves while extracting metadata but not during a
     /// source build would fail late, as a NameError, after the download has
