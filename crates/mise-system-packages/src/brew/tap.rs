@@ -1344,6 +1344,15 @@ end
         .await?;
         assert_eq!(f.versions.stable.as_deref(), Some("398-1"));
 
+        // A basename that is itself the version keeps every component.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/2024-01-31.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("2024-01-31"));
+
         // An explicit `version` still wins over both heuristics.
         let f = formula_metadata(
             &ruby,
