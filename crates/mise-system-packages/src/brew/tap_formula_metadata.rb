@@ -168,7 +168,9 @@ class BottleSpec
   # `sha256 "<hex>" => :sonoma`
   def sha256(spec = nil, **options)
     spec = options if spec.nil?
-    cellar = spec[:cellar] || @cellar_value || ":any"
+    # No `cellar:` pins the bottle to the platform's default Cellar, which the
+    # empty string stands for.
+    cellar = spec[:cellar] || @cellar_value || ""
     cellar = ":#{cellar}" if cellar.is_a?(Symbol)
     spec.each do |key, value|
       next if key == :cellar
