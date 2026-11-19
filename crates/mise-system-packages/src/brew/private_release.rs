@@ -30,15 +30,23 @@ fn parse_release_url(url: &str) -> Option<ReleaseAsset> {
     if parts.next()? != "releases" || parts.next()? != "download" {
         return None;
     }
-    let (tag, name) = (parts.next()?, parts.next()?);
-    if parts.next().is_some() || [owner, repo, tag, name].iter().any(|p| p.is_empty()) {
+    // A tag may hold slashes (`release/v1`), so the asset name is the last
+    // segment and everything between `download` and it is the tag.
+    let rest: Vec<&str> = parts.collect();
+    let (name, tag_parts) = rest.split_last()?;
+    if tag_parts.is_empty() || [owner, repo, name].iter().any(|p| p.is_empty()) {
         return None;
     }
     let decode = |s: &str| urlencoding::decode(s).map(|s| s.into_owned()).ok();
+    let tag = tag_parts
+        .iter()
+        .map(|p| if p.is_empty() { None } else { decode(p) })
+        .collect::<Option<Vec<_>>>()?
+        .join("/");
     Some(ReleaseAsset {
         owner: owner.to_string(),
         repo: repo.to_string(),
-        tag: decode(tag)?,
+        tag,
         name: decode(name)?,
     })
 }
@@ -76,7 +84,13 @@ pub(super) async fn download(
     let release: Release = HTTP_FETCH
         .json(format!(
             "{api}/releases/tags/{}",
-            urlencoding::encode(&asset.tag)
+            // GitHub reads a slash in a tag as part of the path.
+            asset
+                .tag
+                .split('/')
+                .map(|s| urlencoding::encode(s).into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
         ))
         .await
         .wrap_err_with(|| {
@@ -115,6 +129,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parses_release_tags_containing_slashes() {
+        assert_eq!(
+            parse_release_url(
+                "https://github.com/acme/tools/releases/download/release/v1.0.0/w-1.tar.gz"
+            ),
+            Some(ReleaseAsset {
+                owner: "acme".into(),
+                repo: "tools".into(),
+                tag: "release/v1.0.0".into(),
+                name: "w-1.tar.gz".into(),
+            })
+        );
+        assert_eq!(
+            parse_release_url("https://github.com/acme/tools/releases/download/w-1.tar.gz"),
+            None
+        );
+    }
+
+    #[test]
     fn parses_release_asset_urls() {
         assert_eq!(
             parse_release_url("https://github.com/acme/tools/releases/download/v1%2B2/w-1.tar.gz"),
@@ -129,7 +162,7 @@ mod tests {
             "https://github.com/acme/tools/archive/refs/tags/v1.tar.gz",
             "https://example.com/acme/tools/releases/download/v1/w.tar.gz",
             "https://github.com/acme/tools/releases/download/v1",
-            "https://github.com/acme/tools/releases/download/v1/a/b",
+            "https://github.com/acme/tools/releases/download/v1//w.tar.gz",
         ] {
             assert!(!is_release_url(url), "{url}");
         }
