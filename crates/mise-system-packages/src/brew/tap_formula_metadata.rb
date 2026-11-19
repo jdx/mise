@@ -364,6 +364,9 @@ raise "could not infer formula version; add an explicit version declaration" if 
 def bottle_metadata(klass, version)
   spec = klass.bottle_spec
   return {} if spec.nil? || spec.entries.empty?
+  # A pour runs no Ruby, so a formula with a `post_install` hook stays on the
+  # source path, where the shim runs it, rather than appear installed without it.
+  return {} if klass.instance_methods(false).include?(:post_install)
 
   # the GitHub repository the tap is fetched from, which a custom tap URL
   # makes differ from the tap's name

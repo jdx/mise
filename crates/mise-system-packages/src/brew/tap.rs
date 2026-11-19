@@ -1202,6 +1202,20 @@ end
                 .starts_with("https://github.com/example/custom/releases/download/widget-1.2.3_1/")
         );
 
+        // A `post_install` hook only runs on the source path, so such a
+        // formula declares no bottles.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 def post_install\n    system \"true\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
         // A custom root serves one tarball per tag.
         let f = formula_metadata(
             &ruby,
