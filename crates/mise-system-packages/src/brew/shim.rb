@@ -41,7 +41,7 @@ require "tmpdir"
 # the configured credentials), so these only let the formula load. Kept in
 # step with tap_formula_metadata.rb.
 module Kernel
-  HOMEBREW_INTERNAL_LIBS = %w[download_strategy formula utils utils/github utils/curl].freeze
+  HOMEBREW_INTERNAL_LIBS = %w[download_strategy formula utils utils/github utils/curl utils/formatter].freeze
   alias_method :mise_original_require, :require
   def require(name) = HOMEBREW_INTERNAL_LIBS.include?(name.to_s) ? true : mise_original_require(name)
 end

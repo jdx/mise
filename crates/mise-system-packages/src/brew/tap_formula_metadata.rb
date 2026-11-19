@@ -147,7 +147,7 @@ end
 # runs here: mise only records which class a URL names, and downloads a GitHub
 # release asset itself, authenticated with the configured GitHub credentials.
 module Kernel
-  HOMEBREW_INTERNAL_LIBS = %w[download_strategy formula utils utils/github utils/curl].freeze
+  HOMEBREW_INTERNAL_LIBS = %w[download_strategy formula utils utils/github utils/curl utils/formatter].freeze
   alias_method :mise_original_require, :require
   def require(name) = HOMEBREW_INTERNAL_LIBS.include?(name.to_s) ? true : mise_original_require(name)
 end
