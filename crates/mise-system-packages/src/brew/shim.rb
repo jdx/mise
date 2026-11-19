@@ -223,7 +223,7 @@ class Version
 
   def initialize(version) = @version = version.to_s
 
-  def <=>(other) = Gem::Version.new(@version.gsub(/[^0-9.].*\z/, "")) <=> Gem::Version.new(other.to_s.gsub(/[^0-9.].*\z/, ""))
+  def <=>(other) = Gem::Version.new(comparable(@version)) <=> Gem::Version.new(comparable(other))
   def to_s = @version
   def to_str = @version
   def inspect = @version.inspect
@@ -236,6 +236,9 @@ class Version
   def csv = @version.split(",").map { |part| Version.new(part) }
 
   private
+
+  # Hyphen-joined numbers such as a date (2024-01-31) compare by component.
+  def comparable(version) = version.to_s.tr("-", ".").gsub(/[^0-9.].*\z/, "").sub(/\.\z/, "")
 
   def token(idx)
     part = @version.split(".")[idx]
