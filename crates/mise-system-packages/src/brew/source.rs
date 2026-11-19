@@ -58,8 +58,11 @@ pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> 
         |b: &BottleFile| b.using.is_none() || super::private_release::is_release_url(&b.url);
     let cellar = prefix::cellar();
     if formula.from_tap_source {
+        // A native Linux bottle can need a newer glibc than the host, a
+        // dependency Homebrew injects and the tap shim does not emit, so only
+        // an `all` bottle is taken on Linux; the rest build from source.
         pick_tap_bottle(files, tag::cask_variation_tag().as_deref(), |t, b| {
-            cellar_fits(t, &b.cellar, &cellar) && fetchable(b)
+            !t.ends_with("_linux") && cellar_fits(t, &b.cellar, &cellar) && fetchable(b)
         })
     } else {
         // the newest tag whose bottle fits, so one that does not is skipped
@@ -651,6 +654,17 @@ mod tests {
     }
 
     #[test]
+    fn a_native_linux_tap_bottle_is_not_poured() {
+        // its glibc requirement is not in the tap metadata, on any host
+        let mut f = formula(&["x86_64_linux", "arm64_linux"]);
+        f.from_tap_source = true;
+        assert!(select_bottle(&f).is_none());
+        let mut f = formula(&["x86_64_linux", "all"]);
+        f.from_tap_source = true;
+        assert_eq!(select_bottle(&f).map(|(t, _)| t).as_deref(), Some("all"));
+    }
+
+    #[test]
     fn a_tap_bottle_needs_the_exact_host_tag_or_all() {
         let bottle = |tags: &[&str]| formula(tags).bottle_files().unwrap().clone();
         let pick = |tags: &[&str], host: Option<&str>| {
@@ -748,12 +762,13 @@ mod tests {
             tap.from_tap_source = true;
             assert!(!has_bottle(&tap));
         }
-        // The exact tag exists only on a host mise knows.
+        // The exact tag exists only on a host mise knows; a native Linux
+        // bottle is never taken from tap source (see select_bottle).
         if let Some(host) = tag::cask_variation_tag() {
             let mut tap = formula(&[host.as_str()]);
             tap.tap = Some("acme/tools".to_string());
             tap.from_tap_source = true;
-            assert!(has_bottle(&tap));
+            assert_eq!(has_bottle(&tap), !host.ends_with("_linux"));
         }
         let mut tap = formula(&["all"]);
         tap.tap = Some("acme/tools".to_string());
