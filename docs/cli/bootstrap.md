@@ -87,6 +87,9 @@ resource-level changes.
 - **`--upgrade`** — Upgrade installed packages and tools as well as installing missing ones
 
   In the packages phase, runs the equivalent of `mise bootstrap packages upgrade` after installing; in the tools phase, runs `mise upgrade` (without `--bump`) after installing. Package pins and tool version ranges are respected. Does not update mise itself, repositories, or container images, and does not restart services; see `--update` for repositories and `mise self-update` for mise.
+- **`--self-update`** — Update mise itself first, then run the bootstrap with the new version
+
+  Runs `mise self-update`, then runs this bootstrap again in a new process, so every phase uses the new mise. If the update fails, nothing is applied. Combine it with `--upgrade` to update mise, then every package and tool. Skipped by `--dry-run`, and for a subcommand.
 - **`-h --help`** — Print help
 
 ## Examples

@@ -8,6 +8,14 @@ pub(crate) async fn maybe_auto_update(
     Ok(())
 }
 
+pub(crate) async fn update_now() -> crate::Result<()> {
+    SelfUpdate::default().run().await
+}
+
+pub(crate) async fn update_before_tools() -> crate::Result<bool> {
+    Ok(false)
+}
+
 /// Update mise itself
 ///
 /// This build of mise has self-update disabled. Update it with the package

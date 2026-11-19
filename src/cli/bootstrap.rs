@@ -255,6 +255,15 @@ pub(crate) struct Bootstrap {
     /// repositories and `mise self-update` for mise.
     #[usage(long)]
     upgrade: bool,
+
+    /// Update mise itself first, then run the bootstrap with the new version
+    ///
+    /// Runs `mise self-update`, then runs this bootstrap again in a new
+    /// process, so every phase uses the new mise. If the update fails, nothing
+    /// is applied. Combine it with `--upgrade` to update mise, then every
+    /// package and tool. Skipped by `--dry-run`, and for a subcommand.
+    #[usage(long)]
+    self_update: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, usage_rs::ValueEnum)]
@@ -376,6 +385,8 @@ type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<Resourc
 /// Set for a bootstrap that runs after the global config was fast-forwarded,
 /// so that run does not fast-forward it again.
 const CONFIG_UPDATED_ENV: &str = "__MISE_BOOTSTRAP_CONFIG_UPDATED";
+/// Set on the bootstrap `--self-update` starts, which must not update again.
+const SELF_UPDATED_ENV: &str = "__MISE_BOOTSTRAP_SELF_UPDATED";
 
 /// The Git checkout that `mise bootstrap --update` fast-forwards for the
 /// global config: the config directory itself when it is the top of a
@@ -454,6 +465,20 @@ fn rerun_bootstrap_after_config_update() -> Result<()> {
     let status = command.status()?;
     if !status.success() {
         bail!("bootstrap from the updated global config failed with {status}");
+    }
+    Ok(())
+}
+
+fn rerun_bootstrap_with_new_mise() -> Result<()> {
+    let args = crate::env::ARGS.read().unwrap().clone();
+    let mut command = Command::new(&*crate::env::MISE_BIN);
+    command.args(args.iter().skip(1)).env(SELF_UPDATED_ENV, "1");
+    if let Some(cwd) = crate::env::original_cwd() {
+        command.current_dir(cwd);
+    }
+    let status = command.status()?;
+    if !status.success() {
+        bail!("bootstrap with the updated mise failed with {status}");
     }
     Ok(())
 }
@@ -2060,6 +2085,17 @@ impl Bootstrap {
         }
         if self.save_env && self.command.is_some() {
             bail!("--save-env only applies to a full `mise bootstrap` run, not a subcommand");
+        }
+        // The new mise runs everything, so this process updates it and hands
+        // the whole command over. The binary is started by its path: this
+        // process's own executable has just been replaced.
+        if self.self_update
+            && self.command.is_none()
+            && !self.dry_run
+            && std::env::var_os(SELF_UPDATED_ENV).is_none()
+        {
+            super::self_update::update_now().await?;
+            return rerun_bootstrap_with_new_mise();
         }
         // A full run with --update first fast-forwards a global config that is
         // a Git checkout, or links into one. New commits can change miserc.toml
