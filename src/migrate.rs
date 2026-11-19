@@ -40,6 +40,13 @@ remove_by!("2027.1.0", "legacy-incomplete-markers");
 // both, and every other remove_by! with this id.
 remove_by!("2027.11.0", "legacy-brew-rack-locks");
 
+// Guards the bare-name fallback in `keep_receipt_dependencies` in
+// crates/mise-system-packages/src/brew/maintenance.rs, which reads the tap
+// formula names that mise 2026.11.10 and earlier wrote into install receipts
+// as short names. That crate's version is not mise's, so the guard lives here.
+// Remove both, and every other remove_by! with this id.
+remove_by!("2027.11.0", "legacy-brew-receipt-tap-names");
+
 /// mise 2026.10.3 and earlier kept incomplete-install markers in the cache,
 /// where `mise cache clear` and pruning delete them. Moves any left there to
 /// the state dir, once.

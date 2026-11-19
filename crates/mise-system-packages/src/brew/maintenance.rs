@@ -74,6 +74,14 @@ struct InstallReceipt {
     installed_on_request: Option<bool>,
     #[serde(default)]
     source: Option<ReceiptSource>,
+    #[serde(default)]
+    runtime_dependencies: Option<Vec<ReceiptDependency>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ReceiptDependency {
+    #[serde(default)]
+    full_name: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -172,9 +180,64 @@ async fn configured_package_closure(configured: &[PackageRequest]) -> Result<Has
         .collect())
 }
 
+/// The formulae a kept, installed formula still links against. An installed
+/// keg keeps the dependencies it was built with, and those can lag the
+/// formula's current dependency list, so the receipt is the source of truth,
+/// as it is for `brew autoremove`.
+fn keep_receipt_dependencies(
+    formulae: &[InstalledFormula],
+    keep: &HashSet<String>,
+) -> Result<HashSet<String>> {
+    let mut kept = keep.clone();
+    let mut queue: Vec<&InstalledFormula> = formulae
+        .iter()
+        .filter(|f| kept.contains(&f.package_name()))
+        .collect();
+    while let Some(formula) = queue.pop() {
+        let keg = file::desymlink_path(&pour::keg_path(&formula.name, &formula.version));
+        let Some(receipt) = read_receipt(&keg)? else {
+            continue;
+        };
+        for full_name in receipt
+            .runtime_dependencies
+            .iter()
+            .flatten()
+            .filter_map(|dep| dep.full_name.as_deref())
+        {
+            // A receipt names a tap formula by its full name and a core one by
+            // its short name, which is also how `package_name` spells them.
+            let identity = full_name
+                .strip_prefix("homebrew/core/")
+                .unwrap_or(full_name);
+            // Temporary: guarded by `remove_by!` id `legacy-brew-receipt-tap-names`
+            // in src/migrate.rs.
+            // Receipts written by older mise name a tap formula by its short
+            // name, so a bare name matches by name; a qualified one, including an
+            // explicit `homebrew/core/` one, must match the installed identity
+            // exactly (a core formula's identity is its bare name).
+            let qualified = identity.contains('/') || identity.len() != full_name.len();
+            let matches = |f: &InstalledFormula| {
+                if qualified {
+                    f.package_name() == identity
+                } else {
+                    f.name == identity
+                }
+            };
+            for dep in formulae.iter().filter(|f| matches(f)) {
+                if kept.insert(dep.package_name()) {
+                    queue.push(dep);
+                }
+            }
+        }
+    }
+    Ok(kept)
+}
+
 fn prune_plan_from_linked_formulae(keep: &HashSet<String>) -> Result<PrunePlan> {
     let mut plan = PrunePlan::default();
-    for formula in linked_formulae(true)? {
+    let formulae = linked_formulae(true)?;
+    let keep = keep_receipt_dependencies(&formulae, keep)?;
+    for formula in formulae {
         if keep.contains(&formula.package_name()) {
             continue;
         }
@@ -561,6 +624,114 @@ mod tests {
                         keg: unused,
                     }
                 ],
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_keeps_receipt_dependencies_of_kept_formulae() -> Result<()> {
+        let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "wp-cli",
+            "2.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"icu4c@77"}]}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "icu4c@77",
+            "77.1",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"zlib"}]}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "zlib",
+            "1.3",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let unused = write_keg(
+            tmp.path(),
+            "unused",
+            "1.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let keep = HashSet::from(["wp-cli".to_string()]);
+
+        assert_eq!(
+            prune_plan_from_linked_formulae(&keep)?,
+            PrunePlan {
+                remove: vec![PruneCandidate {
+                    name: "unused".to_string(),
+                    version: "1.0.0".to_string(),
+                    keg: unused,
+                }],
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_does_not_keep_a_core_formula_for_a_tap_receipt_dependency() -> Result<()> {
+        let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "app",
+            "1.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"acme/tools/widget"}]}"#,
+        )?;
+        let widget = write_keg(
+            tmp.path(),
+            "widget",
+            "2.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let keep = HashSet::from(["app".to_string()]);
+
+        assert_eq!(
+            prune_plan_from_linked_formulae(&keep)?,
+            PrunePlan {
+                remove: vec![PruneCandidate {
+                    name: "widget".to_string(),
+                    version: "2.0.0".to_string(),
+                    keg: widget,
+                }],
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_does_not_keep_a_tap_formula_for_a_core_receipt_dependency() -> Result<()> {
+        let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "app",
+            "1.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"homebrew/core/widget"}]}"#,
+        )?;
+        let widget = write_keg(
+            tmp.path(),
+            "widget",
+            "2.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"acme/tools"}}"#,
+        )?;
+        let keep = HashSet::from(["app".to_string()]);
+
+        assert_eq!(
+            prune_plan_from_linked_formulae(&keep)?,
+            PrunePlan {
+                remove: vec![PruneCandidate {
+                    name: "widget".to_string(),
+                    version: "2.0.0".to_string(),
+                    keg: widget,
+                }],
             }
         );
         Ok(())
