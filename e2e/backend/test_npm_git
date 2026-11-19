@@ -48,6 +48,6 @@ for i in 1 2 3 4 5 6; do
   assert_contains "mise upgrade --dry-run 2>&1" "Would install"
   mise upgrade --prune
   assert_contains "mise x -- gitpkg" "gitpkg-up$i"
-  assert_not_contains 'ls $MISE_DATA_DIR/installs/npm-git-*' "$old"
+  assert_not_contains "ls $MISE_DATA_DIR/installs/npm-git-*" "$old"
   old="$new"
 done
