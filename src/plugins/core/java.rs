@@ -738,7 +738,8 @@ impl Backend for JavaPlugin {
 
 /// SDKMAN names a Temurin hotfix release with a fourth component, such as `26.0.2.1+1`.
 /// The catalog has no such version: it lists the hotfix as `26.0.2+101`, the hotfix number
-/// followed by the two-digit build. Returns `None` for any other shape.
+/// followed by the two-digit build. A `.0` fourth component marks a regular release and maps to
+/// the three-part version. Returns `None` for any other shape.
 fn temurin_hotfix_version(version: &str) -> Option<String> {
     let (core, build) = version.split_once('+')?;
     let build: u32 = build.parse().ok()?;
@@ -747,7 +748,12 @@ fn temurin_hotfix_version(version: &str) -> Option<String> {
         return None;
     };
     let hotfix: u32 = hotfix.parse().ok()?;
-    if hotfix == 0 || build >= 100 {
+    if hotfix == 0 {
+        // A regular release: the zero is padding, and the three-part version matches the
+        // catalog entry by prefix, as `21.0.13-tem` does.
+        return Some(format!("{major}.{minor}.{patch}"));
+    }
+    if build >= 100 {
         return None;
     }
     Some(format!("{major}.{minor}.{patch}+{}", hotfix * 100 + build))
@@ -1242,7 +1248,10 @@ mod tests {
         );
         assert_eq!(temurin_hotfix_version("21.0.2+13"), None);
         assert_eq!(temurin_hotfix_version("26.0.2.1"), None);
-        assert_eq!(temurin_hotfix_version("26.0.2.0+1"), None);
+        assert_eq!(
+            temurin_hotfix_version("26.0.2.0+1").as_deref(),
+            Some("26.0.2")
+        );
     }
 
     #[tokio::test]
@@ -1258,6 +1267,8 @@ mod tests {
         };
         assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2+101"]);
         assert_eq!(parse("java=21.0.2+13-tem\n").await, ["temurin-21.0.2"]);
+        assert_eq!(parse("java=21.0.13.0+9-tem\n").await, ["temurin-21.0.13"]);
+        assert_eq!(parse("java=8.0.512.0+9-tem\n").await, ["temurin-8.0.512"]);
         assert_eq!(parse("java=21.0.2.1+1-amzn\n").await, ["corretto-21.0.2.1"]);
         assert_eq!(parse("java=21.0.2-zulu\n").await, ["zulu-21"]);
     }
