@@ -1194,6 +1194,17 @@ end
         )
         .await?;
         assert!(f.bottle.is_empty());
+        // A bottle block using a Homebrew-only constant cannot be evaluated; the
+        // formula still loads and builds from source.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", using: GitHub::Missing\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
         // The options may also arrive as a positional hash.
         let f = formula_metadata(
             &ruby,

@@ -307,7 +307,14 @@ class Formula
     def bottle(*, &block)
       return unless block
       @bottle_spec ||= BottleSpec.new
-      @bottle_spec.instance_exec(&block)
+      begin
+        @bottle_spec.instance_exec(&block)
+      rescue StandardError, ScriptError
+        # A block that uses Homebrew-only constants or receivers (`GitHub::...`,
+        # `tap.user`) cannot be evaluated. Declare no bottle, so the formula
+        # still loads and builds from source.
+        @bottle_spec = nil
+      end
     end
     def head(*) = nil
     def livecheck(*) = nil
