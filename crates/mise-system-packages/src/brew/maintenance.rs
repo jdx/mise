@@ -212,9 +212,10 @@ fn keep_receipt_dependencies(
             // Temporary: guarded by `remove_by!` id `legacy-brew-receipt-tap-names`
             // in src/migrate.rs.
             // Receipts written by older mise name a tap formula by its short
-            // name, so a bare name matches by name; a qualified one must match
-            // the installed identity exactly.
-            let qualified = identity.contains('/');
+            // name, so a bare name matches by name; a qualified one, including an
+            // explicit `homebrew/core/` one, must match the installed identity
+            // exactly (a core formula's identity is its bare name).
+            let qualified = identity.contains('/') || identity.len() != full_name.len();
             let matches = |f: &InstalledFormula| {
                 if qualified {
                     f.package_name() == identity
@@ -688,6 +689,38 @@ mod tests {
             "widget",
             "2.0.0",
             r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let keep = HashSet::from(["app".to_string()]);
+
+        assert_eq!(
+            prune_plan_from_linked_formulae(&keep)?,
+            PrunePlan {
+                remove: vec![PruneCandidate {
+                    name: "widget".to_string(),
+                    version: "2.0.0".to_string(),
+                    keg: widget,
+                }],
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_does_not_keep_a_tap_formula_for_a_core_receipt_dependency() -> Result<()> {
+        let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "app",
+            "1.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"homebrew/core/widget"}]}"#,
+        )?;
+        let widget = write_keg(
+            tmp.path(),
+            "widget",
+            "2.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"acme/tools"}}"#,
         )?;
         let keep = HashSet::from(["app".to_string()]);
 
