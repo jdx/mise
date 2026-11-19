@@ -53,6 +53,11 @@ pub struct Formula {
     /// because the step vocabulary is large and grows with brew
     #[serde(default)]
     pub post_install_steps: Vec<serde_json::Value>,
+    /// set when mise extracted this metadata from a tap's formula source
+    /// rather than reading published Homebrew API JSON; such metadata has no
+    /// per-tag `variations`
+    #[serde(default)]
+    pub from_tap_source: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
