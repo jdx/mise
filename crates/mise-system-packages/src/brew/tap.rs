@@ -1198,12 +1198,24 @@ end
             "widget",
             &format!(
                 "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
-                 sha256 \"{SHA}\"\n  bottle do\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
                  pour_bottle? only_if: :clt_installed\nend\n"
             ),
         )
         .await?;
         assert!(f.bottle.is_empty());
+        // The same formula without the restriction declares its bottle, so the
+        // assertion above is the restriction's doing and not a missing root.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\"\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle_files().is_some_and(|files| !files.is_empty()));
 
         // A homebrew- prefixed ghcr.io repository is registered without it.
         let f = formula_metadata(
@@ -1228,7 +1240,8 @@ end
             "widget",
             &format!(
                 "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
-                 sha256 \"{SHA}\"\n  bottle do\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
                  def post_install\n    system \"true\"\n  end\nend\n"
             ),
         )
