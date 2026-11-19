@@ -311,7 +311,10 @@ mise bootstrap packages apply apt:curl
 `--dry-run` prints the commands without running them. `--manager` limits the
 run to one manager and fails if that manager is unavailable. When one manager
 fails to install or remove a package, the others still run, and the apply
-exits non-zero at the end with one line per failed manager. In an interactive
+exits non-zero at the end with one line per failed manager. A package whose
+definition cannot be resolved, such as a cask from a tap that is down, is reported
+as `error` in `status` and counted as a failure in `apply`; the other packages
+still get their status and are still applied. In an interactive
 terminal, mise asks before it installs or removes anything; `--yes` skips that
 prompt but does not supply a sudo password.
 

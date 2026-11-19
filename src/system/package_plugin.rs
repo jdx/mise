@@ -327,6 +327,7 @@ impl PackagePluginManager {
             PackageState::Missing => None,
             #[cfg(unix)]
             PackageState::Unavailable { .. } => None,
+            PackageState::Unresolved { .. } => None,
         }
     }
 

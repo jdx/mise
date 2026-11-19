@@ -125,6 +125,10 @@ impl SystemStatus {
                     (PackageState::Unavailable { reason }, _) => {
                         ("".to_string(), "skipped", Some(reason.as_str()))
                     }
+                    (PackageState::Unresolved { reason }, _) => {
+                        any_missing = true;
+                        ("".to_string(), "error", Some(reason.as_str()))
+                    }
                 };
                 if self.json {
                     let mut package = json!({

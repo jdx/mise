@@ -233,6 +233,7 @@ async fn run_manager(
                 status.request.desired == PackageDesiredState::Absent
                     && !matches!(status.state, PackageState::Missing)
                     && !status.state.is_unavailable()
+                    && !status.state.is_unresolved()
             })
             .collect::<Vec<_>>()
     } else {
@@ -242,15 +243,26 @@ async fn run_manager(
         .iter()
         .filter(|status| status.request.desired == PackageDesiredState::Present)
         .filter(|s| match action {
-            Action::Install => !s.state.is_installed() && !s.state.is_unavailable(),
+            Action::Install => {
+                !s.state.is_installed() && !s.state.is_unavailable() && !s.state.is_unresolved()
+            }
             // upgrade acts on whatever is present (the manager no-ops
             // already-current packages); missing packages are skipped
             // below with a pointer at `install`
             Action::Upgrade => {
-                !matches!(s.state, PackageState::Missing) && !s.state.is_unavailable()
+                !matches!(s.state, PackageState::Missing)
+                    && !s.state.is_unavailable()
+                    && !s.state.is_unresolved()
             }
         })
         .collect();
+    // an entry whose definition cannot be resolved is a failure of its own: it
+    // is reported with the run's other failures and the rest still apply
+    for status in &statuses {
+        if let Some(reason) = status.state.unresolved_reason() {
+            failures.push(eyre::eyre!("{name}: {}: {reason}", status.request));
+        }
+    }
     let missing = statuses
         .iter()
         .filter(|status| status.request.desired == PackageDesiredState::Present)
@@ -348,6 +360,7 @@ async fn run_manager(
                     PackageState::Missing => None,
                     #[cfg(unix)]
                     PackageState::Unavailable { .. } => None,
+                    PackageState::Unresolved { .. } => None,
                 })
                 .collect();
             mp.manager
@@ -377,6 +390,7 @@ async fn run_manager(
                         PackageState::Missing => None,
                         #[cfg(unix)]
                         PackageState::Unavailable { .. } => None,
+                        PackageState::Unresolved { .. } => None,
                     })
                     .collect();
                 if changed.is_empty() {

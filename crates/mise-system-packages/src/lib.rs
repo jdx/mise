@@ -97,6 +97,12 @@ pub enum PackageState {
     Unavailable {
         reason: String,
     },
+    /// The package's definition could not be fetched or evaluated, such as a
+    /// cask whose tap is down. Its state is unknown, and this one entry must
+    /// not hide the state of the others.
+    Unresolved {
+        reason: String,
+    },
 }
 
 impl PackageState {
@@ -130,6 +136,17 @@ impl PackageState {
             Self::Unavailable { .. } => true,
             _ => false,
         }
+    }
+
+    pub fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved { .. })
+    }
+
+    pub fn unresolved_reason(&self) -> Option<&str> {
+        if let Self::Unresolved { reason } = self {
+            return Some(reason);
+        }
+        None
     }
 
     pub fn unavailable_reason(&self) -> Option<&str> {
