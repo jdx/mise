@@ -1201,6 +1201,15 @@ end
         .await?;
         assert_eq!(f.versions.stable.as_deref(), Some("2024-01-31"));
 
+        // A date wins over the wider hyphen-joined run in front of it.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/tool-1-2024-01-31.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("2024-01-31"));
+
         let f = formula_metadata(
             &ruby,
             "widget",
@@ -1749,7 +1758,7 @@ end
         );
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
-            "2024 01 31 2024-01 1 2 1.2"
+            "2024 01 31 2024.1 1 2 1.2"
         );
         Ok(())
     }
