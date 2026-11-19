@@ -80,7 +80,7 @@ pub(super) fn formulae_by_name(closure: &[ResolvedFormula]) -> HashMap<&str, &Re
 /// resolution installed.
 pub(super) fn dep_tag(formula: &Formula, host_tag: &str) -> String {
     if super::source::has_bottle(formula)
-        && let Some((tag, _)) = formula.bottle_files().and_then(tag::select)
+        && let Some((tag, _)) = super::source::select_bottle(formula)
     {
         return tag;
     }
