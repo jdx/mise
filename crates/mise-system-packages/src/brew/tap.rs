@@ -1336,6 +1336,14 @@ end
         .await?;
         assert_eq!(f.versions.stable.as_deref(), Some("2024-01-31"));
 
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/tool-398-1.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("398-1"));
+
         // An explicit `version` still wins over both heuristics.
         let f = formula_metadata(
             &ruby,
