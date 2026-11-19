@@ -425,6 +425,14 @@ root = Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MI
 # Activating the root makes RubyGems resolve one mutually compatible set of
 # dependencies, the same one the tool loads at runtime.
 root.activate
+# `activate` leaves a dependency with several matching versions unresolved
+# until code requires it, so activate those too.
+until (unresolved = Gem::Specification.unresolved_deps).empty?
+  dep = unresolved.values.first
+  spec = dep.to_spec
+  unresolved.delete(dep.name)
+  spec.activate unless Gem.loaded_specs[spec.name]
+end
 Gem.loaded_specs.each_value do |spec|
   next if spec.equal?(root) || spec.default_gem?
   base = File.realpath(spec.base_dir)
