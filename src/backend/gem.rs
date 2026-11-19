@@ -244,6 +244,11 @@ impl Backend for GemBackend {
                 None => e,
             })?;
 
+        // RubyGems counts gems in Ruby's own gem directory as installed, so
+        // dependencies found there never reached `libexec`. Copy them in, or the
+        // tool breaks once the minor version link points at another patch.
+        self.vendor_ruby_gem_dependencies(ctx, &tv).await?;
+
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
         // in {install_path}/bin that sets GEM_HOME and executes the gem installed
         env_script_all_bin_files(&tv.install_path())?;
@@ -266,6 +271,25 @@ impl Backend for GemBackend {
 }
 
 impl GemBackend {
+    /// Runs [`VENDOR_DEPENDENCIES`] for the gem just installed into `tv`.
+    async fn vendor_ruby_gem_dependencies(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "ruby").await)
+            .arg("-e")
+            .arg(VENDOR_DEPENDENCIES)
+            .envs(self.dependency_env(&ctx.config).await?)
+            .env("GEM_HOME", tv.install_path().join("libexec"))
+            .env("MISE_GEM_NAME", self.tool_name())
+            .env("MISE_GEM_VERSION", &tv.version)
+            .env_values(tv.install_env())
+            .current_dir(tv.install_path())
+            .execute()?;
+        Ok(())
+    }
+
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
@@ -390,6 +414,38 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
     }
     Ok(Some(url))
 }
+
+/// Copies the runtime dependencies of `$MISE_GEM_NAME` that resolve outside
+/// `GEM_HOME` (and are not default gems, which ship inside every Ruby) into
+/// `GEM_HOME`, so the tool does not depend on one Ruby patch's gem directory.
+const VENDOR_DEPENDENCIES: &str = r#"require "fileutils"
+home = File.realpath(Gem.dir)
+root = Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MISE_GEM_VERSION"))
+seen = {}
+queue = [root]
+while (spec = queue.shift)
+  next if seen[spec.full_name]
+  seen[spec.full_name] = true
+  spec.runtime_dependencies.each do |dep|
+    found = dep.matching_specs(true).max_by(&:version)
+    queue << found if found
+  end
+  next if spec.equal?(root) || spec.default_gem?
+  base = File.realpath(spec.base_dir)
+  next if base == home
+  name = spec.full_name
+  copy = lambda do |from, to|
+    next unless File.exist?(from) && !File.exist?(to)
+    FileUtils.mkdir_p(File.dirname(to))
+    FileUtils.cp_r(from, to)
+  end
+  %W[gems/#{name} specifications/#{name}.gemspec cache/#{name}.gem].each do |rel|
+    copy.call(File.join(base, rel), File.join(home, rel))
+  end
+  Dir.glob(File.join(base, "extensions", "*", "*", name)).each do |dir|
+    copy.call(dir, File.join(home, dir.delete_prefix(base + "/")))
+  end
+end"#;
 
 /// `bin/gem`, plus `--source` from `MISE_GEM_SOURCE`. The variable is deleted
 /// first so native extension builds do not inherit it.

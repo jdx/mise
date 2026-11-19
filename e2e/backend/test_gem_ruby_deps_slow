@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# A dependency installed by hand into Ruby's own gem directory must still end up
+# in the tool's libexec, so a Ruby patch upgrade cannot strand the tool.
+export MISE_RUBY_COMPILE=true
+mise use ruby
+mise x ruby -- gem install parser -v 3.3.10.0 --no-document
+mise use gem:rubocop@1.69.0
+assert_contains "ls $MISE_DATA_DIR/installs/gem-rubocop/1.69.0/libexec/gems" "parser-3.3.10.0"
+assert "mise x gem:rubocop@1.69.0 -- rubocop --version" "1.69.0"
