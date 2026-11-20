@@ -198,12 +198,13 @@ impl MemoValues {
     /// What still has to be asked of the source, or the earlier failure that rules it out.
     /// `own` are the keys from the user's own fnox config that an all-in-scope call does not
     /// cover: the requested ones, which are asked for by name, and the others when that call
-    /// leaves them out.
+    /// leaves them out. `batch_skips_own` says whether it does.
     fn pending_for(
         &self,
         keys: &BTreeSet<SecretName>,
         all: bool,
         own: &BTreeSet<SecretName>,
+        batch_skips_own: bool,
     ) -> std::result::Result<Option<Pending>, Earlier> {
         // with the whole document here, a key it did not return is missing, so only the
         // user's own keys can still be asked for
@@ -236,8 +237,9 @@ impl MemoValues {
             }
             // the failed all-in-scope batch covered every project key, so one that is not
             // already here would need a new call, which is not made; keys already here stay
-            // usable. The batch never asked for the user's own keys, so those are still asked.
-            if !is_own && matches!(self.all, Some(Err(_))) {
+            // usable. A batch that named the project keys never asked for the user's own keys,
+            // so those are still asked; one that asked for everything did, so they are not.
+            if !(is_own && batch_skips_own) && matches!(self.all, Some(Err(_))) {
                 return Err(Earlier::All);
             }
             pending.push(key.clone());
@@ -1101,7 +1103,10 @@ impl SecretBroker {
         let pending;
         {
             let mut v = memo.values.lock().await;
-            let Some(missing) = v.pending_for(keys, all, &own).map_err(|e| g15(who, &e))? else {
+            let Some(missing) = v
+                .pending_for(keys, all, &own, batch_skips_own)
+                .map_err(|e| g15(who, &e))?
+            else {
                 return Ok(());
             };
             if !req.interactive {
@@ -1117,7 +1122,10 @@ impl SecretBroker {
         let _terminal = req.terminal.acquire(&pending).await;
         let _pause = MultiProgressReport::try_get().map(|r| r.pause_progress());
         let mut v = memo.values.lock().await;
-        let Some(missing) = v.pending_for(keys, all, &own).map_err(|e| g15(who, &e))? else {
+        let Some(missing) = v
+            .pending_for(keys, all, &own, batch_skips_own)
+            .map_err(|e| g15(who, &e))?
+        else {
             return Ok(());
         };
         v.resolve(memo, catalog, missing, true, who).await
@@ -1274,6 +1282,8 @@ mod tests {
         omit: BTreeSet<String>,
         /// catalog keys from the user's own config
         personal: BTreeSet<String>,
+        /// dynamic leases in the catalog
+        leases: Vec<String>,
     }
 
     fn catalog() -> Catalog {
@@ -1319,6 +1329,7 @@ mod tests {
         }
         async fn describe(&self) -> Result<Catalog> {
             let mut catalog = catalog();
+            catalog.dynamic_leases = self.leases.clone();
             for k in self.file_keys.iter().chain(self.omit.iter()) {
                 catalog.entries.insert(
                     SecretName::new(k).unwrap(),
@@ -2037,6 +2048,41 @@ mod tests {
             .to_string();
         assert!(err.contains("task release: not retrying"), "{err}");
         assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_personal_key_is_not_asked_again_after_a_failed_call_that_covered_it() {
+        let term = terminal();
+        // with a dynamic lease the batch asks for everything, the user's own keys included
+        let fake = Arc::new(Fake {
+            id: Some(SourceId {
+                kind: "fake",
+                root: PathBuf::from("/p"),
+                profile: None,
+            }),
+            fail: BTreeSet::from(["*".to_string()]),
+            personal: BTreeSet::from(["PERSONAL_KEY".to_string()]),
+            leases: vec!["build_token".into()],
+            ..Default::default()
+        });
+        let memo = SourceMemo::new(fake.clone());
+        let broker = SecretBroker::default();
+        let all = with_all(Inputs::new("build", &[]));
+        let _ = broker
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap_err();
+        let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        let err = broker
+            .grant_values(&memo, &listed.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("task deploy: not retrying the secrets"),
+            "{err}"
+        );
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
