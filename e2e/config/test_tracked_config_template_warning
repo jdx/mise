@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# A deprecation warning raised while reading a tracked config of another folder names that
+# file, so the user can find what to fix. https://github.com/jdx/mise/discussions/15924
+mkdir -p adjacent run
+cat <<'TOML' >adjacent/.mise.toml
+[tools]
+ruby = "{{ ['3.2'] | slice(end=1) | join(sep='') }}"
+TOML
+mise trust adjacent/.mise.toml
+
+# in the owning folder, then from another folder
+assert_contains "cd adjacent && mise ls 2>&1" "deprecated [tera-v1-slice]"
+assert_contains "cd run && mise reshim 2>&1" "adjacent/.mise.toml). Use Tera 2 slice"

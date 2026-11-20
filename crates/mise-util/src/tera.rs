@@ -314,12 +314,42 @@ fn tera1_context(input: &str, context: &Context) -> TeraResult<tera1::Context> {
     tera1::Context::from_value(JsonValue::Object(data)).map_err(|e| tera_err(e.to_string()))
 }
 
+thread_local! {
+    /// The config file whose template this thread is rendering, if any.
+    static TEMPLATE_SOURCE: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Restores the previous template source when dropped.
+pub struct TemplateSourceGuard(Option<PathBuf>);
+
+impl Drop for TemplateSourceGuard {
+    fn drop(&mut self) {
+        TEMPLATE_SOURCE.with(|source| *source.borrow_mut() = self.0.take());
+    }
+}
+
+/// Records `path` as the file whose template this thread renders, so a
+/// deprecation warning raised meanwhile can name it. Matters for tracked
+/// configs of other folders, which nothing else points the user to.
+pub fn template_source(path: &Path) -> TemplateSourceGuard {
+    TemplateSourceGuard(TEMPLATE_SOURCE.with(|source| source.replace(Some(path.to_path_buf()))))
+}
+
+fn template_source_suffix() -> String {
+    TEMPLATE_SOURCE.with(|source| match &*source.borrow() {
+        Some(path) => format!(" (in {})", crate::file::display_path(path)),
+        None => String::new(),
+    })
+}
+
 fn warn_tera_v1_filter(id: &'static str, name: &str, replacement: &str) {
+    let source = template_source_suffix();
     deprecated_at!(
         "2026.10.0",
         "2027.4.0",
         id,
-        "Tera v1 template helper `{name}` is deprecated in mise templates. {replacement}"
+        "Tera v1 template helper `{name}` is deprecated in mise templates{source}. {replacement}"
     );
 }
 

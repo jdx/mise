@@ -9,6 +9,7 @@ pub fn render_config_str(
     context: &::tera::Context,
     path: &std::path::Path,
 ) -> ::tera::TeraResult<String> {
+    let _source = mise_util::tera::template_source(path);
     if crate::config::is_global_config(path) {
         render_str_with_env(tera, input, context)
     } else {
