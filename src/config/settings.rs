@@ -94,6 +94,42 @@ impl IdiomaticVersionFileSettings {
         Settings::load_sources_from(Some(root), policy)
             .map(|settings| Self::from_settings(&settings))
     }
+
+    /// Like [`Self::resolve_from`] for the root of a tracked config, which belongs to another
+    /// folder. Its settings never apply to this run, so a setting mise drops from one of its
+    /// files (a global-only key in a project config) asks the user for nothing and stays silent.
+    pub(crate) fn resolve_from_foreign_root(
+        root: &Path,
+        policy: SettingsLoadPolicy,
+    ) -> Result<Self> {
+        let _quiet = QuietIgnoredSettings::new();
+        Self::resolve_from(root, policy)
+    }
+}
+
+thread_local! {
+    /// Depth of [`QuietIgnoredSettings`] guards on this thread.
+    static QUIET_IGNORED_SETTINGS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// While alive, the warnings about settings mise ignores in a config file are not printed.
+struct QuietIgnoredSettings;
+
+impl QuietIgnoredSettings {
+    fn new() -> Self {
+        QUIET_IGNORED_SETTINGS.with(|depth| depth.set(depth.get() + 1));
+        Self
+    }
+
+    fn active() -> bool {
+        QUIET_IGNORED_SETTINGS.with(|depth| depth.get() > 0)
+    }
+}
+
+impl Drop for QuietIgnoredSettings {
+    fn drop(&mut self) {
+        QUIET_IGNORED_SETTINGS.with(|depth| depth.set(depth.get() - 1));
+    }
 }
 
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
@@ -595,7 +631,7 @@ fn strip_local_only_settings(settings: &mut toml::Table, path: &Path, is_global:
                     .unwrap()
                     .entry(key)
                     .or_insert_with(|| path.to_path_buf());
-            } else {
+            } else if !QuietIgnoredSettings::active() {
                 warn!(
                     "{key} in non-global config {} is ignored for security reasons",
                     path.display()
@@ -618,7 +654,7 @@ pub(crate) fn ignored_write_target(key: &str) -> Option<PathBuf> {
 /// applies to every config, global included: the ordering problem is the same either way.
 fn strip_env_only_settings(settings: &mut toml::Table, path: &Path) {
     for (key, meta) in SETTINGS_META.iter().filter(|(_, meta)| meta.env_only) {
-        if remove_nested_toml_value(settings, key).is_some() {
+        if remove_nested_toml_value(settings, key).is_some() && !QuietIgnoredSettings::active() {
             warn!(
                 "{key} in {} is ignored: mise reads it before config files load. Set {} instead.",
                 file::display_path(path),
@@ -2726,6 +2762,20 @@ mod tests {
 
         assert_eq!(partial.self_update.api_url, None);
         assert_eq!(partial.self_update.repository, None);
+    }
+
+    #[test]
+    fn test_quiet_ignored_settings_guard_nests() {
+        assert!(!QuietIgnoredSettings::active());
+        {
+            let _outer = QuietIgnoredSettings::new();
+            {
+                let _inner = QuietIgnoredSettings::new();
+                assert!(QuietIgnoredSettings::active());
+            }
+            assert!(QuietIgnoredSettings::active());
+        }
+        assert!(!QuietIgnoredSettings::active());
     }
 
     #[test]

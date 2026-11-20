@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# A tracked config in another folder must not warn about settings mise ignores in it:
+# its settings never apply here. https://github.com/jdx/mise/discussions/15914
+mkdir -p copy/mise other
+cat <<'TOML' >copy/mise/config.toml
+[settings.github]
+credential_command = 'gh auth token'
+TOML
+mise trust copy/mise/config.toml
+
+# in the folder that owns the file the warning is still right
+assert_contains "mise -C copy ls 2>&1" "github.credential_command in non-global config"
+
+# the file is tracked, but another folder does not warn about it
+assert_contains "mise config ls 2>&1; ls $MISE_STATE_DIR/tracked-configs | wc -l" "1"
+assert_not_contains "cd other && mise install 2>&1" "ignored for security reasons"
+assert_not_contains "cd other && mise reshim 2>&1" "ignored for security reasons"

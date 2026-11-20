@@ -1537,10 +1537,11 @@ impl Config {
                     let idiomatic_settings = match idiomatic_settings_by_root.get(&config_root) {
                         Some(settings) => settings.clone(),
                         None => {
-                            let settings = settings::IdiomaticVersionFileSettings::resolve_from(
-                                &config_root,
-                                settings::SettingsLoadPolicy::TRUSTED_HIERARCHY,
-                            )?;
+                            let settings =
+                                settings::IdiomaticVersionFileSettings::resolve_from_foreign_root(
+                                    &config_root,
+                                    settings::SettingsLoadPolicy::TRUSTED_HIERARCHY,
+                                )?;
                             idiomatic_settings_by_root.insert(config_root, settings.clone());
                             settings
                         }
