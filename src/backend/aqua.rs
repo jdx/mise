@@ -290,11 +290,17 @@ impl Backend for AquaBackend {
 
     /// By the package's repository, not the aqua package name: `kubernetes/kubectl`
     /// is released from kubernetes/kubernetes. A version override can name
-    /// another repository, so the package is resolved for the version, as an
-    /// install resolves it.
+    /// another repository, so the package is resolved as an install resolves
+    /// it: by the version's release tag, which picks one override where the
+    /// version alone can match several. Falls back to the version when the
+    /// install path rejects it, such as for a platform it doesn't support.
     async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
-        let Ok(pkg) = self.package_with_version_candidates(tv).await else {
-            return vec![];
+        let pkg = match self.resolve_validated_package(tv).await {
+            Ok(resolved) => resolved.pkg,
+            Err(_) => match self.package_with_version_candidates(tv).await {
+                Ok(pkg) => pkg,
+                Err(_) => return vec![],
+            },
         };
         crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, &tv.version)
     }
@@ -5706,6 +5712,38 @@ version_overrides:
 
         assert_eq!(tag, "jq-1.8.1");
         assert_eq!(versioned.asset, "jq-{{.OS}}-{{.Arch}}");
+    }
+
+    #[test]
+    fn test_release_tag_selects_its_override_repository() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: example
+repo_name: tool
+version_constraint: "false"
+version_overrides:
+  - version_constraint: 'Version startsWith "old-"'
+    version_prefix: old-
+    repo_owner: old-owner
+    repo_name: old-tool
+  - version_constraint: 'Version startsWith "new-"'
+    version_prefix: new-
+    repo_owner: new-owner
+    repo_name: new-tool
+"#,
+        );
+        let select = |tag: Option<&str>| {
+            let versions = resolved_package_version_candidates("1.0.0", tag, &pkg);
+            let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+            let pkg = pkg.clone().with_version(&versions, "linux", "amd64");
+            format!("{}/{}", pkg.repo_owner, pkg.repo_name)
+        };
+
+        // The version alone matches both overrides, and the first one wins.
+        assert_eq!(select(None), "old-owner/old-tool");
+        // An install uses the release tag, which matches only its own.
+        assert_eq!(select(Some("new-1.0.0")), "new-owner/new-tool");
     }
 
     fn pkg_from_yaml(yaml: &str) -> AquaPackage {
