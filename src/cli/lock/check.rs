@@ -414,6 +414,7 @@ impl Lock {
             ..Default::default()
         };
         let host_target = PlatformTarget::from_current();
+        let named = self.platform_selection(&Settings::get())?.named();
         for request in requests {
             let resolved = match request.resolve_options(&locked) {
                 Ok(opts) => ToolVersion::resolve(config, request.clone(), &opts).await,
@@ -533,6 +534,16 @@ impl Lock {
                     }
                 };
                 let locked_platform = tv.lock_platforms.get(&key);
+                // `mise lock` records nothing for a platform a tool has no
+                // build for, and warns only when the user named it. Without a
+                // named platform, a missing entry on a tool that has others is
+                // that skip, not an entry that went missing.
+                if locked_platform.is_none()
+                    && !tv.lock_platforms.is_empty()
+                    && !lockfile::is_named_platform(named.as_ref(), &key)
+                {
+                    continue;
+                }
                 let target = PlatformTarget::new(platform);
                 let problem = tv
                     .backend()
