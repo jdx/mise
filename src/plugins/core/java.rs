@@ -794,13 +794,10 @@ fn temurin_hotfix_version(version: &str) -> Option<String> {
 /// `26.0.2.1+1` or `27.0.1.0.2+1`. Those releases need a catalog lookup.
 /// Whether this run is the shell hook, which parses config on every prompt.
 fn running_hook_env() -> bool {
-    crate::env::ARGS
-        .read()
-        .unwrap()
-        .iter()
-        .skip(1)
-        .take_while(|a| *a != "--")
-        .any(|a| a == "hook-env")
+    let args = crate::env::ARGS.read().unwrap();
+    mise_util::args::first_non_global_arg_idx_cached(&args)
+        .and_then(|idx| args.get(idx))
+        .is_some_and(|cmd| cmd == "hook-env")
 }
 
 fn is_temurin_hotfix(version: &str) -> bool {
@@ -820,7 +817,12 @@ fn temurin_catalog_version(
 ) -> Option<String> {
     metadata
         .values()
-        .filter(|m| m.vendor == "temurin" && m.image_type.as_deref() != Some("jre"))
+        // Only a plain JDK has the bare "temurin-<version>" key the install query matches.
+        .filter(|m| {
+            m.vendor == "temurin"
+                && m.image_type.as_deref() == Some("jdk")
+                && m.features.as_ref().is_none_or(|f| f.is_empty())
+        })
         .filter(|m| m.java_version.split('-').next() == Some(version))
         .filter_map(|m| {
             let (core, build) = m.version.split_once('+')?;
@@ -1356,6 +1358,33 @@ mod tests {
         assert_eq!(lookup("25.0.5.1+2").as_deref(), Some("25.0.5+100000002"));
         assert_eq!(lookup("17.0.21.1+2").as_deref(), Some("17.0.21+100000002"));
         assert_eq!(lookup("25.0.5.1+3"), None);
+        // entries keyed with an "unknown" image type or a feature segment cannot be
+        // selected by the install query, so they are not offered
+        let odd = HashMap::from([
+            (
+                "temurin-unknown-30.0.1+100000002".to_string(),
+                JavaMetadata {
+                    vendor: "temurin".to_string(),
+                    version: "30.0.1+100000002".to_string(),
+                    java_version: "30.0.1.1+2".to_string(),
+                    image_type: None,
+                    ..Default::default()
+                },
+            ),
+            (
+                "temurin-31.0.1+100000002-musl".to_string(),
+                JavaMetadata {
+                    vendor: "temurin".to_string(),
+                    version: "31.0.1+100000002".to_string(),
+                    java_version: "31.0.1.1+2".to_string(),
+                    image_type: Some("jdk".to_string()),
+                    features: Some(vec!["musl".to_string()]),
+                    ..Default::default()
+                },
+            ),
+        ]);
+        assert_eq!(temurin_catalog_version(&odd, "30.0.1.1+2"), None);
+        assert_eq!(temurin_catalog_version(&odd, "31.0.1.1+2"), None);
         // a regular release resolves too, though only hotfixes are looked up
         assert_eq!(lookup("25.0.4+7").as_deref(), Some("25.0.4+7"));
 
