@@ -1399,6 +1399,17 @@ impl Lock {
         outcome
             .platform_regressions
             .extend(self.platform_regression_errors(&resolved, &stale_versions, &results));
+        if run.setup.generate {
+            outcome
+                .platform_regressions
+                .extend(self.generated_platform_regression_errors(
+                    &lockfile,
+                    &resolved,
+                    &resolvable,
+                    target_platforms,
+                    &stale_versions,
+                ));
+        }
         if !self.json {
             let lines = dry_run::entry_changes(
                 &lockfile,
@@ -1572,8 +1583,17 @@ impl Lock {
         let resolution_succeeded = resolution_errors.is_empty();
         outcome.resolution_errors.extend(resolution_errors);
 
-        let platform_regressions =
+        let mut platform_regressions =
             self.platform_regression_errors(&lockfile, &stale_versions, &results);
+        if generate {
+            platform_regressions.extend(self.generated_platform_regression_errors(
+                &previous,
+                &lockfile,
+                tools,
+                target_platforms,
+                &stale_versions,
+            ));
+        }
         if !platform_regressions.is_empty() {
             outcome.platform_regressions.extend(platform_regressions);
             return Ok(());
@@ -2415,6 +2435,66 @@ impl Lock {
                 ))
             })
             .collect()
+    }
+
+    /// The `generate`-mode counterpart of `platform_regression_errors`. Generate
+    /// mode resolves no per-platform results and rebuilds the lockfile without
+    /// the stale versions, so compare the rebuilt `generated` lockfile against
+    /// `previous`: refuse a version bump that leaves out a platform the stale
+    /// version supported. As in merge mode, a tool with several current versions
+    /// is ambiguous and keeps the best-effort behavior.
+    fn generated_platform_regression_errors(
+        &self,
+        previous: &Lockfile,
+        generated: &Lockfile,
+        tools: &[LockTool],
+        platforms: &[Platform],
+        stale_versions: &BTreeMap<String, Vec<String>>,
+    ) -> Vec<String> {
+        let current_versions = self.current_tool_versions(tools);
+        let mut errors = Vec::new();
+        for (short, stale) in stale_versions {
+            let Some(versions) = current_versions.get(short) else {
+                continue;
+            };
+            let (Some(version), 1) = (versions.iter().next(), versions.len()) else {
+                continue;
+            };
+            let Some(previous_entries) = previous.tools_for(short) else {
+                continue;
+            };
+            for platform in platforms {
+                // An `os` option that excludes the platform locks nothing there.
+                if !tools.iter().any(|(ba, tv)| {
+                    crate::toolset::install_state::state_short(&ba.short) == short.as_str()
+                        && tv.request.is_os_supported_on(platform)
+                }) {
+                    continue;
+                }
+                let key = platform.to_key();
+                if generated.tools_for(short).is_some_and(|entries| {
+                    entries
+                        .iter()
+                        .any(|tool| tool.version == *version && tool.platforms.contains_key(&key))
+                }) {
+                    continue;
+                }
+                let lost_versions = previous_entries
+                    .iter()
+                    .filter(|tool| {
+                        stale.contains(&tool.version) && tool.platforms.contains_key(&key)
+                    })
+                    .map(|tool| tool.version.as_str())
+                    .collect::<Vec<_>>();
+                if !lost_versions.is_empty() {
+                    errors.push(format!(
+                        "failed to resolve {short}@{version} for {key}; refusing to replace locked version(s) {} that support this platform",
+                        lost_versions.join(", ")
+                    ));
+                }
+            }
+        }
+        errors
     }
 
     fn stale_versions_for_current(
@@ -4090,6 +4170,97 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("failed to resolve dummy@2.0.0 for linux-x64"));
         assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    fn lockfile_with_dummy_version(version: &str, platforms: &[&str]) -> Lockfile {
+        let mut lockfile = Lockfile::default();
+        for platform in platforms {
+            lockfile.set_platform_info(
+                "dummy",
+                version,
+                Some("asdf:dummy"),
+                &BTreeMap::new(),
+                platform,
+                PlatformInfo {
+                    checksum: Some("sha256:dummy".to_string()),
+                    ..Default::default()
+                },
+            );
+        }
+        lockfile
+    }
+
+    #[test]
+    fn test_generated_platform_regression_rejects_dropped_platform() {
+        let cmd = lock_cmd(&[]);
+        let previous = lockfile_with_dummy_version("1.0.0", &["linux-x64", "windows-x64"]);
+        let generated = lockfile_with_dummy_version("2.0.0", &["linux-x64"]);
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("windows-x64").unwrap(),
+        ];
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+
+        let errors = cmd.generated_platform_regression_errors(
+            &previous,
+            &generated,
+            &tools,
+            &platforms,
+            &stale_versions,
+        );
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("failed to resolve dummy@2.0.0 for windows-x64"));
+        assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_generated_platform_regression_allows_complete_upgrade() {
+        let cmd = lock_cmd(&[]);
+        let previous = lockfile_with_dummy_version("1.0.0", &["linux-x64", "windows-x64"]);
+        let generated = lockfile_with_dummy_version("2.0.0", &["linux-x64", "windows-x64"]);
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("windows-x64").unwrap(),
+        ];
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+
+        assert!(
+            cmd.generated_platform_regression_errors(
+                &previous,
+                &generated,
+                &tools,
+                &platforms,
+                &stale_versions,
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_generated_platform_regression_allows_platform_never_locked() {
+        let cmd = lock_cmd(&[]);
+        let previous = lockfile_with_dummy_version("1.0.0", &["linux-x64"]);
+        let generated = lockfile_with_dummy_version("2.0.0", &["linux-x64"]);
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("windows-x64").unwrap(),
+        ];
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+
+        assert!(
+            cmd.generated_platform_regression_errors(
+                &previous,
+                &generated,
+                &tools,
+                &platforms,
+                &stale_versions,
+            )
+            .is_empty()
+        );
     }
 
     #[test]
