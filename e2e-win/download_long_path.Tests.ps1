@@ -10,10 +10,10 @@ Describe 'a download whose destination is past MAX_PATH' {
 
     BeforeAll {
         $script:OriginalDir = Get-Location
-        # All three, every time. A probe that isolated only some of these once wrote junctions into
+        # All of them, every time. A probe that isolated only some of these once wrote junctions into
         # the real installs directory.
         $script:Saved = @{}
-        foreach ($v in 'MISE_DATA_DIR', 'MISE_CONFIG_DIR', 'MISE_CACHE_DIR', 'MISE_TRUSTED_CONFIG_PATHS') {
+        foreach ($v in 'MISE_DATA_DIR', 'MISE_CONFIG_DIR', 'MISE_CACHE_DIR', 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_INSTALLS_DIR', 'MISE_INSTALL_STORE_DIR') {
             $script:Saved[$v] = [Environment]::GetEnvironmentVariable($v, 'Process')
         }
 
@@ -27,7 +27,8 @@ Describe 'a download whose destination is past MAX_PATH' {
         $script:ShortData = Join-Path $script:Root 'short'
         New-Item -ItemType Directory -Path $script:ShortData -Force | Out-Null
 
-        function script:InstallWith([string]$dataDir, [string]$tag) {
+        # `$installsDir` empty means the default, inside `$dataDir`.
+        function script:InstallWith([string]$dataDir, [string]$tag, [string]$installsDir) {
             $cfg = Join-Path $script:Root "cfg-$tag"
             $cache = Join-Path $script:Root "cache-$tag"
             $proj = Join-Path $script:Root "proj-$tag"
@@ -36,14 +37,21 @@ Describe 'a download whose destination is past MAX_PATH' {
             $env:MISE_CONFIG_DIR = $cfg
             $env:MISE_CACHE_DIR = $cache
             $env:MISE_TRUSTED_CONFIG_PATHS = $script:Root
+            if ($installsDir) { $env:MISE_INSTALLS_DIR = $installsDir }
+            else { Remove-Item Env:\MISE_INSTALLS_DIR -ErrorAction SilentlyContinue }
+            Remove-Item Env:\MISE_INSTALL_STORE_DIR -ErrorAction SilentlyContinue
             Set-Location $proj
             '' | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
             $out = mise install jq@1.8.2 2>&1 | Out-String
             return [pscustomobject]@{ Out = $out; Exit = $LASTEXITCODE }
         }
 
-        $script:Long = script:InstallWith $script:LongData 'long'
-        $script:Short = script:InstallWith $script:ShortData 'short'
+        # The installs directory is kept short for these two: the install layout's catalog lives
+        # there, and is written before anything is downloaded.
+        $script:Long = script:InstallWith $script:LongData 'long' (Join-Path $script:Root 'installs-long')
+        $script:Short = script:InstallWith $script:ShortData 'short' (Join-Path $script:Root 'installs-short')
+        # And with the default installs directory, inside the long data directory, it is not.
+        $script:LongCatalog = script:InstallWith $script:LongData 'catalog' ''
     }
 
     AfterAll {
@@ -99,5 +107,14 @@ Describe 'a download whose destination is past MAX_PATH' {
     It 'names the operation that failed' {
         # Without this the message could be attached to any step and still match above.
         $script:Long.Out | Should -Match 'download'
+    }
+
+    It 'says the same when the installs catalog is the first thing past the limit' {
+        # Its lock file used to be opened without the extended-length prefix, which failed as a
+        # bare `os error 3` before the catalog's own writes could say anything.
+        $script:LongCatalog.Exit | Should -Not -Be 0
+        $script:LongCatalog.Out | Should -Match '260'
+        $script:LongCatalog.Out | Should -Match 'characters'
+        $script:LongCatalog.Out | Should -Match 'shorter'
     }
 }

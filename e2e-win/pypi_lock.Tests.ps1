@@ -46,7 +46,10 @@ pypi.registry_url = "http://127.0.0.1:$port/simple/{}/"
             $preferred = mise where pypi:mise-lock-cli
             $exitCode = $LASTEXITCODE
             $exitCode | Should -Be 0
-            $preferred | Should -Match 'pypi-mise-lock-cli'
+            # An installation of its own, which records the spelling it was installed as.
+            Split-Path $preferred -Leaf | Should -Match '^mise-lock-cli-'
+            (Get-Content (Join-Path $preferred '.mise-install.toml') -Raw) |
+                Should -Match 'requested_as = "pypi:mise-lock-cli"'
             New-Item -ItemType File -Path (Join-Path $index 'publish') | Out-Null
             $output = mise x --locked -- lock-cli
             $exitCode = $LASTEXITCODE

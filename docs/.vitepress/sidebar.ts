@@ -93,7 +93,7 @@ export const sidebar: SidebarItem[] = [
       { text: "System installs", link: "/dev-tools/system-installs" },
       { text: "OCI images (experimental)", link: "/dev-tools/mise-oci" },
       {
-        text: "Identity install layout (experimental)",
+        text: "Identity install layout",
         link: "/dev-tools/install-layout",
       },
       { text: "Migrating from asdf", link: "/dev-tools/comparison-to-asdf" },
