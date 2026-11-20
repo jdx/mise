@@ -247,7 +247,14 @@ impl Backend for GemBackend {
         // RubyGems counts gems in Ruby's own gem directory as installed, so
         // dependencies found there never reached `libexec`. Copy them in, or the
         // tool breaks once the minor version link points at another patch.
-        self.vendor_ruby_gem_dependencies(ctx, &tv).await?;
+        // Best effort: the gem is installed either way, so a failure here
+        // (no `ruby` next to a wrapper `gem`, say) must not fail the install.
+        if let Err(err) = self.vendor_ruby_gem_dependencies(ctx, &tv).await {
+            warn!(
+                "could not copy {}'s dependencies into its install: {err}",
+                self.tool_name()
+            );
+        }
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
         // in {install_path}/bin that sets GEM_HOME and executes the gem installed
@@ -420,7 +427,11 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
 /// `GEM_HOME`, so the tool does not depend on one Ruby patch's gem directory.
 const VENDOR_DEPENDENCIES: &str = r#"require "rubygems"
 home = File.realpath(Gem.dir)
-root = Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MISE_GEM_VERSION"))
+root = begin
+  Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MISE_GEM_VERSION"))
+rescue Gem::MissingSpecError
+  exit # nothing was installed into GEM_HOME (a wrapper `gem`), so nothing to vendor
+end
 # One set of specifications, a single version of each gem, that satisfies every
 # runtime dependency of the root and of everything it pulls in. Activating
 # candidates one at a time and keeping the first that does not raise commits to
