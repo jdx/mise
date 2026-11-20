@@ -2962,7 +2962,10 @@ impl Task {
                 if contains_template_syntax(&lock.name) {
                     let rendered = render_str(&mut tera, &lock.name, &tera_ctx)?;
                     TaskLock::validate_name(&rendered).map_err(|e| eyre!("{}: {e}", self.name))?;
-                    rendered_names.push(NamedLock::new(rendered).with_count(lock.count));
+                    rendered_names.push(NamedLock {
+                        name: rendered,
+                        ..lock.clone()
+                    });
                 } else {
                     rendered_names.push(lock.clone());
                 }

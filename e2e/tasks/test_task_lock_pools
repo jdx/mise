@@ -81,6 +81,23 @@ lock = "cpu"
 run = "true"
 EOF2
 
+mkdir f
+cat <<'EOF2' >f/mise.toml
+[tasks.bench]
+lock = { name = "xcode", if_pool = true }
+run = "echo bench ran"
+
+[tasks.bench-two]
+lock = { name = "xcode", count = 2, if_pool = true }
+run = "echo bench-two ran"
+EOF2
+
+# Where no pool is declared, an `if_pool` lock is not taken; where one is, it is.
+assert_not_contains "cd f && timeout 30 mise tasks info bench" "xcode"
+assert_contains "cd f && MISE_TASK_LOCK_POOLS=xcode=2 timeout 30 mise tasks info bench" "xcode (1 of 2 slots)"
+assert_contains "cd f && MISE_TASK_LOCK_POOLS=xcode=2 timeout 30 mise tasks info bench-two" "xcode (2 of 2 slots)"
+assert_contains "cd f && timeout 30 mise run bench" "bench ran"
+
 assert_contains "cd c && timeout 30 mise tasks info big" "cpu (2 of 4 slots)"
 # A count above the pool is lowered to the whole pool.
 assert_contains "cd c && timeout 30 mise tasks info too-big" "cpu (4 of 4 slots)"
