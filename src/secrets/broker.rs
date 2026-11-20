@@ -196,8 +196,9 @@ impl SourceMemo {
 
 impl MemoValues {
     /// What still has to be asked of the source, or the earlier failure that rules it out.
-    /// `own` are the requested keys from the user's own fnox config, which the all-in-scope
-    /// document never holds, so they are asked for by name.
+    /// `own` are the keys from the user's own fnox config that an all-in-scope call does not
+    /// cover: the requested ones, which are asked for by name, and the others when that call
+    /// leaves them out.
     fn pending_for(
         &self,
         keys: &BTreeSet<SecretName>,
@@ -212,7 +213,10 @@ impl MemoValues {
             _ => false,
         };
         if all && !own_only {
-            if let Some(key) = self.failed.keys().next() {
+            // a failed key of the user's own that this request does not name is not part of
+            // the batch, so it does not rule the batch out
+            let in_batch = |key: &&SecretName| keys.contains(*key) || !own.contains(*key);
+            if let Some(key) = self.failed.keys().find(in_batch) {
                 return Err(Earlier::Key(key.clone()));
             }
             return Ok(Some(Pending::All));
@@ -1085,15 +1089,14 @@ impl SecretBroker {
         req: &SpawnRequest<'_>,
         who: &str,
     ) -> Result<()> {
-        let own: BTreeSet<SecretName> = keys
+        // an all-in-scope call that names the project keys leaves out every key of the
+        // user's own, so those count here too; one that asks for everything does not
+        let batch_skips_own = matches!(all_selection(catalog), KeySelection::Keys(_));
+        let own: BTreeSet<SecretName> = catalog
+            .entries
             .iter()
-            .filter(|key| {
-                catalog
-                    .entries
-                    .get(*key)
-                    .is_some_and(|e| e.personal.is_some())
-            })
-            .cloned()
+            .filter(|(key, e)| e.personal.is_some() && (batch_skips_own || keys.contains(*key)))
+            .map(|(key, _)| key.clone())
             .collect();
         let pending;
         {
@@ -2005,6 +2008,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(spawn.marker_value(), "PERSONAL_KEY");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_failed_personal_key_does_not_rule_out_a_later_all_only_task() {
+        let term = terminal();
+        let (fake, memo) = fake_with_personal(&["PERSONAL_KEY"], &["PERSONAL_KEY"]);
+        let broker = SecretBroker::default();
+        let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        let _ = broker
+            .grant_values(&memo, &listed.req(&term, false))
+            .await
+            .unwrap_err();
+        // the batch names the project keys only, so the failed key is not part of it
+        let all = with_all(Inputs::new("build", &[]));
+        let spawn = broker
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn.marker_value().split(',').any(|k| k == "PERSONAL_KEY"));
+        // a task that names the failed key is still refused, with or without --secrets-all
+        let both = with_all(Inputs::new("release", &["PERSONAL_KEY"]));
+        let err = broker
+            .grant_values(&memo, &both.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("task release: not retrying"), "{err}");
         assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
     }
 
