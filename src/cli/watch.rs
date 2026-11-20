@@ -25,6 +25,11 @@ use std::path::{Path, PathBuf};
 /// watchexec watches the current directory. With no task, runs the `default`
 /// task.
 ///
+/// Several tasks separated by `:::` share one watcher. A change to any of their
+/// sources reruns, or with `--restart` restarts, all of them. To restart tasks
+/// independently, run a separate `mise watch` for each, for example from a
+/// wrapper task, or use `mise daemons`.
+///
 /// Choose what to watch with `--watch`, `--exts`, and `--filter`, and use
 /// `--print-events` to see what triggered a run. Arguments for the task go
 /// after `--`. Requires watchexec, which `mise use -g watchexec` installs.
