@@ -299,6 +299,12 @@ end
 def version_from_basename(url)
   basename = File.basename(url.to_s).sub(/\.(tar\.(gz|xz|bz2|zst)|tgz|txz|zip|gz)\z/i, "")
   match = basename.match(/(?:^|[-_v])([0-9]+(?:\.[0-9A-Za-z]+)+(?:[-_.][0-9A-Za-z]+)*)/)
+  # Homebrew's stem parsers accept a version with no dots when it ends the
+  # name, e.g. LUFA-210130 or lame-398.
+  # Hyphen-joined numbers, such as a date or 398-1, are one version.
+  match ||= basename.match(/(?:\A|[-_])v?([0-9]{4}-[0-9]{2}-[0-9]{2})\z/)
+  match ||= basename.match(/(?:\A|[-_])v?([0-9]+(?:-[0-9]+)+)\z/)
+  match ||= basename.match(/(?:\A|[-_])v?([0-9]+)\z/)
   match && match[1]
 end
 

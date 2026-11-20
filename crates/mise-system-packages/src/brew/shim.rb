@@ -223,7 +223,7 @@ class Version
 
   def initialize(version) = @version = version.to_s
 
-  def <=>(other) = Gem::Version.new(@version.gsub(/[^0-9.].*\z/, "")) <=> Gem::Version.new(other.to_s.gsub(/[^0-9.].*\z/, ""))
+  def <=>(other) = Gem::Version.new(comparable(@version)) <=> Gem::Version.new(comparable(other))
   def to_s = @version
   def to_str = @version
   def inspect = @version.inspect
@@ -231,14 +231,23 @@ class Version
   def major = token(0)
   def minor = token(1)
   def patch = token(2)
-  def major_minor = Version.new(@version.split(".")[0, 2].to_a.join("."))
-  def major_minor_patch = Version.new(@version.split(".")[0, 3].to_a.join("."))
+  def major_minor = Version.new(parts[0, 2].to_a.map { |t| t.match?(/\A[0-9]+\z/) ? t.to_i.to_s : t }.join("."))
+  def major_minor_patch = Version.new(parts[0, 3].to_a.map { |t| t.match?(/\A[0-9]+\z/) ? t.to_i.to_s : t }.join("."))
   def csv = @version.split(",").map { |part| Version.new(part) }
 
   private
 
+  # Hyphen-joined numbers such as a date (2024-01-31) compare by component.
+  def comparable(version) = version.to_s.tr("-", ".").gsub(/[^0-9.].*\z/, "").sub(/\.\z/, "")
+
+  # A hyphen-joined numeric version (2024-01-31) has its components split on
+  # the hyphens, any other version on its dots.
+  def separator = @version.match?(/\A[0-9]+(?:-[0-9]+)+\z/) ? "-" : "."
+
+  def parts = @version.split(separator)
+
   def token(idx)
-    part = @version.split(".")[idx]
+    part = parts[idx]
     part.nil? ? nil : Version.new(part)
   end
 end

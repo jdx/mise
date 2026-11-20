@@ -1183,6 +1183,59 @@ end
         .await?;
         assert_eq!(f.versions.stable.as_deref(), Some("1.21.4"));
 
+        // A version with no dots is read when it ends the filename, as
+        // Homebrew's stem parsers do (`Version.detect` returns "210130").
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://github.com/o/r/archive/refs/tags/LUFA-210130.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("210130"));
+
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/tool-2024-01-31.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("2024-01-31"));
+
+        // A date wins over the wider hyphen-joined run in front of it.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/tool-1-2024-01-31.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("2024-01-31"));
+
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/tool-398-1.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("398-1"));
+
+        // A basename that is only digits is the version.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/210130.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("210130"));
+
+        // A basename that is itself the version keeps every component.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://example.com/2024-01-31.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("2024-01-31"));
+
         // An explicit `version` still wins over both heuristics.
         let f = formula_metadata(
             &ruby,
@@ -1746,6 +1799,41 @@ end
     }
 
     const BUILD_SHIM_RB: &str = include_str!("shim.rb");
+
+    /// `Version` splits a hyphen-joined numeric version (a date) on its
+    /// hyphens and any other on its dots, as the build shim's accessors do.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn build_shim_version_splits_date_versions_by_component() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let class = BUILD_SHIM_RB
+            .lines()
+            .skip_while(|l| *l != "class Version")
+            .take_while(|l| *l != "end")
+            .chain(["end"])
+            .collect::<Vec<_>>()
+            .join("\n");
+        let script = format!(
+            "{class}\nd = Version.new('2024-01-31'); v = Version.new('1.2.3')\n\
+             puts [d.major, d.minor, d.patch, d.major_minor, v.major, v.minor, v.major_minor].join(' ')"
+        );
+        let out = std::process::Command::new(&ruby)
+            .args(["-e", &script])
+            .output()
+            .expect("run ruby");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "2024 01 31 2024.1 1 2 1.2"
+        );
+        Ok(())
+    }
 
     /// Both shims define the `Language::*` namespace, and they have to stay in
     /// step. A mixin that resolves while extracting metadata but not during a
