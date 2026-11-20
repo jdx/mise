@@ -986,12 +986,11 @@ impl Upgrade {
         let mut targets = outdated
             .iter()
             .filter_map(|o| {
-                let mut tv = o.tool_version.clone();
-                // The registry can install the new version with another backend.
-                if let Some(ba) = tv.ba().with_registry_version(&o.latest) {
-                    tv.request = tv.request.clone().with_backend(ba);
-                }
-                tv.version = o.latest.clone();
+                // A new version, not a copy of the installed one: lockfile
+                // metadata such as a release URL describes the old release.
+                // The registry can install the new version with another
+                // backend, which this picks too.
+                let tv = ToolVersion::new(o.tool_version.request.clone(), o.latest.clone());
                 Some((tv.backend().ok()?, tv))
             })
             .collect_vec();
