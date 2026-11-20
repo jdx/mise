@@ -61,6 +61,9 @@ assert_contains "mise upgrade --dry-run 2>&1" "Would install dummy@1.1.0"
 # dummy has no advisory source, so it is reported as not checked, not as clean.
 assert_contains "mise upgrade --vulnerable --dry-run -x aqua:jqlang/jq 2>&1" "not checked, no known advisory source: dummy@1.0.0"
 assert_not_contains "mise upgrade --vulnerable --dry-run -x aqua:jqlang/jq 2>&1" "no known vulnerabilities"
+# A version named on the command line replaces the affected one the config uses.
+assert_contains "mise upgrade --vulnerable --dry-run aqua:jqlang/jq@1.7.1 2>&1" "Would install aqua:jqlang/jq@1.7.1"
+assert_not_contains "mise upgrade --vulnerable --dry-run aqua:jqlang/jq@1.7.1 2>&1" "no newer version"
 
 # With an exact request there is nothing newer in range to upgrade to.
 cat <<EOF >mise.toml

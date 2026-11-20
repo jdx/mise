@@ -891,19 +891,47 @@ impl Upgrade {
         // The installed version an upgrade replaces, which is not the resolved
         // one when that is not installed yet. Each upgrade keeps the index of
         // its item, so it is judged by its own advisory source.
+        // The pending install of a bump's target, which replaces nothing
+        // installed.
+        let installs_bump = |o: &OutdatedInfo, bump: &ExplicitConfigBump| {
+            backend_args_match(o.tool_version.ba(), bump.request.ba())
+                && o.tool_version.request.version() == bump.request.version()
+        };
+        // A version named on the command line replaces the configured request,
+        // so installing it replaces what the configured request resolves to.
+        let configured = self
+            .tool
+            .iter()
+            .any(|t| t.tvr.is_some())
+            .then(|| self.toolset_builder().build_unresolved(config))
+            .transpose()?;
         let mut outdated_items = vec![];
+        let mut replaced = vec![];
         for o in outdated.iter() {
             let mut item = None;
-            if let Some(current) = &o.current
-                && selected(o.tool_version.ba())
-                && let Ok(backend) = o.tool_version.backend()
-            {
+            let mut current = o.current.clone().and_then(|current| {
                 let mut tv = o.tool_version.clone();
-                tv.version = current.clone();
+                tv.version = current;
+                Some((o.tool_version.backend().ok()?, tv))
+            });
+            if o.current.is_none()
+                && let Some(configured) = &configured
+                && self.tool.iter().any(|t| {
+                    t.tvr.is_some() && backend_args_match(t.ba.as_ref(), o.tool_version.ba())
+                })
+                && !bumps.iter().any(|bump| installs_bump(o, bump))
+            {
+                current =
+                    configured_installed_version(config, configured, o.tool_version.ba()).await;
+            }
+            if let Some((backend, tv)) = &current
+                && selected(tv.ba())
+            {
                 item = Some(installed.len());
-                installed.push((backend, tv));
+                installed.push((backend.clone(), tv.clone()));
             }
             outdated_items.push(item);
+            replaced.push(current.map(|(_, tv)| tv.version));
         }
         // The version a config bump moves away from: what the configured
         // request resolves to now. The toolset holds the bump's target instead
@@ -943,19 +971,22 @@ impl Upgrade {
             .map(|(bump, (version, _))| (bump, version))
             .collect_vec();
         *bumps = bumped.iter().map(|(bump, _)| bump.clone()).collect();
-        // The pending install of a bump's target, which replaces nothing
-        // installed.
-        let installs_bump = |o: &OutdatedInfo, bump: &ExplicitConfigBump| {
-            backend_args_match(o.tool_version.ba(), bump.request.ba())
-                && o.tool_version.request.version() == bump.request.version()
-        };
         // Keep an upgrade when the version it replaces is affected, and the
         // install of a kept bump's target.
-        let mut outdated_items = outdated_items.into_iter();
-        outdated.retain(|o| {
-            affected(outdated_items.next().flatten())
-                || bumped.iter().any(|(bump, _)| installs_bump(o, bump))
-        });
+        let kept = outdated
+            .iter()
+            .zip(&outdated_items)
+            .map(|(o, item)| {
+                affected(*item) || bumped.iter().any(|(bump, _)| installs_bump(o, bump))
+            })
+            .collect_vec();
+        let mut kept_iter = kept.iter();
+        outdated.retain(|_| *kept_iter.next().unwrap());
+        let replaced = replaced
+            .into_iter()
+            .zip(&kept)
+            .filter_map(|(version, kept)| kept.then_some(version))
+            .collect_vec();
         if report.findings.is_empty() {
             let checked = report.checked;
             if checked > 0 {
@@ -970,8 +1001,8 @@ impl Upgrade {
             .findings
             .iter()
             .filter(|f| {
-                !outdated.iter().any(|o| {
-                    o.current.as_deref() == Some(f.version.as_str())
+                !outdated.iter().zip(&replaced).any(|(o, version)| {
+                    version.as_deref() == Some(f.version.as_str())
                         && backend_args_match(o.tool_version.ba(), &f.ba)
                 }) && !bumped.iter().any(|(bump, version)| {
                     backend_args_match(bump.configured.ba(), &f.ba)
@@ -2050,6 +2081,27 @@ async fn installed_version(
     backend
         .is_version_installed(config, &tv, true)
         .then_some((backend, tv))
+}
+
+/// The installed version the configured request for `ba` uses, as
+/// `mise outdated` finds it: one matching the request when the version it
+/// resolves to is not installed.
+async fn configured_installed_version(
+    config: &Arc<Config>,
+    configured: &Toolset,
+    ba: &BackendArg,
+) -> Option<(ABackend, ToolVersion)> {
+    let request = configured
+        .versions
+        .iter()
+        .find(|(configured_ba, _)| backend_args_match(configured_ba, ba))?
+        .1
+        .requests
+        .iter()
+        .find(|request| request.is_os_supported())?;
+    let (backend, mut tv) = resolve_request(config, request).await?;
+    tv.version = OutdatedInfo::current_version(config, &backend, &tv).ok()??;
+    Some((backend, tv))
 }
 
 #[cfg(test)]
