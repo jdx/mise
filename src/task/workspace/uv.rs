@@ -259,6 +259,47 @@ impl WorkspaceProvider for UvWorkspaceProvider {
     }
 }
 
+/// Member `pyproject.toml` files of the uv workspace rooted at `workspace_root`.
+///
+/// Returns an empty list when the root has no `[tool.uv.workspace]` table or the
+/// workspace metadata cannot be read.
+pub fn member_manifests(workspace_root: &Path) -> Vec<PathBuf> {
+    let context = WorkspaceDiscoveryContext::new();
+    member_manifests_with_context(workspace_root, &context).unwrap_or_default()
+}
+
+fn member_manifests_with_context(
+    workspace_root: &Path,
+    context: &WorkspaceDiscoveryContext,
+) -> Result<Vec<PathBuf>> {
+    let root_pyproject = workspace_root.join(PYPROJECT_TOML);
+    if !context.is_file(&root_pyproject) {
+        return Ok(Vec::new());
+    }
+    let pyproject = read_pyproject(context, &root_pyproject)?;
+    let Some(workspace) = pyproject.tool.uv.workspace.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let canonical_root = context.canonicalize(workspace_root)?;
+    let excludes = compile_patterns(&workspace.exclude, "exclude")?;
+    let members = discover_members(
+        workspace_root,
+        &canonical_root,
+        &workspace.members,
+        &excludes,
+        context,
+    )?;
+    let mut manifests = Vec::new();
+    for member in members {
+        if member == canonical_root {
+            continue;
+        }
+        let relative = relative_root(&canonical_root, &member)?;
+        manifests.push(workspace_root.join(relative).join(PYPROJECT_TOML));
+    }
+    Ok(manifests)
+}
+
 fn read_pyproject(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<PyProject> {
     let contents = context
         .read_to_string(path)
@@ -532,6 +573,22 @@ mod tests {
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].id.as_str(), "uv:api");
         assert_eq!(projects[0].root, Path::new("packages/api"));
+    }
+
+    #[test]
+    fn lists_member_manifests() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("pyproject.toml"),
+            "[project]\nname = \"root\"\n[tool.uv.workspace]\nmembers = [\"packages/*\"]\nexclude = [\"packages/skip\"]\n",
+        );
+        project(&dir.path().join("packages/a"), "a", "");
+        project(&dir.path().join("packages/skip"), "skip", "");
+        assert_eq!(
+            member_manifests(dir.path()),
+            vec![dir.path().join("packages/a/pyproject.toml")]
+        );
+        assert!(member_manifests(&dir.path().join("packages/a")).is_empty());
     }
 
     #[test]

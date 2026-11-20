@@ -319,6 +319,24 @@ assert_contains "mise deps --list" "uv"
 assert_contains "mise deps --list" "uv.lock"
 assert_contains "mise deps --dry-run 2>&1" "uv"
 
+# uv workspace members' manifests are sources too
+mkdir -p packages/cli
+cat >pyproject.toml <<'EOF2'
+[project]
+name = "example"
+version = "0.1.0"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+EOF2
+cat >packages/cli/pyproject.toml <<'EOF2'
+[project]
+name = "example-cli"
+version = "0.1.0"
+EOF2
+assert_contains "mise deps --list" "packages/cli/pyproject.toml"
+rm -rf packages
+
 # Test bundler provider
 rm -f uv.lock pyproject.toml
 cat >Gemfile.lock <<'EOF'
