@@ -13,7 +13,7 @@ Run tasks and rerun them when files change
 
 Runs the tasks with `mise run` under watchexec, then reruns them whenever one of their `sources` changes, including the sources of their dependencies unless you pass `--skip-deps`. When no selected task declares `sources`, watchexec watches the current directory. With no task, runs the `default` task.
 
-Several tasks separated by `:::` share one watcher and one `mise run`. A change that matches any of their sources runs all of them again, each subject to its usual up-to-date check, and `--restart` restarts them all. A `!` exclude in one task's sources applies to every task in the watcher. To watch tasks independently, run a separate `mise watch` for each, for example from a wrapper task.
+Several tasks separated by `:::` share one watcher and one `mise run`. A change that matches any of their sources runs all of them again, each subject to its usual up-to-date check, and `--restart` restarts them all. A `!` exclude in one task's sources applies to every task in the watcher, unless another task lists the same pattern as an include. To watch tasks independently, run a separate `mise watch` for each, for example from a wrapper task.
 
 Choose what to watch with `--watch`, `--exts`, and `--filter`, and use `--print-events` to see what triggered a run. Arguments for the task go after `--`. Requires watchexec, which `mise use -g watchexec` installs.
 
