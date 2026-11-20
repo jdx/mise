@@ -4,6 +4,14 @@ version_order = "semver"
 
 bins = ["rtk-proxy"]
 
+[[backends]]
+full = "github:rtk-ai/rtk"
+min_version = "1.2.0"
+
+[backends.options]
+asset_pattern = "rtk-proxy-{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-musl', windows='pc-windows-msvc') }}.*"
+bin = "rtk-proxy"
+
 # Releases before 1.2.0 publish a glibc (not musl) Linux arm64 proxy archive.
 [[backends]]
 full = "github:rtk-ai/rtk"
@@ -16,11 +24,3 @@ bin = "rtk-proxy"
 
 [backends.options.platforms.linux-arm64]
 asset_pattern = "rtk-proxy-aarch64-unknown-linux-gnu.*"
-
-[[backends]]
-full = "github:rtk-ai/rtk"
-min_version = "1.2.0"
-
-[backends.options]
-asset_pattern = "rtk-proxy-{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-musl', windows='pc-windows-msvc') }}.*"
-bin = "rtk-proxy"
