@@ -478,6 +478,14 @@ impl Lock {
                     own_entries = true;
                     match ToolVersion::resolve_locked_for_target(config, &request, &target).await {
                         Ok(Some(tv)) => Ok(tv),
+                        // No entry under this platform's own options: the
+                        // same skip as below, for a tool that has others.
+                        Ok(None)
+                            if !lockfile::is_named_platform(named.as_ref(), &platform.to_key())
+                                && host.as_ref().is_ok_and(|tv| !tv.lock_platforms.is_empty()) =>
+                        {
+                            continue;
+                        }
                         Ok(None) => Err(not_in_lockfile(&request, &request.version())),
                         Err(err) => Err(first_line(&err)),
                     }
