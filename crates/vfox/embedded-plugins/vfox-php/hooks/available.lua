@@ -1,6 +1,16 @@
 local MONTHS = {
-    jan = "01", feb = "02", mar = "03", apr = "04", may = "05", jun = "06",
-    jul = "07", aug = "08", sep = "09", oct = "10", nov = "11", dec = "12",
+    jan = "01",
+    feb = "02",
+    mar = "03",
+    apr = "04",
+    may = "05",
+    jun = "06",
+    jul = "07",
+    aug = "08",
+    sep = "09",
+    oct = "10",
+    nov = "11",
+    dec = "12",
 }
 
 --- Convert php.net dates such as "24 Sep 2026" or "01 March 2012" to RFC 3339

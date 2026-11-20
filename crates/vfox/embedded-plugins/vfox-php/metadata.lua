@@ -19,8 +19,9 @@ PLUGIN.notes = {
 -- passes is satisfied regardless of how it was installed, so the `packages`
 -- hints are only used to offer remediation.
 --
--- Build tools are always required. The libraries the default build needs
--- (libxml2, oniguruma, icu) are required on Linux, where they are found via
+-- Build tools (including a C++ compiler) are always required. The libraries the
+-- default build needs (libxml2, openssl, oniguruma, icu, zlib, curl, sqlite3,
+-- libpng, readline) are required on Linux, where they are found via
 -- plain pkg-config. On macOS they are keg-only: this plugin adds each one to
 -- PKG_CONFIG_PATH from `brew --prefix` at build time, so a bare `pkg-config`
 -- probe would false-alarm there; the check is skipped on Darwin. Remaining
@@ -39,27 +40,30 @@ PLUGIN.systemDependencies = {
         .. '"$b" --version 2>/dev/null | head -n 1 | grep -Eq " ([3-9]|[1-9][0-9]+)\\." && exit 0; done; exit 1',
       packages = { brew = "bison", apt = "bison", dnf = "bison" } },
     { bin = "re2c", packages = { brew = "re2c", apt = "re2c", dnf = "re2c" } },
+    -- --enable-intl links ICU with the C++ compiler; configure looks for g++ or c++
+    { command = "command -v g++ >/dev/null 2>&1 || command -v c++ >/dev/null 2>&1",
+      packages = { apt = "build-essential", dnf = "gcc-c++" } },
     { bin = "pkg-config",
       packages = { brew = "pkg-config", apt = "pkg-config", dnf = "pkgconfig" } },
 
-    -- libraries (libxml2/oniguruma/icu are required on Linux; the rest are informational)
+    -- libraries (required on Linux unless marked optional; optional ones are informational)
     { command = linux_only .. 'pkg-config --exists libxml-2.0',
       packages = { brew = "libxml2", apt = "libxml2-dev", dnf = "libxml2-devel" } },
-    { pkgconfig = "openssl", optional = "openssl / TLS support",
+    { command = linux_only .. 'pkg-config --exists openssl',
       packages = { brew = "openssl@3", apt = "libssl-dev", dnf = "openssl-devel" } },
     { command = linux_only .. 'pkg-config --exists oniguruma',
       packages = { brew = "oniguruma", apt = "libonig-dev", dnf = "oniguruma-devel" } },
     { command = linux_only .. 'pkg-config --exists icu-uc',
       packages = { brew = "icu4c", apt = "libicu-dev", dnf = "libicu-devel" } },
-    { pkgconfig = "zlib", optional = "zlib support",
+    { command = linux_only .. 'pkg-config --exists zlib',
       packages = { brew = "zlib", apt = "zlib1g-dev", dnf = "zlib-devel" } },
     { pkgconfig = "libzip", optional = "zip support",
       packages = { brew = "libzip", apt = "libzip-dev", dnf = "libzip-devel" } },
-    { pkgconfig = "libcurl", optional = "curl support",
+    { command = linux_only .. 'pkg-config --exists libcurl',
       packages = { brew = "curl", apt = "libcurl4-openssl-dev", dnf = "libcurl-devel" } },
-    { pkgconfig = "sqlite3", optional = "sqlite support",
+    { command = linux_only .. 'pkg-config --exists sqlite3',
       packages = { brew = "sqlite", apt = "libsqlite3-dev", dnf = "sqlite-devel" } },
-    { pkgconfig = "libpng", optional = "gd image support",
+    { command = linux_only .. 'pkg-config --exists libpng',
       packages = { brew = "libpng", apt = "libpng-dev", dnf = "libpng-devel" } },
     { pkgconfig = "freetype2", optional = "gd freetype support",
       packages = { brew = "freetype", apt = "libfreetype6-dev", dnf = "freetype-devel" } },
@@ -71,6 +75,8 @@ PLUGIN.systemDependencies = {
       packages = { brew = "libsodium", apt = "libsodium-dev", dnf = "libsodium-devel" } },
     { pkgconfig = "gmp", optional = "gmp extension",
       packages = { brew = "gmp", apt = "libgmp-dev", dnf = "gmp-devel" } },
-    { pkgconfig = "readline", optional = "readline line editing",
+    -- RHEL 8's readline-devel ships the headers without readline.pc, and
+    -- configure looks for the header, so accept either.
+    { command = linux_only .. 'pkg-config --exists readline || test -f /usr/include/readline/readline.h',
       packages = { brew = "readline", apt = "libreadline-dev", dnf = "readline-devel" } },
 }
