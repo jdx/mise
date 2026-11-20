@@ -49670,6 +49670,99 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: goshs-labs
+    repo_name: goshs
+    description: Feature-rich single-binary file server for red teamers and developers.  HTTP/S · WebDAV · FTP/SFTP · SMB · LDAP/S · NTLM hash capture · DNS/SMTP callbacks ·  TLS · Auth · Share links. A powerful python3 -m http.server replacement
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.3")
+        no_asset: true
+      - version_constraint: semver("<= 0.0.6")
+        asset: goshs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.1.1")
+        asset: goshs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.3.1")
+        asset: goshs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.0.6")
+        asset: goshs_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.1.4")
+        asset: goshs_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: goshs_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/goshs-labs/goshs/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: checksums.txt.bundle
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: goss-org
     repo_name: goss
     aliases:
@@ -79711,6 +79804,39 @@ packages:
           type: http
           url: https://repo.maven.apache.org/maven2/com/palantir/conjure/typescript/conjure-typescript/{{.Version}}/conjure-typescript-{{.Version}}.{{.Format}}.sha256
           algorithm: sha256
+  - type: github_release
+    repo_owner: palantir
+    repo_name: policy-bot
+    description: A GitHub App that enforces approval policies on pull requests
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.27.4")
+        asset: policy-bot-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        files:
+          - name: policy-bot
+            src: policy-bot-{{trimV .Version}}/bin/{{.OS}}-{{.Arch}}/policy-bot
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v1.38.1"
+        no_asset: true
+      - version_constraint: semver("<= 1.41.1")
+        asset: policy-bot-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        files:
+          - name: policy-bot
+            src: policy-bot-{{trimV .Version}}/bin/{{.OS}}-{{.Arch}}/policy-bot
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: policy-bot-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        files:
+          - name: policy-bot
+            src: policy-bot-{{trimV .Version}}/bin/{{.OS}}-{{.Arch}}/policy-bot
+        supported_envs:
+          - darwin
+          - linux
   - type: github_release
     repo_owner: pamburus
     repo_name: hl

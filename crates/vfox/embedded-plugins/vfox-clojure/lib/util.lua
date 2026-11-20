@@ -1,7 +1,14 @@
-local http = require("http")
-local json = require("json")
-
 local util = {}
+
+--- Platform facts, from vfox's `RUNTIME` global.
+---
+--- Kept here rather than in a module of its own so every hook can call it
+--- without pulling in the network stack below. `http`/`json` are therefore
+--- required lazily, inside the version-fetching functions, so that install
+--- and env hooks (which only need `is_windows`) stay dependency-free.
+function util.is_windows()
+  return RUNTIME.osType == "windows"
+end
 
 local function split_version(version)
   local parts = {}
@@ -27,6 +34,8 @@ end
 --- Map of release tag -> published_at (RFC 3339) from GitHub releases.
 --- Tags without a published release are simply absent (no date reported).
 local function release_dates()
+  local http = require("http")
+  local json = require("json")
   local dates = {}
   for page = 1, 5 do
     local resp, err = http.try_get({
@@ -52,6 +61,8 @@ local function release_dates()
 end
 
 function util.get_versions()
+  local http = require("http")
+  local json = require("json")
   local resp, err = http.get({
     url = "https://api.github.com/repos/clojure/brew-install/tags?per_page=100",
   })
@@ -75,8 +86,55 @@ function util.get_versions()
   return versions
 end
 
+--- Clojure ships two distinct archives per release:
+---   * .tar.gz  -> POSIX tools: bash launchers ("clj", "clojure") + man pages.
+---   * .zip     -> Windows tools: a PowerShell module (ClojureTools.psm1/.psd1)
+---                 exposing Invoke-Clojure, aliased to clj/clojure.
+--- Both are extracted automatically by vfox/mise (format chosen by extension),
+--- each unwrapping its single top-level folder. Pick the one that matches the
+--- platform so the right launcher flavour lands in the install directory.
 function util.download_url(version)
-  return "https://download.clojure.org/install/clojure-tools-" .. version .. ".tar.gz"
+  local ext = util.is_windows() and ".zip" or ".tar.gz"
+  return "https://download.clojure.org/install/clojure-tools-" .. version .. ext
+end
+
+-- ---------------------------------------------------------------------------
+-- Filesystem / shell helpers (platform-agnostic; only wrap the Lua stdlib).
+-- ---------------------------------------------------------------------------
+
+-- Run a shell command and fail loudly instead of silently ignoring failures.
+-- os.execute returns 0 (real Lua) or true (gopher-lua) on success.
+function util.run(command)
+  local ok = os.execute(command)
+  if ok == 0 or ok == true then
+    return
+  end
+  error("command failed: " .. command, 2)
+end
+
+function util.exists(path)
+  local f = io.open(path, "r")
+  if f then
+    f:close()
+    return true
+  end
+  return false
+end
+
+function util.read_file(path)
+  local f = assert(io.open(path, "r"))
+  local content = f:read("*a")
+  f:close()
+  return content
+end
+
+--- Write a file. `binary` skips newline translation, which matters when
+--- emitting CRLF-delimited Windows shims: a text-mode write on Windows would
+--- turn an explicit "\r\n" into "\r\r\n".
+function util.write_file(path, content, binary)
+  local f = assert(io.open(path, binary and "wb" or "w"))
+  f:write(content)
+  f:close()
 end
 
 return util

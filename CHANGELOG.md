@@ -1,5 +1,78 @@
 # Changelog
 
+## [2026.11.11](https://github.com/jdx/mise/releases/tag/v2026.11.11) - 2026-11-20
+
+### 🚀 Features
+
+- **(bootstrap)** install and remove MacPorts ports with the macports package manager by @jdx in [#15862](https://github.com/jdx/mise/pull/15862)
+- **(bootstrap)** update mise before tools with --self-update and tool_update.self_update_first by @jdx in [#15897](https://github.com/jdx/mise/pull/15897)
+- **(dotfiles)** approve harmless values in the history secret scan by @jdx in [#15864](https://github.com/jdx/mise/pull/15864)
+- **(github)** hint in mise token github when gh keeps its token in the keyring by @jdx in [#15868](https://github.com/jdx/mise/pull/15868)
+- **(github)** add version_order = published_at by @jdx in [#15860](https://github.com/jdx/mise/pull/15860)
+- **(pypi)** allow exclude-newer = false on an index by @jdx in [#15885](https://github.com/jdx/mise/pull/15885)
+- **(system-packages)** support virtualenv_install_with_resources in source builds by @jdx in [#15896](https://github.com/jdx/mise/pull/15896)
+- **(system-packages)** pour bottles declared by third-party taps by @jdx in [#15893](https://github.com/jdx/mise/pull/15893)
+- **(system-packages)** fetch private release assets for tap download strategies by @jdx in [#15898](https://github.com/jdx/mise/pull/15898)
+- **(task)** add if_pool to take a lock only where a pool is declared by @jdx in [#15917](https://github.com/jdx/mise/pull/15917)
+
+### 🐛 Bug Fixes
+
+- **(activate)** detect Git Bash when mise runs behind the Scoop shim by @jdx in [#15863](https://github.com/jdx/mise/pull/15863)
+- **(backend)** copy gem tool dependencies out of Ruby's gem directory by @jdx in [#15907](https://github.com/jdx/mise/pull/15907)
+- **(bootstrap)** preview dotfiles declared by a template-rendered config in --dry-run by @jdx in [#15861](https://github.com/jdx/mise/pull/15861)
+- **(bootstrap)** let the host choose its config environments when no remote env is set by @jdx in [#15865](https://github.com/jdx/mise/pull/15865)
+- **(bootstrap)** run a monorepo root bootstrap task by @jdx in [#15853](https://github.com/jdx/mise/pull/15853)
+- **(bootstrap)** report an unresolvable cask per entry instead of aborting by @jdx in [#15909](https://github.com/jdx/mise/pull/15909)
+- **(ci)** build linux release tarballs with the stable Rust toolchain by @jdx in [#15925](https://github.com/jdx/mise/pull/15925)
+- **(config)** accept legacy tool names in enable_tools and disable_tools by @jdx in [#15880](https://github.com/jdx/mise/pull/15880)
+- **(config)** stay quiet about ignored settings in tracked configs of other folders by @jdx in [#15919](https://github.com/jdx/mise/pull/15919)
+- **(config)** name the config file in Tera deprecation warnings by @jdx in [#15927](https://github.com/jdx/mise/pull/15927)
+- **(doctor)** stop crashing on a plugin repo with no commits by @jdx in [#15850](https://github.com/jdx/mise/pull/15850)
+- **(dotfiles)** name the missing /<id> when a merge key has none by @jdx in [#15859](https://github.com/jdx/mise/pull/15859)
+- **(http)** verify downloads against checksum_url at install by @jdx in [#15908](https://github.com/jdx/mise/pull/15908)
+- **(install)** leave a read-only shared dir's global links alone for tools installed only there by @jdx in [#15858](https://github.com/jdx/mise/pull/15858)
+- **(install)** accept absolute archive symlinks that point into the archive by @jdx in [#15857](https://github.com/jdx/mise/pull/15857)
+- **(java)** map sdkman temurin hotfix versions to the catalog build by @jdx in [#15877](https://github.com/jdx/mise/pull/15877)
+- **(java)** map sdkman temurin releases with a .0 fourth segment by @jdx in [#15906](https://github.com/jdx/mise/pull/15906)
+- **(oci)** relocate uv long-path launchers in pipx layers by @jdx in [#15879](https://github.com/jdx/mise/pull/15879)
+- **(shim)** create shims for path: tool versions by @jdx in [#15866](https://github.com/jdx/mise/pull/15866)
+- **(system-packages)** support command_wrapper in tap casks by @jdx in [#15891](https://github.com/jdx/mise/pull/15891)
+- **(system-packages)** keep receipt dependencies when pruning by @jdx in [#15890](https://github.com/jdx/mise/pull/15890)
+- **(system-packages)** infer a dotless version from a tap formula URL by @jdx in [#15892](https://github.com/jdx/mise/pull/15892)
+- **(task)** fall back to global tasks for bare depends in monorepo tasks by @jdx in [#15851](https://github.com/jdx/mise/pull/15851)
+- **(task)** run each tool's rustup check once per mise run by @jdx in [#15878](https://github.com/jdx/mise/pull/15878)
+- **(task)** don't fail command inputs when a loaded machine delays the pipe drain by @jdx in [#15916](https://github.com/jdx/mise/pull/15916)
+- **(unuse)** remove tools from the global file that declares them by @jdx in [#15884](https://github.com/jdx/mise/pull/15884)
+- **(upgrade)** see a new commit of an npm git source tracking HEAD by @jdx in [#15905](https://github.com/jdx/mise/pull/15905)
+- **(windows)** start mise.exe on Server Core by linking the C runtime statically by @jdx in [#15852](https://github.com/jdx/mise/pull/15852)
+
+### 📚 Documentation
+
+- **(bootstrap)** move the settings plugin author guide into Writing plugins by @jdx in [#15846](https://github.com/jdx/mise/pull/15846)
+
+### 📦️ Dependency Updates
+
+- update rattler by @renovate[bot] in [#15806](https://github.com/jdx/mise/pull/15806)
+- replace dependency @tsconfig/node24 with @tsconfig/node26 by @renovate[bot] in [#15800](https://github.com/jdx/mise/pull/15800)
+- watch uv workspace members' manifests by @jdx in [#15918](https://github.com/jdx/mise/pull/15918)
+- watch pnpm-workspace.yaml and workspace members' manifests by @jdx in [#15926](https://github.com/jdx/mise/pull/15926)
+
+### 📦 Registry
+
+- add rtk-proxy by @jdx in [#15915](https://github.com/jdx/mise/pull/15915)
+
+### Ci
+
+- update the Rust toolchain before building mise by @jdx in [#15876](https://github.com/jdx/mise/pull/15876)
+- stop using pull_request_target in workflows by @jdx in [#15882](https://github.com/jdx/mise/pull/15882)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`goshs-labs/goshs`](https://github.com/goshs-labs/goshs)
+- [`palantir/policy-bot`](https://github.com/palantir/policy-bot)
+
 ## [2026.11.10](https://github.com/jdx/mise/releases/tag/v2026.11.10) - 2026-11-18
 
 ### 🚀 Features
