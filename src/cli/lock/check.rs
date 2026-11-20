@@ -2,7 +2,6 @@
 //! locked install needs, read from the lockfile alone. Nothing is resolved
 //! remotely and nothing is written.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use console::style;
@@ -470,8 +469,6 @@ impl Lock {
                 .collect();
             let mut rows = Vec::with_capacity(variants.len());
             let mut own_entries = false;
-            // Platforms with no entry under their own lock options.
-            let mut missing_own: BTreeSet<String> = BTreeSet::new();
             for platform in variants {
                 let target = PlatformTarget::new(platform.clone());
                 let options = lock_options(&target);
@@ -481,26 +478,11 @@ impl Lock {
                     own_entries = true;
                     match ToolVersion::resolve_locked_for_target(config, &request, &target).await {
                         Ok(Some(tv)) => Ok(tv),
-                        Ok(None) => {
-                            missing_own.insert(platform.to_key());
-                            Err(not_in_lockfile(&request, &request.version()))
-                        }
+                        Ok(None) => Err(not_in_lockfile(&request, &request.version())),
                         Err(err) => Err(first_line(&err)),
                     }
                 };
                 rows.push((platform, entry));
-            }
-            // As below, a tool that has entries on other platforms and none
-            // here has no build for it, unless the platform was named.
-            let has_entries = host.as_ref().is_ok_and(|tv| !tv.lock_platforms.is_empty())
-                || rows
-                    .iter()
-                    .any(|(_, entry)| entry.as_ref().is_ok_and(|tv| !tv.lock_platforms.is_empty()));
-            if has_entries {
-                rows.retain(|(platform, _)| {
-                    let key = platform.to_key();
-                    !missing_own.contains(&key) || lockfile::is_named_platform(named.as_ref(), &key)
-                });
             }
             // A tool no platform reads its own entry for fails as a whole.
             if let (Err(problem), false) = (&host, own_entries) {
@@ -556,8 +538,10 @@ impl Lock {
                 // build for, and warns only when the user named it. Without a
                 // named platform, a missing entry on a tool that has others is
                 // that skip, not an entry that went missing.
+                // The host platform is always locked, so it stays checked.
                 if locked_platform.is_none()
                     && !tv.lock_platforms.is_empty()
+                    && key != Platform::current().to_key()
                     && !lockfile::is_named_platform(named.as_ref(), &key)
                 {
                     continue;
