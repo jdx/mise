@@ -288,6 +288,19 @@ impl Backend for AquaBackend {
             .and_then(|p| p.description.clone())
     }
 
+    /// By the package's repository, not the aqua package name: `kubernetes/kubectl`
+    /// is released from kubernetes/kubernetes.
+    async fn advisory_queries(&self, version: &str) -> Vec<crate::audit::AdvisoryQuery> {
+        let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await else {
+            return vec![];
+        };
+        let tag = match &pkg.version_prefix {
+            Some(prefix) => format!("{prefix}{version}"),
+            None => version.to_string(),
+        };
+        crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, version, &tag)
+    }
+
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let pkg = match self.package_with_version_candidates(tv).await {
             Ok(pkg) => pkg,

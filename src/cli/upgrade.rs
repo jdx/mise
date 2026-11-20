@@ -31,6 +31,7 @@ use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use jiff::Timestamp;
 
 const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
@@ -61,6 +62,7 @@ struct ExplicitConfigBump {
     example(r###"mise upgrade --dry-run"###, help = r###"Show what would be upgraded"###),
     example(r###"mise upgrade --exclude go"###, help = r###"Upgrade everything except go"###),
     example(r###"mise upgrade --interactive"###, help = r###"Choose tools from a menu"###),
+    example(r###"mise upgrade --vulnerable"###, help = r###"Upgrade only tools with a known vulnerability (see `mise audit`)"###),
     example(r###"mise upgrade --global claude"###, help = r###"Upgrade claude within the global config's request, leaving project config alone"###))]
 pub(crate) struct Upgrade {
     /// Tools to upgrade, such as node@20 python@3.10
@@ -110,6 +112,15 @@ pub(crate) struct Upgrade {
     /// Tools to exclude from upgrading, such as go python
     #[usage(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
     exclude: Vec<ToolArg>,
+
+    /// Only upgrade tools with a known vulnerability
+    ///
+    /// Looks up the installed versions in OSV.dev, as `mise audit` does, and
+    /// upgrades only the affected tools: within their configured range, or to
+    /// the newest release with `--bump`. Warns about affected tools that have
+    /// no newer version to upgrade to, and about upgrades that are still affected.
+    #[usage(long)]
+    vulnerable: bool,
 
     /// Like --dry-run, but exit with code 1 if there are outdated tools
     ///
@@ -658,6 +669,14 @@ impl Upgrade {
         if self.installed_only {
             outdated.retain(|o| o.current.is_some());
         }
+        if self.vulnerable {
+            self.keep_vulnerable(&config, &ts, &mut outdated, &mut explicit_config_bumps)
+                .await?;
+            if outdated.is_empty() && explicit_config_bumps.is_empty() {
+                checked.warn_unchecked();
+                return Ok(());
+            }
+        }
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
             // only the requests that enable it. It also only moves an installed
@@ -827,6 +846,109 @@ impl Upgrade {
         }
         checked.warn_unchecked();
 
+        Ok(())
+    }
+
+    /// Narrows `outdated` and `bumps` to the tools whose installed version has a
+    /// known vulnerability, and warns about the ones an upgrade will not fix.
+    async fn keep_vulnerable(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        outdated: &mut Vec<OutdatedInfo>,
+        bumps: &mut Vec<ExplicitConfigBump>,
+    ) -> Result<()> {
+        let selected = |ba: &BackendArg| {
+            (self.tool.is_empty()
+                || self
+                    .tool
+                    .iter()
+                    .any(|tool| backend_args_match(tool.ba.as_ref(), ba)))
+                && !self
+                    .exclude
+                    .iter()
+                    .any(|tool| backend_args_match(tool.ba.as_ref(), ba))
+        };
+        let installed = ts
+            .list_current_installed_versions(config)
+            .into_iter()
+            .filter(|(_, tv)| selected(tv.ba()))
+            .map(|(backend, tv)| (backend, tv.version))
+            .unique_by(|(backend, version)| (backend.id().to_string(), version.clone()))
+            .collect_vec();
+        let report = crate::audit::scan(installed).await?;
+        let affected = |ba: &BackendArg, version: &str| {
+            report
+                .findings
+                .iter()
+                .any(|f| f.version == version && backend_args_match(&f.ba, ba))
+        };
+        outdated.retain(|o| {
+            o.current
+                .as_deref()
+                .is_some_and(|current| affected(o.tool_version.ba(), current))
+        });
+        bumps.retain(|bump| {
+            report
+                .findings
+                .iter()
+                .any(|f| backend_args_match(&f.ba, bump.request.ba()))
+        });
+        if report.findings.is_empty() {
+            info!("No known vulnerabilities in installed tools");
+            return Ok(());
+        }
+        let stuck = report
+            .findings
+            .iter()
+            .filter(|f| {
+                !outdated.iter().any(|o| {
+                    o.current.as_deref() == Some(f.version.as_str())
+                        && backend_args_match(o.tool_version.ba(), &f.ba)
+                }) && !bumps
+                    .iter()
+                    .any(|bump| backend_args_match(bump.request.ba(), &f.ba))
+            })
+            .map(|f| format!("{}@{}", f.tool, f.version))
+            .unique()
+            .collect_vec();
+        if !stuck.is_empty() {
+            let (range, hint) = if self.bump {
+                ("", "")
+            } else {
+                (
+                    " in the configured range",
+                    "\nRun `mise upgrade --vulnerable --bump` to upgrade past the range.",
+                )
+            };
+            warn!(
+                "known vulnerabilities, but no newer version{range}: {}{hint}",
+                stuck.join(", ")
+            );
+        }
+        // The version an upgrade moves to can be affected too.
+        let targets = outdated
+            .iter()
+            .filter_map(|o| Some((o.tool_version.backend().ok()?, o.latest.clone())))
+            .collect_vec();
+        let still = crate::audit::scan(targets)
+            .await?
+            .findings
+            .iter()
+            .map(|f| format!("{}@{}", f.tool, f.version))
+            .unique()
+            .collect_vec();
+        if !still.is_empty() {
+            let hint = if self.bump {
+                ""
+            } else {
+                "\nRun `mise upgrade --vulnerable --bump` to upgrade past the configured range."
+            };
+            warn!(
+                "upgrading to versions that still have known vulnerabilities: {}{hint}",
+                still.join(", ")
+            );
+        }
         Ok(())
     }
 

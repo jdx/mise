@@ -3477,6 +3477,11 @@ pub trait Backend: Debug + Send + Sync {
     async fn security_info(&self) -> Vec<SecurityFeature> {
         vec![]
     }
+    /// The OSV.dev lookups `mise audit` makes for `version` of this tool.
+    /// Empty when mise knows no advisory source for it.
+    async fn advisory_queries(&self, version: &str) -> Vec<crate::audit::AdvisoryQuery> {
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), version)
+    }
     fn get_plugin_type(&self) -> Option<PluginType> {
         None
     }

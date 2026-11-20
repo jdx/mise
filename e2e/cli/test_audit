@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# `mise audit` and `mise upgrade --vulnerable` look advisories up on OSV.dev.
+
+cat <<EOF >mise.toml
+[tools]
+"npm:lodash" = "4.17.15"
+go = "1.22.0"
+zig = "0.13.0"
+EOF
+
+# A package registry tool is looked up by its package name, with fixed versions.
+assert_fail_contains "mise audit npm:lodash" "GHSA-35jh-r3h4-6jhm"
+assert_fail_contains "mise audit npm:lodash" "4.17.21"
+assert_fail_contains "mise audit npm:lodash --json" '"url": "https://osv.dev/vulnerability/GHSA-35jh-r3h4-6jhm"'
+# Go itself is looked up as the Go standard library.
+assert_fail_contains "mise audit go" "GO-2024-2887"
+# A tool with no advisory source is reported as not checked, not as clean.
+assert_contains "mise audit zig 2>&1" "not checked, no known advisory source: zig@0.13.0"
+assert_contains "mise audit zig --json" '"unchecked": [
+    {
+      "tool": "zig",
+      "version": "0.13.0"
+    }
+  ]'
+assert_fail_contains "mise audit" "known vulnerabilities in 2 tools"
+
+assert_fail_contains "MISE_OFFLINE=1 mise audit" "offline mode is enabled"
+
+# jq 1.7 is affected by CVE-2023-50246, fixed in 1.7.1. aqua tags jq releases
+# `jq-<version>`, so this also checks the tag prefix reaches OSV.
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1"
+dummy = "1"
+EOF
+mise install aqua:jqlang/jq@1.7 dummy@1.0.0
+assert_fail_contains "mise audit aqua:jqlang/jq" "CVE-2023-50246"
+
+# Only jq is upgraded: dummy is outdated but has no known vulnerability.
+assert_contains "mise upgrade --vulnerable --dry-run 2>&1" "Would install aqua:jqlang/jq@1.8"
+assert_not_contains "mise upgrade --vulnerable --dry-run 2>&1" "dummy"
+assert_contains "mise upgrade --dry-run 2>&1" "Would install dummy@1.1.0"
+assert_contains "mise upgrade --vulnerable --dry-run -x aqua:jqlang/jq 2>&1" "No known vulnerabilities in installed tools"
+
+# With an exact request there is nothing newer in range to upgrade to.
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7"
+EOF
+assert_contains "mise upgrade --vulnerable --dry-run 2>&1" "known vulnerabilities, but no newer version in the configured range: aqua:jqlang/jq@1.7"
+assert_contains "mise upgrade --vulnerable --bump --dry-run 2>&1" "Would install aqua:jqlang/jq@1.8"
