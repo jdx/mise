@@ -429,14 +429,24 @@ root = Gem::Specification.find_by_name(ENV.fetch("MISE_GEM_NAME"), ENV.fetch("MI
 chosen = { root.name => root }
 budget = 20_000
 solve = lambda do |queue|
-  return true if queue.empty?
   budget -= 1
   return false if budget < 0
-  dep, *rest = queue
-  if (have = chosen[dep.name])
-    return dep.requirement.satisfied_by?(have.version) && solve.call(rest)
+  # Requirements on gems already chosen are checked right away, so a doomed
+  # branch fails here instead of after exploring everything queued behind it.
+  open = []
+  queue.each do |dep|
+    if (have = chosen[dep.name])
+      return false unless dep.requirement.satisfied_by?(have.version)
+    else
+      open << dep
+    end
   end
-  dep.matching_specs(true).sort_by(&:version).reverse.each do |spec|
+  return true if open.empty?
+  # Branch on the most constrained dependency (fewest candidates) first.
+  options = open.map { |dep| [dep, dep.matching_specs(true).sort_by(&:version).reverse] }
+  dep, candidates = options.min_by { |_, specs| specs.size }
+  rest = open - [dep]
+  candidates.each do |spec|
     chosen[dep.name] = spec
     return true if solve.call(rest + spec.runtime_dependencies)
     chosen.delete(dep.name)
@@ -444,7 +454,8 @@ solve = lambda do |queue|
   false
 end
 unless solve.call(root.runtime_dependencies)
-  warn "mise: could not resolve a compatible set of dependencies for #{root.full_name}"
+  why = budget < 0 ? " (gave up after too many attempts)" : ""
+  warn "mise: could not resolve a compatible set of dependencies for " + root.full_name + why
   exit
 end
 # Only now: requiring this default gem activates it, which would clash with a
@@ -1748,11 +1759,12 @@ mod tests {
 
     /// Any installed Ruby will do: the script only uses RubyGems.
     fn ruby_for_tests() -> Option<std::path::PathBuf> {
+        const RUBY_BIN: &str = if cfg!(windows) { "ruby.exe" } else { "ruby" };
         let installs = crate::dirs::INSTALLS.join("ruby");
         let mut found: Vec<_> = std::fs::read_dir(installs)
             .into_iter()
             .flatten()
-            .filter_map(|e| Some(e.ok()?.path().join("bin/ruby")))
+            .filter_map(|e| Some(e.ok()?.path().join("bin").join(RUBY_BIN)))
             .filter(|p| p.is_file())
             .collect();
         found.sort();
@@ -1882,5 +1894,31 @@ mod tests {
         assert!(target.join("native_ext.so").exists(), "{stderr}");
         assert!(target.join("gem.build_complete").exists(), "{stderr}");
         assert!(!g.libexec().join("extensions").exists());
+    }
+
+    /// Constraints on a gem chosen later must be checked before the search
+    /// fans out over unrelated dependencies, or the budget runs out first.
+    #[test]
+    fn vendor_checks_pinned_dependencies_before_branching() {
+        let g = fake_gems();
+        let mut deps: Vec<(String, &str)> = vec![("a".into(), ">= 1"), ("pin".into(), "= 1")];
+        for i in 0..14 {
+            deps.push((format!("f{i}"), ">= 1"));
+        }
+        let deps: Vec<(&str, &str)> = deps.iter().map(|(n, r)| (n.as_str(), *r)).collect();
+        g.add(&g.libexec(), "root", "1.0.0", &deps);
+        g.add(&g.ruby_gems(), "pin", "1", &[("a", "= 1")]);
+        g.add(&g.ruby_gems(), "a", "1", &[]);
+        g.add(&g.ruby_gems(), "a", "2", &[]);
+        for i in 0..14 {
+            for v in ["1", "2"] {
+                g.add(&g.ruby_gems(), &format!("f{i}"), v, &[]);
+            }
+        }
+        let Some(stderr) = g.run("root", "1.0.0", None) else {
+            return;
+        };
+        assert!(g.vendored("a-1") && g.vendored("pin-1"), "{stderr}");
+        assert!(!g.vendored("a-2"), "{stderr}");
     }
 }
