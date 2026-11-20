@@ -432,29 +432,58 @@ root = begin
 rescue Gem::MissingSpecError
   exit # nothing was installed into GEM_HOME (a wrapper `gem`), so nothing to vendor
 end
-# Activating the root makes RubyGems resolve one mutually compatible set of
-# dependencies, the same one the tool loads at runtime.
-root.activate
-# `activate` leaves a dependency with several matching versions unresolved
-# until code requires it, so activate those too.
-until (unresolved = Gem::Specification.unresolved_deps).empty?
-  dep = unresolved.values.first
-  unresolved.delete(dep.name)
-  next if Gem.loaded_specs[dep.name]
-  # Newest first, skipping candidates that conflict with what is already
-  # activated, as a runtime `require` would.
-  activated = dep.matching_specs(true).sort_by(&:version).reverse.any? do |spec|
-    spec.activate
-    true
-  rescue Gem::LoadError
-    false
+# One set of specifications, a single version of each gem, that satisfies every
+# runtime dependency of the root and of everything it pulls in. Activating
+# candidates one at a time and keeping the first that does not raise commits to
+# an early choice that a later dependency can rule out, so search with
+# backtracking, newest candidate first, and keep nothing activated.
+chosen = { root.name => root }
+budget = 20_000
+solve = lambda do |queue|
+  budget -= 1
+  return false if budget < 0
+  # Requirements on gems already chosen are checked right away, so a doomed
+  # branch fails here instead of after exploring everything queued behind it.
+  open = []
+  queue.each do |dep|
+    if (have = chosen[dep.name])
+      return false unless dep.requirement.satisfied_by?(have.version)
+    else
+      open << dep
+    end
   end
-  warn "mise: could not resolve #{dep}" unless activated
+  return true if open.empty?
+  # Branch on the most constrained dependency (fewest candidates) first.
+  options = open.map { |dep| [dep, dep.matching_specs(true).sort_by(&:version).reverse] }
+  dep, candidates = options.min_by { |_, specs| specs.size }
+  rest = open - [dep]
+  candidates.each do |spec|
+    chosen[dep.name] = spec
+    return true if solve.call(rest + spec.runtime_dependencies)
+    chosen.delete(dep.name)
+  end
+  false
+end
+unless solve.call(root.runtime_dependencies)
+  why = budget < 0 ? "gave up after too many attempts" : "no compatible set exists"
+  warn "mise: could not resolve one set of dependencies for " + root.full_name + " (" + why + "); copying the newest of each"
+  # Best effort: the newest candidate of everything reachable, so the tool
+  # still stops depending on one Ruby patch's gem directory where it can.
+  chosen = { root.name => root }
+  queue = root.runtime_dependencies
+  until queue.empty?
+    dep = queue.shift
+    next if chosen[dep.name]
+    spec = dep.matching_specs(true).max_by(&:version)
+    next unless spec
+    chosen[dep.name] = spec
+    queue.concat(spec.runtime_dependencies)
+  end
 end
 # Only now: requiring this default gem activates it, which would clash with a
 # dependency version the tool pins.
 require "fileutils"
-Gem.loaded_specs.each_value do |spec|
+chosen.each_value do |spec|
   next if spec.equal?(root) || spec.default_gem?
   base = File.realpath(spec.base_dir)
   next if base == home
@@ -1667,5 +1696,254 @@ mod tests {
         assert_eq!(extract_minor_version("2.7.8"), Some("2.7".to_string()));
         assert_eq!(extract_minor_version("3"), None);
         assert_eq!(extract_minor_version("latest"), None);
+    }
+
+    /// Hand-built gem directories: `libexec` is `GEM_HOME` and `ruby_gems` is the
+    /// Ruby's own gem directory.
+    struct FakeGems {
+        tmp: tempfile::TempDir,
+    }
+
+    impl FakeGems {
+        fn libexec(&self) -> std::path::PathBuf {
+            self.tmp.path().join("libexec")
+        }
+
+        fn ruby_gems(&self) -> std::path::PathBuf {
+            self.tmp.path().join("ruby-gems")
+        }
+
+        /// `deps` are `(name, requirement)` pairs.
+        fn add(&self, dir: &std::path::Path, name: &str, version: &str, deps: &[(&str, &str)]) {
+            let full = format!("{name}-{version}");
+            file::create_dir_all(dir.join("specifications")).unwrap();
+            file::create_dir_all(dir.join("gems").join(&full).join("lib")).unwrap();
+            file::write(dir.join("gems").join(&full).join("lib/x.rb"), "").unwrap();
+            let deps: String = deps
+                .iter()
+                .map(|(n, r)| format!("s.add_runtime_dependency \"{n}\", \"{r}\"\n"))
+                .collect();
+            file::write(
+                dir.join("specifications").join(format!("{full}.gemspec")),
+                format!(
+                    "Gem::Specification.new do |s|\n s.name = \"{name}\"\n s.version = \"{version}\"\n \
+                     s.summary = \"x\"\n s.authors = [\"x\"]\n s.files = []\n{deps}end\n"
+                ),
+            )
+            .unwrap();
+        }
+
+        /// Whether `full_name` was copied into `libexec`.
+        fn vendored(&self, full_name: &str) -> bool {
+            self.libexec()
+                .join("specifications")
+                .join(format!("{full_name}.gemspec"))
+                .exists()
+                && self.libexec().join("gems").join(full_name).exists()
+        }
+
+        /// Runs [`VENDOR_DEPENDENCIES`] for `root`, optionally after requiring
+        /// `prelude`. Returns the script's stderr, or `None` when no Ruby is
+        /// installed.
+        fn run(&self, root: &str, version: &str, prelude: Option<&str>) -> Option<String> {
+            let ruby = ruby_for_tests()?;
+            let mut cmd = std::process::Command::new(ruby);
+            if let Some(prelude) = prelude {
+                let path = self.tmp.path().join("prelude.rb");
+                file::write(&path, prelude).unwrap();
+                cmd.arg("-r").arg(path);
+            }
+            let out = cmd
+                .arg("-e")
+                .arg(VENDOR_DEPENDENCIES)
+                .env("GEM_HOME", self.libexec())
+                .env(
+                    "GEM_PATH",
+                    std::env::join_paths([self.libexec(), self.ruby_gems()]).unwrap(),
+                )
+                .env("MISE_GEM_NAME", root)
+                .env("MISE_GEM_VERSION", version)
+                .output()
+                .unwrap();
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(out.status.success(), "script failed: {stderr}");
+            Some(stderr)
+        }
+    }
+
+    fn fake_gems() -> FakeGems {
+        let gems = FakeGems {
+            tmp: tempfile::tempdir().unwrap(),
+        };
+        file::create_dir_all(gems.libexec()).unwrap();
+        file::create_dir_all(gems.ruby_gems()).unwrap();
+        gems
+    }
+
+    /// Any installed Ruby will do: the script only uses RubyGems.
+    fn ruby_for_tests() -> Option<std::path::PathBuf> {
+        const RUBY_BIN: &str = if cfg!(windows) { "ruby.exe" } else { "ruby" };
+        let installs = crate::dirs::INSTALLS.join("ruby");
+        let mut found: Vec<_> = std::fs::read_dir(installs)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| Some(e.ok()?.path().join("bin").join(RUBY_BIN)))
+            .filter(|p| p.is_file())
+            .collect();
+        found.sort();
+        found.extend(which::which("ruby").ok());
+        // A mise shim for an uninstalled Ruby is on PATH but cannot run.
+        let ruby = found.into_iter().rev().find(|ruby| {
+            std::process::Command::new(ruby)
+                .args(["-e", "exit"])
+                .output()
+                .is_ok_and(|o| o.status.success())
+        });
+        if ruby.is_none() {
+            eprintln!("skipping: no ruby installed");
+        }
+        ruby
+    }
+
+    /// The first candidate for `a` needs a `c` the root forbids, so it has to
+    /// be passed over for the older one.
+    #[test]
+    fn vendor_skips_dependency_candidates_that_conflict() {
+        let g = fake_gems();
+        g.add(
+            &g.libexec(),
+            "root",
+            "1.0.0",
+            &[("a", ">= 1"), ("c", "= 1")],
+        );
+        g.add(&g.ruby_gems(), "a", "1", &[("c", "= 1")]);
+        g.add(&g.ruby_gems(), "a", "2", &[("c", "= 2")]);
+        g.add(&g.ruby_gems(), "c", "1", &[]);
+        g.add(&g.ruby_gems(), "c", "2", &[]);
+        let Some(stderr) = g.run("root", "1.0.0", None) else {
+            return;
+        };
+        assert!(g.vendored("a-1"), "{stderr}");
+        assert!(g.vendored("c-1"), "{stderr}");
+        assert!(!g.vendored("a-2") && !g.vendored("c-2"));
+    }
+
+    /// Taking the newest `a` (which needs `c-2`) first would leave `b` with no
+    /// compatible `c`; the graph that works needs `a-1`.
+    #[test]
+    fn vendor_backtracks_across_the_whole_dependency_graph() {
+        let g = fake_gems();
+        g.add(
+            &g.libexec(),
+            "root",
+            "1.0.0",
+            &[("a", ">= 1"), ("b", ">= 1")],
+        );
+        g.add(&g.ruby_gems(), "a", "1", &[("c", "= 1")]);
+        g.add(&g.ruby_gems(), "a", "2", &[("c", "= 2")]);
+        g.add(&g.ruby_gems(), "b", "1", &[("c", "= 1")]);
+        g.add(&g.ruby_gems(), "b", "2", &[("c", "= 1")]);
+        g.add(&g.ruby_gems(), "c", "1", &[]);
+        g.add(&g.ruby_gems(), "c", "2", &[]);
+        let Some(stderr) = g.run("root", "1.0.0", None) else {
+            return;
+        };
+        for name in ["a-1", "b-2", "c-1"] {
+            assert!(g.vendored(name), "{name}: {stderr}");
+        }
+        for name in ["a-2", "b-1", "c-2"] {
+            assert!(!g.vendored(name), "{name}: {stderr}");
+        }
+    }
+
+    /// With no compatible set the install still succeeds, with a warning, and
+    /// the newest of each dependency is copied anyway.
+    #[test]
+    fn vendor_warns_instead_of_failing_without_a_solution() {
+        let g = fake_gems();
+        g.add(&g.libexec(), "root", "1.0.0", &[("a", "= 1"), ("c", "= 2")]);
+        g.add(&g.ruby_gems(), "a", "1", &[("c", "= 1")]);
+        g.add(&g.ruby_gems(), "c", "1", &[]);
+        g.add(&g.ruby_gems(), "c", "2", &[]);
+        let Some(stderr) = g.run("root", "1.0.0", None) else {
+            return;
+        };
+        assert!(stderr.contains("could not resolve"), "{stderr}");
+        // Best effort: the newest of each is still copied.
+        assert!(g.vendored("a-1") && g.vendored("c-2"), "{stderr}");
+    }
+
+    /// When `Gem.default_ext_dir_for` puts extensions outside the gem
+    /// directory, they follow the copied specification, not the source's path.
+    #[test]
+    fn vendor_copies_extensions_to_the_copied_specs_extension_dir() {
+        let g = fake_gems();
+        g.add(&g.libexec(), "root", "1.0.0", &[("native", ">= 1")]);
+        g.add(&g.ruby_gems(), "native", "1", &[]);
+        let prelude = "module Gem\n def self.default_ext_dir_for(base_dir)\n \
+                       File.join(File.dirname(base_dir), File.basename(base_dir) + \"-ext\")\n end\nend\n";
+        // Where the source spec's extensions live, found the way the script does.
+        let ruby = match ruby_for_tests() {
+            Some(r) => r,
+            None => return,
+        };
+        let probe = g.tmp.path().join("probe.rb");
+        file::write(
+            &probe,
+            "puts Gem::Specification.load(File.join(ARGV[0], 'specifications/native-1.gemspec')).extension_dir",
+        )
+        .unwrap();
+        let prelude_path = g.tmp.path().join("probe_prelude.rb");
+        file::write(&prelude_path, prelude).unwrap();
+        let out = std::process::Command::new(ruby)
+            .arg("-r")
+            .arg(&prelude_path)
+            .arg(&probe)
+            .arg(g.ruby_gems())
+            .output()
+            .unwrap();
+        let source_ext = std::path::PathBuf::from(String::from_utf8(out.stdout).unwrap().trim());
+        assert!(source_ext.starts_with(g.tmp.path().join("ruby-gems-ext")));
+        file::create_dir_all(&source_ext).unwrap();
+        file::write(source_ext.join("native_ext.so"), "so").unwrap();
+        file::write(source_ext.join("gem.build_complete"), "").unwrap();
+
+        let Some(stderr) = g.run("root", "1.0.0", Some(prelude)) else {
+            return;
+        };
+        let target = g.tmp.path().join("libexec-ext").join(
+            source_ext
+                .strip_prefix(g.tmp.path().join("ruby-gems-ext"))
+                .unwrap(),
+        );
+        assert!(target.join("native_ext.so").exists(), "{stderr}");
+        assert!(target.join("gem.build_complete").exists(), "{stderr}");
+        assert!(!g.libexec().join("extensions").exists());
+    }
+
+    /// Constraints on a gem chosen later must be checked before the search
+    /// fans out over unrelated dependencies, or the budget runs out first.
+    #[test]
+    fn vendor_checks_pinned_dependencies_before_branching() {
+        let g = fake_gems();
+        let mut deps: Vec<(String, &str)> = vec![("a".into(), ">= 1"), ("pin".into(), "= 1")];
+        for i in 0..14 {
+            deps.push((format!("f{i}"), ">= 1"));
+        }
+        let deps: Vec<(&str, &str)> = deps.iter().map(|(n, r)| (n.as_str(), *r)).collect();
+        g.add(&g.libexec(), "root", "1.0.0", &deps);
+        g.add(&g.ruby_gems(), "pin", "1", &[("a", "= 1")]);
+        g.add(&g.ruby_gems(), "a", "1", &[]);
+        g.add(&g.ruby_gems(), "a", "2", &[]);
+        for i in 0..14 {
+            for v in ["1", "2"] {
+                g.add(&g.ruby_gems(), &format!("f{i}"), v, &[]);
+            }
+        }
+        let Some(stderr) = g.run("root", "1.0.0", None) else {
+            return;
+        };
+        assert!(g.vendored("a-1") && g.vendored("pin-1"), "{stderr}");
+        assert!(!g.vendored("a-2"), "{stderr}");
     }
 }
