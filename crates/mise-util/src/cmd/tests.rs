@@ -783,13 +783,35 @@ async fn test_cmd_line_runner_execute_hashes_async_times_out() {
 async fn test_cmd_line_runner_execute_hashes_async_rejects_undrained_pipes() {
     let err = super::CmdLineRunner::new("sh")
         .args(["-c", "sleep 60 &"])
-        .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::from_millis(20))
+        .execute_hashes_async_with_drain_timeout(
+            1024,
+            std::time::Duration::from_millis(20),
+            std::time::Duration::from_millis(20),
+        )
         .await
         .unwrap_err();
     assert!(
         err.to_string()
             .contains("command output pipes did not close")
     );
+}
+
+/// A drain deadline that has already passed (a starved runtime never got to
+/// the readers) must not fail a command whose pipes are closed.
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn test_cmd_line_runner_execute_hashes_async_ignores_late_deadline_when_pipes_closed() {
+    for _ in 0..50 {
+        super::CmdLineRunner::new("sh")
+            .args(["-c", "echo out; echo err >&2"])
+            .execute_hashes_async_with_drain_timeout(
+                1024,
+                std::time::Duration::ZERO,
+                std::time::Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+    }
 }
 
 /// A descendant that outlives the shell must not survive the drain
@@ -809,7 +831,11 @@ async fn test_cmd_line_runner_execute_hashes_async_kills_descendants() {
             "-c",
             &format!("sleep 60 & printf %s \"$!\" >{}", pid_file.display()),
         ])
-        .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::from_millis(20))
+        .execute_hashes_async_with_drain_timeout(
+            1024,
+            std::time::Duration::from_millis(20),
+            std::time::Duration::from_millis(20),
+        )
         .await
         .unwrap_err();
     assert!(
