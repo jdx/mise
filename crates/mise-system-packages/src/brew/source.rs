@@ -127,9 +127,12 @@ pub(super) fn check_buildable(formula: &Formula) -> Result<()> {
         bail!("{}: formula has no stable source URL", formula.name);
     };
     if let Some(using) = &src.using {
-        // A name with no leading colon is a download strategy class from a tap;
-        // mise fetches its GitHub release assets itself.
-        if using.starts_with(':') || !super::private_release::is_release_url(&src.url) {
+        // A tap's own download strategy is a class name with no leading colon;
+        // mise fetches its GitHub release assets itself. Homebrew's core API
+        // writes symbol strategies (`git`, `nounzip`) without a colon too, so
+        // only a tap formula's name is read as a class.
+        let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
+        if using.starts_with(':') || !is_tap || !super::private_release::is_release_url(&src.url) {
             bail!(
                 "{}: source uses the {using:?} download strategy, which mise cannot build from \
                  (and no bottle exists for this machine)",
@@ -825,6 +828,17 @@ mod tests {
         let mut git_source = formula(&[]);
         git_source.urls.get_mut("stable").unwrap().using = Some("git".to_string());
         assert!(check_buildable(&git_source).is_err());
+
+        // a core formula's colon-less symbol strategy is not a tap's class,
+        // even on a GitHub release URL
+        let mut core_symbol = formula(&[]);
+        let src = core_symbol.urls.get_mut("stable").unwrap();
+        src.url = "https://github.com/acme/widget/releases/download/v1/widget-1.tar.gz".into();
+        src.using = Some("nounzip".to_string());
+        assert!(check_buildable(&core_symbol).is_err());
+        // a tap formula's strategy class on a release URL is fetched by mise
+        core_symbol.tap = Some("acme/tools".to_string());
+        assert!(check_buildable(&core_symbol).is_ok());
 
         let mut no_checksum = formula(&[]);
         no_checksum.urls.get_mut("stable").unwrap().checksum = None;
