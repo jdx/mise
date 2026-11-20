@@ -83,11 +83,13 @@ impl Audit {
             .iter()
             .filter(|(ba, _)| tool_set.is_empty() || tool_set.contains(*ba))
             .flat_map(|(ba, tvl)| {
+                // Requests resolve in order, one version each, and resolution
+                // stops at the first failure. Comparing the requests themselves
+                // would not work: a lockfile can rewrite a request's options.
                 tvl.requests
                     .iter()
-                    .filter(|r| {
-                        r.is_os_supported() && !tvl.versions.iter().any(|tv| tv.request == **r)
-                    })
+                    .skip(tvl.versions.len())
+                    .filter(|r| r.is_os_supported())
                     .map(move |r| format!("{ba}@{}", r.version()))
             })
             .collect_vec();
