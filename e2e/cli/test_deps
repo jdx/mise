@@ -245,12 +245,12 @@ assert_contains "mise deps --list" "aube-lock.yaml"
 assert_contains "mise deps --dry-run 2>&1" "aube"
 
 # aube workspace settings and members' manifests are sources too
-mkdir -p packages/lib
+mkdir -p libs/lib
 echo "packages:
-  - packages/lib" >aube-workspace.yaml
-echo '{"name": "lib"}' >packages/lib/package.json
+  - libs/*" >aube-workspace.yaml
+echo '{"name": "lib"}' >libs/lib/package.json
 assert_contains "mise deps --list" "aube-workspace.yaml"
-assert_contains "mise deps --list" "packages/lib/package.json"
+assert_contains "mise deps --list" "libs/lib/package.json"
 
 # Test deno provider
 rm -f aube-lock.yaml

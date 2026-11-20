@@ -36,7 +36,7 @@ impl DepsProvider for AubeDepsProvider {
             let workspaces = ["aube-workspace.yaml", "pnpm-workspace.yaml"]
                 .map(|name| root.join(name))
                 .into_iter()
-                .filter(|path| path.is_file())
+                .filter(|path| path.is_file() && std::fs::File::open(path).is_ok())
                 .collect::<Vec<_>>();
             if !workspaces.is_empty() {
                 sources.extend(workspaces);
