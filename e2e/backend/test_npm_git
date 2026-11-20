@@ -34,3 +34,20 @@ assert_not_contains "mise prune --tools --dry-run 2>&1" "gitpkg@$head2 is prunab
 mise install "$spec@$head1"
 assert_contains "mise prune --tools --dry-run 2>&1" "gitpkg@v1 is prunable"
 assert_not_contains "mise prune --tools --dry-run 2>&1" "gitpkg@$head2 is prunable"
+
+# upgrade sees a new commit however its SHA sorts against the installed one,
+# and --prune removes the commit it replaced
+rm -rf "$MISE_DATA_DIR"/installs/npm-git-*
+printf '[tools]\n"%s" = "latest"\n' "$spec" >mise.toml
+mise install
+old="$(git -C "$repo" rev-parse HEAD)"
+for i in 1 2 3 4 5 6; do
+  printf '#!/bin/sh\necho gitpkg-up%s\n' "$i" >"$repo/bin/gitpkg.sh"
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am "up$i"
+  new="$(git -C "$repo" rev-parse HEAD)"
+  assert_contains "mise upgrade --dry-run 2>&1" "Would install"
+  mise upgrade --prune
+  assert_contains "mise x -- gitpkg" "gitpkg-up$i"
+  assert_not_contains "ls $MISE_DATA_DIR/installs/npm-git-*" "$old"
+  old="$new"
+done
