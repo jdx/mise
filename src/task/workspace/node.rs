@@ -14,6 +14,7 @@ use super::{
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
+const AUBE_WORKSPACE: &str = "aube-workspace.yaml";
 const SHARED_LOCKFILES: [&str; 5] = [
     "package-lock.json",
     "npm-shrinkwrap.json",
@@ -268,14 +269,18 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
     }
 }
 
-/// Member `package.json` files of the pnpm workspace rooted at `workspace_root`,
-/// from the `packages` globs of `pnpm-workspace.yaml`.
+/// Member `package.json` files of the pnpm or aube workspace rooted at
+/// `workspace_root`, from the `packages` globs of `aube-workspace.yaml` or
+/// `pnpm-workspace.yaml`.
 ///
-/// Returns an empty list when the root has no `pnpm-workspace.yaml` or the
-/// members cannot be discovered. The root manifest is not included.
-pub fn pnpm_member_manifests(workspace_root: &Path) -> Vec<PathBuf> {
+/// Returns an empty list when the root has neither file or the members cannot
+/// be discovered. The root manifest is not included.
+pub fn workspace_member_manifests(workspace_root: &Path) -> Vec<PathBuf> {
     let context = WorkspaceDiscoveryContext::new();
-    if !context.is_file(&workspace_root.join(PNPM_WORKSPACE)) {
+    if ![AUBE_WORKSPACE, PNPM_WORKSPACE]
+        .iter()
+        .any(|name| context.is_file(&workspace_root.join(name)))
+    {
         return Vec::new();
     }
     let Ok(canonical_root) = context.canonicalize(workspace_root) else {
@@ -777,7 +782,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_pnpm_member_manifests() {
+    fn lists_workspace_member_manifests() {
         let temp = tempdir().unwrap();
         write(
             &temp.path().join(PNPM_WORKSPACE),
@@ -793,10 +798,28 @@ mod tests {
             r#"{"name":"skip"}"#,
         );
         assert_eq!(
-            pnpm_member_manifests(temp.path()),
+            workspace_member_manifests(temp.path()),
             vec![temp.path().join("packages/app/package.json")]
         );
-        assert!(pnpm_member_manifests(&temp.path().join("packages/app")).is_empty());
+        assert!(workspace_member_manifests(&temp.path().join("packages/app")).is_empty());
+    }
+
+    #[test]
+    fn lists_aube_workspace_member_manifests() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(AUBE_WORKSPACE),
+            "packages:\n  - packages/*\n",
+        );
+        write(&temp.path().join(PACKAGE_JSON), r#"{"name":"root"}"#);
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+        assert_eq!(
+            workspace_member_manifests(temp.path()),
+            vec![temp.path().join("packages/app/package.json")]
+        );
     }
 
     #[test]

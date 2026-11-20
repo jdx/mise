@@ -36,7 +36,9 @@ impl DepsProvider for PnpmDepsProvider {
             let workspace = root.join("pnpm-workspace.yaml");
             if workspace.is_file() {
                 sources.push(workspace);
-                sources.extend(crate::task::workspace::node::pnpm_member_manifests(&root));
+                sources.extend(crate::task::workspace::node::workspace_member_manifests(
+                    &root,
+                ));
             }
         }
         self.base.sources(sources)

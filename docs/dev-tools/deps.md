@@ -77,7 +77,7 @@ command:
 | `pnpm`          | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, workspace members' `package.json` | `node_modules/`                  | `pnpm install`                                                   |
 | `bun`           | `package.json`, `bun.lock` or `bun.lockb`                                                  | `node_modules/`                  | `bun install`                                                    |
 | `deno`          | `deno.json`, `deno.jsonc`, `package.json`, `deno.lock`                                     | Optional `node_modules/`         | `deno install`                                                   |
-| `aube`          | `package.json`, `aube-lock.yaml`                                                           | `node_modules/`                  | `aube install`                                                   |
+| `aube`          | `package.json`, `aube-lock.yaml`, `aube-workspace.yaml`, workspace members' `package.json` | `node_modules/`                  | `aube install`                                                   |
 | `go`            | `go.mod`, `go.sum`                                                                         | Optional `vendor/`               | `go mod vendor` if `vendor/` exists, otherwise `go mod download` |
 | `pip`           | `requirements.txt`                                                                         | Optional `.venv/`                | `pip install -r requirements.txt`                                |
 | `poetry`        | `pyproject.toml`, `poetry.lock`                                                            | Optional `.venv/`                | `poetry install`                                                 |
