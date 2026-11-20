@@ -1725,11 +1725,7 @@ mod tests {
                 .env("GEM_HOME", self.libexec())
                 .env(
                     "GEM_PATH",
-                    format!(
-                        "{}:{}",
-                        self.libexec().display(),
-                        self.ruby_gems().display()
-                    ),
+                    std::env::join_paths([self.libexec(), self.ruby_gems()]).unwrap(),
                 )
                 .env("MISE_GEM_NAME", root)
                 .env("MISE_GEM_VERSION", version)
@@ -1754,12 +1750,20 @@ mod tests {
     fn ruby_for_tests() -> Option<std::path::PathBuf> {
         let installs = crate::dirs::INSTALLS.join("ruby");
         let mut found: Vec<_> = std::fs::read_dir(installs)
-            .ok()?
+            .into_iter()
+            .flatten()
             .filter_map(|e| Some(e.ok()?.path().join("bin/ruby")))
             .filter(|p| p.is_file())
             .collect();
         found.sort();
-        let ruby = found.pop().or_else(|| which::which("ruby").ok());
+        found.extend(which::which("ruby").ok());
+        // A mise shim for an uninstalled Ruby is on PATH but cannot run.
+        let ruby = found.into_iter().rev().find(|ruby| {
+            std::process::Command::new(ruby)
+                .args(["-e", "exit"])
+                .output()
+                .is_ok_and(|o| o.status.success())
+        });
         if ruby.is_none() {
             eprintln!("skipping: no ruby installed");
         }
