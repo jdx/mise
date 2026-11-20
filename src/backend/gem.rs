@@ -772,6 +772,11 @@ struct RubyGemsVersion {
     created_at: Option<String>,
 }
 
+/// Whether `source` is rubygems.org, whose gems OSV knows as RubyGems.
+fn is_rubygems_source(source: &str) -> bool {
+    Url::parse(source).is_ok_and(|url| url.host_str() == Some("rubygems.org"))
+}
+
 /// Parse gem sources output to extract the primary source URL.
 /// Output format:
 /// ```text
@@ -779,11 +784,6 @@ struct RubyGemsVersion {
 ///
 /// https://rubygems.org/
 /// ```
-/// Whether `source` is rubygems.org, whose gems OSV knows as RubyGems.
-fn is_rubygems_source(source: &str) -> bool {
-    Url::parse(source).is_ok_and(|url| url.host_str() == Some("rubygems.org"))
-}
-
 fn parse_gem_source_output(output: &str) -> String {
     for line in output.lines() {
         let line = line.trim();
