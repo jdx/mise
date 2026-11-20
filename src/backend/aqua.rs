@@ -289,7 +289,7 @@ impl Backend for AquaBackend {
     }
 
     /// By the package's repository, not the aqua package name: `kubernetes/kubectl`
-    /// is released from kubernetes/kubernetes. A version override can name
+    /// is released from kubernetes/kubernetes. A version or platform override can name
     /// another repository, so the package is resolved as an install resolves
     /// it: by the version's release tag, which picks one override where the
     /// version alone can match several. Not validated: a release this platform
@@ -300,7 +300,7 @@ impl Backend for AquaBackend {
         let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await else {
             return vec![];
         };
-        let pkg = if overrides_move_repository(&pkg) {
+        let pkg = if pkg.overrides_name_other_repositories() {
             let Ok(ResolvedPackage { pkg, .. }) = self.resolve_package(tv).await else {
                 return vec![];
             };
@@ -4537,14 +4537,6 @@ fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec
     candidates.into_iter().unique().collect()
 }
 
-/// Whether a version override releases the package from another repository.
-fn overrides_move_repository(pkg: &AquaPackage) -> bool {
-    pkg.version_overrides.iter().any(|vo| {
-        (!vo.repo_owner.is_empty() && vo.repo_owner != pkg.repo_owner)
-            || (!vo.repo_name.is_empty() && vo.repo_name != pkg.repo_name)
-    })
-}
-
 fn package_version_candidates<'a>(version: &'a str, pkg: &AquaPackage) -> Vec<Cow<'a, str>> {
     let mut candidates = version_candidates(version, None);
     let prefixes = pkg
@@ -5776,7 +5768,7 @@ version_overrides:
         assert_eq!(select(None), "old-owner/old-tool");
         // An install uses the release tag, which matches only its own.
         assert_eq!(select(Some("new-1.0.0")), "new-owner/new-tool");
-        assert!(overrides_move_repository(&pkg));
+        assert!(pkg.overrides_name_other_repositories());
     }
 
     #[test]
@@ -5834,7 +5826,7 @@ version_overrides:
     asset: jq-{{.OS}}-{{.Arch}}
 "#,
         );
-        assert!(!overrides_move_repository(&pkg));
+        assert!(!pkg.overrides_name_other_repositories());
     }
 
     fn pkg_from_yaml(yaml: &str) -> AquaPackage {
