@@ -293,10 +293,20 @@ impl Backend for AquaBackend {
     /// another repository, so the package is resolved as an install resolves
     /// it: by the version's release tag, which picks one override where the
     /// version alone can match several. Not validated: a release this platform
-    /// can't install still comes from that repository.
+    /// can't install still comes from that repository. Finding the tag can
+    /// list the repository's releases, so it is only done when an override
+    /// names another repository.
     async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
-        let Ok(ResolvedPackage { pkg, .. }) = self.resolve_package(tv).await else {
+        let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await else {
             return vec![];
+        };
+        let pkg = if overrides_move_repository(&pkg) {
+            let Ok(ResolvedPackage { pkg, .. }) = self.resolve_package(tv).await else {
+                return vec![];
+            };
+            pkg
+        } else {
+            pkg
         };
         crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, &tv.version)
     }
@@ -4516,6 +4526,14 @@ fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec
     candidates.into_iter().unique().collect()
 }
 
+/// Whether a version override releases the package from another repository.
+fn overrides_move_repository(pkg: &AquaPackage) -> bool {
+    pkg.version_overrides.iter().any(|vo| {
+        (!vo.repo_owner.is_empty() && vo.repo_owner != pkg.repo_owner)
+            || (!vo.repo_name.is_empty() && vo.repo_name != pkg.repo_name)
+    })
+}
+
 fn package_version_candidates<'a>(version: &'a str, pkg: &AquaPackage) -> Vec<Cow<'a, str>> {
     let mut candidates = version_candidates(version, None);
     let prefixes = pkg
@@ -5747,6 +5765,23 @@ version_overrides:
         assert_eq!(select(None), "old-owner/old-tool");
         // An install uses the release tag, which matches only its own.
         assert_eq!(select(Some("new-1.0.0")), "new-owner/new-tool");
+        assert!(overrides_move_repository(&pkg));
+    }
+
+    #[test]
+    fn test_overrides_in_the_same_repository_do_not_move_it() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: jqlang
+repo_name: jq
+version_overrides:
+  - version_constraint: "true"
+    repo_owner: jqlang
+    asset: jq-{{.OS}}-{{.Arch}}
+"#,
+        );
+        assert!(!overrides_move_repository(&pkg));
     }
 
     fn pkg_from_yaml(yaml: &str) -> AquaPackage {

@@ -995,7 +995,8 @@ impl Upgrade {
                 Some((tv.backend().ok()?, tv))
             })
             .collect_vec();
-        // A bump whose target is installed already has no pending upgrade.
+        // A bump with a pending install has its target in `targets` already.
+        // Only a bump whose target is installed resolves it here.
         for (bump, _) in &bumped {
             if outdated.iter().any(|o| installs_bump(o, bump)) {
                 continue;
