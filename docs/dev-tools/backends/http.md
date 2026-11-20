@@ -319,8 +319,9 @@ See [version ordering](/dev-tools/versions.html#version-ordering).
 
 With [lockfiles](/dev-tools/mise-lock.html) enabled, mise records a checksum and
 size on the first install and checks them on every later one. `checksum` and
-`size` pin values without a lockfile, and `checksum_url` lets `mise lock` record
-published checksums for every platform.
+`size` pin values without a lockfile. `checksum_url` names a published checksum:
+install checks the download against it when neither `checksum` nor a lockfile
+entry pins the artifact, and `mise lock` records it for every platform.
 
 ### `checksum`
 
@@ -344,6 +345,10 @@ The URL of a published checksum source. With it,
 platform, including platforms other than the one you run it on, without
 downloading the artifacts. One machine can then write a complete cross-platform
 lockfile.
+
+Install fails if the download does not match the published checksum, or if the
+checksum cannot be resolved. A `checksum` or a `mise.lock` entry for the
+platform takes precedence.
 
 ::: v-pre
 `checksum_url` is a template, like `url`, and can be set per platform. It can

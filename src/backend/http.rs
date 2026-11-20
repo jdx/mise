@@ -1604,7 +1604,33 @@ impl Backend for HttpBackend {
             .and_then(|p| p.checksum.as_ref())
             .is_some();
 
-        let pinned = pinned_checksum(&tv, &platform_key, opts.raw());
+        let mut pinned = pinned_checksum(&tv, &platform_key, opts.raw());
+
+        // A published checksum (`checksum_url`) is the expected digest when nothing else
+        // pins the download. Without this, an install with no `mise.lock` entry would
+        // record the download's own digest and never compare it to the published one.
+        let target = crate::platform::Platform::parse(&platform_key)
+            .map(crate::backend::PlatformTarget::new)?;
+        if pinned.is_none()
+            && !has_lockfile_checksum
+            && opts.checksum_url_for_target(&target).is_some()
+        {
+            ctx.pr.set_message(format!("resolve checksum {filename}"));
+            let published = self
+                .resolve_lock_checksum(&opts, &tv, &target, &url)
+                .await
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "could not resolve the checksum from checksum_url for {} on {}",
+                        self.ba.full(),
+                        platform_key
+                    )
+                })?;
+            if let Some(platform_info) = tv.lock_platforms.get_mut(&platform_key) {
+                platform_info.checksum = Some(published.clone());
+            }
+            pinned = Some(published);
+        }
 
         let download = match local_artifact_path(&url)? {
             Some(src) => {
