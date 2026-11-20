@@ -21,6 +21,7 @@ use crate::args::BackendArg;
 use crate::backend::ABackend;
 use crate::backend::backend_type::BackendType;
 use crate::config::Settings;
+use crate::toolset::ToolVersion;
 
 const OSV_API: &str = "https://api.osv.dev/v1";
 /// The most queries `/v1/querybatch` takes in one request.
@@ -69,6 +70,10 @@ impl AdvisoryQuery {
 /// name. Empty when mise knows no advisory source for the tool.
 pub fn queries_for(backend: &BackendType, tool_name: &str, version: &str) -> Vec<AdvisoryQuery> {
     match backend {
+        // A git source or a tarball URL is not a registry package, and its
+        // name can carry credentials that must not be sent anywhere. npm
+        // package names never contain a `:`.
+        BackendType::Npm if tool_name.contains(':') => vec![],
         BackendType::Npm => vec![AdvisoryQuery::new(
             OsvPackage::new("npm", tool_name),
             version,
@@ -97,8 +102,9 @@ pub fn queries_for(backend: &BackendType, tool_name: &str, version: &str) -> Vec
         BackendType::Packslip => crate::backend::packslip::project_name(tool_name)
             .ok()
             .and_then(|project| {
-                let path = project.strip_prefix("github.com/")?;
-                let (owner, repo) = path.split_once('/')?;
+                // A subproject such as `github.com/oxc-project/oxc/oxlint` is
+                // released from its repository.
+                let (_, owner, repo) = packslip::model::repository(&project)?;
                 Some(github_queries(owner, repo, version))
             })
             .unwrap_or_default(),
@@ -329,24 +335,31 @@ impl Report {
     }
 }
 
-/// Looks up every tool version in `items` in OSV.
-pub async fn scan(items: Vec<(ABackend, String)>) -> Result<Report> {
+/// The tool's name to show, without any credentials a URL in it carries.
+fn display_name(backend: &ABackend) -> String {
+    crate::install_layout::resolver::redact_credentials(backend.id())
+}
+
+/// Looks up every tool version in `items` in OSV, each with the backend it
+/// resolved to.
+pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
     ensure!(
         !mise_util::network::offline(&Settings::get()),
         "checking for vulnerabilities needs OSV.dev, but offline mode is enabled"
     );
     let mut report = Report::default();
     let mut planned = vec![];
-    for (backend, version) in items {
-        let queries = if is_release(&version) {
-            backend.advisory_queries(&version).await
+    for (backend, tv) in items {
+        let queries = if is_release(&tv.version) {
+            backend.advisory_queries(&tv).await
         } else {
             vec![]
         };
+        let version = tv.version;
         if queries.is_empty() {
             report.unchecked.push(Unchecked {
                 ba: backend.ba().clone(),
-                tool: backend.id().to_string(),
+                tool: display_name(&backend),
                 version,
             });
         } else {
@@ -413,7 +426,7 @@ pub async fn scan(items: Vec<(ABackend, String)>) -> Result<Report> {
             seen[i].extend(names);
             report.findings.push(Finding {
                 ba: backend.ba().clone(),
-                tool: backend.id().to_string(),
+                tool: display_name(backend),
                 version: version.clone(),
                 severity: vuln.severity(),
                 summary: vuln.summary(),
@@ -458,6 +471,7 @@ struct BatchResponse {
 struct BatchResult {
     #[serde(default)]
     vulns: Vec<serde_json::Value>,
+    next_page_token: Option<String>,
 }
 
 /// The advisories OSV has for `version` of `package`.
@@ -491,27 +505,41 @@ async fn query(package: &OsvPackage, version: &str) -> Result<Vec<OsvVuln>> {
 /// Which of `packages` OSV has any advisory for, in any version.
 async fn known_packages(packages: Vec<OsvPackage>) -> Result<HashSet<OsvPackage>> {
     let mut known = HashSet::new();
-    for chunk in packages.chunks(OSV_BATCH_LIMIT) {
-        let res: BatchResponse = post(
-            "querybatch",
-            &BatchRequest {
-                queries: chunk
-                    .iter()
-                    .map(|package| QueryRequest {
-                        package,
-                        version: None,
-                        page_token: None,
-                    })
-                    .collect(),
-            },
-        )
-        .await
-        .wrap_err("looking up packages on OSV.dev")?;
-        for (package, result) in chunk.iter().zip(res.results) {
-            if !result.vulns.is_empty() {
-                known.insert(package.clone());
+    let mut pending = packages.iter().map(|p| (p, None)).collect_vec();
+    while !pending.is_empty() {
+        let mut next = vec![];
+        for chunk in pending.chunks(OSV_BATCH_LIMIT) {
+            let res: BatchResponse = post(
+                "querybatch",
+                &BatchRequest {
+                    queries: chunk
+                        .iter()
+                        .map(|(package, page_token)| QueryRequest {
+                            package,
+                            version: None,
+                            page_token: page_token.clone(),
+                        })
+                        .collect(),
+                },
+            )
+            .await
+            .wrap_err("looking up packages on OSV.dev")?;
+            ensure!(
+                res.results.len() == chunk.len(),
+                "OSV.dev answered {} of {} package lookups",
+                res.results.len(),
+                chunk.len()
+            );
+            for ((package, _), result) in chunk.iter().zip(res.results) {
+                if !result.vulns.is_empty() {
+                    known.insert((*package).clone());
+                } else if let Some(token) = result.next_page_token.filter(|t| !t.is_empty()) {
+                    // OSV stopped before finding any: ask again from there.
+                    next.push((*package, Some(token)));
+                }
             }
         }
+        pending = next;
     }
     Ok(known)
 }
@@ -575,7 +603,8 @@ struct OsvEvent {
 
 #[derive(Debug, Deserialize)]
 struct OsvDatabaseSpecific {
-    severity: Option<String>,
+    /// Each database decides what goes here, so it need not be a string.
+    severity: Option<serde_json::Value>,
 }
 
 impl OsvVuln {
@@ -594,7 +623,7 @@ impl OsvVuln {
         let rated = self
             .database_specific
             .as_ref()
-            .and_then(|d| d.severity.as_deref())
+            .and_then(|d| d.severity.as_ref()?.as_str())
             .and_then(|s| match s.to_ascii_uppercase().as_str() {
                 "LOW" => Some(Severity::Low),
                 "MODERATE" | "MEDIUM" => Some(Severity::Medium),
@@ -616,11 +645,7 @@ impl OsvVuln {
     fn fixed_versions(&self, package: &OsvPackage) -> Vec<String> {
         self.affected
             .iter()
-            .filter(|a| {
-                a.package.as_ref().is_some_and(|p| {
-                    p.ecosystem == package.ecosystem && p.name.eq_ignore_ascii_case(&package.name)
-                })
-            })
+            .filter(|a| a.package.as_ref().is_some_and(|p| same_package(p, package)))
             .flat_map(|a| &a.ranges)
             .filter(|r| r.r#type != "GIT")
             .flat_map(|r| &r.events)
@@ -628,6 +653,20 @@ impl OsvVuln {
             .unique()
             .collect()
     }
+}
+
+/// Whether two names are the same package, by the registry's own rules.
+fn same_package(a: &OsvPackage, b: &OsvPackage) -> bool {
+    a.ecosystem == b.ecosystem
+        && match a.ecosystem.as_str() {
+            "PyPI" => normalize_pypi_name(&a.name) == normalize_pypi_name(&b.name),
+            // crates.io treats `-` and `_` as the same character.
+            "crates.io" => a
+                .name
+                .replace('_', "-")
+                .eq_ignore_ascii_case(&b.name.replace('_', "-")),
+            _ => a.name.eq_ignore_ascii_case(&b.name),
+        }
 }
 
 fn rating(score: f64) -> Option<Severity> {
@@ -883,6 +922,13 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(vuln.severity(), Some(Severity::High));
+        let vuln: OsvVuln = serde_json::from_value(serde_json::json!({
+            "id": "CVE-y",
+            "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"}],
+            "database_specific": {"severity": 7},
+        }))
+        .unwrap();
+        assert_eq!(vuln.severity(), Some(Severity::High));
     }
 
     #[test]
@@ -911,5 +957,47 @@ mod tests {
             vec!["4.17.21".to_string()]
         );
         assert_eq!(vuln.summary(), "First line.");
+
+        let vuln: OsvVuln = serde_json::from_value(serde_json::json!({
+            "id": "PYSEC-x",
+            "affected": [{
+                "package": {"ecosystem": "PyPI", "name": "Demo_Package"},
+                "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.0"}]}],
+            }],
+        }))
+        .unwrap();
+        assert_eq!(
+            vuln.fixed_versions(&OsvPackage::new("PyPI", "demo-package")),
+            vec!["2.0".to_string()]
+        );
+    }
+
+    #[test]
+    fn npm_sources_that_are_not_registry_packages_are_not_looked_up() {
+        for name in [
+            "https://user:secret@example.com/pkg.tgz",
+            "git+https://github.com/a/b.git",
+            "github:a/b",
+        ] {
+            assert!(
+                queries_for(&BackendType::Npm, name, "1.0.0").is_empty(),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn packslip_subprojects_use_their_repository() {
+        assert_eq!(
+            names(&queries_for(
+                &BackendType::Packslip,
+                "oxc-project/oxc/oxlint",
+                "1.0.0"
+            )),
+            vec![
+                vec![pkg("Go", "github.com/oxc-project/oxc")],
+                vec![pkg("GIT", "https://github.com/oxc-project/oxc")],
+            ]
+        );
     }
 }

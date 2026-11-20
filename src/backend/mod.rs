@@ -89,7 +89,7 @@ pub(crate) mod ubi;
 pub(crate) mod version_list;
 pub(crate) mod vfox;
 
-pub(crate) type ABackend = Arc<dyn Backend>;
+pub type ABackend = Arc<dyn Backend>;
 pub(crate) type BackendMap = BTreeMap<String, ABackend>;
 pub(crate) type BackendList = Vec<ABackend>;
 pub(crate) type IdiomaticVersion = (String, Option<ToolVersionOptions>);
@@ -3479,8 +3479,8 @@ pub trait Backend: Debug + Send + Sync {
     }
     /// The OSV.dev lookups `mise audit` makes for `version` of this tool.
     /// Empty when mise knows no advisory source for it.
-    async fn advisory_queries(&self, version: &str) -> Vec<crate::audit::AdvisoryQuery> {
-        crate::audit::queries_for(&self.get_type(), &self.tool_name(), version)
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
     }
     fn get_plugin_type(&self) -> Option<PluginType> {
         None

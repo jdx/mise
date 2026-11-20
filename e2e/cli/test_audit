@@ -12,6 +12,10 @@ EOF
 assert_fail_contains "mise audit npm:lodash" "GHSA-35jh-r3h4-6jhm"
 assert_fail_contains "mise audit npm:lodash" "4.17.21"
 assert_fail_contains "mise audit npm:lodash --json" '"url": "https://osv.dev/vulnerability/GHSA-35jh-r3h4-6jhm"'
+# Advisories exit with status 1, not just any failure.
+status=0
+mise audit npm:lodash >/dev/null 2>&1 || status=$?
+assert "echo $status" "1"
 # Go itself is looked up as the Go standard library.
 assert_fail_contains "mise audit go" "GO-2024-2887"
 # A tool with no advisory source is reported as not checked, not as clean.
@@ -25,6 +29,8 @@ assert_contains "mise audit zig --json" '"unchecked": [
 assert_fail_contains "mise audit" "known vulnerabilities in 2 tools"
 
 assert_fail_contains "MISE_OFFLINE=1 mise audit" "offline mode is enabled"
+# A tool named without a version must have one configured.
+assert_fail_contains "mise audit node" "no version of node is configured. Pass node@VERSION to check one."
 
 # jq 1.7 is affected by CVE-2023-50246, fixed in 1.7.1.
 cat <<EOF >mise.toml
@@ -65,3 +71,12 @@ cat <<EOF >mise.toml
 "npm:mise-no-such-package-xyz" = "latest"
 EOF
 assert_fail_contains "mise audit 2>&1" "not checked, the version did not resolve: npm:mise-no-such-package-xyz@latest"
+
+# A config bump is kept when the version it replaces is affected, even with
+# its clean target already installed.
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7"
+EOF
+mise install aqua:jqlang/jq@1.8
+assert_contains "mise upgrade --vulnerable --bump aqua:jqlang/jq@1.8 --dry-run 2>&1" "Would bump aqua:jqlang/jq@1.8 in"

@@ -64,6 +64,15 @@ impl Audit {
             .with_args(&self.tool)
             .build(&config)
             .await?;
+        for t in &self.tool {
+            ensure!(
+                ts.versions
+                    .get(&t.ba)
+                    .is_some_and(|tvl| !tvl.requests.is_empty()),
+                "no version of {ba} is configured. Pass {ba}@VERSION to check one.",
+                ba = t.ba
+            );
+        }
         let tool_set = self
             .tool
             .iter()
@@ -73,8 +82,9 @@ impl Audit {
             .list_current_versions()
             .into_iter()
             .filter(|(_, tv)| tool_set.is_empty() || tool_set.contains(tv.ba()))
-            .map(|(backend, tv)| (backend, tv.version))
-            .unique_by(|(backend, version)| (backend.id().to_string(), version.clone()))
+            // A version can resolve to another backend than its group's.
+            .map(|(backend, tv)| (tv.backend().unwrap_or(backend), tv))
+            .unique_by(|(backend, tv)| (backend.id().to_string(), tv.version.clone()))
             .collect_vec();
         // A version that failed to resolve was only warned about. Don't let it
         // drop out of the audit unnoticed.

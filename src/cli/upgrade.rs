@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::args::{BackendArg, ToolArg};
+use crate::backend::ABackend;
 use crate::backend::pipx::PIPXBackend;
 use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::errors::split_install_result;
@@ -42,6 +43,8 @@ struct ExplicitConfigBump {
     // Keep the original selector for matching successful resolutions even when pinning.
     request: ToolRequest,
     persisted_request: ToolRequest,
+    /// The request the config holds now, which the bump replaces.
+    configured: ToolRequest,
 }
 
 /// Upgrade outdated tools
@@ -470,6 +473,7 @@ impl Upgrade {
                     path,
                     persisted_request: request.clone(),
                     request,
+                    configured: configured_request.clone(),
                 });
             }
             explicit_config_bumps.retain(|bump| {
@@ -627,6 +631,7 @@ impl Upgrade {
                         path: path.to_path_buf(),
                         persisted_request: configured.clone(),
                         request: configured.clone(),
+                        configured: configured.clone(),
                     });
                 }
             }
@@ -875,13 +880,42 @@ impl Upgrade {
         } else {
             ts.list_current_versions()
         };
-        let installed = versions
+        let mut installed = versions
             .into_iter()
             .filter(|(backend, tv)| {
                 selected(tv.ba()) && backend.is_version_installed(config, tv, true)
             })
-            .map(|(backend, tv)| (backend, tv.version))
-            .unique_by(|(backend, version)| (backend.id().to_string(), version.clone()))
+            // A version can resolve to another backend than its group's.
+            .map(|(backend, tv)| (tv.backend().unwrap_or(backend), tv))
+            .collect_vec();
+        // The installed version an upgrade replaces, which is not the resolved
+        // one when that is not installed yet.
+        for o in outdated.iter() {
+            if let Some(current) = &o.current
+                && selected(o.tool_version.ba())
+                && let Ok(backend) = o.tool_version.backend()
+            {
+                let mut tv = o.tool_version.clone();
+                tv.version = current.clone();
+                installed.push((backend, tv));
+            }
+        }
+        // The version a config bump moves away from: what the configured
+        // request resolves to now. The toolset holds the bump's target instead
+        // when the target was named on the command line.
+        let mut bumped = vec![];
+        for bump in bumps.iter() {
+            let tv = installed_version(config, &bump.configured).await;
+            if let Some((backend, tv)) = &tv
+                && selected(tv.ba())
+            {
+                installed.push((backend.clone(), tv.clone()));
+            }
+            bumped.push(tv.map(|(_, tv)| tv.version));
+        }
+        let installed = installed
+            .into_iter()
+            .unique_by(|(backend, tv)| (backend.id().to_string(), tv.version.clone()))
             .collect_vec();
         let scanned = installed.len();
         let report = crate::audit::scan(installed).await?;
@@ -892,25 +926,21 @@ impl Upgrade {
                 .iter()
                 .any(|f| f.version == version && backend_args_match(&f.ba, ba))
         };
-        // The version a config bump moves away from: the one its request
-        // resolves to now.
-        let bumped_version = |bump: &ExplicitConfigBump| {
-            ts.list_current_versions()
-                .into_iter()
-                .find(|(_, tv)| {
-                    backend_args_match(tv.ba(), bump.request.ba())
-                        && tv.request.version() == bump.request.version()
-                })
-                .map(|(_, tv)| tv.version)
-        };
         outdated.retain(|o| {
             o.current
                 .as_deref()
                 .is_some_and(|current| affected(o.tool_version.ba(), current))
         });
-        bumps.retain(|bump| {
-            bumped_version(bump).is_some_and(|version| affected(bump.request.ba(), &version))
-        });
+        let bumped = std::mem::take(bumps)
+            .into_iter()
+            .zip(bumped)
+            .filter(|(bump, version)| {
+                version
+                    .as_deref()
+                    .is_some_and(|version| affected(bump.configured.ba(), version))
+            })
+            .collect_vec();
+        *bumps = bumped.iter().map(|(bump, _)| bump.clone()).collect();
         if report.findings.is_empty() {
             let checked = scanned - report.unchecked.len();
             if checked > 0 {
@@ -928,9 +958,9 @@ impl Upgrade {
                 !outdated.iter().any(|o| {
                     o.current.as_deref() == Some(f.version.as_str())
                         && backend_args_match(o.tool_version.ba(), &f.ba)
-                }) && !bumps.iter().any(|bump| {
-                    backend_args_match(bump.request.ba(), &f.ba)
-                        && bumped_version(bump).as_deref() == Some(f.version.as_str())
+                }) && !bumped.iter().any(|(bump, version)| {
+                    backend_args_match(bump.configured.ba(), &f.ba)
+                        && version.as_deref() == Some(f.version.as_str())
                 })
             })
             .map(|f| format!("{}@{}", f.tool, f.version))
@@ -950,10 +980,23 @@ impl Upgrade {
                 stuck.join(", ")
             );
         }
-        // The version an upgrade moves to can be affected too.
-        let targets = outdated
+        // The version an upgrade or a config bump moves to can be affected too.
+        let mut targets = outdated
             .iter()
-            .filter_map(|o| Some((o.tool_version.backend().ok()?, o.latest.clone())))
+            .filter_map(|o| {
+                let mut tv = o.tool_version.clone();
+                tv.version = o.latest.clone();
+                Some((o.tool_version.backend().ok()?, tv))
+            })
+            .collect_vec();
+        for (bump, _) in &bumped {
+            if let Some(target) = resolve_request(config, &bump.persisted_request).await {
+                targets.push(target);
+            }
+        }
+        let targets = targets
+            .into_iter()
+            .unique_by(|(backend, tv)| (backend.id().to_string(), tv.version.clone()))
             .collect_vec();
         let still = crate::audit::scan(targets)
             .await?
@@ -1964,6 +2007,30 @@ Use `-b` or `--bump` instead.
 The `--local` flag is deprecated in favor of `--no-global`. mise warns about it from
 2027.1.0 and removes it in 2027.7.0."###
 );
+
+/// What `request` resolves to now, with the backend it resolved to.
+async fn resolve_request(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+) -> Option<(ABackend, ToolVersion)> {
+    let tv = request
+        .resolve(config, &ResolveOptions::default())
+        .await
+        .ok()?;
+    let backend = tv.backend().ok()?;
+    Some((backend, tv))
+}
+
+/// What `request` resolves to now, if that version is installed.
+async fn installed_version(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+) -> Option<(ABackend, ToolVersion)> {
+    let (backend, tv) = resolve_request(config, request).await?;
+    backend
+        .is_version_installed(config, &tv, true)
+        .then_some((backend, tv))
+}
 
 #[cfg(test)]
 mod tests {

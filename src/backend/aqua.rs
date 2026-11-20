@@ -289,12 +289,14 @@ impl Backend for AquaBackend {
     }
 
     /// By the package's repository, not the aqua package name: `kubernetes/kubectl`
-    /// is released from kubernetes/kubernetes.
-    async fn advisory_queries(&self, version: &str) -> Vec<crate::audit::AdvisoryQuery> {
-        let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await else {
+    /// is released from kubernetes/kubernetes. A version override can name
+    /// another repository, so the package is resolved for the version, as an
+    /// install resolves it.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let Ok(pkg) = self.package_with_version_candidates(tv).await else {
             return vec![];
         };
-        crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, version)
+        crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, &tv.version)
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
