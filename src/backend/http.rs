@@ -1611,7 +1611,10 @@ impl Backend for HttpBackend {
         // record the download's own digest and never compare it to the published one.
         let target = crate::platform::Platform::parse(&platform_key)
             .map(crate::backend::PlatformTarget::new)?;
-        if pinned.is_none() && opts.checksum_url_for_target(&target).is_some() {
+        if pinned.is_none()
+            && !has_lockfile_checksum
+            && opts.checksum_url_for_target(&target).is_some()
+        {
             ctx.pr.set_message(format!("resolve checksum {filename}"));
             let published = self
                 .resolve_lock_checksum(&opts, &tv, &target, &url)
