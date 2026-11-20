@@ -454,9 +454,20 @@ solve = lambda do |queue|
   false
 end
 unless solve.call(root.runtime_dependencies)
-  why = budget < 0 ? " (gave up after too many attempts)" : ""
-  warn "mise: could not resolve a compatible set of dependencies for " + root.full_name + why
-  exit
+  why = budget < 0 ? "gave up after too many attempts" : "no compatible set exists"
+  warn "mise: could not resolve one set of dependencies for " + root.full_name + " (" + why + "); copying the newest of each"
+  # Best effort: the newest candidate of everything reachable, so the tool
+  # still stops depending on one Ruby patch's gem directory where it can.
+  chosen = { root.name => root }
+  queue = root.runtime_dependencies
+  until queue.empty?
+    dep = queue.shift
+    next if chosen[dep.name]
+    spec = dep.matching_specs(true).max_by(&:version)
+    next unless spec
+    chosen[dep.name] = spec
+    queue.concat(spec.runtime_dependencies)
+  end
 end
 # Only now: requiring this default gem activates it, which would clash with a
 # dependency version the tool pins.
@@ -1676,9 +1687,8 @@ mod tests {
         assert_eq!(extract_minor_version("latest"), None);
     }
 
-    /// Runs [`VENDOR_DEPENDENCIES`] for `root` against hand-built gem
-    /// directories, with `libexec` as `GEM_HOME` and `ruby_gems` as the Ruby's
-    /// own gem directory. Returns `None` when no Ruby is installed.
+    /// Hand-built gem directories: `libexec` is `GEM_HOME` and `ruby_gems` is the
+    /// Ruby's own gem directory.
     struct FakeGems {
         tmp: tempfile::TempDir,
     }
@@ -1721,6 +1731,9 @@ mod tests {
                 && self.libexec().join("gems").join(full_name).exists()
         }
 
+        /// Runs [`VENDOR_DEPENDENCIES`] for `root`, optionally after requiring
+        /// `prelude`. Returns the script's stderr, or `None` when no Ruby is
+        /// installed.
         fn run(&self, root: &str, version: &str, prelude: Option<&str>) -> Option<String> {
             let ruby = ruby_for_tests()?;
             let mut cmd = std::process::Command::new(ruby);
@@ -1732,7 +1745,6 @@ mod tests {
             let out = cmd
                 .arg("-e")
                 .arg(VENDOR_DEPENDENCIES)
-                .env_remove("GEM_PATH")
                 .env("GEM_HOME", self.libexec())
                 .env(
                     "GEM_PATH",
@@ -1833,7 +1845,8 @@ mod tests {
         }
     }
 
-    /// With no compatible set the install still succeeds, with a warning.
+    /// With no compatible set the install still succeeds, with a warning, and
+    /// the newest of each dependency is copied anyway.
     #[test]
     fn vendor_warns_instead_of_failing_without_a_solution() {
         let g = fake_gems();
@@ -1845,7 +1858,8 @@ mod tests {
             return;
         };
         assert!(stderr.contains("could not resolve"), "{stderr}");
-        assert!(!g.vendored("a-1"));
+        // Best effort: the newest of each is still copied.
+        assert!(g.vendored("a-1") && g.vendored("c-2"), "{stderr}");
     }
 
     /// When `Gem.default_ext_dir_for` puts extensions outside the gem
