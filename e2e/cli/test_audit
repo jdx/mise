@@ -93,5 +93,16 @@ EOF
 assert_contains "mise upgrade --vulnerable --bump aqua:jqlang/jq@1.8 --dry-run 2>&1" "Would install aqua:jqlang/jq@1.8"
 # The version a bump replaces is not reported as one it upgrades to.
 assert_not_contains "mise upgrade --vulnerable --bump aqua:jqlang/jq@1 --dry-run 2>&1 | grep 'still have known' || true" "jq@1.7"
+# A lockfile can pin a version that is not installed. The upgrade still
+# replaces the affected one that is, so --pin writes its target to the config.
+cat <<EOF >mise.lock
+lockfile_version = 3
+
+[[tools."aqua:jqlang/jq"]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+EOF
+assert_contains "mise upgrade --vulnerable --bump --pin --dry-run 2>&1" "Would bump aqua:jqlang/jq@1.8"
+rm mise.lock
 mise install aqua:jqlang/jq@1.8
 assert_contains "mise upgrade --vulnerable --bump aqua:jqlang/jq@1.8 --dry-run 2>&1" "Would bump aqua:jqlang/jq@1.8 in"

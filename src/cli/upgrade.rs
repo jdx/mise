@@ -910,15 +910,28 @@ impl Upgrade {
         // when the target was named on the command line.
         let mut bumped = vec![];
         for bump in bumps.iter() {
-            let tv = installed_version(config, &bump.configured).await;
-            let mut item = None;
-            if let Some((backend, tv)) = &tv
-                && selected(tv.ba())
-            {
-                item = Some(installed.len());
-                installed.push((backend.clone(), tv.clone()));
-            }
-            bumped.push((tv.map(|(_, tv)| tv.version), item));
+            let entry = match installed_version(config, &bump.configured).await {
+                Some((backend, tv)) => {
+                    let mut item = None;
+                    if selected(tv.ba()) {
+                        item = Some(installed.len());
+                        installed.push((backend, tv.clone()));
+                    }
+                    (Some(tv.version), item)
+                }
+                // The request can resolve to a version that is not installed,
+                // such as one a lockfile pins. The upgrade of the same request
+                // then replaces the installed version, so the bump goes with it.
+                None => outdated
+                    .iter()
+                    .zip(&outdated_items)
+                    .find(|(o, _)| {
+                        backend_args_match(o.tool_version.ba(), bump.configured.ba())
+                            && o.tool_version.request.version() == bump.configured.version()
+                    })
+                    .map_or((None, None), |(o, item)| (o.current.clone(), *item)),
+            };
+            bumped.push(entry);
         }
         let report = crate::audit::scan(installed).await?;
         report.log_unchecked();
