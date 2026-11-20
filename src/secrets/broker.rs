@@ -204,28 +204,14 @@ impl MemoValues {
         all: bool,
         own: &BTreeSet<SecretName>,
     ) -> std::result::Result<Option<Pending>, Earlier> {
-        match &self.all {
-            // the whole document is here; a key it did not return is missing
-            Some(Ok(())) => {
-                let mut pending = vec![];
-                for key in own {
-                    if self.set.contains_key(key)
-                        || self.files.contains_key(key)
-                        || self.missing.contains(key)
-                    {
-                        continue;
-                    }
-                    if self.failed.contains_key(key) {
-                        return Err(Earlier::Key(key.clone()));
-                    }
-                    pending.push(key.clone());
-                }
-                return Ok((!pending.is_empty()).then_some(Pending::Keys(pending)));
-            }
+        // with the whole document here, a key it did not return is missing, so only the
+        // user's own keys can still be asked for
+        let own_only = match &self.all {
+            Some(Ok(())) => true,
             Some(Err(_)) if all => return Err(Earlier::All),
-            _ => {}
-        }
-        if all {
+            _ => false,
+        };
+        if all && !own_only {
             if let Some(key) = self.failed.keys().next() {
                 return Err(Earlier::Key(key.clone()));
             }
@@ -233,7 +219,9 @@ impl MemoValues {
         }
         let mut pending = vec![];
         for key in keys {
-            if self.set.contains_key(key)
+            let is_own = own.contains(key);
+            if (own_only && !is_own)
+                || self.set.contains_key(key)
                 || self.files.contains_key(key)
                 || self.missing.contains(key)
             {
@@ -242,9 +230,10 @@ impl MemoValues {
             if self.failed.contains_key(key) {
                 return Err(Earlier::Key(key.clone()));
             }
-            // the failed all-in-scope batch covered every key, so a key that is not already
-            // here would need a new call, which is not made; keys already here stay usable
-            if matches!(self.all, Some(Err(_))) {
+            // the failed all-in-scope batch covered every project key, so one that is not
+            // already here would need a new call, which is not made; keys already here stay
+            // usable. The batch never asked for the user's own keys, so those are still asked.
+            if !is_own && matches!(self.all, Some(Err(_))) {
                 return Err(Earlier::All);
             }
             pending.push(key.clone());
@@ -1995,6 +1984,28 @@ mod tests {
             .await
             .unwrap();
         assert!(!spawn.marker_value().split(',').any(|k| k == "PERSONAL_KEY"));
+    }
+
+    #[tokio::test]
+    async fn a_personal_key_is_still_asked_for_after_a_failed_all_in_scope_call() {
+        let term = terminal();
+        // with a personal key in the catalog the batch names the project keys, so one fails it
+        let (fake, memo) = fake_with_personal(&["B"], &["PERSONAL_KEY"]);
+        let broker = SecretBroker::default();
+        let mut all = Inputs::new("build", &[]);
+        all.grant.all = Some(GrantOrigin::CliAll);
+        let _ = broker
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap_err();
+        // the failed batch never asked for the user's own key, so it is not ruled out
+        let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        let spawn = broker
+            .grant_values(&memo, &listed.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "PERSONAL_KEY");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
