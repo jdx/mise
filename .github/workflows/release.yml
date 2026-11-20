@@ -129,6 +129,10 @@ jobs:
         uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
         with:
           tool: cross
+      # cross builds with the host's default toolchain. The runner image's
+      # default lags behind the workspace rust-version, so move it to stable.
+      - name: Setup Rust toolchain
+        run: rustup update stable --no-self-update && rustup default stable
       - name: Install llvm-tools (PGO)
         if: matrix.pgo
         run: rustup component add llvm-tools
