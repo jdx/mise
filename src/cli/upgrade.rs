@@ -888,9 +888,6 @@ impl Upgrade {
             // A version can resolve to another backend than its group's.
             .map(|(backend, tv)| (tv.backend().unwrap_or(backend), tv))
             .collect_vec();
-        // The installed version an upgrade replaces, which is not the resolved
-        // one when that is not installed yet. Each upgrade keeps the index of
-        // its item, so it is judged by its own advisory source.
         // The pending install of a bump's target, which replaces nothing
         // installed.
         let installs_bump = |o: &OutdatedInfo, bump: &ExplicitConfigBump| {
@@ -905,6 +902,9 @@ impl Upgrade {
             .any(|t| t.tvr.is_some())
             .then(|| self.toolset_builder().build_unresolved(config))
             .transpose()?;
+        // The installed version an upgrade replaces, which is not the resolved
+        // one when that is not installed yet. Each upgrade keeps the index of
+        // its item, so it is judged by its own advisory source.
         let mut outdated_items = vec![];
         let mut replaced = vec![];
         for o in outdated.iter() {
