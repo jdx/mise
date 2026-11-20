@@ -189,8 +189,9 @@ impl JavaPlugin {
         {
             return Some(found);
         }
-        // Shell hooks and other fast commands must not wait on the network.
-        if Settings::get().prefer_offline() {
+        // The shell hook must not wait on the network; `exec` and friends may, so an
+        // installed JDK keeps matching when the catalog cache is cold.
+        if Settings::get().offline() || running_hook_env() {
             return None;
         }
         match self.fetch_java_metadata("ga").await {
@@ -791,6 +792,17 @@ fn temurin_hotfix_version(version: &str) -> Option<String> {
 
 /// Whether a SDKMAN Temurin version has a component after the patch that is not zero, such as
 /// `26.0.2.1+1` or `27.0.1.0.2+1`. Those releases need a catalog lookup.
+/// Whether this run is the shell hook, which parses config on every prompt.
+fn running_hook_env() -> bool {
+    crate::env::ARGS
+        .read()
+        .unwrap()
+        .iter()
+        .skip(1)
+        .take_while(|a| *a != "--")
+        .any(|a| a == "hook-env")
+}
+
 fn is_temurin_hotfix(version: &str) -> bool {
     let core = version.split_once('+').map_or(version, |(core, _)| core);
     let parts = core.split('.').collect::<Vec<_>>();
