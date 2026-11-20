@@ -196,14 +196,32 @@ impl SourceMemo {
 
 impl MemoValues {
     /// What still has to be asked of the source, or the earlier failure that rules it out.
+    /// `own` are the requested keys from the user's own fnox config, which the all-in-scope
+    /// document never holds, so they are asked for by name.
     fn pending_for(
         &self,
         keys: &BTreeSet<SecretName>,
         all: bool,
+        own: &BTreeSet<SecretName>,
     ) -> std::result::Result<Option<Pending>, Earlier> {
         match &self.all {
             // the whole document is here; a key it did not return is missing
-            Some(Ok(())) => return Ok(None),
+            Some(Ok(())) => {
+                let mut pending = vec![];
+                for key in own {
+                    if self.set.contains_key(key)
+                        || self.files.contains_key(key)
+                        || self.missing.contains(key)
+                    {
+                        continue;
+                    }
+                    if self.failed.contains_key(key) {
+                        return Err(Earlier::Key(key.clone()));
+                    }
+                    pending.push(key.clone());
+                }
+                return Ok((!pending.is_empty()).then_some(Pending::Keys(pending)));
+            }
             Some(Err(_)) if all => return Err(Earlier::All),
             _ => {}
         }
@@ -976,6 +994,7 @@ impl SecretBroker {
             for (key, entry) in &catalog.entries {
                 if keys.contains(key)
                     || !entry.injectable
+                    || entry.personal.is_some()
                     || mise_util::env::is_reserved_secret_name(key.as_str())
                 {
                     continue;
@@ -988,6 +1007,12 @@ impl SecretBroker {
         }
         self.ensure_resolved(memo, &catalog, &resolve_keys, all, req, &who)
             .await?;
+        if all {
+            // `--secrets-all` leaves the user's own keys out; the ones this task names
+            // itself are asked for by name
+            self.ensure_resolved(memo, &catalog, &resolve_keys, false, req, &who)
+                .await?;
+        }
 
         let v = memo.values.lock().await;
         let mut env_values = BTreeMap::new();
@@ -1008,6 +1033,14 @@ impl SecretBroker {
                     return false;
                 }
                 if skipped.contains(key) {
+                    return false;
+                }
+                // one of the user's own keys, here because another task named it
+                if catalog
+                    .entries
+                    .get(key)
+                    .is_some_and(|e| e.personal.is_some())
+                {
                     return false;
                 }
                 if !catalog.entries.contains_key(key)
@@ -1063,10 +1096,20 @@ impl SecretBroker {
         req: &SpawnRequest<'_>,
         who: &str,
     ) -> Result<()> {
+        let own: BTreeSet<SecretName> = keys
+            .iter()
+            .filter(|key| {
+                catalog
+                    .entries
+                    .get(*key)
+                    .is_some_and(|e| e.personal.is_some())
+            })
+            .cloned()
+            .collect();
         let pending;
         {
             let mut v = memo.values.lock().await;
-            let Some(missing) = v.pending_for(keys, all).map_err(|e| g15(who, &e))? else {
+            let Some(missing) = v.pending_for(keys, all, &own).map_err(|e| g15(who, &e))? else {
                 return Ok(());
             };
             if !req.interactive {
@@ -1082,7 +1125,7 @@ impl SecretBroker {
         let _terminal = req.terminal.acquire(&pending).await;
         let _pause = MultiProgressReport::try_get().map(|r| r.pause_progress());
         let mut v = memo.values.lock().await;
-        let Some(missing) = v.pending_for(keys, all).map_err(|e| g15(who, &e))? else {
+        let Some(missing) = v.pending_for(keys, all, &own).map_err(|e| g15(who, &e))? else {
             return Ok(());
         };
         v.resolve(memo, catalog, missing, true, who).await
@@ -1925,39 +1968,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_personal_key_needs_the_users_own_flag() {
+    async fn a_task_can_list_a_personal_key() {
         let term = terminal();
-        let (fake, memo) = fake_with_personal(&[], &["PERSONAL_KEY"]);
+        let (_, memo) = fake_with_personal(&[], &["PERSONAL_KEY"]);
         let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
-        let err = SecretBroker::default()
-            .grant_values(&memo, &listed.req(&term, false))
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains(
-                "task deploy: PERSONAL_KEY comes from your own fnox config, so the project cannot grant it"
-            ),
-            "{err}"
-        );
-        assert!(
-            err.contains("mise run --secrets PERSONAL_KEY deploy"),
-            "{err}"
-        );
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
-
-        let mut asked = Inputs::new("deploy", &["PERSONAL_KEY"]);
-        asked
-            .grant
-            .keys
-            .get_mut(&SecretName::new("PERSONAL_KEY").unwrap())
-            .unwrap()
-            .push(GrantOrigin::CliFlag);
         let spawn = SecretBroker::default()
-            .grant_values(&memo, &asked.req(&term, false))
+            .grant_values(&memo, &listed.req(&term, false))
             .await
             .unwrap();
         assert_eq!(spawn.marker_value(), "PERSONAL_KEY");
+
+        // --secrets-all leaves the user's own keys out, but not one the task names itself
+        let (_, memo) = fake_with_personal(&[], &["PERSONAL_KEY"]);
+        let mut both = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        both.grant.all = Some(GrantOrigin::CliAll);
+        let spawn = SecretBroker::default()
+            .grant_values(&memo, &both.req(&term, false))
+            .await
+            .unwrap();
+        assert!(spawn.marker_value().split(',').any(|k| k == "PERSONAL_KEY"));
+        // a later task that only asks for everything does not inherit it
+        let mut all = Inputs::new("build", &[]);
+        all.grant.all = Some(GrantOrigin::CliAll);
+        let spawn = SecretBroker::default()
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn.marker_value().split(',').any(|k| k == "PERSONAL_KEY"));
     }
 
     #[tokio::test]
