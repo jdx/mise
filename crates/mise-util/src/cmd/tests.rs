@@ -783,7 +783,11 @@ async fn test_cmd_line_runner_execute_hashes_async_times_out() {
 async fn test_cmd_line_runner_execute_hashes_async_rejects_undrained_pipes() {
     let err = super::CmdLineRunner::new("sh")
         .args(["-c", "sleep 60 &"])
-        .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::from_millis(20))
+        .execute_hashes_async_with_drain_timeout(
+            1024,
+            std::time::Duration::from_millis(20),
+            std::time::Duration::from_millis(20),
+        )
         .await
         .unwrap_err();
     assert!(
@@ -800,7 +804,11 @@ async fn test_cmd_line_runner_execute_hashes_async_ignores_late_deadline_when_pi
     for _ in 0..50 {
         super::CmdLineRunner::new("sh")
             .args(["-c", "echo out; echo err >&2"])
-            .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::ZERO)
+            .execute_hashes_async_with_drain_timeout(
+                1024,
+                std::time::Duration::ZERO,
+                std::time::Duration::from_millis(500),
+            )
             .await
             .unwrap();
     }
@@ -823,7 +831,11 @@ async fn test_cmd_line_runner_execute_hashes_async_kills_descendants() {
             "-c",
             &format!("sleep 60 & printf %s \"$!\" >{}", pid_file.display()),
         ])
-        .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::from_millis(20))
+        .execute_hashes_async_with_drain_timeout(
+            1024,
+            std::time::Duration::from_millis(20),
+            std::time::Duration::from_millis(20),
+        )
         .await
         .unwrap_err();
     assert!(

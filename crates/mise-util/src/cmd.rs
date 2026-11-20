@@ -1937,14 +1937,19 @@ impl<'a> CmdLineRunner<'a> {
     /// combined byte limit also prevents commands that emit indefinitely from
     /// consuming unbounded resources.
     pub async fn execute_hashes_async(self, max_output_bytes: usize) -> Result<(String, String)> {
-        self.execute_hashes_async_with_drain_timeout(max_output_bytes, PIPE_DRAIN_TIMEOUT)
-            .await
+        self.execute_hashes_async_with_drain_timeout(
+            max_output_bytes,
+            PIPE_DRAIN_TIMEOUT,
+            PIPE_DRAIN_GRACE,
+        )
+        .await
     }
 
     async fn execute_hashes_async_with_drain_timeout(
         mut self,
         max_output_bytes: usize,
         pipe_drain_timeout: Duration,
+        pipe_drain_grace: Duration,
     ) -> Result<(String, String)> {
         let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
@@ -2100,7 +2105,7 @@ impl<'a> CmdLineRunner<'a> {
                 Ok(None) => break,
                 Err(_) if !graced => {
                     graced = true;
-                    drain_deadline = Instant::now() + PIPE_DRAIN_GRACE;
+                    drain_deadline = Instant::now() + pipe_drain_grace;
                     continue;
                 }
                 Err(_) => {
