@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::{WrapErr, bail};
 
-use super::api::Formula;
+use super::api::{BottleFile, Formula};
 use super::pour;
 use super::prefix;
 use super::resolve::ResolvedFormula;
@@ -38,10 +38,70 @@ pub(super) fn has_bottle(formula: &Formula) -> bool {
     {
         return false;
     }
-    formula
-        .bottle_files()
-        .and_then(|files| tag::select(files))
-        .is_some()
+    select_bottle(formula).is_some()
+}
+
+/// The bottle to pour for `formula` on this host, as `(tag, bottle)`.
+///
+/// Core formulae and published API JSON pick the newest tag that is not newer
+/// than the host, and resolve dependencies through per-tag `variations`.
+/// Metadata mise extracted from a tap's formula source has its
+/// dependencies evaluated for this host and carries no `variations`, so only
+/// a version-independent bottle or one built for exactly this host is safe; a
+/// bottle for an older tag could miss a dependency that tag needs.
+pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> {
+    let files = formula.bottle_files()?;
+    let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
+    let cellar = prefix::cellar();
+    if formula.from_tap_source {
+        // A native Linux bottle can need a newer glibc than the host, a
+        // dependency Homebrew injects and the tap shim does not emit, so only
+        // an `all` bottle is taken on Linux; the rest build from source.
+        pick_tap_bottle(files, tag::cask_variation_tag().as_deref(), |t, b| {
+            !t.ends_with("_linux") && cellar_fits(t, &b.cellar, &cellar)
+        })
+    } else {
+        // the newest tag whose bottle fits, so one that does not is skipped
+        tag::candidates().into_iter().find_map(|t| {
+            files
+                .get(&t)
+                .filter(|b| !is_tap || cellar_fits(&t, &b.cellar, &cellar))
+                .map(|b| (t, b))
+        })
+    }
+}
+
+/// A bottle pinned to a Cellar path (`/opt/homebrew/Cellar`) only works when
+/// that is where mise installs; `:any` and `:any_skip_relocation` relocate.
+///
+/// A bottle that declares no `cellar:` is pinned to Homebrew's default Cellar
+/// for its platform, which is the empty string here.
+fn cellar_fits(tag: &str, bottle_cellar: &str, cellar: &Path) -> bool {
+    if bottle_cellar.is_empty() {
+        let default = match tag {
+            "all" => return true,
+            t if t.ends_with("_linux") => "/home/linuxbrew/.linuxbrew/Cellar",
+            t if t.starts_with("arm64_") => "/opt/homebrew/Cellar",
+            _ => "/usr/local/Cellar",
+        };
+        return Path::new(default) == cellar;
+    }
+    bottle_cellar.starts_with(':') || Path::new(bottle_cellar) == cellar
+}
+
+/// `host` is `None` on a macOS release mise does not know, where no versioned
+/// bottle is known to fit.
+fn pick_tap_bottle<'a>(
+    files: &'a HashMap<String, BottleFile>,
+    host: Option<&str>,
+    usable: impl Fn(&str, &BottleFile) -> bool,
+) -> Option<(String, &'a BottleFile)> {
+    host.into_iter().chain(["all"]).find_map(|tag| {
+        files
+            .get(tag)
+            .filter(|f| usable(tag, f))
+            .map(|f| (tag.to_string(), f))
+    })
 }
 
 /// why `has_bottle` is false, for log/dry-run output
@@ -538,6 +598,7 @@ mod tests {
         Formula {
             name: "test".to_string(),
             tap: None,
+            from_tap_source: false,
             aliases: vec![],
             oldnames: vec![],
             versions: Versions {
@@ -566,6 +627,129 @@ mod tests {
             tap_git_head: Some("abc123".to_string()),
             post_install_steps: vec![],
         }
+    }
+
+    #[test]
+    fn a_native_linux_tap_bottle_is_not_poured() {
+        // its glibc requirement is not in the tap metadata, on any host
+        let mut f = formula(&["x86_64_linux", "arm64_linux"]);
+        f.from_tap_source = true;
+        assert!(select_bottle(&f).is_none());
+        let mut f = formula(&["x86_64_linux", "all"]);
+        f.from_tap_source = true;
+        assert_eq!(select_bottle(&f).map(|(t, _)| t).as_deref(), Some("all"));
+    }
+
+    #[test]
+    fn a_tap_bottle_needs_the_exact_host_tag_or_all() {
+        let bottle = |tags: &[&str]| formula(tags).bottle_files().unwrap().clone();
+        let pick = |tags: &[&str], host: Option<&str>| {
+            pick_tap_bottle(&bottle(tags), host, |_, _| true).map(|(tag, _)| tag)
+        };
+        assert_eq!(pick(&["all"], None).as_deref(), Some("all"));
+        assert_eq!(
+            pick(&["arm64_sequoia"], Some("arm64_sequoia")).as_deref(),
+            Some("arm64_sequoia")
+        );
+        assert_eq!(pick(&["arm64_sequoia"], Some("arm64_tahoe")), None);
+        // an unknown macOS release has no exact tag, so no versioned bottle fits
+        assert_eq!(pick(&["arm64_tahoe"], None), None);
+        // an older versioned bottle does not hide a usable `all` one
+        assert_eq!(
+            pick(&["arm64_sequoia", "all"], Some("arm64_tahoe")).as_deref(),
+            Some("all")
+        );
+        // the exact tag wins over `all`
+        assert_eq!(
+            pick(&["arm64_tahoe", "all"], Some("arm64_tahoe")).as_deref(),
+            Some("arm64_tahoe")
+        );
+    }
+
+    #[test]
+    fn a_pinned_cellar_must_match_the_install_cellar() {
+        let cellar = Path::new("/opt/homebrew/Cellar");
+        assert!(cellar_fits("arm64_tahoe", ":any", cellar));
+        assert!(cellar_fits("arm64_tahoe", ":any_skip_relocation", cellar));
+        assert!(cellar_fits("arm64_tahoe", "/opt/homebrew/Cellar", cellar));
+        assert!(!cellar_fits("arm64_tahoe", "/usr/local/Cellar", cellar));
+        // no `cellar:` declared means the platform default
+        assert!(cellar_fits("arm64_tahoe", "", cellar));
+        assert!(
+            !cellar_fits("sequoia", "", cellar),
+            "intel default is /usr/local"
+        );
+        assert!(cellar_fits("sequoia", "", Path::new("/usr/local/Cellar")));
+        assert!(cellar_fits(
+            "x86_64_linux",
+            "",
+            Path::new("/home/linuxbrew/.linuxbrew/Cellar")
+        ));
+        assert!(cellar_fits("all", "", Path::new("/srv/brew/Cellar")));
+        assert!(!cellar_fits(
+            "arm64_tahoe",
+            "",
+            Path::new("/srv/brew/Cellar")
+        ));
+    }
+
+    #[test]
+    fn an_incompatible_exact_tag_bottle_falls_back_to_all() {
+        let mut files = formula(&["arm64_tahoe", "all"])
+            .bottle_files()
+            .unwrap()
+            .clone();
+        files.get_mut("arm64_tahoe").unwrap().cellar = "/srv/brew/Cellar".to_string();
+        let cellar = Path::new("/opt/homebrew/Cellar");
+        let pick = pick_tap_bottle(&files, Some("arm64_tahoe"), |t, b| {
+            cellar_fits(t, &b.cellar, cellar)
+        });
+        assert_eq!(pick.map(|(tag, _)| tag).as_deref(), Some("all"));
+    }
+
+    #[test]
+    fn published_tap_json_skips_a_misfit_tag_for_a_later_one() {
+        let tags: Vec<String> = tag::candidates();
+        if tags.len() < 2 || tags[1] == "all" {
+            return;
+        }
+        let mut tap = formula(&[tags[0].as_str(), tags[1].as_str()]);
+        tap.tap = Some("acme/tools".to_string());
+        tap.bottle
+            .get_mut("stable")
+            .unwrap()
+            .files
+            .get_mut(&tags[0])
+            .unwrap()
+            .cellar = "/srv/brew/Cellar".to_string();
+        assert_eq!(select_bottle(&tap).map(|(t, _)| t), Some(tags[1].clone()));
+    }
+
+    #[test]
+    fn a_tap_bottle_for_another_tag_builds_from_source() {
+        // Only macOS has tags older than the host's.
+        if let Some(older) = tag::candidates().into_iter().filter(|t| t != "all").nth(1) {
+            let mut tap = formula(&[older.as_str()]);
+            assert!(has_bottle(&tap), "core formulae use per-tag variations");
+            // Published tap JSON carries correct variations, so it may pour an older tag.
+            tap.tap = Some("acme/tools".to_string());
+            assert!(has_bottle(&tap));
+            tap.tap = Some("acme/tools".to_string());
+            tap.from_tap_source = true;
+            assert!(!has_bottle(&tap));
+        }
+        // The exact tag exists only on a host mise knows; a native Linux
+        // bottle is never taken from tap source (see select_bottle).
+        if let Some(host) = tag::cask_variation_tag() {
+            let mut tap = formula(&[host.as_str()]);
+            tap.tap = Some("acme/tools".to_string());
+            tap.from_tap_source = true;
+            assert_eq!(has_bottle(&tap), !host.ends_with("_linux"));
+        }
+        let mut tap = formula(&["all"]);
+        tap.tap = Some("acme/tools".to_string());
+        tap.from_tap_source = true;
+        assert!(has_bottle(&tap));
     }
 
     #[test]

@@ -142,6 +142,46 @@ class Requirement
   end
 end
 
+# What a formula's `bottle do ... end` block declares: where the bottles are
+# hosted, the rebuild number, and one checksum per platform tag. Anything else
+# in the block (`cellar` aside) carries no metadata mise needs.
+class BottleSpec
+  attr_reader :root_url_value, :root_url_options, :rebuild_value, :cellar_value, :entries
+
+  def initialize
+    @rebuild_value = 0
+    @entries = {}
+  end
+
+  def root_url(value = nil, positional_options = nil, **options)
+    return if value.nil?
+
+    options = positional_options.merge(options) if positional_options.is_a?(Hash)
+
+    @root_url_value = value.to_s
+    @root_url_options = options
+  end
+  def rebuild(value = nil) = (@rebuild_value = value.to_i unless value.nil?)
+  def cellar(value = nil) = (@cellar_value = value unless value.nil?)
+
+  # `sha256 cellar: :any, arm64_sonoma: "<hex>"`, or the older
+  # `sha256 "<hex>" => :sonoma`
+  def sha256(spec = nil, **options)
+    spec = options if spec.nil?
+    # No `cellar:` pins the bottle to the platform's default Cellar, which the
+    # empty string stands for.
+    cellar = spec[:cellar] || @cellar_value || ""
+    cellar = ":#{cellar}" if cellar.is_a?(Symbol)
+    spec.each do |key, value|
+      next if key == :cellar
+      tag, digest = value.is_a?(String) ? [key, value] : [value, key]
+      @entries[tag.to_s] = { "cellar" => cellar.to_s, "sha256" => digest }
+    end
+  end
+  def method_missing(*) = nil
+  def respond_to_missing?(*) = true
+end
+
 class Formula
   class << self
     attr_reader :source_url, :source_sha256, :explicit_version, :revision_value,
@@ -149,6 +189,7 @@ class Formula
                 :keg_only_reason_value
 
     def unsupported_requirements = (@unsupported_requirements ||= [])
+    attr_reader :bottle_spec
 
     def inherited(subclass)
       Formula.instance_variable_set(:@subclass, subclass)
@@ -260,7 +301,23 @@ class Formula
 
     def resource(*) = nil
     def patch(*) = nil
-    def bottle(*) = nil
+    # `pour_bottle? only_if: ...` restricts when a bottle may be used; mise does
+    # not evaluate it, so such a formula stays on the source path.
+    def pour_bottle?(*, **) = (@pour_bottle_restricted = true)
+    def pour_bottle_restricted? = @pour_bottle_restricted || false
+
+    def bottle(*, &block)
+      return unless block
+      @bottle_spec ||= BottleSpec.new
+      begin
+        @bottle_spec.instance_exec(&block)
+      rescue StandardError, ScriptError
+        # A block that uses Homebrew-only constants or receivers (`GitHub::...`,
+        # `tap.user`) cannot be evaluated. Declare no bottle, so the formula
+        # still loads and builds from source.
+        @bottle_spec = nil
+      end
+    end
     def head(*) = nil
     def livecheck(*) = nil
     def service(*) = nil
@@ -324,6 +381,45 @@ raise "formula has no stable sha256" if klass.source_sha256.to_s.empty?
 version = (klass.explicit_version || inferred_version(klass.source_url)).to_s
 raise "could not infer formula version; add an explicit version declaration" if version.to_s.empty?
 
+# Homebrew's bottle URL rules (Library/Homebrew/bottle.rb): a ghcr.io root is
+# an OCI registry addressed by blob digest, anything else serves one tarball per
+# tag named name-version.tag.bottle[.rebuild].tar.gz.
+def bottle_metadata(klass, version)
+  spec = klass.bottle_spec
+  return {} if spec.nil? || spec.entries.empty?
+  # A pour runs no Ruby, so a formula with a `post_install` hook stays on the
+  # source path, where the shim runs it, rather than appear installed without it.
+  return {} if klass.method_defined?(:post_install)
+  # Likewise for a bottle restriction, declared as `pour_bottle? only_if:` or
+  # as an overriding `pour_bottle?` method.
+  return {} if klass.pour_bottle_restricted? || klass.method_defined?(:pour_bottle?)
+
+  pkg_version = klass.revision_value.to_i > 0 ? "#{version}_#{klass.revision_value}" : version
+  # Homebrew resolves an omitted root through `bottle_domain`, which mise does
+  # not model, so a rootless declaration stays on the source path.
+  return {} if spec.root_url_value.to_s.empty?
+  # Options such as `headers:` change how the bottle is fetched, and mise's
+  # downloader cannot send them, so the formula builds from source.
+  return {} unless spec.root_url_options.to_h.empty?
+
+  root = spec.root_url_value
+  root = root.chomp("/")
+  rebuild = spec.rebuild_value > 0 ? "#{spec.rebuild_value}." : ""
+  files = spec.entries.to_h do |tag, entry|
+    url = if root.start_with?("https://ghcr.io/v2/")
+      image = FORMULA_NAME.tr("@", "/").tr("+", "x")
+      # Homebrew names the registry repository acme/tools for a root of
+      # ghcr.io/v2/acme/homebrew-tools.
+      registry = root.sub(%r{\Ahttps://ghcr\.io/v2/([^/]+)/homebrew-}, 'https://ghcr.io/v2/\1/')
+      "#{registry}/#{image}/blobs/sha256:#{entry["sha256"]}"
+    else
+      "#{root}/#{FORMULA_NAME}-#{pkg_version}.#{tag}.bottle.#{rebuild}tar.gz"
+    end
+    [tag, entry.merge("url" => url)]
+  end
+  { "stable" => { "files" => files } }
+end
+
 metadata = {
   "name" => FORMULA_NAME,
   "tap" => ENV.fetch("MISE_BREW_TAP"),
@@ -333,7 +429,8 @@ metadata = {
   "keg_only_reason" => keg_only_reason_metadata(klass),
   "dependencies" => klass.runtime_dependencies || [],
   "build_dependencies" => klass.build_dependencies || [],
-  "bottle" => {},
+  "bottle" => bottle_metadata(klass, version),
+  "from_tap_source" => true,
   "urls" => { "stable" => { "url" => klass.source_url, "checksum" => klass.source_sha256 } },
   "ruby_source_path" => ENV.fetch("MISE_BREW_SOURCE_PATH"),
   "ruby_source_checksum" => { "sha256" => ENV.fetch("MISE_BREW_SOURCE_CHECKSUM") },

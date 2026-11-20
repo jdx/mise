@@ -2,9 +2,9 @@
 //!
 //! Homebrew does not publish JSON API metadata for most taps. For those taps,
 //! fetch the formula definition and evaluate only its metadata DSL with mise's
-//! own Ruby shim. The resulting formula deliberately has no bottles: source
-//! installation is the portable fallback and avoids duplicating Homebrew's
-//! bottle URL construction rules.
+//! own Ruby shim. The shim also reads the formula's `bottle do` block and builds
+//! the bottle URLs with Homebrew's rules; a formula without one is built from
+//! source.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1114,6 +1114,215 @@ end
             .with_sandbox(metadata_sandbox()?);
         runner.apply_sandbox().await?;
         Ok(serde_json::from_str(&runner.read().await?)?)
+    }
+
+    /// A tap's `bottle do` block becomes bottle files using Homebrew's URL rules.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn reads_bottles_declared_by_the_tap() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const BOTTLE: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let widget = |bottle: &str| {
+            format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  revision 1\n  bottle do\n{bottle}  end\nend\n"
+            )
+        };
+
+        // A custom root serves one tarball per tag, with the rebuild number in
+        // the filename.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\"\n    rebuild 2\n    sha256 cellar: :any_skip_relocation, arm64_sequoia: \"{BOTTLE}\"\n    sha256 x86_64_linux: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        let files = f.bottle_files().expect("bottle files");
+        let arm = &files["arm64_sequoia"];
+        assert_eq!(arm.cellar, ":any_skip_relocation");
+        assert_eq!(arm.sha256, BOTTLE);
+        assert_eq!(
+            arm.url,
+            "https://example.com/bottles/widget-1.2.3_1.arm64_sequoia.bottle.2.tar.gz"
+        );
+        assert_eq!(files["x86_64_linux"].cellar, "");
+
+        // A ghcr.io root is addressed by blob digest.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://ghcr.io/v2/acme/tools\"\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["arm64_sequoia"].url,
+            format!("https://ghcr.io/v2/acme/tools/widget/blobs/sha256:{BOTTLE}")
+        );
+
+        // A block-wide `cellar` applies to the older checksum form.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\"\n    cellar :any_skip_relocation\n    sha256 \"{BOTTLE}\" => :sonoma\n"
+            )),
+        )
+        .await?;
+        let sonoma = &f.bottle_files().unwrap()["sonoma"];
+        assert_eq!(sonoma.cellar, ":any_skip_relocation");
+        assert_eq!(
+            sonoma.url,
+            "https://example.com/bottles/widget-1.2.3_1.sonoma.bottle.tar.gz"
+        );
+
+        // Homebrew resolves a missing root through `bottle_domain`, which mise
+        // does not model, so the formula builds from source.
+        // A root that needs extra request options stays on the source path.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", headers: [\"X-Access: 1\"]\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+        // A bottle block using a Homebrew-only constant cannot be evaluated; the
+        // formula still loads and builds from source.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", using: GitHub::Missing\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+        // The options may also arrive as a positional hash.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", {{ headers: [\"X-Access: 1\"] }}\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!("    sha256 arm64_sequoia: \"{BOTTLE}\"\n")),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
+        // A bottle restriction is not evaluated, so the formula builds from source.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 pour_bottle? only_if: :clt_installed\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+        // The same formula without the restriction declares its bottle, so the
+        // assertion above is the restriction's doing and not a missing root.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\"\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle_files().is_some_and(|files| !files.is_empty()));
+
+        // A homebrew- prefixed ghcr.io repository is registered without it.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://ghcr.io/v2/acme/homebrew-tools\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["arm64_sequoia"].url,
+            format!("https://ghcr.io/v2/acme/tools/widget/blobs/sha256:{BOTTLE}")
+        );
+
+        // A `post_install` hook only runs on the source path, so such a
+        // formula declares no bottles.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\n  \
+                 def post_install\n    system \"true\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+        assert!(f.from_tap_source);
+
+        // A hook mixed in from a module counts too.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "module Hooks\n  def post_install\n    system \"true\"\n  end\nend\n\
+                 class Widget < Formula\n  include Hooks\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
+        // So does a `pour_bottle?` restriction mixed in from a module.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "module Policy\n  def pour_bottle?\n    false\n  end\nend\n\
+                 class Widget < Formula\n  include Policy\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://example.com/bottles\"\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
+
+        // A custom root serves one tarball per tag.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://dl.example.com/bottles/\"\n    sha256 \"{BOTTLE}\" => :sonoma\n"
+            )),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["sonoma"].url,
+            "https://dl.example.com/bottles/widget-1.2.3_1.sonoma.bottle.tar.gz"
+        );
+        Ok(())
     }
 
     /// None of these formulae declare a `version`, so they pin the URL

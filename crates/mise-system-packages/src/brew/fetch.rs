@@ -73,9 +73,12 @@ pub(super) async fn fetch_bottle(
     if let Some(pr) = pr {
         pr.set_message(format!("download {name}-{pkg_version}.tar.gz"));
     }
-    // ghcr.io allows anonymous pulls with this static bearer token
+    // ghcr.io allows anonymous pulls with this static bearer token; other
+    // hosts (a tap's own bottle server) get no credentials
     let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer QQ=="));
+    if bottle.url.starts_with("https://ghcr.io/") {
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer QQ=="));
+    }
     HTTP.download_file_with_headers(&bottle.url, &path, &headers, pr)
         .await?;
     if let Some(pr) = pr {
