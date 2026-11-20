@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" && "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+# A cask whose metadata cannot be fetched is reported for that entry alone.
+# The other packages keep their status, and apply still reaches them.
+FORMULAE_DIR="$TMPDIR/formulae"
+mkdir -p "$FORMULAE_DIR/api/cask"
+printf '{"token":"example-good","version":"1.0","url":"https://example.invalid/cask.zip","sha256":"no_check","artifacts":[{"font":["Example.ttf"]}]}\n' >"$FORMULAE_DIR/api/cask/example-good.json"
+start_http_server --dir "$FORMULAE_DIR"
+MISE_URL_REPLACEMENTS="$(printf '{"https://formulae.brew.sh":"http://127.0.0.1:%s"}' "$HTTP_PORT")"
+export MISE_URL_REPLACEMENTS
+export MISE_SYSTEM_BREW_PREFIX="$PWD/brew-prefix"
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"brew-cask:example-good" = "latest"
+"brew-cask:example-gone" = "latest"
+TOML
+
+assert_fail "mise bootstrap packages status --missing"
+assert_contains "mise bootstrap packages status 2>&1" "example-good"
+assert_contains "mise bootstrap packages status 2>&1" "example-gone"
+assert_contains "mise bootstrap packages status 2>&1" "error"
+assert_contains "mise bootstrap packages status --json 2>&1" '"state": "error"'
+
+assert_fail "mise bootstrap packages apply --dry-run --yes"
+assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1 || true" "example-gone"
+assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1 || true" "install cask example-good/1.0"
+assert_contains "mise doctor 2>&1 || true" "example-gone"

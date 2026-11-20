@@ -576,6 +576,9 @@ fn package_resource_state(
             PackageState::Unavailable { reason } => {
                 (format!("skipped ({reason})"), ResourceAction::Unknown)
             }
+            PackageState::Unresolved { reason } => {
+                (format!("error ({reason})"), ResourceAction::Unknown)
+            }
             PackageState::Installed { version }
             | PackageState::NeedsRepair { installed: version }
             | PackageState::VersionMismatch { installed: version } => (
@@ -623,6 +626,9 @@ fn package_resource_state(
         #[cfg(unix)]
         PackageState::Unavailable { reason } => {
             (format!("skipped ({reason})"), ResourceAction::Unknown)
+        }
+        PackageState::Unresolved { reason } => {
+            (format!("error ({reason})"), ResourceAction::Unknown)
         }
     }
 }

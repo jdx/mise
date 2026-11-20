@@ -5196,6 +5196,9 @@ impl BootstrapStatus {
                     (PackageState::Unavailable { reason }, _) => {
                         ("".to_string(), "skipped", Some(reason.as_str()), false)
                     }
+                    (PackageState::Unresolved { reason }, _) => {
+                        ("".to_string(), "error", Some(reason.as_str()), true)
+                    }
                 };
                 report.row(
                     "packages",

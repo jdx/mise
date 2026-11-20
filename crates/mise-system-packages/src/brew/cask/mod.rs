@@ -1243,10 +1243,17 @@ impl SystemPackageManager for BrewCaskManager {
         // first error in that order, as the loop it replaces did.
         let jobs = mise_util::jobs::normalize(mise_settings::Settings::get().jobs);
         futures_util::stream::iter(pkgs.iter().map(|req| async move {
-            let cask = self.resolve_cask(req, manager_options, false).await?;
+            // A cask that cannot be resolved (a tap that is down, a token that
+            // does not exist) is that entry's state, not the whole query's.
+            let state = match self.resolve_cask(req, manager_options, false).await {
+                Ok(cask) => package_state(req, &cask)?,
+                Err(err) => PackageState::Unresolved {
+                    reason: format!("{err:#}"),
+                },
+            };
             Ok(PackageStatus {
                 request: req.clone(),
-                state: package_state(req, &cask)?,
+                state,
                 display_name: None,
             })
         }))
@@ -1260,7 +1267,10 @@ impl SystemPackageManager for BrewCaskManager {
         status: &PackageStatus,
         manager_options: &ManagerPackageOptions,
     ) -> Option<PackageManagement> {
-        if matches!(status.state, PackageState::Missing) || status.state.is_unavailable() {
+        if matches!(status.state, PackageState::Missing)
+            || status.state.is_unavailable()
+            || status.state.is_unresolved()
+        {
             return None;
         }
         let Ok(cask) = self

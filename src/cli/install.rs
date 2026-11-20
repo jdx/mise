@@ -320,6 +320,11 @@ impl Install {
                 .await
             {
                 Ok(statuses) => {
+                    // an entry that could not be resolved is a transient
+                    // failure as well: it must not start the 24h throttle
+                    if statuses.iter().any(|s| s.state.is_unresolved()) {
+                        all_queries_ok = false;
+                    }
                     missing += statuses
                         .iter()
                         .filter(|s| {
@@ -327,6 +332,7 @@ impl Install {
                                 == crate::system::packages::PackageDesiredState::Present
                                 && !s.state.is_installed()
                                 && !s.state.is_unavailable()
+                                && !s.state.is_unresolved()
                         })
                         .count();
                 }
