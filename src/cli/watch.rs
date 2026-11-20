@@ -28,7 +28,8 @@ use std::path::{Path, PathBuf};
 /// Several tasks separated by `:::` share one watcher and one `mise run`. A
 /// change that matches any of their sources runs all of them again, each
 /// subject to its usual up-to-date check, and `--restart` restarts them all. A
-/// `!` exclude in one task's sources applies to every task in the watcher,
+/// change while they are running is ignored unless you set `--on-busy-update`.
+/// A `!` exclude in one task's sources applies to every task in the watcher,
 /// unless another task lists the same pattern as an include. To watch tasks
 /// independently, run a separate `mise watch` for each, for example from a
 /// wrapper task.
