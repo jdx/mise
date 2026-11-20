@@ -4539,6 +4539,10 @@
                       "type": "integer",
                       "description": "how many of the lock's slots the task holds while it runs; `task.lock_pools` sets how many slots the lock has, one unless it says more, and a count above that is lowered to it",
                       "minimum": 1
+                    },
+                    "if_pool": {
+                      "type": "boolean",
+                      "description": "take the lock only on a machine whose `task.lock_pools` declares this name, so a project can join a pool where one exists without serializing runs where none does; the default is to take it everywhere"
                     }
                   },
                   "unevaluatedProperties": false
@@ -4569,6 +4573,10 @@
                         "type": "integer",
                         "description": "how many of the lock's slots the task holds while it runs; `task.lock_pools` sets how many slots the lock has, one unless it says more, and a count above that is lowered to it",
                         "minimum": 1
+                      },
+                      "if_pool": {
+                        "type": "boolean",
+                        "description": "take the lock only on a machine whose `task.lock_pools` declares this name, so a project can join a pool where one exists without serializing runs where none does; the default is to take it everywhere"
                       }
                     },
                     "required": ["name"],

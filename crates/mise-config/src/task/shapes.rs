@@ -82,6 +82,8 @@ pub struct TaskLockTable {
     /// how many of the lock's slots the task holds while it runs; `task.lock_pools` sets how many slots the lock has, one unless it says more, and a count above that is lowered to it
     #[schemars(range(min = 1))]
     pub count: Option<u32>,
+    /// take the lock only on a machine whose `task.lock_pools` declares this name, so a project can join a pool where one exists without serializing runs where none does; the default is to take it everywhere
+    pub if_pool: Option<bool>,
 }
 
 /// prompt to answer before this task's own command runs, after its dependencies

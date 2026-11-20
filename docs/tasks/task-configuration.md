@@ -945,7 +945,7 @@ Windows at once. The run-wide timeout does not stop the processes of
 
 ### `lock`
 
-- **Type**: `boolean | string | { name, count } | (string | { name, count })[]`
+- **Type**: `boolean | string | { name, count, if_pool } | (string | { name, count, if_pool })[]`
 - **Default**: unset
 
 Resources the task holds while its commands run. A run that needs a lock
@@ -976,6 +976,11 @@ lock = true
 - `{ name = "...", count = N }` takes N slots of a lock that has several, for a
   resource that is limited rather than unique, such as the cores or memory of a
   machine. See [Locks with several slots](#locks-with-several-slots).
+- `{ name = "...", if_pool = true }` takes the lock only on a machine whose
+  [`task.lock_pools`](/configuration/settings.html#task.lock_pools) declares that
+  name, and runs without it elsewhere. Use it to join a pool such as
+  `xcode = "2"` where a machine has one, without making every other machine
+  take turns on a single exclusive lock. It combines with `count`.
 - `false` or an empty list takes no lock, for example to turn off a lock a
   template sets.
 

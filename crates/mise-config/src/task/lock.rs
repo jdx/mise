@@ -12,7 +12,7 @@ pub enum TaskLock {
     Off,
     /// `lock = true`: this task, in this repository.
     Task,
-    /// `lock = "name"`, a `{ name, count }` table, or a list of them, each shared by every task
+    /// `lock = "name"`, a `{ name, count, if_pool }` table, or a list of them, each shared by every task
     /// on the machine that names it.
     Names(Vec<NamedLock>),
 }
@@ -23,6 +23,9 @@ pub enum TaskLock {
 pub struct NamedLock {
     pub name: String,
     pub count: NonZeroU32,
+    /// Take the lock only on a machine whose `task.lock_pools` declares `name`; elsewhere the
+    /// task runs without it.
+    pub if_pool: bool,
 }
 
 impl NamedLock {
@@ -30,7 +33,13 @@ impl NamedLock {
         Self {
             name: name.into(),
             count: NonZeroU32::MIN,
+            if_pool: false,
         }
+    }
+
+    pub fn with_if_pool(mut self, if_pool: bool) -> Self {
+        self.if_pool = if_pool;
+        self
     }
 
     pub fn with_count(mut self, count: NonZeroU32) -> Self {
@@ -83,12 +92,17 @@ impl Serialize for TaskLock {
 impl Serialize for NamedLock {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
-        if self.count == NonZeroU32::MIN {
+        if self.count == NonZeroU32::MIN && !self.if_pool {
             return serializer.serialize_str(&self.name);
         }
-        let mut map = serializer.serialize_map(Some(2))?;
+        let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("name", &self.name)?;
-        map.serialize_entry("count", &self.count)?;
+        if self.count != NonZeroU32::MIN {
+            map.serialize_entry("count", &self.count)?;
+        }
+        if self.if_pool {
+            map.serialize_entry("if_pool", &true)?;
+        }
         map.end()
     }
 }
@@ -101,7 +115,9 @@ impl<'de> Deserialize<'de> for TaskLock {
             type Value = TaskLock;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a boolean, a lock name, a `{ name, count }` table, or a list of them")
+                f.write_str(
+                    "a boolean, a lock name, a `{ name, count, if_pool }` table, or a list of them",
+                )
             }
 
             fn visit_bool<E: de::Error>(self, v: bool) -> Result<TaskLock, E> {
@@ -143,7 +159,7 @@ impl<'de> Visitor<'de> for NamedLockVisitor {
     type Value = NamedLock;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a lock name or a `{ name, count }` table")
+        f.write_str("a lock name or a `{ name, count, if_pool }` table")
     }
 
     fn visit_str<E: de::Error>(self, v: &str) -> Result<NamedLock, E> {
@@ -156,6 +172,7 @@ impl<'de> Visitor<'de> for NamedLockVisitor {
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<NamedLock, A::Error> {
         let mut name: Option<String> = None;
         let mut count: Option<NonZeroU32> = None;
+        let mut if_pool = false;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
                 "name" => name = Some(map.next_value()?),
@@ -169,7 +186,13 @@ impl<'de> Visitor<'de> for NamedLockVisitor {
                         },
                     )?);
                 }
-                other => return Err(de::Error::unknown_field(other, &["name", "count"])),
+                "if_pool" => if_pool = map.next_value()?,
+                other => {
+                    return Err(de::Error::unknown_field(
+                        other,
+                        &["name", "count", "if_pool"],
+                    ));
+                }
             }
         }
         let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
@@ -179,6 +202,7 @@ impl<'de> Visitor<'de> for NamedLockVisitor {
         Ok(NamedLock {
             name,
             count: count.unwrap_or(NonZeroU32::MIN),
+            if_pool,
         })
     }
 }
@@ -251,6 +275,24 @@ mod tests {
         assert_eq!(
             parse("{ name = \"cpu\" }").unwrap(),
             TaskLock::Names(vec![NamedLock::new("cpu")])
+        );
+    }
+
+    #[test]
+    fn reads_if_pool() {
+        assert_eq!(
+            parse("{ name = \"xcode\", if_pool = true }").unwrap(),
+            TaskLock::Names(vec![NamedLock::new("xcode").with_if_pool(true)])
+        );
+        assert_eq!(
+            parse("{ name = \"xcode\", if_pool = false }").unwrap(),
+            TaskLock::Names(vec![NamedLock::new("xcode")])
+        );
+        assert!(parse("{ name = \"xcode\", if_pool = \"yes\" }").is_err());
+        let lock = TaskLock::Names(vec![NamedLock::new("xcode").with_if_pool(true)]);
+        assert_eq!(
+            serde_json::to_string(&lock).unwrap(),
+            r#"[{"name":"xcode","if_pool":true}]"#
         );
     }
 

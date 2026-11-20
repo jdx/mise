@@ -174,6 +174,15 @@ fn capacity_of(name: &str) -> Result<u32> {
     }
 }
 
+/// Whether `task.lock_pools` declares the pool `name`, which is what `if_pool` asks.
+fn is_declared(name: &str) -> bool {
+    Settings::get()
+        .task
+        .lock_pools
+        .as_ref()
+        .is_some_and(|pools| pools.contains_key(name))
+}
+
 /// More slots than any machine has cores, so a typo does not make a thousand lock files.
 const MAX_SLOTS: u32 = 4096;
 
@@ -185,6 +194,7 @@ pub(crate) fn requested(task: &Task) -> Result<Vec<LockKey>> {
         Some(TaskLock::Task) => vec![LockKey::this_task(task)],
         Some(TaskLock::Names(locks)) => locks
             .iter()
+            .filter(|l| !l.if_pool || is_declared(&l.name))
             .map(|l| Ok(LockKey::pool(&l.name, l.count.get(), capacity_of(&l.name)?)))
             .collect::<Result<Vec<_>>>()?,
     };
