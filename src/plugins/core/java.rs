@@ -179,6 +179,28 @@ impl JavaPlugin {
         Ok(metadata)
     }
 
+    /// The catalog version of a SDKMAN Temurin hotfix. This runs while reading `.sdkmanrc`,
+    /// including from the shell hook, so it reads the cached catalog first, whatever its age,
+    /// and fetches only when that has no such release and mise is online. A failed fetch
+    /// leaves the caller to fall back to the computed version.
+    async fn temurin_catalog_version_for(&self, version: &str) -> Option<String> {
+        if let Ok(metadata) = self.java_metadata_ga_cache.get_cached()
+            && let Some(found) = temurin_catalog_version(&metadata, version)
+        {
+            return Some(found);
+        }
+        if Settings::get().offline() {
+            return None;
+        }
+        match self.fetch_java_metadata("ga").await {
+            Ok(metadata) => temurin_catalog_version(metadata, version),
+            Err(err) => {
+                debug!("could not look up temurin {version} in the catalog: {err}");
+                None
+            }
+        }
+    }
+
     fn insert_java_metadata(
         metadata: &mut HashMap<String, JavaMetadata>,
         m: JavaMetadata,
@@ -590,17 +612,10 @@ impl Backend for JavaPlugin {
                 _ => vendor, // either same vendor name or unsupported
             };
             if vendor == "temurin" {
+                // The catalog shape of a hotfix build has changed before, so look the release
+                // up by its Java version rather than computing a build number.
                 let catalog = if is_temurin_hotfix(version) {
-                    // The catalog shape of a hotfix build has changed before, so look the
-                    // release up by its Java version rather than computing a build number.
-                    // A failed fetch falls back to the computed one.
-                    match self.fetch_java_metadata("ga").await {
-                        Ok(metadata) => temurin_catalog_version(metadata, version),
-                        Err(err) => {
-                            debug!("could not look up temurin {version} in the catalog: {err}");
-                            None
-                        }
-                    }
+                    self.temurin_catalog_version_for(version).await
                 } else {
                     None
                 };
@@ -1341,6 +1356,53 @@ mod tests {
             match_versions(&versions, "temurin-25.0.5+100000002"),
             ["temurin-25.0.5+100000002.0.LTS".to_string()]
         );
+    }
+
+    /// `.sdkmanrc` parsing for Temurin hotfixes against a controlled catalog cache, so
+    /// nothing reaches the live catalog: the cache is fresh, which stops the fetch.
+    #[tokio::test]
+    async fn sdkmanrc_temurin_hotfix_uses_the_cached_catalog_with_a_computed_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = |version: &str, java_version: &str| {
+            (
+                format!("temurin-{version}"),
+                JavaMetadata {
+                    vendor: "temurin".to_string(),
+                    version: version.to_string(),
+                    java_version: java_version.to_string(),
+                    image_type: Some("jdk".to_string()),
+                    ..Default::default()
+                },
+            )
+        };
+        let plugin = {
+            let mut plugin = JavaPlugin::new();
+            plugin.java_metadata_ga_cache =
+                CacheManagerBuilder::new(dir.path().join("java_metadata_ga.msgpack.z"))
+                    .with_fresh_duration(Some(std::time::Duration::from_secs(3600)))
+                    .build();
+            plugin
+                .java_metadata_ga_cache
+                .write(&HashMap::from([
+                    entry("25.0.4+101.0.LTS", "25.0.4.1+1-LTS"),
+                    entry("25.0.5+100000002.0.LTS", "25.0.5.1+2-LTS"),
+                ]))
+                .unwrap();
+            plugin
+        };
+        let parse = async |contents: &str| {
+            let path = dir.path().join(".sdkmanrc");
+            std::fs::write(&path, contents).unwrap();
+            plugin._parse_idiomatic_file(&path).await.unwrap()
+        };
+        // both encodings come from the catalog entry
+        assert_eq!(
+            parse("java=25.0.5.1+2-tem\n").await,
+            ["temurin-25.0.5+100000002"]
+        );
+        assert_eq!(parse("java=25.0.4.1+1-tem\n").await, ["temurin-25.0.4+101"]);
+        // a release the catalog lacks falls back to the computed version
+        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2+101"]);
     }
 
     #[test]
