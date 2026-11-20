@@ -84,7 +84,6 @@ impl Audit {
             .filter(|(_, tv)| tool_set.is_empty() || tool_set.contains(tv.ba()))
             // A version can resolve to another backend than its group's.
             .map(|(backend, tv)| (tv.backend().unwrap_or(backend), tv))
-            .unique_by(|(backend, tv)| (backend.id().to_string(), tv.version.clone()))
             .collect_vec();
         // A version that failed to resolve was only warned about. Don't let it
         // drop out of the audit unnoticed.
@@ -103,9 +102,8 @@ impl Audit {
                     .map(move |r| format!("{ba}@{}", r.version()))
             })
             .collect_vec();
-        let checked = items.len();
         let report = audit::scan(items).await?;
-        let checked = checked - report.unchecked.len();
+        let checked = report.checked;
 
         if self.json {
             miseprintln!(

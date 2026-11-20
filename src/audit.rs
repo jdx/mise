@@ -49,7 +49,7 @@ impl OsvPackage {
 }
 
 /// One lookup for a tool version.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AdvisoryQuery {
     /// Names the tool may be published under, best first. With more than
     /// one, the first that OSV has any record of is used.
@@ -102,8 +102,9 @@ pub fn queries_for(backend: &BackendType, tool_name: &str, version: &str) -> Vec
         BackendType::Packslip => crate::backend::packslip::project_name(tool_name)
             .ok()
             .and_then(|project| {
-                // A subproject such as `github.com/oxc-project/oxc/oxlint` is
-                // released from its repository.
+                // Only a github.com project has a repository here, and a
+                // subproject such as `github.com/oxc-project/oxc/oxlint` is
+                // released from it.
                 let (_, owner, repo) = packslip::model::repository(&project)?;
                 Some(github_queries(owner, repo, version))
             })
@@ -317,6 +318,8 @@ pub struct Unchecked {
 pub struct Report {
     pub findings: Vec<Finding>,
     pub unchecked: Vec<Unchecked>,
+    /// How many tool versions were looked up.
+    pub checked: usize,
 }
 
 impl Report {
@@ -341,7 +344,9 @@ fn display_name(backend: &ABackend) -> String {
 }
 
 /// Looks up every tool version in `items` in OSV, each with the backend it
-/// resolved to.
+/// resolved to. A tool version listed twice is looked up once, unless its
+/// entries have different advisory sources (one from a GitHub Enterprise
+/// `api_url`, one from public GitHub).
 pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
     ensure!(
         !mise_util::network::offline(&Settings::get()),
@@ -349,6 +354,7 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
     );
     let mut report = Report::default();
     let mut planned = vec![];
+    let mut listed = HashSet::new();
     for (backend, tv) in items {
         let queries = if is_release(&tv.version) {
             backend.advisory_queries(&tv).await
@@ -356,6 +362,9 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
             vec![]
         };
         let version = tv.version;
+        if !listed.insert((backend.id().to_string(), version.clone(), queries.clone())) {
+            continue;
+        }
         if queries.is_empty() {
             report.unchecked.push(Unchecked {
                 ba: backend.ba().clone(),
@@ -366,6 +375,7 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
             planned.push((backend, version, queries));
         }
     }
+    report.checked = planned.len();
 
     let alternatives = planned
         .iter()

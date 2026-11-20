@@ -913,11 +913,6 @@ impl Upgrade {
             }
             bumped.push(tv.map(|(_, tv)| tv.version));
         }
-        let installed = installed
-            .into_iter()
-            .unique_by(|(backend, tv)| (backend.id().to_string(), tv.version.clone()))
-            .collect_vec();
-        let scanned = installed.len();
         let report = crate::audit::scan(installed).await?;
         report.log_unchecked();
         let affected = |ba: &BackendArg, version: &str| {
@@ -942,7 +937,7 @@ impl Upgrade {
             .collect_vec();
         *bumps = bumped.iter().map(|(bump, _)| bump.clone()).collect();
         if report.findings.is_empty() {
-            let checked = scanned - report.unchecked.len();
+            let checked = report.checked;
             if checked > 0 {
                 info!(
                     "no known vulnerabilities in {checked} installed tool version{}",
@@ -994,10 +989,6 @@ impl Upgrade {
                 targets.push(target);
             }
         }
-        let targets = targets
-            .into_iter()
-            .unique_by(|(backend, tv)| (backend.id().to_string(), tv.version.clone()))
-            .collect_vec();
         let still = crate::audit::scan(targets)
             .await?
             .findings
