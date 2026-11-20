@@ -27,6 +27,6 @@ assert "mise env --json-extended | jq -r '.DENO_INSTALL_ROOT.tool'" "deno"
 assert_contains "mise env --json-extended | jq -r '.DENO_INSTALL_ROOT.value'" ".deno"
 assert_contains "mise env --json-extended | jq -r '.DENO_INSTALL_ROOT.source'" ".mise.toml"
 
-assert_contains "mise env --json-extended go@1.23.4 | jq -r '.GOBIN.value'" "go/1.23.4/bin"
 assert_contains "mise env --json-extended go@1.23.4 | jq -r '.GOBIN.tool'" "go"
+assert "mise env --json-extended go@1.23.4 | jq -r '.GOBIN.value'" "$(mise where go@1.23.4)/bin"
 assert_contains "mise env --json-extended go@1.23.4 | jq -r '.GOBIN.source'" ""

@@ -67,8 +67,11 @@ cat >mise.toml <<EOF
 EOF
 
 # --- step 1: initial install ---
-mise install
-PRIMARY_INSTALL_PATH=$(mise where "vfox:file://$PLUGIN_DIR")
+# Made in the legacy layout, the one a shared directory is read in. Under the
+# identity layout the catalog would keep selecting the installation after it
+# moves away, and never look for it in the shared directory.
+MISE_INSTALL_LAYOUT=legacy mise install
+PRIMARY_INSTALL_PATH=$(MISE_INSTALL_LAYOUT=legacy mise where "vfox:file://$PLUGIN_DIR")
 assert "cat '$PRIMARY_INSTALL_PATH/version.txt'" "content-v1"
 
 # Move the install into a shared fallback directory. Rolling checksum checks
