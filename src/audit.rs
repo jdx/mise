@@ -4,7 +4,8 @@
 //! database, NVD and more under one schema. A package registry tool (`npm:`,
 //! `pipx:`, `cargo:`, ...) is looked up by its package name; a tool released
 //! from a git repository (`github:`, `aqua:`, node, python, ...) by the
-//! repository and the release tag. OSV decides whether a version is affected,
+//! repository and the version, which OSV matches against its release tags. OSV
+//! decides whether a version is affected,
 //! so mise never has to order versions itself.
 
 use std::collections::HashSet;
@@ -84,13 +85,13 @@ pub fn queries_for(backend: &BackendType, tool_name: &str, version: &str) -> Vec
         BackendType::Cargo => cargo_queries(tool_name, version),
         BackendType::Go => go_module_query(tool_name, version).into_iter().collect(),
         BackendType::Github | BackendType::Aqua => match tool_name.split_once('/') {
-            Some((owner, repo)) if !repo.contains('/') => {
-                github_queries(owner, repo, version, version)
-            }
+            Some((owner, repo)) if !repo.contains('/') => github_queries(owner, repo, version),
             _ => vec![],
         },
+        // GitLab paths are case-insensitive, and OSV matches repository URLs
+        // exactly, as it stores them: lowercase.
         BackendType::Gitlab => vec![AdvisoryQuery::new(
-            OsvPackage::git(&format!("https://gitlab.com/{tool_name}")),
+            OsvPackage::git(&format!("https://gitlab.com/{tool_name}").to_lowercase()),
             version,
         )],
         BackendType::Packslip => crate::backend::packslip::project_name(tool_name)
@@ -98,7 +99,7 @@ pub fn queries_for(backend: &BackendType, tool_name: &str, version: &str) -> Vec
             .and_then(|project| {
                 let path = project.strip_prefix("github.com/")?;
                 let (owner, repo) = path.split_once('/')?;
-                Some(github_queries(owner, repo, version, version))
+                Some(github_queries(owner, repo, version))
             })
             .unwrap_or_default(),
         BackendType::Core => core_queries(tool_name, version),
@@ -107,9 +108,13 @@ pub fn queries_for(backend: &BackendType, tool_name: &str, version: &str) -> Vec
 }
 
 /// The lookups for a tool released from `github.com/<owner>/<repo>`, whose
-/// release `version` carries the tag `tag`. Go programs are also looked up
-/// as Go modules, where the Go vulnerability database has fixed versions.
-pub fn github_queries(owner: &str, repo: &str, version: &str, tag: &str) -> Vec<AdvisoryQuery> {
+/// release `version`. Go programs are also looked up as Go modules, where the
+/// Go vulnerability database has fixed versions.
+///
+/// The version is sent as it is, not as the release tag: OSV matches it
+/// against the repository's tags loosely, so `1.7` finds the same advisories
+/// as `jq-1.7`, and `20.0.0` the same as `v20.0.0`.
+pub fn github_queries(owner: &str, repo: &str, version: &str) -> Vec<AdvisoryQuery> {
     let repo = repo.trim_end_matches(".git");
     if owner.is_empty() || repo.is_empty() {
         return vec![];
@@ -128,7 +133,7 @@ pub fn github_queries(owner: &str, repo: &str, version: &str, tag: &str) -> Vec<
         // OSV stores GitHub repository URLs in lowercase and matches them exactly.
         AdvisoryQuery::new(
             OsvPackage::git(&format!("https://github.com/{owner}/{repo}").to_lowercase()),
-            tag,
+            version,
         ),
     ]
 }
@@ -162,7 +167,12 @@ fn pipx_queries(tool_name: &str, version: &str) -> Vec<AdvisoryQuery> {
         .or_else(|| (!source.contains(':') && source.contains('/')).then_some(source));
     if let Some(path) = github_path {
         let path = path.split(['@', '#']).next().unwrap_or_default();
-        return match path.split('/').collect_vec().as_slice() {
+        return match path
+            .trim_end_matches('/')
+            .split('/')
+            .collect_vec()
+            .as_slice()
+        {
             [owner, repo] => vec![AdvisoryQuery::new(
                 OsvPackage::git(
                     &format!(
@@ -194,7 +204,7 @@ fn cargo_queries(tool_name: &str, version: &str) -> Vec<AdvisoryQuery> {
             .collect_vec()
             .as_slice()
         {
-            [owner, repo] => github_queries(owner, repo, version, version)
+            [owner, repo] => github_queries(owner, repo, version)
                 .into_iter()
                 .filter(|q| q.packages.iter().all(|p| p.ecosystem == "GIT"))
                 .collect(),
@@ -301,6 +311,22 @@ pub struct Unchecked {
 pub struct Report {
     pub findings: Vec<Finding>,
     pub unchecked: Vec<Unchecked>,
+}
+
+impl Report {
+    /// Says which tool versions were not looked up, so that no findings is
+    /// not read as a clean result for them.
+    pub fn log_unchecked(&self) {
+        if !self.unchecked.is_empty() {
+            info!(
+                "not checked, no known advisory source: {}",
+                self.unchecked
+                    .iter()
+                    .map(|u| format!("{}@{}", u.tool, u.version))
+                    .join(", ")
+            );
+        }
+    }
 }
 
 /// Looks up every tool version in `items` in OSV.
@@ -803,10 +829,6 @@ mod tests {
                 vec![pkg("Go", "github.com/BurntSushi/ripgrep")],
                 vec![pkg("GIT", "https://github.com/burntsushi/ripgrep")],
             ]
-        );
-        assert_eq!(
-            github_queries("jqlang", "jq", "1.7.1", "jq-1.7.1")[1].version,
-            "jq-1.7.1"
         );
     }
 

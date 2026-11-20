@@ -294,11 +294,7 @@ impl Backend for AquaBackend {
         let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await else {
             return vec![];
         };
-        let tag = match &pkg.version_prefix {
-            Some(prefix) => format!("{prefix}{version}"),
-            None => version.to_string(),
-        };
-        crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, version, &tag)
+        crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, version)
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {

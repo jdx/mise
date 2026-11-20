@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use console::style;
-use eyre::Result;
+use eyre::{Result, ensure};
 use itertools::Itertools;
 use serde::Serialize;
 
@@ -76,6 +76,21 @@ impl Audit {
             .map(|(backend, tv)| (backend, tv.version))
             .unique_by(|(backend, version)| (backend.id().to_string(), version.clone()))
             .collect_vec();
+        // A version that failed to resolve was only warned about. Don't let it
+        // drop out of the audit unnoticed.
+        let unresolved = ts
+            .versions
+            .iter()
+            .filter(|(ba, _)| tool_set.is_empty() || tool_set.contains(*ba))
+            .flat_map(|(ba, tvl)| {
+                tvl.requests
+                    .iter()
+                    .filter(|r| {
+                        r.is_os_supported() && !tvl.versions.iter().any(|tv| tv.request == **r)
+                    })
+                    .map(move |r| format!("{ba}@{}", r.version()))
+            })
+            .collect_vec();
         let checked = items.len();
         let report = audit::scan(items).await?;
         let checked = checked - report.unchecked.len();
@@ -90,16 +105,7 @@ impl Audit {
             );
         } else {
             self.display_table(&report.findings)?;
-            if !report.unchecked.is_empty() {
-                info!(
-                    "not checked, no known advisory source: {}",
-                    report
-                        .unchecked
-                        .iter()
-                        .map(|u| format!("{}@{}", u.tool, u.version))
-                        .join(", ")
-                );
-            }
+            report.log_unchecked();
             if report.findings.is_empty() {
                 if checked > 0 {
                     info!(
@@ -117,6 +123,11 @@ impl Audit {
                 );
             }
         }
+        ensure!(
+            unresolved.is_empty(),
+            "not checked, the version did not resolve: {}",
+            unresolved.join(", ")
+        );
         if !report.findings.is_empty() {
             return Err(exit::request(1));
         }

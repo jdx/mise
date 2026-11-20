@@ -869,19 +869,39 @@ impl Upgrade {
                     .iter()
                     .any(|tool| backend_args_match(tool.ba.as_ref(), ba))
         };
-        let installed = ts
-            .list_current_installed_versions(config)
+        // `--inactive` also upgrades installed versions the config doesn't use.
+        let versions = if self.inactive {
+            ts.list_all_versions(config).await?
+        } else {
+            ts.list_current_versions()
+        };
+        let installed = versions
             .into_iter()
-            .filter(|(_, tv)| selected(tv.ba()))
+            .filter(|(backend, tv)| {
+                selected(tv.ba()) && backend.is_version_installed(config, tv, true)
+            })
             .map(|(backend, tv)| (backend, tv.version))
             .unique_by(|(backend, version)| (backend.id().to_string(), version.clone()))
             .collect_vec();
+        let scanned = installed.len();
         let report = crate::audit::scan(installed).await?;
+        report.log_unchecked();
         let affected = |ba: &BackendArg, version: &str| {
             report
                 .findings
                 .iter()
                 .any(|f| f.version == version && backend_args_match(&f.ba, ba))
+        };
+        // The version a config bump moves away from: the one its request
+        // resolves to now.
+        let bumped_version = |bump: &ExplicitConfigBump| {
+            ts.list_current_versions()
+                .into_iter()
+                .find(|(_, tv)| {
+                    backend_args_match(tv.ba(), bump.request.ba())
+                        && tv.request.version() == bump.request.version()
+                })
+                .map(|(_, tv)| tv.version)
         };
         outdated.retain(|o| {
             o.current
@@ -889,13 +909,16 @@ impl Upgrade {
                 .is_some_and(|current| affected(o.tool_version.ba(), current))
         });
         bumps.retain(|bump| {
-            report
-                .findings
-                .iter()
-                .any(|f| backend_args_match(&f.ba, bump.request.ba()))
+            bumped_version(bump).is_some_and(|version| affected(bump.request.ba(), &version))
         });
         if report.findings.is_empty() {
-            info!("No known vulnerabilities in installed tools");
+            let checked = scanned - report.unchecked.len();
+            if checked > 0 {
+                info!(
+                    "no known vulnerabilities in {checked} installed tool version{}",
+                    if checked == 1 { "" } else { "s" }
+                );
+            }
             return Ok(());
         }
         let stuck = report
@@ -905,9 +928,10 @@ impl Upgrade {
                 !outdated.iter().any(|o| {
                     o.current.as_deref() == Some(f.version.as_str())
                         && backend_args_match(o.tool_version.ba(), &f.ba)
-                }) && !bumps
-                    .iter()
-                    .any(|bump| backend_args_match(bump.request.ba(), &f.ba))
+                }) && !bumps.iter().any(|bump| {
+                    backend_args_match(bump.request.ba(), &f.ba)
+                        && bumped_version(bump).as_deref() == Some(f.version.as_str())
+                })
             })
             .map(|f| format!("{}@{}", f.tool, f.version))
             .unique()

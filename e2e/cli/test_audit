@@ -26,8 +26,7 @@ assert_fail_contains "mise audit" "known vulnerabilities in 2 tools"
 
 assert_fail_contains "MISE_OFFLINE=1 mise audit" "offline mode is enabled"
 
-# jq 1.7 is affected by CVE-2023-50246, fixed in 1.7.1. aqua tags jq releases
-# `jq-<version>`, so this also checks the tag prefix reaches OSV.
+# jq 1.7 is affected by CVE-2023-50246, fixed in 1.7.1.
 cat <<EOF >mise.toml
 [tools]
 "aqua:jqlang/jq" = "1"
@@ -38,9 +37,11 @@ assert_fail_contains "mise audit aqua:jqlang/jq" "CVE-2023-50246"
 
 # Only jq is upgraded: dummy is outdated but has no known vulnerability.
 assert_contains "mise upgrade --vulnerable --dry-run 2>&1" "Would install aqua:jqlang/jq@1.8"
-assert_not_contains "mise upgrade --vulnerable --dry-run 2>&1" "dummy"
+assert_not_contains "mise upgrade --vulnerable --dry-run 2>&1" "Would install dummy"
 assert_contains "mise upgrade --dry-run 2>&1" "Would install dummy@1.1.0"
-assert_contains "mise upgrade --vulnerable --dry-run -x aqua:jqlang/jq 2>&1" "No known vulnerabilities in installed tools"
+# dummy has no advisory source, so it is reported as not checked, not as clean.
+assert_contains "mise upgrade --vulnerable --dry-run -x aqua:jqlang/jq 2>&1" "not checked, no known advisory source: dummy@1.0.0"
+assert_not_contains "mise upgrade --vulnerable --dry-run -x aqua:jqlang/jq 2>&1" "no known vulnerabilities"
 
 # With an exact request there is nothing newer in range to upgrade to.
 cat <<EOF >mise.toml
@@ -49,3 +50,18 @@ cat <<EOF >mise.toml
 EOF
 assert_contains "mise upgrade --vulnerable --dry-run 2>&1" "known vulnerabilities, but no newer version in the configured range: aqua:jqlang/jq@1.7"
 assert_contains "mise upgrade --vulnerable --bump --dry-run 2>&1" "Would install aqua:jqlang/jq@1.8"
+
+# --inactive also checks installed versions the config doesn't use.
+cat <<EOF >mise.toml
+[tools]
+dummy = "1"
+EOF
+assert_not_contains "mise upgrade --vulnerable --dry-run 2>&1" "aqua:jqlang/jq"
+assert_contains "mise upgrade --vulnerable --inactive --dry-run 2>&1" "Would install aqua:jqlang/jq@1.8"
+
+# A version that does not resolve fails the audit instead of dropping out of it.
+cat <<EOF >mise.toml
+[tools]
+"npm:mise-no-such-package-xyz" = "latest"
+EOF
+assert_fail_contains "mise audit 2>&1" "not checked, the version did not resolve: npm:mise-no-such-package-xyz@latest"
