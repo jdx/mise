@@ -189,7 +189,8 @@ impl JavaPlugin {
         {
             return Some(found);
         }
-        if Settings::get().offline() {
+        // Shell hooks and other fast commands must not wait on the network.
+        if Settings::get().prefer_offline() {
             return None;
         }
         match self.fetch_java_metadata("ga").await {
