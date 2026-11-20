@@ -78,5 +78,7 @@ cat <<EOF >mise.toml
 [tools]
 "aqua:jqlang/jq" = "1.7"
 EOF
+# A kept bump installs its target, which replaces no installed version.
+assert_contains "mise upgrade --vulnerable --bump aqua:jqlang/jq@1.8 --dry-run 2>&1" "Would install aqua:jqlang/jq@1.8"
 mise install aqua:jqlang/jq@1.8
 assert_contains "mise upgrade --vulnerable --bump aqua:jqlang/jq@1.8 --dry-run 2>&1" "Would bump aqua:jqlang/jq@1.8 in"

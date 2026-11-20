@@ -921,11 +921,6 @@ impl Upgrade {
                 .iter()
                 .any(|f| f.version == version && backend_args_match(&f.ba, ba))
         };
-        outdated.retain(|o| {
-            o.current
-                .as_deref()
-                .is_some_and(|current| affected(o.tool_version.ba(), current))
-        });
         let bumped = std::mem::take(bumps)
             .into_iter()
             .zip(bumped)
@@ -936,6 +931,17 @@ impl Upgrade {
             })
             .collect_vec();
         *bumps = bumped.iter().map(|(bump, _)| bump.clone()).collect();
+        // Keep an upgrade when the version it replaces is affected, and the
+        // install of a kept bump's target, which replaces nothing installed.
+        outdated.retain(|o| {
+            o.current
+                .as_deref()
+                .is_some_and(|current| affected(o.tool_version.ba(), current))
+                || bumped.iter().any(|(bump, _)| {
+                    backend_args_match(o.tool_version.ba(), bump.request.ba())
+                        && o.tool_version.request.version() == bump.request.version()
+                })
+        });
         if report.findings.is_empty() {
             let checked = report.checked;
             if checked > 0 {
@@ -980,8 +986,12 @@ impl Upgrade {
             .iter()
             .filter_map(|o| {
                 let mut tv = o.tool_version.clone();
+                // The registry can install the new version with another backend.
+                if let Some(ba) = tv.ba().with_registry_version(&o.latest) {
+                    tv.request = tv.request.clone().with_backend(ba);
+                }
                 tv.version = o.latest.clone();
-                Some((o.tool_version.backend().ok()?, tv))
+                Some((tv.backend().ok()?, tv))
             })
             .collect_vec();
         for (bump, _) in &bumped {
@@ -989,8 +999,9 @@ impl Upgrade {
                 targets.push(target);
             }
         }
-        let still = crate::audit::scan(targets)
-            .await?
+        let target_report = crate::audit::scan(targets).await?;
+        target_report.log_unchecked();
+        let still = target_report
             .findings
             .iter()
             .map(|f| format!("{}@{}", f.tool, f.version))
