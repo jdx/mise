@@ -122,14 +122,23 @@ impl Backend for GemBackend {
             .map(|source| hash::hash_to_str(&source)))
     }
 
-    /// A gem from another source is not the rubygems.org gem of the same
-    /// name, so it has no known advisory source. The source is the one
-    /// versions are listed from.
+    /// A gem from another source than rubygems.org is not the rubygems.org
+    /// gem of the same name, so it has no known advisory source. The source
+    /// is the one versions are listed from: the `source` option, else the
+    /// first of `gem sources`, else rubygems.org.
     async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
         let Ok(config) = Config::get().await else {
             return vec![];
         };
-        if !matches!(self.remote_version_cache_context(&config).await, Ok(None)) {
+        let public = match self.configured_source(&config).await {
+            Ok(Some(source)) => is_rubygems_source(source.as_str()),
+            Ok(None) => self
+                .detect_gem_source(&config)
+                .await
+                .map_or(true, is_rubygems_source),
+            Err(_) => false,
+        };
+        if !public {
             return vec![];
         }
         crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
@@ -770,6 +779,11 @@ struct RubyGemsVersion {
 ///
 /// https://rubygems.org/
 /// ```
+/// Whether `source` is rubygems.org, whose gems OSV knows as RubyGems.
+fn is_rubygems_source(source: &str) -> bool {
+    Url::parse(source).is_ok_and(|url| url.host_str() == Some("rubygems.org"))
+}
+
 fn parse_gem_source_output(output: &str) -> String {
     for line in output.lines() {
         let line = line.trim();
@@ -1137,6 +1151,14 @@ pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_rubygems_source() {
+        assert!(is_rubygems_source("https://rubygems.org/"));
+        assert!(is_rubygems_source("https://rubygems.org"));
+        assert!(!is_rubygems_source("https://gems.example.com/"));
+        assert!(!is_rubygems_source("https://rubygems.org.example.com/"));
+    }
 
     /// The wrapper must run the executable it was generated for, even when the
     /// install directory or the executable's name contains spaces or shell

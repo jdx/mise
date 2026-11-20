@@ -1138,13 +1138,6 @@ impl Backend for NPMBackend {
         options
     }
 
-    /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
-    /// its own versions, which the shared versions host cannot know.
-    ///
-    /// `npm.shell_out` lists through `npm view` in the dependency environment,
-    /// whose registry settings mise does not interpret, so it always lists
-    /// directly. Its cache is keyed by what `npm` reads there, so one
-    /// registry's list is not reused for another.
     /// A package `.npmrc` routes to another registry is not the public npm
     /// package of the same name, so it has no known advisory source.
     async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
@@ -1155,6 +1148,13 @@ impl Backend for NPMBackend {
         crate::audit::queries_for(&self.get_type(), &name, &tv.version)
     }
 
+    /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
+    /// its own versions, which the shared versions host cannot know.
+    ///
+    /// `npm.shell_out` lists through `npm view` in the dependency environment,
+    /// whose registry settings mise does not interpret, so it always lists
+    /// directly. Its cache is keyed by what `npm` reads there, so one
+    /// registry's list is not reused for another.
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         // A tarball URL is not a package name, and no registry lists it.
         if is_tarball_spec(&self.tool_name()) {
