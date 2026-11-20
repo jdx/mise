@@ -1,0 +1,10 @@
+description = "Local LLM proxy daemon for rtk (BUSL-1.1, separate from the rtk CLI)"
+test = { cmd = "rtk-proxy --version", expected = "rtk-proxy {{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "github:rtk-ai/rtk"
+
+[backends.options]
+asset_pattern = "rtk-proxy-{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-musl', windows='pc-windows-msvc') }}.*"
+bin = "rtk-proxy"
