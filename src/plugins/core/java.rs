@@ -185,7 +185,8 @@ impl JavaPlugin {
     /// leaves the caller to fall back to the computed version.
     async fn temurin_catalog_version_for(&self, version: &str) -> Option<String> {
         if let Ok(metadata) = self.java_metadata_ga_cache.get_cached()
-            && let Some(found) = temurin_catalog_version(&metadata, version)
+            && let Some(found) =
+                temurin_catalog_version(&metadata, version, &current_java_platform())
         {
             return Some(found);
         }
@@ -195,7 +196,7 @@ impl JavaPlugin {
             return None;
         }
         match self.fetch_java_metadata("ga").await {
-            Ok(metadata) => temurin_catalog_version(metadata, version),
+            Ok(metadata) => temurin_catalog_version(metadata, version, &current_java_platform()),
             Err(err) => {
                 debug!("could not look up temurin {version} in the catalog: {err}");
                 None
@@ -814,14 +815,15 @@ fn is_temurin_hotfix(version: &str) -> bool {
 fn temurin_catalog_version(
     metadata: &HashMap<String, JavaMetadata>,
     version: &str,
+    platform: &Platform,
 ) -> Option<String> {
     metadata
         .values()
-        // Only a plain JDK has the bare "temurin-<version>" key the install query matches.
+        // Only an entry whose key is the bare "temurin-<version>" on this platform
+        // can be selected by the install query (a musl feature is dropped on musl).
         .filter(|m| {
             m.vendor == "temurin"
-                && m.image_type.as_deref() == Some("jdk")
-                && m.features.as_ref().is_none_or(|f| f.is_empty())
+                && m.to_version_string(platform) == format!("temurin-{}", m.version)
         })
         .filter(|m| m.java_version.split('-').next() == Some(version))
         .filter_map(|m| {
@@ -1352,7 +1354,8 @@ mod tests {
             entry("25.0.5+100000002.0.LTS", "25.0.5.1+2-LTS", "jre"),
             entry("17.0.21+100000002", "17.0.21.1+2", "jdk"),
         ]);
-        let lookup = |v| temurin_catalog_version(&metadata, v);
+        let platform = current_java_platform();
+        let lookup = |v| temurin_catalog_version(&metadata, v, &platform);
         // the older and the newer hotfix encodings both resolve
         assert_eq!(lookup("25.0.4.1+1").as_deref(), Some("25.0.4+101"));
         assert_eq!(lookup("25.0.5.1+2").as_deref(), Some("25.0.5+100000002"));
@@ -1383,8 +1386,15 @@ mod tests {
                 },
             ),
         ]);
-        assert_eq!(temurin_catalog_version(&odd, "30.0.1.1+2"), None);
-        assert_eq!(temurin_catalog_version(&odd, "31.0.1.1+2"), None);
+        assert_eq!(temurin_catalog_version(&odd, "30.0.1.1+2", &platform), None);
+        let glibc = Platform::parse("linux-x64").unwrap();
+        let musl = Platform::parse("linux-x64-musl").unwrap();
+        // the musl feature is dropped from the key on musl hosts only
+        assert_eq!(temurin_catalog_version(&odd, "31.0.1.1+2", &glibc), None);
+        assert_eq!(
+            temurin_catalog_version(&odd, "31.0.1.1+2", &musl).as_deref(),
+            Some("31.0.1+100000002")
+        );
         // a regular release resolves too, though only hotfixes are looked up
         assert_eq!(lookup("25.0.4+7").as_deref(), Some("25.0.4+7"));
 
