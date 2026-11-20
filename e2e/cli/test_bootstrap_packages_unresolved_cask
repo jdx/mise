@@ -8,7 +8,7 @@ fi
 # The other packages keep their status, and apply still reaches them.
 FORMULAE_DIR="$TMPDIR/formulae"
 mkdir -p "$FORMULAE_DIR/api/cask"
-printf '{"token":"example-good","version":"1.0","url":"https://example.invalid/cask.zip","sha256":"no_check","artifacts":[]}\n' >"$FORMULAE_DIR/api/cask/example-good.json"
+printf '{"token":"example-good","version":"1.0","url":"https://example.invalid/cask.zip","sha256":"no_check","artifacts":[{"font":["Example.ttf"]}]}\n' >"$FORMULAE_DIR/api/cask/example-good.json"
 start_http_server --dir "$FORMULAE_DIR"
 MISE_URL_REPLACEMENTS="$(printf '{"https://formulae.brew.sh":"http://127.0.0.1:%s"}' "$HTTP_PORT")"
 export MISE_URL_REPLACEMENTS
@@ -28,3 +28,5 @@ assert_contains "mise bootstrap packages status --json 2>&1" '"state": "error"'
 
 assert_fail "mise bootstrap packages apply --dry-run --yes"
 assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1 || true" "example-gone"
+assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1 || true" "install cask example-good/1.0"
+assert_contains "mise doctor 2>&1 || true" "example-gone"

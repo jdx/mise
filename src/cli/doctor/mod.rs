@@ -751,8 +751,17 @@ impl Doctor {
                                 == crate::system::packages::PackageDesiredState::Present
                                 && !s.state.is_installed()
                                 && !s.state.is_unavailable()
+                                && !s.state.is_unresolved()
                         })
                         .count();
+                    for s in &statuses {
+                        if let Some(reason) = s.state.unresolved_reason() {
+                            self.warnings.push(format!(
+                                "could not resolve {name} system package {}: {reason}",
+                                s.request
+                            ));
+                        }
+                    }
                     total_missing += missing;
                     map.insert(
                         name.into(),
@@ -1248,8 +1257,17 @@ impl Doctor {
                                 == crate::system::packages::PackageDesiredState::Present
                                 && !s.state.is_installed()
                                 && !s.state.is_unavailable()
+                                && !s.state.is_unresolved()
                         })
                         .count();
+                    for s in &statuses {
+                        if let Some(reason) = s.state.unresolved_reason() {
+                            self.warnings.push(format!(
+                                "could not resolve {name} system package {}: {reason}",
+                                s.request
+                            ));
+                        }
+                    }
                     lines.push(format!(
                         "{name}: {} requested, {missing} missing",
                         statuses.len()
