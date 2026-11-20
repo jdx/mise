@@ -28,8 +28,14 @@ impl DepsProvider for UvDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        self.base
-            .sources(vec![root.join("uv.lock"), root.join("pyproject.toml")])
+        let mut sources = vec![root.join("uv.lock"), root.join("pyproject.toml")];
+        // Workspace members' manifests (scripts, dependencies) can change
+        // without touching `uv.lock`.
+        // Skipped when `sources` is configured, since that replaces the defaults.
+        if self.base.config.sources.is_none() {
+            sources.extend(crate::task::workspace::uv::member_manifests(&root));
+        }
+        self.base.sources(sources)
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
