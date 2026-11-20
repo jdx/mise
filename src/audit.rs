@@ -362,8 +362,13 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
     let mut item_plan = vec![];
     let mut listed = HashMap::new();
     for (backend, tv) in items {
-        let queries = if is_release(&tv.version) {
-            backend.advisory_queries(&tv).await
+        // An installed version can be named by its install directory, such as
+        // `4.17.15~aube~<digest>` for an npm package locked with its graph.
+        // OSV knows the release, while the report keeps the name it was given.
+        let mut release = tv.clone();
+        release.strip_install_path_identity();
+        let queries = if is_release(&release.version) {
+            backend.advisory_queries(&release).await
         } else {
             vec![]
         };
