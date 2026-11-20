@@ -1145,6 +1145,16 @@ impl Backend for NPMBackend {
     /// whose registry settings mise does not interpret, so it always lists
     /// directly. Its cache is keyed by what `npm` reads there, so one
     /// registry's list is not reused for another.
+    /// A package `.npmrc` routes to another registry is not the public npm
+    /// package of the same name, so it has no known advisory source.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let name = self.tool_name();
+        if !npm_registry::is_public_registry(&npm_registry::package_registry(&name)) {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &name, &tv.version)
+    }
+
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         // A tarball URL is not a package name, and no registry lists it.
         if is_tarball_spec(&self.tool_name()) {

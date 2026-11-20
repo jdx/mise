@@ -32,6 +32,14 @@ assert_fail_contains "MISE_OFFLINE=1 mise audit" "offline mode is enabled"
 # A tool named without a version must have one configured.
 assert_fail_contains "mise audit node" "no version of node is configured. Pass node@VERSION to check one."
 
+# A package from another registry or index is not the public package of the
+# same name, so it is not checked.
+echo "registry=https://npm.example.invalid/" >"$HOME/.npmrc"
+assert_contains "mise audit npm:lodash@4.17.15 2>&1" "not checked, no known advisory source: npm:lodash@4.17.15"
+rm "$HOME/.npmrc"
+assert_contains "MISE_PYPI_REGISTRY_URL='https://pypi.example.invalid/pypi/{}/json' mise audit pipx:black@22.1.0 2>&1" "not checked, no known advisory source: pipx:black@22.1.0"
+assert_contains "mise audit 'gem:rails[source=https://gems.example.invalid/]@7.0.0' 2>&1" "not checked, no known advisory source: gem:rails@7.0.0"
+
 # jq 1.7 is affected by CVE-2023-50246, fixed in 1.7.1.
 cat <<EOF >mise.toml
 [tools]

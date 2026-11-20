@@ -122,6 +122,19 @@ impl Backend for GemBackend {
             .map(|source| hash::hash_to_str(&source)))
     }
 
+    /// A gem from another source is not the rubygems.org gem of the same
+    /// name, so it has no known advisory source. The source is the one
+    /// versions are listed from.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let Ok(config) = Config::get().await else {
+            return vec![];
+        };
+        if !matches!(self.remote_version_cache_context(&config).await, Ok(None)) {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Resolution and installation have to agree on where the gem comes
         // from. Listing versions from rubygems.org and then installing from a

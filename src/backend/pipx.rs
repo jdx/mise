@@ -577,6 +577,19 @@ impl Backend for PIPXBackend {
         Ok(())
     }
 
+    /// A package from another index than PyPI is not the PyPI package of the
+    /// same name, so it has no known advisory source. A git install is looked
+    /// up by its repository either way.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let Ok(config) = Config::get().await else {
+            return vec![];
+        };
+        if !matches!(self.remote_version_cache_context(&config).await, Ok(None)) {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
+    }
+
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(_) => {
