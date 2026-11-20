@@ -4791,6 +4791,16 @@ pub struct UnsupportedPlatforms {
     resolved: BTreeSet<(String, String, String)>,
 }
 
+/// Whether the user named `platform` (or the platform it is a variant of), as
+/// `--platform` or `lockfile_platforms` do. `None` means none were named.
+pub fn is_named_platform(named: Option<&BTreeSet<String>>, platform: &str) -> bool {
+    named.is_some_and(|named| {
+        named
+            .iter()
+            .any(|name| platform == name || platform.starts_with(&format!("{name}-")))
+    })
+}
+
 impl UnsupportedPlatforms {
     pub fn new(named: Option<BTreeSet<String>>) -> Self {
         Self {
@@ -4802,12 +4812,7 @@ impl UnsupportedPlatforms {
     pub fn record(&mut self, short: &str, version: &str, platform: &str) {
         // Variants such as `linux-x64-musl` belong to the named `linux-x64`. The
         // current platform is always locked, so it only counts when named too.
-        let named = self.named.as_ref().is_some_and(|named| {
-            named
-                .iter()
-                .any(|name| platform == name || platform.starts_with(&format!("{name}-")))
-        });
-        if named {
+        if is_named_platform(self.named.as_ref(), platform) {
             self.platforms
                 .entry((short.to_string(), version.to_string()))
                 .or_default()

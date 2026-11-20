@@ -414,6 +414,7 @@ impl Lock {
             ..Default::default()
         };
         let host_target = PlatformTarget::from_current();
+        let named = self.platform_selection(&Settings::get())?.named();
         for request in requests {
             let resolved = match request.resolve_options(&locked) {
                 Ok(opts) => ToolVersion::resolve(config, request.clone(), &opts).await,
@@ -471,7 +472,8 @@ impl Lock {
             for platform in variants {
                 let target = PlatformTarget::new(platform.clone());
                 let options = lock_options(&target);
-                let entry = if options.is_none() || options == host_options {
+                let reads_host = options.is_none() || options == host_options;
+                let entry = if reads_host {
                     host.clone()
                 } else {
                     own_entries = true;
@@ -481,7 +483,7 @@ impl Lock {
                         Err(err) => Err(first_line(&err)),
                     }
                 };
-                rows.push((platform, entry));
+                rows.push((platform, entry, reads_host));
             }
             // A tool no platform reads its own entry for fails as a whole.
             if let (Err(problem), false) = (&host, own_entries) {
@@ -491,9 +493,9 @@ impl Lock {
             let Some(first) = host
                 .as_ref()
                 .ok()
-                .or_else(|| rows.iter().find_map(|(_, entry)| entry.as_ref().ok()))
+                .or_else(|| rows.iter().find_map(|(_, entry, _)| entry.as_ref().ok()))
             else {
-                for (platform, entry) in rows {
+                for (platform, entry, _) in rows {
                     if let Err(problem) = entry {
                         let key = platform.to_key();
                         check.push_unresolved(
@@ -519,7 +521,7 @@ impl Lock {
                 );
                 check.push(Some(first), None, vec![problem]);
             }
-            for (platform, entry) in rows {
+            for (platform, entry, reads_host) in rows {
                 let key = platform.to_key();
                 let tv = match entry {
                     Ok(tv) => tv,
@@ -533,6 +535,25 @@ impl Lock {
                     }
                 };
                 let locked_platform = tv.lock_platforms.get(&key);
+                // `mise lock` records nothing for a platform a tool has no
+                // build for, and warns only when the user named it. Without a
+                // named platform, a missing entry on a tool that has others is
+                // that skip, not an entry that went missing.
+                // The host platform is always locked, so it stays checked, under
+                // the key the backend selects there (Bun's `-baseline`). A
+                // platform with its own lock options reads another entry of
+                // the tool, so its gap is not a missing build either.
+                if locked_platform.is_none()
+                    && !tv.lock_platforms.is_empty()
+                    && reads_host
+                    && key != Platform::current().to_key()
+                    && tv
+                        .backend()
+                        .is_ok_and(|backend| backend.get_platform_key_for(&tv) != key)
+                    && !lockfile::is_named_platform(named.as_ref(), &key)
+                {
+                    continue;
+                }
                 let target = PlatformTarget::new(platform);
                 let problem = tv
                     .backend()
