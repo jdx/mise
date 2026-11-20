@@ -357,3 +357,30 @@ packages:
         "https://example.com/tool-default"
     );
 }
+
+#[test]
+fn test_overrides_name_other_repositories() {
+    let names_other = |overrides: &str| {
+        let yml = format!(
+            "packages:\n  - type: github_release\n    repo_owner: example\n    repo_name: tool\n    asset: tool\n{overrides}"
+        );
+        first_registry_package(&yml).overrides_name_other_repositories()
+    };
+
+    assert!(!names_other(""));
+    // A platform override.
+    assert!(names_other(
+        "    overrides:\n      - goos: windows\n        repo_name: tool-windows\n"
+    ));
+    // A version override, and a platform override inside one.
+    assert!(names_other(
+        "    version_constraint: \"false\"\n    version_overrides:\n      - version_constraint: \"true\"\n        repo_owner: other\n"
+    ));
+    assert!(names_other(
+        "    version_constraint: \"false\"\n    version_overrides:\n      - version_constraint: \"true\"\n        overrides:\n          - goos: darwin\n            repo_owner: other\n"
+    ));
+    // Naming the package's own repository again moves nothing.
+    assert!(!names_other(
+        "    overrides:\n      - goos: windows\n        repo_owner: example\n        asset: tool.exe\n"
+    ));
+}

@@ -20,6 +20,9 @@ export const commands: { [key: string]: Command } = {
   asdf: {
     hide: true,
   },
+  audit: {
+    hide: false,
+  },
   backends: {
     hide: false,
     subcommands: {

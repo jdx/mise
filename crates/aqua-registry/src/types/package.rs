@@ -1,6 +1,22 @@
 use super::*;
 
 impl AquaPackage {
+    /// Whether a version or platform override releases this package from
+    /// another repository than its own, so the repository depends on the
+    /// release.
+    pub fn overrides_name_other_repositories(&self) -> bool {
+        let other = |pkg: &AquaPackage| {
+            (!pkg.repo_owner.is_empty() && pkg.repo_owner != self.repo_owner)
+                || (!pkg.repo_name.is_empty() && pkg.repo_name != self.repo_name)
+        };
+        let platform = |pkg: &AquaPackage| pkg.overrides.iter().any(|o| other(&o.pkg));
+        platform(self)
+            || self
+                .version_overrides
+                .iter()
+                .any(|vo| other(vo) || platform(vo))
+    }
+
     /// Return every command name this package may install across its version and platform
     /// overrides.
     ///

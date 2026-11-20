@@ -62,7 +62,7 @@ impl OutdatedInfo {
         Ok(oi)
     }
 
-    fn current_version(
+    pub fn current_version(
         config: &Arc<Config>,
         backend: &ABackend,
         tv: &ToolVersion,

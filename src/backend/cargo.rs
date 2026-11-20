@@ -265,6 +265,16 @@ impl Backend for CargoBackend {
         Ok(CargoOptions::new(&opts).lockfile_options(target))
     }
 
+    /// A crate from the `cargo.registry_name` registry is not the crates.io
+    /// crate of the same name, so it has no known advisory source. A git
+    /// install is looked up by its repository either way.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        if self.git_url().is_none() && Settings::get().cargo.registry_name.is_some() {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
+    }
+
     /// `cargo.registry_name` makes `cargo install` take the crate from another registry,
     /// where the same name and version can be different code.
     fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
@@ -684,6 +694,30 @@ mod tests {
         );
         assert_ne!(identity(None, &[("features", "tls")]), default);
         Settings::reset(None);
+    }
+
+    #[tokio::test]
+    async fn test_advisory_queries_skip_another_registry() {
+        use crate::config::SettingsExt;
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let dir = tempfile::tempdir().unwrap();
+        let tv = test_tool_version(dir.path(), ToolVersionOptions::default());
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+        let git = CargoBackend::from_arg("cargo:https://github.com/owner/tool".into());
+
+        assert!(!backend.advisory_queries(&tv).await.is_empty());
+        let mut partial = SettingsPartial::empty();
+        partial.cargo.registry_name = Some("internal".to_string());
+        Settings::reset(Some(partial));
+        let private = backend.advisory_queries(&tv).await;
+        let from_git = git.advisory_queries(&tv).await;
+        Settings::reset(None);
+
+        assert!(private.is_empty(), "{private:?}");
+        assert!(!from_git.is_empty());
     }
 
     #[tokio::test]

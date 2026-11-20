@@ -7,7 +7,7 @@ use crate::backend::options::BackendOptions;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP_FETCH;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
@@ -164,12 +164,27 @@ impl Backend for DotnetBackend {
 
         DotnetOptions::new(opts).prerelease() || dotnet_legacy_prerelease_package_flag_enabled()
     }
+
+    /// `dotnet tool install` reads its sources from `NuGet.Config`, which mise
+    /// does not parse, so the feed mise lists versions from stands in for
+    /// where a tool came from. With another feed there, a package can be a
+    /// private one named like a nuget.org package, so it is not checked.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        if !is_nuget_org_feed(&Settings::get().dotnet.registry_url) {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
+    }
 }
 
 impl DotnetBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
+}
+
+fn is_nuget_org_feed(registry_url: &str) -> bool {
+    url::Url::parse(registry_url).is_ok_and(|url| url.host_str() == Some("api.nuget.org"))
 }
 
 async fn nuget_search_url() -> eyre::Result<String> {
@@ -312,6 +327,18 @@ mod tests {
                 "{version} should use remote discovery"
             );
         }
+    }
+
+    #[test]
+    fn test_is_nuget_org_feed() {
+        assert!(is_nuget_org_feed(DEFAULT_NUGET_REGISTRY_URL));
+        assert!(!is_nuget_org_feed(
+            "https://nuget.example.com/v3/index.json"
+        ));
+        assert!(!is_nuget_org_feed(
+            "https://api.nuget.org.example.com/v3/index.json"
+        ));
+        assert!(!is_nuget_org_feed("not a url"));
     }
 
     #[test]

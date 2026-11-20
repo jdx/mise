@@ -716,6 +716,16 @@ fn forgejo_release_has_assets(release: &forgejo::ForgejoRelease) -> bool {
 
 #[async_trait]
 impl Backend for UnifiedGitBackend {
+    /// A release from another host, such as GitHub Enterprise, is not the
+    /// public repository of the same name, so it is not looked up.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let raw_opts = tv.request.options();
+        if self.options(&raw_opts).api_url() != self.default_api_url() {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
+    }
+
     fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
         VersionOrder::from_dated_options_or(
             opts,
