@@ -1250,9 +1250,7 @@ impl AquaBackend {
                     .flatten()
                     .is_some_and(|(version, _)| version == tv.version)
             });
-        let versions = resolved_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
-        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-        let pkg = Self::package_with_options_for_pkg(tv, pkg, &versions)?;
+        let pkg = Self::package_for_release(tv, pkg, tag.as_deref())?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
         {
@@ -1280,6 +1278,19 @@ impl AquaBackend {
             v_prefixed,
             release_tag,
         })
+    }
+
+    /// The package with the version override for the release `tag`, or for
+    /// the version when its tag is not known. Nothing here checks that this
+    /// platform can install it.
+    fn package_for_release(
+        tv: &ToolVersion,
+        pkg: AquaPackage,
+        tag: Option<&str>,
+    ) -> Result<AquaPackage> {
+        let versions = resolved_package_version_candidates(&tv.version, tag, &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        Self::package_with_options_for_pkg(tv, pkg, &versions)
     }
 
     fn package_with_options_for_pkg(
@@ -5766,6 +5777,48 @@ version_overrides:
         // An install uses the release tag, which matches only its own.
         assert_eq!(select(Some("new-1.0.0")), "new-owner/new-tool");
         assert!(overrides_move_repository(&pkg));
+    }
+
+    #[test]
+    fn test_advisory_repository_survives_an_override_this_platform_cannot_install() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: example
+repo_name: tool
+version_constraint: "false"
+version_overrides:
+  - version_constraint: 'Version startsWith "old-"'
+    version_prefix: old-
+    repo_owner: old-owner
+    repo_name: old-tool
+  - version_constraint: 'Version startsWith "new-"'
+    version_prefix: new-
+    repo_owner: new-owner
+    repo_name: new-tool
+    error_message: not released for this platform
+"#,
+        );
+        let ba = Arc::new(BackendArg::new(
+            "aqua:example/tool".to_string(),
+            Some("aqua:example/tool".to_string()),
+        ));
+        let request =
+            crate::toolset::ToolRequest::new(ba, "1.0.0", crate::toolset::ToolSource::Unknown)
+                .unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+
+        // The path an advisory lookup takes: the release tag picks the
+        // override, which an install would then reject.
+        let pkg = AquaBackend::package_for_release(&tv, pkg, Some("new-1.0.0")).unwrap();
+        assert!(validate(&pkg, "new-1.0.0").is_err());
+        let git = crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, &tv.version)
+            .into_iter()
+            .flat_map(|q| q.packages)
+            .filter(|p| p.ecosystem == "GIT")
+            .map(|p| p.name)
+            .collect_vec();
+        assert_eq!(git, ["https://github.com/new-owner/new-tool"]);
     }
 
     #[test]
