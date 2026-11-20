@@ -19,7 +19,7 @@ start_http_server --dir "$SRV"
 write_config() {
   cat >mise.toml <<EOT
 [tools."http:mytool-checksum-url"]
-version = "1.0.0"
+version = "${2:-1.0.0}"
 bin = "mytool"
 url = "http://127.0.0.1:${HTTP_PORT}/mytool"
 checksum_url = "http://127.0.0.1:${HTTP_PORT}/$1"
@@ -41,7 +41,7 @@ assert_contains "mise x -- mytool" "mytool ok"
 
 # With lockfiles enabled and no `mise lock` first, the published checksum is
 # what lands in mise.lock, not a digest of the download.
-sed -i 's/1\.0\.0/1.0.1/' mise.toml
+write_config good_SHASUMS 1.0.1
 touch mise.lock
 export MISE_LOCKFILE=1
 mise install
