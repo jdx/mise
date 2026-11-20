@@ -165,8 +165,10 @@ impl Backend for DotnetBackend {
         DotnetOptions::new(opts).prerelease() || dotnet_legacy_prerelease_package_flag_enabled()
     }
 
-    /// A package from another feed is not the nuget.org package of the same
-    /// name, so its advisories would not apply.
+    /// `dotnet tool install` reads its sources from `NuGet.Config`, which mise
+    /// does not parse, so the feed mise lists versions from stands in for
+    /// where a tool came from. With another feed there, a package can be a
+    /// private one named like a nuget.org package, so it is not checked.
     async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
         if !is_nuget_org_feed(&Settings::get().dotnet.registry_url) {
             return vec![];
