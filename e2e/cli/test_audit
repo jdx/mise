@@ -39,6 +39,8 @@ assert_contains "mise audit npm:lodash@4.17.15 2>&1" "not checked, no known advi
 rm "$HOME/.npmrc"
 assert_contains "MISE_PYPI_REGISTRY_URL='https://pypi.example.invalid/pypi/{}/json' mise audit pipx:black@22.1.0 2>&1" "not checked, no known advisory source: pipx:black@22.1.0"
 assert_contains "mise audit 'gem:rails[source=https://gems.example.invalid/]@7.0.0' 2>&1" "not checked, no known advisory source: gem:rails@7.0.0"
+assert_contains "MISE_DOTNET_REGISTRY_URL=https://nuget.example.invalid/v3/index.json mise audit dotnet:GitVersion.Tool@5.12.0 2>&1" "not checked, no known advisory source: dotnet:GitVersion.Tool@5.12.0"
+assert_not_contains "mise audit dotnet:GitVersion.Tool@5.12.0 2>&1" "not checked"
 # The public registry named explicitly is still checked.
 assert_fail_contains "MISE_PYPI_REGISTRY_URL='https://pypi.org/simple/{}/' mise audit pipx:black@22.1.0 2>&1" "GHSA-fj7x-q9j7-g6q6"
 assert_fail_contains "mise audit 'gem:rails[source=https://rubygems.org/]@7.0.0' 2>&1" "GHSA-9822-6m93-xqf4"

@@ -7,7 +7,7 @@ use crate::backend::options::BackendOptions;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP_FETCH;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
@@ -164,12 +164,25 @@ impl Backend for DotnetBackend {
 
         DotnetOptions::new(opts).prerelease() || dotnet_legacy_prerelease_package_flag_enabled()
     }
+
+    /// A package from another feed is not the nuget.org package of the same
+    /// name, so its advisories would not apply.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        if !is_nuget_org_feed(&Settings::get().dotnet.registry_url) {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
+    }
 }
 
 impl DotnetBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
+}
+
+fn is_nuget_org_feed(registry_url: &str) -> bool {
+    url::Url::parse(registry_url).is_ok_and(|url| url.host_str() == Some("api.nuget.org"))
 }
 
 async fn nuget_search_url() -> eyre::Result<String> {
@@ -312,6 +325,18 @@ mod tests {
                 "{version} should use remote discovery"
             );
         }
+    }
+
+    #[test]
+    fn test_is_nuget_org_feed() {
+        assert!(is_nuget_org_feed(DEFAULT_NUGET_REGISTRY_URL));
+        assert!(!is_nuget_org_feed(
+            "https://nuget.example.com/v3/index.json"
+        ));
+        assert!(!is_nuget_org_feed(
+            "https://api.nuget.org.example.com/v3/index.json"
+        ));
+        assert!(!is_nuget_org_feed("not a url"));
     }
 
     #[test]
