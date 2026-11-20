@@ -70,23 +70,23 @@ is active.
 Each built-in provider supplies default sources, outputs, and an install
 command:
 
-| Provider        | Sources                                                          | Tracked output                   | Default command                                                  |
-| --------------- | ---------------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------- |
-| `npm`           | `package.json`, `package-lock.json`                              | `node_modules/`                  | `npm install`                                                    |
-| `yarn`          | `package.json`, `yarn.lock`                                      | `node_modules/`                  | `yarn install`                                                   |
-| `pnpm`          | `package.json`, `pnpm-lock.yaml`                                 | `node_modules/`                  | `pnpm install`                                                   |
-| `bun`           | `package.json`, `bun.lock` or `bun.lockb`                        | `node_modules/`                  | `bun install`                                                    |
-| `deno`          | `deno.json`, `deno.jsonc`, `package.json`, `deno.lock`           | Optional `node_modules/`         | `deno install`                                                   |
-| `aube`          | `package.json`, `aube-lock.yaml`                                 | `node_modules/`                  | `aube install`                                                   |
-| `go`            | `go.mod`, `go.sum`                                               | Optional `vendor/`               | `go mod vendor` if `vendor/` exists, otherwise `go mod download` |
-| `pip`           | `requirements.txt`                                               | Optional `.venv/`                | `pip install -r requirements.txt`                                |
-| `poetry`        | `pyproject.toml`, `poetry.lock`                                  | Optional `.venv/`                | `poetry install`                                                 |
-| `uv`            | `pyproject.toml`, `uv.lock`, workspace members' `pyproject.toml` | Optional `.venv/`                | `uv sync`                                                        |
-| `bundler`       | `Gemfile`, `Gemfile.lock`                                        | Optional `vendor/bundle/`        | `bundle install`                                                 |
-| `composer`      | `composer.json`, `composer.lock`                                 | `vendor/`                        | `composer install`                                               |
-| `dart`          | `pubspec.yaml`, `pubspec.lock`                                   | `.dart_tool/package_config.json` | `dart pub get`                                                   |
-| `flutter`       | `pubspec.yaml`, `pubspec.lock`                                   | `.dart_tool/package_config.json` | `flutter pub get`                                                |
-| `git-submodule` | `.gitmodules`                                                    | Declared submodule directories   | `git submodule update --init --recursive`                        |
+| Provider        | Sources                                                                                    | Tracked output                   | Default command                                                  |
+| --------------- | ------------------------------------------------------------------------------------------ | -------------------------------- | ---------------------------------------------------------------- |
+| `npm`           | `package.json`, `package-lock.json`                                                        | `node_modules/`                  | `npm install`                                                    |
+| `yarn`          | `package.json`, `yarn.lock`                                                                | `node_modules/`                  | `yarn install`                                                   |
+| `pnpm`          | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, workspace members' `package.json` | `node_modules/`                  | `pnpm install`                                                   |
+| `bun`           | `package.json`, `bun.lock` or `bun.lockb`                                                  | `node_modules/`                  | `bun install`                                                    |
+| `deno`          | `deno.json`, `deno.jsonc`, `package.json`, `deno.lock`                                     | Optional `node_modules/`         | `deno install`                                                   |
+| `aube`          | `package.json`, `aube-lock.yaml`                                                           | `node_modules/`                  | `aube install`                                                   |
+| `go`            | `go.mod`, `go.sum`                                                                         | Optional `vendor/`               | `go mod vendor` if `vendor/` exists, otherwise `go mod download` |
+| `pip`           | `requirements.txt`                                                                         | Optional `.venv/`                | `pip install -r requirements.txt`                                |
+| `poetry`        | `pyproject.toml`, `poetry.lock`                                                            | Optional `.venv/`                | `poetry install`                                                 |
+| `uv`            | `pyproject.toml`, `uv.lock`, workspace members' `pyproject.toml`                           | Optional `.venv/`                | `uv sync`                                                        |
+| `bundler`       | `Gemfile`, `Gemfile.lock`                                                                  | Optional `vendor/bundle/`        | `bundle install`                                                 |
+| `composer`      | `composer.json`, `composer.lock`                                                           | `vendor/`                        | `composer install`                                               |
+| `dart`          | `pubspec.yaml`, `pubspec.lock`                                                             | `.dart_tool/package_config.json` | `dart pub get`                                                   |
+| `flutter`       | `pubspec.yaml`, `pubspec.lock`                                                             | `.dart_tool/package_config.json` | `flutter pub get`                                                |
+| `git-submodule` | `.gitmodules`                                                                              | Declared submodule directories   | `git submodule update --init --recursive`                        |
 
 A provider is active only when its required project input exists. Most need
 their lockfile; the exceptions are `go` (`go.mod`), `pip` (`requirements.txt`),
