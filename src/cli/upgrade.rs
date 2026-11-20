@@ -909,10 +909,11 @@ impl Upgrade {
         let mut replaced = vec![];
         for o in outdated.iter() {
             let mut item = None;
+            // A new version, not a copy of the resolved one: lockfile metadata
+            // such as a release tag describes the resolved release.
             let mut current = o.current.clone().and_then(|current| {
-                let mut tv = o.tool_version.clone();
-                tv.version = current;
-                Some((o.tool_version.backend().ok()?, tv))
+                let tv = ToolVersion::new(o.tool_version.request.clone(), current);
+                Some((tv.backend().ok()?, tv))
             });
             if o.current.is_none()
                 && let Some(configured) = &configured
@@ -2099,9 +2100,12 @@ async fn configured_installed_version(
         .requests
         .iter()
         .find(|request| request.is_os_supported())?;
-    let (backend, mut tv) = resolve_request(config, request).await?;
-    tv.version = OutdatedInfo::current_version(config, &backend, &tv).ok()??;
-    Some((backend, tv))
+    let (backend, tv) = resolve_request(config, request).await?;
+    let current = OutdatedInfo::current_version(config, &backend, &tv).ok()??;
+    // Not the resolved version with its number changed: its lockfile metadata
+    // describes the resolved release, not the installed one.
+    let tv = ToolVersion::new(tv.request, current);
+    Some((tv.backend().ok()?, tv))
 }
 
 #[cfg(test)]
