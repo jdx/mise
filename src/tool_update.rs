@@ -23,6 +23,11 @@ use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
 
+/// The id a failed `tool_update.self_update_first` mise update is recorded
+/// under, for `mise doctor`. It is not a tool, so it never clears by an
+/// upgrade of one.
+pub const SELF_UPDATE_ID: &str = "mise (self-update)";
+
 /// Set in `mise __tool-update`'s environment. A hook of that upgrade that
 /// launches another opted-in tool must not start a nested update: it would
 /// wait for the update lock its own updater holds.
@@ -468,10 +473,24 @@ pub fn failures(global: &Toolset) -> Vec<Failure> {
         .filter(|(_, versions)| versions.requests.iter().any(enabled))
         .map(|(ba, _)| ba.full_without_opts())
         .collect::<std::collections::HashSet<_>>();
+    let self_update_first = Settings::get().tool_update.self_update_first;
     recorded_failures()
         .into_iter()
-        .filter(|failure| opted_in.contains(&failure.tool))
+        .filter(|failure| {
+            opted_in.contains(&failure.tool)
+                || (self_update_first && failure.tool == SELF_UPDATE_ID)
+        })
         .collect()
+}
+
+/// How long ago `tool_id`'s recorded failure was written.
+pub fn recorded_failure_age(tool_id: &str) -> Option<Duration> {
+    file::modified_duration(&StatePaths::new(tool_id).failure).ok()
+}
+
+/// The recorded failure of `tool_id`'s last update, if it has not succeeded since.
+pub fn recorded_failure(tool_id: &str) -> Option<Failure> {
+    serde_json::from_str(&file::read_to_string(StatePaths::new(tool_id).failure).ok()?).ok()
 }
 
 fn recorded_failures() -> Vec<Failure> {

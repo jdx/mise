@@ -1268,11 +1268,11 @@ impl Backend for NPMBackend {
         version == "latest" && tracks_source_head(&self.tool_name())
     }
 
-    /// A tarball's versions are digests, which an ordering would use to miss an
-    /// installed digest that sorts above the new one. They are only ever equal
-    /// or different.
+    /// The versions of a tarball or of a git source tracking HEAD are digests
+    /// and commit SHAs, which an ordering would use to miss an installed one
+    /// that sorts above the new one. They are only ever equal or different.
     fn versions_are_unordered(&self, _request: &str) -> bool {
-        is_tarball_spec(&self.tool_name())
+        tracks_source_head(&self.tool_name())
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
@@ -4213,6 +4213,23 @@ packages:
             BackendResolution::new(true),
         );
         NPMBackend::from_arg(ba)
+    }
+
+    #[test]
+    fn git_head_and_tarball_versions_are_unordered() {
+        for tool in [
+            "git+ssh://git@github.com/o/r.git",
+            "github:o/r",
+            "https://example.com/r@1.tgz",
+        ] {
+            assert!(
+                create_npm_git_backend(tool).versions_are_unordered("latest"),
+                "{tool}"
+            );
+        }
+        // A pinned ref and a registry package keep their ordering.
+        assert!(!create_npm_git_backend("github:o/r#v1").versions_are_unordered("latest"));
+        assert!(!create_npm_backend("left-pad").versions_are_unordered("latest"));
     }
 
     #[test]

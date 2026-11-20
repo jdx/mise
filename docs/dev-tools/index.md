@@ -180,6 +180,12 @@ error.
 A duration such as `"6h"` sets that tool's own interval. Intervals under one
 hour are raised to one hour.
 
+To have the tools update with the newest mise, set
+[`tool_update.self_update_first`](/configuration/settings.html#tool_update.self_update_first)
+along with [`self_update.auto`](/configuration/settings.html#self_update.auto).
+Each automatic update pass then updates mise first, and skips the tools, with
+the error in `mise doctor`, if that fails.
+
 To update every tool in your global config without marking each one, set
 [`tool_update.global_auto`](/configuration/settings.html#tool_update.global_auto)
 to `true` or an interval. A tool's own `auto_update` still wins, so
