@@ -94,6 +94,10 @@ pub struct BottleFile {
     pub cellar: String,
     pub url: String,
     pub sha256: String,
+    /// A tap's own download strategy class, which mise cannot run; the
+    /// bottle is fetched as a GitHub release asset instead
+    #[serde(default)]
+    pub using: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -142,24 +142,80 @@ class Requirement
   end
 end
 
+# A tap that ships its own download strategy loads Homebrew's with
+# `require "download_strategy"` and subclasses one of its classes. None of it
+# runs here: mise only records which class a URL names, and downloads a GitHub
+# release asset itself, authenticated with the configured GitHub credentials.
+module Kernel
+  HOMEBREW_INTERNAL_LIBS = %w[download_strategy formula utils utils/github utils/curl utils/formatter].freeze
+  alias_method :mise_original_require, :require
+  def require(name) = HOMEBREW_INTERNAL_LIBS.include?(name.to_s) ? true : mise_original_require(name)
+end
+
+class AbstractDownloadStrategy
+  def initialize(*, **); end
+  def method_missing(*) = nil
+  def respond_to_missing?(*) = true
+
+  class << self
+    def method_missing(*) = nil
+    def respond_to_missing?(*) = true
+  end
+end
+class CurlDownloadStrategy < AbstractDownloadStrategy; end
+class NoUnzipCurlDownloadStrategy < CurlDownloadStrategy; end
+class CurlGitHubPackagesDownloadStrategy < CurlDownloadStrategy; end
+# A tap may define these itself with its own superclass (`class X <
+# CurlDownloadStrategy`), which a predefined class would reject as a superclass
+# mismatch. They are created only when a formula refers to one that no file
+# has defined.
+class Object
+  def self.const_missing(name)
+    case name
+    when :GitHubPrivateRepositoryDownloadStrategy
+      const_set(name, Class.new(CurlDownloadStrategy))
+    when :GitHubPrivateRepositoryReleaseDownloadStrategy
+      const_set(name, Class.new(GitHubPrivateRepositoryDownloadStrategy))
+    else
+      super
+    end
+  end
+end
+class VCSDownloadStrategy < AbstractDownloadStrategy; end
+class GitDownloadStrategy < VCSDownloadStrategy; end
+
+# The name a `using:` option records. Symbols such as `:nounzip` are ordinary
+# Homebrew options, so only a class, which carries behavior mise cannot run,
+# is recorded.
+def download_strategy_name(using) = using.is_a?(Class) ? using.name : nil
+
 # What a formula's `bottle do ... end` block declares: where the bottles are
 # hosted, the rebuild number, and one checksum per platform tag. Anything else
 # in the block (`cellar` aside) carries no metadata mise needs.
 class BottleSpec
-  attr_reader :root_url_value, :root_url_options, :rebuild_value, :cellar_value, :entries
+  attr_reader :root_url_value, :root_url_options, :rebuild_value, :cellar_value, :entries, :using_value
 
   def initialize
     @rebuild_value = 0
     @entries = {}
   end
 
-  def root_url(value = nil, positional_options = nil, **options)
+  # `using:` names a download strategy, recorded separately; any other option
+  # (`headers:`, ...) changes how the bottle is fetched.
+  def root_url(value = nil, positional_options = nil, using: nil, **options)
     return if value.nil?
 
-    options = positional_options.merge(options) if positional_options.is_a?(Hash)
+    if positional_options.is_a?(Hash)
+      options = positional_options.merge(options)
+      using ||= options.delete(:using)
+    end
 
     @root_url_value = value.to_s
+    # A symbol such as `:nounzip` is not a strategy mise can run, so it counts
+    # as an unsupported option and the bottle builds from source.
+    options = options.merge(using: using) unless using.nil? || using.is_a?(Class)
     @root_url_options = options
+    @using_value = download_strategy_name(using)
   end
   def rebuild(value = nil) = (@rebuild_value = value.to_i unless value.nil?)
   def cellar(value = nil) = (@cellar_value = value unless value.nil?)
@@ -184,7 +240,7 @@ end
 
 class Formula
   class << self
-    attr_reader :source_url, :source_sha256, :explicit_version, :revision_value,
+    attr_reader :source_url, :source_using, :source_sha256, :explicit_version, :revision_value,
                 :runtime_dependencies, :build_dependencies, :keg_only_value,
                 :keg_only_reason_value
 
@@ -200,7 +256,12 @@ class Formula
       subclass.instance_variable_set(:@keg_only_reason_value, nil)
     end
 
-    def url(value = nil, **) = (@source_url = value unless value.nil?)
+    def url(value = nil, using: nil, **)
+      return if value.nil?
+
+      @source_url = value
+      @source_using = download_strategy_name(using)
+    end
     def mirror(*) = nil
     def sha256(value = nil, **) = (@source_sha256 = value if value.is_a?(String))
     def version(value = nil)
@@ -415,7 +476,9 @@ def bottle_metadata(klass, version)
     else
       "#{root}/#{FORMULA_NAME}-#{pkg_version}.#{tag}.bottle.#{rebuild}tar.gz"
     end
-    [tag, entry.merge("url" => url)]
+    entry = entry.merge("url" => url)
+    entry["using"] = spec.using_value if spec.using_value
+    [tag, entry]
   end
   { "stable" => { "files" => files } }
 end
@@ -431,7 +494,7 @@ metadata = {
   "build_dependencies" => klass.build_dependencies || [],
   "bottle" => bottle_metadata(klass, version),
   "from_tap_source" => true,
-  "urls" => { "stable" => { "url" => klass.source_url, "checksum" => klass.source_sha256 } },
+  "urls" => { "stable" => { "url" => klass.source_url, "checksum" => klass.source_sha256, "using" => klass.source_using }.compact },
   "ruby_source_path" => ENV.fetch("MISE_BREW_SOURCE_PATH"),
   "ruby_source_checksum" => { "sha256" => ENV.fetch("MISE_BREW_SOURCE_CHECKSUM") },
   "tap_git_head" => ENV.fetch("MISE_BREW_TAP_COMMIT"),

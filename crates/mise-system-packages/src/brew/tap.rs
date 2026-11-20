@@ -1205,6 +1205,33 @@ end
         )
         .await?;
         assert!(f.bottle.is_empty());
+        // A tap that defines the strategy itself, with its own superclass, loads.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class GitHubPrivateRepositoryReleaseDownloadStrategy < CurlDownloadStrategy; end\n\
+                 class Widget < Formula\n  url \"https://example.com/widget-1.2.3.tar.gz\"\n  \
+                 sha256 \"{SHA}\"\n  bottle do\n    root_url \"https://github.com/acme/tools/releases/download/v1\", \
+                 using: GitHubPrivateRepositoryReleaseDownloadStrategy\n    \
+                 sha256 arm64_sequoia: \"{BOTTLE}\"\n  end\nend\n"
+            ),
+        )
+        .await?;
+        assert_eq!(
+            f.bottle_files().unwrap()["arm64_sequoia"].using.as_deref(),
+            Some("GitHubPrivateRepositoryReleaseDownloadStrategy")
+        );
+        // A symbol strategy is not one mise can run, so it builds from source too.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(&format!(
+                "    root_url \"https://example.com/bottles\", using: :nounzip\n    sha256 arm64_sequoia: \"{BOTTLE}\"\n"
+            )),
+        )
+        .await?;
+        assert!(f.bottle.is_empty());
         // The options may also arrive as a positional hash.
         let f = formula_metadata(
             &ruby,
@@ -2042,6 +2069,31 @@ end
             "2024 01 31 2024.1 1 2 1.2"
         );
         Ok(())
+    }
+
+    /// A tap's custom download strategy has to load under both shims: the
+    /// metadata one reads the formula, and the build one loads it again for
+    /// `install`. A stub missing from the build shim fails after the download.
+    #[test]
+    fn download_strategy_stubs_match_across_shims() {
+        fn stubs(src: &str) -> Vec<&str> {
+            src.lines()
+                .skip_while(|l| !l.starts_with("module Kernel"))
+                .take_while(|l| !l.starts_with("class GitDownloadStrategy"))
+                .chain(
+                    src.lines()
+                        .filter(|l| l.starts_with("class GitDownloadStrategy")),
+                )
+                .collect()
+        }
+        let metadata = stubs(METADATA_SHIM_RB);
+        assert_eq!(metadata, stubs(BUILD_SHIM_RB));
+        assert!(
+            metadata
+                .iter()
+                .any(|l| l.trim() == "when :GitHubPrivateRepositoryReleaseDownloadStrategy"),
+            "missing the release strategy stub: {metadata:?}"
+        );
     }
 
     /// Both shims define the `Language::*` namespace, and they have to stay in

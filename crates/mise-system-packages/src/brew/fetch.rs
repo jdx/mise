@@ -79,6 +79,10 @@ pub(super) async fn fetch_bottle(
     if bottle.url.starts_with("https://ghcr.io/") {
         headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer QQ=="));
     }
+    if bottle.using.is_some() {
+        super::private_release::download(&bottle.url, &path, &bottle.sha256, pr).await?;
+        return Ok(path);
+    }
     HTTP.download_file_with_headers(&bottle.url, &path, &headers, pr)
         .await?;
     if let Some(pr) = pr {

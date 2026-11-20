@@ -35,6 +35,49 @@ require "rbconfig"
 require "shellwords"
 require "tmpdir"
 
+# A tap that ships its own download strategy loads Homebrew's with
+# `require "download_strategy"` and subclasses one of its classes. mise has
+# already fetched the source archive (a private GitHub release asset, through
+# the configured credentials), so these only let the formula load. Kept in
+# step with tap_formula_metadata.rb.
+module Kernel
+  HOMEBREW_INTERNAL_LIBS = %w[download_strategy formula utils utils/github utils/curl utils/formatter].freeze
+  alias_method :mise_original_require, :require
+  def require(name) = HOMEBREW_INTERNAL_LIBS.include?(name.to_s) ? true : mise_original_require(name)
+end
+
+class AbstractDownloadStrategy
+  def initialize(*, **); end
+  def method_missing(*) = nil
+  def respond_to_missing?(*) = true
+
+  class << self
+    def method_missing(*) = nil
+    def respond_to_missing?(*) = true
+  end
+end
+class CurlDownloadStrategy < AbstractDownloadStrategy; end
+class NoUnzipCurlDownloadStrategy < CurlDownloadStrategy; end
+class CurlGitHubPackagesDownloadStrategy < CurlDownloadStrategy; end
+# A tap may define these itself with its own superclass (`class X <
+# CurlDownloadStrategy`), which a predefined class would reject as a superclass
+# mismatch. They are created only when a formula refers to one that no file
+# has defined.
+class Object
+  def self.const_missing(name)
+    case name
+    when :GitHubPrivateRepositoryDownloadStrategy
+      const_set(name, Class.new(CurlDownloadStrategy))
+    when :GitHubPrivateRepositoryReleaseDownloadStrategy
+      const_set(name, Class.new(GitHubPrivateRepositoryDownloadStrategy))
+    else
+      super
+    end
+  end
+end
+class VCSDownloadStrategy < AbstractDownloadStrategy; end
+class GitDownloadStrategy < VCSDownloadStrategy; end
+
 MISE_BREW_PREFIX = Pathname.new(ENV.fetch("MISE_BREW_PREFIX"))
 MISE_BREW_CELLAR = Pathname.new(ENV.fetch("MISE_BREW_CELLAR"))
 MISE_BREW_FORMULA_FILE = Pathname.new(ENV.fetch("MISE_BREW_FORMULA_FILE"))

@@ -52,20 +52,24 @@ pub(super) fn has_bottle(formula: &Formula) -> bool {
 pub(super) fn select_bottle(formula: &Formula) -> Option<(String, &BottleFile)> {
     let files = formula.bottle_files()?;
     let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
+    // A bottle that names a download strategy is fetched as a GitHub release
+    // asset; one hosted anywhere else is built from source instead.
+    let fetchable =
+        |b: &BottleFile| b.using.is_none() || super::private_release::is_release_url(&b.url);
     let cellar = prefix::cellar();
     if formula.from_tap_source {
         // A native Linux bottle can need a newer glibc than the host, a
         // dependency Homebrew injects and the tap shim does not emit, so only
         // an `all` bottle is taken on Linux; the rest build from source.
         pick_tap_bottle(files, tag::cask_variation_tag().as_deref(), |t, b| {
-            !t.ends_with("_linux") && cellar_fits(t, &b.cellar, &cellar)
+            !t.ends_with("_linux") && cellar_fits(t, &b.cellar, &cellar) && fetchable(b)
         })
     } else {
         // the newest tag whose bottle fits, so one that does not is skipped
         tag::candidates().into_iter().find_map(|t| {
             files
                 .get(&t)
-                .filter(|b| !is_tap || cellar_fits(&t, &b.cellar, &cellar))
+                .filter(|b| (!is_tap || cellar_fits(&t, &b.cellar, &cellar)) && fetchable(b))
                 .map(|b| (t, b))
         })
     }
@@ -123,11 +127,18 @@ pub(super) fn check_buildable(formula: &Formula) -> Result<()> {
         bail!("{}: formula has no stable source URL", formula.name);
     };
     if let Some(using) = &src.using {
-        bail!(
-            "{}: source uses the {using:?} download strategy, which mise cannot build from \
-             (and no bottle exists for this machine)",
-            formula.name,
-        );
+        // A tap's own download strategy is a class name with no leading colon;
+        // mise fetches its GitHub release assets itself. Homebrew's core API
+        // writes symbol strategies (`git`, `nounzip`) without a colon too, so
+        // only a tap formula's name is read as a class.
+        let is_tap = formula.tap.as_deref().is_some_and(|t| t != "homebrew/core");
+        if using.starts_with(':') || !is_tap || !super::private_release::is_release_url(&src.url) {
+            bail!(
+                "{}: source uses the {using:?} download strategy, which mise cannot build from \
+                 (and no bottle exists for this machine)",
+                formula.name,
+            );
+        }
     }
     if src.checksum.is_none() {
         bail!("{}: source archive has no sha256 in the API", formula.name);
@@ -185,6 +196,17 @@ pub(super) async fn build(
         mise_util::file::remove_all(&build_root)?;
     }
     mise_util::file::create_dir_all(&build_root)?;
+    // A private release's contents must not be readable by other local users,
+    // so the tree they are extracted into is owner-only.
+    #[cfg(unix)]
+    if formula
+        .urls
+        .get("stable")
+        .is_some_and(|u| u.using.is_some())
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&build_root, std::fs::Permissions::from_mode(0o700))?;
+    }
     pr.set_message("extract source".to_string());
     let buildpath = stage_source(&archive, &build_root, &source_basename(formula))?;
     let shim_path = build_root.join("mise-brew-shim.rb");
@@ -343,7 +365,11 @@ async fn fetch_source(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBu
     pr.set_message(format!("download {basename}"));
     // GNU formulae point at ftpmirror.gnu.org, which may redirect to a
     // plain-HTTP mirror; brew follows it, and the pinned sha256 makes it safe.
-    mise_util::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
+    if src.using.is_some() {
+        super::private_release::download(&src.url, &dest, sha256, Some(pr)).await?;
+    } else {
+        mise_util::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
+    }
     Ok(dest)
 }
 
@@ -587,6 +613,7 @@ mod tests {
                         cellar: ":any".to_string(),
                         url: "https://example.com/bottle.tar.gz".to_string(),
                         sha256: "0".repeat(64),
+                        using: None,
                     },
                 )
             })
@@ -753,6 +780,29 @@ mod tests {
     }
 
     #[test]
+    fn a_bottle_with_a_download_strategy_needs_a_github_release_url() {
+        let mut f = formula(&["all"]);
+        let bottle = f
+            .bottle
+            .get_mut("stable")
+            .unwrap()
+            .files
+            .get_mut("all")
+            .unwrap();
+        bottle.using = Some("PrivateStrategy".to_string());
+        assert!(!has_bottle(&f), "a host mise cannot authenticate to");
+        let bottle = f
+            .bottle
+            .get_mut("stable")
+            .unwrap()
+            .files
+            .get_mut("all")
+            .unwrap();
+        bottle.url = "https://github.com/acme/tools/releases/download/v1/w.tar.gz".to_string();
+        assert!(has_bottle(&f));
+    }
+
+    #[test]
     fn test_has_bottle() {
         // the version-independent "all" tag matches every machine
         assert!(has_bottle(&formula(&["all"])));
@@ -778,6 +828,17 @@ mod tests {
         let mut git_source = formula(&[]);
         git_source.urls.get_mut("stable").unwrap().using = Some("git".to_string());
         assert!(check_buildable(&git_source).is_err());
+
+        // a core formula's colon-less symbol strategy is not a tap's class,
+        // even on a GitHub release URL
+        let mut core_symbol = formula(&[]);
+        let src = core_symbol.urls.get_mut("stable").unwrap();
+        src.url = "https://github.com/acme/widget/releases/download/v1/widget-1.tar.gz".into();
+        src.using = Some("nounzip".to_string());
+        assert!(check_buildable(&core_symbol).is_err());
+        // a tap formula's strategy class on a release URL is fetched by mise
+        core_symbol.tap = Some("acme/tools".to_string());
+        assert!(check_buildable(&core_symbol).is_ok());
 
         let mut no_checksum = formula(&[]);
         no_checksum.urls.get_mut("stable").unwrap().checksum = None;
