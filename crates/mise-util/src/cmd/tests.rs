@@ -792,6 +792,20 @@ async fn test_cmd_line_runner_execute_hashes_async_rejects_undrained_pipes() {
     );
 }
 
+/// A drain deadline that has already passed (a starved runtime never got to
+/// the readers) must not fail a command whose pipes are closed.
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn test_cmd_line_runner_execute_hashes_async_ignores_late_deadline_when_pipes_closed() {
+    for _ in 0..50 {
+        super::CmdLineRunner::new("sh")
+            .args(["-c", "echo out; echo err >&2"])
+            .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::ZERO)
+            .await
+            .unwrap();
+    }
+}
+
 /// A descendant that outlives the shell must not survive the drain
 /// deadline — cleanup goes through the process group, so it reaches the
 /// leaves even though only the shell is a direct child.

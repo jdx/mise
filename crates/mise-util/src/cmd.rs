@@ -993,6 +993,9 @@ pub fn signal_child_tree(pid: u32, signal: nix::sys::signal::Signal) {
 /// block forever waiting for EOF and the parent would hang. After this
 /// deadline we abandon the readers — any tail output is dropped.
 const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+/// Extra time the hashing runner gives the readers once `PIPE_DRAIN_TIMEOUT`
+/// has passed, so a starved runtime is not mistaken for a held pipe.
+const PIPE_DRAIN_GRACE: Duration = Duration::from_secs(1);
 
 /// Maximum amount of stdout retained for commands whose output is hidden
 /// behind a progress indicator. The tail is replayed if the command fails.
@@ -2081,19 +2084,25 @@ impl<'a> CmdLineRunner<'a> {
             }
         }
         let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
-        let drain_deadline = Instant::now() + pipe_drain_timeout;
+        // The deadline measures wall-clock time, so on a starved machine it can
+        // pass while this task and the reader tasks were all unscheduled, with
+        // the pipes already closed. When it passes, give the readers one short
+        // grace window to deliver what they already have before calling the
+        // pipes held.
+        let mut drain_deadline = Instant::now() + pipe_drain_timeout;
+        let mut graced = false;
         loop {
+            // `timeout` polls the channel before the timer, so output that is
+            // already queued wins even when the deadline has passed.
             let remaining = drain_deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                #[cfg(unix)]
-                signal_process_tree(id, nix::sys::signal::Signal::SIGKILL);
-                #[cfg(windows)]
-                kill_process_tree(id);
-                bail!("command output pipes did not close within {pipe_drain_timeout:?}");
-            }
             let output = match tokio::time::timeout(remaining, rx.recv()).await {
                 Ok(Some(output)) => output,
                 Ok(None) => break,
+                Err(_) if !graced => {
+                    graced = true;
+                    drain_deadline = Instant::now() + PIPE_DRAIN_GRACE;
+                    continue;
+                }
                 Err(_) => {
                     #[cfg(unix)]
                     signal_process_tree(id, nix::sys::signal::Signal::SIGKILL);
