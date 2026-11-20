@@ -542,6 +542,12 @@ impl Lock {
                 if locked_platform.is_none()
                     && !tv.lock_platforms.is_empty()
                     && key != Platform::current().to_key()
+                    && {
+                        // A platform with its own lock options reads another
+                        // entry of the tool, so its gap is not a missing build.
+                        let options = lock_options(&PlatformTarget::new(platform.clone()));
+                        options.is_none() || options == host_options
+                    }
                     && !lockfile::is_named_platform(named.as_ref(), &key)
                 {
                     continue;
