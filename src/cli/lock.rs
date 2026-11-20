@@ -2463,15 +2463,16 @@ impl Lock {
             let Some(previous_entries) = previous.tools_for(short) else {
                 continue;
             };
-            for platform in platforms {
-                // An `os` option that excludes the platform locks nothing there.
-                if !tools.iter().any(|(ba, tv)| {
+            // The platforms and backend variants (`linux-x64-musl`, ...) this run
+            // locks; an `os` option that excludes a platform locks nothing there.
+            let keys: BTreeSet<String> = platform_tasks(tools, platforms)
+                .into_iter()
+                .filter(|(ba, _, _)| {
                     crate::toolset::install_state::state_short(&ba.short) == short.as_str()
-                        && tv.request.is_os_supported_on(platform)
-                }) {
-                    continue;
-                }
-                let key = platform.to_key();
+                })
+                .map(|(_, _, platform)| platform.to_key())
+                .collect();
+            for key in keys {
                 if generated.tools_for(short).is_some_and(|entries| {
                     entries
                         .iter()
