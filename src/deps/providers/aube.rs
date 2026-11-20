@@ -28,8 +28,24 @@ impl DepsProvider for AubeDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        self.base
-            .sources(vec![root.join("aube-lock.yaml"), root.join("package.json")])
+        let mut sources = vec![root.join("aube-lock.yaml"), root.join("package.json")];
+        // Workspace settings and members' manifests can change what
+        // `aube install` does without touching `aube-lock.yaml`.
+        // Skipped when `sources` is configured, since that replaces the defaults.
+        if self.base.config.sources.is_none() {
+            let workspaces = ["aube-workspace.yaml", "pnpm-workspace.yaml"]
+                .map(|name| root.join(name))
+                .into_iter()
+                .filter(|path| path.is_file() && std::fs::File::open(path).is_ok())
+                .collect::<Vec<_>>();
+            if !workspaces.is_empty() {
+                sources.extend(workspaces);
+                sources.extend(crate::task::workspace::node::workspace_member_manifests(
+                    &root,
+                ));
+            }
+        }
+        self.base.sources(sources)
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
