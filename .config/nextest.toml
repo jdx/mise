@@ -62,6 +62,13 @@ slow-timeout = { period = "1s", terminate-after = 5 }
 filter = 'test(/^git::tests::/) | (package(mise-system) & test(/^(history::|remote_repository::)/)) | (package(mise-system-packages) & test(/^apt::/))'
 slow-timeout = { period = "2s", terminate-after = 4 }
 
+# This test runs the real brew shim, which creates a Python venv and runs pip
+# once per resource (each in its own build environment). That is process
+# start-up cost, a few seconds on a loaded runner, not anything the test computes.
+[[profile.ci.overrides]]
+filter = 'package(mise-system-packages) & test(brew::source::tests::shim_virtualenv_install_with_resources)'
+slow-timeout = { period = "5s", terminate-after = 4 }
+
 # These macOS tests write preferences through cfprefsd and then wait for it to
 # write the plist to disk, which it does shortly after the write returns. Give
 # the wait a real budget instead of racing the one-second ceiling.

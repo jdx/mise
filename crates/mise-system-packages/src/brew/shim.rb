@@ -578,10 +578,10 @@ end
 # covers it: an undefined one raises NameError while the class body is still
 # being evaluated, before the build can report what it does not support.
 #
-# The mixins only contribute install-time helpers, so empty modules are the
-# right shape. Calling one still fails loudly and specifically through
-# Formula#method_missing, which reports it as an unsupported install-time
-# helper rather than as a bare NameError.
+# The mixins only contribute install-time helpers, so empty modules are the right
+# shape: calling one still fails loudly and specifically through
+# Formula#method_missing. tap.rs keeps this block identical to the metadata
+# shim's; Python::Virtualenv is filled in right after it.
 module Language
   module Java; end
   module Node
@@ -596,6 +596,124 @@ module Language
   module Python
     module Shebang; end
     module Virtualenv; end
+  end
+end
+
+module Language
+  module Python
+    # The subset of Library/Homebrew/language/python.rb that
+    # `virtualenv_install_with_resources` needs. Like Homebrew, each resource is
+    # staged and installed on its own, in declaration order, with `--no-deps`
+    # and `--no-binary :all:`, so every runtime package is a resource whose
+    # sha256 the formula declares. Like Homebrew, pip builds in an isolated
+    # environment by default, so a build backend such as setuptools or hatchling
+    # is fetched by pip itself; `build_isolation: false` uses only what the venv
+    # already has, with no index access.
+    module Virtualenv
+      class Virtualenv
+        attr_reader :root
+
+        def initialize(formula, root, python)
+          @formula = formula
+          @root = Pathname.new(root.to_s)
+          @python = python.to_s
+        end
+
+        def create(system_site_packages: true, without_pip: true)
+          args = ["-m", "venv"]
+          args << "--system-site-packages" if system_site_packages
+          args << "--without-pip" if without_pip
+          @formula.system @python, *args, @root.to_s
+        end
+
+        def pip_install(targets, build_isolation: true)
+          Array(targets).flatten.each do |target|
+            if target.is_a?(Resource) && target.url.to_s.end_with?(".whl")
+              # a pure-Python wheel is installed as the file itself, under its
+              # own name (pip validates it); staging would unzip it
+              wheel = MiseDownload.fetch(target.url, target.sha256, "resource #{target.name}")
+              Dir.mktmpdir("mise-wheel-") do |dir|
+                named = Pathname.new(dir) + File.basename(URI(target.url).path)
+                FileUtils.cp wheel, named
+                do_install(named, build_isolation)
+              end
+            elsif target.is_a?(Resource)
+              target.stage { do_install(Pathname.pwd, build_isolation) }
+            else
+              do_install(target, build_isolation)
+            end
+          end
+        end
+
+        # install and expose the console scripts it created in the keg's bin
+        def pip_install_and_link(targets, **options)
+          before = bin_entries
+          pip_install(targets, **options)
+          created = bin_entries - before
+          @formula.bin.install_symlink(created) unless created.empty?
+        end
+
+        private
+
+        def bin_entries = Dir[(@root + "bin" + "*").to_s].map { |path| Pathname.new(path) }
+
+        # The venv has no pip of its own (`--without-pip`); the interpreter it
+        # was created from installs into it, as Homebrew does.
+        def do_install(target, build_isolation)
+          venv_python = (@root + "bin/python").to_s
+          args = ["-v", "--no-deps", "--no-binary=:all:", "--ignore-installed",
+                  "--disable-pip-version-check"]
+          args += ["--no-build-isolation", "--no-index"] unless build_isolation
+          @formula.system @python, "-m", "pip", "--python=#{venv_python}", "install", *args, target.to_s
+        end
+      end
+
+      def virtualenv_create(venv_root, python = "python", formula = self, system_site_packages: true, without_pip: true)
+        venv = Virtualenv.new(formula, venv_root, shim_python_for(python))
+        venv.create(system_site_packages: system_site_packages, without_pip: without_pip)
+        venv
+      end
+
+      def virtualenv_install_with_resources(system_site_packages: true, without: nil, start_with: nil, end_with: nil, using: nil)
+        python = using || shim_default_python
+        venv = virtualenv_create(libexec, python, system_site_packages: system_site_packages)
+
+        excluded = Array(without).map(&:to_s)
+        first = Array(start_with).map(&:to_s)
+        last = Array(end_with).map(&:to_s)
+        pending = resources.reject { |r| excluded.include?(r.name) }
+        by_name = pending.to_h { |r| [r.name, r] }
+        # start_with/end_with are ordered lists: honor the order given, not the
+        # declaration order
+        head = first.filter_map { |n| by_name[n] }
+        tail = last.filter_map { |n| by_name[n] }
+        ordered = head + (pending - head - tail) + tail
+        venv.pip_install ordered
+        venv.pip_install_and_link buildpath
+        venv
+      end
+
+      private
+
+      # `python@3.12` -> the dependency's opt keg, else whatever is on PATH
+      def shim_python_for(python)
+        python = python.to_s
+        declared = self.class.declared_dependency_names
+        key = python.delete("@")
+        dep = declared.find { |name| name == python || name.delete("@") == key }
+        if dep
+          path = MISE_BREW_PREFIX + "opt" + dep + "bin" + dep.delete("@")
+          return path.to_s if path.executable?
+        end
+        found = which(python) || which(key) || which("python3")
+        raise "no #{python} interpreter found; the formula must depend on one" if found.nil?
+        found.to_s
+      end
+
+      def shim_default_python
+        self.class.declared_dependency_names.find { |name| name.match?(/\Apython@3\.\d+\z/) } || "python3"
+      end
+    end
   end
 end
 
@@ -700,7 +818,15 @@ class Formula
       class_exec(&block) if block
     end
 
-    def depends_on(*); end
+    # only the names are kept: the build needs to know which python the formula
+    # asked for. Dependencies themselves are poured by the Rust side.
+    def depends_on(*args)
+      spec = args.first
+      name = spec.is_a?(Hash) ? spec.keys.first : spec
+      declared_dependency_names << name if name.is_a?(String)
+    end
+
+    def declared_dependency_names = (@declared_dependency_names ||= [])
     def uses_from_macos(*, **); end
     def keg_only(*); end
     def skip_clean(*); end

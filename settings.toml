@@ -4867,6 +4867,30 @@ global_only = true
 rust_type = "AutoUpdate"
 type = "BoolOrString"
 
+[tool_update.self_update_first]
+default = false
+description = "Update mise before automatic tool updates, and skip the tools if that fails."
+docs = """
+With `true`, each automatic tool update pass, whether from a shell prompt or
+the `tool-update` service, first checks for a newer mise release the way
+[`self_update.auto`](#self_update.auto) does, using its
+[`check_duration`](#self_update.check_duration), and installs it. The tools
+then update with the new mise. If the mise update fails, the tools are skipped
+until the next interval and the error is reported by `mise doctor`.
+It needs `self_update.auto` to be on, and is skipped in CI, in offline and
+prefer-offline modes, and for installations whose packager disabled
+self-update. See [Automatic tool updates](/dev-tools/#automatic-tool-updates).
+
+```toml
+[settings]
+self_update.auto = true
+tool_update.self_update_first = true
+```
+"""
+env = "MISE_TOOL_UPDATE_SELF_UPDATE_FIRST"
+global_only = true
+type = "Bool"
+
 [trace]
 description = "Set the log level to trace."
 env = "MISE_TRACE"

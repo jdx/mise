@@ -3686,6 +3686,11 @@
                   "type": "string"
                 }
               ]
+            },
+            "self_update_first": {
+              "default": false,
+              "description": "Update mise before automatic tool updates, and skip the tools if that fails.",
+              "type": "boolean"
             }
           }
         },

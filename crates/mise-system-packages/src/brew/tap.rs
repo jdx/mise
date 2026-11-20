@@ -1627,6 +1627,69 @@ end"##,
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
+    async fn serializes_cask_command_wrappers() -> Result<()> {
+        use super::super::cask::cask_artifacts;
+
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(CASK_METADATA_SHIM_RB)
+            .stdin_string(
+                r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget.tar.gz"
+  app "widget.app"
+  command_wrapper "widget",
+                  executable: "#{appdir}/widget.app/Contents/MacOS/widget",
+                  args:       ["--cli", :fast],
+                  env:        { "WIDGET_CLI" => "1" }
+  command_wrapper "inline", content: "echo hi"
+end"##,
+            )
+            .env("MISE_BREW_TOKEN", "widget")
+            .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+            .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+            .env("MISE_BREW_TAP_COMMIT", "fixture")
+            .env("MISE_BREW_MACOS_VERSION", "26")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", "aarch64");
+        let output = runner.read().await?;
+        let cask: Cask = serde_json::from_str(&output)?;
+        let metadata: serde_json::Value = serde_json::from_str(&output)?;
+        assert_eq!(
+            metadata["artifacts"],
+            serde_json::json!([
+                {"app": ["widget.app"]},
+                {"command_wrapper": ["widget", {
+                    "executable": "$APPDIR/widget.app/Contents/MacOS/widget",
+                    "args": ["--cli", "fast"],
+                    "env": {"WIDGET_CLI": "1"}
+                }]},
+                {"command_wrapper": ["inline", {"content": "echo hi"}]}
+            ])
+        );
+        let wrappers = cask_artifacts(&cask)?.command_wrappers;
+        assert_eq!(wrappers.len(), 2);
+        assert_eq!(wrappers[0].name, "widget");
+        assert_eq!(
+            wrappers[0].executable.as_deref(),
+            Some("$APPDIR/widget.app/Contents/MacOS/widget")
+        );
+        assert_eq!(wrappers[0].args, vec!["--cli", "fast"]);
+        assert_eq!(
+            wrappers[0].env.get("WIDGET_CLI").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(wrappers[1].content.as_deref(), Some("echo hi"));
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
     async fn serializes_cask_generated_completions() -> Result<()> {
         use super::super::cask::{CompletionShell, cask_artifacts};
 
