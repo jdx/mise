@@ -99,6 +99,7 @@ impl WorkspaceProvider for UvWorkspaceProvider {
             &workspace.members,
             &excludes,
             context,
+            true,
         )?;
         if root_pyproject.project.is_some() {
             workspace_roots.insert(canonical_root.clone());
@@ -288,6 +289,7 @@ fn member_manifests_with_context(
         &workspace.members,
         &excludes,
         context,
+        false,
     )?;
     let mut manifests = Vec::new();
     for member in members {
@@ -324,6 +326,7 @@ fn discover_members(
     members: &[String],
     excludes: &[Pattern],
     context: &WorkspaceDiscoveryContext,
+    strict: bool,
 ) -> Result<BTreeSet<PathBuf>> {
     let options = match_options();
     // Avoid canonical Windows roots here because their verbatim `\\?\` prefix
@@ -355,6 +358,11 @@ fn discover_members(
                 continue;
             }
             if !context.is_file(&candidate.join(PYPROJECT_TOML)) {
+                // uv skips directories without a manifest; only task discovery
+                // treats them as an error.
+                if !strict {
+                    continue;
+                }
                 bail!(
                     "uv workspace member at {} is missing {PYPROJECT_TOML}",
                     relative.display()
@@ -584,6 +592,8 @@ mod tests {
         );
         project(&dir.path().join("packages/a"), "a", "");
         project(&dir.path().join("packages/skip"), "skip", "");
+        // A leftover directory without a manifest doesn't hide the other members.
+        std::fs::create_dir_all(dir.path().join("packages/empty")).unwrap();
         assert_eq!(
             member_manifests(dir.path()),
             vec![dir.path().join("packages/a/pyproject.toml")]

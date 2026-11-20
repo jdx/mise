@@ -335,7 +335,6 @@ name = "example-cli"
 version = "0.1.0"
 EOF2
 assert_contains "mise deps --list" "packages/cli/pyproject.toml"
-rm -rf packages
 
 # Test bundler provider
 rm -f uv.lock pyproject.toml
