@@ -8,7 +8,7 @@
 //! decides whether a version is affected,
 //! so mise never has to order versions itself.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use eyre::{Result, WrapErr, ensure};
@@ -320,6 +320,10 @@ pub struct Report {
     pub unchecked: Vec<Unchecked>,
     /// How many tool versions were looked up.
     pub checked: usize,
+    /// Whether a finding affects each item scanned, in the order given. A
+    /// finding for one advisory source does not affect an item of the same
+    /// tool and version with another.
+    pub affected: Vec<bool>,
 }
 
 impl Report {
@@ -354,7 +358,9 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
     );
     let mut report = Report::default();
     let mut planned = vec![];
-    let mut listed = HashSet::new();
+    // Each item's index in `planned`, or None when it is not looked up.
+    let mut item_plan = vec![];
+    let mut listed = HashMap::new();
     for (backend, tv) in items {
         let queries = if is_release(&tv.version) {
             backend.advisory_queries(&tv).await
@@ -362,18 +368,24 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
             vec![]
         };
         let version = tv.version;
-        if !listed.insert((backend.id().to_string(), version.clone(), queries.clone())) {
+        let key = (backend.id().to_string(), version.clone(), queries.clone());
+        if let Some(plan) = listed.get(&key) {
+            item_plan.push(*plan);
             continue;
         }
-        if queries.is_empty() {
+        let plan = if queries.is_empty() {
             report.unchecked.push(Unchecked {
                 ba: backend.ba().clone(),
                 tool: display_name(&backend),
                 version,
             });
+            None
         } else {
             planned.push((backend, version, queries));
-        }
+            Some(planned.len() - 1)
+        };
+        listed.insert(key, plan);
+        item_plan.push(plan);
     }
     report.checked = planned.len();
 
@@ -405,6 +417,7 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
     .await?;
 
     let mut seen: Vec<HashSet<String>> = vec![HashSet::new(); planned.len()];
+    let mut hit = vec![false; planned.len()];
     for (i, package, vulns) in results {
         let (backend, version, _) = &planned[i];
         for vuln in vulns {
@@ -434,6 +447,7 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
                 continue;
             }
             seen[i].extend(names);
+            hit[i] = true;
             report.findings.push(Finding {
                 ba: backend.ba().clone(),
                 tool: display_name(backend),
@@ -447,6 +461,10 @@ pub async fn scan(items: Vec<(ABackend, ToolVersion)>) -> Result<Report> {
             });
         }
     }
+    report.affected = item_plan
+        .into_iter()
+        .map(|plan| plan.is_some_and(|i| hit[i]))
+        .collect();
     Ok(report)
 }
 

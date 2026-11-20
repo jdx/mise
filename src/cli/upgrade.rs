@@ -889,16 +889,21 @@ impl Upgrade {
             .map(|(backend, tv)| (tv.backend().unwrap_or(backend), tv))
             .collect_vec();
         // The installed version an upgrade replaces, which is not the resolved
-        // one when that is not installed yet.
+        // one when that is not installed yet. Each upgrade keeps the index of
+        // its item, so it is judged by its own advisory source.
+        let mut outdated_items = vec![];
         for o in outdated.iter() {
+            let mut item = None;
             if let Some(current) = &o.current
                 && selected(o.tool_version.ba())
                 && let Ok(backend) = o.tool_version.backend()
             {
                 let mut tv = o.tool_version.clone();
                 tv.version = current.clone();
+                item = Some(installed.len());
                 installed.push((backend, tv));
             }
+            outdated_items.push(item);
         }
         // The version a config bump moves away from: what the configured
         // request resolves to now. The toolset holds the bump's target instead
@@ -906,41 +911,37 @@ impl Upgrade {
         let mut bumped = vec![];
         for bump in bumps.iter() {
             let tv = installed_version(config, &bump.configured).await;
+            let mut item = None;
             if let Some((backend, tv)) = &tv
                 && selected(tv.ba())
             {
+                item = Some(installed.len());
                 installed.push((backend.clone(), tv.clone()));
             }
-            bumped.push(tv.map(|(_, tv)| tv.version));
+            bumped.push((tv.map(|(_, tv)| tv.version), item));
         }
         let report = crate::audit::scan(installed).await?;
         report.log_unchecked();
-        let affected = |ba: &BackendArg, version: &str| {
-            report
-                .findings
-                .iter()
-                .any(|f| f.version == version && backend_args_match(&f.ba, ba))
-        };
+        let affected = |item: Option<usize>| item.is_some_and(|i| report.affected[i]);
         let bumped = std::mem::take(bumps)
             .into_iter()
             .zip(bumped)
-            .filter(|(bump, version)| {
-                version
-                    .as_deref()
-                    .is_some_and(|version| affected(bump.configured.ba(), version))
-            })
+            .filter(|(_, (_, item))| affected(*item))
+            .map(|(bump, (version, _))| (bump, version))
             .collect_vec();
         *bumps = bumped.iter().map(|(bump, _)| bump.clone()).collect();
+        // The pending install of a bump's target, which replaces nothing
+        // installed.
+        let installs_bump = |o: &OutdatedInfo, bump: &ExplicitConfigBump| {
+            backend_args_match(o.tool_version.ba(), bump.request.ba())
+                && o.tool_version.request.version() == bump.request.version()
+        };
         // Keep an upgrade when the version it replaces is affected, and the
-        // install of a kept bump's target, which replaces nothing installed.
+        // install of a kept bump's target.
+        let mut outdated_items = outdated_items.into_iter();
         outdated.retain(|o| {
-            o.current
-                .as_deref()
-                .is_some_and(|current| affected(o.tool_version.ba(), current))
-                || bumped.iter().any(|(bump, _)| {
-                    backend_args_match(o.tool_version.ba(), bump.request.ba())
-                        && o.tool_version.request.version() == bump.request.version()
-                })
+            affected(outdated_items.next().flatten())
+                || bumped.iter().any(|(bump, _)| installs_bump(o, bump))
         });
         if report.findings.is_empty() {
             let checked = report.checked;
@@ -994,7 +995,11 @@ impl Upgrade {
                 Some((tv.backend().ok()?, tv))
             })
             .collect_vec();
+        // A bump whose target is installed already has no pending upgrade.
         for (bump, _) in &bumped {
+            if outdated.iter().any(|o| installs_bump(o, bump)) {
+                continue;
+            }
             if let Some(target) = resolve_request(config, &bump.persisted_request).await {
                 targets.push(target);
             }

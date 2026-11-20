@@ -292,15 +292,11 @@ impl Backend for AquaBackend {
     /// is released from kubernetes/kubernetes. A version override can name
     /// another repository, so the package is resolved as an install resolves
     /// it: by the version's release tag, which picks one override where the
-    /// version alone can match several. Falls back to the version when the
-    /// install path rejects it, such as for a platform it doesn't support.
+    /// version alone can match several. Not validated: a release this platform
+    /// can't install still comes from that repository.
     async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
-        let pkg = match self.resolve_validated_package(tv).await {
-            Ok(resolved) => resolved.pkg,
-            Err(_) => match self.package_with_version_candidates(tv).await {
-                Ok(pkg) => pkg,
-                Err(_) => return vec![],
-            },
+        let Ok(ResolvedPackage { pkg, .. }) = self.resolve_package(tv).await else {
+            return vec![];
         };
         crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, &tv.version)
     }
@@ -1170,6 +1166,15 @@ impl AquaBackend {
     /// the wrong block would call a tool impossible when it installs fine -- a worse answer than
     /// the optimism it replaces.
     async fn resolve_validated_package(&self, tv: &ToolVersion) -> Result<ResolvedPackage> {
+        let resolved = self.resolve_package(tv).await?;
+        validate(&resolved.pkg, &resolved.v)?;
+        ensure_url_safe_version(&resolved.v)?;
+        Ok(resolved)
+    }
+
+    /// The package, version override and release tag an install of `tv` uses,
+    /// before checking that this platform can install it.
+    async fn resolve_package(&self, tv: &ToolVersion) -> Result<ResolvedPackage> {
         // Check if URL already exists in lockfile platforms first
         // This allows us to skip API calls when lockfile has the URL
         let platform_key = self.get_platform_key();
@@ -1251,8 +1256,6 @@ impl AquaBackend {
                 }
             });
         }
-        validate(&pkg, &v)?;
-        ensure_url_safe_version(&v)?;
         let release_tag = match tag {
             Some(_) => tag_names_version.then(|| v.clone()),
             None => pkg.version_prefix.is_some().then(|| v.clone()),
