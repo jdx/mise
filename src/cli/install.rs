@@ -332,6 +332,7 @@ impl Install {
                                 == crate::system::packages::PackageDesiredState::Present
                                 && !s.state.is_installed()
                                 && !s.state.is_unavailable()
+                                && !s.state.is_unresolved()
                         })
                         .count();
                 }
