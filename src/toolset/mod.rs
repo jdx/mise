@@ -1440,8 +1440,22 @@ pub async fn prunable_tools_with_sources(
         needed.entry(key).or_default().extend(sources);
     }
 
-    to_delete.retain(|(key, _), (_, tv)| {
-        !needed.contains_key(key) && !needed.contains_key(&needed_key(tv))
+    // A system copy found beside several identity-layout variants of one version
+    // is listed once per variant, under each variant's key. It is one
+    // installation: needed when any of them is, and kept once, so the running
+    // processes below are checked against it once.
+    let mut keys_by_path: BTreeMap<PathBuf, BTreeSet<(String, String)>> = BTreeMap::new();
+    for ((key, path), (_, tv)) in &to_delete {
+        let keys = keys_by_path.entry(path.clone()).or_default();
+        keys.insert(key.clone());
+        keys.insert(needed_key(tv));
+    }
+    let mut seen = HashSet::new();
+    to_delete.retain(|(_, path), _| {
+        seen.insert(path.clone())
+            && !keys_by_path[path]
+                .iter()
+                .any(|key| needed.contains_key(key))
     });
 
     // A process started before its version stopped being needed may still be
