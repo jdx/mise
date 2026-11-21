@@ -408,7 +408,10 @@ fn expand_group(
         origin,
         &mut merged,
     );
+    // the entries resolve apart from the tree, so that none can take its place
+    let mut entry_requests = IndexMap::new();
     for (entry, cut) in entries.into_iter().zip(nested) {
+        let key = entry.key.clone();
         let mut table = entry.table;
         if !cut.is_empty() {
             let mut exclude = table
@@ -440,9 +443,21 @@ fn expand_group(
             &target,
             base,
             origin,
-            &mut merged,
+            &mut entry_requests,
         )?;
+        // the destinations as they deploy: a wildcard is expanded by now and
+        // a variant selected, and an earlier entry's were checked with it
+        if let Some((deployed, _)) = entry_requests
+            .keys()
+            .find(|(deployed, _)| target.starts_with(deployed))
+        {
+            bail!(
+                "entries.{key:?}: deploys to {}, which must not be the group's target or a directory that contains it",
+                deployed.display()
+            );
+        }
     }
+    merged.extend(entry_requests);
     Ok((
         merged.into_values().collect(),
         edits.into_iter().map(|edit| edit.request).collect(),
@@ -1464,6 +1479,17 @@ mod tests {
             let err = expand(dir.path(), &entry).unwrap_err().to_string();
             assert!(err.contains("must not be the group's target"), "{err}");
         }
+        // a wildcard is compared as it deploys too, match by match
+        file::create_dir_all(dir.path().join("root/extras")).unwrap();
+        file::write(dir.path().join("root/extras/other"), "").unwrap();
+        let wildcard = format!(
+            "{:?} = {{ source = \"extras/*\", mode = \"copy\" }}",
+            dir.path().join("*")
+        );
+        assert!(expand(dir.path(), &wildcard).is_ok());
+        file::write(dir.path().join("root/extras/home"), "").unwrap();
+        let err = expand(dir.path(), &wildcard).unwrap_err().to_string();
+        assert!(err.contains("must not be the group's target"), "{err}");
         // an entry that takes no source needs none
         let absent = format!(
             "{:?} = {{ mode = \"absent\" }}",
