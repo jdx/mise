@@ -35,7 +35,7 @@ of a core tool, such as Node.js, on its [language page](/core-tools.html).
 | `postinstall`         | A command to run after the tool installs; see [Tool postinstall commands](#tool-postinstall-commands).                                                                                                                                                                                            |
 | `lazy`, `lazy_bins`   | Install the tool the first time one of its commands runs; see [Lazy tools](/dev-tools/shims.html#lazy-tools).                                                                                                                                                                                     |
 | `auto_update`         | In global config only, update the tool before it runs; see [Automatic tool updates](/dev-tools/#automatic-tool-updates).                                                                                                                                                                          |
-| `minimum_release_age` | Select only versions released at least this long ago (a duration such as `3d`) or before a date, where the backend reports release dates; see [minimum release age](/security.html#minimum-release-age).                                                                                          |
+| `minimum_release_age` | Select only versions released at least this long ago (a duration such as `3d`) or before a date. A version with no release date is not held back, and mise warns when it installs one; see [minimum release age](/security.html#minimum-release-age).                                             |
 | `bump`                | Set `false` to keep the tool out of `mise upgrade --bump` and `mise outdated --bump`: it is upgraded within its request and mise.toml is not rewritten. Naming the tool (`mise upgrade node --bump`) still bumps it. Not available in `.tool-versions`.                                           |
 | `prerelease`          | Include prereleases in `mise ls-remote` and when resolving `latest` or a prefix. Every backend honors it except the core `java` plugin; see [`prereleases`](/configuration/settings.html#prereleases).                                                                                            |
 | `version_order`       | Order versions by `semver` or by `source` on aqua, github, gitlab, forgejo, and http tools, or by `published_at` on github, gitlab, and forgejo tools; see [Version ordering](/dev-tools/versions.html#version-ordering).                                                                         |
@@ -226,9 +226,11 @@ node = { version = "24", postinstall = { run = "corepack enable", when = "always
 
 The command runs with the tool's `bin` directory and any
 [dependencies](#tool-dependencies) on `PATH`, the tool's `install_env`, and the
-project's `[env]` values. Templates such as
-<code v-pre>{{ tools.ripgrep.path }}</code> are rendered first. It also
-receives:
+project's `[env]` values. An `[env]` value marked `tools = true` is included
+only when the tool declares `depends`, and is resolved against those
+dependencies. When `[env]` cannot be resolved, the command runs without it.
+Templates such as <code v-pre>{{ tools.ripgrep.path }}</code> are rendered
+first. It also receives:
 
 - `MISE_TOOL_NAME`: the tool's short name, such as `node`.
 - `MISE_TOOL_VERSION`: the version that was installed, such as `24.11.1`.

@@ -168,13 +168,15 @@ pub enum DaemonInit {
 #[schemars(extend("not" = {"required": ["auto"]}))]
 pub struct DaemonPitchforkPort(#[schemars(schema_with = "any_table")] pub toml::Table);
 
-// The port of a custom daemon: mise's own, or pitchfork's structured form.
+// The port of a custom daemon: mise's own, or one of the forms pitchfork reads itself.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
 pub enum DaemonCommandPort {
     Mise(#[schemars(schema_with = "refs::daemon_port")] DaemonPort),
     Pitchfork(DaemonPitchforkPort),
+    /// Ports the daemon is expected to listen on, forwarded to pitchfork verbatim.
+    PitchforkList(Vec<u16>),
 }
 
 // One `[daemons]` entry. Which shape a table is follows from its keys, so each names the keys

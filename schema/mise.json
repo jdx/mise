@@ -11200,6 +11200,15 @@
                     "not": {
                       "required": ["auto"]
                     }
+                  },
+                  {
+                    "type": "array",
+                    "description": "Ports the daemon is expected to listen on, forwarded to pitchfork verbatim.",
+                    "items": {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 0
+                    }
                   }
                 ]
               },
@@ -11316,6 +11325,15 @@
                     "description": "Pitchfork's structured port configuration, forwarded verbatim.",
                     "not": {
                       "required": ["auto"]
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "description": "Ports the daemon is expected to listen on, forwarded to pitchfork verbatim.",
+                    "items": {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 0
                     }
                   }
                 ]
