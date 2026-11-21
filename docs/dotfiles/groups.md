@@ -11,7 +11,7 @@ entries, and each machine chooses which groups it applies.
 
 ## Define a group {#define-a-group}
 
-Declare a group with a `[dotfile_groups.<name>]` table that names its `root`:
+Declare a group with a `[dotfile_groups.<name>]` table:
 
 ```toml
 [dotfile_groups.zsh]
@@ -26,6 +26,8 @@ exclude = ["README.md"]
 ```
 
 mise walks the root and deploys each file at the same path under the target.
+A table that leaves `root` out deploys the directory named after the group, so
+`[dotfile_groups.zsh]` with no `root` also reads `~/.dotfiles/zsh`.
 A relative `root` always starts at
 [`dotfiles.root`](/configuration/settings.html#dotfiles.root), not at the
 directory of the config file that declares the group. Group names can contain
@@ -36,7 +38,7 @@ group with the same name, its table replaces the whole group.
 
 | Key          | Default        | Meaning                                                                                                                                                                           |
 | ------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `root`       | (required)     | The directory tree to deploy. A relative path starts at `dotfiles.root`.                                                                                                          |
+| `root`       | the group name | The directory tree to deploy. A relative path starts at `dotfiles.root`.                                                                                                          |
 | `target`     | `~`            | The directory the tree deploys into.                                                                                                                                              |
 | `mode`       | `symlink-each` | `symlink-each` links each file, `copy` copies each file, and `symlink` links the whole tree. `dot_prefix`, `manifest`, and `entries` need `symlink-each` or `copy`.               |
 | `exclude`    |                | Paths under the root to skip, using the [pattern syntax](/dotfiles/reference.html#patterns).                                                                                      |
@@ -164,9 +166,17 @@ dotfile_groups = ["kitty", "nvim", "zsh"]
 
 `~/.config/kitty/kitty.conf` links to `~/.dotfiles/kitty/.config/kitty/kitty.conf`,
 and so on. Write a table only for a group that needs more, such as
-`entries`, `dot_prefix`, or another `target`; a table replaces the defaults
-for its name. These groups exist only while a list selects them. mise warns
-when the list names something that is neither declared nor a directory.
+`entries`, `dot_prefix`, or another `target`. The table holds only what
+differs, since its `root` is still the directory of that name:
+
+```toml
+[dotfile_groups.kitty]
+exclude = ["README.md"]
+```
+
+A group without a table exists only while a list selects it, while a declared
+group also applies when no list is set. mise warns when the list names
+something that is neither declared nor a directory.
 
 Two selected groups cannot deploy the same target file, and one group cannot
 link a directory as a whole while another places files inside it. mise

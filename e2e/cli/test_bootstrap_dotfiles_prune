@@ -98,7 +98,9 @@ cat <<EOF2 >"$src/config.toml"
 "$config" = { source = "$src/config.toml", mode = "copy" }
 
 [dotfile_groups.broken]
+root = "$src/broken"
 target = "~"
+mode = "symlinks"
 EOF2
 cp "$src/config.toml" "$config"
 assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"

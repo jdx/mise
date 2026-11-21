@@ -65,6 +65,24 @@ dotfile_groups = ["kitty", "alacritty"]
 EOF
 assert_contains "mise dot apply --yes 2>&1" "ignoring group"
 assert_fail "test -e $HOME/.config/alacritty"
+# the table exists, so its name is not also reported as undeclared
+assert_contains "mise dot status 2>&1" "ignoring group"
+assert_not_contains "mise dot status 2>&1" "no [dotfile_groups] table declares it"
+
+# A table that only narrows a package needs no root: it is still the
+# directory named after the group.
+echo "readme" >"$DOTS/alacritty/README.md"
+cat <<EOF >mise.toml
+[dotfile_groups.alacritty]
+exclude = ["README.md"]
+
+[bootstrap]
+dotfile_groups = ["kitty", "alacritty"]
+EOF
+assert_not_contains "mise dot status 2>&1" "ignoring group"
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.config/alacritty/alacritty.toml" "$DOTS/alacritty/.config/alacritty/alacritty.toml"
+assert_fail "test -e $HOME/README.md"
 
 # A name with neither a table nor a directory is still reported.
 cat <<EOF >mise.toml

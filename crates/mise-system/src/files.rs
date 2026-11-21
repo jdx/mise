@@ -752,11 +752,11 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
                 .collect_vec()
         })
         .collect_vec();
+    let declared = maps
+        .iter()
+        .flat_map(crate::dotfile_groups::declared_names)
+        .collect::<HashSet<_>>();
     if let Some(selection) = &selection {
-        let declared = maps
-            .iter()
-            .flat_map(crate::dotfile_groups::declared_names)
-            .collect::<HashSet<_>>();
         let implicit = crate::dotfile_groups::implicit_group_requests(
             &config.config_files(),
             selection,
@@ -805,8 +805,8 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     }
     let mut requests = composed.into_values().flatten().collect::<Vec<_>>();
     if let Some(selection) = &selection {
-        let declared = requests.iter().chain(&deselected).cloned().collect_vec();
-        crate::dotfile_groups::warn_unknown_selection(selection, &declared);
+        let grouped = requests.iter().chain(&deselected).cloned().collect_vec();
+        crate::dotfile_groups::warn_unknown_selection(selection, &grouped, &declared);
     }
     requests.extend(deselected);
     Ok(requests)
