@@ -22,7 +22,7 @@ use crate::task::has_any_usage_spec;
 use crate::task::run_report::{RunReport, RunReportWriter, TaskReportStatus};
 use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
-use crate::task::task_list::{get_task_lists, resolve_depends};
+use crate::task::task_list::{GlobalTasks, Picker, get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::{OutputHandler, SummaryOutcome};
 use crate::task::task_scheduler::RunLoopHooks;
@@ -206,6 +206,21 @@ pub(crate) struct Run {
     /// Open the task picker with tasks from every project in the monorepo
     #[usage(long, conflicts = ["task", "affected"])]
     pub all: bool,
+
+    /// Open the task picker with only the global tasks
+    ///
+    /// Global tasks come from the global config, such as `~/.config/mise/config.toml`,
+    /// and the global task directory, `~/.config/mise/tasks`.
+    #[usage(long, conflicts = ["task", "affected", "tag", "no_global"])]
+    pub global: bool,
+
+    /// Open the task picker without the global tasks
+    ///
+    /// Global tasks come from the global config, such as `~/.config/mise/config.toml`,
+    /// and the global task directory, `~/.config/mise/tasks`.
+    /// Combine with `--all` or `--multi` to filter those pickers too.
+    #[usage(long, conflicts = ["task", "affected", "tag", "global"])]
+    pub no_global: bool,
 
     /// Open the task picker as a checklist and run every task you check
     ///
@@ -679,7 +694,7 @@ async fn get_affected_task_list(
         .collect::<BTreeSet<_>>();
 
     let args = affected_task_args(args);
-    let mut tasks = get_task_lists(config, &args, true, only, false, false).await?;
+    let mut tasks = get_task_lists(config, &args, true, only, None).await?;
     // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
     // after this returns, so prerequisites from unaffected projects remain intact.
     tasks.retain(|task| {
@@ -714,7 +729,7 @@ async fn get_source_affected_task_list(
     use crate::task::task_affected::affected_task_reasons;
 
     let mut repos = crate::task::task_affected::AffectedRepos::new(&revisions, config)?;
-    let mut tasks = get_task_lists(config, args, true, only, false, false).await?;
+    let mut tasks = get_task_lists(config, args, true, only, None).await?;
     // As in a monorepo, finding no tagged task is not an error.
     keep_tagged(config, &mut tasks, tags.tags, tags.no_cache).await?;
     // As in a monorepo, only the pattern matches are filtered: `Run::run` resolves their
@@ -955,6 +970,22 @@ fn display_affected_text(text: &str) -> String {
 }
 
 impl Run {
+    /// How the task picker opens, when a flag asks for it instead of a named task
+    fn picker(&self) -> Option<Picker> {
+        let globals = if self.global {
+            GlobalTasks::Only
+        } else if self.no_global {
+            GlobalTasks::Exclude
+        } else {
+            GlobalTasks::Include
+        };
+        (self.all || self.multi || globals != GlobalTasks::Include).then_some(Picker {
+            all: self.all,
+            multi: self.multi,
+            globals,
+        })
+    }
+
     /// The parser leaves `--help` to the task, so `mise run --help` arrives here as a task name.
     /// It prints this command's own help and runs nothing the project defines.
     pub(crate) fn only_prints_help(&self) -> bool {
@@ -1053,7 +1084,7 @@ impl Run {
                 )
                 .collect_vec();
 
-            let mut task_list = get_task_lists(&config, &args, false, false, false, false).await?;
+            let mut task_list = get_task_lists(&config, &args, false, false, None).await?;
             // Help is for the task `--tag` would run.
             retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
 
@@ -1098,7 +1129,7 @@ impl Run {
         self.tmpdir = tmpdir.path().to_path_buf();
 
         // Build args list - don't include args_last yet, they'll be added after task resolution
-        let args = if self.all {
+        let args = if self.picker().is_some() {
             vec![]
         } else {
             once(task).chain(self.args.clone()).collect_vec()
@@ -1127,7 +1158,7 @@ impl Run {
             )
             .await?
         } else {
-            get_task_lists(&config, &args, true, self.skip_deps, self.all, self.multi).await?
+            get_task_lists(&config, &args, true, self.skip_deps, self.picker()).await?
         };
         if !self.affected {
             retain_tagged(&config, &mut task_list, &self.tag, &args, self.no_cache).await?;
