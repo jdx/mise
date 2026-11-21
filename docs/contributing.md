@@ -266,8 +266,13 @@ the full suite, as CI does.
 
 Each test runs in a fresh working directory with its own `HOME`, mise
 directories, and trusted config path, with `MISE_EXPERIMENTAL=1` set and your
-`target/debug` first on `PATH`. The host still has to provide the shells,
-compilers, and services a test uses. `MISE_E2E_DOCKER=1` runs each test inside
+`target/debug` first on `PATH`. The tests run that debug build and nothing
+else: if `target/debug/mise` is missing, the run fails and tells you to run
+`mise run build`. To test another binary on purpose, such as a release build,
+set `MISE_E2E_BIN` to its path; the file must be named `mise`.
+
+The host still has to provide the shells, compilers, and services a test uses.
+`MISE_E2E_DOCKER=1` runs each test inside
 `ghcr.io/jdx/mise:e2e`, the image CI runs the E2E tests in, which has those
 packages; it needs a Linux build of mise. Set `MISE_GITHUB_TOKEN` or
 `GITHUB_TOKEN` for tests that call the GitHub API; the harness passes them

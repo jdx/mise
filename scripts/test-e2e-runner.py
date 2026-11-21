@@ -21,6 +21,8 @@ class E2ERunnerTests(unittest.TestCase):
         release_skip=False,
         task_args=None,
         jobs="2",
+        mise_bin="stub",
+        dangling_target=False,
     ):
         """Run e2e/run_all_tests, or the `mise run test:e2e` task script when
         task_args is given. Records the executed test order in self.order."""
@@ -28,7 +30,7 @@ class E2ERunnerTests(unittest.TestCase):
             root = Path(tmp)
             e2e = root / "e2e"
             e2e.mkdir()
-            for name in ("run_all_tests", "style.sh"):
+            for name in ("run_all_tests", "style.sh", "helpers.sh"):
                 shutil.copy(ROOT / "e2e" / name, e2e / name)
             scripts = root / "scripts"
             scripts.mkdir()
@@ -72,9 +74,25 @@ exit "$status"
                 for key, value in os.environ.items()
                 if not key.startswith(("E2E_", "TEST_", "GITHUB_", "MISE_E2E_"))
             }
+            # The runner refuses to start without a mise binary to test. "stub"
+            # names one through MISE_E2E_BIN, "debug" puts one where a build of
+            # the checkout would be, and None or any other path is passed as is.
+            stub = root / "bin" / "mise"
+            if mise_bin == "debug":
+                stub = root / "target" / "debug" / "mise"
+            if mise_bin in ("stub", "debug"):
+                stub.parent.mkdir(parents=True)
+                stub.write_text("#!/bin/sh\n")
+                stub.chmod(0o755)
+            if mise_bin == "stub":
+                env["MISE_E2E_BIN"] = str(stub)
+            elif mise_bin not in (None, "debug"):
+                env["MISE_E2E_BIN"] = mise_bin
+            if dangling_target:
+                (root / "target").symlink_to(root / "gone")
+            env.pop("CARGO_TARGET_DIR", None)
             env.update(
                 COUNTS=str(counts),
-                MISE_E2E_BIN="/unused",
                 E2E_RETRY_WAIT_SECONDS="0",
                 GITHUB_ACTIONS="true",
                 GITHUB_STEP_SUMMARY=str(summary),
@@ -182,6 +200,35 @@ exit "$status"
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("No test matches nope", result.stderr)
                 self.assertEqual(counts, {})
+
+    def test_missing_binary_fails_before_running(self):
+        for task_args in (None, ("^test_pass$",)):
+            with self.subTest(task_args=task_args):
+                result, counts, _ = self.run_runner(mise_bin=None, task_args=task_args)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(counts, {})
+                self.assertIn("target/debug/mise", result.stderr)
+                self.assertIn("mise run build", result.stderr)
+                self.assertIn("MISE_E2E_BIN", result.stderr)
+                self.assertNotIn("E2E: ran", result.stderr)
+
+    def test_dangling_target_symlink_is_a_missing_binary(self):
+        result, counts, _ = self.run_runner(mise_bin=None, dangling_target=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(counts, {})
+        self.assertIn("mise run build", result.stderr)
+
+    def test_debug_build_of_the_checkout_is_used(self):
+        result, counts, _ = self.run_runner(mise_bin="debug", args=("test_pass",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(counts, {"test_pass": 1})
+
+    def test_override_must_be_an_executable_file(self):
+        result, counts, _ = self.run_runner(mise_bin="/no/such/mise")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(counts, {})
+        self.assertIn("MISE_E2E_BIN is set to", result.stderr)
+        self.assertIn("/no/such/mise", result.stderr)
 
     def test_invalid_attempt_limit(self):
         for attempts in ("0", "-1", "abc", "08"):

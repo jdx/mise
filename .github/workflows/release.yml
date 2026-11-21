@@ -399,7 +399,8 @@ jobs:
           TEST_ALL: 1
           E2E_MAX_ATTEMPTS: 3
           E2E_RETRY_WAIT_SECONDS: 30
-        run: ./e2e/run_all_tests
+        # This job tests the release tarball, not a debug build of the checkout.
+        run: MISE_E2E_BIN="$HOME/mise/bin/mise" ./e2e/run_all_tests
   rpm:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
