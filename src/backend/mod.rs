@@ -961,14 +961,27 @@ pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, ke
 }
 
 /// The options a backend reads, as documented by the named `schema/mise.json` definitions
-/// (`schema_matches_parser` keeps those in step with the parser). Any other option is an
-/// error, so only a backend whose options are a fixed set should declare one.
+/// (`schema_matches_parser` keeps those in step with the parser). Any other option is
+/// reported at install time, so only a backend whose options are a fixed set should declare
+/// one. [`OptionSpec::new`] and [`OptionSpec::with_platforms`] fail the install;
+/// [`OptionSpec::warn_only`] warns and installs anyway.
 #[derive(Debug, Clone, Copy)]
 pub struct OptionSpec {
     schema_defs: &'static [&'static str],
     /// The schema definitions for the options a platform override may carry. A backend that
     /// has none accepts anything it knows at the top level.
     platform_defs: &'static [&'static str],
+    /// Whether an option the backend does not read is a warning instead of an error.
+    warn_only: bool,
+}
+
+/// An option a backend does not read, as [`OptionSpec::unknown_options`] reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnknownOption {
+    /// The option as written, with `platforms.` in front when it is inside a platform override.
+    pub(crate) key: String,
+    /// The option the backend reads whose name is closest, if one is close.
+    pub(crate) suggestion: Option<String>,
 }
 
 impl OptionSpec {
@@ -976,6 +989,7 @@ impl OptionSpec {
         Self {
             schema_defs,
             platform_defs: &[],
+            warn_only: false,
         }
     }
 
@@ -986,6 +1000,17 @@ impl OptionSpec {
         Self {
             schema_defs,
             platform_defs,
+            warn_only: false,
+        }
+    }
+
+    /// For a backend that installed with unread options before it declared its options: an
+    /// option it does not read is a warning, so configs that carried one keep installing.
+    pub const fn warn_only(schema_defs: &'static [&'static str]) -> Self {
+        Self {
+            schema_defs,
+            platform_defs: &[],
+            warn_only: true,
         }
     }
 
@@ -1043,6 +1068,20 @@ impl OptionSpec {
             })
     }
 
+    /// The options a platform override may carry. A backend that declares no platform options
+    /// reads none from a platform override, so only the options every tool shares are accepted
+    /// there.
+    fn platform_known_keys(&self) -> HashSet<String> {
+        if self.platform_defs.is_empty() {
+            Self::shared_keys()
+        } else {
+            self.platform_defs
+                .iter()
+                .flat_map(|def| Self::platform_schema_keys(def))
+                .collect()
+        }
+    }
+
     /// Returns the options that are not known, including those inside `platforms`.
     pub(crate) fn unknown_keys(
         &self,
@@ -1050,16 +1089,7 @@ impl OptionSpec {
         opts: &ToolVersionOptions,
     ) -> Vec<String> {
         let known = self.known_keys(backend_type);
-        // A backend that declares no platform options reads none from a platform override, so
-        // only the options every tool shares are accepted there.
-        let platform_known = if self.platform_defs.is_empty() {
-            Self::shared_keys()
-        } else {
-            self.platform_defs
-                .iter()
-                .flat_map(|def| Self::platform_schema_keys(def))
-                .collect()
-        };
+        let platform_known = self.platform_known_keys();
         let mut unknown = vec![];
         for (key, value) in &opts.opts {
             if key == "platforms" || key == "platform" {
@@ -1079,8 +1109,69 @@ impl OptionSpec {
         unknown
     }
 
-    /// Fails on the first unknown option, other than the `allowed` keys, such as the ones a
-    /// tool stub file adds to a tool's options.
+    /// The unknown options, other than the `allowed` keys, such as the ones a tool stub file
+    /// adds to a tool's options. Each comes with the closest option the backend reads where it
+    /// was written: at the top level, or inside a platform override.
+    pub(crate) fn unknown_options(
+        &self,
+        backend_type: &BackendType,
+        opts: &ToolVersionOptions,
+        allowed: &[&str],
+    ) -> Vec<UnknownOption> {
+        // Sorted, so that of two options equally close the same one is always suggested.
+        let sorted = |keys: HashSet<String>| -> Vec<String> {
+            let mut keys: Vec<String> = keys.into_iter().collect();
+            keys.sort();
+            keys
+        };
+        let known = sorted(self.known_keys(backend_type));
+        let platform_known = sorted(self.platform_known_keys());
+        self.unknown_keys(backend_type, opts)
+            .into_iter()
+            .filter_map(|key| {
+                let name = key.rsplit('.').next().unwrap_or(&key);
+                if allowed.contains(&name) {
+                    return None;
+                }
+                let candidates = if key.starts_with("platforms.") || key.starts_with("platform.") {
+                    &platform_known
+                } else {
+                    &known
+                };
+                let suggestion = crate::fuzzy::nearest(name, candidates.iter().map(String::as_str))
+                    .map(str::to_string);
+                Some(UnknownOption { key, suggestion })
+            })
+            .collect()
+    }
+
+    /// What to tell the user about an option `tool` carries that its backend does not read.
+    fn unknown_option_message(
+        &self,
+        tool: &str,
+        backend_type: &BackendType,
+        unknown: &UnknownOption,
+    ) -> String {
+        let UnknownOption { key, suggestion } = unknown;
+        let problem = format!("{tool}: option `{key}` is not used by the {backend_type} backend");
+        if self.warn_only {
+            let hint = suggestion
+                .as_ref()
+                .map(|s| format!(" (did you mean `{s}`?)"))
+                .unwrap_or_default();
+            format!("{problem}, so it has no effect{hint}")
+        } else {
+            let hint = match suggestion {
+                Some(s) => format!("Did you mean `{s}`?"),
+                None => "Remove it, or check the spelling against the backend's documented options"
+                    .to_string(),
+            };
+            format!("{problem}\nhint: {hint}")
+        }
+    }
+
+    /// Reports the unknown options, other than the `allowed` keys: fails on the first one, or
+    /// for a [`warn_only`](Self::warn_only) spec warns about each, once per process.
     pub(crate) fn check(
         &self,
         tool: &str,
@@ -1088,14 +1179,12 @@ impl OptionSpec {
         opts: &ToolVersionOptions,
         allowed: &[&str],
     ) -> eyre::Result<()> {
-        if let Some(key) = self.unknown_keys(backend_type, opts).iter().find(|key| {
-            let name = key.rsplit('.').next().unwrap_or(key);
-            !allowed.contains(&name)
-        }) {
-            bail!(
-                "{tool}: option `{key}` is not used by the {backend_type} backend\n\
-                hint: Remove it, or check the spelling against the backend's documented options"
-            );
+        for unknown in self.unknown_options(backend_type, opts, allowed) {
+            let message = self.unknown_option_message(tool, backend_type, &unknown);
+            if !self.warn_only {
+                bail!(message);
+            }
+            warn_once!("{message}");
         }
         Ok(())
     }
@@ -10000,6 +10089,121 @@ mod option_spec_tests {
             .check("cargo:x", &BackendType::Cargo, &o, &[])
             .unwrap_err();
         assert!(err.to_string().contains("option `nonsense` is not used"));
+    }
+
+    #[test]
+    fn the_error_names_the_closest_option() {
+        let spec = OptionSpec::with_platforms(&["tool_forge_options"], &["tool_forge_platforms"]);
+        let err = spec
+            .check(
+                "github:cli/cli",
+                &BackendType::Github,
+                &opts("asset_patern=x"),
+                &[],
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "github:cli/cli: option `asset_patern` is not used by the github backend\n\
+            hint: Did you mean `asset_pattern`?"
+        );
+        // Nothing is close to this one, so the hint stays general.
+        let err = spec
+            .check(
+                "github:cli/cli",
+                &BackendType::Github,
+                &opts("nonsense=x"),
+                &[],
+            )
+            .unwrap_err();
+        assert!(err.to_string().ends_with(
+            "hint: Remove it, or check the spelling against the backend's documented options"
+        ));
+    }
+
+    #[test]
+    fn a_platform_option_is_suggested_from_the_platform_options() {
+        let spec = OptionSpec::with_platforms(&["tool_cargo_options"], &["tool_cargo_platforms"]);
+        let mut o = ToolVersionOptions::default();
+        // `features` is one edit from `feature`, but cargo reads it only at the top level.
+        let platform: toml::Table =
+            toml::from_str("[linux-x64]\nfeature = \"x\"\nbn = \"y\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert_eq!(
+            spec.unknown_options(&BackendType::Cargo, &o, &[]),
+            vec![
+                UnknownOption {
+                    key: "platforms.bn".into(),
+                    suggestion: Some("bin".into()),
+                },
+                UnknownOption {
+                    key: "platforms.feature".into(),
+                    suggestion: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_warn_only_spec_warns_once_and_does_not_fail() {
+        let spec = OptionSpec::warn_only(&["tool_core_python_options"]);
+        let o = opts("virtualenv=.venv,patch_sysconfg=false,postinstal=x,warn_only_test_opt=1");
+        // The tool name is unique to this test: the captured warnings are shared.
+        let tool = "python-warn-only-spec-test";
+        for _ in 0..2 {
+            spec.check(tool, &BackendType::Core, &o, &[]).unwrap();
+        }
+        let warnings: Vec<String> = crate::output::tests::STDERR
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.contains(tool))
+            .map(|line| console::strip_ansi_codes(line).to_string())
+            .collect();
+        assert_eq!(
+            warnings,
+            vec![
+                "mise python-warn-only-spec-test: option `patch_sysconfg` is not used by the core backend, so it has no effect (did you mean `patch_sysconfig`?)",
+                "mise python-warn-only-spec-test: option `postinstal` is not used by the core backend, so it has no effect (did you mean `postinstall`?)",
+                "mise python-warn-only-spec-test: option `warn_only_test_opt` is not used by the core backend, so it has no effect",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_warn_only_spec_allows_stub_keys() {
+        let spec = OptionSpec::warn_only(&[]);
+        assert_eq!(
+            spec.unknown_options(&BackendType::Core, &opts("bin=node,nonsense=1"), &["bin"]),
+            vec![UnknownOption {
+                key: "nonsense".into(),
+                suggestion: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn every_core_tool_option_in_the_schema_is_accepted() {
+        let core_defs: [&'static [&'static str]; 4] = [
+            &["tool_core_python_options"],
+            &["tool_core_java_options"],
+            &["tool_core_rust_options"],
+            &["tool_core_dotnet_options"],
+        ];
+        for defs in core_defs {
+            let documented = OptionSpec::schema_keys(defs[0]);
+            assert!(!documented.is_empty(), "{defs:?}: no schema options");
+            let mut o = ToolVersionOptions::default();
+            for key in documented {
+                o.opts.insert(key, toml::Value::Boolean(true));
+            }
+            assert_eq!(
+                OptionSpec::warn_only(defs).unknown_keys(&BackendType::Core, &o),
+                Vec::<String>::new(),
+                "{defs:?}"
+            );
+        }
     }
 
     #[test]

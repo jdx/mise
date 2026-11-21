@@ -309,6 +309,10 @@ impl Backend for SwiftPlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[]))
+    }
+
     /// Swift download URLs are derived from the build host: OS, arch, and—on
     /// Linux—the specific distro (e.g. `ubuntu24.04`, `amazonlinux2`,
     /// `fedora39`, `ubi9`). `mise lock` can only guess the distro of a machine

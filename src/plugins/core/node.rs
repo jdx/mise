@@ -640,6 +640,10 @@ impl Backend for NodePlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[]))
+    }
+
     fn resolves_locked_url_from_checksum(&self) -> bool {
         true
     }

@@ -666,6 +666,10 @@ impl Backend for ErlangPlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[]))
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = if Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(false) {
             github::list_releases("erlef/otp_builds")

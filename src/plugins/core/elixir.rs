@@ -141,6 +141,10 @@ impl Backend for ElixirPlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[]))
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         // Format: "version hash timestamp checksum"
         // Example: "v1.17.3 abc123 2024-12-01T00:00:00Z def456"
