@@ -3118,6 +3118,7 @@ mise records each config file it loads and each tool stub it runs, and
 project you have not used in this long stops protecting its versions, so they
 can be pruned; the next mise command run in that project tracks it again and
 installs what it needs. Set to `0s` to keep tracking until the file is deleted.
+mise records a use to within a day, so a value under a day counts as a day.
 
 A tracked file that no longer exists stops protecting its versions at once and
 is forgotten after a week without use, whatever this is set to, so a project

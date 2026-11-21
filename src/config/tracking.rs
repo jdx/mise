@@ -59,6 +59,9 @@ impl Tracker {
         Self::list_all_in(&TRACKED_STUBS, Self::max_age(), SystemTime::now())
     }
 
+    /// `prune.forget_unused_after`, but no less than `REFRESH_AFTER`: a use is
+    /// only recorded once an entry is that stale, so a shorter age would forget
+    /// a file that was just loaded.
     fn max_age() -> Option<Duration> {
         Settings::get()
             .prune_forget_unused_after_duration()
@@ -66,6 +69,7 @@ impl Tracker {
                 warn!("invalid prune.forget_unused_after: {err:#}");
                 None
             })
+            .map(|max_age| max_age.max(REFRESH_AFTER))
     }
 
     fn list_all_in(dir: &Path, max_age: Option<Duration>, now: SystemTime) -> Result<Vec<PathBuf>> {

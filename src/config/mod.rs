@@ -1611,39 +1611,34 @@ impl Config {
                 parsed
                     .get(&path)
                     .filter(|(at, _)| *at == stamp)
-                    .map(|(_, cf)| cf.clone())
+                    .map(|(_, parsed)| parsed.clone())
             });
-            let parsed = match cached {
-                Some(cf) => cf,
-                None => {
-                    let parsed = config_file::parse_detected(&path, detection)
-                        .await
-                        .map_err(|err| {
-                            report_tracked_config_error(&path, &err);
-                        })
-                        .ok();
-                    if let Some(stamp) = stamp {
-                        TRACKED_PARSES
-                            .lock()
-                            .unwrap()
-                            .insert(path.clone(), (stamp, parsed.clone()));
-                    }
-                    if parsed.is_none() {
-                        continue;
-                    }
-                    parsed
-                }
+            let mut parsed = match cached {
+                Some(parsed) => parsed,
+                None => config_file::parse_detected(&path, detection)
+                    .await
+                    .map_err(|err| TrackedFailure {
+                        message: tracked_config_error_message(&path, &err),
+                        warned: false,
+                    }),
             };
-            match parsed {
-                Some(cf) => {
-                    config_files.insert(path, cf);
+            match &mut parsed {
+                Ok(cf) => {
+                    config_files.insert(path.clone(), cf.clone());
                 }
-                // Warned about when it was first read.
-                None if count_quiet_tracked_problem() => {}
-                None => debug!(
-                    "skipping tracked config that failed to load: {}",
-                    display_path(&path)
-                ),
+                Err(failure) => {
+                    if count_quiet_tracked_problem() || failure.warned {
+                        debug!("{}", failure.message);
+                    } else {
+                        // Once per process, however often it is read, but never
+                        // only inside a scan that summarized it.
+                        warn!("{}", failure.message);
+                        failure.warned = true;
+                    }
+                }
+            }
+            if let Some(stamp) = stamp {
+                TRACKED_PARSES.lock().unwrap().insert(path, (stamp, parsed));
             }
         }
         Ok(config_files)
@@ -9154,50 +9149,47 @@ fn included_task_definitions(
 }
 
 /// The tracked configs this process has parsed, by path, with the modification time and
-/// size they were read at; `None` for a config that failed to parse.
+/// size they were read at.
 type TrackedParse = (
     (Option<std::time::SystemTime>, u64),
-    Option<Arc<dyn ConfigFile>>,
+    std::result::Result<Arc<dyn ConfigFile>, TrackedFailure>,
 );
+
+/// A tracked config that failed to parse, and whether this process has warned about it.
+#[derive(Clone)]
+struct TrackedFailure {
+    message: String,
+    warned: bool,
+}
 static TRACKED_PARSES: Lazy<std::sync::Mutex<HashMap<PathBuf, TrackedParse>>> =
     Lazy::new(Default::default);
 
-tokio::task_local! {
-    /// Set while a command scans every tracked config for something the user did not
-    /// ask about directly (which old versions an upgrade may remove, the deferred
-    /// tool-purgatory cleanup): problems are counted instead of warned about one by one.
-    static TRACKED_ERRORS_QUIET: std::sync::atomic::AtomicUsize;
-}
-
 /// Runs `future` with problems in tracked configs and stubs demoted to debug output.
-/// Returns its result and how many problems there were.
+/// Returns its result and how many problems there were. A command uses it while it
+/// scans every tracked config for something the user did not ask about directly
+/// (which old versions an upgrade may remove, the deferred tool-purgatory cleanup).
 pub async fn with_quiet_tracked_config_errors<T>(
     future: impl std::future::Future<Output = T>,
 ) -> (T, usize) {
-    TRACKED_ERRORS_QUIET
-        .scope(std::sync::atomic::AtomicUsize::new(0), async {
-            let out = future.await;
-            let skipped =
-                TRACKED_ERRORS_QUIET.with(|count| count.load(std::sync::atomic::Ordering::Relaxed));
-            (out, skipped)
-        })
-        .await
+    mise_util::quiet_problems::scope(future).await
 }
 
 /// Reports a tracked config that could not be loaded.
 pub(crate) fn report_tracked_config_error(path: &Path, err: &eyre::Report) {
-    report_tracked_problem(&format!(
+    report_tracked_problem(&tracked_config_error_message(path, err));
+}
+
+fn tracked_config_error_message(path: &Path, err: &eyre::Report) -> String {
+    format!(
         "error loading tracked config file {}: {err:#}",
         display_path(path)
-    ));
+    )
 }
 
 /// Whether problems with tracked configs are being counted rather than shown, see
 /// [`with_quiet_tracked_config_errors`]. Counts the problem when they are.
 pub(crate) fn count_quiet_tracked_problem() -> bool {
-    TRACKED_ERRORS_QUIET
-        .try_with(|count| count.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
-        .is_ok()
+    mise_util::quiet_problems::count()
 }
 
 /// Warns about a problem with a tracked config or stub, or counts it and logs it at
