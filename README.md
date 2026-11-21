@@ -125,8 +125,9 @@ curl -fsSL https://mise.run | sh
 ~/.local/bin/mise --version
 ```
 
-On Windows, run `irm https://mise.run/powershell | iex` in PowerShell. For
-Homebrew, apt, dnf, WinGet, Scoop, and other package managers, see
+On Windows, run `irm https://mise.run/powershell | iex` in PowerShell, or
+`winget install jdx.mise`. For Homebrew, apt, dnf, Scoop, and other package
+managers, see
 [Installing mise](https://mise.jdx.dev/installing-mise.html).
 
 The installer places the binary at `~/.local/bin/mise`. If `~/.local/bin` is not

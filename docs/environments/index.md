@@ -240,7 +240,9 @@ Relative paths resolve against the project directory, even when the config file
 is in `.config/mise/` or `.mise/` (see
 [`config_root`](/configuration.html#config-root)). Paths can use templates,
 `$VAR` and `~`. Directives run in the order you write them, so `_.path` can use
-a variable that `_.source` set above it; `_.python.venv` always runs last.
+a variable that `_.source` set above it; `_.python.venv` always runs last. To
+use the same directive at two points in one file, write
+[`[[env]]`](#env-array).
 
 | Option     | `_.file` | `_.source` | `_.path` | Effect                                                                   |
 | ---------- | -------- | ---------- | -------- | ------------------------------------------------------------------------ |
@@ -445,6 +447,26 @@ _.my-env-plugin = { api_url = "https://api.example.com" }
 installed and mise has no source to install it from, mise warns and skips the
 directive. To write an environment plugin, see
 [Environment plugins](/env-plugin-development.html).
+
+## Repeat a key with `[[env]]` {#env-array}
+
+A TOML table holds each key once, so one `[env]` table cannot set a variable
+twice or use `_.source` at two different points. Write `[[env]]` to split a
+file's environment into groups. mise evaluates the groups from top to bottom as
+one list, so a later group can read what an earlier group set, and set it again:
+
+```toml [mise.toml]
+[[env]]
+_.source = "scripts/base.sh" # exports APP_HOST
+
+[[env]]
+APP_URL = "https://{{ env.APP_HOST }}"
+_.source = "scripts/urls.sh" # reads $APP_URL
+```
+
+A file uses `[env]` or `[[env]]`, not both. Only the top-level `env` has this
+form: `[vars]` and a task's `env` are single tables. `mise set` and `mise unset`
+do not edit a file that uses `[[env]]`, so change it by hand.
 
 ## Variables that configure mise {#mise-variables}
 

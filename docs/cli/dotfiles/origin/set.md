@@ -11,7 +11,7 @@ description: "Connect an origin repository"
 
 Connect an origin repository
 
-Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
+Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync: it fetches in every mode, and pushes your saved checkpoints unless the mode is `fetch-only`. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
 
 The origin holds tracked-file history, not a checkout of your global config: connect a repository of its own, or a separate branch (`--branch`) of the one you adopt as global config with `mise bootstrap --adopt`.
 
@@ -24,7 +24,7 @@ The origin holds tracked-file history, not a checkout of your global config: con
   Reconnecting a repository this machine already follows keeps that connection's branch. A repository with no branches gets `main`, which the first push creates.
 - **`--sync <MODE>`** — How to sync with the repository: sync, fetch-only, or manual
 
-  `sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no automatic network calls: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
+  `sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no network calls after the first sync that connecting runs: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
 - **`-y --yes`** — Skip the sync mode prompt and use the `history.sync` setting
 - **`-h --help`** — Print help
 
@@ -36,7 +36,7 @@ Connect and choose a sync mode at the prompt
 mise dot origin set https://github.com/you/dotfiles.git
 ```
 
-Connect without automatic network activity
+Connect, then sync only when you run `mise dot sync`
 
 ```
 mise dot origin set git@github.com:you/dotfiles.git --sync manual

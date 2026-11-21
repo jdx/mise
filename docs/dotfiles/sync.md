@@ -79,10 +79,12 @@ applied on the others. Track them with a
 [`machine` variant](/dotfiles/history.html#machine-variants) so each machine
 keeps its own version.
 
-mise prints a preview of the connection and then connects. With `--sync sync`,
-the watcher pushes saved changes and periodically fetches and applies changes
-from other machines; [Choose a sync mode](#choose-a-sync-mode) covers the other
-modes. mise uses the repository's default branch unless you pass
+mise prints a preview of the connection, connects, and runs a first sync. That
+sync fetches in every mode and pushes your saved checkpoints unless the mode is
+`fetch-only`, so `manual` also shares what you have saved when you connect.
+After that, with `--sync sync`, the watcher pushes saved changes and
+periodically fetches and applies changes from other machines;
+[Choose a sync mode](#choose-a-sync-mode) covers the other modes. mise uses the repository's default branch unless you pass
 `--branch`; a repository with no branches gets `main`, which the first push
 creates.
 

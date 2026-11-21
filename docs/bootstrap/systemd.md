@@ -272,7 +272,7 @@ disables units with `wanted_by = []`, then restarts each unit with
 | `exec_start_post`   | `ExecStartPost`    | List; one line per entry, in order           |
 | `exec_stop`         | `ExecStop`         |                                              |
 | `exec_stop_post`    | `ExecStopPost`     | List; one line per entry, in order           |
-| `type`              | `Type`             | Such as `"oneshot"`                          |
+| `type`              | `Type`             | A service type, listed below                 |
 | `remain_after_exit` | `RemainAfterExit`  |                                              |
 | `timeout_start_sec` | `TimeoutStartSec`  |                                              |
 | `timeout_stop_sec`  | `TimeoutStopSec`   |                                              |
@@ -292,6 +292,12 @@ In the `exec_*` keys, a leading `~` or `~/` is expanded to your home directory,
 and systemd's command prefixes stay in front of the path, so
 `exec_start_pre = ["-~/bin/check"]` runs an optional check from your home
 directory.
+
+`type` is one of systemd's service types: `"simple"`, `"exec"`, `"forking"`,
+`"oneshot"`, `"dbus"`, `"notify"`, `"notify-reload"` or `"idle"`. mise writes
+the value to the unit unchanged, and
+[systemd.service(5)](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Type=)
+describes what each one means. Without `type`, systemd uses `simple`.
 
 `[Timer]` keys; setting any of them makes the entry a timer:
 

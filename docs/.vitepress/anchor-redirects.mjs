@@ -957,6 +957,30 @@ export const anchorRedirects = {
     "/dotfiles/reference.html#configuration-reference",
   "/dotfiles/history.html#credential-filtering-and-omissions":
     "/dotfiles/reference.html#credential-filtering-and-omissions",
+  "/dotfiles/history.html#history.allow_plaintext_history":
+    "/dotfiles/reference.html#history.allow_plaintext_history",
+  "/dotfiles/history.html#history.allow_secret_values":
+    "/dotfiles/reference.html#history.allow_secret_values",
+  "/dotfiles/history.html#history.describe_command":
+    "/dotfiles/reference.html#history.describe_command",
+  "/dotfiles/history.html#history.enabled":
+    "/dotfiles/reference.html#history.enabled",
+  "/dotfiles/history.html#history.fetch_interval":
+    "/dotfiles/reference.html#history.fetch_interval",
+  "/dotfiles/history.html#history.lock_wait":
+    "/dotfiles/reference.html#history.lock_wait",
+  "/dotfiles/history.html#history.notify":
+    "/dotfiles/reference.html#history.notify",
+  "/dotfiles/history.html#history.sync":
+    "/dotfiles/reference.html#history.sync",
+  "/dotfiles/history.html#history.sync_interval":
+    "/dotfiles/reference.html#history.sync_interval",
+  "/dotfiles/history.html#history.watch.debounce":
+    "/dotfiles/reference.html#history.watch.debounce",
+  "/dotfiles/history.html#history.watch.max_interval":
+    "/dotfiles/reference.html#history.watch.max_interval",
+  "/dotfiles/history.html#history.watch.reconcile":
+    "/dotfiles/reference.html#history.watch.reconcile",
   "/dotfiles/history.html#nested-repositories":
     "/dotfiles/reference.html#nested-repositories",
   "/env-plugin-development.html#_4-use-built-in-caching-for-expensive-operations":

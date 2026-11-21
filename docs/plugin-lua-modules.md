@@ -252,8 +252,12 @@ plugin HTTP client reads only that environment variable, not an
 file. Requests follow mise's [`url_replacements`](/url-replacements.html), and
 credentials from [`netrc`](/configuration/settings.html#netrc) are added for the
 destination host. When a replacement sends the request to another origin, mise
-drops the credential headers you passed, such as `Authorization` and `Cookie`,
-and keeps the others. A request to `api.github.com`, or to a GitHub Enterprise Cloud
+drops the headers you passed whose names mark them as credentials and keeps
+the others. It recognizes `Authorization`, `Cookie`, and names built from words such as
+`auth`, `api-key`, `token`, `secret`, `credential` and `session-id`, for example
+`X-Api-Key` and `X-Auth-Token`. A secret under another name, such as
+`X-Password`, is forwarded, so send secrets in a header mise recognizes. A
+request to `api.github.com`, or to a GitHub Enterprise Cloud
 `api.*.ghe.com` host, that has no `Authorization` header gets the
 [GitHub token](/dev-tools/github-tokens.html) mise resolves for `github.com`
 (even for a `ghe.com` host) and an `X-GitHub-Api-Version` header. For a GitHub

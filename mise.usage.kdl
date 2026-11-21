@@ -1216,7 +1216,7 @@ See https://mise.jdx.dev/dotfiles/sync.html
                 long_help #"""
 Connect an origin repository
 
-Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
+Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync: it fetches in every mode, and pushes your saved checkpoints unless the mode is `fetch-only`. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
 
 The origin holds tracked-file history, not a checkout of your global config: connect a repository of its own, or a separate branch (`--branch`) of the one you adopt as global config with `mise bootstrap --adopt`.
 """#
@@ -1232,7 +1232,7 @@ Reconnecting a repository this machine already follows keeps that connection's b
                     long_help #"""
 How to sync with the repository: sync, fetch-only, or manual
 
-`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no automatic network calls: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
+`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no network calls after the first sync that connecting runs: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
 """#
                     arg <MODE>
                 }
@@ -1240,7 +1240,7 @@ How to sync with the repository: sync, fetch-only, or manual
                 flag "-h --help" help="Print help" action=help builtin=#true
                 arg <URL> help="The repository URL (any Git URL; use a private repository)"
                 example "mise dot origin set https://github.com/you/dotfiles.git" help="Connect and choose a sync mode at the prompt"
-                example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect without automatic network activity"
+                example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect, then sync only when you run `mise dot sync`"
             }
             example "mise dot origin" help="Show the connected repository"
             example "mise dot origin set git@github.com:you/dotfiles.git" help="Connect a repository"
@@ -3433,7 +3433,7 @@ See https://mise.jdx.dev/dotfiles/sync.html
             long_help #"""
 Connect an origin repository
 
-Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
+Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync: it fetches in every mode, and pushes your saved checkpoints unless the mode is `fetch-only`. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
 
 The origin holds tracked-file history, not a checkout of your global config: connect a repository of its own, or a separate branch (`--branch`) of the one you adopt as global config with `mise bootstrap --adopt`.
 """#
@@ -3449,7 +3449,7 @@ Reconnecting a repository this machine already follows keeps that connection's b
                 long_help #"""
 How to sync with the repository: sync, fetch-only, or manual
 
-`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no automatic network calls: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
+`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no network calls after the first sync that connecting runs: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
 """#
                 arg <MODE>
             }
@@ -3457,7 +3457,7 @@ How to sync with the repository: sync, fetch-only, or manual
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <URL> help="The repository URL (any Git URL; use a private repository)"
             example "mise dot origin set https://github.com/you/dotfiles.git" help="Connect and choose a sync mode at the prompt"
-            example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect without automatic network activity"
+            example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect, then sync only when you run `mise dot sync`"
         }
         example "mise dot origin" help="Show the connected repository"
         example "mise dot origin set git@github.com:you/dotfiles.git" help="Connect a repository"
@@ -8051,8 +8051,8 @@ untrusted-config error when it cannot prompt.
 A file with no template syntax that contains only `min_version`, `[tools]`
 entries with plain version strings (or arrays of them), and `[tasks]` in
 which no task lists `secrets` does not need trust unless paranoid mode is on.
-Commands that run project code (`mise run`, task shorthand such as
-`mise build`, `mise install`, `mise exec`, `mise watch`, and
+Commands that run project code (`mise run`, the `mise <task>` shorthand,
+`mise install`, `mise exec`, `mise watch`, and
 `mise daemons start|restart|register`) trust their active config
 automatically.
 
