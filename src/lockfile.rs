@@ -2115,7 +2115,9 @@ impl Lockfile {
 
     /// Drop unbound (no specifiers) entries that a bound entry of the same
     /// version and backend supersedes. An unbound entry with platform data the
-    /// bound entry lacks or records differently (checksum, URL) is kept, as is any unbound entry with no bound sibling.
+    /// bound entry lacks or records differently (checksum, URL), or with an
+    /// `unsupported_platforms` entry the bound entry does not account for, is
+    /// kept, as is any unbound entry with no bound sibling.
     /// `in_scope` limits the pruning to tools the caller resolved.
     pub fn retain_unsuperseded_unbound_entries(
         &mut self,
@@ -2135,6 +2137,10 @@ impl Lockfile {
                                     .platforms
                                     .get(key)
                                     .is_some_and(|b| b.same_persisted_data(info))
+                            })
+                            && entry.unsupported_platforms.iter().all(|key| {
+                                bound.platforms.contains_key(key)
+                                    || bound.unsupported_platforms.contains(key)
                             })
                     })
             };
@@ -2439,25 +2445,32 @@ impl Lockfile {
         options: &BTreeMap<String, String>,
         platform_key: &str,
     ) {
-        self.set_platform_info(
-            short,
-            version,
-            backend,
-            options,
-            platform_key,
-            PlatformInfo::default(),
-        );
         let key = self
             .tool_key(short)
             .cloned()
             .unwrap_or_else(|| crate::toolset::install_state::state_short(short).into_owned());
-        if let Some(tool) = self.tools.get_mut(&key).and_then(|tools| {
-            tools
-                .iter_mut()
-                .find(|t| t.version == version && &t.options == options)
-        }) && !tool.platforms.contains_key(platform_key)
+        let tools = self.tools.entry(key).or_default();
+        // Find the entry without merging into it: `set_platform_info` would
+        // replace an existing platform's `conda_deps`.
+        if let Some(tool) = tools
+            .iter_mut()
+            .find(|t| t.version == version && &t.options == options)
         {
-            tool.unsupported_platforms.insert(platform_key.to_string());
+            if !tool.platforms.contains_key(platform_key) {
+                tool.unsupported_platforms.insert(platform_key.to_string());
+            }
+        } else {
+            tools.push(LockfileTool {
+                version: version.to_string(),
+                backend: backend.map(|s| s.to_string()),
+                specifiers: BTreeSet::new(),
+                options: options.clone(),
+                platforms: BTreeMap::new(),
+                aube: None,
+                uv: None,
+                provenance: None,
+                unsupported_platforms: BTreeSet::from([platform_key.to_string()]),
+            });
         }
     }
 

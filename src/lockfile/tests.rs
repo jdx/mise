@@ -91,6 +91,64 @@ fn test_retain_unsuperseded_unbound_entries() {
 }
 
 #[test]
+fn retain_unsuperseded_keeps_unsupported_platforms_the_bound_entry_lacks() {
+    let tool = |specifiers: &[&str], unsupported: &[&str]| LockfileTool {
+        version: "1".to_string(),
+        backend: Some("g".to_string()),
+        specifiers: specifiers.iter().map(|s| s.to_string()).collect(),
+        options: BTreeMap::new(),
+        platforms: BTreeMap::new(),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: unsupported.iter().map(|s| s.to_string()).collect(),
+    };
+    let mut lockfile = Lockfile::default();
+    // The bound entry says nothing about windows-x64: kept.
+    lockfile.tools.insert(
+        "g".to_string(),
+        vec![tool(&[], &["windows-x64"]), tool(&["1"], &[])],
+    );
+    // The bound entry lists it too: pruned.
+    lockfile.tools.insert(
+        "h".to_string(),
+        vec![tool(&[], &["windows-x64"]), tool(&["1"], &["windows-x64"])],
+    );
+    lockfile.retain_unsuperseded_unbound_entries(|_, _| true);
+    assert_eq!(lockfile.tools["g"].len(), 2);
+    assert_eq!(lockfile.tools["h"].len(), 1);
+}
+
+#[test]
+fn set_unsupported_platform_keeps_an_existing_entry() {
+    let mut lockfile = Lockfile::default();
+    let info = PlatformInfo {
+        url: Some("https://example.com/pkg.conda".to_string()),
+        conda_deps: Some(vec!["libzlib@1.3".to_string()]),
+        ..Default::default()
+    };
+    let options = BTreeMap::new();
+    lockfile.set_platform_info(
+        "conda:pkg",
+        "1.0.0",
+        Some("conda:pkg"),
+        &options,
+        "linux-x64",
+        info.clone(),
+    );
+    lockfile.set_unsupported_platform(
+        "conda:pkg",
+        "1.0.0",
+        Some("conda:pkg"),
+        &options,
+        "linux-x64",
+    );
+    let tool = &lockfile.tools["conda:pkg"][0];
+    assert_eq!(tool.platforms["linux-x64"], info);
+    assert!(tool.unsupported_platforms.is_empty());
+}
+
+#[test]
 fn test_outdated_lockfile_version_waits_six_months_after_newer_format() {
     use jiff::civil::date;
 
