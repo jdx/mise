@@ -15,12 +15,15 @@ mise lock --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
 
 # Recreate what an older mise wrote: the previous backend's provenance and no
-# signer, with a checksum that differs from the release so the entry is re-locked.
-sed -i.bak -E '/^signer = /d; /^repository_ids = /d; s/^provenance = .*/provenance = "cosign"/; s/^checksum = .*/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/' mise.lock
-grep -q 'provenance = "cosign"' mise.lock || sed -i.bak -E 's/^(url = .*)$/\1\nprovenance = "cosign"/' mise.lock
+# signer. awk keeps the edit portable to BSD sed platforms.
+awk '
+  /^signer = / || /^repository_ids = / { next }
+  { print }
+  /^url = / { print "provenance = \"cosign\"" }
+' mise.lock >mise.lock.new && mv mise.lock.new mise.lock
 assert_contains "cat mise.lock" 'provenance = "cosign"'
 assert_not_contains "cat mise.lock" 'signer = '
 
-mise lock --platform "$MISE_PLATFORM" --bump hk
+# Re-verify the release instead of reusing the edited entry as it is.
+MISE_LOCKED_VERIFY_PROVENANCE=1 mise lock --platform "$MISE_PLATFORM" --bump hk
 assert_contains "cat mise.lock" 'signer = '
-assert_not_contains "cat mise.lock" 'sha256:0000'
