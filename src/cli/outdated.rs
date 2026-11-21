@@ -154,8 +154,10 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
+        // Naming a tool asks for it, even one that sets `bump = false`.
+        let named = (!self.tool.is_empty()).then_some(self.tool.as_slice());
         let mut checked = ts
-            .list_outdated_versions(
+            .list_outdated_versions_filtered(
                 &config,
                 self.bump,
                 &ResolveOptions {
@@ -163,18 +165,22 @@ impl Outdated {
                     outdated_release_urls: self.json,
                     ..Default::default()
                 },
+                named,
+                None,
             )
             .await;
         let outdated = std::mem::take(&mut checked.outdated);
         let bump_available = if !self.json && !self.bump && outdated.is_empty() {
             let bumps = ts
-                .list_outdated_versions(
+                .list_outdated_versions_filtered(
                     &config,
                     true,
                     &ResolveOptions {
                         inactive: self.inactive,
                         ..Default::default()
                     },
+                    named,
+                    None,
                 )
                 .await;
             // A tool whose backend-wide lookup failed may be out of date too.

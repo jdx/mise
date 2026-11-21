@@ -620,7 +620,12 @@ impl Toolset {
                 }
                 select(tv)
             })
-            .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
+            .map(|(t, tv)| {
+                // `bump = false` keeps a tool out of a sweep. Naming the tool asks for it.
+                let tool_bump =
+                    bump && (filter_tools.is_some() || tv.request.options().bump_enabled());
+                (config.clone(), t, tv, tool_bump, opts.clone())
+            })
             .collect::<Vec<_>>();
         let mut progress = show_progress
             .then(|| {

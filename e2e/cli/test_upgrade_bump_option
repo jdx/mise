@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# `bump = false` keeps a tool out of `mise upgrade --bump` and `mise outdated --bump`.
+# It is still upgraded within its request, and naming it asks for the bump.
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/bumptest"
+mkdir -p "$PLUGIN_DIR/bin"
+
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "1.0.0 1.0.1 2.0.0"
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH"
+touch "$ASDF_INSTALL_PATH/version-$ASDF_INSTALL_VERSION"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+
+cat <<'CONFIG' >mise.toml
+[tools]
+bumptest = { version = "1", bump = false }
+CONFIG
+mise install bumptest@1.0.0
+before=$(cat mise.toml)
+
+# the sweep stays within the request: 1.0.1, not 2.0.0, and mise.toml is untouched
+output=$(mise upgrade --bump --dry-run 2>&1)
+assert_contains_text "$output" "Would install bumptest@1.0.1"
+assert_not_contains_text "$output" "bumptest@2.0.0"
+assert_not_contains_text "$output" "Would bump"
+assert_not_contains_text "$(mise outdated --bump 2>&1)" "2.0.0"
+mise upgrade --bump
+assert "cat mise.toml" "$before"
+assert_contains "mise ls --current bumptest" "1.0.1"
+
+# naming the tool asks for the bump
+assert_contains "mise outdated --bump bumptest" "2.0.0"
+
+# without the option the same request bumps
+cat <<'CONFIG' >mise.toml
+[tools]
+bumptest = "1"
+CONFIG
+assert_contains "mise outdated --bump" "2.0.0"
