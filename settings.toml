@@ -14,6 +14,13 @@ PATH="/some/other/python:$PATH"
 `python` runs `/some/other/python`, not the version from `mise.toml`. Move
 `mise activate` to the end of your shell startup file, or set
 `activate_aggressive = true` to keep mise's tools first.
+
+The same ordering applies to `mise exec`: directories before mise's shims on the
+caller's `PATH` stay ahead of mise's tool directories in the child environment.
+`mise exec -- node` resolves the program with mise's tools first, but a child
+that searches `PATH` itself (`/usr/bin/env node`, or a `mise exec -c` command)
+finds those directories first. Run `MISE_ACTIVATE_AGGRESSIVE=1 mise exec -- <command>`
+to put mise's tool directories first for that invocation.
 """
 env = "MISE_ACTIVATE_AGGRESSIVE"
 type = "Bool"
