@@ -179,6 +179,7 @@ impl TaskContextBuilder {
                 .with_config_files(task_config_files)
                 .with_args(tools)
                 .with_task_tool_args()
+                .with_task_tool_lockfile_owner(task_cf.source(), &task.tool_args()?)
                 .build(config)
                 .await?;
 

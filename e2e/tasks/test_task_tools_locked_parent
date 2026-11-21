@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A task's `tools` pin is read from the lockfile beside the task's config, even
+# when a parent config lists the same tool at another version.
+export MISE_LOCKFILE=1
+unset MISE_LOCKFILE_MODE
+
+cat >mise.toml <<'TOML'
+[tools]
+jq = "1.6"
+TOML
+mkdir child
+cat >child/mise.toml <<'TOML'
+[tasks.where]
+tools = { jq = "1.7.1" }
+run = "jq --version"
+TOML
+
+mise trust --all
+mise lock
+cd child
+mise lock
+assert_contains "cat mise.lock" "1.7.1"
+
+assert "mise run where" "jq-1.7.1"
+assert "MISE_LOCKED=1 mise run where" "jq-1.7.1"
