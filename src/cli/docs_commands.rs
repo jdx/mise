@@ -46,6 +46,9 @@ const LOG_LEVELS: &[&str] = &["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
 #[derive(Debug, Clone, PartialEq)]
 struct Word {
     text: String,
+    /// The word starts with a quote, so it is an argument and never a flag,
+    /// a prefix or usage notation. `--flag='value'` is not quoted: only its
+    /// value is.
     quoted: bool,
 }
 
@@ -239,7 +242,7 @@ fn simple_commands(line: &str) -> Vec<Vec<Word>> {
         match c {
             '\'' | '"' => {
                 quote = Some(c);
-                split.quoted = true;
+                split.quoted |= split.cur.is_empty();
             }
             c if c.is_whitespace() => split.end_word(),
             '#' if bare => break,
@@ -278,7 +281,7 @@ struct Splitter {
     commands: Vec<Vec<Word>>,
     words: Vec<Word>,
     cur: String,
-    /// The word in `cur` had a quoted part, so it is a word even when empty.
+    /// The word in `cur` starts with a quote, so it is a word even when empty.
     quoted: bool,
     /// A redirection was read: the rest of this command is not its arguments.
     redirected: bool,
@@ -613,6 +616,7 @@ mod tests {
             "mise COMMAND --help",
             "mise help lsp",
             "mise sync ruby <--brew>",
+            "mise exec --allow-env='MYAPP_*' -- node app.js",
         ] {
             assert_eq!(verdict(line), Ok(()), "{line}");
         }
@@ -623,6 +627,10 @@ mod tests {
         for (line, problem) in [
             ("mise instal node", "mise has no command `instal`"),
             ("mise install --bogus", "`mise install` has no flag --bogus"),
+            (
+                "mise exec --bogus='MYAPP_*' -- node app.js",
+                "`mise exec` has no flag --bogus",
+            ),
             ("mise ls -Z", "`mise ls` has no flag -Z"),
             (
                 "mise settings bogus x y z",

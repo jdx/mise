@@ -388,7 +388,8 @@ of checking again. Set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 or turn on [paranoid mode](/paranoid.html) to re-verify on every install.
 Neither re-checks a tool that is already installed. The `npm:` provenance check
-runs on every install of the tool. The lockfile records the repository the
+is not reused from the lockfile: where the table above says it applies, it runs
+each time mise installs the tool. The lockfile records the repository the
 provenance names, and a later install of that version must show the same
 repository; see [npm provenance](/dev-tools/backends/npm.html#provenance).
 
