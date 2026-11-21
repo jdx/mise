@@ -68,9 +68,23 @@ enum Request {
     },
 }
 
+/// Whether [`remove`] can delete `install_path`. It deletes the
+/// `<tool>/<version>` installations `mise install --system` writes. An
+/// identity-layout installation placed in the system root, by its owner running
+/// `mise install` with that root as the installs directory, also has catalog
+/// records that only the owner's mise clears.
+pub(crate) fn can_remove(install_path: &Path) -> bool {
+    crate::install_layout::resolver::dir_name_of(install_path).is_none()
+}
+
 /// Delete a system installation the user cannot write to, through `sudo`.
 /// `manual_cmd` is what to run instead when `sudo` is unavailable.
 pub(crate) fn remove(install_path: &Path, manual_cmd: &str) -> Result<()> {
+    ensure!(
+        can_remove(install_path),
+        "{} is an identity-layout installation; remove it as the user that installed it",
+        install_path.display()
+    );
     let name = |path: Option<&Path>| {
         path.and_then(Path::file_name)
             .and_then(|name| name.to_str())

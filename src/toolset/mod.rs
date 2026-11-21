@@ -1414,6 +1414,23 @@ pub async fn prunable_tools_with_sources(
     // Tools the user excluded from pruning are never candidates.
     to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
 
+    // A system installation that needs sudo is removed by the privileged helper,
+    // which cannot remove every one; that one is left for its owner.
+    #[cfg(unix)]
+    to_delete.retain(|_, (_, tv)| {
+        let path = tv.install_path();
+        let kept = crate::env::install_path_category(&path) == crate::env::InstallPathCategory::System
+            && crate::tool_purgatory::needs_sudo_to_remove(&path)
+            && !crate::system_install::can_remove(&path);
+        if kept {
+            warn!(
+                "not pruning {}: it is an identity-layout installation; remove it as the user that installed it",
+                display_path(&path)
+            );
+        }
+        !kept
+    });
+
     // Remove versions that are still needed by tracked configs
     let mut needed = get_versions_needed_by_tracked_configs_with_progress(
         config,

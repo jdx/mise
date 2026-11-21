@@ -65,14 +65,27 @@ pub(crate) fn processes_running_from(
 
 /// The directory holding the runtime links that may point at `install_path`.
 /// A `<tool>/<version>` installation keeps them beside it, which for a system
-/// or shared copy of a version is not the backend's own `installs_path`. An
-/// identity-layout installation sits in the install store, and its links are
-/// in the backend's tool directory.
+/// or shared copy of a version is not the backend's own `installs_path`.
 fn links_dir_of(install_path: &Path, backend_links_dir: &Path) -> PathBuf {
-    match install_path.parent() {
-        Some(parent) if crate::install_layout::resolver::dir_name_of(install_path).is_none() => {
-            parent.to_path_buf()
-        }
+    let identity = crate::install_layout::resolver::dir_name_of(install_path).is_some();
+    links_dir_in(install_path, backend_links_dir, identity, |store| {
+        crate::install_layout::resolver::is_primary_store(store)
+    })
+}
+
+/// An identity-layout installation sits in an install store. The user's own
+/// store is apart from the installs directory, whose tool directory
+/// (`backend_links_dir`) holds the links; a shared or system root is its own
+/// store, so the links are in that root's directory for the tool.
+fn links_dir_in(
+    install_path: &Path,
+    backend_links_dir: &Path,
+    identity: bool,
+    is_primary_store: impl Fn(&Path) -> bool,
+) -> PathBuf {
+    match (install_path.parent(), backend_links_dir.file_name()) {
+        (Some(parent), _) if !identity => parent.to_path_buf(),
+        (Some(store), Some(tool)) if !is_primary_store(store) => store.join(tool),
         _ => backend_links_dir.to_path_buf(),
     }
 }
@@ -414,6 +427,26 @@ mod tests {
             Path::new("/usr/local/share/mise/installs/tiny")
         );
         assert_eq!(links_dir_of(&user.join("1.0.0"), user), user);
+    }
+
+    #[test]
+    fn links_dir_of_an_identity_install_is_its_roots_tool_dir() {
+        let user = Path::new("/home/u/.local/share/mise/installs/tiny");
+        let primary = Path::new("/home/u/.local/share/mise/store");
+        let is_primary = |store: &Path| store == primary;
+        assert_eq!(
+            links_dir_in(&primary.join("tiny-1.0.0-abc"), user, true, is_primary),
+            user
+        );
+        assert_eq!(
+            links_dir_in(
+                Path::new("/usr/local/share/mise/installs/tiny-1.0.0-abc"),
+                user,
+                true,
+                is_primary
+            ),
+            Path::new("/usr/local/share/mise/installs/tiny")
+        );
     }
 
     fn pids(found: &BTreeMap<PathBuf, Vec<RunningProcess>>, install: &Path) -> Vec<u32> {

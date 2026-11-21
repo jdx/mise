@@ -292,11 +292,18 @@ pub async fn auto_prune() -> Result<()> {
         // not stop to ask for a sudo password. `upgrade` does not schedule a
         // version that needs sudo, but a receipt can still get here: the
         // directory may have become root-owned since, or the receipt was
-        // written by a mise from before that check.
-        if install_path.exists() && needs_sudo_to_prune(install_path) {
-            warn!(
-                "not removing {display} automatically because it needs sudo; remove it with `mise prune --system`"
-            );
+        // written by a mise from before that check. A version that is already
+        // gone still has its system shims rebuilt below, which can need sudo too.
+        if needs_sudo_to_prune(install_path) {
+            if install_path.exists() {
+                warn!(
+                    "not removing {display} automatically because it needs sudo; remove it with `mise prune --system`"
+                );
+            } else {
+                warn!(
+                    "{display} was removed, but updating the system shims needs sudo; run `mise reshim --system`"
+                );
+            }
             entries_to_remove.push((key, entry));
             continue;
         }
