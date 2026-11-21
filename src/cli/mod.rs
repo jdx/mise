@@ -1395,6 +1395,8 @@ impl Cli {
                         args: self.task_args.unwrap_or_default(),
                         args_last: self.task_args_last,
                         all: false,
+                        global: false,
+                        no_global: false,
                         multi: false,
                         at: None,
                         at_setup: None,

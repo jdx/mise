@@ -388,14 +388,53 @@ async fn err_no_task(
     bail!(err_msg);
 }
 
+/// Which global tasks (from `~/.config/mise/config.toml` and the like) a task picker lists
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum GlobalTasks {
+    #[default]
+    Include,
+    Only,
+    Exclude,
+}
+
+/// How `mise run` opens its task picker
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Picker {
+    /// List the tasks from every project in the monorepo
+    pub all: bool,
+    /// Let the user check several tasks instead of choosing one
+    pub multi: bool,
+    pub globals: GlobalTasks,
+}
+
+/// Load the tasks a picker offers, leaving out the ones `globals` filters out
+async fn picker_tasks(config: &Arc<Config>, picker: Picker) -> Result<Arc<BTreeMap<String, Task>>> {
+    let ctx = picker.all.then(TaskLoadContext::all);
+    let tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let keep = |t: &Task| match picker.globals {
+        GlobalTasks::Include => true,
+        GlobalTasks::Only => t.global,
+        GlobalTasks::Exclude => !t.global,
+    };
+    if picker.globals == GlobalTasks::Include {
+        return Ok(tasks);
+    }
+    Ok(Arc::new(
+        tasks
+            .iter()
+            .filter(|(_, t)| keep(t))
+            .map(|(k, t)| (k.clone(), t.clone()))
+            .collect(),
+    ))
+}
+
 /// Prompt the user to check several tasks to run, for `mise run --multi`
-async fn prompt_for_tasks(config: &Arc<Config>, load_all: bool) -> Result<Vec<Task>> {
+async fn prompt_for_tasks(config: &Arc<Config>, picker: Picker) -> Result<Vec<Task>> {
     ensure!(
         console::user_attended_stderr() && std::io::IsTerminal::is_terminal(&std::io::stdin()),
         "--multi requires an interactive terminal"
     );
-    let ctx = load_all.then(TaskLoadContext::all);
-    let tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let tasks = picker_tasks(config, picker).await?;
     ensure!(
         !tasks.is_empty(),
         "no tasks defined. see {url}",
@@ -443,9 +482,8 @@ async fn prompt_for_tasks(config: &Arc<Config>, load_all: bool) -> Result<Vec<Ta
 }
 
 /// Prompt the user to select a task interactively
-async fn prompt_for_task(config: &Arc<Config>, load_all: bool) -> Result<Task> {
-    let ctx = load_all.then(TaskLoadContext::all);
-    let tasks = config.tasks_with_context(ctx.as_ref()).await?;
+async fn prompt_for_task(config: &Arc<Config>, picker: Picker) -> Result<Task> {
+    let tasks = picker_tasks(config, picker).await?;
     ensure!(
         !tasks.is_empty(),
         "no tasks defined. see {url}",
@@ -508,14 +546,13 @@ pub async fn get_task_lists(
     args: &[String],
     prompt: bool,
     only: bool,
-    prompt_all: bool,
-    multi: bool,
+    picker: Option<Picker>,
 ) -> Result<Vec<Task>> {
-    if prompt_all || multi {
-        let mut tasks = if multi {
-            prompt_for_tasks(config, prompt_all).await?
+    if let Some(picker) = picker {
+        let mut tasks = if picker.multi {
+            prompt_for_tasks(config, picker).await?
         } else {
-            vec![prompt_for_task(config, true).await?]
+            vec![prompt_for_task(config, picker).await?]
         };
         if only {
             for task in &mut tasks {
@@ -652,7 +689,7 @@ pub async fn get_task_lists(
                 tasks.push(task.with_args(args));
                 continue;
             }
-            tasks.push(prompt_for_task(config, false).await?);
+            tasks.push(prompt_for_task(config, Picker::default()).await?);
         } else {
             cur_tasks
                 .into_iter()
@@ -760,16 +797,9 @@ mod tests {
     #[tokio::test]
     async fn a_missing_task_is_an_error() {
         let config = Config::get().await.unwrap();
-        let err = get_task_lists(
-            &config,
-            &["no-such-task".to_string()],
-            false,
-            false,
-            false,
-            false,
-        )
-        .await
-        .unwrap_err();
+        let err = get_task_lists(&config, &["no-such-task".to_string()], false, false, None)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("no-such-task"), "{err}");
     }
 }

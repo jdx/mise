@@ -6145,6 +6145,22 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
         arg <CMD>
     }
     flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+    flag --global help="Open the task picker with only the global tasks" {
+        long_help #"""
+Open the task picker with only the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`.
+"""#
+        conflicts "--affected" "--no-global"
+    }
+    flag --no-global help="Open the task picker without the global tasks" {
+        long_help #"""
+Open the task picker without the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`. Combine with `--all` or `--multi` to filter those pickers too.
+"""#
+        conflicts "--affected" "--global"
+    }
     flag --multi help="Open the task picker as a checklist and run every task you check" {
         long_help #"""
 Open the task picker as a checklist and run every task you check
@@ -7438,6 +7454,22 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
             arg <CMD>
         }
         flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+        flag --global help="Open the task picker with only the global tasks" {
+            long_help #"""
+Open the task picker with only the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`.
+"""#
+            conflicts "--affected" "--no-global"
+        }
+        flag --no-global help="Open the task picker without the global tasks" {
+            long_help #"""
+Open the task picker without the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`. Combine with `--all` or `--multi` to filter those pickers too.
+"""#
+            conflicts "--affected" "--global"
+        }
         flag --multi help="Open the task picker as a checklist and run every task you check" {
             long_help #"""
 Open the task picker as a checklist and run every task you check

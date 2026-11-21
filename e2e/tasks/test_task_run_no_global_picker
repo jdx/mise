@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/.config/mise"
+cat <<'TOML' >"$HOME/.config/mise/config.toml"
+[tasks.dotfiles-sync]
+run = 'echo "dotfiles-sync task ran"'
+TOML
+
+cat <<'TOML' >mise.toml
+[tasks.build]
+run = 'echo "build task ran"'
+
+[tasks.test]
+run = 'echo "test task ran"'
+TOML
+
+pick() {
+  if [[ $(uname) == Darwin ]]; then
+    run_with_timeout 30 bash -c "printf '$1' | script -q /dev/null mise run $2"
+  else
+    run_with_timeout 30 bash -c "printf '$1' | script -qec 'mise run $2' /dev/null"
+  fi
+}
+
+# The picker lists tasks alphabetically: build, dotfiles-sync, test. Enter after one
+# down-arrow picks the second entry.
+output=$(pick '\033[B\r' "")
+assert_contains_text "$output" "dotfiles-sync task ran"
+
+# Without global tasks the second entry is the project's `test`.
+output=$(pick '\033[B\r' "--no-global")
+assert_contains_text "$output" "test task ran"
+assert_not_contains_text "$output" "dotfiles-sync"
+
+# With only global tasks there is a single entry.
+output=$(pick '\r' "--global")
+assert_contains_text "$output" "dotfiles-sync task ran"
+
+assert_fail_contains "mise run --no-global build" "cannot be used with"
+assert_fail_contains "mise run --global build" "cannot be used with"
+assert_fail_contains "mise run --global --no-global" "cannot be used with"
