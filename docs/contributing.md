@@ -416,8 +416,9 @@ mise run render:help         # docs/.vitepress/cli_commands.ts
 mise run test:unit
 ```
 
-`render:usage` deletes `docs/cli/` before it writes it again. If it fails
-partway, run `git restore docs/cli` before you retry.
+`render:usage` builds the pages in a scratch directory and replaces `docs/cli/`
+only when every step has passed, so a run that fails leaves `docs/cli/` as it
+was.
 
 ### Writing CLI help {#writing-cli-help}
 
