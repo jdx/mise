@@ -180,7 +180,7 @@ pub struct TaskDecl {
     #[serde(default)]
     #[schemars(transform = crate::experimental::TASK_PASS_THROUGH_ENV.labels())]
     pub pass_through_env: Vec<String>,
-    // [experimental] Secret keys this task receives when it starts. Dependencies and
+    // Experimental: secret keys this task receives when it starts. Dependencies and
     // subtasks get only their own lists.
     #[serde(default)]
     #[schemars(with = "Option<TaskSecretsDecl>")]

@@ -227,22 +227,42 @@ mod tests {
                 );
             }
         }
-        // A label typed into a doc comment reads the same in the schema as one a constant
-        // added, so the doc comments are checked where they are written.
+        // A label typed by hand reads the same in the schema as one a constant added,
+        // whether it sits in a doc comment or in a description passed to `json_schema!`,
+        // so the sources are checked where they are written.
         for (path, text) in sources() {
             if !path.contains("/mise-config/src/") {
                 continue;
             }
-            for (i, line) in text.lines().enumerate() {
-                let line = line.trim_start();
-                assert!(
-                    !(line.starts_with("///") && line.contains(LABEL)),
-                    "{path}:{}: a doc comment holds the label; label the key with a constant \
-                     of `mise_config::experimental` instead",
-                    i + 1
-                );
-            }
+            let typed = hand_typed_labels(&text);
+            assert!(
+                typed.is_empty(),
+                "{path}: lines {typed:?} hold the label; label the key with a constant of \
+                 `mise_config::experimental` instead"
+            );
         }
+    }
+
+    /// The 1-based lines of a source file that spell the label out.
+    fn hand_typed_labels(text: &str) -> Vec<usize> {
+        text.lines()
+            .enumerate()
+            .filter(|(_, line)| line.contains(LABEL))
+            .map(|(i, _)| i + 1)
+            .collect()
+    }
+
+    #[test]
+    fn a_hand_typed_label_is_found_wherever_it_is_written() {
+        let label = LABEL;
+        let source = format!(
+            "/// {label} in a doc comment\n\
+             pub field: String,\n\
+             json_schema!({{ \"description\": \"{label} in a schema literal\" }})\n\
+             #[schemars(description = \"{label} in an attribute\")]\n"
+        );
+        assert_eq!(hand_typed_labels(&source), [1, 3, 4]);
+        assert_eq!(hand_typed_labels("/// an experimental idea\n"), [0usize; 0]);
     }
 
     #[test]
