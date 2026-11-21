@@ -16,29 +16,30 @@ The identity layout gives each installation its own directory,
 `installs/<tool>/<version>` path stays, as a link to that directory.
 
 ::: warning Experimental
-The identity layout needs `experimental = true`. On Windows, that alone turns
-it on; elsewhere it also needs `install_layout = "identity"`.
-Directory names, receipts, and the catalog format can change between releases
-while the layout is experimental. Try it where reinstalling tools is cheap, and
-read [Turn it off or downgrade](#downgrading-and-compatibility) first.
+The identity layout is on whenever `experimental = true`. Set
+`install_layout = "legacy"` to keep the old layout with other experimental
+features on. Directory names, receipts, and the catalog format can change
+between releases while the layout is experimental. Files that tools generate
+while installing, such as virtual environments and shebangs, record the hashed
+path. Try it where reinstalling tools is cheap, and read
+[Turn it off or downgrade](#downgrading-and-compatibility) first.
 :::
 
 ## Quick start
 
-Turn the layout on for a project in `mise.toml`:
+Turn on experimental features in `mise.toml`, and the layout comes with them:
 
 ```toml [mise.toml]
 [settings]
 experimental = true
-install_layout = "identity"
+# install_layout = "legacy"  # to keep installs/<tool>/<version>
 
 [tools]
 age = "1.2.1"
 ```
 
-To turn it on everywhere, run `mise settings experimental=true` and
-`mise settings install_layout=identity`, or export `MISE_EXPERIMENTAL=1` and
-`MISE_INSTALL_LAYOUT=identity`. On Windows, `experimental = true` is enough. See
+To turn it on everywhere, run `mise settings experimental=true` or export
+`MISE_EXPERIMENTAL=1`. See
 [`install_layout`](/configuration/settings.html#install_layout).
 
 Install the tool and see where it went:
@@ -452,12 +453,6 @@ from where it runs and can fail.
 
 The identity layout works the same way on Windows, with these differences:
 
-- `experimental = true` turns it on without `install_layout = "identity"`,
-  because Windows benefits most from the shorter install store described below.
-  Installations that already exist stay where they are. To keep installing
-  into the legacy layout, set `install_layout = "legacy"` or
-  `MISE_INSTALL_LAYOUT=legacy`.
-
 - The version link is a directory junction with an absolute target, which IDE
   SDK selectors and other programs can follow. mise never substitutes a text
   file for a link. Junctions do not need administrator rights. A directory on a
@@ -498,10 +493,10 @@ The identity layout works the same way on Windows, with these differences:
 
 ## Turn it off or downgrade {#downgrading-and-compatibility}
 
-To turn the identity layout off, remove `install_layout = "identity"` (on
-Windows with `experimental = true`, set `install_layout = "legacy"`). mise then
-installs new versions into `installs/<tool>/<version>` again and leaves hashed
-directories where they are. While it is off:
+To turn the identity layout off, set `install_layout = "legacy"` (or turn off
+`experimental`). mise then installs new versions into
+`installs/<tool>/<version>` again and leaves hashed directories where they are.
+While it is off:
 
 - `mise where` and `mise exec` still reach a hashed installation through its
   version link, and `mise ls` shows it as a symlinked version.
