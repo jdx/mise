@@ -159,6 +159,23 @@ pub fn needs_sudo_to_remove(install_path: &Path) -> bool {
     }
 }
 
+/// Whether pruning the installation at `install_path` needs sudo: to remove it,
+/// or to rebuild the system shims that removing a system version changes, which
+/// can be root-owned when the installs directory is not.
+pub fn needs_sudo_to_prune(install_path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        needs_sudo_to_remove(install_path)
+            || (crate::env::install_path_category(install_path)
+                == crate::env::InstallPathCategory::System
+                && crate::system_install::needs_elevation(&crate::dirs::system_shims()))
+    }
+    #[cfg(not(unix))]
+    {
+        needs_sudo_to_remove(install_path)
+    }
+}
+
 pub fn forget_path(path: &Path) -> Result<()> {
     if !state_path().exists() {
         return Ok(());
@@ -276,7 +293,7 @@ pub async fn auto_prune() -> Result<()> {
         // version that needs sudo, but a receipt can still get here: the
         // directory may have become root-owned since, or the receipt was
         // written by a mise from before that check.
-        if install_path.exists() && needs_sudo_to_remove(install_path) {
+        if install_path.exists() && needs_sudo_to_prune(install_path) {
             warn!(
                 "not removing {display} automatically because it needs sudo; remove it with `mise prune --system`"
             );

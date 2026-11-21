@@ -1535,7 +1535,7 @@ impl Upgrade {
                         // ask for a sudo password, so a system install that needs sudo
                         // stays until it is removed on purpose.
                         PruneMode::Deferred(_)
-                            if crate::tool_purgatory::needs_sudo_to_remove(
+                            if crate::tool_purgatory::needs_sudo_to_prune(
                                 &old_tv.install_path(),
                             ) =>
                         {
