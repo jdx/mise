@@ -58,6 +58,9 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 
+[dev-dependencies]
+strum = { version = "0.28", features = ["derive"] }
+
 [build-dependencies]
 eyre = "0.6"
 regex = "1"

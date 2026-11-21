@@ -340,7 +340,7 @@ fn rule_11() -> Value {
 
 /// `merge`: `true`, or `"missing"`.
 pub(crate) fn merge(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"oneOf": [{"type": "boolean"}, {"const": "missing"}]})
+    json_schema!({"oneOf": [{"type": "boolean"}, {"const": super::MergeSetting::MISSING}]})
 }
 
 /// A variant's `os`: one name or a list of them.
@@ -351,4 +351,75 @@ pub(crate) fn one_or_many_strings(_: &mut SchemaGenerator) -> Schema {
 /// A group entry written as a table, checked when mise expands the group.
 pub(crate) fn any_table(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type": "object"})
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use crate::dotfiles::{DotfileGroupEntryTableDecl, DotfileTableDecl};
+    use crate::schema::property_enum;
+
+    /// The strings a schema names with `const` or `enum`, at any depth.
+    fn strings(schema: &Value, out: &mut BTreeSet<String>) {
+        match schema {
+            Value::Object(object) => {
+                for (keyword, value) in object {
+                    match (keyword.as_str(), value) {
+                        ("const", Value::String(name)) => {
+                            out.insert(name.clone());
+                        }
+                        ("enum", Value::Array(names)) => {
+                            out.extend(names.iter().filter_map(Value::as_str).map(str::to_string));
+                        }
+                        _ => strings(value, out),
+                    }
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+            _ => {}
+        }
+    }
+
+    /// The values the rules name for `key`, wherever a rule constrains it.
+    fn named(rules: &Value, key: &str, out: &mut BTreeSet<String>) {
+        match rules {
+            Value::Object(object) => {
+                if let Some(schema) = object.get("properties").and_then(|keys| keys.get(key)) {
+                    strings(schema, out);
+                }
+                object.values().for_each(|value| named(value, key, out));
+            }
+            Value::Array(items) => items.iter().for_each(|item| named(item, key, out)),
+            _ => {}
+        }
+    }
+
+    /// A rule that names a mode or a merge setting the declaration types do not list never
+    /// applies to a value an editor offers.
+    #[test]
+    fn the_rules_name_declared_values() {
+        let mut schema = json_schema!({});
+        entry_rules(&mut schema);
+        let rules = schema.to_value();
+        for key in [
+            "mode", "merge", "format", "manifest", "position", "template",
+        ] {
+            let mut values = BTreeSet::new();
+            named(&rules, key, &mut values);
+            for declared in [
+                property_enum::<DotfileTableDecl>(key),
+                property_enum::<DotfileGroupEntryTableDecl>(key),
+            ] {
+                assert!(
+                    values.is_subset(&declared),
+                    "the rules name {key} values {values:?}, the declaration {declared:?}"
+                );
+            }
+        }
+        let mut modes = BTreeSet::new();
+        named(&rules, "mode", &mut modes);
+        assert!(modes.contains("fnox"), "the rules were not read: {modes:?}");
+    }
 }

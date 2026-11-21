@@ -4,6 +4,8 @@ pub mod host;
 #[macro_use]
 mod macros;
 #[cfg(test)]
+mod declaration_tests;
+#[cfg(test)]
 mod test_host;
 
 pub mod ports;

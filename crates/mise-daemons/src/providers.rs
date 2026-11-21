@@ -14,6 +14,12 @@ pub struct Provider {
     pub declaration: toml::Table,
 }
 
+/// The presets that can run a shared server.
+pub(crate) const PROVIDER_PRESETS: [&str; 3] = ["postgres", "cockroachdb", "nats"];
+
+/// The keys a provider takes besides `preset` and `version`.
+pub(crate) const PROVIDER_KEYS: [&str; 5] = ["port", "ports", "options", "data_dir", "tool"];
+
 pub fn directory(name: &str) -> PathBuf {
     mise_util::dirs::STATE.join("daemon-providers").join(name)
 }
@@ -70,7 +76,7 @@ impl Provider {
         let mut table = self.declaration.clone();
         let preset = super::take_string(&mut table, "preset")?
             .ok_or_else(|| eyre::eyre!("provider {} requires preset", self.name))?;
-        if !matches!(preset.as_str(), "postgres" | "cockroachdb" | "nats") {
+        if !PROVIDER_PRESETS.contains(&preset.as_str()) {
             bail!(
                 "provider {}: supported presets are postgres, cockroachdb and nats",
                 self.name
@@ -92,10 +98,7 @@ impl Provider {
             }
         }
         for key in table.keys() {
-            if !matches!(
-                key.as_str(),
-                "port" | "ports" | "options" | "data_dir" | "tool"
-            ) {
+            if !PROVIDER_KEYS.contains(&key.as_str()) {
                 bail!(
                     "provider {} does not accept {key:?}; lifecycle and commands are managed by mise",
                     self.name

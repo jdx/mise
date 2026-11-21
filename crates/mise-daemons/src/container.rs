@@ -55,7 +55,8 @@ const CONTAINER_KEYS: &[&str] = &[
 const RESERVED_PORT_NAMES: &[&str] = &["port", "container", "runtime"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Runtime {
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub(crate) enum Runtime {
     /// Docker if it is on PATH, otherwise Podman.
     Auto,
     Docker,
@@ -63,7 +64,7 @@ enum Runtime {
 }
 
 impl Runtime {
-    fn parse(name: &str, value: &toml::Value) -> Result<Self> {
+    pub(crate) fn parse(name: &str, value: &toml::Value) -> Result<Self> {
         match value.as_str() {
             Some("auto") => Ok(Self::Auto),
             Some("docker") => Ok(Self::Docker),

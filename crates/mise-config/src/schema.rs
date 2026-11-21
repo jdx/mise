@@ -11,7 +11,7 @@
 mod settings;
 mod shared;
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use schemars::generate::SchemaSettings;
 use schemars::transform::{Transform, transform_subschemas};
@@ -511,6 +511,46 @@ pub(crate) fn fragment<T: JsonSchema>(generator: &mut SchemaGenerator) -> Value 
     object.remove("$schema");
     object.remove("title");
     schema.to_value()
+}
+
+/// The strings the schema of `T` enumerates for its `key`: every `enum` member and `const` of
+/// the property, through `anyOf`, `oneOf` and `allOf`. A parser's tests compare the values it
+/// accepts with these, so a declaration type that nothing parses into names the same values.
+///
+/// # Panics
+///
+/// When the schema of `T` has no property `key`.
+pub fn property_enum<T: JsonSchema>(key: &str) -> BTreeSet<String> {
+    let schema = fragment::<T>(&mut generator());
+    let property = schema
+        .pointer(&format!("/properties/{key}"))
+        .unwrap_or_else(|| panic!("the schema has no property {key:?}"));
+    let mut values = BTreeSet::new();
+    enumerated(property, &mut values);
+    values
+}
+
+/// The strings the schema of `T` itself enumerates, as [`property_enum`] does for a property.
+pub fn type_enum<T: JsonSchema>() -> BTreeSet<String> {
+    let mut values = BTreeSet::new();
+    enumerated(&fragment::<T>(&mut generator()), &mut values);
+    values
+}
+
+fn enumerated(schema: &Value, values: &mut BTreeSet<String>) {
+    let strings = schema
+        .get("enum")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .chain(schema.get("const"));
+    values.extend(strings.filter_map(Value::as_str).map(str::to_string));
+    for key in ["anyOf", "oneOf", "allOf"] {
+        let alternatives = schema.get(key).and_then(Value::as_array);
+        for alternative in alternatives.into_iter().flatten() {
+            enumerated(alternative, values);
+        }
+    }
 }
 
 /// TOML has no null, so an `Option` field is optional but never nullable, and it has no
