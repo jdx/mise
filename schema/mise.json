@@ -8164,7 +8164,7 @@
                     },
                     "mode": {
                       "type": "string",
-                      "description": "how to apply a whole-file source to the target; omitted uses the group's mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
+                      "description": "how to apply a whole-file source to the target; omitted uses the group's mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared. \"fnox\" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source",
                       "anyOf": [
                         {
                           "enum": [
@@ -8174,7 +8174,8 @@
                             "template",
                             "absent",
                             "track",
-                            "track-local"
+                            "track-local",
+                            "fnox"
                           ]
                         },
                         {
@@ -8318,7 +8319,7 @@
                       "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
                     },
                     "merge": {
-                      "description": "edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, or YAML target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension unless \"format\" names it",
+                      "description": "edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, YAML, or INI target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension unless \"format\" names it",
                       "oneOf": [
                         {
                           "type": "boolean"
@@ -8330,10 +8331,10 @@
                     },
                     "format": {
                       "type": "string",
-                      "description": "merge only: the format of the target and source when the target's extension doesn't name it, such as \"jsonc\" for VS Code's settings.json",
+                      "description": "merge only: the format of the target and source when the target's extension doesn't name it, such as \"jsonc\" for VS Code's settings.json or \"ini\" for an extensionless INI file",
                       "anyOf": [
                         {
-                          "enum": ["json", "jsonc", "toml", "yaml"]
+                          "enum": ["json", "jsonc", "toml", "yaml", "ini"]
                         },
                         {
                           "type": "string"
@@ -9502,7 +9503,7 @@
                   },
                   "state": {
                     "type": "string",
-                    "description": "desired package state; macports, pacman, scoop, snap, and zypper support absent",
+                    "description": "desired package state; macports, pacman, scoop, snap, zypper, and dnf layering packages with rpm-ostree support absent",
                     "enum": ["present", "absent"],
                     "default": "present"
                   },
@@ -9773,7 +9774,7 @@
                       },
                       "kickstart": {
                         "type": "boolean",
-                        "description": "run `launchctl kickstart -k` after loading the agent",
+                        "description": "run `launchctl kickstart` after loading the agent",
                         "default": false
                       }
                     },
@@ -10444,7 +10445,7 @@
         },
         "groups": {
           "type": "object",
-          "description": "[experimental] Linux groups that bootstrap creates or removes, keyed by group name",
+          "description": "Linux groups that bootstrap creates or removes, keyed by group name",
           "additionalProperties": {
             "type": "object",
             "description": "local Linux group that bootstrap creates, updates, or removes",
@@ -10494,7 +10495,7 @@
         },
         "users": {
           "type": "object",
-          "description": "[experimental] Linux users that bootstrap creates or removes, keyed by user name",
+          "description": "Linux users that bootstrap creates or removes, keyed by user name",
           "additionalProperties": {
             "type": "object",
             "description": "local Linux user that bootstrap creates, updates, or removes",
@@ -10762,7 +10763,7 @@
     },
     "history": {
       "type": "object",
-      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)",
+      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/dotfiles/history.html)",
       "properties": {
         "encryption": {
           "type": "object",
@@ -10804,7 +10805,7 @@
         },
         "origin": {
           "type": "object",
-          "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`",
+          "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise dot origin set`",
           "additionalProperties": false,
           "properties": {
             "url": {
@@ -11300,6 +11301,24 @@
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
+              },
+              "mise": {
+                "type": "boolean",
+                "description": "false runs the daemon's setup steps and probes without the project's tool environment; the task itself always runs through `mise run`."
+              },
+              "port": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/daemon_port"
+                  },
+                  {
+                    "type": "object",
+                    "description": "Pitchfork's structured port configuration, forwarded verbatim.",
+                    "not": {
+                      "required": ["auto"]
+                    }
+                  }
+                ]
               },
               "ports": {
                 "type": "object",

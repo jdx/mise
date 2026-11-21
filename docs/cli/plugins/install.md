@@ -20,7 +20,7 @@ Pass a name that the registry or a `[plugins]` entry knows, a name and a
 URL, or only a URL. With only a URL, the plugin is named after the
 repository without an `asdf-`, `mise-`, or `vfox-` prefix. Pass several names
 to install several plugins. Prefix a name with `vfox:`, `vfox-backend:`,
-`package:`, or `asdf:` to choose the plugin type.
+`package:`, `bootstrap-settings:`, or `asdf:` to choose the plugin type.
 
 A Git URL may end in `#ref` to select a plugin commit, tag, or branch. This
 selects the plugin code, separately from the tool version `mise use` installs.

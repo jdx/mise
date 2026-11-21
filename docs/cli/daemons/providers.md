@@ -7,7 +7,7 @@ description: "[experimental] Manage shared servers from global `[daemon_provider
 
 - **Usage:** `mise daemons providers [SUBCOMMAND]`
 - **Effect:** read-only
-- **Source code:** [`src/daemons/providers.rs`](https://github.com/jdx/mise/blob/main/src/daemons/providers.rs)
+- **Source code:** [`src/daemons/provider_commands.rs`](https://github.com/jdx/mise/blob/main/src/daemons/provider_commands.rs)
 
 [experimental] Manage shared servers from global `[daemon_providers]`
 

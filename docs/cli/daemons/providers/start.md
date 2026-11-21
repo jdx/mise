@@ -6,7 +6,7 @@ description: "[experimental] Start shared servers"
 # `mise daemons providers start`
 
 - **Usage:** `mise daemons providers start [NAMES]…`
-- **Source code:** [`src/daemons/providers.rs`](https://github.com/jdx/mise/blob/main/src/daemons/providers.rs)
+- **Source code:** [`src/daemons/provider_commands.rs`](https://github.com/jdx/mise/blob/main/src/daemons/provider_commands.rs)
 
 [experimental] Start shared servers
 
