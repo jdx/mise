@@ -1,0 +1,4 @@
+backends = ["aqua:reylosql/reylo", "github:reylosql/reylo"]
+description = "Infer types for SQL queries from the database itself"
+test = { cmd = "reylo --version", expected = "reylo {{version}}" }
+version_order = "semver"
