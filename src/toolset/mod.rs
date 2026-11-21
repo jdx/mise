@@ -1590,6 +1590,13 @@ fn keep_uv_python_variants(
     // key. A receipt that cannot be mapped safely aborts pruning rather than
     // leaving a retained environment with a deleted interpreter.
     let python_ba = BackendArg::from("python");
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    // A system environment's receipt names a system interpreter, which has the
+    // same tool/version key as the user's copy.
+    let python_roots = [
+        python_ba.installs_path().to_path_buf(),
+        system_installs.join(python_ba.tool_dir_name()),
+    ];
     if selected_python {
         let mut variant_dirs: Vec<_> = crate::install_layout::resolver::installs_of(tv.ba())
             .into_iter()
@@ -1598,13 +1605,21 @@ fn keep_uv_python_variants(
         // The default layout stores environments under `<tool>/<version>`, which
         // `installs_of` intentionally does not enumerate. Include those retained
         // variants so an older receipt can keep its exact interpreter alive too.
+        // The listing names one copy of a version installed both for the user
+        // and for the system, so read the receipt in each directory.
+        let roots = [
+            tv.ba().installs_path().to_path_buf(),
+            system_installs.join(tv.ba().tool_dir_name()),
+        ];
         variant_dirs.extend(
             backend
                 .list_installed_versions()
                 .into_iter()
                 .filter(|version| version.starts_with(&prefix))
-                .map(|version| tv.ba().installs_path().join(version)),
+                .flat_map(|version| roots.iter().map(move |root| root.join(&version))),
         );
+        variant_dirs.sort();
+        variant_dirs.dedup();
         for dir in variant_dirs {
             let receipt = dir.join(".mise-uv/python.json");
             let contents = match crate::file::read_to_string(&receipt) {
@@ -1629,12 +1644,7 @@ fn keep_uv_python_variants(
             };
             let (python, version) = selected_python_receipt(&contents, &receipt)?;
             let identity_installs = crate::install_layout::resolver::installs_of(&python_ba);
-            match receipt_python_install(
-                &python,
-                &version,
-                &identity_installs,
-                python_ba.installs_path(),
-            ) {
+            match receipt_python_install(&python, &version, &identity_installs, &python_roots) {
                 Some(ReceiptPython::Identity(python_dir)) => {
                     let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
                     else {
@@ -1721,7 +1731,7 @@ fn receipt_python_install(
     python: &Path,
     version: &str,
     identity_installs: &[(String, PathBuf)],
-    legacy_root: &Path,
+    legacy_roots: &[PathBuf],
 ) -> Option<ReceiptPython> {
     let resolved = resolve_receipt_python(python);
     let in_dir = |dir: &Path| receipt_python_in_dir(python, &resolved, dir);
@@ -1732,10 +1742,13 @@ fn receipt_python_install(
     if let Some((_, dir)) = identity {
         return Some(ReceiptPython::Identity(dir.clone()));
     }
-    if in_dir(&legacy_root.join(version)) {
+    if legacy_roots.iter().any(|root| in_dir(&root.join(version))) {
         return Some(ReceiptPython::Legacy(version.to_string()));
     }
-    receipt_legacy_install_name(&resolved, legacy_root).map(ReceiptPython::Legacy)
+    legacy_roots
+        .iter()
+        .find_map(|root| receipt_legacy_install_name(&resolved, root))
+        .map(ReceiptPython::Legacy)
 }
 
 /// The legacy installation directory (`python/<version>`) that `python` resolves into, for a
@@ -1964,7 +1977,7 @@ mod tests {
 
         // Legacy layout: the receipt records 3.14.7, but the link leads into 3.14.8.
         assert_eq!(
-            receipt_python_install(&python, "3.14.7", &[], &root),
+            receipt_python_install(&python, "3.14.7", &[], std::slice::from_ref(&root)),
             Some(ReceiptPython::Legacy("3.14.8".into()))
         );
         // Identity layout: the installation the link resolves into is kept, not an
@@ -1976,13 +1989,39 @@ mod tests {
             ("3.14.9".to_string(), root.join("hash-3149")),
         ];
         assert_eq!(
-            receipt_python_install(&python, "3.14.7", &installs, &root),
+            receipt_python_install(&python, "3.14.7", &installs, std::slice::from_ref(&root)),
             Some(ReceiptPython::Identity(root.join("hash-3149")))
         );
         // An interpreter outside every mise installation still fails closed.
         let elsewhere = tmp.path().join("other/bin/python");
         assert_eq!(
-            receipt_python_install(&elsewhere, "3.14.7", &installs, &root),
+            receipt_python_install(&elsewhere, "3.14.7", &installs, std::slice::from_ref(&root)),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_python_install_finds_a_system_interpreter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user/python");
+        let system = tmp.path().join("system/python");
+        std::fs::create_dir_all(user.join("3.13.1/bin")).unwrap();
+        std::fs::create_dir_all(system.join("3.12.4/bin")).unwrap();
+        let roots = [user, system.clone()];
+
+        // A system environment's receipt names the system copy, which has the
+        // same tool/version key as a user copy would.
+        assert_eq!(
+            receipt_python_install(&system.join("3.12.4/bin/python"), "3.12.4", &[], &roots),
+            Some(ReceiptPython::Legacy("3.12.4".into()))
+        );
+        assert_eq!(
+            receipt_python_install(&system.join("3.12.4/bin/python"), "3.12", &[], &roots),
+            Some(ReceiptPython::Legacy("3.12.4".into()))
+        );
+        assert_eq!(
+            receipt_python_install(&tmp.path().join("other/bin/python"), "3.12.4", &[], &roots),
             None
         );
     }

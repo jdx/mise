@@ -305,6 +305,8 @@ async fn delete(
             Some(tool) => tool.reporter(),
             None => mpr.add(&tv.style()),
         };
+        // Checked before removal: the helper may remove the tool directory too.
+        let removed_with_sudo = crate::tool_purgatory::needs_sudo_to_remove(&tv.install_path());
         let result = p.uninstall_version(config, &tv, pr.as_ref(), false).await;
         if let Some(tool) = &tool {
             tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
@@ -314,7 +316,12 @@ async fn delete(
         if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
             warn!("failed to clear tool purgatory entry: {err:#}");
         }
-        runtime_symlinks::remove_missing_symlinks(p)?;
+        // In a root-owned system installs directory the privileged helper has
+        // already dropped the links the removal left dangling, and this user
+        // cannot. The system links are rebuilt after the loop.
+        if !removed_with_sudo {
+            runtime_symlinks::remove_missing_symlinks(p)?;
+        }
         if tool.is_none() {
             pr.finish();
         }
