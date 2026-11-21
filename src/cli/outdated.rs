@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ConfigScope, ResolveOptions, ToolsetBuilder};
+use crate::toolset::{ConfigScope, OutdatedSelection, ResolveOptions, ToolsetBuilder};
 use crate::ui::table;
 use eyre::Result;
 use indexmap::IndexMap;
@@ -154,8 +154,10 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
+        // Naming a tool asks for it, even one that sets `bump = false`.
+        let named = (!self.tool.is_empty()).then_some(self.tool.as_slice());
         let mut checked = ts
-            .list_outdated_versions(
+            .list_outdated_versions_filtered(
                 &config,
                 self.bump,
                 &ResolveOptions {
@@ -163,25 +165,50 @@ impl Outdated {
                     outdated_release_urls: self.json,
                     ..Default::default()
                 },
+                named,
+                None,
             )
             .await;
         let outdated = std::mem::take(&mut checked.outdated);
         let bump_available = if !self.json && !self.bump && outdated.is_empty() {
             let bumps = ts
-                .list_outdated_versions(
+                .list_outdated_versions_selecting(
                     &config,
                     true,
                     &ResolveOptions {
                         inactive: self.inactive,
                         ..Default::default()
                     },
+                    OutdatedSelection {
+                        filter_tools: named,
+                        exclude_tools: None,
+                        named_tools: named,
+                        honor_bump_option: false,
+                        show_progress: false,
+                        select: &|_| true,
+                    },
                 )
                 .await;
             // A tool whose backend-wide lookup failed may be out of date too.
             checked.unchecked.extend(bumps.unchecked);
-            bumps.outdated.iter().any(|o| o.bump.is_some())
+            let available = bumps.outdated.iter().filter(|o| o.bump.is_some());
+            // A tool that sets `bump = false` shows up in `--bump` only when named.
+            let names = available
+                .clone()
+                .map(|o| o.name.as_str())
+                .collect::<Vec<_>>();
+            available.clone().next().is_some().then(|| {
+                if available
+                    .clone()
+                    .any(|o| !o.tool_request.options().bump_enabled())
+                {
+                    format!("mise outdated --bump {}", names.join(" "))
+                } else {
+                    "mise outdated --bump".to_string()
+                }
+            })
         } else {
-            false
+            None
         };
         let all_checked = checked.unchecked.is_empty();
         match self.json {
@@ -195,16 +222,16 @@ impl Outdated {
     fn display_table(
         &self,
         outdated: Vec<OutdatedInfo>,
-        bump_available: bool,
+        bump_available: Option<String>,
         all_checked: bool,
     ) -> Result<()> {
         if outdated.is_empty() {
             if all_checked {
                 info!("All tools are up to date");
             }
-            if bump_available {
+            if let Some(command) = bump_available {
                 info!(
-                    "Newer versions are available outside the configured version ranges. Use `mise outdated --bump` to view them."
+                    "Newer versions are available outside the configured version ranges. Use `{command}` to view them."
                 );
             }
             return Ok(());
