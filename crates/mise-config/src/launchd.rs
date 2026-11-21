@@ -79,7 +79,7 @@ pub struct LaunchdTomlConfig {
     #[serde(default)]
     #[schemars(schema_with = "refs::launchd_resource_limits")]
     pub hard_resource_limits: Option<LaunchdResourceLimits>,
-    /// run `launchctl kickstart -k` after loading the agent
+    /// run `launchctl kickstart` after loading the agent
     #[serde(default)]
     pub kickstart: bool,
 }

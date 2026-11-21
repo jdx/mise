@@ -243,7 +243,7 @@ In an [activated shell](/shell-setup.html), mise warns when an `auto = true`
 provider is stale, naming each provider and the reason:
 
 ```text
-mise WARN  deps: npm (package-lock.json changed) — run `mise deps`
+mise WARN  deps: npm (package-lock.json changed); run `mise deps`
 ```
 
 To turn the warning off, set

@@ -199,10 +199,10 @@ pub struct DotfileGroupEntryTableDecl {
     pub source: Option<String>,
     /// literal inline file content; alternative to source
     pub content: Option<String>,
-    /// how to apply a whole-file source to the target; omitted uses the group's mode. "absent" removes a file or symlink at the target and takes no source. "track" saves the file's history where it is, and "track-local" saves it in this machine's local-only history, which is never shared
+    /// how to apply a whole-file source to the target; omitted uses the group's mode. "absent" removes a file or symlink at the target and takes no source. "track" saves the file's history where it is, and "track-local" saves it in this machine's local-only history, which is never shared. "fnox" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source
     // A string, so a mode from a newer mise warns and is skipped.
     #[schemars(extend("anyOf" = [
-        {"enum": ["symlink", "symlink-each", "copy", "template", "absent", "track", "track-local"]},
+        {"enum": ["symlink", "symlink-each", "copy", "template", "absent", "track", "track-local", "fnox"]},
         {"type": "string"}
     ]))]
     pub mode: Option<String>,
@@ -250,11 +250,11 @@ pub struct DotfileGroupEntryTableDecl {
     pub position: Option<String>,
     /// comment prefix for edit marker lines; inferred from the file extension when omitted
     pub comment: Option<String>,
-    /// edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, or YAML target and leaves the target's other keys to the application that also writes it; "missing" sets only the keys the target has no value for; the format comes from the target's extension unless "format" names it
+    /// edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, YAML, or INI target and leaves the target's other keys to the application that also writes it; "missing" sets only the keys the target has no value for; the format comes from the target's extension unless "format" names it
     #[serde(default)]
     #[schemars(schema_with = "schema::merge")]
     pub merge: Option<MergeSetting>,
-    /// merge only: the format of the target and source when the target's extension doesn't name it, such as "jsonc" for VS Code's settings.json
-    #[schemars(extend("anyOf" = [{"enum": ["json", "jsonc", "toml", "yaml"]}, {"type": "string"}]))]
+    /// merge only: the format of the target and source when the target's extension doesn't name it, such as "jsonc" for VS Code's settings.json or "ini" for an extensionless INI file
+    #[schemars(extend("anyOf" = [{"enum": ["json", "jsonc", "toml", "yaml", "ini"]}, {"type": "string"}]))]
     pub format: Option<String>,
 }

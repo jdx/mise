@@ -408,8 +408,8 @@ pub(crate) struct Lock {
     /// mise keeps an existing lockfile at its format version during normal updates,
     /// so collaborators on an older mise can still read it. This flag rewrites it in
     /// the newest format, which adds request bindings, dependency-graph sidecars,
-    /// and packslip repository IDs. It processes every configured tool and cannot be
-    /// combined with tool arguments. See
+    /// packslip repository IDs, and npm source repositories. It processes every
+    /// configured tool and cannot be combined with tool arguments. See
     /// https://mise.jdx.dev/dev-tools/mise-lock-reference.html#format-versions.
     #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
