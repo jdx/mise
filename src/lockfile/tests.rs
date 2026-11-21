@@ -1363,6 +1363,26 @@ fn merge_keeps_unsupported_platforms_until_resolved() {
         tools[0].unsupported_platforms,
         BTreeSet::from(["windows-x64".to_string()])
     );
+
+    // windows-x64 now resolves to its own options, such as a `url` for
+    // Windows: the marker was found without them, so it is dropped.
+    let windows_url = BTreeMap::from([("url".to_string(), "https://example.com/w".to_string())]);
+    let (tools, _) = merge_tool_entries(
+        vec![entry(&["linux-x64"], &[])],
+        Some(&existing),
+        |_, platform| (platform.to_key() == "windows-x64").then(|| windows_url.clone()),
+    );
+    assert!(
+        tools
+            .iter()
+            .all(|tool| !tool.unsupported_platforms.contains("windows-x64")),
+        "{tools:?}"
+    );
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool.unsupported_platforms.contains("macos-arm64"))
+    );
 }
 
 #[test]

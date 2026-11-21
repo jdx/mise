@@ -5225,6 +5225,20 @@ fn rekeyed_entry<'a>(
 /// Existing empty-options entries are rekeyed platform-by-platform using the
 /// backend's resolved options. This migrates legacy entries without guessing
 /// from platform overlap while preserving data when resolution is ambiguous.
+/// Whether an `unsupported_platforms` marker of `tool` still describes the
+/// options its platform resolves to. A marker records the options `mise lock`
+/// tried, so when the platform now resolves to others it is dropped and the
+/// next lock tries the platform again.
+fn marker_still_applies<F>(resolve: &mut F, tool: &LockfileTool, platform_key: &str) -> bool
+where
+    F: FnMut(&str, &Platform) -> Option<BTreeMap<String, String>>,
+{
+    Platform::parse(platform_key)
+        .ok()
+        .and_then(|platform| resolve(&tool.version, &platform))
+        .is_none_or(|options| options == tool.options)
+}
+
 fn merge_tool_entries<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
@@ -5303,9 +5317,11 @@ where
                 if entry.provenance.is_none() {
                     entry.provenance = existing_tool.provenance.clone();
                 }
-                entry
-                    .unsupported_platforms
-                    .extend(existing_tool.unsupported_platforms.iter().cloned());
+                for platform_key in &existing_tool.unsupported_platforms {
+                    if marker_still_applies(&mut resolve, existing_tool, platform_key) {
+                        entry.unsupported_platforms.insert(platform_key.clone());
+                    }
+                }
             }
             if !existing_tool.options.is_empty() {
                 if let Some(entry) = by_key.get_mut(&key) {
@@ -5352,11 +5368,13 @@ where
                     .and_modify(|fresh| *fresh = fresh.merge_with(info))
                     .or_insert_with(|| info.clone());
             }
+            // Unlike a legacy platform entry, a marker was always written
+            // with the options it was tried with, so it keeps its own key.
             for platform_key in &existing_tool.unsupported_platforms {
-                let resolved_options = Platform::parse(platform_key)
-                    .ok()
-                    .and_then(|platform| resolve(&existing_tool.version, &platform));
-                rekeyed_entry(&mut by_key, existing_tool, resolved_options)
+                if !marker_still_applies(&mut resolve, existing_tool, platform_key) {
+                    continue;
+                }
+                rekeyed_entry(&mut by_key, existing_tool, None)
                     .unsupported_platforms
                     .insert(platform_key.clone());
             }
