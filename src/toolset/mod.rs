@@ -1400,10 +1400,14 @@ pub async fn prunable_tools_with_sources(
         .await?
         .into_iter()
         .flat_map(|(p, tv)| {
+            // A system copy is keyed like the version it was found beside. In the
+            // identity layout the user's copy is keyed by its own directory, which
+            // the system copy's `<tool>/<version>` name would never match.
+            let key = needed_key(&tv);
             scope
                 .installs_of(tv, &system_installs)
                 .into_iter()
-                .map(move |tv| ((needed_key(&tv), tv.install_path()), (p.clone(), tv)))
+                .map(move |tv| ((key.clone(), tv.install_path()), (p.clone(), tv)))
         })
         .collect::<BTreeMap<((String, String), PathBuf), (Arc<dyn Backend>, ToolVersion)>>();
 
@@ -1447,7 +1451,9 @@ pub async fn prunable_tools_with_sources(
         needed.entry(key).or_default().extend(sources);
     }
 
-    to_delete.retain(|(key, _), _| !needed.contains_key(key));
+    to_delete.retain(|(key, _), (_, tv)| {
+        !needed.contains_key(key) && !needed.contains_key(&needed_key(tv))
+    });
 
     // A process started before its version stopped being needed may still be
     // running from it. Removing the version would delete files from under it.
