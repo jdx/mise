@@ -1,7 +1,7 @@
 //! Checks that the `mise` commands the docs show exist.
 //!
-//! Every `mise ...` command in a shell block or an inline code span under
-//! `docs/` and in `README.md` is walked against mise's own usage spec: each
+//! Every `mise ...` command in a shell block, a block with no language or an
+//! inline code span under `docs/` and in `README.md` is walked against mise's own usage spec: each
 //! subcommand has to be one mise has, and each flag one that command accepts.
 //! Values are not checked, so a placeholder such as `<tool>` is fine.
 //!
@@ -9,7 +9,8 @@
 //! a message mise prints, the `mise <task>` shorthand), is skipped with
 //! `<!-- cli: skip -->`. On a line of its own, the marker skips the fenced
 //! block or the heading that follows. Directly after an inline code span,
-//! with no space between, it skips that span.
+//! with no space between, it skips that span. A help example has nowhere to put
+//! the marker, so the output lines the generated pages show are in `PRINTED`.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -19,7 +20,8 @@ use regex::Regex;
 use usage::spec::arg::SpecDoubleDashChoices;
 use usage::{SpecCommand, SpecFlag};
 
-/// Fence languages whose blocks hold commands someone types.
+/// Fence languages whose blocks hold commands someone types. A block with no
+/// language is read too: the generated CLI pages write their examples in one.
 const SHELLS: &[&str] = &[
     "sh",
     "bash",
@@ -38,6 +40,13 @@ const SHELLS: &[&str] = &[
 const PREFIXES: &[&str] = &[
     "$", "❯", "%", "sudo", "exec", "eval", "command", "time", "RUN", "run:", "-", "if", "!",
     "then", "do", "else", "&",
+];
+
+/// Lines mise prints, which help examples in `docs/cli/` show under the command
+/// that prints them. Each is the start of the line, with single spaces.
+const PRINTED: &[&str] = &[
+    "mise node@20.0.0 is prunable:",
+    "mise node@20.0.0 [dryrun] remove",
 ];
 
 /// What mise prints after its own name in log lines, which console blocks show.
@@ -83,10 +92,21 @@ fn docs_show_commands_that_exist() {
     let spec = super::usage::spec();
     let shown = corpus(root);
     // guards against the extraction silently finding nothing
-    assert!(shown.len() > 4000, "found only {} commands", shown.len());
+    assert!(shown.len() > 5000, "found only {} commands", shown.len());
+
+    let printed = |cmd: &Shown| {
+        let text = cmd.text();
+        cmd.origin.starts_with("docs/cli/") && PRINTED.iter().any(|line| text.starts_with(line))
+    };
+    for line in PRINTED {
+        assert!(
+            shown.iter().any(|cmd| cmd.text().starts_with(line)),
+            "no page under docs/cli/ shows `{line}`: remove it from PRINTED"
+        );
+    }
 
     let mut failures = String::new();
-    for cmd in &shown {
+    for cmd in shown.iter().filter(|cmd| !printed(cmd)) {
         if let Err(problem) = check(&spec.cmd, &cmd.words) {
             writeln!(failures, "{}: `{}`: {problem}", cmd.origin, cmd.text()).unwrap();
         }
@@ -166,7 +186,7 @@ fn commands_in(markdown: &str) -> Vec<(usize, Vec<Word>)> {
             continue;
         };
         let lang = trimmed[len..].split_whitespace().next().unwrap_or("");
-        let checked = SHELLS.contains(&lang) && !skip_next;
+        let checked = (lang.is_empty() || SHELLS.contains(&lang)) && !skip_next;
         skip_next = false;
         i += 1;
         // a line ending in a backslash continues on the next one
@@ -594,7 +614,8 @@ mod tests {
         let markdown = "Run `mise install` first.\n\n```sh\nmise use \\\n  node@24\n```\n\n\
                         ```toml\nrun = \"mise bogus\"\n```\n\n<!-- cli: skip -->\n```sh\nmise bogus\n```\n\
                         A message, `mise bogus`<!-- cli: skip -->, then `mise ls`.\n\n\
-                        <!-- cli: skip -->\n\n## `mise bogus` is printed\n\nThen `mise doctor`.\n";
+                        <!-- cli: skip -->\n\n## `mise bogus` is printed\n\nThen `mise doctor`.\n\n\
+                        ```\nmise prune --dry-run\n```\n";
         let found: Vec<(usize, String)> = commands_in(markdown)
             .into_iter()
             .map(|(line, words)| (line, words[0].text.clone()))
@@ -605,7 +626,8 @@ mod tests {
                 (1, "install".to_string()),
                 (4, "use".to_string()),
                 (16, "ls".to_string()),
-                (22, "doctor".to_string())
+                (22, "doctor".to_string()),
+                (25, "prune".to_string())
             ]
         );
     }

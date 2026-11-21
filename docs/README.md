@@ -107,8 +107,9 @@ schema must then reject.
 
 The `docs_show_commands_that_exist` unit test
 (`cargo test -p mise --bin mise docs_commands`) walks every `mise ...` command
-in a shell block or inline code span through the usage spec and fails on a
-subcommand or flag mise does not have. It does not check values, so
+in a shell block, a block with no language or an inline code span through the
+usage spec and fails on a subcommand or flag mise does not have. Give a block
+of output the `text` language. It does not check values, so
 placeholders such as `<tool>` are fine. Text that starts with `mise` and is not
 a command to type, such as a message mise prints or the `mise <task>`
 shorthand, needs `<!-- cli: skip -->`: on its own line above a fenced block or
