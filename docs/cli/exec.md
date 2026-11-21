@@ -24,6 +24,12 @@ tools are installed first unless the `exec_auto_install` or `auto_install`
 setting is off; when you name tools, only those are installed. The --allow-*and
 --deny-* flags sandbox the command; see <https://mise.jdx.dev/sandboxing.html>.
 
+By default, `PATH` entries that come before mise's shims directory stay ahead of mise's
+tool directories in the command's environment. `mise exec -- node` looks the
+program up with mise's tools first, but a child that searches `PATH` itself,
+such as `/usr/bin/env node` or a `-c` command, finds those entries first. Set
+`activate_aggressive` to put mise's tool directories first for that run.
+
 ## Arguments
 - **`[TOOL@VERSION]…`** — Tools to add or override, such as `node@24 python@3.13`
 - **`[-- COMMAND]…`** — Executable and arguments to run directly, after `--`

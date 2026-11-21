@@ -3873,6 +3873,12 @@ Put the command after `--`, or pass a shell command string with `-c`. Missing
 tools are installed first unless the `exec_auto_install` or `auto_install`
 setting is off; when you name tools, only those are installed. The --allow-* and
 --deny-* flags sandbox the command; see https://mise.jdx.dev/sandboxing.html.
+
+By default, `PATH` entries that come before mise's shims directory stay ahead of mise's
+tool directories in the command's environment. `mise exec -- node` looks the
+program up with mise's tools first, but a child that searches `PATH` itself,
+such as `/usr/bin/env node` or a `-c` command, finds those entries first. Set
+`activate_aggressive` to put mise's tool directories first for that run.
 """#
     flag "-c --command" help="Command string to run through a shell (supports pipes and redirection)" conflicts=COMMAND {
         arg <COMMAND>
@@ -6145,6 +6151,22 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
         arg <CMD>
     }
     flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+    flag --global help="Open the task picker with only the global tasks" {
+        long_help #"""
+Open the task picker with only the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`, and the global task directory, `~/.config/mise/tasks`.
+"""#
+        conflicts "--affected" "--tag" "--no-global"
+    }
+    flag --no-global help="Open the task picker without the global tasks" {
+        long_help #"""
+Open the task picker without the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`, and the global task directory, `~/.config/mise/tasks`. Combine with `--all` or `--multi` to filter those pickers too.
+"""#
+        conflicts "--affected" "--tag" "--global"
+    }
     flag --multi help="Open the task picker as a checklist and run every task you check" {
         long_help #"""
 Open the task picker as a checklist and run every task you check
@@ -7438,6 +7460,22 @@ It runs in the worktree's copy of the directory mise was started from (not a tas
             arg <CMD>
         }
         flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
+        flag --global help="Open the task picker with only the global tasks" {
+            long_help #"""
+Open the task picker with only the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`, and the global task directory, `~/.config/mise/tasks`.
+"""#
+            conflicts "--affected" "--tag" "--no-global"
+        }
+        flag --no-global help="Open the task picker without the global tasks" {
+            long_help #"""
+Open the task picker without the global tasks
+
+Global tasks come from the global config, such as `~/.config/mise/config.toml`, and the global task directory, `~/.config/mise/tasks`. Combine with `--all` or `--multi` to filter those pickers too.
+"""#
+            conflicts "--affected" "--tag" "--global"
+        }
         flag --multi help="Open the task picker as a checklist and run every task you check" {
             long_help #"""
 Open the task picker as a checklist and run every task you check

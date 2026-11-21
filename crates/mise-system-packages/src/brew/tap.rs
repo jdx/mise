@@ -142,20 +142,9 @@ async fn evaluate_formula(
         .wrap_err_with(|| format!("failed to evaluate {source_path}"))?;
 
     // The shim reports requirements it skipped alongside the metadata, since
-    // stderr from a successful run is discarded. Formula has no such field.
-    let mut metadata: serde_json::Value = serde_json::from_str(&output)
-        .wrap_err_with(|| format!("invalid metadata extracted from {source_path}"))?;
-    let unsupported = metadata
-        .as_object_mut()
-        .and_then(|object| object.remove("unsupported_requirements"))
-        .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
-        .unwrap_or_default();
-    for requirement in unsupported {
-        warn!(
-            "ignoring unsupported Homebrew requirement {requirement} in {owner}/{tap}/{name}; it is not enforced"
-        );
-    }
-    let formula: Formula = serde_json::from_value(metadata)
+    // stderr from a successful run is discarded. They are kept on the formula
+    // so the caller warns only once it knows the formula will be installed.
+    let formula: Formula = serde_json::from_str(&output)
         .wrap_err_with(|| format!("invalid metadata extracted from {source_path}"))?;
     if formula.name != name {
         bail!(
@@ -2174,6 +2163,8 @@ end
         )
         .await?;
         assert_eq!(formula.dependencies, ["libfoo"]);
+        // kept for the caller to warn about once it installs the formula
+        assert_eq!(formula.unsupported_requirements, ["WidgetMacOSRequirement"]);
         Ok(())
     }
 

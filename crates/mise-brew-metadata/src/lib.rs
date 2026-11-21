@@ -58,6 +58,10 @@ pub struct Formula {
     /// per-tag `variations`
     #[serde(default)]
     pub from_tap_source: bool,
+    /// custom `Requirement` classes a tap formula names in `depends_on` that
+    /// mise cannot evaluate, so it does not enforce them
+    #[serde(default)]
+    pub unsupported_requirements: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -422,5 +426,16 @@ mod tests {
             github_raw_base(url).as_deref(),
             Some("https://raw.githubusercontent.com/acme/homebrew-tools/HEAD")
         );
+    }
+
+    #[test]
+    fn reads_unsupported_requirements_from_tap_metadata() {
+        let formula: Formula = serde_json::from_value(serde_json::json!({
+            "name": "splash",
+            "versions": {"stable": "1"},
+            "unsupported_requirements": ["SplashMacOSRequirement"],
+        }))
+        .unwrap();
+        assert_eq!(formula.unsupported_requirements, ["SplashMacOSRequirement"]);
     }
 }
