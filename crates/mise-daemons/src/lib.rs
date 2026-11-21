@@ -3199,10 +3199,14 @@ mod tests {
             ..Default::default()
         };
         let named = runtime::render(&set.for_root(&shop), &state, true).unwrap();
-        assert!(named.contains("as = \"search\""), "{named}");
+        let id = reference(&set, "search").key.clone();
+        assert!(
+            named.contains(&format!("id = \"{id}\"")) && named.contains("as = \"search\""),
+            "{named}"
+        );
         let plain = runtime::render(&set.for_root(&shop), &state, false).unwrap();
         assert!(
-            plain.contains("depends = [\"") && !plain.contains("as ="),
+            plain.contains(&format!("depends = [\"{id}\"]")) && !plain.contains("as ="),
             "{plain}"
         );
     }
