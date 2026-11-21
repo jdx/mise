@@ -5232,12 +5232,6 @@ fn rekeyed_entry<'a>(
     target
 }
 
-/// Merge tool entries with deduplication by (version, options).
-/// Merges platform info for entries with the same key.
-/// Preserves existing platform info for matching entries.
-/// Existing empty-options entries are rekeyed platform-by-platform using the
-/// backend's resolved options. This migrates legacy entries without guessing
-/// from platform overlap while preserving data when resolution is ambiguous.
 /// Whether an `unsupported_platforms` marker of `tool` still describes the
 /// options its platform resolves to. A marker records the options `mise lock`
 /// tried, so when the platform now resolves to others it is dropped and the
@@ -5252,6 +5246,12 @@ where
         .is_none_or(|options| options == tool.options)
 }
 
+/// Merge tool entries with deduplication by (version, options).
+/// Merges platform info for entries with the same key.
+/// Preserves existing platform info for matching entries.
+/// Existing empty-options entries are rekeyed platform-by-platform using the
+/// backend's resolved options. This migrates legacy entries without guessing
+/// from platform overlap while preserving data when resolution is ambiguous.
 fn merge_tool_entries<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
