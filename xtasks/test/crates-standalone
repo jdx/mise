@@ -27,7 +27,11 @@ metadata=$(cargo metadata --no-deps --format-version 1)
 if [[ $# -gt 0 ]]; then
 	crates=("$@")
 else
-	mapfile -t crates < <(jq -r '.packages[].name | select(. != "mise")' <<<"$metadata")
+	# A read loop, because the Bash 3.2 that macOS ships has no mapfile.
+	crates=()
+	while IFS= read -r crate; do
+		crates+=("$crate")
+	done < <(jq -r '.packages[].name | select(. != "mise")' <<<"$metadata")
 fi
 
 failed=()
