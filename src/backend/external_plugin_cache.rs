@@ -8,23 +8,7 @@ use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolVersion};
 use dashmap::DashMap;
 use eyre::{WrapErr, eyre};
-use std::path::PathBuf;
 use std::sync::Arc;
-
-/// The cached entries that describe one physical installation, since a
-/// plugin's `list-bin-paths` and `exec-env` can print its path. The user's and
-/// the system copy of a version share its cache, so these go when either copy
-/// is removed, even while the other keeps the rest of the cache.
-pub(super) fn install_entries(tv: &ToolVersion) -> [PathBuf; 4] {
-    let cache = tv.cache_path();
-    [
-        "list_bin_paths",
-        "list_bin_paths.msgpack.z",
-        "exec_env",
-        "exec_env.msgpack.z",
-    ]
-    .map(|name| cache.join(name))
-}
 
 #[derive(Debug, Default)]
 pub(super) struct ExternalPluginCache {

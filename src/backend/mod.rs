@@ -3220,9 +3220,31 @@ fn other_copy_remains(tv: &ToolVersion, install_path: &Path) -> bool {
     .any(|path| path != install_path && std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir()))
 }
 
-/// Delete a system installation the user cannot write to through `sudo`, the
-/// way `mise install --system` publishes one. Returns false for any other
-/// installation, which the caller deletes itself.
+/// Names of the cached entries of a version that describe one physical
+/// installation: bin paths and a plugin's `exec-env` can name its path. Each
+/// cache file gets a key suffix (`exec_env-<key>.msgpack.z`, vfox's
+/// `exec_env_<hash>.msgpack.z`), so they are matched by prefix.
+const INSTALL_CACHE_PREFIXES: [&str; 3] = ["bin_paths", "exec_env", "list_bin_paths"];
+
+/// Drops the cached entries that describe one installation of `tv`. The user's
+/// and the system copy of a version share its cache, so these go when either
+/// copy is removed, while the other keeps the rest of the cache.
+fn forget_install_cache(tv: &ToolVersion) {
+    let Ok(entries) = std::fs::read_dir(tv.cache_path()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if INSTALL_CACHE_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+        {
+            let _ = remove_all_with_warning(entry.path());
+        }
+    }
+}
+
 /// Whether uninstalling `install_path` goes through the root helper, as a
 /// version in a root-owned system installs directory does for a normal user.
 /// Backend hooks run as this user then, and cannot change that installation.
@@ -3231,6 +3253,9 @@ pub(crate) fn removes_with_sudo(install_path: &Path) -> bool {
         && crate::tool_purgatory::needs_sudo_to_remove(install_path)
 }
 
+/// Delete a system installation the user cannot write to through `sudo`, the
+/// way `mise install --system` publishes one. Returns false for any other
+/// installation, which the caller deletes itself.
 fn remove_system_install_with_sudo(tv: &ToolVersion, install_path: &Path) -> eyre::Result<bool> {
     #[cfg(unix)]
     if removes_with_sudo(install_path) {
@@ -6230,9 +6255,7 @@ pub trait Backend: Debug + Send + Sync {
             }
             rmdir(&tv.cache_path())?;
         } else if !dryrun {
-            for entry in external_plugin_cache::install_entries(tv) {
-                let _ = remove_all_with_warning(&entry);
-            }
+            forget_install_cache(tv);
         }
         if dryrun {
             if !would_remove.is_empty() {
