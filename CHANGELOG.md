@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026.11.13](https://github.com/jdx/mise/releases/tag/v2026.11.13) - 2026-11-21
+
+### 🐛 Bug Fixes
+
+- **(ci)** satisfy clippy on Windows and the latest beta by @jdx in [#15967](https://github.com/jdx/mise/pull/15967)
+
+### 📦️ Dependency Updates
+
+- remove stale zip advisory ignores from deny.toml by @jdx in [#15966](https://github.com/jdx/mise/pull/15966)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`bitwarden/clients`](https://github.com/bitwarden/clients)
+
 ## [2026.11.12](https://github.com/jdx/mise/releases/tag/v2026.11.12) - 2026-11-21
 
 ### 🚀 Features
