@@ -1018,8 +1018,7 @@ fn split_tool_option_segments(s: &str) -> Vec<String> {
             '"' if !escaped && !in_single_quotes => in_double_quotes = !in_double_quotes,
             '\'' if !in_double_quotes => in_single_quotes = !in_single_quotes,
             ',' if !in_double_quotes && !in_single_quotes => {
-                segments.push(current);
-                current = String::new();
+                segments.push(std::mem::take(&mut current));
                 escaped = false;
                 continue;
             }

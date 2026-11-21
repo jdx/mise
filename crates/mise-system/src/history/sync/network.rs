@@ -49,113 +49,6 @@ pub(crate) fn validate_url(value: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{HistoryRepo, PushOutcome, Remote, UPSTREAM_REF, validate_url};
-
-    #[test]
-    fn disposable_tip_probe_is_shallow_but_ordinary_fetch_keeps_ancestry() {
-        let temp = tempfile::tempdir().unwrap();
-        let source = HistoryRepo::open_or_init_in(&temp.path().join("source"))
-            .unwrap()
-            .unwrap();
-        let tree = source.empty_object("tree").unwrap();
-        let first = source.commit_tree(&tree, vec![], "first").unwrap();
-        let second = source.commit_tree(&tree, vec![&first], "second").unwrap();
-        source.update_ref("refs/heads/main", &second, None).unwrap();
-        let url = url::Url::from_file_path(source.dir()).unwrap();
-        let probe = HistoryRepo::open_or_init_in(&temp.path().join("probe"))
-            .unwrap()
-            .unwrap();
-        Remote::new(&probe, url.as_str()).fetch_tip("main").unwrap();
-        assert_eq!(
-            probe.rev_list(UPSTREAM_REF, 10).unwrap(),
-            vec![second.clone()]
-        );
-        let full = HistoryRepo::open_or_init_in(&temp.path().join("full"))
-            .unwrap()
-            .unwrap();
-        Remote::new(&full, url.as_str()).fetch("main").unwrap();
-        assert_eq!(
-            full.rev_list(UPSTREAM_REF, 10).unwrap(),
-            vec![second, first]
-        );
-        assert!(!full.dir().join("shallow").exists());
-    }
-
-    #[test]
-    fn ordinary_push_preserves_ancestry_and_rejects_divergence() {
-        if mise_util::git::plumbing_binary().is_none() {
-            return;
-        }
-        let tmp = tempfile::tempdir().unwrap();
-        let destination = HistoryRepo::open_or_init_in(&tmp.path().join("origin"))
-            .unwrap()
-            .unwrap();
-        let local = HistoryRepo::open_or_init_in(&tmp.path().join("local"))
-            .unwrap()
-            .unwrap();
-        let remote = Remote::new(&local, destination.dir().to_str().unwrap());
-        let tree = local.empty_object("tree").unwrap();
-        let first = local.commit_tree(&tree, vec![], "first").unwrap();
-        let second = local.commit_tree(&tree, vec![&first], "second").unwrap();
-        let third = local.commit_tree(&tree, vec![&second], "third").unwrap();
-        assert_eq!(
-            remote
-                .push(&[format!("{third}:refs/heads/main")], Some(("main", None)))
-                .unwrap(),
-            PushOutcome::Done
-        );
-        assert_eq!(
-            destination.rev_list("refs/heads/main", 10).unwrap(),
-            vec![third.clone(), second, first.clone()]
-        );
-        let divergent = local.commit_tree(&tree, vec![&first], "divergent").unwrap();
-        assert!(matches!(
-            remote
-                .push(
-                    &[format!("{divergent}:refs/heads/main")],
-                    Some(("main", Some(&third)))
-                )
-                .unwrap(),
-            PushOutcome::Rejected(_)
-        ));
-        assert!(remote.fetch("main").unwrap());
-        assert_eq!(local.ref_oid(UPSTREAM_REF).unwrap(), Some(third.clone()));
-        assert_eq!(destination.ref_oid("refs/heads/main").unwrap(), Some(third));
-        assert!(local.list_refs("refs/machines/").unwrap().is_empty());
-    }
-
-    #[test]
-    fn option_like_urls_are_rejected_at_every_entry_point() {
-        let tmp = tempfile::tempdir().unwrap();
-        let Some(repo) = HistoryRepo::open_or_init_in(tmp.path()).unwrap() else {
-            return;
-        };
-        for value in ["", "--upload-pack=bad", "  --upload-pack=bad"] {
-            assert!(validate_url(value).is_err());
-            let remote = Remote::new(&repo, value);
-            assert!(remote.fetch("main").is_err());
-            assert!(remote.push(&[], None).is_err());
-            assert!(remote.symbolic_head().is_err());
-            assert!(remote.ls_remote().is_err());
-        }
-    }
-
-    #[test]
-    fn malformed_http_remotes_fail_without_echoing_credentials() {
-        for value in [
-            "https://secret@example.com:bad/repo",
-            "HTTP://secret@[broken/repo",
-        ] {
-            let error = validate_url(value).unwrap_err().to_string();
-            assert!(!error.contains("secret"));
-        }
-        assert!(validate_url("git@github.com:jdx/dotfiles.git").is_ok());
-        assert!(validate_url("/tmp/setup.git").is_ok());
-    }
-}
-
 pub(crate) struct Remote<'a> {
     repo: &'a HistoryRepo,
     url: String,
@@ -313,5 +206,112 @@ impl<'a> Remote<'a> {
                 Some((oid.to_string(), name.to_string()))
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HistoryRepo, PushOutcome, Remote, UPSTREAM_REF, validate_url};
+
+    #[test]
+    fn disposable_tip_probe_is_shallow_but_ordinary_fetch_keeps_ancestry() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = HistoryRepo::open_or_init_in(&temp.path().join("source"))
+            .unwrap()
+            .unwrap();
+        let tree = source.empty_object("tree").unwrap();
+        let first = source.commit_tree(&tree, vec![], "first").unwrap();
+        let second = source.commit_tree(&tree, vec![&first], "second").unwrap();
+        source.update_ref("refs/heads/main", &second, None).unwrap();
+        let url = url::Url::from_file_path(source.dir()).unwrap();
+        let probe = HistoryRepo::open_or_init_in(&temp.path().join("probe"))
+            .unwrap()
+            .unwrap();
+        Remote::new(&probe, url.as_str()).fetch_tip("main").unwrap();
+        assert_eq!(
+            probe.rev_list(UPSTREAM_REF, 10).unwrap(),
+            vec![second.clone()]
+        );
+        let full = HistoryRepo::open_or_init_in(&temp.path().join("full"))
+            .unwrap()
+            .unwrap();
+        Remote::new(&full, url.as_str()).fetch("main").unwrap();
+        assert_eq!(
+            full.rev_list(UPSTREAM_REF, 10).unwrap(),
+            vec![second, first]
+        );
+        assert!(!full.dir().join("shallow").exists());
+    }
+
+    #[test]
+    fn ordinary_push_preserves_ancestry_and_rejects_divergence() {
+        if mise_util::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let destination = HistoryRepo::open_or_init_in(&tmp.path().join("origin"))
+            .unwrap()
+            .unwrap();
+        let local = HistoryRepo::open_or_init_in(&tmp.path().join("local"))
+            .unwrap()
+            .unwrap();
+        let remote = Remote::new(&local, destination.dir().to_str().unwrap());
+        let tree = local.empty_object("tree").unwrap();
+        let first = local.commit_tree(&tree, vec![], "first").unwrap();
+        let second = local.commit_tree(&tree, vec![&first], "second").unwrap();
+        let third = local.commit_tree(&tree, vec![&second], "third").unwrap();
+        assert_eq!(
+            remote
+                .push(&[format!("{third}:refs/heads/main")], Some(("main", None)))
+                .unwrap(),
+            PushOutcome::Done
+        );
+        assert_eq!(
+            destination.rev_list("refs/heads/main", 10).unwrap(),
+            vec![third.clone(), second, first.clone()]
+        );
+        let divergent = local.commit_tree(&tree, vec![&first], "divergent").unwrap();
+        assert!(matches!(
+            remote
+                .push(
+                    &[format!("{divergent}:refs/heads/main")],
+                    Some(("main", Some(&third)))
+                )
+                .unwrap(),
+            PushOutcome::Rejected(_)
+        ));
+        assert!(remote.fetch("main").unwrap());
+        assert_eq!(local.ref_oid(UPSTREAM_REF).unwrap(), Some(third.clone()));
+        assert_eq!(destination.ref_oid("refs/heads/main").unwrap(), Some(third));
+        assert!(local.list_refs("refs/machines/").unwrap().is_empty());
+    }
+
+    #[test]
+    fn option_like_urls_are_rejected_at_every_entry_point() {
+        let tmp = tempfile::tempdir().unwrap();
+        let Some(repo) = HistoryRepo::open_or_init_in(tmp.path()).unwrap() else {
+            return;
+        };
+        for value in ["", "--upload-pack=bad", "  --upload-pack=bad"] {
+            assert!(validate_url(value).is_err());
+            let remote = Remote::new(&repo, value);
+            assert!(remote.fetch("main").is_err());
+            assert!(remote.push(&[], None).is_err());
+            assert!(remote.symbolic_head().is_err());
+            assert!(remote.ls_remote().is_err());
+        }
+    }
+
+    #[test]
+    fn malformed_http_remotes_fail_without_echoing_credentials() {
+        for value in [
+            "https://secret@example.com:bad/repo",
+            "HTTP://secret@[broken/repo",
+        ] {
+            let error = validate_url(value).unwrap_err().to_string();
+            assert!(!error.contains("secret"));
+        }
+        assert!(validate_url("git@github.com:jdx/dotfiles.git").is_ok());
+        assert!(validate_url("/tmp/setup.git").is_ok());
     }
 }

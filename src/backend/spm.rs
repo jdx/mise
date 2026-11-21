@@ -1398,6 +1398,136 @@ fn filter_artifactbundle_binaries(
         .collect())
 }
 
+/// https://developer.apple.com/documentation/packagedescription
+#[derive(Deserialize)]
+struct PackageDescription {
+    products: Vec<PackageDescriptionProduct>,
+}
+
+#[derive(Deserialize)]
+struct PackageDescriptionProduct {
+    name: String,
+    #[serde(deserialize_with = "PackageDescriptionProductType::deserialize_product_type_field")]
+    r#type: PackageDescriptionProductType,
+}
+
+#[derive(Deserialize)]
+enum PackageDescriptionProductType {
+    Executable,
+    Other,
+}
+
+impl PackageDescriptionProductType {
+    fn is_executable(&self) -> bool {
+        matches!(self, Self::Executable)
+    }
+
+    /// Swift determines the toolchain to use with a given package using a comment in the Package.swift file at the top.
+    /// For example:
+    ///   // swift-tools-version: 6.0
+    ///
+    /// The version of the toolchain can be older than the Swift version used to build the package. This versioning gives
+    /// Apple the flexibility to introduce and flag breaking changes in the toolchain.
+    ///
+    /// How to determine the product type is something that might change across different versions of Swift.
+    ///
+    /// ## Swift 5.x
+    ///
+    /// Product type is a key in the map with an undocumented value that we are not interested in and can be easily skipped.
+    ///
+    /// Example:
+    /// ```json
+    /// "type" : {
+    ///     "executable" : null
+    /// }
+    /// ```
+    /// or
+    /// ```json
+    /// "type" : {
+    ///     "library" : [
+    ///       "automatic"
+    ///     ]
+    /// }
+    /// ```
+    ///
+    /// ## Swift 6.x
+    ///
+    /// The product type is directly the value under the key "type"
+    ///
+    /// Example:
+    ///
+    /// ```json
+    /// "type": "executable"
+    /// ```
+    ///
+    fn deserialize_product_type_field<'de, D>(
+        deserializer: D,
+    ) -> Result<PackageDescriptionProductType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TypeFieldVisitor;
+
+        impl<'de> Visitor<'de> for TypeFieldVisitor {
+            type Value = PackageDescriptionProductType;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map with a key 'executable' or other types")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                if let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "type" => {
+                            let value: String = map.next_value()?;
+                            if value == "executable" {
+                                Ok(PackageDescriptionProductType::Executable)
+                            } else {
+                                Ok(PackageDescriptionProductType::Other)
+                            }
+                        }
+                        "executable" => {
+                            // Skip the value by reading it into a dummy serde_json::Value
+                            let _value: serde_json::Value = map.next_value()?;
+                            Ok(PackageDescriptionProductType::Executable)
+                        }
+                        _ => {
+                            let _value: serde_json::Value = map.next_value()?;
+                            Ok(PackageDescriptionProductType::Other)
+                        }
+                    }
+                } else {
+                    Err(serde::de::Error::custom("missing key"))
+                }
+            }
+        }
+
+        deserializer.deserialize_map(TypeFieldVisitor)
+    }
+}
+
+/// https://github.com/swiftlang/swift-evolution/blob/main/proposals/0305-swiftpm-binary-target-improvements.md
+#[derive(Deserialize)]
+struct ArtifactBundleInfo {
+    artifacts: std::collections::BTreeMap<String, ArtifactBundleArtifact>,
+}
+
+#[derive(Deserialize)]
+struct ArtifactBundleArtifact {
+    r#type: String,
+    variants: Vec<ArtifactBundleVariant>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtifactBundleVariant {
+    path: String,
+    supported_triples: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use crate::args::BackendResolution;
@@ -2690,134 +2820,4 @@ mod tests {
         assert!(msg.contains("does-not-exist"), "got: {msg}");
         assert!(msg.contains("swiftly"), "got: {msg}");
     }
-}
-
-/// https://developer.apple.com/documentation/packagedescription
-#[derive(Deserialize)]
-struct PackageDescription {
-    products: Vec<PackageDescriptionProduct>,
-}
-
-#[derive(Deserialize)]
-struct PackageDescriptionProduct {
-    name: String,
-    #[serde(deserialize_with = "PackageDescriptionProductType::deserialize_product_type_field")]
-    r#type: PackageDescriptionProductType,
-}
-
-#[derive(Deserialize)]
-enum PackageDescriptionProductType {
-    Executable,
-    Other,
-}
-
-impl PackageDescriptionProductType {
-    fn is_executable(&self) -> bool {
-        matches!(self, Self::Executable)
-    }
-
-    /// Swift determines the toolchain to use with a given package using a comment in the Package.swift file at the top.
-    /// For example:
-    ///   // swift-tools-version: 6.0
-    ///
-    /// The version of the toolchain can be older than the Swift version used to build the package. This versioning gives
-    /// Apple the flexibility to introduce and flag breaking changes in the toolchain.
-    ///
-    /// How to determine the product type is something that might change across different versions of Swift.
-    ///
-    /// ## Swift 5.x
-    ///
-    /// Product type is a key in the map with an undocumented value that we are not interested in and can be easily skipped.
-    ///
-    /// Example:
-    /// ```json
-    /// "type" : {
-    ///     "executable" : null
-    /// }
-    /// ```
-    /// or
-    /// ```json
-    /// "type" : {
-    ///     "library" : [
-    ///       "automatic"
-    ///     ]
-    /// }
-    /// ```
-    ///
-    /// ## Swift 6.x
-    ///
-    /// The product type is directly the value under the key "type"
-    ///
-    /// Example:
-    ///
-    /// ```json
-    /// "type": "executable"
-    /// ```
-    ///
-    fn deserialize_product_type_field<'de, D>(
-        deserializer: D,
-    ) -> Result<PackageDescriptionProductType, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct TypeFieldVisitor;
-
-        impl<'de> Visitor<'de> for TypeFieldVisitor {
-            type Value = PackageDescriptionProductType;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a map with a key 'executable' or other types")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                if let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "type" => {
-                            let value: String = map.next_value()?;
-                            if value == "executable" {
-                                Ok(PackageDescriptionProductType::Executable)
-                            } else {
-                                Ok(PackageDescriptionProductType::Other)
-                            }
-                        }
-                        "executable" => {
-                            // Skip the value by reading it into a dummy serde_json::Value
-                            let _value: serde_json::Value = map.next_value()?;
-                            Ok(PackageDescriptionProductType::Executable)
-                        }
-                        _ => {
-                            let _value: serde_json::Value = map.next_value()?;
-                            Ok(PackageDescriptionProductType::Other)
-                        }
-                    }
-                } else {
-                    Err(serde::de::Error::custom("missing key"))
-                }
-            }
-        }
-
-        deserializer.deserialize_map(TypeFieldVisitor)
-    }
-}
-
-/// https://github.com/swiftlang/swift-evolution/blob/main/proposals/0305-swiftpm-binary-target-improvements.md
-#[derive(Deserialize)]
-struct ArtifactBundleInfo {
-    artifacts: std::collections::BTreeMap<String, ArtifactBundleArtifact>,
-}
-
-#[derive(Deserialize)]
-struct ArtifactBundleArtifact {
-    r#type: String,
-    variants: Vec<ArtifactBundleVariant>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ArtifactBundleVariant {
-    path: String,
-    supported_triples: Vec<String>,
 }
