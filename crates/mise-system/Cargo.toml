@@ -121,6 +121,10 @@ minisign-verify = "0.3"
 schemars = "1"
 uuid = { version = "1", features = ["v4"] }
 
+[features]
+# Compiles the Lua that vfox embeds instead of linking the Lua 5.1 on the system.
+vendored-lua = ["vfox/vendored-lua"]
+
 [package.metadata.cargo-machete]
 # build.rs builds the macOS notification helper with it; cargo-machete does not scan build scripts.
 ignored = ["cc"]

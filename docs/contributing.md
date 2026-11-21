@@ -151,6 +151,7 @@ is defined. Tasks come from `tasks.toml`, file tasks under `xtasks/`, and the
 | `mise run lint-fix`           | `fix`, `format` | Applies hk's fixes                                                   |
 | `mise run test:unit`          |                 | `cargo test --all-features`                                          |
 | `mise run test:e2e <pattern>` | `e`, `e2e`      | Builds, then runs the [E2E tests](#e2e-tests) you select             |
+| `mise run test:crates-standalone` |             | `cargo check` on each workspace crate by itself, as crates.io builds it |
 | `mise run snapshots`          |                 | Accepts changed insta snapshots and deletes unreferenced ones        |
 | `mise run render`             |                 | Regenerates every [generated file](/architecture.html#generated-files) |
 | `mise run docs`               |                 | Starts the docs dev server                                           |

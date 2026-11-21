@@ -259,6 +259,12 @@ task description
 
 Run all tests with coverage report
 
+## `test:crates-standalone`
+
+- **Usage:** `test:crates-standalone`
+
+Check that each workspace crate compiles on its own
+
 ## `test:e2e`
 
 - Depends: build
