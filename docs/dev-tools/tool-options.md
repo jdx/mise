@@ -227,7 +227,8 @@ node = { version = "24", postinstall = { run = "corepack enable", when = "always
 The command runs with the tool's `bin` directory and any
 [dependencies](#tool-dependencies) on `PATH`, the tool's `install_env`, and the
 project's `[env]` values. An `[env]` value marked `tools = true` is included
-only when the tool declares `depends`, and is resolved against those
+only when the tool has install dependencies, from its backend (an `npm:` tool
+depends on `node`) or from `depends`, and is resolved against those
 dependencies. When `[env]` cannot be resolved, the command runs without it.
 Templates such as <code v-pre>{{ tools.ripgrep.path }}</code> are rendered
 first. It also receives:
