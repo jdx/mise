@@ -349,7 +349,12 @@ pub fn is_current(
                 }
                 let key = platform.to_key();
                 let Some(info) = entry.platforms.get(&key) else {
-                    return Ok(false);
+                    // A platform the backend has no build for was tried already.
+                    if !bindings_current || !entry.unsupported_platforms.contains(&key) {
+                        return Ok(false);
+                    }
+                    covered.entry(index).or_default().insert(key);
+                    continue;
                 };
                 if !bindings_current || !can_reuse(info, &tv.version) {
                     return Ok(false);
@@ -372,9 +377,10 @@ pub fn is_current(
         // Counting distinct entries also rejects duplicate version/option rows.
         if covered.is_empty()
             || covered.len() != entries.len()
-            || covered
-                .iter()
-                .any(|(index, keys)| keys.len() != entries[*index].platforms.len())
+            || covered.iter().any(|(index, keys)| {
+                keys.len()
+                    != entries[*index].platforms.len() + entries[*index].unsupported_platforms.len()
+            })
         {
             return Ok(false);
         }
@@ -473,10 +479,15 @@ pub async fn generate(
                 if !matches!(platform_selection, PlatformSelection::Explicit(_)) {
                     continue;
                 }
+                let selected_key =
+                    |platform: &String| keys.contains(&(short.clone(), platform.clone()));
                 untouched
                     .platforms
-                    .retain(|platform, _| !keys.contains(&(short.clone(), platform.clone())));
-                if untouched.platforms.is_empty() {
+                    .retain(|platform, _| !selected_key(platform));
+                untouched
+                    .unsupported_platforms
+                    .retain(|platform| !selected_key(platform));
+                if untouched.platforms.is_empty() && untouched.unsupported_platforms.is_empty() {
                     continue;
                 }
             } else if !retain_unselected_tools {
@@ -615,6 +626,14 @@ pub async fn generate(
         let (short, version, backend, platform, info, options, conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
             unsupported.record(&short, &version, &platform.to_key());
+            candidate.set_unsupported_platform(
+                &short,
+                &version,
+                Some(&backend),
+                &options,
+                &platform.to_key(),
+            );
+            candidate.bind_request(&short, &specifier, &version, &options);
             continue;
         }
         if info.as_ref().is_ok_and(|info| {
@@ -1370,7 +1389,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsupported_target_is_skipped_without_an_empty_entry() {
+    async fn unsupported_target_is_recorded_without_an_empty_entry() {
         crate::backend::load_tools().await.unwrap();
         let generated = generate(
             &Lockfile::default(),
@@ -1383,7 +1402,12 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(generated.tools.is_empty());
+        let entry = &generated.tools["fixture"][0];
+        assert!(entry.platforms.is_empty());
+        assert_eq!(
+            entry.unsupported_platforms,
+            BTreeSet::from(["windows-arm64".to_string()])
+        );
     }
 
     #[tokio::test]
@@ -1403,9 +1427,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let platforms = &generated.tools["fixture"][0].platforms;
-        assert!(platforms.contains_key("linux-x64"));
-        assert!(!platforms.contains_key("windows-arm64"));
+        let entry = &generated.tools["fixture"][0];
+        assert!(entry.platforms.contains_key("linux-x64"));
+        assert!(!entry.platforms.contains_key("windows-arm64"));
+        assert!(entry.unsupported_platforms.contains("windows-arm64"));
     }
 
     #[tokio::test]
@@ -1462,7 +1487,13 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(old.tools, generated.tools);
+        let mut expected = old.tools.clone();
+        expected.get_mut("fixture").unwrap()[0]
+            .unsupported_platforms
+            .insert("windows-arm64".into());
+        assert_eq!(expected, generated.tools);
+        // The next run finds the listed platform current.
+        assert!(is_current(&generated, &[tool()], &platforms, true).unwrap());
     }
 
     #[tokio::test]
@@ -1656,6 +1687,27 @@ mod tests {
             .conda_packages
             .insert("linux-x64".into(), BTreeMap::new());
         assert!(!is_current(&changed, &tools, &platforms, true).unwrap());
+    }
+
+    #[tokio::test]
+    async fn platform_recorded_as_unsupported_is_current() {
+        crate::backend::load_tools().await.unwrap();
+        let tools = vec![tool()];
+        let mut platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let mut old = previous();
+        old.tools_for_mut("fixture").unwrap()[0]
+            .unsupported_platforms
+            .insert("linux-arm64".into());
+        // A listed platform outside the requested scope must still be pruned.
+        assert!(!is_current(&old, &tools, &platforms, true).unwrap());
+        platforms.push(Platform::parse("linux-arm64").unwrap());
+        assert!(is_current(&old, &tools, &platforms, true).unwrap());
+        // A platform that is neither locked nor listed is not current.
+        platforms.push(Platform::parse("windows-x64").unwrap());
+        assert!(!is_current(&old, &tools, &platforms, true).unwrap());
     }
 
     #[tokio::test]

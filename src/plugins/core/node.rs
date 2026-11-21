@@ -964,11 +964,14 @@ impl Backend for NodePlugin {
                 if node_compile != Some(false) && target.os_name() != "windows" {
                     return self.resolve_source_lock_info(version).await;
                 }
-                debug!(
-                    "precompiled node archive {filename} not found in {} and compilation is disabled",
-                    mirror.join(&format!("v{version}/SHASUMS256.txt"))?
-                );
-                return Ok(PlatformInfo::default());
+                // No binary and no source build to fall back on: `mise lock`
+                // lists the platform in `unsupported_platforms`.
+                return Err(eyre::Report::new(crate::errors::Error::UnsupportedTarget(
+                    format!(
+                        "precompiled node archive {filename} not found in {} and compilation is disabled",
+                        mirror.join(&format!("v{version}/SHASUMS256.txt"))?
+                    ),
+                )));
             }
             Err(e) => {
                 debug!(

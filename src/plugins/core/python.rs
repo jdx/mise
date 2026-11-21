@@ -371,9 +371,9 @@ impl PythonPlugin {
     /// Resolve the archive a `pypy*` version would install on `target`, for `mise lock`.
     ///
     /// The URL is always recorded when one exists; the checksum stays unset because PyPy publishes
-    /// none in machine-readable form, and `verify_checksum` fills it in on first install. An
-    /// unresolvable target (no build published, or a version outside the index) records nothing
-    /// rather than failing the lock of the other platforms.
+    /// none in machine-readable form, and `verify_checksum` fills it in on first install. A target
+    /// PyPy publishes no build for (or a version outside the index) is an unsupported target, so
+    /// `mise lock` lists it in `unsupported_platforms` rather than failing the other platforms.
     async fn resolve_pypy_lock_info(
         &self,
         version: &str,
@@ -391,17 +391,22 @@ impl PythonPlugin {
         } else {
             (target.os_name(), target.arch_name())
         };
-        let Some((platform, arch)) = pypy_platform_arch(os, arch) else {
-            return Ok(PlatformInfo::default());
+        let no_build = || {
+            eyre::Report::new(crate::errors::Error::UnsupportedTarget(format!(
+                "PyPy publishes no {version} build for {}",
+                target.to_key()
+            )))
         };
+        let (platform, arch) = pypy_platform_arch(os, arch).ok_or_else(no_build)?;
         let releases = self.fetch_pypy_releases().await?;
         let url = releases
             .iter()
             .find(|r| pypy_version_str(r).as_deref() == Some(version))
             .and_then(|r| pypy_file_for(r, platform, arch))
-            .map(|f| f.download_url.clone());
+            .map(|f| f.download_url.clone())
+            .ok_or_else(no_build)?;
         Ok(PlatformInfo {
-            url,
+            url: Some(url),
             ..Default::default()
         })
     }

@@ -696,6 +696,7 @@ mod tests {
             uv: None,
             provenance: None,
             aube: None,
+            unsupported_platforms: Default::default(),
         }
     }
     #[test]

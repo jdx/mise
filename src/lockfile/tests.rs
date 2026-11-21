@@ -14,6 +14,7 @@ fn test_retain_unsuperseded_unbound_entries() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let mut lockfile = Lockfile::default();
     lockfile.tools.insert(
@@ -87,6 +88,64 @@ fn test_retain_unsuperseded_unbound_entries() {
     assert_eq!(lockfile.tools["d"].len(), 1);
     assert_eq!(lockfile.tools["e"].len(), 2);
     assert_eq!(lockfile.tools["f"].len(), 1);
+}
+
+#[test]
+fn retain_unsuperseded_keeps_unsupported_platforms_the_bound_entry_lacks() {
+    let tool = |specifiers: &[&str], unsupported: &[&str]| LockfileTool {
+        version: "1".to_string(),
+        backend: Some("g".to_string()),
+        specifiers: specifiers.iter().map(|s| s.to_string()).collect(),
+        options: BTreeMap::new(),
+        platforms: BTreeMap::new(),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: unsupported.iter().map(|s| s.to_string()).collect(),
+    };
+    let mut lockfile = Lockfile::default();
+    // The bound entry says nothing about windows-x64: kept.
+    lockfile.tools.insert(
+        "g".to_string(),
+        vec![tool(&[], &["windows-x64"]), tool(&["1"], &[])],
+    );
+    // The bound entry lists it too: pruned.
+    lockfile.tools.insert(
+        "h".to_string(),
+        vec![tool(&[], &["windows-x64"]), tool(&["1"], &["windows-x64"])],
+    );
+    lockfile.retain_unsuperseded_unbound_entries(|_, _| true);
+    assert_eq!(lockfile.tools["g"].len(), 2);
+    assert_eq!(lockfile.tools["h"].len(), 1);
+}
+
+#[test]
+fn set_unsupported_platform_keeps_an_existing_entry() {
+    let mut lockfile = Lockfile::default();
+    let info = PlatformInfo {
+        url: Some("https://example.com/pkg.conda".to_string()),
+        conda_deps: Some(vec!["libzlib@1.3".to_string()]),
+        ..Default::default()
+    };
+    let options = BTreeMap::new();
+    lockfile.set_platform_info(
+        "conda:pkg",
+        "1.0.0",
+        Some("conda:pkg"),
+        &options,
+        "linux-x64",
+        info.clone(),
+    );
+    lockfile.set_unsupported_platform(
+        "conda:pkg",
+        "1.0.0",
+        Some("conda:pkg"),
+        &options,
+        "linux-x64",
+    );
+    let tool = &lockfile.tools["conda:pkg"][0];
+    assert_eq!(tool.platforms["linux-x64"], info);
+    assert!(tool.unsupported_platforms.is_empty());
 }
 
 #[test]
@@ -335,6 +394,7 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }
 }
 
@@ -573,6 +633,7 @@ fn new_lockfiles_write_current_version_and_request_bindings() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -863,6 +924,7 @@ fn request_binding_moves_between_versions_with_matching_options() {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: Default::default(),
             },
             basic_tool("1.1.0", "asdf:dummy"),
         ],
@@ -891,6 +953,7 @@ fn failed_request_binding_preserves_the_existing_binding() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -1059,6 +1122,7 @@ fn tool_with_conda_dep(version: &str, backend: &str, platform: &str, dep: &str) 
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }
 }
 
@@ -1136,6 +1200,192 @@ fn empty_resolution_creates_new_tool_entry_without_platform_metadata() {
 }
 
 #[test]
+fn unsupported_resolution_records_the_platform() {
+    let mut lockfile = Lockfile::default();
+    let result = (
+        "dummy".to_string(),
+        "1.0.0".to_string(),
+        "github:o/dummy".to_string(),
+        Platform::parse("windows-x64").unwrap(),
+        Err("no asset for windows-x64".to_string()),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        crate::lockfile::LockResolutionStatus::Unsupported,
+    );
+    assert!(!apply_lock_result(&mut lockfile, result).unwrap());
+    let tool = &lockfile.tools["dummy"][0];
+    assert!(tool.platforms.is_empty());
+    assert_eq!(
+        tool.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+
+    // Any other failure records nothing.
+    let mut lockfile = Lockfile::default();
+    let result = (
+        "dummy".to_string(),
+        "1.0.0".to_string(),
+        "github:o/dummy".to_string(),
+        Platform::parse("windows-x64").unwrap(),
+        Err("connection reset".to_string()),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        crate::lockfile::LockResolutionStatus::Optional,
+    );
+    assert!(!apply_lock_result(&mut lockfile, result).unwrap());
+    assert!(lockfile.tools.get("dummy").is_none_or(|tools| {
+        tools
+            .iter()
+            .all(|tool| tool.unsupported_platforms.is_empty())
+    }));
+}
+
+#[test]
+fn unsupported_platform_yields_to_a_resolved_entry() {
+    let url = PlatformInfo {
+        url: Some("https://example.com/dummy.zip".to_string()),
+        checksum: Some("sha256:abc".to_string()),
+        ..Default::default()
+    };
+    let options = BTreeMap::new();
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "linux-x64",
+        url.clone(),
+    );
+    // A platform with an entry is never listed.
+    lockfile.set_unsupported_platform(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "linux-x64",
+    );
+    lockfile.set_unsupported_platform(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "windows-x64",
+    );
+    let tool = &lockfile.tools["dummy"][0];
+    assert_eq!(
+        tool.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+    assert_eq!(
+        lockfile.all_platform_keys(),
+        BTreeSet::from(["linux-x64".to_string(), "windows-x64".to_string()])
+    );
+    // A later build for the platform replaces the marker.
+    lockfile.set_platform_info(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "windows-x64",
+        url,
+    );
+    assert!(lockfile.tools["dummy"][0].unsupported_platforms.is_empty());
+}
+
+#[test]
+fn unsupported_platforms_round_trip() {
+    let toml = r#"
+[[tools.dummy]]
+version = "1.0.0"
+backend = "github:o/dummy"
+unsupported_platforms = ["windows-x64", "linux-x64"]
+
+[tools.dummy."platforms.linux-x64"]
+url = "https://example.com/dummy.tar.gz"
+"#;
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(&path, toml).unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    let tool = &lockfile.tools["dummy"][0];
+    // A platform with an entry is not unsupported.
+    assert_eq!(
+        tool.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+    lockfile.save(&path).unwrap();
+    let written = file::read_to_string(&path).unwrap();
+    assert!(
+        written.contains(r#"unsupported_platforms = ["windows-x64"]"#),
+        "{written}"
+    );
+    assert_eq!(Lockfile::read(&path).unwrap().tools, lockfile.tools);
+}
+
+#[test]
+fn merge_keeps_unsupported_platforms_until_resolved() {
+    let entry = |platforms: &[&str], unsupported: &[&str]| LockfileTool {
+        version: "1.0.0".to_string(),
+        backend: Some("github:o/dummy".to_string()),
+        specifiers: BTreeSet::new(),
+        options: BTreeMap::new(),
+        platforms: platforms
+            .iter()
+            .map(|p| {
+                (
+                    p.to_string(),
+                    PlatformInfo {
+                        url: Some(format!("https://example.com/{p}")),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect(),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: unsupported.iter().map(|p| p.to_string()).collect(),
+    };
+    let existing = vec![entry(&["linux-x64"], &["windows-x64", "macos-arm64"])];
+    // This run resolved macos-arm64 and found no windows build again.
+    let (tools, _) = merge_tool_entries(
+        vec![entry(&["linux-x64", "macos-arm64"], &[])],
+        Some(&existing),
+        |_, _| None,
+    );
+    assert_eq!(tools.len(), 1);
+    assert_eq!(
+        tools[0].platforms.keys().collect::<Vec<_>>(),
+        ["linux-x64", "macos-arm64"]
+    );
+    assert_eq!(
+        tools[0].unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+
+    // windows-x64 now resolves to its own options, such as a `url` for
+    // Windows: the marker was found without them, so it is dropped.
+    let windows_url = BTreeMap::from([("url".to_string(), "https://example.com/w".to_string())]);
+    let (tools, _) = merge_tool_entries(
+        vec![entry(&["linux-x64"], &[])],
+        Some(&existing),
+        |_, platform| (platform.to_key() == "windows-x64").then(|| windows_url.clone()),
+    );
+    assert!(
+        tools
+            .iter()
+            .all(|tool| !tool.unsupported_platforms.contains("windows-x64")),
+        "{tools:?}"
+    );
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool.unsupported_platforms.contains("macos-arm64"))
+    );
+}
+
+#[test]
 fn test_array_format_required() {
     // Test that multi-version (array) format is read correctly
     let multi_version_toml = r#"
@@ -1206,6 +1456,7 @@ fn test_save_uses_array_format() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
 
     lockfile.tools.insert("node".to_string(), vec![tool]);
@@ -1348,6 +1599,7 @@ fn test_options_field_not_serialized_when_empty() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -1379,6 +1631,7 @@ fn test_options_field_serialized_when_present() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -1936,6 +2189,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let mut options = BTreeMap::new();
     options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
@@ -1956,6 +2210,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
         Some(&existing),
         |_, _| Some(options.clone()),
@@ -1983,6 +2238,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     });
     let mut merged = vec![basic_tool("22.0.0", "core:node")];
     preserve_absent_tool_entries(&mut merged, Some(&fragmented), &HashSet::new());
@@ -2025,6 +2281,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let mut new_options = BTreeMap::new();
@@ -2047,6 +2304,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) =
@@ -2094,6 +2352,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2110,6 +2369,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
     let fresh = vec![
@@ -2128,6 +2388,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2144,6 +2405,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
 
@@ -2200,6 +2462,7 @@ fn locked_backend_inherits_only_an_unambiguous_backend() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let aqua_old = entry("1.57.0", "aqua:jdx/hk");
     let aqua_new = entry("1.58.1", "aqua:jdx/hk");
@@ -2225,6 +2488,44 @@ fn locked_backend_inherits_only_an_unambiguous_backend() {
 }
 
 #[test]
+fn switch_backend_does_not_require_artifacts_for_an_entry_with_only_markers() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    std::fs::write(
+        &path,
+        r#"lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+unsupported_platforms = ["linux-arm64"]
+"#,
+    )
+    .unwrap();
+    let mut lockfile = Lockfile::read(&path).unwrap();
+    // The relock still covers linux-arm64: it is one of the lockfile's platforms.
+    assert!(lockfile.all_platform_keys().contains("linux-arm64"));
+    let moved = lockfile.switch_backend(
+        "hk",
+        "aqua:jdx/hk",
+        &BTreeSet::from(["1.58.1".to_string()]),
+        |_| Some("packslip:github.com/jdx/hk".to_string()),
+    );
+    // No artifacts to replace, so the switch does not require the new backend
+    // to record any.
+    assert_eq!(
+        moved,
+        vec![(
+            "1.58.1".to_string(),
+            "packslip:github.com/jdx/hk".to_string(),
+            false
+        )]
+    );
+    let entry = &lockfile.tools_for("hk").unwrap()[0];
+    assert!(entry.unsupported_platforms.is_empty());
+}
+
+#[test]
 fn switch_backend_moves_only_the_given_versions() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mise.lock");
@@ -2242,6 +2543,7 @@ url = "https://example.com/hk-1.57.0"
 [[tools.hk]]
 version = "1.58.1"
 backend = "aqua:jdx/hk"
+unsupported_platforms = ["windows-x64"]
 
 [tools.hk."platforms.linux-x64"]
 checksum = "sha256:abc"
@@ -2281,6 +2583,8 @@ url = "https://example.com/hk-1.58.1-mac"
         Some("packslip:github.com/jdx/hk")
     );
     assert!(switched.platforms.is_empty());
+    // The old backend having no Windows build says nothing about the new one.
+    assert!(switched.unsupported_platforms.is_empty());
     let kept = entries.iter().find(|t| t.version == "1.57.0").unwrap();
     assert_eq!(kept.backend.as_deref(), Some("aqua:jdx/hk"));
     assert!(reread.has_platforms("hk", "1.57.0"));
@@ -2305,6 +2609,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let fresh = vec![LockfileTool {
         version: "1.0.0".to_string(),
@@ -2321,6 +2626,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) =
@@ -2351,6 +2657,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let fresh = vec![LockfileTool {
         version: "26.0.1".to_string(),
@@ -2361,6 +2668,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
@@ -2390,6 +2698,7 @@ fn test_merge_tool_entries_keeps_other_platform_option_variants() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let existing = vec![
         variant("shellcheck-*.zip", "windows-x64", "sha256:WIN"),
@@ -2409,6 +2718,41 @@ fn test_merge_tool_entries_keeps_other_platform_option_variants() {
     assert!(merged.iter().any(|tool| {
         tool.options["asset_pattern"] == "shellcheck-*.tar.xz"
             && tool.platforms["linux-x64"].checksum.as_deref() == Some("sha256:LINUX")
+    }));
+}
+
+#[test]
+fn test_merge_tool_entries_marker_keeps_other_variant_artifact() {
+    let variant = |pattern: &str, platform: &str| LockfileTool {
+        version: "0.11.0".to_string(),
+        backend: Some("github:koalaman/shellcheck".to_string()),
+        specifiers: BTreeSet::new(),
+        options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+        platforms: BTreeMap::from([(
+            platform.to_string(),
+            PlatformInfo {
+                checksum: Some("sha256:ABC".to_string()),
+                ..Default::default()
+            },
+        )]),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: Default::default(),
+    };
+    let existing = vec![variant("shellcheck-*.zip", "windows-x64")];
+    // The linux variant's pattern has no windows asset. That says nothing
+    // about the windows variant, which keeps its artifact.
+    let mut fresh_linux = variant("shellcheck-*.tar.xz", "linux-x64");
+    fresh_linux
+        .unsupported_platforms
+        .insert("windows-x64".to_string());
+
+    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+
+    assert!(merged.iter().any(|tool| {
+        tool.options["asset_pattern"] == "shellcheck-*.zip"
+            && tool.platforms["windows-x64"].checksum.as_deref() == Some("sha256:ABC")
     }));
 }
 
@@ -2434,6 +2778,7 @@ fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let existing = vec![tool(
         "shellcheck-*.old",
@@ -2475,6 +2820,7 @@ fn test_merge_tool_entries_retained_variants_do_not_count_as_fresh() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let existing = vec![
         tool("a", &["windows-x64"]),
@@ -2536,6 +2882,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2552,6 +2899,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
     let fresh = vec![LockfileTool {
@@ -2569,6 +2917,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) =
@@ -2595,6 +2944,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let fresh = vec![LockfileTool {
         version: "1.0.0".to_string(),
@@ -2605,6 +2955,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
 
@@ -2679,6 +3030,7 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2696,6 +3048,7 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
 
@@ -2716,6 +3069,41 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
         "3.4.2",
         "windows-x64",
         &unix_options,
+    ));
+}
+
+#[test]
+fn test_unsupported_platform_does_not_need_auto_lock() {
+    let tools = vec![LockfileTool {
+        version: "0.1.8".to_string(),
+        backend: Some("aqua:reproducible-containers/diffoci".to_string()),
+        specifiers: BTreeSet::new(),
+        options: BTreeMap::new(),
+        platforms: BTreeMap::new(),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: BTreeSet::from(["windows-x64".to_string()]),
+    }];
+
+    assert!(!lockfile_target_needs_auto_lock(
+        &tools,
+        "0.1.8",
+        "windows-x64",
+        &BTreeMap::new(),
+    ));
+    assert!(lockfile_target_needs_auto_lock(
+        &tools,
+        "0.1.8",
+        "linux-x64",
+        &BTreeMap::new(),
+    ));
+    // A new version may have a build, so it is resolved again.
+    assert!(lockfile_target_needs_auto_lock(
+        &tools,
+        "0.1.9",
+        "windows-x64",
+        &BTreeMap::new(),
     ));
 }
 
@@ -2882,6 +3270,7 @@ fn test_merge_lockfile_for_lookup_keeps_request_bindings_enabled() {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: Default::default(),
             }],
         );
         let mut other = Lockfile {
@@ -2959,6 +3348,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
     primary.save(&primary_path).unwrap();
@@ -3108,6 +3498,7 @@ fn test_conda_packages_serialization() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -3199,6 +3590,7 @@ fn test_cleanup_unreferenced_conda_packages() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -3316,6 +3708,7 @@ fn test_retain_tools_by_short_or_backend_preserves_legacy_keyed_entries() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -3945,10 +4338,49 @@ fn test_deferred_resolution_failure_blocks_when_baseline_present() {
         "github:owner/repo",
         &platform,
         "network unavailable",
+        None,
     )
     .expect("failure must fail-closed while the provenance baseline is present");
     assert!(err.contains("could not verify provenance for repo@0.12.0"));
     assert!(err.contains("network unavailable"));
+
+    // A release that has no build for the platform locks no artifact, so it
+    // is recorded as unsupported instead of failing, as `mise lock` does.
+    assert!(
+        deferred_provenance_resolution_error(
+            Some(&tools),
+            "repo",
+            "0.12.0",
+            "github:owner/repo",
+            &platform,
+            "no asset for this platform",
+            Some(&BTreeMap::new()),
+        )
+        .is_none()
+    );
+
+    // An artifact already locked for that platform stays in place, and it
+    // was never verified, so the failure still blocks.
+    let mut with_row = tools.clone();
+    with_row[1].platforms.insert(
+        platform.clone(),
+        PlatformInfo {
+            url: Some("https://example.com/repo-0.12.0.tar.gz".to_string()),
+            ..Default::default()
+        },
+    );
+    assert!(
+        deferred_provenance_resolution_error(
+            Some(&with_row),
+            "repo",
+            "0.12.0",
+            "github:owner/repo",
+            &platform,
+            "no asset for this platform",
+            Some(&BTreeMap::new()),
+        )
+        .is_some()
+    );
 
     // Without a provenance-bearing prior version, a failure stays best-effort.
     let no_baseline = vec![
@@ -3963,6 +4395,7 @@ fn test_deferred_resolution_failure_blocks_when_baseline_present() {
             "github:owner/repo",
             &platform,
             "network unavailable",
+            None,
         )
         .is_none(),
         "no baseline means a resolution failure should remain non-blocking"
@@ -4945,6 +5378,7 @@ fn test_lockfile_write_refuses_credential_queries() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     lockfile
         .tools

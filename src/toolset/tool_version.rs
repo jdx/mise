@@ -3,7 +3,10 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
 use std::{cmp::Ordering, sync::LazyLock};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
@@ -52,6 +55,8 @@ pub struct ToolVersion {
     /// the request itself, not a release, so nothing may record or compare it as one.
     deferred: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
+    /// Platforms mise.lock records this version has no build for.
+    pub lock_unsupported_platforms: BTreeSet<String>,
     pub install_path: Option<PathBuf>,
     /// The HTTP backend should treat `install_path` as the final destination
     /// rather than a `<tool>/<version>` path. Used by install-into.
@@ -170,6 +175,7 @@ impl ToolVersion {
             resolved_from_lockfile: false,
             deferred: false,
             lock_platforms: Default::default(),
+            lock_unsupported_platforms: Default::default(),
             install_path: None,
             install_path_is_exact: false,
             install_path_is_explicit: false,
@@ -402,6 +408,7 @@ impl ToolVersion {
         tv.locked = true;
         tv.resolved_from_lockfile = true;
         tv.lock_platforms = lt.platforms;
+        tv.lock_unsupported_platforms = lt.unsupported_platforms;
         tv.aube_lock = lt.aube;
         tv.uv_lock = lt.uv;
         tv.npm_provenance = lt.provenance;
@@ -2031,6 +2038,7 @@ mod tests {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: Default::default(),
             };
             ToolVersion::from_lockfile(request, lt).request.options()
         };
@@ -2054,6 +2062,7 @@ mod tests {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: Default::default(),
             };
             ToolVersion::from_lockfile(request, lt).request.options()
         };
@@ -2078,6 +2087,7 @@ mod tests {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: Default::default(),
             };
             ToolVersion::from_lockfile(request, lt).request.options()
         };
@@ -2130,6 +2140,7 @@ mod tests {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         };
 
         let tv = ToolVersion::from_lockfile(request, lt);

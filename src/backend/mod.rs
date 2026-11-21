@@ -3366,6 +3366,13 @@ pub trait Backend: Debug + Send + Sync {
         platform_key: &str,
         locked_platform: Option<&PlatformInfo>,
     ) -> Option<eyre::Report> {
+        if locked_platform.is_none() && tv.lock_unsupported_platforms.contains(platform_key) {
+            return Some(eyre!(
+                "{} has no build for platform {}, as mise.lock records; set the tool's `os` option to skip that platform (--locked mode)",
+                tv.style(),
+                platform_key
+            ));
+        }
         if !self.requires_lockfile_url(tv) {
             return None;
         }
