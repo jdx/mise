@@ -177,7 +177,7 @@ pub async fn prepare_exec_secrets(
     if req.keys.is_empty() && !req.all {
         return Ok(None);
     }
-    Settings::get().ensure_experimental("mise secrets")?;
+    Settings::get().ensure_experimental(mise_config::experimental::SECRETS.what)?;
     Settings::ensure_not_safe("mise secrets")?;
     let broker = SecretBroker::default();
     let ctx = crate::task::task_context_builder::TaskContextBuilder::new();

@@ -213,7 +213,7 @@ impl DepsEngine {
             .iter()
             .any(|provider| matches!(provider.applicability(), Applicable))
         {
-            Settings::get().ensure_experimental("deps")?;
+            Settings::get().ensure_experimental(mise_config::experimental::DEPS.what)?;
         }
         Ok(Self { providers })
     }
@@ -335,7 +335,7 @@ impl DepsEngine {
             .iter()
             .any(|provider| matches!(provider.applicability(), Applicable))
         {
-            Settings::get().ensure_experimental("deps")?;
+            Settings::get().ensure_experimental(mise_config::experimental::DEPS.what)?;
         }
         Ok(Self { providers })
     }
@@ -386,7 +386,7 @@ impl DepsEngine {
             .iter()
             .any(|provider| matches!(provider.applicability(), Applicable))
         {
-            Settings::get().ensure_experimental("deps")?;
+            Settings::get().ensure_experimental(mise_config::experimental::DEPS.what)?;
         }
         Ok(Self { providers })
     }

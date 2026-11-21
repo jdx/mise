@@ -175,11 +175,12 @@ pub struct TaskDecl {
     /// allow specific env vars through
     #[serde(default)]
     pub allow_env: Vec<String>,
-    /// experimental ambient env vars preserved under environment denial without affecting the task cache key
+    /// ambient env vars preserved under environment denial without affecting the task cache key
     // Preserve ambient env vars when env inheritance is denied without hashing their values
     #[serde(default)]
+    #[schemars(transform = crate::experimental::TASK_PASS_THROUGH_ENV.labels())]
     pub pass_through_env: Vec<String>,
-    // [experimental] Secret keys this task receives when it starts. Dependencies and
+    // Experimental: secret keys this task receives when it starts. Dependencies and
     // subtasks get only their own lists.
     #[serde(default)]
     #[schemars(with = "Option<TaskSecretsDecl>")]

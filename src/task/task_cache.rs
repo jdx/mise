@@ -258,7 +258,7 @@ impl TaskArtifactCache {
         config: &Arc<Config>,
         dry_run: bool,
     ) -> Result<Option<TaskArtifactCacheBuilder>> {
-        Settings::get().ensure_experimental("task artifact caching")?;
+        Settings::get().ensure_experimental(mise_config::experimental::TASK_CACHE.what)?;
         let root = task_cwd(task, config).await?;
         validate_config(task, &root)?;
         let inputs_read_at = SystemTime::now();
@@ -1065,7 +1065,7 @@ pub fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry
 /// Returns one list per requested task, in the order given. The directory holds the
 /// manifests of every task, so scanning it per task would cost tasks × entries.
 pub fn task_cache_entries_for(tasks: &[(&Task, &Path)]) -> Result<Vec<Vec<TaskCacheEntry>>> {
-    Settings::get().ensure_experimental("task artifact caching")?;
+    Settings::get().ensure_experimental(mise_config::experimental::TASK_CACHE.what)?;
     let mut results = tasks.iter().map(|_| Vec::new()).collect::<Vec<_>>();
     let cache_dir = task_cache_dir();
     if !cache_dir.is_dir() {

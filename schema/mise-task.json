@@ -356,7 +356,7 @@
         },
         "cache": {
           "type": "object",
-          "description": "experimental local artifact cache for declared task outputs",
+          "description": "[experimental] local artifact cache for declared task outputs",
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -669,7 +669,7 @@
         },
         "pass_through_env": {
           "type": "array",
-          "description": "experimental ambient env vars preserved under environment denial without affecting the task cache key",
+          "description": "[experimental] ambient env vars preserved under environment denial without affecting the task cache key",
           "items": {
             "type": "string"
           }
@@ -1815,7 +1815,7 @@
       ]
     },
     "tool_spinel": {
-      "description": "a tool installed with the spinel backend",
+      "description": "[experimental] a tool installed with the spinel backend",
       "oneOf": [
         {
           "description": "version of the tool to install",

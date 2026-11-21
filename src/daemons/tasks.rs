@@ -125,7 +125,8 @@ pub async fn start(
     if crate::env::var_is_true(super::DAEMON_TASK_MARKER) {
         return Ok(());
     }
-    if !gate(Settings::get().experimental, tasks)? {
+    let experimental = Settings::get().experimental_enabled(&mise_config::experimental::DAEMONS);
+    if !gate(experimental, tasks)? {
         return Ok(());
     }
     Settings::ensure_not_safe("starting task daemons")?;

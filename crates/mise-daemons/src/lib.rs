@@ -295,7 +295,7 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
         if entries.is_empty() && groups.is_empty() && file_settings.is_none() {
             continue;
         }
-        if !Settings::get().experimental {
+        if !Settings::get().experimental_enabled(&mise_config::experimental::DAEMONS) {
             if !entries.is_empty() || !groups.is_empty() {
                 warn_once!("{EXPERIMENTAL}; ignoring daemon declarations");
             }
