@@ -1602,15 +1602,24 @@ impl Config {
                 continue;
             }
             // A command can read the tracked configs more than once (an upgrade, then
-            // the reshim after it), and a file that has not changed parses the same.
-            let stamp = std::fs::metadata(&path)
-                .ok()
-                .map(|m| (m.modified().ok(), m.len()));
-            let cached = stamp.and_then(|stamp| {
+            // the reshim after it), and a file that has not changed parses the same,
+            // as long as an idiomatic one is read for the same tools.
+            let backends = match &detection {
+                config_file::ConfigFileDetection::Recognized(
+                    config_file::ConfigFileType::IdiomaticVersion(backends),
+                ) => backends.iter().map(|b| b.id().to_string()).collect(),
+                _ => vec![],
+            };
+            let stamp = std::fs::metadata(&path).ok().map(|m| TrackedStamp {
+                modified: m.modified().ok(),
+                len: m.len(),
+                backends,
+            });
+            let cached = stamp.as_ref().and_then(|stamp| {
                 let parsed = TRACKED_PARSES.lock().unwrap();
                 parsed
                     .get(&path)
-                    .filter(|(at, _)| *at == stamp)
+                    .filter(|(at, _)| at == stamp)
                     .map(|(_, parsed)| parsed.clone())
             });
             let mut parsed = match cached {
@@ -9146,12 +9155,20 @@ fn included_task_definitions(
     tasks
 }
 
-/// The tracked configs this process has parsed, by path, with the modification time and
-/// size they were read at.
+/// The tracked configs this process has parsed, by path, with the state they were read in.
 type TrackedParse = (
-    (Option<std::time::SystemTime>, u64),
+    TrackedStamp,
     std::result::Result<Arc<dyn ConfigFile>, TrackedFailure>,
 );
+
+/// What a tracked config's parse depends on: the file, and for an idiomatic version
+/// file the tools detection let read it.
+#[derive(PartialEq)]
+struct TrackedStamp {
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+    backends: Vec<String>,
+}
 
 /// A tracked config that failed to parse, and whether this process has reported it.
 #[derive(Clone)]
