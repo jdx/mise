@@ -411,21 +411,38 @@ pub struct Picker {
 async fn picker_tasks(config: &Arc<Config>, picker: Picker) -> Result<Arc<BTreeMap<String, Task>>> {
     let ctx = picker.all.then(TaskLoadContext::all);
     let tasks = config.tasks_with_context(ctx.as_ref()).await?;
-    let keep = |t: &Task| match picker.globals {
-        GlobalTasks::Include => true,
-        GlobalTasks::Only => t.global,
-        GlobalTasks::Exclude => !t.global,
+    let tasks = match picker.globals {
+        GlobalTasks::Include => tasks,
+        GlobalTasks::Only => Arc::new(
+            tasks
+                .iter()
+                .filter(|(_, t)| t.global)
+                .map(|(k, t)| (k.clone(), t.clone()))
+                .collect(),
+        ),
+        GlobalTasks::Exclude => Arc::new(
+            tasks
+                .iter()
+                .filter(|(_, t)| !t.global)
+                .map(|(k, t)| (k.clone(), t.clone()))
+                .collect(),
+        ),
     };
-    if picker.globals == GlobalTasks::Include {
-        return Ok(tasks);
-    }
-    Ok(Arc::new(
-        tasks
-            .iter()
-            .filter(|(_, t)| keep(t))
-            .map(|(k, t)| (k.clone(), t.clone()))
-            .collect(),
-    ))
+    let which = match picker.globals {
+        GlobalTasks::Include => "",
+        GlobalTasks::Only => "global ",
+        GlobalTasks::Exclude => "non-global ",
+    };
+    ensure!(
+        !tasks.is_empty(),
+        "no {which}tasks defined. see {url}",
+        url = style::eunderline("https://mise.jdx.dev/tasks/")
+    );
+    ensure!(
+        tasks.values().any(|t| !t.hide),
+        "no {which}tasks to pick from; every task is hidden"
+    );
+    Ok(tasks)
 }
 
 /// Prompt the user to check several tasks to run, for `mise run --multi`
@@ -435,17 +452,8 @@ async fn prompt_for_tasks(config: &Arc<Config>, picker: Picker) -> Result<Vec<Ta
         "--multi requires an interactive terminal"
     );
     let tasks = picker_tasks(config, picker).await?;
-    ensure!(
-        !tasks.is_empty(),
-        "no tasks defined. see {url}",
-        url = style::eunderline("https://mise.jdx.dev/tasks/")
-    );
     let theme = crate::ui::theme::get_theme();
     let visible = tasks.values().filter(|t| !t.hide).collect_vec();
-    ensure!(
-        !visible.is_empty(),
-        "no tasks to pick from; every task is hidden"
-    );
     let mut s = MultiSelect::new("Tasks")
         .description("Select the tasks to run")
         .min(1)
@@ -484,11 +492,6 @@ async fn prompt_for_tasks(config: &Arc<Config>, picker: Picker) -> Result<Vec<Ta
 /// Prompt the user to select a task interactively
 async fn prompt_for_task(config: &Arc<Config>, picker: Picker) -> Result<Task> {
     let tasks = picker_tasks(config, picker).await?;
-    ensure!(
-        !tasks.is_empty(),
-        "no tasks defined. see {url}",
-        url = style::eunderline("https://mise.jdx.dev/tasks/")
-    );
     let theme = crate::ui::theme::get_theme();
     let mut s = Select::new("Tasks")
         .description("Select a task to run")
