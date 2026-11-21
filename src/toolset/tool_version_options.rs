@@ -17,6 +17,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "minimum_release_age",
     "version_order",
     "auto_update",
+    "bump",
 ];
 
 /// Options that hold nothing but credentials: the http backend's `headers`
@@ -572,6 +573,13 @@ impl ToolOptions {
             return self.auto_update.as_deref();
         }
         self.opts.get(key).and_then(|v| v.as_str())
+    }
+
+    /// False when the tool sets `bump = false`, which keeps it out of `--bump`.
+    pub fn bump_enabled(&self) -> bool {
+        self.opts
+            .get("bump")
+            .is_none_or(|v| crate::backend::options::bool_value_or_default("bump", v, true))
     }
 
     pub fn minimum_release_age(&self) -> Option<&str> {

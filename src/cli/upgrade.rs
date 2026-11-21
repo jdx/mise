@@ -322,6 +322,8 @@ impl Upgrade {
                 OutdatedSelection {
                     filter_tools,
                     exclude_tools,
+                    named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
+                    honor_bump_option: true,
                     show_progress: self.show_resolution_progress(),
                     select: &|tv| !unrun.contains(&tv.request),
                 },
@@ -350,6 +352,8 @@ impl Upgrade {
                     OutdatedSelection {
                         filter_tools,
                         exclude_tools,
+                        named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
+                        honor_bump_option: true,
                         show_progress: false,
                         select: &|tv| needed.contains(&tv.request),
                     },
@@ -603,6 +607,10 @@ impl Upgrade {
                     if version != "latest" && !version.chars().any(|c| c.is_ascii_digit()) {
                         continue;
                     }
+                    // `bump = false` keeps a tool out of a bare sweep, pinning included.
+                    if self.tool.is_empty() && !tv.request.options().bump_enabled() {
+                        continue;
+                    }
                     if self
                         .exclude
                         .iter()
@@ -794,6 +802,8 @@ impl Upgrade {
                         OutdatedSelection {
                             filter_tools,
                             exclude_tools,
+                            named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
+                            honor_bump_option: false,
                             show_progress: false,
                             select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
                         },
@@ -844,8 +854,20 @@ impl Upgrade {
                 if hidden > 0 {
                     updates.push_str(&format!("\n  … and {hidden} more"));
                 }
+                let hint = if bump_outdated
+                    .iter()
+                    .any(|o| !o.tool_request.options().bump_enabled())
+                {
+                    // A tool that sets `bump = false` is bumped only when named.
+                    let names = bump_outdated.iter().map(|o| o.name.as_str()).join(" ");
+                    format!(
+                        "Run `mise outdated --bump {names}` to view all, or `mise upgrade --bump {names}` to update the configuration and upgrade."
+                    )
+                } else {
+                    "Run `mise outdated --bump` to view all, or `mise upgrade --bump` to update the configuration and upgrade.".to_string()
+                };
                 info!(
-                    "Newer versions are available but do not match the configured version ranges:\n{updates}\nRun `mise outdated --bump` to view all, or `mise upgrade --bump` to update the configuration and upgrade."
+                    "Newer versions are available but do not match the configured version ranges:\n{updates}\n{hint}"
                 );
             }
         } else {
@@ -1001,7 +1023,19 @@ impl Upgrade {
             }
             return Ok(());
         }
-        let stuck = report
+        // A tool with `bump = false` stays in its range under `--bump`, unless named.
+        let opted_out = |ba: &BackendArg, version: &str| {
+            self.bump
+                && self.tool.is_empty()
+                && ts.versions.iter().any(|(b, tvl)| {
+                    backend_args_match(b, ba)
+                        && tvl
+                            .versions
+                            .iter()
+                            .any(|tv| tv.version == version && !tv.request.options().bump_enabled())
+                })
+        };
+        let (kept_in_range, stuck): (Vec<_>, Vec<_>) = report
             .findings
             .iter()
             .filter(|f| {
@@ -1013,9 +1047,21 @@ impl Upgrade {
                         && version.as_deref() == Some(f.version.as_str())
                 })
             })
-            .map(|f| format!("{}@{}", f.tool, f.version))
-            .unique()
-            .collect_vec();
+            .partition(|f| opted_out(&f.ba, &f.version));
+        let name = |findings: Vec<&crate::audit::Finding>| {
+            findings
+                .into_iter()
+                .map(|f| format!("{}@{}", f.tool, f.version))
+                .unique()
+                .collect_vec()
+        };
+        let (kept_in_range, stuck) = (name(kept_in_range), name(stuck));
+        if !kept_in_range.is_empty() {
+            warn!(
+                "known vulnerabilities in tools with `bump = false`, which stay in the configured range: {}\nName the tool to upgrade past it, such as `mise upgrade --vulnerable --bump <tool>`.",
+                kept_in_range.join(", ")
+            );
+        }
         if !stuck.is_empty() {
             let (range, hint) = if self.bump {
                 ("", "")
@@ -1855,6 +1901,14 @@ impl Upgrade {
         }
     }
 
+    /// Whether `--bump` applies to this tool: a `bump = false` tool stays in its range
+    /// unless it is named on the command line.
+    fn bump_applies(&self, tv: &ToolVersion) -> bool {
+        self.bump
+            && (self.tool.iter().any(|t| t.ba.as_ref() == tv.ba())
+                || tv.request.options().bump_enabled())
+    }
+
     async fn latest_for_upgrade(
         &self,
         config: &Arc<Config>,
@@ -1862,7 +1916,7 @@ impl Upgrade {
         opts: &ResolveOptions,
     ) -> Result<Option<String>> {
         let backend = tv.backend()?;
-        if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+        if self.bump_applies(tv) || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             backend
                 .latest_version(
@@ -1883,7 +1937,9 @@ impl Upgrade {
         opts: &ResolveOptions,
     ) -> Result<Option<String>> {
         let backend = tv.backend()?;
-        let query = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+        let query = if self.bump_applies(tv)
+            || (opts.inactive && tv.request.source() == &ToolSource::Unknown)
+        {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             prefixed_latest_query(&prefix, &prefix_version)
         } else {
