@@ -1575,9 +1575,13 @@ impl Lockfile {
             entry.backend.as_deref() == Some(from) && versions.contains(&entry.version)
         }) {
             if let Some(backend) = to(&entry.version) {
-                let had_platforms = entry.platforms.values().any(|p| !p.is_empty());
+                // A platform the old backend had no build for was locked too,
+                // so the relock tries it again on the new backend.
+                let had_platforms = entry.platforms.values().any(|p| !p.is_empty())
+                    || !entry.unsupported_platforms.is_empty();
                 entry.backend = Some(backend.clone());
                 entry.platforms.clear();
+                entry.unsupported_platforms.clear();
                 // Dependency graphs are recorded per backend too.
                 entry.aube = None;
                 entry.uv = None;

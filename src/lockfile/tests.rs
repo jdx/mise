@@ -2505,6 +2505,7 @@ url = "https://example.com/hk-1.57.0"
 [[tools.hk]]
 version = "1.58.1"
 backend = "aqua:jdx/hk"
+unsupported_platforms = ["windows-x64"]
 
 [tools.hk."platforms.linux-x64"]
 checksum = "sha256:abc"
@@ -2544,6 +2545,8 @@ url = "https://example.com/hk-1.58.1-mac"
         Some("packslip:github.com/jdx/hk")
     );
     assert!(switched.platforms.is_empty());
+    // The old backend having no Windows build says nothing about the new one.
+    assert!(switched.unsupported_platforms.is_empty());
     let kept = entries.iter().find(|t| t.version == "1.57.0").unwrap();
     assert_eq!(kept.backend.as_deref(), Some("aqua:jdx/hk"));
     assert!(reread.has_platforms("hk", "1.57.0"));
