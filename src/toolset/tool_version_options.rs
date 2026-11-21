@@ -576,7 +576,7 @@ impl ToolOptions {
     }
 
     /// False when the tool sets `bump = false`, which keeps it out of `--bump`.
-    pub(crate) fn bump_enabled(&self) -> bool {
+    pub fn bump_enabled(&self) -> bool {
         self.opts
             .get("bump")
             .is_none_or(|v| crate::backend::options::bool_value_or_default("bump", v, true))

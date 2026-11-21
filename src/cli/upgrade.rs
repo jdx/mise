@@ -600,6 +600,10 @@ impl Upgrade {
                     if version != "latest" && !version.chars().any(|c| c.is_ascii_digit()) {
                         continue;
                     }
+                    // `bump = false` keeps a tool out of a bare sweep, pinning included.
+                    if self.tool.is_empty() && !tv.request.options().bump_enabled() {
+                        continue;
+                    }
                     if self
                         .exclude
                         .iter()
@@ -998,7 +1002,16 @@ impl Upgrade {
             }
             return Ok(());
         }
-        let stuck = report
+        // A tool with `bump = false` stays in its range under `--bump`, unless named.
+        let opted_out = |ba: &BackendArg| {
+            self.bump
+                && self.tool.is_empty()
+                && ts.versions.iter().any(|(b, tvl)| {
+                    backend_args_match(b, ba)
+                        && tvl.requests.iter().any(|r| !r.options().bump_enabled())
+                })
+        };
+        let (kept_in_range, stuck): (Vec<_>, Vec<_>) = report
             .findings
             .iter()
             .filter(|f| {
@@ -1010,9 +1023,21 @@ impl Upgrade {
                         && version.as_deref() == Some(f.version.as_str())
                 })
             })
-            .map(|f| format!("{}@{}", f.tool, f.version))
-            .unique()
-            .collect_vec();
+            .partition(|f| opted_out(&f.ba));
+        let name = |findings: Vec<&crate::audit::Finding>| {
+            findings
+                .into_iter()
+                .map(|f| format!("{}@{}", f.tool, f.version))
+                .unique()
+                .collect_vec()
+        };
+        let (kept_in_range, stuck) = (name(kept_in_range), name(stuck));
+        if !kept_in_range.is_empty() {
+            warn!(
+                "known vulnerabilities in tools with `bump = false`, which stay in the configured range: {}\nName the tool to upgrade past it, such as `mise upgrade --vulnerable --bump <tool>`.",
+                kept_in_range.join(", ")
+            );
+        }
         if !stuck.is_empty() {
             let (range, hint) = if self.bump {
                 ("", "")

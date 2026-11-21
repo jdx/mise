@@ -45,3 +45,12 @@ cat <<'CONFIG' >mise.toml
 bumptest = "1"
 CONFIG
 assert_contains "mise outdated --bump" "2.0.0"
+
+# `--pin` does not rewrite a tool that opted out either
+cat <<'CONFIG' >mise.toml
+[tools]
+bumptest = { version = "1", bump = false }
+CONFIG
+before=$(cat mise.toml)
+mise upgrade --bump --pin
+assert "cat mise.toml" "$before"
