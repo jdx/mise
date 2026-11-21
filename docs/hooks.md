@@ -326,16 +326,16 @@ echo "Installed: $MISE_INSTALLED_TOOLS"
 ```
 
 ```text
-Installed: [{"name":"node","version":"24.4.1","requested_version":"24","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node/24.4.1"}]
+Installed: [{"name":"node","version":"24.4.1","requested_version":"24","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node-k3q7x2ma"}]
 ```
 
-| Field               | Meaning                                                                                 | Example                                    |
-| ------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `name`              | The tool's short name                                                                   | `node`                                     |
-| `version`           | The version that was installed                                                          | `24.4.1`                                   |
-| `requested_version` | What was asked for, before resolution; the same as `version` for a fully pinned request | `latest`, `24`, `lts`, `ref:main`          |
-| `backend`           | The backend that installed it, without options or URL credentials                       | `core:node`, `npm:prettier`                |
-| `install_path`      | The directory of this installation, never a floating link such as `latest`              | `~/.local/share/mise/installs/node/24.4.1` |
+| Field               | Meaning                                                                                 | Example                                      |
+| ------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `name`              | The tool's short name                                                                   | `node`                                       |
+| `version`           | The version that was installed                                                          | `24.4.1`                                     |
+| `requested_version` | What was asked for, before resolution; the same as `version` for a fully pinned request | `latest`, `24`, `lts`, `ref:main`            |
+| `backend`           | The backend that installed it, without options or URL credentials                       | `core:node`, `npm:prettier`                  |
+| `install_path`      | The installation's own directory, never a link such as `installs/node/24` or `latest`   | `~/.local/share/mise/installs/node-k3q7x2ma` |
 
 `requested_version` is normally the string from the config or the command line.
 Ref selectors are normalized to their `:` form, so `ref-main` is reported as

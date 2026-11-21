@@ -10,13 +10,17 @@ Describe 'the install marker file names itself when it cannot be written' {
     #
     # `file::create` wraps it with the path. This does not make `nul` a usable version, and
     # `create_dir_all` still answers Ok for it; only the report changes.
+    #
+    # The legacy install layout, because only it names the marker's directory after the version.
+    # The identity layout keys it by the installation directory (`<CACHE>/<short>/jq-<hash>/`), so
+    # `nul` never becomes part of that path and the install goes on to the registry's answer.
 
     BeforeAll {
         $script:OriginalDir = Get-Location
-        # All four, every time. Pester runs every suite in one process, so an inherited value has to
+        # All of them, every time. Pester runs every suite in one process, so an inherited value has to
         # come back afterwards rather than simply being removed.
         $script:Saved = @{}
-        foreach ($v in 'MISE_DATA_DIR', 'MISE_CONFIG_DIR', 'MISE_CACHE_DIR', 'MISE_TRUSTED_CONFIG_PATHS') {
+        foreach ($v in 'MISE_DATA_DIR', 'MISE_CONFIG_DIR', 'MISE_CACHE_DIR', 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_INSTALL_LAYOUT') {
             $script:Saved[$v] = [Environment]::GetEnvironmentVariable($v, 'Process')
         }
 
@@ -33,6 +37,7 @@ Describe 'the install marker file names itself when it cannot be written' {
         $env:MISE_CONFIG_DIR = $cfg
         $env:MISE_CACHE_DIR = $cache
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:Root
+        $env:MISE_INSTALL_LAYOUT = 'legacy'
         Set-Location $proj
         '' | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
 

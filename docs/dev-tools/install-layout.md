@@ -3,44 +3,37 @@ description: Name each tool installation by what it is, so shorthands share one 
 socialDescription: Name each installation by what it is, so variants of one version coexist.
 ---
 
-# Identity install layout <Badge type="warning" text="experimental" />
+# Identity install layout
 
-By default, mise installs a tool into `installs/<tool>/<version>`, the legacy
+mise installs each tool into its own directory, `installs/<label>-<hash>/`,
+named by what was installed: the backend, version, platform, and the options
+that change what gets installed. The familiar `installs/<tool>/<version>` path
+stays, as a link to that directory.
+
+Before this layout, every tool went into `installs/<tool>/<version>`, the legacy
 layout. That path cannot say which backend produced the files, which platform
 build they are, or which install options were used. So `age` and
-`aqua:FiloSottile/age` are two separate downloads, and two variants of one
-version overwrite each other.
+`aqua:FiloSottile/age` were two separate downloads, and two variants of one
+version overwrote each other.
 
-The identity layout gives each installation its own directory,
-`installs/<label>-<hash>/`, named by what was installed. The familiar
-`installs/<tool>/<version>` path stays, as a link to that directory.
-
-::: warning Experimental
-The identity layout is on whenever `experimental = true`. Set
-`install_layout = "legacy"` to keep the old layout with other experimental
-features on. Directory names, receipts, and the catalog format can change
-between releases while the layout is experimental. Files that tools generate
-while installing, such as virtual environments and shebangs, record the hashed
-path. Try it where reinstalling tools is cheap, and read
-[Turn it off or downgrade](#downgrading-and-compatibility) first.
+::: warning Opting out is deprecated
+`install_layout = "legacy"` keeps installing into `installs/<tool>/<version>`.
+It is deprecated and will be removed. Files that tools generate while
+installing, such as virtual environments and shebangs, record the hashed path;
+read [Turn it off or downgrade](#downgrading-and-compatibility) before going
+back to an older mise.
 :::
 
 ## Quick start
 
-Turn on experimental features in `mise.toml`, and the layout comes with them:
+Nothing needs to be set:
 
 ```toml [mise.toml]
-[settings]
-experimental = true
-# install_layout = "legacy"  # to keep installs/<tool>/<version>
-
 [tools]
 age = "1.2.1"
 ```
 
-To turn it on everywhere, run `mise settings experimental=true` or export
-`MISE_EXPERIMENTAL=1`. See
-[`install_layout`](/configuration/settings.html#install_layout).
+See [`install_layout`](/configuration/settings.html#install_layout).
 
 Install the tool and see where it went:
 
@@ -493,10 +486,9 @@ The identity layout works the same way on Windows, with these differences:
 
 ## Turn it off or downgrade {#downgrading-and-compatibility}
 
-To turn the identity layout off, set `install_layout = "legacy"` (or turn off
-`experimental`). mise then installs new versions into
-`installs/<tool>/<version>` again and leaves hashed directories where they are.
-While it is off:
+To turn the identity layout off, set `install_layout = "legacy"` (deprecated).
+mise then installs new versions into `installs/<tool>/<version>` again and
+leaves hashed directories where they are. While it is off:
 
 - `mise where` and `mise exec` still reach a hashed installation through its
   version link, and `mise ls` shows it as a symlinked version.

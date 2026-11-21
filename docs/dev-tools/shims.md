@@ -270,7 +270,7 @@ which node
 
 The path can go through a link named after the request, such as `node/24`,
 rather than the resolved version. See
-[install layout](/dev-tools/install-layout.html) for the experimental layout's
+[install layout](/dev-tools/install-layout.html) for the identity layout's
 paths.
 
 ### Checking whether a tool is installed {#command-v}
