@@ -6212,6 +6212,10 @@ pub trait Backend: Debug + Send + Sync {
                 rmdir(&tv.download_path())?;
             }
             rmdir(&tv.cache_path())?;
+        } else if !dryrun {
+            for entry in external_plugin_cache::install_entries(tv) {
+                let _ = remove_all_with_warning(&entry);
+            }
         }
         if dryrun {
             if !would_remove.is_empty() {

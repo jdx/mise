@@ -15,9 +15,11 @@ mise install tiny@1.1.0
 # two copies, and the system one must still be found.
 cp -a "$system_installs/tiny/1.0.0" "$user_installs/tiny/1.0.0"
 # The version's cache belongs to it, not to one copy, so it stays while either
-# copy does.
+# copy does. A plugin's cached environment can name the removed copy's path,
+# so that entry goes.
 user_cache="$MISE_CACHE_DIR/tiny/1.0.0"
 mkdir -p "$user_cache"
+touch "$user_cache/exec_env.msgpack.z"
 mise reshim --system
 assert "test -x '$system_shims/dummy'"
 
@@ -53,6 +55,7 @@ assert_directory_exists "$system_installs/tiny/2.1.0"
 assert_directory_exists "$user_installs/tiny/1.0.0"
 assert_directory_exists "$user_installs/tiny/1.1.0"
 assert_directory_exists "$user_cache"
+assert_fail "test -e '$user_cache/exec_env.msgpack.z'"
 output="$(mise prune --dry-run --tools 2>&1)"
 [[ $output == *"mise/tiny/1.0.0"* ]] || fail "cache of the last copy was not in prune plan: $output"
 assert "readlink '$system_installs/tiny/latest'" "./2.1.0"
