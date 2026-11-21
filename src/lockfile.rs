@@ -5306,9 +5306,10 @@ where
     let fresh_platforms: HashSet<(String, String)> = by_key
         .iter()
         .flat_map(|((version, _), tool)| {
+            // A no-build marker only covers the options it was tried with, so
+            // it does not replace another variant's artifact for that platform.
             tool.platforms
                 .keys()
-                .chain(&tool.unsupported_platforms)
                 .map(|platform| (version.clone(), platform.clone()))
         })
         .collect();

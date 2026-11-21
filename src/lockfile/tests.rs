@@ -2722,6 +2722,41 @@ fn test_merge_tool_entries_keeps_other_platform_option_variants() {
 }
 
 #[test]
+fn test_merge_tool_entries_marker_keeps_other_variant_artifact() {
+    let variant = |pattern: &str, platform: &str| LockfileTool {
+        version: "0.11.0".to_string(),
+        backend: Some("github:koalaman/shellcheck".to_string()),
+        specifiers: BTreeSet::new(),
+        options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+        platforms: BTreeMap::from([(
+            platform.to_string(),
+            PlatformInfo {
+                checksum: Some("sha256:ABC".to_string()),
+                ..Default::default()
+            },
+        )]),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: Default::default(),
+    };
+    let existing = vec![variant("shellcheck-*.zip", "windows-x64")];
+    // The linux variant's pattern has no windows asset. That says nothing
+    // about the windows variant, which keeps its artifact.
+    let mut fresh_linux = variant("shellcheck-*.tar.xz", "linux-x64");
+    fresh_linux
+        .unsupported_platforms
+        .insert("windows-x64".to_string());
+
+    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+
+    assert!(merged.iter().any(|tool| {
+        tool.options["asset_pattern"] == "shellcheck-*.zip"
+            && tool.platforms["windows-x64"].checksum.as_deref() == Some("sha256:ABC")
+    }));
+}
+
+#[test]
 fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
     let tool = |pattern: &str, platforms: &[(&str, &str)]| LockfileTool {
         version: "0.11.0".to_string(),
