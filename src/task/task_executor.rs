@@ -2340,13 +2340,16 @@ impl TaskExecutor {
         let output = self.output(Some(task));
         cmd.with_pass_signals();
 
-        // Only tee output into the OTLP log pipeline when this process will
-        // actually capture it. Under `raw` the child gets the terminal
-        // directly and a fully silenced task discards both streams, so the
-        // observers would never fire — and the claim path would then invite a
-        // nested `mise run` to take over a stream nobody is reading.
+        // Only tee output into the OTLP log pipeline when it is meant to be
+        // seen and this process reads it. Under `raw` the child gets the
+        // terminal directly, so the observers would never fire and the claim
+        // path would invite a nested `mise run` to take over a stream nobody
+        // is reading. The silent style is not exported either, whatever
+        // selected it (`silent = true`, `--silent`, `--output silent`, a
+        // task's `output`, or the `task.output` setting): the task cache and
+        // the task log still pipe its streams, and the observers would fire.
         let forwards_output =
-            self.output_forwarder.is_some() && !raw && !task.silent.suppresses_both();
+            self.output_forwarder.is_some() && !raw && output != TaskOutput::Silent;
         // Holds the claim directory for the lifetime of the command; dropping
         // it cleans up. See `otel::log_claim` for the hand-off protocol.
         // Failing to create it only costs the nested-run hand-off, which is no
@@ -2901,7 +2904,7 @@ impl TaskExecutor {
             return Ok(());
         }
         if !items.is_empty() {
-            Settings::get().ensure_experimental("mise secrets")?;
+            Settings::get().ensure_experimental(mise_config::experimental::SECRETS.what)?;
             Settings::ensure_not_safe("mise secrets")?;
         }
         if !self.dry_run && !privilege_problem {

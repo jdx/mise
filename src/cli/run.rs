@@ -2225,7 +2225,7 @@ impl Run {
         use crate::file;
         use crate::ui;
         if self.task_cache.enabled() && task.cache.as_ref().is_some_and(|cache| cache.enabled) {
-            Settings::get().ensure_experimental("task artifact caching")?;
+            Settings::get().ensure_experimental(mise_config::experimental::TASK_CACHE.what)?;
         }
         if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled) {
             deprecated_at!(
@@ -2236,7 +2236,8 @@ impl Run {
             );
         }
         if !task.pass_through_env.is_empty() {
-            Settings::get().ensure_experimental("task environment pass-through")?;
+            Settings::get()
+                .ensure_experimental(mise_config::experimental::TASK_PASS_THROUGH_ENV.what)?;
         }
         if let Some(path) = &task.file
             && path.exists()

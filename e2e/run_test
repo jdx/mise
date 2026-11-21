@@ -163,7 +163,7 @@ within_isolated_env() {
         MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
         MISE_USE_VERSIONS_HOST_TRACK=0 \
         MISE_YES=1 \
-        PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
+        PATH="$MISE_BIN_DIR:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
         ROOT="$ROOT" \
         RUSTUP_HOME="$RUSTUP_HOME" \
         RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
@@ -291,6 +291,12 @@ run_test() {
     err "/tmp/mise.toml exists and will interfere with e2e tests. Please remove it."
     return 1
   fi
+
+  # The tests call `mise` by name, so the binary under test has to be the first
+  # `mise` on PATH.
+  local mise_bin
+  mise_bin="$(resolve_mise_bin)" || return 1
+  MISE_BIN_DIR="$(cd "$(dirname "$mise_bin")" && pwd)"
 
   setup_isolated_env
   create_isolated_env

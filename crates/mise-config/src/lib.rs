@@ -22,6 +22,7 @@ pub mod doctor;
 pub mod dotfiles;
 pub mod env;
 pub mod env_value;
+pub mod experimental;
 pub mod firewall;
 pub mod history;
 pub mod hooks;

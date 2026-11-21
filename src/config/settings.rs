@@ -1741,6 +1741,14 @@ impl SettingsInternal for Settings {
                 }
                 SettingsTrustPolicy::GlobalOnly => crate::config::is_global_config(path),
             })
+            // A global config may be a `.tool-versions` file, which holds no settings
+            // and is not TOML.
+            .filter(|path| {
+                !matches!(
+                    super::config_file::detect_config_file_type_by_filename(path),
+                    Some(super::config_file::ConfigFileType::ToolVersions)
+                )
+            })
             .filter_map(|path| match parse_settings_file_once(&path) {
                 Ok(config) => Some(config),
                 Err(err) => {

@@ -188,7 +188,7 @@ pub enum EnvDirective {
     Path(String, EnvDirectiveOptions),
     /// run a bash script and apply the resulting env diff
     Source(String, EnvDirectiveOptions),
-    /// [experimental] age-encrypted value
+    /// age-encrypted value
     Age {
         key: String,
         value: String,

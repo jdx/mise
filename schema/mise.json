@@ -3887,7 +3887,7 @@
         },
         "cache": {
           "type": "object",
-          "description": "default experimental local artifact cache configuration for eligible tasks with sources and explicit outputs",
+          "description": "[experimental] default local artifact cache configuration for eligible tasks with sources and explicit outputs",
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -3945,28 +3945,28 @@
         },
         "global_env": {
           "type": "array",
-          "description": "experimental ambient environment variable names added to every enabled task cache key in this config scope",
+          "description": "[experimental] ambient environment variable names added to every enabled task cache key in this config scope",
           "items": {
             "type": "string"
           }
         },
         "global_pass_through_env": {
           "type": "array",
-          "description": "experimental ambient environment variable names preserved under environment denial without affecting task cache keys",
+          "description": "[experimental] ambient environment variable names preserved under environment denial without affecting task cache keys",
           "items": {
             "type": "string"
           }
         },
         "global_inputs": {
           "type": "array",
-          "description": "experimental config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>",
+          "description": "[experimental] config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>",
           "items": {
             "type": "string"
           }
         },
         "input_groups": {
           "type": "object",
-          "description": "experimental reusable config-root-relative source groups referenced with @group:<name>",
+          "description": "[experimental] reusable config-root-relative source groups referenced with @group:<name>",
           "additionalProperties": {
             "type": "array",
             "description": "source patterns in this group, relative to the config root; may reference other groups with @group:<name>",
@@ -4345,7 +4345,7 @@
         },
         "cache": {
           "type": "object",
-          "description": "experimental local artifact cache for declared task outputs",
+          "description": "[experimental] local artifact cache for declared task outputs",
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -4658,7 +4658,7 @@
         },
         "pass_through_env": {
           "type": "array",
-          "description": "experimental ambient env vars preserved under environment denial without affecting the task cache key",
+          "description": "[experimental] ambient env vars preserved under environment denial without affecting the task cache key",
           "items": {
             "type": "string"
           }
@@ -6567,7 +6567,7 @@
       }
     },
     "tool_spinel": {
-      "description": "a tool installed with the spinel backend",
+      "description": "[experimental] a tool installed with the spinel backend",
       "oneOf": [
         {
           "description": "version of the tool to install",
@@ -10444,7 +10444,7 @@
         },
         "groups": {
           "type": "object",
-          "description": "[experimental] Linux groups that bootstrap creates or removes, keyed by group name",
+          "description": "Linux groups that bootstrap creates or removes, keyed by group name",
           "additionalProperties": {
             "type": "object",
             "description": "local Linux group that bootstrap creates, updates, or removes",
@@ -10494,7 +10494,7 @@
         },
         "users": {
           "type": "object",
-          "description": "[experimental] Linux users that bootstrap creates or removes, keyed by user name",
+          "description": "Linux users that bootstrap creates or removes, keyed by user name",
           "additionalProperties": {
             "type": "object",
             "description": "local Linux user that bootstrap creates, updates, or removes",
@@ -11057,7 +11057,7 @@
           ]
         },
         "^spinel:": {
-          "description": "a tool installed with the spinel backend",
+          "description": "[experimental] a tool installed with the spinel backend",
           "oneOf": [
             {
               "type": "array",
@@ -11166,7 +11166,7 @@
     },
     "daemons": {
       "type": "object",
-      "description": "Experimental project daemons: custom pitchfork commands or managed presets.",
+      "description": "[experimental] Project daemons: custom pitchfork commands or managed presets.",
       "additionalProperties": {
         "description": "A daemon: a version request for the preset of the same name, or a table describing a custom command, task, preset, another project's daemon, or a shared provider.",
         "oneOf": [
@@ -11675,7 +11675,7 @@
     },
     "daemon_providers": {
       "type": "object",
-      "description": "Experimental shared servers owned by the user. Only allowed in global configuration.",
+      "description": "[experimental] Shared servers owned by the user. Only allowed in global configuration.",
       "additionalProperties": {
         "type": "object",
         "description": "A PostgreSQL, CockroachDB or NATS server that every checkout shares, with a separate database or NATS account for each.",
@@ -11752,7 +11752,7 @@
     },
     "daemons_settings": {
       "type": "object",
-      "description": "Experimental project-wide daemon options.",
+      "description": "[experimental] Project-wide daemon options.",
       "additionalProperties": false,
       "properties": {
         "namespace": {
@@ -11768,7 +11768,7 @@
     },
     "daemon_groups": {
       "type": "object",
-      "description": "Experimental named groups of project daemons. Members are daemon names or other group names declared in the same project.",
+      "description": "[experimental] Named groups of project daemons. Members are daemon names or other group names declared in the same project.",
       "additionalProperties": {
         "oneOf": [
           {

@@ -6117,7 +6117,7 @@ async fn apply_bootstrap_settings(
         debug!("bootstrap: no [bootstrap.settings] configured, skipping");
         return Ok(vec![]);
     }
-    Settings::get().ensure_experimental("bootstrap settings plugins")?;
+    Settings::get().ensure_experimental(mise_config::experimental::BOOTSTRAP_SETTINGS.what)?;
     info!("bootstrap: settings");
     let mut follow_up = vec![];
     for section in sections {
@@ -6179,7 +6179,8 @@ impl BootstrapSettingsStatus {
         let config = Config::get().await?;
         let sections = selected_settings_sections(&config, &self.plugins)?;
         if !sections.is_empty() {
-            Settings::get().ensure_experimental("bootstrap settings plugins")?;
+            Settings::get()
+                .ensure_experimental(mise_config::experimental::BOOTSTRAP_SETTINGS.what)?;
         }
         let mut any_missing = false;
         let mut rows = vec![];
