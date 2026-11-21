@@ -91,6 +91,43 @@ fn is_normal_formula_component(name: &str) -> bool {
     matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
+/// The formulae of a resolved closure that have no keg yet. A malformed
+/// version is an error, not "already poured".
+fn formulae_to_pour(
+    closure: &[resolve::ResolvedFormula],
+    keg_installed: impl Fn(&str, &str) -> bool,
+) -> Result<Vec<resolve::ResolvedFormula>> {
+    let mut to_pour = vec![];
+    for rf in closure {
+        let pkg_version = rf.formula.pkg_version()?;
+        if !keg_installed(&rf.formula.name, &pkg_version) {
+            to_pour.push(rf.clone());
+        }
+    }
+    Ok(to_pour)
+}
+
+/// One warning per custom Homebrew requirement mise skips in a formula it is
+/// about to pour or build.
+fn unsupported_requirement_warnings(to_pour: &[resolve::ResolvedFormula]) -> Vec<String> {
+    let mut warnings = vec![];
+    for rf in to_pour {
+        let formula = &rf.formula;
+        let tap = formula
+            .tap
+            .as_deref()
+            .map(|t| format!("{t}/"))
+            .unwrap_or_default();
+        for requirement in &formula.unsupported_requirements {
+            warnings.push(format!(
+                "ignoring unsupported Homebrew requirement {requirement} in {tap}{}; it is not enforced",
+                formula.name
+            ));
+        }
+    }
+    warnings
+}
+
 impl BrewManager {
     pub fn new() -> Self {
         Self {}
@@ -149,14 +186,7 @@ impl BrewManager {
                 );
             }
         }
-        let mut to_pour: Vec<_> = vec![];
-        for rf in &closure {
-            // a malformed version is an error, not "already poured"
-            let pkg_version = rf.formula.pkg_version()?;
-            if !pour::keg_installed(&rf.formula.name, &pkg_version) {
-                to_pour.push(rf.clone());
-            }
-        }
+        let to_pour = formulae_to_pour(&closure, pour::keg_installed)?;
         if !opts.dry_run {
             // also on a no-op install, so racks an older mise left behind
             // disappear without waiting for a bottle to be poured
@@ -168,19 +198,8 @@ impl BrewManager {
         }
         // only now: a formula that is already poured is not touched, so its
         // unenforced requirements are not worth a warning
-        for rf in &to_pour {
-            let formula = &rf.formula;
-            for requirement in &formula.unsupported_requirements {
-                let tap = formula
-                    .tap
-                    .as_deref()
-                    .map(|t| format!("{t}/"))
-                    .unwrap_or_default();
-                warn!(
-                    "ignoring unsupported Homebrew requirement {requirement} in {tap}{}; it is not enforced",
-                    formula.name
-                );
-            }
+        for message in unsupported_requirement_warnings(&to_pour) {
+            warn!("{message}");
         }
         // formulae without a usable bottle are built from source by
         // evaluating their Ruby with mise's formula shim; reject the ones
@@ -579,6 +598,58 @@ fn split_formula_name(name: &str) -> Option<(&str, &str, &str)> {
 
 #[cfg(test)]
 mod tests {
+    fn resolved_with_requirements(name: &str, requirements: &[&str]) -> resolve::ResolvedFormula {
+        resolve::ResolvedFormula {
+            formula: serde_json::from_value(serde_json::json!({
+                "name": name,
+                "tap": "acme/tools",
+                "versions": {"stable": "1.0"},
+                "unsupported_requirements": requirements,
+            }))
+            .unwrap(),
+            tap_raw_base: None,
+            on_request: true,
+        }
+    }
+
+    /// An up-to-date formula is not touched, so it must not warn; this is the
+    /// no-op `upgrade` and its dry run.
+    #[test]
+    fn no_warning_when_every_formula_is_already_poured() {
+        let closure = [resolved_with_requirements("splash", &["SplashRequirement"])];
+        let to_pour = formulae_to_pour(&closure, |_, _| true).unwrap();
+        assert!(to_pour.is_empty());
+        assert!(unsupported_requirement_warnings(&to_pour).is_empty());
+    }
+
+    /// A formula that will be poured, or listed by a dry run, warns.
+    #[test]
+    fn warns_for_a_formula_that_needs_pouring() {
+        let closure = [resolved_with_requirements("splash", &["SplashRequirement"])];
+        let to_pour = formulae_to_pour(&closure, |_, _| false).unwrap();
+        assert_eq!(
+            unsupported_requirement_warnings(&to_pour),
+            [
+                "ignoring unsupported Homebrew requirement SplashRequirement in \
+                 acme/tools/splash; it is not enforced"
+            ]
+        );
+    }
+
+    /// In a batch only the formulae that need work warn.
+    #[test]
+    fn warns_only_for_the_missing_formulae_in_a_batch() {
+        let closure = [
+            resolved_with_requirements("installed", &["InstalledRequirement"]),
+            resolved_with_requirements("missing", &["MissingRequirement"]),
+            resolved_with_requirements("plain", &[]),
+        ];
+        let to_pour = formulae_to_pour(&closure, |name, _| name == "installed").unwrap();
+        let warnings = unsupported_requirement_warnings(&to_pour);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("MissingRequirement in acme/tools/missing"));
+    }
+
     use super::*;
 
     #[test]
