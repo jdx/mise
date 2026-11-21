@@ -2488,6 +2488,44 @@ fn locked_backend_inherits_only_an_unambiguous_backend() {
 }
 
 #[test]
+fn switch_backend_does_not_require_artifacts_for_an_entry_with_only_markers() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    std::fs::write(
+        &path,
+        r#"lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+unsupported_platforms = ["linux-arm64"]
+"#,
+    )
+    .unwrap();
+    let mut lockfile = Lockfile::read(&path).unwrap();
+    // The relock still covers linux-arm64: it is one of the lockfile's platforms.
+    assert!(lockfile.all_platform_keys().contains("linux-arm64"));
+    let moved = lockfile.switch_backend(
+        "hk",
+        "aqua:jdx/hk",
+        &BTreeSet::from(["1.58.1".to_string()]),
+        |_| Some("packslip:github.com/jdx/hk".to_string()),
+    );
+    // No artifacts to replace, so the switch does not require the new backend
+    // to record any.
+    assert_eq!(
+        moved,
+        vec![(
+            "1.58.1".to_string(),
+            "packslip:github.com/jdx/hk".to_string(),
+            false
+        )]
+    );
+    let entry = &lockfile.tools_for("hk").unwrap()[0];
+    assert!(entry.unsupported_platforms.is_empty());
+}
+
+#[test]
 fn switch_backend_moves_only_the_given_versions() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mise.lock");
