@@ -278,6 +278,15 @@ run_with_time_limit() {
     stop_test
     wait "$TEST_PID" 2>/dev/null || true
   else
+    # The signal can land as the test finishes: the interrupted wait then left
+    # the test's real status uncollected, and what is in $status is the signal's.
+    # When the wait already reaped the test, this one fails with 127 and the
+    # status stays.
+    if [[ $TIMED_OUT == 1 ]]; then
+      local collected=0
+      wait "$TEST_PID" 2>/dev/null || collected=$?
+      [[ $collected == 127 ]] || status=$collected
+    fi
     TIMED_OUT=0
   fi
   stop_watchdog
