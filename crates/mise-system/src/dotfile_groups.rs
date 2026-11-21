@@ -19,10 +19,9 @@
 //! An entry without a source finds it under the group root at its path
 //! inside the group target, and a relative source starts at the root. An
 //! entry may deploy outside the group target, where it has no such path and
-//! names its source. A
-//! group expands into ordinary [`FileRequest`]s tagged with its name, so
-//! apply, status, and unapply treat its files like any other entry. Each
-//! apply also records what a group deployed under
+//! names its source. A group expands into ordinary [`FileRequest`]s tagged
+//! with its name, so apply, status, and unapply treat its files like any
+//! other entry. Each apply also records what a group deployed under
 //! `$MISE_STATE_DIR/dotfiles/groups/`, so its files can still be found once
 //! the group stops deploying them: `mise dot status` reports them as
 //! orphaned, `mise dot apply --prune` removes them, and
