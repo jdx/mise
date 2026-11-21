@@ -321,7 +321,11 @@ function sourcePath(url: string): string {
   );
 }
 
-function main() {
+/**
+ * Add navigation to the generated pages in `cliDir`. `render:usage` passes the
+ * scratch directory it generates into; the default is `docs/cli`.
+ */
+function main(cliDir = resolve(docsDir, "cli")) {
   const root = JSON.parse(
     execFileSync(
       "mise",
@@ -352,8 +356,7 @@ function main() {
   let removed = 0;
   for (const name of commands.keys()) {
     const file = resolve(
-      docsDir,
-      "cli",
+      cliDir,
       name ? `${name.replaceAll(" ", "/")}.md` : "index.md",
     );
     if (!existsSync(file)) continue; // usage excludes hidden commands' own pages.
@@ -372,7 +375,7 @@ function main() {
       let parent = parts.slice(0, -1);
       while (
         parent.length &&
-        !existsSync(resolve(docsDir, "cli", parent.join("/") + ".md"))
+        !existsSync(resolve(cliDir, parent.join("/") + ".md"))
       )
         parent.pop();
       const parentUsage =
@@ -405,7 +408,7 @@ function main() {
   }
   // usage generates a page for the spec's `config` block; it has no command to
   // take a description from.
-  const configPage = resolve(docsDir, "cli", "configuration.md");
+  const configPage = resolve(cliDir, "configuration.md");
   if (existsSync(configPage)) {
     const body = readFileSync(configPage, "utf8").replace(
       /^---\r?\ndescription: [^\r\n]*\r?\n---\r?\n\r?\n/,
@@ -416,10 +419,11 @@ function main() {
       `---\ndescription: ${JSON.stringify("Settings that mise reads from CLI flags and environment variables")}\n---\n\n${body}`,
     );
   }
-  removeEmptyDirs(resolve(docsDir, "cli"));
+  removeEmptyDirs(cliDir);
   console.log(
     `Added reference navigation to ${count} CLI pages; removed ${removed} under hidden commands`,
   );
 }
 
-if (import.meta.main) main();
+if (import.meta.main)
+  main(process.argv[2] ? resolve(process.argv[2]) : undefined);
