@@ -3200,6 +3200,22 @@ mod tests {
     }
 }
 
+/// Delete a system installation the user cannot write to through `sudo`, the
+/// way `mise install --system` publishes one. Returns false for any other
+/// installation, which the caller deletes itself.
+fn remove_system_install_with_sudo(tv: &ToolVersion, install_path: &Path) -> eyre::Result<bool> {
+    #[cfg(unix)]
+    if env::install_path_category(install_path) == env::InstallPathCategory::System
+        && crate::tool_purgatory::needs_sudo_to_remove(install_path)
+    {
+        let manual = format!("mise uninstall {}@{}", tv.ba().short, tv.version);
+        crate::system_install::remove(install_path, &manual)?;
+        return Ok(true);
+    }
+    let _ = (tv, install_path);
+    Ok(false)
+}
+
 fn make_install_dirs(tv: &ToolVersion) -> eyre::Result<()> {
     let _ = remove_all_with_warning(tv.install_path());
     if !Settings::get().always_keep_download {
@@ -6137,7 +6153,9 @@ pub trait Backend: Debug + Send + Sync {
             // check that takes no lock must not read as complete; the marker is cleared below.
             install_state::mark_incomplete(tv.ba(), &tv.state_key())?;
         }
-        rmdir(&install_path)?;
+        if dryrun || !remove_system_install_with_sudo(tv, &install_path)? {
+            rmdir(&install_path)?;
+        }
         if !dryrun {
             // Version links into the removed installation, from every tool that
             // linked it. The catalog record stays, so a reinstall lands on the

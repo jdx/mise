@@ -1293,10 +1293,38 @@ pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Resul
 pub async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    scope: PruneScope,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    Ok(prunable_tools_with_sources(config, tools, None)
+    Ok(prunable_tools_with_sources(config, tools, scope, None)
         .await?
         .to_delete)
+}
+
+/// Which install directories pruning may remove versions from.
+///
+/// Configured shared directories are never pruned: mise only reads them. The
+/// system installs directory is pruned only when asked, because the configs
+/// that keep a version are the ones this user has loaded, and other users of
+/// the machine may need versions that none of them names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PruneScope {
+    /// The user's own installs directory.
+    User,
+    /// The system installs directory.
+    System,
+    /// Both, for removing the versions an upgrade replaced wherever they were.
+    UserAndSystem,
+}
+
+impl PruneScope {
+    fn includes(self, path: &Path) -> bool {
+        use crate::env::InstallPathCategory::{Local, System};
+        matches!(
+            (self, crate::env::install_path_category(path)),
+            (Self::User | Self::UserAndSystem, Local)
+                | (Self::System | Self::UserAndSystem, System)
+        )
+    }
 }
 
 /// The outcome of deciding which installed versions are unused.
@@ -1318,6 +1346,7 @@ pub struct PrunableTools {
 pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    scope: PruneScope,
     progress: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<PrunableTools> {
     // Resolving the toolset of this directory inspects it from the environment
@@ -1334,12 +1363,7 @@ pub async fn prunable_tools_with_sources(
         .list_installed_versions(config)
         .await?
         .into_iter()
-        // System and shared installs are read-only fallback locations. Prune only
-        // manages versions in the user's primary install directory.
-        .filter(|(_, tv)| {
-            crate::env::install_path_category(&tv.install_path())
-                == crate::env::InstallPathCategory::Local
-        })
+        .filter(|(_, tv)| scope.includes(&tv.install_path()))
         .map(|(p, tv)| (needed_key(&tv), (p, tv)))
         .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
 

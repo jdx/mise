@@ -6,7 +6,7 @@ use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::args::BackendArg;
-use crate::config::Config;
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -143,6 +143,22 @@ pub fn schedule(tv: &ToolVersion, after: Duration) -> Result<()> {
     save_state(&state)
 }
 
+/// Whether removing the installation at `install_path` needs sudo, as one in a
+/// root-owned system installs directory does for a normal user.
+pub fn needs_sudo_to_remove(install_path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        install_path
+            .parent()
+            .is_some_and(crate::system_install::needs_elevation)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = install_path;
+        false
+    }
+}
+
 pub fn forget_path(path: &Path) -> Result<()> {
     if !state_path().exists() {
         return Ok(());
@@ -196,10 +212,13 @@ pub async fn auto_prune() -> Result<()> {
     let config = Config::get().await?;
     // The user did not ask for this, so a tracked config that cannot be loaded here
     // is summarized in one line instead of warned about file by file.
-    let (prunable, skipped) = crate::config::with_quiet_tracked_config_errors(
-        crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()),
-    )
-    .await;
+    let (prunable, skipped) =
+        crate::config::with_quiet_tracked_config_errors(crate::toolset::prunable_tools(
+            &config,
+            Vec::<&BackendArg>::new(),
+            crate::toolset::PruneScope::UserAndSystem,
+        ))
+        .await;
     if skipped > 0 {
         warn!(
             "deferred prune skipped {skipped} tracked config(s) that could not be loaded; run `mise prune --dry-run` for details"
@@ -219,6 +238,9 @@ pub async fn auto_prune() -> Result<()> {
         .map(|(_, tv)| tv.install_path())
         .collect::<HashSet<_>>();
 
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    let installs_roots = [crate::dirs::INSTALLS.to_path_buf(), system_installs];
+
     let mpr = MultiProgressReport::get();
     let mut install_state_changed = false;
     let mut entries_awaiting_reconciliation = vec![];
@@ -235,20 +257,29 @@ pub async fn auto_prune() -> Result<()> {
             prunable_by_path
                 .get(install_path)
                 .map(|(_, tv)| tv.ba().installs_path().to_path_buf())
-        } else if let Some(installs_dir) = install_path
-            .parent()
-            .filter(|parent| parent.starts_with(*crate::dirs::INSTALLS))
-            .filter(|parent| *parent != *crate::dirs::INSTALLS)
-        {
+        } else if let Some(installs_dir) = install_path.parent().filter(|parent| {
+            installs_roots
+                .iter()
+                .any(|root| parent.starts_with(root) && parent != root)
+        }) {
             Some(installs_dir.to_path_buf())
         } else {
             warn!(
-                "ignoring tool purgatory entry outside the user installs directory: {}",
+                "ignoring tool purgatory entry outside the user and system installs directories: {}",
                 display_path(install_path)
             );
             entries_to_remove.push((key, entry));
             continue;
         };
+        // Deferred pruning runs inside whatever command came next, which must
+        // not stop to ask for a sudo password.
+        if install_path.exists() && needs_sudo_to_remove(install_path) {
+            warn!(
+                "not removing {display} automatically because it needs sudo; remove it with `mise prune --system`"
+            );
+            entries_to_remove.push((key, entry));
+            continue;
+        }
         let remove_missing_links = |dir: &Option<PathBuf>| match dir {
             Some(dir) => crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir),
             None => Ok(()),

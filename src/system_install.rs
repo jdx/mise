@@ -60,6 +60,41 @@ enum Request {
         /// Names whose real directory a link in `links` may replace.
         replace: Vec<String>,
     },
+    /// Delete the installation `directory/tool/version`.
+    Remove {
+        directory: PathBuf,
+        tool: String,
+        version: String,
+    },
+}
+
+/// Delete a system installation the user cannot write to, through `sudo`.
+/// `manual_cmd` is what to run instead when `sudo` is unavailable.
+pub(crate) fn remove(install_path: &Path, manual_cmd: &str) -> Result<()> {
+    let name = |path: Option<&Path>| {
+        path.and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .map(str::to_string)
+    };
+    let tool_dir = install_path.parent();
+    let (Some(version), Some(tool), Some(directory)) = (
+        name(Some(install_path)),
+        name(tool_dir),
+        tool_dir.and_then(Path::parent),
+    ) else {
+        bail!(
+            "invalid system installation path: {}",
+            install_path.display()
+        );
+    };
+    sudo::ensure_elevation_available(manual_cmd)?;
+    let mut input = serde_json::to_vec(&Request::Remove {
+        directory: directory.to_path_buf(),
+        tool,
+        version,
+    })?;
+    input.push(b'\n');
+    publish(&input[..])
 }
 
 pub(crate) async fn install<B: Backend + ?Sized>(
@@ -341,7 +376,9 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32, roots: &[PathBuf]) -> Re
     input.read_line(&mut header)?;
     let request: Request = serde_json::from_str(&header)?;
     let directory = match &request {
-        Request::Install { directory, .. } | Request::Links { directory, .. } => directory,
+        Request::Install { directory, .. }
+        | Request::Links { directory, .. }
+        | Request::Remove { directory, .. } => directory,
     };
     ensure!(
         roots
@@ -523,6 +560,36 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32, roots: &[PathBuf]) -> Re
                 symlink(target, &link)?;
                 fs::rename(link, destination)?;
             }
+        }
+        Request::Remove { tool, version, .. } => {
+            ensure!(
+                crate::file::is_plain_file_name(&tool)
+                    && crate::file::is_plain_file_name(&version)
+                    && !tool.starts_with('.')
+                    && !version.starts_with('.'),
+                "invalid tool or version directory"
+            );
+            let tool_dir = directory.join(&tool);
+            let destination = tool_dir.join(&version);
+            let metadata = match fs::symlink_metadata(&destination) {
+                Ok(metadata) => metadata,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(err) => return Err(err.into()),
+            };
+            // Version links are removed with a `Links` request; only a real
+            // installation directory is deleted here.
+            ensure!(
+                metadata.is_dir(),
+                "refusing to remove non-directory {}",
+                destination.display()
+            );
+            validate_directory(&tool_dir, owner)?;
+            // Move the installation out of its name first, so the version is
+            // gone at once and a failed delete leaves nothing under that name.
+            let stage = tempfile::tempdir_in(&tool_dir)?;
+            let old = stage.path().join("old");
+            fs::rename(&destination, &old)?;
+            fs::remove_dir_all(&old)?;
         }
     }
     Ok(())
@@ -728,6 +795,27 @@ mod tests {
         apply_for_owner(&migrate[..], owner, &roots)?;
         assert!(root.join("uv/latest").is_symlink());
         assert_eq!(fs::read_to_string(root.join("uv/latest/tool"))?, "binary");
+        // Removal deletes an installation directory, never a link or a reserved
+        // name, and accepts a version that is already gone.
+        let remove_request = |version: &str| -> Result<Vec<u8>> {
+            let mut bytes = serde_json::to_vec(&Request::Remove {
+                directory: root.clone(),
+                tool: "uv".into(),
+                version: version.into(),
+            })?;
+            bytes.push(b'\n');
+            Ok(bytes)
+        };
+        assert!(apply_for_owner(&remove_request("latest")?[..], owner, &roots).is_err());
+        assert!(root.join("uv/latest").is_symlink());
+        assert!(
+            apply_for_owner(&remove_request(".mise.backend.toml")?[..], owner, &roots).is_err()
+        );
+        assert!(root.join("uv/.mise.backend.toml").is_file());
+        assert!(apply_for_owner(&remove_request("../uv")?[..], owner, &roots).is_err());
+        apply_for_owner(&remove_request("1")?[..], owner, &roots)?;
+        assert!(fs::symlink_metadata(root.join("uv/1")).is_err());
+        apply_for_owner(&remove_request("1")?[..], owner, &roots)?;
         fs::set_permissions(&root, fs::Permissions::from_mode(0o777))?;
         assert!(validate_directory(&root, owner).is_err());
         Ok(())

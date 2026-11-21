@@ -57,6 +57,9 @@ struct ExplicitConfigBump {
 /// The version you upgraded from is removed after the `upgrade.prune_after`
 /// setting's grace period unless a tracked config or tool stub still uses it.
 /// Pass `--prune` to remove it now or `--no-prune` to keep it.
+/// A replaced system install that needs `sudo` to remove is kept instead,
+/// because later commands never prompt for a password; pass `--prune` or run
+/// `mise prune --system` to remove it.
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
     example(r###"mise upgrade"###, help = r###"Upgrade every configured tool within its range"###),
@@ -1528,6 +1531,19 @@ impl Upgrade {
 
                     match prune_mode {
                         PruneMode::Immediate => immediate.push(old_tv),
+                        // Deferred pruning runs during a later command, which must not
+                        // ask for a sudo password, so a system install that needs sudo
+                        // stays until it is removed on purpose.
+                        PruneMode::Deferred(_)
+                            if crate::tool_purgatory::needs_sudo_to_remove(
+                                &old_tv.install_path(),
+                            ) =>
+                        {
+                            info!(
+                                "kept {}@{} in the system installs directory; remove it with `mise prune --system` or upgrade with `--prune`",
+                                o.name, old_version
+                            );
+                        }
                         PruneMode::Deferred(after) => {
                             if let Err(err) = crate::tool_purgatory::schedule(&old_tv, after) {
                                 warn!(

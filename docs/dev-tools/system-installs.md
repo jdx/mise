@@ -45,6 +45,30 @@ detects this. Run mise as your user and let it call `sudo` itself. Running mise
 directly as root, for example in a container build, is supported.
 :::
 
+## Remove unused system installs {#remove-unused-system-installs}
+
+`mise prune` only removes versions from your own installs directory. To remove
+versions from the system installs directory that none of your config files
+use, run:
+
+```sh
+mise prune --system --dry-run
+mise prune --system
+```
+
+Like installs, removal uses `sudo` when you cannot write to the directory. mise
+only knows the config files your user has loaded, including the system config,
+so run it as the account whose configs select the system tools. Another user
+who still uses a removed version has to install it again.
+
+After `mise upgrade` replaces a system install, the old version is removed like
+a user install once the
+[`upgrade.prune_after`](/configuration/settings.html#upgrade.prune_after) grace
+period ends. When removing it needs `sudo`, mise keeps it instead, because the
+cleanup runs during a later command that must not ask for a password. Use
+`mise upgrade --prune` to remove it during the upgrade, or `mise prune --system`
+later.
+
 ## Supported backends {#supported-backends}
 
 When mise has to elevate, it supports tools from the `aqua`, `github`,
