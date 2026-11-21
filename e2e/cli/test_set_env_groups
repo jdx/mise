@@ -104,6 +104,15 @@ assert "mise unset FOO.value" ""
 assert "cat mise.toml" '[env]
 FOO = { value = "keep", redact = true }'
 
+# An edit that would leave an env mise cannot load is refused, and the file stays as it was.
+assert_fail "mise unset FOO.value" "cannot unset FOO.value"
+assert_fail "mise set NEW.name=1" "cannot set NEW.name"
+assert "cat mise.toml" '[env]
+FOO = { value = "keep", redact = true }'
+assert "mise unset FOO.redact" ""
+assert "cat mise.toml" '[env]
+FOO = { value = "keep" }'
+
 # An inline table is edited too.
 cat <<EOF >mise.toml
 env = { STAGE = "one" }

@@ -1118,30 +1118,58 @@ impl MiseToml {
     /// later one overrides an earlier one. So the group rewritten is the last one that sets
     /// `key`, and a key no group sets goes into the last group: either way the new value is
     /// the one mise ends up with, as it is with a single `[env]`.
+    ///
+    /// A `.` in `key` descends into a nested table, unless a group has an entry named exactly
+    /// `key`. Fails, leaving the document as it was, when mise could not load the result.
     fn set_env_item(&mut self, key: &str, item: Item) -> eyre::Result<()> {
-        let mut doc = self.doc_mut()?;
-        let mut groups = env_tables_mut(doc.get_mut().unwrap(), &self.path)?;
-        // an entry named exactly `key` is that variable, whatever dots its name has
-        if let Some(i) = groups.iter().rposition(|group| group.names(key)) {
-            groups.swap_remove(i).set_named(key, item);
-            return Ok(());
-        }
-        let mut group = match groups.iter().rposition(|group| group.sets(key)) {
-            Some(i) => groups.swap_remove(i),
-            None => match groups.pop() {
-                Some(last) => last,
-                None => bail!(
-                    "cannot set {key} in {}: `env` is an empty list, so there is no table to add it to",
-                    display_path(&self.path)
-                ),
-            },
-        };
-        group.set(key, item).map_err(|part| {
-            eyre!(
-                "cannot set {key} in {}: `{part}` is not a table",
-                display_path(&self.path)
-            )
+        let path = &self.path;
+        self.edit_doc(|doc| {
+            let mut groups = env_tables_mut(doc, path)?;
+            // an entry named exactly `key` is that variable, whatever dots its name has
+            if let Some(i) = groups.iter().rposition(|group| group.names(key)) {
+                groups.swap_remove(i).set_named(key, item);
+                return Ok(());
+            }
+            let mut group = match groups.iter().rposition(|group| group.sets(key)) {
+                Some(i) => groups.swap_remove(i),
+                None => match groups.pop() {
+                    Some(last) => last,
+                    None => bail!(
+                        "cannot set {key} in {}: `env` is an empty list, so there is no table to add it to",
+                        display_path(path)
+                    ),
+                },
+            };
+            group.set(key, item).map_err(|part| {
+                eyre!(
+                    "cannot set {key} in {}: `{part}` is not a table",
+                    display_path(path)
+                )
+            })?;
+            if key.contains('.') {
+                load_env(doc).wrap_err_with(|| {
+                    format!(
+                        "cannot set {key} in {}: mise could not load `env` with it set",
+                        display_path(path)
+                    )
+                })?;
+            }
+            Ok(())
         })
+    }
+
+    /// Runs `edit` on a copy of the document and keeps the copy only when `edit` succeeds, so
+    /// an edit that fails part way changes nothing.
+    fn edit_doc(
+        &self,
+        edit: impl FnOnce(&mut DocumentMut) -> eyre::Result<()>,
+    ) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        let mut edited = doc.clone();
+        edit(&mut edited)?;
+        *doc = edited;
+        Ok(())
     }
 
     /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
@@ -1366,18 +1394,31 @@ impl MiseToml {
     /// `key` is read the way [`Self::update_env`] reads it: when a group has an entry named
     /// exactly `key`, those entries are what is removed, and an entry a `.` in `key` could also
     /// descend to is left alone. Only otherwise does a `.` descend into a nested table.
+    ///
+    /// Taking a key out of a nested table can leave something mise refuses to load, such as a
+    /// variable with options and no value. That fails, leaving the document as it was.
     pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
-        let mut doc = self.doc_mut()?;
-        let mut groups = env_tables_mut(doc.get_mut().unwrap(), &self.path)?;
-        let named = groups.iter().any(|group| group.names(key));
-        for group in &mut groups {
-            if named {
-                group.remove_named(key);
-            } else {
-                group.remove(key);
+        let path = &self.path;
+        self.edit_doc(|doc| {
+            let mut groups = env_tables_mut(doc, path)?;
+            let named = groups.iter().any(|group| group.names(key));
+            for group in &mut groups {
+                if named {
+                    group.remove_named(key);
+                } else {
+                    group.remove(key);
+                }
             }
-        }
-        Ok(())
+            if !named && key.contains('.') {
+                load_env(doc).wrap_err_with(|| {
+                    format!(
+                        "cannot unset {key} in {}: mise could not load `env` without it",
+                        display_path(path)
+                    )
+                })?;
+            }
+            Ok(())
+        })
     }
 
     // Merge base OS env vars with env sections from this file,
@@ -2591,6 +2632,17 @@ impl<'a> EnvTable<'a> {
 }
 
 /// The decor of the last entry of `table`, when that entry is a value.
+/// Reads `doc`'s `env` the way loading the file does, so an edit can be checked before it is
+/// saved.
+fn load_env(doc: &DocumentMut) -> Result<EnvList, toml::de::Error> {
+    #[derive(Deserialize)]
+    struct EnvOnly {
+        #[serde(default, deserialize_with = "mise_config::env::deserialize_root_env")]
+        env: EnvList,
+    }
+    Ok(toml::from_str::<EnvOnly>(&doc.to_string())?.env)
+}
+
 fn last_value_decor(table: &mut dyn TableLike) -> Option<&mut toml_edit::Decor> {
     let (_, last) = table.iter_mut().last()?;
     Some(last.as_value_mut()?.decor_mut())
@@ -6707,6 +6759,64 @@ run = "cargo build"
             "the error should name the file and the key: {err}"
         );
         assert_eq!(dump, contents);
+    }
+
+    /// Each `FOO` loads as written, and stops loading once `value` is taken out or put in.
+    const ENV_OPTIONS: &str = indoc! {r#"
+        [[env]]
+        FOO = { value = "one", tools = true }
+
+        [[env]]
+        BAR = { required = true }
+    "#};
+
+    #[tokio::test]
+    async fn test_remove_env_that_leaves_env_unloadable_is_an_error() {
+        let (result, dump) = edit_env_file(".env-unset-unloadable.mise.toml", ENV_OPTIONS, |cf| {
+            cf.remove_env("FOO.value")
+        })
+        .await;
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(
+            err.contains("cannot unset FOO.value in")
+                && err.contains(".env-unset-unloadable.mise.toml")
+                && err.contains("'FOO' has no value"),
+            "the error should name the key, the file and the problem: {err}"
+        );
+        assert_eq!(dump, ENV_OPTIONS);
+
+        // an option can go: what is left still loads
+        let (result, dump) = edit_env_file(".env-unset-unloadable.mise.toml", ENV_OPTIONS, |cf| {
+            cf.remove_env("FOO.tools")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                FOO = { value = "one" }
+
+                [[env]]
+                BAR = { required = true }
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_that_leaves_env_unloadable_is_an_error() {
+        let (result, dump) = edit_env_file(".env-set-unloadable.mise.toml", ENV_OPTIONS, |cf| {
+            cf.update_env("BAR.value", "x")
+        })
+        .await;
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(
+            err.contains("cannot set BAR.value in")
+                && err.contains(".env-set-unloadable.mise.toml")
+                && err.contains("cannot have both 'value' and 'required'"),
+            "the error should name the key, the file and the problem: {err}"
+        );
+        assert_eq!(dump, ENV_OPTIONS);
     }
 
     #[tokio::test]
