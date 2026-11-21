@@ -183,6 +183,60 @@ mod tests {
         }
     }
 
+    /// Every command page in `docs/cli` links to the file that implements the
+    /// command. The link comes from `source_code_link_template` in
+    /// `mise-extra.usage.kdl`, which maps command paths to files by hand, so a
+    /// moved or renamed file leaves a link to nothing unless this fails.
+    #[test]
+    fn source_code_links_point_at_existing_files() {
+        const BLOB: &str = "https://github.com/jdx/mise/blob/main/";
+        // Read the committed pages, which CI keeps equal to what the template
+        // renders: rendering every command here takes seconds.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let docs = root.join("docs/cli");
+        // the pages live in the repository, not in the published crate
+        if !docs.is_dir() {
+            eprintln!("skipping: docs/cli is only in a checkout of the repository");
+            return;
+        }
+        let mut pages = 0;
+        let mut missing = vec![];
+        for entry in walkdir::WalkDir::new(docs) {
+            let entry = entry.unwrap();
+            let page = entry.path();
+            if page.extension().is_none_or(|ext| ext != "md") {
+                continue;
+            }
+            let name = page.strip_prefix(root).unwrap().display();
+            let text = std::fs::read_to_string(page).unwrap();
+            let Some(line) = text
+                .lines()
+                .find(|line| line.starts_with("- **Source code:**"))
+            else {
+                // The index and the configuration page describe no one command.
+                continue;
+            };
+            pages += 1;
+            let href = line
+                .rsplit_once("](")
+                .and_then(|(_, href)| href.strip_suffix(')'))
+                .unwrap_or_else(|| panic!("{name}: unexpected source code line: {line}"));
+            let path = href
+                .strip_prefix(BLOB)
+                .unwrap_or_else(|| panic!("{name}: {href} is not a file on main"));
+            if !root.join(path).is_file() {
+                missing.push(format!("{name}: {path}"));
+            }
+        }
+        assert!(pages > 100, "only {pages} command pages read");
+        assert!(
+            missing.is_empty(),
+            "source code links to files that do not exist; fix the paths in \
+             src/assets/mise-extra.usage.kdl and run `mise run render:usage`:\n{}",
+            missing.join("\n")
+        );
+    }
+
     #[test]
     fn command_examples_survive_spec_roundtrip() {
         let spec = super::spec();
