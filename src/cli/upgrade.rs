@@ -851,16 +851,20 @@ impl Upgrade {
                 if hidden > 0 {
                     updates.push_str(&format!("\n  … and {hidden} more"));
                 }
-                let needs_name = if bump_outdated
+                let hint = if bump_outdated
                     .iter()
                     .any(|o| !o.tool_request.options().bump_enabled())
                 {
-                    "\nA tool that sets `bump = false` is bumped only when named, such as `mise upgrade --bump <tool>`."
+                    // A tool that sets `bump = false` is bumped only when named.
+                    let names = bump_outdated.iter().map(|o| o.name.as_str()).join(" ");
+                    format!(
+                        "Run `mise outdated --bump {names}` to view all, or `mise upgrade --bump {names}` to update the configuration and upgrade."
+                    )
                 } else {
-                    ""
+                    "Run `mise outdated --bump` to view all, or `mise upgrade --bump` to update the configuration and upgrade.".to_string()
                 };
                 info!(
-                    "Newer versions are available but do not match the configured version ranges:\n{updates}\nRun `mise outdated --bump` to view all, or `mise upgrade --bump` to update the configuration and upgrade.{needs_name}"
+                    "Newer versions are available but do not match the configured version ranges:\n{updates}\n{hint}"
                 );
             }
         } else {

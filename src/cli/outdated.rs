@@ -191,9 +191,24 @@ impl Outdated {
                 .await;
             // A tool whose backend-wide lookup failed may be out of date too.
             checked.unchecked.extend(bumps.unchecked);
-            bumps.outdated.iter().any(|o| o.bump.is_some())
+            let available = bumps.outdated.iter().filter(|o| o.bump.is_some());
+            // A tool that sets `bump = false` shows up in `--bump` only when named.
+            let names = available
+                .clone()
+                .map(|o| o.name.as_str())
+                .collect::<Vec<_>>();
+            available.clone().next().is_some().then(|| {
+                if available
+                    .clone()
+                    .any(|o| !o.tool_request.options().bump_enabled())
+                {
+                    format!("mise outdated --bump {}", names.join(" "))
+                } else {
+                    "mise outdated --bump".to_string()
+                }
+            })
         } else {
-            false
+            None
         };
         let all_checked = checked.unchecked.is_empty();
         match self.json {
@@ -207,16 +222,16 @@ impl Outdated {
     fn display_table(
         &self,
         outdated: Vec<OutdatedInfo>,
-        bump_available: bool,
+        bump_available: Option<String>,
         all_checked: bool,
     ) -> Result<()> {
         if outdated.is_empty() {
             if all_checked {
                 info!("All tools are up to date");
             }
-            if bump_available {
+            if let Some(command) = bump_available {
                 info!(
-                    "Newer versions are available outside the configured version ranges. Use `mise outdated --bump` to view them."
+                    "Newer versions are available outside the configured version ranges. Use `{command}` to view them."
                 );
             }
             return Ok(());
