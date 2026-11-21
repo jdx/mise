@@ -517,11 +517,10 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
         reference
             .exports
             .retain(|var, _| !state.ambiguous.contains(var) && !ambiguous_references.contains(var));
-        // The referenced daemon's hostname, when the proxy will not route it.
-        if state.withdrawn_hosts.contains(&reference.key)
-            && let Some(host) = set.daemons.get(&reference.key).and_then(|d| d.host.clone())
-        {
-            reference.exports.retain(|_, value| !value.contains(&host));
+        // The referenced daemon's hostname, when the proxy will not route it,
+        // goes with the `<NAME>_URL` that names it.
+        if state.withdrawn_hosts.contains(&reference.key) {
+            reference.exports.retain(|var, _| !var.ends_with("_URL"));
         }
     }
     for (key, daemon) in set.daemons.iter_mut() {
@@ -3164,6 +3163,31 @@ mod tests {
         assert!(reference(&set, "search_api").exports.is_empty());
         // The local daemon keeps its variable, wherever it was declared.
         assert_eq!(set.daemons["search-api"].exports["SEARCH_API_PORT"], "3100");
+    }
+
+    #[test]
+    fn a_reference_gives_way_to_a_presets_variable() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let search = tmp.path().join("search");
+        referenced_project(&search, "[daemons.app]\nrun = 'exec s'\nport = 4100\n");
+        let shop = tmp.path().join("shop");
+        std::fs::create_dir_all(&shop).unwrap();
+        // The postgres preset publishes DATABASE_URL under a name that does not
+        // fold with the reference called `database`.
+        let config = files(&[(
+            shop.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.db]\npreset = 'postgres'\nversion = '18'\n\
+                 [daemons.database]\nproject = {}\nname = 'app'\n",
+                toml::Value::String(search.to_string_lossy().into_owned())
+            ),
+        )]);
+        let set = load(&config).unwrap();
+        let exports = &reference(&set, "database").exports;
+        assert!(!exports.contains_key("DATABASE_URL"), "{exports:?}");
+        assert_eq!(exports["DATABASE_PORT"], "4100");
+        assert!(set.daemons["db"].exports["DATABASE_URL"].starts_with("postgresql://"));
     }
 
     #[test]

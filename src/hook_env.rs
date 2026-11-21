@@ -857,6 +857,7 @@ pub async fn build_session(
         .config_files
         .values()
         .flat_map(|cf| cf.included_paths())
+        .chain(config.referenced_config_paths())
         .collect();
     // A remote include is stored in a cache file that is rewritten when it
     // refreshes. It is checked on every prompt like any loaded config, so
