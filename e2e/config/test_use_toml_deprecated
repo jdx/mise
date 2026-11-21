@@ -54,6 +54,11 @@ assert_not_contains "mise ls 2>&1" "$warning"
 assert_not_contains "MISE_USE_TOML=0 mise --no-config ls 2>&1" "$warning"
 assert_not_contains "MISE_USE_TOML=0 MISE_IGNORED_CONFIG_PATHS=$HOME/.tool-versions mise ls 2>&1" "$warning"
 
+# a home directory reached through a symlink: discovery from the working directory
+# lists the file under the resolved spelling, and it is still the one the variable adds
+ln -s "$HOME" "$TMPDIR/home_link"
+assert "HOME=$TMPDIR/home_link MISE_USE_TOML=0 mise ls 2>&1 | grep -c '$warning'" "1"
+
 # the shell hook runs before every prompt and never prints it
 assert_not_contains "MISE_USE_TOML=0 mise hook-env -s bash 2>&1" "$warning"
 

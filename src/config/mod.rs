@@ -3420,8 +3420,17 @@ pub fn warn_use_toml_disabled() {
 /// config directory. Only a file mise loaded counts: `--no-config` and an ignored
 /// path leave the variable without effect.
 fn warn_if_use_toml_loads_home_tool_versions(config: &Config) {
-    if use_toml_adds_home_tool_versions()
-        && config.config_files.contains_key(&home_tool_versions_path())
+    if !use_toml_adds_home_tool_versions() {
+        return;
+    }
+    // Discovery from the working directory can list the file under another
+    // spelling of the home directory, such as the target of a symlinked $HOME.
+    let home = home_tool_versions_path();
+    let target = file::desymlink_path_cached(&home);
+    if config
+        .config_files
+        .keys()
+        .any(|path| *path == home || file::desymlink_path_cached(path) == target)
     {
         warn_use_toml_disabled();
     }
