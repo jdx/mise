@@ -6085,6 +6085,10 @@
           "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions, \"published_at\" sorts by release date on github, gitlab and forgejo tools",
           "enum": ["source", "semver", "published_at"]
         },
+        "bump": {
+          "description": "false keeps the tool out of `mise upgrade --bump` and `mise outdated --bump`, which then treat it like a plain upgrade",
+          "$ref": "#/$defs/tool_bool"
+        },
         "prerelease": {
           "description": "include pre-release versions when listing versions and resolving latest",
           "$ref": "#/$defs/tool_bool"
