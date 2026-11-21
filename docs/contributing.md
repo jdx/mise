@@ -519,6 +519,15 @@ first; when only Markdown pages changed,
 `mise run lint` fails when the index is out of date, and `mise run lint-fix`
 rewrites it.
 
+A unit test checks the commands the docs show:
+`cargo test -p mise --bin mise docs_commands` walks every `mise ...` command in
+a shell block or inline code span in `docs/` and `README.md` through the usage
+spec, and fails on a subcommand or flag mise does not have. Text that starts
+with `mise` and is not a command to type, such as a message mise prints, needs
+a `<!-- cli: skip -->` comment: on its own line above a fenced block or a
+heading, or directly after the inline code with no space between. For a page under
+`docs/cli/`, fix the command's help text and run `mise run render`.
+
 ## Pull request titles and descriptions {#pull-request-titles-and-descriptions}
 
 PR titles follow [Conventional Commits](https://www.conventionalcommits.org/).

@@ -20,8 +20,8 @@ use std::sync::Arc;
 /// A file with no template syntax that contains only `min_version`, `[tools]`
 /// entries with plain version strings (or arrays of them), and `[tasks]` in
 /// which no task lists `secrets` does not need trust unless paranoid mode is on.
-/// Commands that run project code (`mise run`, task shorthand such as
-/// `mise build`, `mise install`, `mise exec`, `mise watch`, and
+/// Commands that run project code (`mise run`, the `mise <task>` shorthand,
+/// `mise install`, `mise exec`, `mise watch`, and
 /// `mise daemons start|restart|register`) trust their active config
 /// automatically.
 ///

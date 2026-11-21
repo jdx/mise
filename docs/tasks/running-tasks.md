@@ -22,8 +22,9 @@ mise run build
 
 ### `mise run` shorthand {#mise-run-shorthand}
 
-`mise run build`, `mise r build`, `mise tasks run build`, and `mise build` all
-run the `build` task. The last form works only while the task name does not
+`mise run build`, `mise r build`, `mise tasks run build`, and
+`mise build`<!-- cli: skip --> all run the `build` task. The last form works
+only while the task name does not
 match a mise command, and a later mise release can add a command with that
 name, so write `mise run build` in scripts and documentation. For interactive
 use, a shell alias such as `alias mr='mise run'` saves typing.

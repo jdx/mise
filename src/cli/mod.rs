@@ -56,6 +56,8 @@ mod current;
 mod daemons;
 mod deactivate;
 mod direnv;
+#[cfg(test)]
+mod docs_commands;
 mod doctor;
 pub(crate) mod dotfiles;
 mod en;

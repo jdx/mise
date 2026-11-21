@@ -103,6 +103,8 @@ configs read:
 mise trust .env
 ```
 
+<!-- cli: skip -->
+
 ### `mise version <X> is required, but you are using <Y>` {#min-version}
 
 The project sets a
@@ -115,8 +117,8 @@ version is newer than that, name it:
 mise self-update 2026.10.4
 ```
 
-`mise version <X> is recommended, but you are using <Y>` is the same check as a
-warning, from a `soft` minimum. mise keeps working.
+`mise version <X> is recommended, but you are using <Y>`<!-- cli: skip --> is
+the same check as a warning, from a `soft` minimum. mise keeps working.
 
 ### `<feature> is experimental` {#experimental}
 
