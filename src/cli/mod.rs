@@ -1487,8 +1487,15 @@ async fn run_with_exit_signal<T>(
     exit_signal: impl std::future::Future<Output = i32>,
 ) -> Result<T> {
     tokio::select! {
-        result = command => result,
+        // The exit signal goes first: its first poll installs the SIGINT
+        // handler, and a command polled before that can start a child while
+        // SIGINT is still ignored, as a shell leaves it for `mise run task &`.
+        // The child inherits the ignored signal, a shell cannot trap one that
+        // was ignored when it started, and mise then waits forever for a task
+        // that never sees the Ctrl-C it passes on.
+        biased;
         code = exit_signal => Err(request_exit(code)),
+        result = command => result,
     }
 }
 
@@ -2292,6 +2299,28 @@ mod tests {
 
         assert_eq!(crate::exit::requested_exit_code(&err), Some(42));
         assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn exit_signal_is_polled_before_the_command() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        // The order used to be random, so one pass would prove nothing.
+        for _ in 0..64 {
+            let installed = std::sync::Arc::new(AtomicBool::new(false));
+            let exit_signal = {
+                let installed = installed.clone();
+                async move {
+                    installed.store(true, Ordering::SeqCst);
+                    std::future::pending::<i32>().await
+                }
+            };
+            let command = async move { Ok(installed.load(Ordering::SeqCst)) };
+
+            let handler_was_installed = run_with_exit_signal(command, exit_signal).await.unwrap();
+
+            assert!(handler_was_installed);
+        }
     }
 
     #[test]

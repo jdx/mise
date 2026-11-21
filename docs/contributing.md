@@ -264,6 +264,14 @@ given, each once it and the tests before it have finished, not as it runs.
 run selected tests in parallel. `TEST_TRANCHE` and `TEST_TRANCHE_COUNT` split
 the full suite, as CI does.
 
+A test that has not finished after 300 seconds (900 for a `*_slow` test) is
+killed with every process it started, and fails with the output it had
+written and a list of the processes that were still running. Set
+`E2E_TEST_TIMEOUT_SECONDS` or `E2E_SLOW_TEST_TIMEOUT_SECONDS` to change a
+limit, or to `0` to turn it off. With a limit, a test runs in its own process
+group with no standard input. `E2E_MAX_ATTEMPTS` retries a failing test, as CI
+does, but not one that timed out.
+
 Each test runs in a fresh working directory with its own `HOME`, mise
 directories, and trusted config path, with `MISE_EXPERIMENTAL=1` set and your
 `target/debug` first on `PATH`. The host still has to provide the shells,
