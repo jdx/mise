@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A task's `tools` pin that the lockfile records with a dependency graph is
+# installed under the graph's identity directory. The task must run with that
+# same directory on PATH, not the unsuffixed version directory, which is absent
+# on a machine that never ran the task before `mise lock`.
+export MISE_LOCKFILE=1 MISE_EXPERIMENTAL=1
+unset MISE_LOCKFILE_MODE
+
+cat >mise.toml <<'TOML'
+[tasks.where]
+tools = { "npm:semver" = "7.6.0" }
+run = "command -v semver"
+TOML
+
+mise lock
+assert_contains "grep '^aube = ' mise.lock" "locks/"
+
+rm -rf "$MISE_DATA_DIR/installs"
+assert_contains "mise run where" "node_modules/.bin/semver"
+assert_contains "mise run where" "~aube~"
