@@ -190,38 +190,39 @@ mod tests {
     #[test]
     fn source_code_links_point_at_existing_files() {
         const BLOB: &str = "https://github.com/jdx/mise/blob/main/";
-        fn visit<'a>(cmd: &'a usage::SpecCommand, out: &mut Vec<&'a usage::SpecCommand>) {
-            for sub in cmd.subcommands.values().filter(|sub| !sub.hide) {
-                out.push(sub);
-                visit(sub, out);
-            }
-        }
-
-        let spec = super::completion_spec();
-        let mut cmds = vec![];
-        visit(&spec.cmd, &mut cmds);
-        let markdown = usage::docs::markdown::MarkdownRenderer::new(spec.clone());
+        // Read the committed pages, which CI keeps equal to what the template
+        // renders: rendering every command here takes seconds.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut pages = 0;
         let mut missing = vec![];
-        for cmd in &cmds {
-            let name = cmd.full_cmd.join(" ");
-            let page = markdown.render_cmd(cmd).unwrap();
-            let line = page
+        for entry in walkdir::WalkDir::new(root.join("docs/cli")) {
+            let entry = entry.unwrap();
+            let page = entry.path();
+            if page.extension().is_none_or(|ext| ext != "md") {
+                continue;
+            }
+            let name = page.strip_prefix(root).unwrap().display();
+            let text = std::fs::read_to_string(page).unwrap();
+            let Some(line) = text
                 .lines()
                 .find(|line| line.starts_with("- **Source code:**"))
-                .unwrap_or_else(|| panic!("mise {name} has no source code link:\n{page}"));
+            else {
+                // The index and the configuration page describe no one command.
+                continue;
+            };
+            pages += 1;
             let href = line
                 .rsplit_once("](")
                 .and_then(|(_, href)| href.strip_suffix(')'))
-                .unwrap_or_else(|| panic!("mise {name}: unexpected source code line: {line}"));
+                .unwrap_or_else(|| panic!("{name}: unexpected source code line: {line}"));
             let path = href
                 .strip_prefix(BLOB)
-                .unwrap_or_else(|| panic!("mise {name}: {href} is not a file on main"));
+                .unwrap_or_else(|| panic!("{name}: {href} is not a file on main"));
             if !root.join(path).is_file() {
-                missing.push(format!("mise {name}: {path}"));
+                missing.push(format!("{name}: {path}"));
             }
         }
-        assert!(cmds.len() > 100, "only {} commands visited", cmds.len());
+        assert!(pages > 100, "only {pages} command pages read");
         assert!(
             missing.is_empty(),
             "source code links to files that do not exist; fix the paths in \
