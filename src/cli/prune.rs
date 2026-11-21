@@ -128,6 +128,12 @@ impl Prune {
             } = scan_prunable(&config, tools, scope).await?;
             explain_running(&running);
             let has_work = !to_delete.is_empty();
+            // The shim directory to rebuild follows the installs directory the
+            // removed versions were in.
+            let removed_paths = to_delete
+                .iter()
+                .map(|(_, tv)| tv.install_path())
+                .collect::<Vec<_>>();
             if self.system && has_work {
                 warn!(
                     "mise only knows the config files your user has loaded; other users must reinstall a removed version they still use"
@@ -150,13 +156,8 @@ impl Prune {
             }
             config = Config::reset().await?;
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(
-                &config,
-                ts,
-                &[],
-                crate::lockfile::LockfileUpdateMode::Normal,
-            )
-            .await?;
+            config::rebuild_shims_and_runtime_symlinks_after_removal(&config, ts, &removed_paths)
+                .await?;
         }
         Ok(())
     }

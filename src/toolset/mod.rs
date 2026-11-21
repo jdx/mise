@@ -1,7 +1,7 @@
 use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::config::Config;
-use crate::config::settings::{Settings, SettingsStatusMissingTools};
+use crate::config::settings::{Settings, SettingsExt, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
 use crate::daemons::glue::DaemonSetExt;
 use crate::env::TERM_WIDTH;
@@ -1325,6 +1325,35 @@ impl PruneScope {
                 | (Self::System | Self::UserAndSystem, System)
         )
     }
+
+    /// The installations of a listed version that this scope may remove.
+    ///
+    /// The listing merges a version installed in both the user and the system
+    /// installs directories into one entry whose `install_path` is the user's
+    /// copy, so the system copy is added on its own here.
+    fn installs_of(self, tv: ToolVersion, system_installs: &Path) -> Vec<ToolVersion> {
+        let install_path = tv.install_path();
+        let system_copy = (self != Self::User
+            && crate::env::install_path_category(&install_path)
+                == crate::env::InstallPathCategory::Local
+            && crate::install_layout::resolver::dir_name_of(&install_path).is_none())
+        .then(|| {
+            system_installs
+                .join(tv.ba().tool_dir_name())
+                .join(tv.tv_pathname())
+        })
+        .filter(|path| *path != install_path && path.is_dir());
+        let mut installs = vec![];
+        if let Some(path) = system_copy {
+            let mut copy = tv.clone();
+            copy.install_path = Some(path);
+            installs.push(copy);
+        }
+        if self.includes(&install_path) {
+            installs.push(tv);
+        }
+        installs
+    }
 }
 
 /// The outcome of deciding which installed versions are unused.
@@ -1359,13 +1388,20 @@ pub async fn prunable_tools_with_sources(
     if let Some(progress) = progress {
         progress.set_message("listing installed versions".into());
     }
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    // Keyed by install path as well, because a version can be installed in both
+    // the user and the system installs directories.
     let mut to_delete = ts
         .list_installed_versions(config)
         .await?
         .into_iter()
-        .filter(|(_, tv)| scope.includes(&tv.install_path()))
-        .map(|(p, tv)| (needed_key(&tv), (p, tv)))
-        .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
+        .flat_map(|(p, tv)| {
+            scope
+                .installs_of(tv, &system_installs)
+                .into_iter()
+                .map(move |tv| ((needed_key(&tv), tv.install_path()), (p.clone(), tv)))
+        })
+        .collect::<BTreeMap<((String, String), PathBuf), (Arc<dyn Backend>, ToolVersion)>>();
 
     if !tools.is_empty() {
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
@@ -1390,9 +1426,7 @@ pub async fn prunable_tools_with_sources(
         needed.entry(key).or_default().extend(sources);
     }
 
-    for key in needed.keys() {
-        to_delete.remove(key);
-    }
+    to_delete.retain(|(key, _), _| !needed.contains_key(key));
 
     // A process started before its version stopped being needed may still be
     // running from it. Removing the version would delete files from under it.
