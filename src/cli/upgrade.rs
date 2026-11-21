@@ -319,6 +319,7 @@ impl Upgrade {
                 OutdatedSelection {
                     filter_tools,
                     exclude_tools,
+                    named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
                     show_progress: self.show_resolution_progress(),
                     select: &|tv| !unrun.contains(&tv.request),
                 },
@@ -347,6 +348,7 @@ impl Upgrade {
                     OutdatedSelection {
                         filter_tools,
                         exclude_tools,
+                        named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
                         show_progress: false,
                         select: &|tv| needed.contains(&tv.request),
                     },
@@ -795,6 +797,7 @@ impl Upgrade {
                         OutdatedSelection {
                             filter_tools,
                             exclude_tools,
+                            named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
                             show_progress: false,
                             select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
                         },

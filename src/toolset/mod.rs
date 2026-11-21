@@ -134,6 +134,9 @@ impl OutdatedVersions {
 pub struct OutdatedSelection<'a> {
     pub filter_tools: Option<&'a [crate::args::ToolArg]>,
     pub exclude_tools: Option<&'a [crate::args::ToolArg]>,
+    /// The tools the command names. A named tool is bumped even when it sets
+    /// `bump = false`, whether or not `filter_tools` narrows the lookup to it.
+    pub named_tools: Option<&'a [crate::args::ToolArg]>,
     pub show_progress: bool,
     pub select: &'a dyn Fn(&ToolVersion) -> bool,
 }
@@ -568,6 +571,7 @@ impl Toolset {
             OutdatedSelection {
                 filter_tools,
                 exclude_tools,
+                named_tools: filter_tools,
                 show_progress,
                 select: &|_| true,
             },
@@ -588,6 +592,7 @@ impl Toolset {
         let OutdatedSelection {
             filter_tools,
             exclude_tools,
+            named_tools,
             show_progress,
             select,
         } = selection;
@@ -622,8 +627,9 @@ impl Toolset {
             })
             .map(|(t, tv)| {
                 // `bump = false` keeps a tool out of a sweep. Naming the tool asks for it.
-                let tool_bump =
-                    bump && (filter_tools.is_some() || tv.request.options().bump_enabled());
+                let named =
+                    named_tools.is_some_and(|tools| tools.iter().any(|t| t.ba.as_ref() == tv.ba()));
+                let tool_bump = bump && (named || tv.request.options().bump_enabled());
                 (config.clone(), t, tv, tool_bump, opts.clone())
             })
             .collect::<Vec<_>>();
