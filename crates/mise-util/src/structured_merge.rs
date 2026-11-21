@@ -30,7 +30,7 @@ use std::path::Path;
 use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, TableLike};
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, strum::EnumIter)]
 pub enum Format {
     Json,
     /// JSON with comments and trailing commas, as VS Code's `settings.json`

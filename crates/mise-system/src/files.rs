@@ -41,7 +41,7 @@ use mise_util::file;
 use mise_util::hash::{hash_sha256_to_str, hash_to_str};
 use mise_util::path::PathExt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
 pub enum FileMode {
     /// symlink the target to the source — a file or the directory itself
     Symlink,
@@ -70,7 +70,7 @@ pub enum FileMode {
     Fnox,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
 pub enum FileManifest {
     Git,
 }
@@ -8098,6 +8098,92 @@ mod tests {
             .copied()
             .collect();
         assert_eq!(parsed, declared);
+    }
+
+    /// `schema/mise.json` lists the values of an enumerated key from the declaration types, which
+    /// nothing parses into, so each list must be the values the parsers accept.
+    #[test]
+    fn enumerated_values_match_the_declaration() {
+        use crate::dotfile_groups::GROUP_MODES;
+        use crate::edits::{LinePosition, TEMPLATE_ENGINES};
+        use mise_config::dotfiles::{
+            DotfileGroupDecl, DotfileGroupEntryTableDecl, DotfileTableDecl,
+        };
+        use mise_config::schema::property_enum;
+        use mise_util::structured_merge::Format;
+        use std::collections::BTreeSet;
+        use std::fmt::Debug;
+        use strum::IntoEnumIterator;
+
+        /// Every declared value is accepted, and every variant has exactly one declared name.
+        fn names_every_variant<T: IntoEnumIterator + PartialEq + Debug>(
+            key: &str,
+            declared: &BTreeSet<String>,
+            parse: impl Fn(&str) -> Option<T>,
+        ) {
+            let parsed: Vec<T> = declared
+                .iter()
+                .map(|value| {
+                    parse(value).unwrap_or_else(|| {
+                        panic!("{key} = {value:?} is declared, but the parser rejects it")
+                    })
+                })
+                .collect();
+            for variant in T::iter() {
+                assert_eq!(
+                    parsed.iter().filter(|parsed| **parsed == variant).count(),
+                    1,
+                    "the parser accepts a {key} for {variant:?}, which must be declared once"
+                );
+            }
+        }
+        let strings = |values: &[&str]| -> BTreeSet<String> {
+            values.iter().map(|value| value.to_string()).collect()
+        };
+
+        // an entry of [dotfiles] and an entry of a group go through the same parsers
+        let entries = [
+            (
+                property_enum::<DotfileTableDecl>("mode"),
+                property_enum::<DotfileTableDecl>("manifest"),
+                property_enum::<DotfileTableDecl>("format"),
+                property_enum::<DotfileTableDecl>("position"),
+                property_enum::<DotfileTableDecl>("template"),
+            ),
+            (
+                property_enum::<DotfileGroupEntryTableDecl>("mode"),
+                property_enum::<DotfileGroupEntryTableDecl>("manifest"),
+                property_enum::<DotfileGroupEntryTableDecl>("format"),
+                property_enum::<DotfileGroupEntryTableDecl>("position"),
+                property_enum::<DotfileGroupEntryTableDecl>("template"),
+            ),
+        ];
+        // the modes a config can name; `Content` and `Permissions` follow from an entry's keys
+        let modes: BTreeSet<String> = FileMode::iter()
+            .filter(|mode| FileMode::parse(mode.name()) == Some(*mode))
+            .map(|mode| mode.name().to_string())
+            .chain([TRACK_LOCAL.to_string()])
+            .collect();
+        for (mode, manifest, format, position, template) in entries {
+            assert_eq!(mode, modes);
+            names_every_variant("manifest", &manifest, FileManifest::parse);
+            names_every_variant("format", &format, Format::from_name);
+            names_every_variant("position", &position, LinePosition::parse);
+            assert_eq!(template, strings(&TEMPLATE_ENGINES));
+        }
+
+        assert_eq!(
+            property_enum::<DotfileGroupDecl>("mode"),
+            strings(&GROUP_MODES)
+        );
+        for mode in GROUP_MODES {
+            assert!(FileMode::parse(mode).is_some(), "{mode}");
+        }
+        names_every_variant(
+            "manifest",
+            &property_enum::<DotfileGroupDecl>("manifest"),
+            FileManifest::parse,
+        );
     }
 
     /// `schema/mise.json` describes a `[dotfiles]` entry from

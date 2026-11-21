@@ -166,12 +166,26 @@ impl EditOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, strum::EnumIter)]
 pub enum LinePosition {
     Prepend,
     #[default]
     Append,
 }
+
+impl LinePosition {
+    /// The position an entry's `position` key names.
+    pub(crate) fn parse(name: &str) -> Option<Self> {
+        match name {
+            "append" => Some(Self::Append),
+            "prepend" => Some(Self::Prepend),
+            _ => None,
+        }
+    }
+}
+
+/// The engines an entry's `template` key may name.
+pub(crate) const TEMPLATE_ENGINES: [&str; 1] = ["tera"];
 
 /// one edit, resolved against the config file that declared it
 #[derive(Debug, Clone)]
@@ -559,7 +573,7 @@ fn resolve_entry(
             };
             let template = match entry.template.as_deref() {
                 None => false,
-                Some("tera") => true,
+                Some(engine) if TEMPLATE_ENGINES.contains(&engine) => true,
                 Some(other) => {
                     bail!(
                         "\"{path_raw}\".{id}: unknown template engine '{other}' (expected \"tera\"), ignoring entry"
@@ -585,13 +599,12 @@ fn resolve_entry(
                 )
             }
             let position = match entry.position.as_deref() {
-                None | Some("append") => LinePosition::Append,
-                Some("prepend") => LinePosition::Prepend,
-                Some(other) => {
-                    bail!(
-                        "\"{path_raw}\".{id}: unknown line position '{other}' (expected \"append\" or \"prepend\"), ignoring entry"
+                None => LinePosition::default(),
+                Some(name) => LinePosition::parse(name).ok_or_else(|| {
+                    eyre::eyre!(
+                        "\"{path_raw}\".{id}: unknown line position '{name}' (expected \"append\" or \"prepend\"), ignoring entry"
                     )
-                }
+                })?,
             };
             EditOp::Line {
                 line: line.clone(),
@@ -625,7 +638,7 @@ fn check_merge_key_has_id(
 ) -> Result<()> {
     // an invalid merge setting is the error to report; the key is no help then
     if !matches!(merge, MergeSetting::Bool(true))
-        && !matches!(merge, MergeSetting::Mode(mode) if mode == "missing")
+        && !matches!(merge, MergeSetting::Mode(mode) if mode == MergeSetting::MISSING)
     {
         return Ok(());
     }
@@ -707,7 +720,7 @@ fn merge_op(
 ) -> Result<EditOp> {
     let missing_only = match merge {
         MergeSetting::Bool(true) => false,
-        MergeSetting::Mode(mode) if mode == "missing" => true,
+        MergeSetting::Mode(mode) if mode == MergeSetting::MISSING => true,
         _ => bail!(
             "\"{path_raw}\".{id}: merge must be true or \"missing\" when present, ignoring entry"
         ),
@@ -749,7 +762,7 @@ fn merge_op(
     origin.source = Some(source.clone());
     let template = match entry.template.as_deref() {
         None => false,
-        Some("tera") => true,
+        Some(engine) if TEMPLATE_ENGINES.contains(&engine) => true,
         Some(other) => {
             bail!(
                 "\"{path_raw}\".{id}: unknown template engine '{other}' (expected \"tera\"), ignoring entry"

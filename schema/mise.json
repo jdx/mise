@@ -8164,7 +8164,7 @@
                     },
                     "mode": {
                       "type": "string",
-                      "description": "how to apply a whole-file source to the target; omitted uses the group's mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
+                      "description": "how to apply a whole-file source to the target; omitted uses the group's mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared. \"fnox\" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source",
                       "anyOf": [
                         {
                           "enum": [
@@ -8174,7 +8174,8 @@
                             "template",
                             "absent",
                             "track",
-                            "track-local"
+                            "track-local",
+                            "fnox"
                           ]
                         },
                         {
@@ -8318,7 +8319,7 @@
                       "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
                     },
                     "merge": {
-                      "description": "edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, or YAML target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension unless \"format\" names it",
+                      "description": "edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, YAML, or INI target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension unless \"format\" names it",
                       "oneOf": [
                         {
                           "type": "boolean"
@@ -8330,10 +8331,10 @@
                     },
                     "format": {
                       "type": "string",
-                      "description": "merge only: the format of the target and source when the target's extension doesn't name it, such as \"jsonc\" for VS Code's settings.json",
+                      "description": "merge only: the format of the target and source when the target's extension doesn't name it, such as \"jsonc\" for VS Code's settings.json or \"ini\" for an extensionless INI file",
                       "anyOf": [
                         {
-                          "enum": ["json", "jsonc", "toml", "yaml"]
+                          "enum": ["json", "jsonc", "toml", "yaml", "ini"]
                         },
                         {
                           "type": "string"
@@ -11301,6 +11302,24 @@
               "init": {
                 "$ref": "#/$defs/daemon_init"
               },
+              "mise": {
+                "type": "boolean",
+                "description": "false runs the daemon's setup steps and probes without the project's tool environment; the task itself always runs through `mise run`."
+              },
+              "port": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/daemon_port"
+                  },
+                  {
+                    "type": "object",
+                    "description": "Pitchfork's structured port configuration, forwarded verbatim.",
+                    "not": {
+                      "required": ["auto"]
+                    }
+                  }
+                ]
+              },
               "ports": {
                 "type": "object",
                 "description": "More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.",
@@ -11396,6 +11415,10 @@
               "version": {
                 "type": "string",
                 "description": "Version request for the preset's tool."
+              },
+              "tool": {
+                "type": "string",
+                "description": "Tool to install the server from, in place of the preset's default."
               },
               "port": {
                 "$ref": "#/$defs/daemon_port"

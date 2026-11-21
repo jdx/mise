@@ -464,6 +464,9 @@ fn validate_idle_timeout(name: &str, table: &toml::Table) -> Result<()> {
     }
 }
 
+/// The values a daemon's `proxy_tls` key may name.
+pub(crate) const PROXY_TLS_MODES: [&str; 2] = ["terminate", "passthrough"];
+
 /// Read `proxy` and `proxy_tls` from a daemon table, validate them, write the
 /// normalized values back for pitchfork, and return the daemon's hostname.
 pub fn apply(
@@ -477,7 +480,7 @@ pub fn apply(
     let routable = table.contains_key("port");
     let tls = match table.get("proxy_tls") {
         None => None,
-        Some(toml::Value::String(mode)) if matches!(mode.as_str(), "terminate" | "passthrough") => {
+        Some(toml::Value::String(mode)) if PROXY_TLS_MODES.contains(&mode.as_str()) => {
             Some(mode.clone())
         }
         Some(other) => bail!(

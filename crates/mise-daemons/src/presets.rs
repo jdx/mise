@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-const PRESETS: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/daemon_presets.rs"));
+pub(crate) const PRESETS: &[(&str, &str)] =
+    include!(concat!(env!("OUT_DIR"), "/daemon_presets.rs"));
 
 /// Daemon table keys whose values are shell command lines. Only these render with
 /// shell-quoted paths and option values; everything else (`depends`, `dir`, …) is a

@@ -254,6 +254,9 @@ pub struct DaemonTaskDecl {
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_init")]
     pub init: Option<DaemonInit>,
+    /// false runs the daemon's setup steps and probes without the project's tool environment; the task itself always runs through `mise run`.
+    pub mise: Option<bool>,
+    pub port: Option<DaemonCommandPort>,
     /// More named ports, each exported as <NAME>_<PORT>_PORT and moved by the same worktree slot as `port`.
     #[schemars(extend("propertyNames" = {
         "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
@@ -292,6 +295,8 @@ pub struct DaemonPresetDecl {
     pub preset: String,
     /// Version request for the preset's tool.
     pub version: String,
+    /// Tool to install the server from, in place of the preset's default.
+    pub tool: Option<String>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_port")]
     pub port: Option<DaemonPort>,
