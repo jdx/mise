@@ -436,13 +436,21 @@ fn expand_group(
         }
     }
     // a wildcard entry, or a variant's target, deploys somewhere its key does
-    // not name, and inside the target that path is the entry's too
-    for (deployed, _) in entry_requests.keys() {
+    // not name, from a source its table does not name. Inside the target and
+    // the tree, those paths are the entry's too.
+    for ((deployed, _), request) in &entry_requests {
+        let mut cuts = vec![];
         if let Ok(rel) = deployed.strip_prefix(&target) {
-            let cut = format!(
-                "/{}",
-                glob_escape_rel(&source_rel_for(&root, rel, group.dot_prefix))
-            );
+            cuts.push(source_rel_for(&root, rel, group.dot_prefix));
+        }
+        if let Ok(source_rel) =
+            files::lexical_normalize(&request.source).strip_prefix(&normalized_root)
+            && !source_rel.as_os_str().is_empty()
+        {
+            cuts.push(source_rel.to_path_buf());
+        }
+        for cut in cuts {
+            let cut = format!("/{}", glob_escape_rel(&cut));
             if !exclude.contains(&cut) {
                 exclude.push(cut);
             }
@@ -1477,10 +1485,10 @@ mod tests {
             panic!("expected the tree and one entry, got {files:?}");
         };
         assert_eq!(entry.target, dir.path().join("home/config"));
-        assert!(
-            tree.exclude.iter().any(|p| p.as_str() == "/config"),
-            "{tree:?}"
-        );
+        // the walk skips where the match deploys and where it comes from
+        for cut in ["/config", "/extras/home"] {
+            assert!(tree.exclude.iter().any(|p| p.as_str() == cut), "{tree:?}");
+        }
         Ok(())
     }
 
