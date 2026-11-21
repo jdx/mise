@@ -415,6 +415,45 @@ fn expand_group(
         }
     }
 
+    // the same cut once more, between the destinations as they deploy: a
+    // wildcard's matches and a selected variant's target are not in the keys
+    let resolved = entry_requests
+        .values()
+        .map(|request| {
+            (
+                request.target.clone(),
+                files::lexical_normalize(&request.source),
+            )
+        })
+        .collect::<Vec<_>>();
+    for outer in entry_requests.values_mut() {
+        if !matches!(outer.mode, FileMode::SymlinkEach | FileMode::Copy) || !outer.source.is_dir() {
+            continue;
+        }
+        let outer_source = files::lexical_normalize(&outer.source);
+        for (inner_target, inner_source) in resolved
+            .iter()
+            .filter(|(target, _)| *target != outer.target)
+        {
+            let mut cuts = vec![];
+            if let Ok(rel) = inner_target.strip_prefix(&outer.target) {
+                cuts.push(source_rel_for(&outer.source, rel, outer.dot_prefix));
+            }
+            if let Ok(rel) = inner_source.strip_prefix(&outer_source)
+                && !rel.as_os_str().is_empty()
+            {
+                cuts.push(rel.to_path_buf());
+            }
+            for cut in cuts {
+                if let Ok(cut) = glob::Pattern::new(&format!("/{}", glob_escape_rel(&cut)))
+                    && !outer.exclude.contains(&cut)
+                {
+                    outer.exclude.push(cut);
+                }
+            }
+        }
+    }
+
     let mut merged = IndexMap::new();
     // the tree itself, minus every path an entry describes, and minus a
     // source inside the tree that an entry deploys somewhere else
@@ -1489,6 +1528,34 @@ mod tests {
         for cut in ["/config", "/extras/home"] {
             assert!(tree.exclude.iter().any(|p| p.as_str() == cut), "{tree:?}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_wildcard_entry_takes_its_matches_out_of_a_walking_entry() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        file::create_dir_all(dir.path().join("root/app"))?;
+        file::write(dir.path().join("root/app/settings"), "")?;
+        file::create_dir_all(dir.path().join("root/extras"))?;
+        file::write(dir.path().join("root/extras/app"), "")?;
+        // the wildcard's one match deploys inside the directory `app` walks
+        let (files, _) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"app\", mode = \"copy\" }}\n{:?} = {{ source = \"extras/*\", mode = \"copy\" }}",
+                dir.path().join("app"),
+                dir.path().join("*/settings"),
+            ),
+        )?;
+        let [_tree, app, settings] = files.as_slice() else {
+            panic!("expected the tree and two entries, got {files:?}");
+        };
+        assert_eq!(settings.target, dir.path().join("app/settings"));
+        assert!(
+            app.exclude.iter().any(|p| p.as_str() == "/settings"),
+            "{app:?}"
+        );
+        assert!(settings.exclude.is_empty(), "{settings:?}");
         Ok(())
     }
 
