@@ -168,7 +168,7 @@ fn registration(
         output.push_str(if commands.is_empty() {
             "if typeset -f __mise_clear_completions >/dev/null && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         } else if !compinit {
-            "if (( $+functions[compdef] )) && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n__mise_pending_completions() {\n(( $+functions[compdef] )) || return 0\nprecmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\")\n"
+            "__mise_pending_completions() {\n(( $+functions[compdef] )) || return 0\nprecmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\")\nif [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         } else {
             "if ! typeset -f compdef >/dev/null || [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         });

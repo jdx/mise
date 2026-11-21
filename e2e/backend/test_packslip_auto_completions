@@ -290,3 +290,18 @@ for hook in ${precmd_functions-}; do $hook 2>/dev/null || :; done
 if (( $+functions[__mise_clear_completions] || $+functions[_probe] )); then print -r -- registered; else print -r -- clean; fi
 ZSH
 assert 'cat zsh-no-compinit-deactivated.out' 'clean'
+
+# A plain-array _comps is repaired when the queued registration finally runs.
+zsh -f <<'ZSH' >zsh-no-compinit-plain-comps.out 2>&1
+set -eu
+export MISE_PACKSLIP_COMPINIT=0
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise hook-env -s zsh --force)"
+autoload -Uz compinit
+compinit -i
+unset _comps
+typeset -ga _comps
+for hook in ${precmd_functions-}; do $hook; done
+[[ ${(t)_comps} == association* ]] && (( $+functions[__mise_clear_completions] )) && print -r -- repaired
+ZSH
+assert 'cat zsh-no-compinit-plain-comps.out' 'repaired'
