@@ -626,6 +626,7 @@ mod tests {
             name: "test".to_string(),
             tap: None,
             from_tap_source: false,
+            unsupported_requirements: vec![],
             aliases: vec![],
             oldnames: vec![],
             versions: Versions {

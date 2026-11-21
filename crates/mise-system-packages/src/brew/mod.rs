@@ -166,6 +166,22 @@ impl BrewManager {
             info!("brew: all formulae already poured");
             return Ok(());
         }
+        // only now: a formula that is already poured is not touched, so its
+        // unenforced requirements are not worth a warning
+        for rf in &to_pour {
+            let formula = &rf.formula;
+            for requirement in &formula.unsupported_requirements {
+                let tap = formula
+                    .tap
+                    .as_deref()
+                    .map(|t| format!("{t}/"))
+                    .unwrap_or_default();
+                warn!(
+                    "ignoring unsupported Homebrew requirement {requirement} in {tap}{}; it is not enforced",
+                    formula.name
+                );
+            }
+        }
         // formulae without a usable bottle are built from source by
         // evaluating their Ruby with mise's formula shim; reject the ones
         // the builder can't handle before any work happens
