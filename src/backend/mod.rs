@@ -3223,11 +3223,17 @@ fn other_copy_remains(tv: &ToolVersion, install_path: &Path) -> bool {
 /// Delete a system installation the user cannot write to through `sudo`, the
 /// way `mise install --system` publishes one. Returns false for any other
 /// installation, which the caller deletes itself.
+/// Whether uninstalling `install_path` goes through the root helper, as a
+/// version in a root-owned system installs directory does for a normal user.
+/// Backend hooks run as this user then, and cannot change that installation.
+pub(crate) fn removes_with_sudo(install_path: &Path) -> bool {
+    env::install_path_category(install_path) == env::InstallPathCategory::System
+        && crate::tool_purgatory::needs_sudo_to_remove(install_path)
+}
+
 fn remove_system_install_with_sudo(tv: &ToolVersion, install_path: &Path) -> eyre::Result<bool> {
     #[cfg(unix)]
-    if env::install_path_category(install_path) == env::InstallPathCategory::System
-        && crate::tool_purgatory::needs_sudo_to_remove(install_path)
-    {
+    if removes_with_sudo(install_path) {
         let manual = format!("mise uninstall {}@{}", tv.ba().short, tv.version);
         crate::system_install::remove(install_path, &manual)?;
         return Ok(true);
@@ -6168,8 +6174,17 @@ pub trait Backend: Debug + Send + Sync {
         if !dryrun {
             crate::install_layout::resolver::guard_removal(&install_path)?;
         }
+        let other_copy = other_copy_remains(tv, &install_path);
+        // The marker is per version, shared by the user's and the system copy.
+        // Removing the system copy while the user's stays leaves it as it is:
+        // the listing resolves the version to the user's copy, which marking
+        // would make look uninstalled, and for good if this process is killed.
+        // A user copy being removed is the one readers resolve to, so it is
+        // still marked while it is half deleted.
+        let keep_marker = other_copy
+            && env::install_path_category(&install_path) == env::InstallPathCategory::System;
         let was_incomplete = !dryrun && install_state::is_incomplete(tv.ba(), &tv.state_key());
-        if !dryrun {
+        if !dryrun && !keep_marker {
             // A removal in progress leaves a directory that is not the install it was, which a
             // check that takes no lock must not read as complete; the marker is cleared below.
             install_state::mark_incomplete(tv.ba(), &tv.state_key())?;
@@ -6183,7 +6198,7 @@ pub trait Backend: Debug + Send + Sync {
                     // The root helper moves the installation away before deleting anything,
                     // so one still in place was not touched (sudo was unavailable or
                     // refused) and is as complete as it was.
-                    if !was_incomplete && install_path.exists() {
+                    if !keep_marker && !was_incomplete && install_path.exists() {
                         install_state::clear_incomplete_marker_best_effort(
                             tv.ba(),
                             &tv.state_key(),
@@ -6203,11 +6218,13 @@ pub trait Backend: Debug + Send + Sync {
             crate::install_layout::resolver::unlink_installation(&install_path);
             // The install is gone. The marker is shared by every install of this version, so
             // it must not outlive the removal if the download or cache cleanup below fails.
-            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
+            if !keep_marker {
+                install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
+            }
         }
         // The download and cache belong to the version, not to one copy of it, so they
         // stay while the user's or the system copy of the same version is still there.
-        if !other_copy_remains(tv, &install_path) {
+        if !other_copy {
             if !Settings::get().always_keep_download {
                 rmdir(&tv.download_path())?;
             }

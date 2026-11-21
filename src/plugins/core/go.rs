@@ -332,7 +332,9 @@ impl Backend for GoPlugin {
         tv: &ToolVersion,
     ) -> eyre::Result<()> {
         let gopath = self.gopath(tv);
-        if gopath.exists() {
+        // The root helper removes a root-owned system install, read-only module
+        // cache and all, and this user could not change its permissions.
+        if gopath.exists() && !crate::backend::removes_with_sudo(&tv.install_path()) {
             cmd!("chmod", "-R", "u+wx", gopath).run()?;
         }
         Ok(())

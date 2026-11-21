@@ -1659,7 +1659,22 @@ fn keep_uv_python_variants(
                     });
                 }
             };
-            let (python, version) = selected_python_receipt(&contents, &receipt)?;
+            let Some((python, version)) = selected_python_receipt(&contents, &receipt)? else {
+                // An administrator may have built the system copy with an
+                // interpreter from outside mise, under a config other than this
+                // user's; it owns no mise runtime to keep. In the user's own
+                // directory a selector records a mise Python, so anything else
+                // means the receipt cannot be trusted.
+                if crate::env::install_path_category(&dir)
+                    == crate::env::InstallPathCategory::System
+                {
+                    continue;
+                }
+                bail!(
+                    "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
+                    receipt.display()
+                );
+            };
             let identity_installs = crate::install_layout::resolver::installs_of(&python_ba);
             match receipt_python_install(&python, &version, &identity_installs, &python_roots) {
                 Some(ReceiptPython::Identity(python_dir)) => {
@@ -1779,7 +1794,9 @@ fn receipt_legacy_install_name(resolved: &Path, installs: &Path) -> Option<Strin
     root.join(name).is_dir().then(|| name.to_string())
 }
 
-fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
+/// The interpreter and version a receipt records, or `None` for one that names
+/// an interpreter from outside mise.
+fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<Option<(PathBuf, String)>> {
     let (python, identity) =
         serde_json::from_str::<(PathBuf, String)>(contents).wrap_err_with(|| {
             format!(
@@ -1791,12 +1808,9 @@ fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, S
     let (Some("core"), Some("python"), Some(version), Some(_runtime_identity)) =
         (parts.next(), parts.next(), parts.next(), parts.next())
     else {
-        bail!(
-            "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
-            receipt.display()
-        );
+        return Ok(None);
     };
-    Ok((python, version.to_string()))
+    Ok(Some((python, version.to_string())))
 }
 
 /// What a rolling `latest` points at on its remote, asked once per source for
@@ -1956,6 +1970,7 @@ mod tests {
             r#"["/data/installs/python/3.11.9/bin/python","core:python:3.11.9:old-runtime"]"#,
             receipt,
         )
+        .unwrap()
         .unwrap();
         assert_eq!(
             python,
@@ -1965,21 +1980,19 @@ mod tests {
     }
 
     #[test]
-    fn selected_python_receipt_fails_closed_when_malformed_or_not_mise_python() {
+    fn selected_python_receipt_fails_closed_when_malformed_and_names_no_foreign_python() {
         let receipt = Path::new("/data/installs/pypi:demo/demo/.mise-uv/python.json");
         let invalid_json = selected_python_receipt("not json", receipt).unwrap_err();
         assert!(invalid_json.to_string().contains("invalid Python receipt"));
 
+        // The caller decides: a foreign interpreter is expected in a system copy
+        // and fails closed in the user's own directory.
         let foreign_runtime = selected_python_receipt(
             r#"["/usr/bin/python3","system:python:3.12:system"]"#,
             receipt,
         )
-        .unwrap_err();
-        assert!(
-            foreign_runtime
-                .to_string()
-                .contains("does not name a mise core Python runtime")
-        );
+        .unwrap();
+        assert_eq!(foreign_runtime, None);
     }
 
     #[cfg(unix)]
