@@ -19,7 +19,7 @@ use crate::{env, file};
 /// Set or show local tool versions (deprecated; use `mise use`)
 ///
 /// Writes `mise.toml` in the current directory, or an existing `.tool-versions`
-/// there when there is no `mise.toml`. Set MISE_USE_TOML=0 to create
+/// there when there is no `mise.toml`. The deprecated MISE_USE_TOML=0 creates
 /// `.tool-versions` instead. Use `mise global` for the global config.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
@@ -57,8 +57,8 @@ pub(crate) struct Local {
 
     /// Use the nearest `mise.toml` in this or a parent directory
     ///
-    /// By default, only the current directory is used. With MISE_USE_TOML=0, a
-    /// `.tool-versions` file also counts.
+    /// By default, only the current directory is used. With the deprecated
+    /// MISE_USE_TOML=0, a `.tool-versions` file also counts.
     #[usage(short, long, verbatim_doc_comment)]
     parent: bool,
 
@@ -113,6 +113,7 @@ fn get_path() -> Result<PathBuf> {
     } else if *env::MISE_USE_TOML {
         Ok(mise_toml)
     } else {
+        crate::config::warn_use_toml_disabled();
         Ok(tool_versions)
     }
 }
@@ -122,8 +123,16 @@ pub(super) fn get_parent_path() -> Result<PathBuf> {
     if !*env::MISE_USE_TOML {
         filenames.push(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
     }
-    file::find_up(&env::current_dir()?, &filenames)
-        .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
+    let path = file::find_up(&env::current_dir()?, &filenames)
+        .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))?;
+    // Only MISE_USE_TOML=0 lets `--parent` find a `.tool-versions` file.
+    if path
+        .file_name()
+        .is_some_and(|f| f == MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
+    {
+        crate::config::warn_use_toml_disabled();
+    }
+    Ok(path)
 }
 
 pub(super) async fn local(

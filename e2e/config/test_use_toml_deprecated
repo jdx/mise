@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# MISE_USE_TOML=0 is deprecated. mise warns once per run when the variable changes
+# what it does, and stays quiet when the variable is unset or has no effect.
+
+warning="MISE_USE_TOML=0 is deprecated"
+
+assert "mise i dummy@{1,2}"
+
+# unset: no warning
+assert_not_contains "mise ls 2>&1" "$warning"
+
+# set, but there is no ~/.tool-versions for it to load: no warning
+assert_fail "test -f $HOME/.tool-versions"
+assert_not_contains "MISE_USE_TOML=0 mise ls 2>&1" "$warning"
+
+# `mise local` creates mise.toml by default and .tool-versions under MISE_USE_TOML=0
+mkdir local_toml local_tv
+(
+  cd local_toml || exit
+  assert_not_contains "mise local dummy@1 2>&1" "$warning"
+  assert "test -f mise.toml"
+)
+(
+  cd local_tv || exit
+  assert_contains "MISE_USE_TOML=0 mise local dummy@1 2>&1" "$warning"
+  assert "cat .tool-versions" "dummy 1"
+  # the file exists now, so the variable no longer decides where `mise local` writes
+  assert_not_contains "MISE_USE_TOML=0 mise local dummy@2 2>&1" "$warning"
+  assert "cat .tool-versions" "dummy 2"
+)
+
+# the replacement the warning names for writing .tool-versions
+mkdir use_path
+(
+  cd use_path || exit
+  assert_not_contains "mise use --path .tool-versions dummy@1 2>&1" "$warning"
+  assert "cat .tool-versions" "dummy 1"
+  # a directory whose only config is .tool-versions keeps receiving writes
+  assert_not_contains "mise use dummy@2 2>&1" "$warning"
+  assert "cat .tool-versions" "dummy 2"
+  assert_fail "test -f mise.toml"
+)
+
+# with no global TOML config, MISE_USE_TOML=0 sends global writes to ~/.tool-versions
+assert_contains "MISE_USE_TOML=0 mise use -g dummy@1 2>&1" "$warning"
+assert "cat $HOME/.tool-versions" "dummy 1"
+assert_fail "test -f $HOME/.config/mise/config.toml"
+
+# ~/.tool-versions is now loaded as a global config because of the variable
+assert "MISE_USE_TOML=0 mise ls 2>&1 | grep -c '$warning'" "1"
+assert_not_contains "mise ls 2>&1" "$warning"
+
+# the shell hook runs before every prompt and never prints it
+assert_not_contains "MISE_USE_TOML=0 mise hook-env -s bash 2>&1" "$warning"
+
+# the replacement the warning names for a global ~/.tool-versions
+export MISE_GLOBAL_CONFIG_FILE="$HOME/.tool-versions"
+assert_not_contains "MISE_USE_TOML=0 mise use -g dummy@2 2>&1" "$warning"
+assert_not_contains "mise use -g dummy@2 2>&1" "$warning"
+assert "cat $HOME/.tool-versions" "dummy 2"
+assert "mise ls dummy --json | jq -r '.[] | select(.source) | .source.path'" "$HOME/.tool-versions"
+assert_fail "test -f $HOME/.config/mise/config.toml"
+
+# a .tool-versions global config holds no settings, so mise does not parse it as TOML
+assert_not_contains "mise ls 2>&1" "Error loading settings file"
+unset MISE_GLOBAL_CONFIG_FILE
+assert_not_contains "MISE_USE_TOML=0 mise ls 2>&1" "Error loading settings file"

@@ -487,6 +487,7 @@ impl Config {
             }
         }
 
+        warn_if_use_toml_loads_home_tool_versions();
         if !global_only {
             warn_if_auto_env_files_exist();
             warn_if_monorepo_lockfile_default_changes(&config);
@@ -3373,6 +3374,56 @@ fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &ResolvedMonorepoC
     lockfile_paths.iter().any(|path| path.exists())
 }
 
+/// Whether this process is `mise hook-env`, which runs before every prompt.
+/// Matches the subcommand anywhere before `--` rather than guessing its positional
+/// slot (flags with separate values like `--cd /path` would shift it); callers use
+/// this to skip advisory warnings, so erring toward skipping is the safe direction.
+fn running_hook_env() -> bool {
+    env::ARGS
+        .read()
+        .unwrap()
+        .iter()
+        .skip(1)
+        .take_while(|a| *a != "--")
+        .any(|a| a == "hook-env")
+}
+
+/// `~/.tool-versions`, which `MISE_USE_TOML=0` adds to the global config files.
+fn home_tool_versions_path() -> PathBuf {
+    dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str())
+}
+
+/// Whether `MISE_USE_TOML=0` put `~/.tool-versions` among the global config files.
+/// `MISE_GLOBAL_CONFIG_FILE` names the only global config, so the variable does
+/// nothing to the global files when that is set.
+fn use_toml_adds_home_tool_versions() -> bool {
+    !*env::MISE_USE_TOML && env::MISE_GLOBAL_CONFIG_FILE.is_none()
+}
+
+/// Deprecation warning for `MISE_USE_TOML=0`. Call it only where the variable
+/// changed what mise did, so that setting it without effect stays quiet. Shims and
+/// `hook-env` never print it: they run on every command and every prompt.
+pub fn warn_use_toml_disabled() {
+    if *env::IS_RUNNING_AS_SHIM || running_hook_env() {
+        return;
+    }
+    deprecated_at!(
+        "2026.11.0",
+        "2027.11.0",
+        "env.MISE_USE_TOML",
+        "MISE_USE_TOML=0 is deprecated. mise still reads .tool-versions files. To write one, use `mise use --path .tool-versions`; to keep ~/.tool-versions as the global config, set MISE_GLOBAL_CONFIG_FILE=~/.tool-versions."
+    );
+}
+
+/// Warns when `MISE_USE_TOML=0` made an existing `~/.tool-versions` a global config
+/// file, which applies it outside the home directory and ranks it above the
+/// global config directory.
+fn warn_if_use_toml_loads_home_tool_versions() {
+    if use_toml_adds_home_tool_versions() && home_tool_versions_path().exists() {
+        warn_use_toml_disabled();
+    }
+}
+
 /// Phase-2 rollout warning for auto_env: starting with 2026.12.0, tell users about
 /// platform-specific config files (e.g. mise.windows.toml) that mise will begin
 /// loading automatically when auto_env defaults to true in 2027.6.0.
@@ -3391,17 +3442,7 @@ fn warn_if_auto_env_files_exist() {
         return;
     }
     // Skip hook-env to keep the every-prompt path free of extra filesystem checks.
-    // Match the subcommand anywhere before `--` rather than guessing its positional
-    // slot (flags with separate values like `--cd /path` would shift it); the warning
-    // is advisory, so erring toward skipping it is the safe direction.
-    if env::ARGS
-        .read()
-        .unwrap()
-        .iter()
-        .skip(1)
-        .take_while(|a| *a != "--")
-        .any(|a| a == "hook-env")
-    {
+    if running_hook_env() {
         return;
     }
     let found = detect_auto_env_candidate_files();
@@ -3776,7 +3817,7 @@ pub(crate) fn global_config_files() -> IndexSet<PathBuf> {
     if !*env::MISE_USE_TOML {
         // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
         // because that's how the user overrides the default
-        config_files.insert(dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()));
+        config_files.insert(home_tool_versions_path());
     };
     *g = Some(config_files.clone());
     config_files
@@ -3984,10 +4025,15 @@ fn is_active_env_config_file(path: &Path, envs: &[String]) -> bool {
 /// See: https://github.com/jdx/mise/discussions/8236
 pub fn global_config_path() -> PathBuf {
     let files = global_write_candidates();
-    first_config_file(&files)
+    let path = first_config_file(&files)
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
-        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
+        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"));
+    // Without MISE_USE_TOML=0 this would be a TOML file in the config directory.
+    if use_toml_adds_home_tool_versions() && path == home_tool_versions_path() {
+        warn_use_toml_disabled();
+    }
+    path
 }
 
 /// The shared global config file: where declarations meant for every
