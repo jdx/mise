@@ -246,6 +246,39 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn zsh_cleanup_runs_quietly_when_the_completion_function_is_gone() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        if which::which("zsh").is_err() {
+            return;
+        }
+        let commands = BTreeSet::from(["wt".to_string()]);
+        let output = registration("zsh", Shell::Zsh, &commands);
+        // A snapshot-restored shell keeps `__mise_clear_completions` but not `_wt`.
+        let script = format!(
+            "autoload -Uz compinit; compinit -u -D\n{output}\nunfunction _wt\n__mise_clear_completions\n"
+        );
+        let mut child = Command::new("zsh")
+            .arg("-f")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(script.as_bytes())
+            .unwrap();
+        let result = child.wait_with_output().unwrap();
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(result.status.success(), "{stderr}");
+        assert!(stderr.is_empty(), "{stderr}");
+    }
+
+    #[test]
     fn manifest_command_names_cannot_inject_shell_code() {
         for command in ["hk", "my-tool", "g++", "tool.exe"] {
             assert!(safe_command(command));
