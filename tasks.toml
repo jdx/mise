@@ -69,18 +69,48 @@ done
 description = 'Generate usage documentation'
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
-run = [
-  "mise usage > mise.usage.kdl",
-  "mise generate task-docs > tasks.md",
-  "rm -rf docs/cli && mkdir -p docs/cli",
-  "mise x usage -- usage generate markdown -m --out-dir docs/cli --url-prefix /cli --link-extension .html --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
-  # usage-lib renders <SUBCOMMAND> for any command with subcommands. `mise bootstrap`
-  # can run without a subcommand, so normalize the generated markdown.
-  "perl -0pi -e 's/mise bootstrap \\[FLAGS\\] <SUBCOMMAND>/mise bootstrap [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/index.md",
-  "node --test docs/.vitepress/cli-reference.test.ts",
-  "node docs/.vitepress/cli-reference.ts",
-  "markdownlint --fix docs/cli",
-]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Everything is written to a scratch directory first. mise.usage.kdl and
+# tasks.md are moved into place once their command has succeeded, and the pages
+# replace docs/cli only after every step has passed, so a failed run leaves
+# docs/cli as it was. The scratch directory is in the repository so each move
+# is a rename on one filesystem, and the pages sit at docs/cli inside it
+# because markdownlint matches .markdownlintignore against paths relative to
+# its working directory.
+root="$PWD"
+tmp="$(mktemp -d "$root/.render-usage.XXXXXX")"
+out="$tmp/docs/cli"
+cleanup() {
+  # Put the previous pages back when the swap stopped between its two renames.
+  if [ ! -e "$root/docs/cli" ] && [ -e "$tmp/previous" ]; then
+    mv "$tmp/previous" "$root/docs/cli"
+  fi
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+mkdir -p "$out"
+
+mise usage > "$tmp/mise.usage.kdl"
+mv "$tmp/mise.usage.kdl" mise.usage.kdl
+mise generate task-docs > "$tmp/tasks.md"
+mv "$tmp/tasks.md" tasks.md
+
+mise x usage -- usage generate markdown -m --out-dir "$out" --url-prefix /cli --link-extension .html --html-encode --file mise.usage.kdl --replace-pre-with-code-fences
+# usage-lib renders <SUBCOMMAND> for any command with subcommands. `mise bootstrap`
+# can run without a subcommand, so normalize the generated markdown.
+perl -0pi -e 's/mise bootstrap \[FLAGS\] <SUBCOMMAND>/mise bootstrap [FLAGS] [SUBCOMMAND]/g' "$out/bootstrap.md" "$out/index.md"
+node --test docs/.vitepress/cli-reference.test.ts
+node docs/.vitepress/cli-reference.ts "$out"
+(cd "$tmp" && markdownlint --fix --config "$root/.markdownlint.json" --ignore-path "$root/.markdownlintignore" docs/cli)
+
+if [ -e docs/cli ]; then
+  mv docs/cli "$tmp/previous"
+fi
+mv "$out" docs/cli
+'''
 
 ["render:completions"]
 description = 'Generate shell completions'
