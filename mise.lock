@@ -292,6 +292,10 @@ url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets
 version = "1.49.0"
 backend = "aqua:mitsuhiko/insta"
 specifiers = ["latest"]
+unsupported_platforms = [
+    "linux-arm64",
+    "linux-arm64-musl",
+]
 
 [tools.cargo-insta."platforms.linux-x64"]
 checksum = "sha256:18879f4e7280c2eb87bb1037ddb9d48af697511fb0d8113edfc39ab8bade4d4e"
