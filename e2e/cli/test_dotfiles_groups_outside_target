@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+# A group entry may deploy outside its group's target, so a package whose
+# files land in more than one place is still one group.
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/vscode/.config/Code/User" "$DOTS/vscode/.config/crossnote"
+echo "keys" >"$DOTS/vscode/.config/Code/User/keybindings.json"
+echo '{"editor.tabSize": 2}' >"$DOTS/vscode/.config/Code/User/settings.json"
+echo "style" >"$DOTS/vscode/.config/crossnote/style.less"
+echo "notes" >"$DOTS/vscode/notes.md"
+
+cat <<EOF >mise.toml
+[dotfile_groups.vscode]
+root = "vscode/.config"
+target = "~/AppData/Roaming"
+
+[dotfile_groups.vscode.entries]
+"~/.crossnote" = { source = "crossnote", mode = "symlink" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/AppData/Roaming/Code/User/keybindings.json" "$DOTS/vscode/.config/Code/User/keybindings.json"
+assert "readlink $HOME/.crossnote" "$DOTS/vscode/.config/crossnote"
+# the tree does not also deploy the source the entry placed elsewhere
+assert_fail "test -e $HOME/AppData/Roaming/crossnote"
+
+# The entry belongs to the group: removing the group removes it too.
+assert_succeed "mise dot unapply --group vscode --yes"
+assert_fail "test -e $HOME/.crossnote"
+assert_fail "test -e $HOME/AppData/Roaming/Code/User/keybindings.json"
+assert "cat $DOTS/vscode/.config/crossnote/style.less" "style"
+
+# A directory entry without a mode deploys like the group, file by file, and
+# an edit can change a file outside the target.
+cat <<EOF >mise.toml
+[dotfile_groups.vscode]
+root = "vscode/.config"
+target = "~/AppData/Roaming"
+
+[dotfile_groups.vscode.entries]
+"~/.crossnote" = "crossnote"
+"~/.vscode-settings.json/shared" = { source = "Code/User/settings.json", merge = true }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.crossnote/style.less" "$DOTS/vscode/.config/crossnote/style.less"
+assert_fail "test -L $HOME/.crossnote"
+assert_contains "cat $HOME/.vscode-settings.json" "editor.tabSize"
+assert_fail "test -e $HOME/AppData/Roaming/Code/User/settings.json"
+assert "readlink $HOME/AppData/Roaming/Code/User/keybindings.json" "$DOTS/vscode/.config/Code/User/keybindings.json"
+
+# Deselecting the group orphans the entry's files with the rest of it.
+cat <<EOF >>mise.toml
+
+[bootstrap]
+dotfile_groups = []
+EOF
+assert_contains "mise dot status" "orphaned"
+assert_succeed "mise dot apply --prune --yes"
+assert_fail "test -e $HOME/.crossnote/style.less"
+assert_fail "test -e $HOME/AppData/Roaming/Code/User/keybindings.json"
+
+# An entry outside the target has no path in the tree, so it names a source.
+cat <<EOF >mise.toml
+[dotfile_groups.vscode]
+root = "vscode/.config"
+target = "~/AppData/Roaming"
+
+[dotfile_groups.vscode.entries]
+"~/.crossnote" = { mode = "symlink" }
+EOF
+assert_contains "mise dot status 2>&1" "needs a source"
+
+# A group that deploys only its entries: skip the whole tree.
+cat <<EOF >mise.toml
+[dotfile_groups.vscode]
+root = "vscode"
+exclude = ["/*"]
+
+[dotfile_groups.vscode.entries]
+"~/.keys.json" = ".config/Code/User/keybindings.json"
+"~/.crossnote" = ".config/crossnote"
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.keys.json" "$DOTS/vscode/.config/Code/User/keybindings.json"
+assert "readlink $HOME/.crossnote/style.less" "$DOTS/vscode/.config/crossnote/style.less"
+assert_fail "test -e $HOME/notes.md"
+assert_fail "test -e $HOME/.config/Code"

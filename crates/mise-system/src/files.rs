@@ -1654,6 +1654,7 @@ pub(crate) fn merge_group_entry(
 pub(crate) fn merge_group_toml_entry(
     target_raw: String,
     value: toml::Value,
+    group_target: &Path,
     base: &Path,
     origin: &ResourceOrigin,
     merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
@@ -1661,6 +1662,25 @@ pub(crate) fn merge_group_toml_entry(
     let Some(entry) = parse_file_entry(&target_raw, value, &origin.config) else {
         bail!("entries.{target_raw:?}: not a valid whole-file entry");
     };
+    // a variant may deploy elsewhere, but never over the tree as a whole. The
+    // target is compared as it deploys, so a template is rendered first; one
+    // that does not render is reported when its variant is selected.
+    if let FileTomlEntry::Table(table) = &entry {
+        for variant_target in table
+            .variants
+            .iter()
+            .flatten()
+            .filter_map(|variant| variant.target.as_deref())
+        {
+            if let Ok(rendered) = render_variant_target(variant_target, origin)
+                && group_target.starts_with(resolve_target_arg(&rendered))
+            {
+                bail!(
+                    "entries.{target_raw:?}: variant target {variant_target:?} must not be the group's target or a directory that contains it"
+                );
+            }
+        }
+    }
     merge_file_entry(target_raw, entry, base, origin, merged);
     Ok(())
 }

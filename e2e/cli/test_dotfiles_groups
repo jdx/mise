@@ -185,16 +185,17 @@ EOF
 assert_fail_contains "mise dot apply --yes --force" "conflicting"
 assert "cat $DOTS/app/dot-config/app/themes/dark.toml" "dark"
 
-# An entry must lie inside its group's target.
+# An entry cannot take the place of its group's target, or of a directory
+# that contains it.
 cat <<EOF >mise.toml
 [dotfile_groups.app]
 root = "app"
 target = "~/.config"
 
 [dotfile_groups.app.entries]
-"~/.elsewhere" = { mode = "absent" }
+"~" = { mode = "absent" }
 EOF
-assert_contains "mise dot status 2>&1" "must be inside the group's target"
+assert_contains "mise dot status 2>&1" "must not be the group's target or a directory that contains it"
 
 # A group that leaves root out deploys the directory named after it, and
 # [dotfiles] entries take no group.
@@ -235,7 +236,7 @@ assert "cat $HOME/.config/tool/gen.conf" "gen=$HOME"
 assert_fail "test -e $HOME/.config/tool/gen.tmpl"
 assert_fail "test -e $HOME/tooltree"
 
-# A variant cannot deploy an entry outside its group's target.
+# A variant can deploy an entry outside its group's target,
 cat <<EOF >mise.toml
 [dotfile_groups.app]
 root = "app"
@@ -244,10 +245,20 @@ target = "~/.config"
 [dotfile_groups.app.entries]
 "~/.config/tool.conf" = { mode = "absent", variants = [{ os = "linux", target = "~/.elsewhere" }, { default = true }] }
 EOF
-assert_contains "mise dot status 2>&1" "must be inside the group's target"
-# nor onto the group's target itself
+assert_not_contains "mise dot status 2>&1" "ignoring group"
+# but not onto the group's target itself
 sed -i 's|target = "~/.elsewhere"|target = "~/.config"|' mise.toml
-assert_contains "mise dot status 2>&1" "must be inside the group's target"
+assert_contains "mise dot status 2>&1" "must not be the group's target or a directory that contains it"
+# nor through a template that renders to it
+cat <<EOF >mise.toml
+[dotfile_groups.app]
+root = "app"
+target = "~/.config"
+
+[dotfile_groups.app.entries]
+"~/.config/tool.conf" = { mode = "absent", variants = [{ os = "linux", target = "{{ env.HOME }}/.config" }, { default = true }] }
+EOF
+assert_contains "mise dot status 2>&1" "must not be the group's target or a directory that contains it"
 
 # Removal works under a target whose parent directory is a symlink.
 mkdir -p "$HOME/realcfg" "$DOTS/linked"

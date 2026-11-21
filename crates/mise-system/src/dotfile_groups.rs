@@ -17,10 +17,11 @@
 //! ```
 //!
 //! An entry without a source finds it under the group root at its path
-//! inside the group target, and a relative source starts at the root. A
-//! group expands into ordinary [`FileRequest`]s tagged with its name, so
-//! apply, status, and unapply treat its files like any other entry. Each
-//! apply also records what a group deployed under
+//! inside the group target, and a relative source starts at the root. An
+//! entry may deploy outside the group target, where it has no such path and
+//! names its source. A group expands into ordinary [`FileRequest`]s tagged
+//! with its name, so apply, status, and unapply treat its files like any
+//! other entry. Each apply also records what a group deployed under
 //! `$MISE_STATE_DIR/dotfiles/groups/`, so its files can still be found once
 //! the group stops deploying them: `mise dot status` reports them as
 //! orphaned, `mise dot apply --prune` removes them, and
@@ -329,8 +330,12 @@ fn expand_group(
     // deploy a file the edit changes.
     let claims = entries
         .iter()
-        .map(|entry| (&entry.target, &entry.source))
-        .chain(edits.iter().map(|edit| (&edit.target, &edit.source)))
+        .map(|entry| (entry.target.clone(), entry.source.clone()))
+        .chain(
+            edits
+                .iter()
+                .map(|edit| (edit.target.clone(), edit.source.clone())),
+        )
         .collect::<Vec<_>>();
     let nested = entries
         .iter()
@@ -340,7 +345,7 @@ fn expand_group(
                 return cut;
             }
             for (inner_target, inner_source) in
-                claims.iter().filter(|(target, _)| **target != outer.target)
+                claims.iter().filter(|(target, _)| *target != outer.target)
             {
                 // the nested entry's target, and its source when that lies
                 // in this entry's tree, are the nested entry's to deploy
@@ -360,6 +365,98 @@ fn expand_group(
         })
         .collect::<Vec<_>>();
 
+    // the entries resolve apart from the tree, so that none can take its place
+    let mut entry_requests = IndexMap::new();
+    for (entry, cut) in entries.into_iter().zip(nested) {
+        let key = entry.key.clone();
+        let mut table = entry.table;
+        if !cut.is_empty() {
+            let mut exclude = table
+                .get("exclude")
+                .and_then(toml::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            exclude.extend(cut.into_iter().map(toml::Value::String));
+            table.insert("exclude".into(), toml::Value::Array(exclude));
+        }
+        // the group waits for its dependencies, and so does each of its entries
+        if !group.depends.is_empty() {
+            let mut depends = table
+                .get("depends")
+                .and_then(toml::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for dep in &group.depends {
+                let dep = toml::Value::String(dep.clone());
+                if !depends.contains(&dep) {
+                    depends.push(dep);
+                }
+            }
+            table.insert("depends".into(), toml::Value::Array(depends));
+        }
+        files::merge_group_toml_entry(
+            entry.key,
+            toml::Value::Table(table),
+            &target,
+            base,
+            origin,
+            &mut entry_requests,
+        )?;
+        // the destinations as they deploy: a wildcard is expanded by now and
+        // a variant selected, and an earlier entry's were checked with it
+        if let Some((deployed, _)) = entry_requests
+            .keys()
+            .find(|(deployed, _)| target.starts_with(deployed))
+        {
+            bail!(
+                "entries.{key:?}: deploys to {}, which must not be the group's target or a directory that contains it",
+                deployed.display()
+            );
+        }
+    }
+
+    // the same cut once more, between the destinations as they deploy: a
+    // wildcard's matches and a selected variant's target are not in the keys.
+    // An edit is claimed here too, since the entry that walks over its file
+    // may be one of those.
+    let resolved = entry_requests
+        .values()
+        .map(|request| (request.target.clone(), request.source.clone()))
+        .chain(
+            edits
+                .iter()
+                .map(|edit| (edit.target.clone(), edit.source.clone())),
+        )
+        .map(|(target, source)| (target, files::lexical_normalize(&source)))
+        .collect::<Vec<_>>();
+    for outer in entry_requests.values_mut() {
+        if !matches!(outer.mode, FileMode::SymlinkEach | FileMode::Copy) || !outer.source.is_dir() {
+            continue;
+        }
+        let outer_source = files::lexical_normalize(&outer.source);
+        for (inner_target, inner_source) in resolved
+            .iter()
+            .filter(|(target, _)| *target != outer.target)
+        {
+            let mut cuts = vec![];
+            if let Ok(rel) = inner_target.strip_prefix(&outer.target) {
+                cuts.push(source_rel_for(&outer.source, rel, outer.dot_prefix));
+            }
+            if let Ok(rel) = inner_source.strip_prefix(&outer_source)
+                && !rel.as_os_str().is_empty()
+            {
+                cuts.push(rel.to_path_buf());
+            }
+            for cut in cuts {
+                if let Ok(cut) = glob::Pattern::new(&format!("/{}", glob_escape_rel(&cut)))
+                    && !outer.exclude.contains(&cut)
+                {
+                    outer.exclude.push(cut);
+                }
+            }
+        }
+    }
+
     let mut merged = IndexMap::new();
     // the tree itself, minus every path an entry describes, and minus a
     // source inside the tree that an entry deploys somewhere else
@@ -367,17 +464,38 @@ fn expand_group(
     // the sources are normalized, so the root they are compared with is too
     let normalized_root = files::lexical_normalize(&root);
     for (entry_target, entry_source) in &claims {
-        let rel = entry_target
-            .strip_prefix(&target)
-            .expect("entry inside target");
-        exclude.push(format!(
-            "/{}",
-            glob_escape_rel(&source_rel_for(&root, rel, group.dot_prefix))
-        ));
+        // an entry outside the target takes no path out of the tree
+        if let Ok(rel) = entry_target.strip_prefix(&target) {
+            exclude.push(format!(
+                "/{}",
+                glob_escape_rel(&source_rel_for(&root, rel, group.dot_prefix))
+            ));
+        }
         if let Ok(source_rel) = entry_source.strip_prefix(&normalized_root)
             && !source_rel.as_os_str().is_empty()
         {
             exclude.push(format!("/{}", glob_escape_rel(source_rel)));
+        }
+    }
+    // a wildcard entry, or a variant's target, deploys somewhere its key does
+    // not name, from a source its table does not name. Inside the target and
+    // the tree, those paths are the entry's too.
+    for ((deployed, _), request) in &entry_requests {
+        let mut cuts = vec![];
+        if let Ok(rel) = deployed.strip_prefix(&target) {
+            cuts.push(source_rel_for(&root, rel, group.dot_prefix));
+        }
+        if let Ok(source_rel) =
+            files::lexical_normalize(&request.source).strip_prefix(&normalized_root)
+            && !source_rel.as_os_str().is_empty()
+        {
+            cuts.push(source_rel.to_path_buf());
+        }
+        for cut in cuts {
+            let cut = format!("/{}", glob_escape_rel(&cut));
+            if !exclude.contains(&cut) {
+                exclude.push(cut);
+            }
         }
     }
     let walks = mode != FileMode::Symlink;
@@ -407,40 +525,7 @@ fn expand_group(
         origin,
         &mut merged,
     );
-    for (entry, cut) in entries.into_iter().zip(nested) {
-        let mut table = entry.table;
-        if !cut.is_empty() {
-            let mut exclude = table
-                .get("exclude")
-                .and_then(toml::Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            exclude.extend(cut.into_iter().map(toml::Value::String));
-            table.insert("exclude".into(), toml::Value::Array(exclude));
-        }
-        // the group waits for its dependencies, and so does each of its entries
-        if !group.depends.is_empty() {
-            let mut depends = table
-                .get("depends")
-                .and_then(toml::Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            for dep in &group.depends {
-                let dep = toml::Value::String(dep.clone());
-                if !depends.contains(&dep) {
-                    depends.push(dep);
-                }
-            }
-            table.insert("depends".into(), toml::Value::Array(depends));
-        }
-        files::merge_group_toml_entry(
-            entry.key,
-            toml::Value::Table(table),
-            base,
-            origin,
-            &mut merged,
-        )?;
-    }
+    merged.extend(entry_requests);
     Ok((
         merged.into_values().collect(),
         edits.into_iter().map(|edit| edit.request).collect(),
@@ -507,17 +592,22 @@ fn group_edit_entry(
         bail!("entries.{key:?}: the file being edited must not contain \"..\"");
     }
     let target = files::resolve_target_arg(&path_raw);
-    let Ok(rel) = target.strip_prefix(group_target) else {
-        bail!("entries.{key:?}: the file being edited must be inside the group's target");
-    };
-    if rel.as_os_str().is_empty() {
-        bail!("entries.{key:?}: the file being edited must be a path inside the group's target");
+    if group_target.starts_with(&target) {
+        bail!(
+            "entries.{key:?}: the file being edited must not be the group's target or a directory that contains it"
+        );
     }
     let mut value = value;
     if let toml::Value::Table(table) = &mut value
         && table.contains_key("merge")
         && !table.contains_key("source")
     {
+        // a file outside the group's target has no path in the tree
+        let Ok(rel) = target.strip_prefix(group_target) else {
+            bail!(
+                "entries.{key:?}: needs a source, because the file being edited is outside the group's target and has no path in the tree"
+            );
+        };
         let source = root.join(source_rel_for(root, rel, dot_prefix));
         table.insert(
             "source".into(),
@@ -577,30 +667,15 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
     }
     table.insert("group".into(), toml::Value::String(name.to_string()));
     let target = files::resolve_target_arg(key);
-    let Ok(rel) = target.strip_prefix(group_target) else {
-        bail!("entries.{key:?}: must be inside the group's target");
-    };
-    if rel.as_os_str().is_empty() {
-        bail!("entries.{key:?}: must be a path inside the group's target, not the target itself");
+    if group_target.starts_with(&target) {
+        bail!("entries.{key:?}: must not be the group's target or a directory that contains it");
     }
-    let rel = rel.to_path_buf();
-    // a variant may deploy elsewhere; every destination stays in the group
-    for variant in table
-        .get("variants")
-        .and_then(toml::Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        if let Some(variant_target) = variant.get("target").and_then(toml::Value::as_str)
-            && !files::resolve_target_arg(variant_target)
-                .strip_prefix(group_target)
-                .is_ok_and(|rel| !rel.as_os_str().is_empty())
-        {
-            bail!(
-                "entries.{key:?}: variant target {variant_target:?} must be inside the group's target"
-            );
-        }
-    }
+    // the entry's place in the tree, when it deploys inside the group's
+    // target; an entry anywhere else names its own source
+    let rel = target
+        .strip_prefix(group_target)
+        .ok()
+        .map(Path::to_path_buf);
     let mode = table
         .get("mode")
         .and_then(toml::Value::as_str)
@@ -619,12 +694,17 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
             source
         })
     } else if needs_source {
-        let source = root.join(source_rel_for(root, &rel, dot_prefix));
+        let Some(rel) = &rel else {
+            bail!(
+                "entries.{key:?}: needs a source, because it is outside the group's target and has no path in the tree"
+            );
+        };
+        let source = root.join(source_rel_for(root, rel, dot_prefix));
         Some(if mode.as_deref() == Some("template") {
             // the leaf spelled literally in the chosen parent, or every
             // component spelled literally
             let leaf = source.with_file_name(rel.file_name().unwrap_or_default());
-            template_source(source, &[leaf, root.join(&rel)])
+            template_source(source, &[leaf, root.join(rel)])
         } else {
             source
         })
@@ -1401,6 +1481,168 @@ mod tests {
     }
 
     #[test]
+    fn an_entry_outside_the_target_deploys_its_own_source() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let elsewhere = dir.path().join("elsewhere");
+        let (files, edits) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"app\", mode = \"symlink\" }}\n{:?} = {{ source = \"env.toml\", merge = true }}",
+                elsewhere.join(".app"),
+                elsewhere.join("env.toml/defaults"),
+            ),
+        )?;
+        let [tree, entry] = files.as_slice() else {
+            panic!("expected the tree and one entry, got {files:?}");
+        };
+        assert_eq!(entry.target, elsewhere.join(".app"));
+        assert_eq!(entry.source, dir.path().join("root/app"));
+        assert_eq!(entry.group.as_deref(), Some("common"));
+        let [edit] = edits.as_slice() else {
+            panic!("expected one edit, got {edits:?}");
+        };
+        assert_eq!(edit.path, elsewhere.join("env.toml"));
+        // the walk skips the sources deployed elsewhere, and nothing else
+        let mut skipped = tree.exclude.iter().map(|p| p.as_str()).collect::<Vec<_>>();
+        skipped.sort();
+        assert_eq!(skipped, ["/app", "/env.toml"]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_wildcard_entry_takes_its_matches_out_of_the_tree() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        file::create_dir_all(dir.path().join("root/extras"))?;
+        file::write(dir.path().join("root/extras/home"), "")?;
+        file::write(dir.path().join("root/config"), "")?;
+        // the key names no path in the target, and its one match deploys there
+        let (files, _) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"extras/*\", mode = \"copy\" }}",
+                dir.path().join("*/config")
+            ),
+        )?;
+        let [tree, entry] = files.as_slice() else {
+            panic!("expected the tree and one entry, got {files:?}");
+        };
+        assert_eq!(entry.target, dir.path().join("home/config"));
+        // the walk skips where the match deploys and where it comes from
+        for cut in ["/config", "/extras/home"] {
+            assert!(tree.exclude.iter().any(|p| p.as_str() == cut), "{tree:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_wildcard_entry_takes_its_matches_out_of_a_walking_entry() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        file::create_dir_all(dir.path().join("root/app"))?;
+        file::write(dir.path().join("root/app/settings"), "")?;
+        file::create_dir_all(dir.path().join("root/extras"))?;
+        file::write(dir.path().join("root/extras/app"), "")?;
+        // the wildcard's one match deploys inside the directory `app` walks
+        let (files, _) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"app\", mode = \"copy\" }}\n{:?} = {{ source = \"extras/*\", mode = \"copy\" }}",
+                dir.path().join("app"),
+                dir.path().join("*/settings"),
+            ),
+        )?;
+        let [_tree, app, settings] = files.as_slice() else {
+            panic!("expected the tree and two entries, got {files:?}");
+        };
+        assert_eq!(settings.target, dir.path().join("app/settings"));
+        assert!(
+            app.exclude.iter().any(|p| p.as_str() == "/settings"),
+            "{app:?}"
+        );
+        assert!(settings.exclude.is_empty(), "{settings:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn an_edit_is_cut_out_of_a_wildcard_entry_that_walks_over_it() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        file::create_dir_all(dir.path().join("root/extras/app"))?;
+        file::write(dir.path().join("root/extras/app/rc"), "")?;
+        // the key of the entry that walks `apps/app` does not name it
+        let (files, edits) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"extras/*\", mode = \"copy\" }}\n{:?} = {{ line = \"x\" }}",
+                dir.path().join("apps/*"),
+                dir.path().join("apps/app/rc/x"),
+            ),
+        )?;
+        let [_tree, app] = files.as_slice() else {
+            panic!("expected the tree and one entry, got {files:?}");
+        };
+        assert_eq!(app.target, dir.path().join("apps/app"));
+        assert_eq!(edits.len(), 1);
+        assert!(app.exclude.iter().any(|p| p.as_str() == "/rc"), "{app:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn an_entry_outside_the_target_needs_its_own_source() {
+        let dir = tempfile::tempdir().unwrap();
+        for (entry, expected) in [
+            // no path in the tree to find a source at
+            (
+                format!(
+                    "{:?} = {{ mode = \"symlink\" }}",
+                    dir.path().join("elsewhere")
+                ),
+                "needs a source",
+            ),
+            // the group's target, and a directory that contains it
+            (
+                format!("{:?} = \"app\"", dir.path().join("home")),
+                "must not be the group's target",
+            ),
+            (
+                format!("{:?} = \"app\"", dir.path()),
+                "must not be the group's target",
+            ),
+        ] {
+            let err = expand(dir.path(), &entry).unwrap_err().to_string();
+            assert!(err.contains(expected), "{err}");
+        }
+        // a variant target is compared as it deploys, after rendering
+        for variant_target in [
+            dir.path().join("home").to_string_lossy().to_string(),
+            "{{ config_root }}/home".to_string(),
+            "{{ config_root }}".to_string(),
+        ] {
+            let entry = format!(
+                "{:?} = {{ source = \"app\", variants = [{{ default = true, target = {variant_target:?} }}] }}",
+                dir.path().join("home/app"),
+            );
+            let err = expand(dir.path(), &entry).unwrap_err().to_string();
+            assert!(err.contains("must not be the group's target"), "{err}");
+        }
+        // a wildcard is compared as it deploys too, match by match
+        file::create_dir_all(dir.path().join("root/extras")).unwrap();
+        file::write(dir.path().join("root/extras/other"), "").unwrap();
+        let wildcard = format!(
+            "{:?} = {{ source = \"extras/*\", mode = \"copy\" }}",
+            dir.path().join("*")
+        );
+        assert!(expand(dir.path(), &wildcard).is_ok());
+        file::write(dir.path().join("root/extras/home"), "").unwrap();
+        let err = expand(dir.path(), &wildcard).unwrap_err().to_string();
+        assert!(err.contains("must not be the group's target"), "{err}");
+        // an entry that takes no source needs none
+        let absent = format!(
+            "{:?} = {{ mode = \"absent\" }}",
+            dir.path().join("elsewhere")
+        );
+        assert!(expand(dir.path(), &absent).is_ok());
+    }
+
+    #[test]
     fn a_group_edit_reads_its_source_from_the_group_root() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let home = dir.path().join("home");
@@ -1512,10 +1754,14 @@ mod tests {
         for (entries, expected) in [
             (
                 format!(
-                    "{:?} = {{ line = \"x\" }}",
-                    format!("{}/outside/x", dir.path().display())
+                    "{:?} = {{ merge = true }}",
+                    format!("{}/outside.toml/x", dir.path().display())
                 ),
-                "inside the group's target",
+                "needs a source",
+            ),
+            (
+                format!("{:?} = {{ line = \"x\" }}", format!("{}/x", home.display())),
+                "must not be the group's target",
             ),
             (
                 format!(

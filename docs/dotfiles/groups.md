@@ -93,14 +93,53 @@ dot_prefix = true
 - An entry that walks a directory inherits the group's `dot_prefix` and
   `manifest`, and the group's `exclude` patterns that contain no `/`, unless
   it sets its own.
-- Every entry, including each target its `variants` name, must lie inside the
-  group's target, and cannot be the target itself. An entry beneath another
+- An entry, and each target its `variants` name, cannot be the group's target
+  or a directory that contains it. An entry beneath another
   walking entry is cut out of that one too. An entry beneath a directory
   linked as a whole would change a file in the root itself, so mise reports it
   as a conflict before anything is written.
 
 To put an entry in a group, declare it under `[dotfile_groups.<name>.entries]`;
 a `[dotfiles]` entry with a `group` key is invalid.
+
+### Entries outside the target {#entries-outside-the-target}
+
+An entry can deploy outside the group's target, so a package whose files land
+in more than one place is still one group. For example, on Windows VS Code
+reads its settings from `~/AppData/Roaming/Code` but an extension reads
+`~/.crossnote`:
+
+```toml
+[dotfile_groups.vscode]
+root = "vscode/.config"
+target = "~/AppData/Roaming"
+
+[dotfile_groups.vscode.entries]
+"~/.crossnote" = { source = "crossnote", mode = "symlink" }
+```
+
+`vscode/.config/Code` is walked into `~/AppData/Roaming/Code`, and
+`~/.crossnote` links to `vscode/.config/crossnote`, which the walk skips.
+
+- An entry outside the target has no path in the tree, so it needs a `source`,
+  unless its mode takes none, such as `absent`.
+- The entry belongs to the group like any other: it applies only while the
+  group is selected, and `mise dot unapply --group` and `mise dot apply --prune`
+  remove it with the rest of the group.
+
+To deploy only the entries and nothing else from the root, exclude everything
+at the top of the tree. The `/` anchors the pattern, so entries that walk a
+directory do not inherit it:
+
+```toml
+[dotfile_groups.vscode]
+root = "vscode"
+exclude = ["/*"]
+
+[dotfile_groups.vscode.entries]
+"~/AppData/Roaming/Code/User/settings.json" = ".config/Code/User/settings.json"
+"~/.crossnote" = ".config/crossnote"
+```
 
 ### Edits in a group {#group-edits}
 
@@ -122,7 +161,8 @@ root = "common"
   entries, and a `merge` without one reads the file at the same path inside the
   root. A walking group does not also deploy a file that an edit reads or
   changes.
-- The file being edited must lie inside the group's target. An edit takes the
+- The file being edited can be outside the group's target; a `merge` there
+  needs a `source`. An edit takes the
   keys it takes in `[dotfiles]`, and a key that only whole-file entries take,
   such as `mode`, makes mise ignore the whole group with a warning.
 - Deselecting the group stops the edit but leaves what it wrote in the file.
