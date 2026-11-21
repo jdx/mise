@@ -1356,7 +1356,8 @@ impl MiseToml {
     }
 
     /// Removes `key` from this file's `env`: from every group when `env` is a list of tables
-    /// (`[[env]]`), since an earlier group's value would otherwise take over.
+    /// (`[[env]]`), since an earlier group's value would otherwise take over. A `.` in `key`
+    /// descends into a nested table, as it does in [`Self::update_env`].
     pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
         for mut group in env_tables_mut(doc.get_mut().unwrap(), &self.path)? {
@@ -2516,9 +2517,20 @@ impl<'a> EnvTable<'a> {
         })
     }
 
+    /// Removes `key`: the entry of that exact name, and the one a `.` in `key` descends to,
+    /// which is where [`Self::set`] writes it. A nested table the removal empties goes too.
     fn remove(&mut self, key: &str) {
         self.edit(|table| {
             table.remove(key);
+            if let Some((parent, rest)) = key.split_once('.')
+                && let Some(mut nested) = table.get_mut(parent).and_then(EnvTable::of)
+            {
+                let had_entries = !nested.table.is_empty();
+                nested.remove(rest);
+                if had_entries && nested.table.is_empty() {
+                    table.remove(parent);
+                }
+            }
         })
     }
 
@@ -6462,6 +6474,63 @@ run = "cargo build"
                 node = "20"
             "#}
         );
+    }
+
+    #[tokio::test]
+    async fn test_remove_env_nested_key() {
+        let contents = indoc! {r#"
+            [[env]]
+            _.path = "./bin"
+            _.file = ".env"
+            STAGE = "one"
+
+            [[env]]
+            "dotted.name" = "x"
+            KEEP = "y"
+
+            # set by `mise set _.path=./scripts`
+            [env._]
+            path = "./scripts"
+        "#};
+        let (result, dump) = edit_env_file(".env-remove-nested.mise.toml", contents, |cf| {
+            // removed from both groups; the second group's `_` table has nothing left
+            cf.remove_env("_.path")?;
+            // a key whose name holds a `.` is still removed
+            cf.remove_env("dotted.name")?;
+            // not a table, so there is nothing below it to remove
+            cf.remove_env("STAGE.nested")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                _.file = ".env"
+                STAGE = "one"
+
+                [[env]]
+                KEEP = "y"
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_env_nested_key_inline() {
+        let contents = "env = { _ = { path = \"./bin\", file = \".env\" }, A = \"1\" }\n";
+        let (result, dump) = edit_env_file(".env-remove-nested-inline.mise.toml", contents, |cf| {
+            cf.remove_env("_.file")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(dump, "env = { _ = { path = \"./bin\" }, A = \"1\" }\n");
+
+        let (result, dump) = edit_env_file(".env-remove-nested-inline.mise.toml", &dump, |cf| {
+            cf.remove_env("_.path")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(dump, "env = { A = \"1\" }\n");
     }
 
     #[tokio::test]

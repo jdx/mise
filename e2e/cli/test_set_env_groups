@@ -70,6 +70,25 @@ assert "mise set --rm NEW" ""
 assert_fail "mise set NEW" "Environment variable NEW not found"
 assert "mise set ONLY_FIRST" "z"
 
+# unset removes a dotted key from the nested table that set wrote it to.
+assert "mise set _.path=./bin" ""
+assert "cat mise.toml" '# base values
+[[env]]
+ONLY_FIRST = "z"
+
+# overrides
+[[env]]
+
+[env._]
+path = "./bin"'
+assert "mise unset _.path" ""
+assert "cat mise.toml" '# base values
+[[env]]
+ONLY_FIRST = "z"
+
+# overrides
+[[env]]'
+
 # An inline table is edited too.
 cat <<EOF >mise.toml
 env = { STAGE = "one" }
