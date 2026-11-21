@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+# `mise set` and `mise unset` edit a config that writes its environment as
+# [[env]] groups. mise reads the groups in file order, so a later group
+# overrides an earlier one.
+cat <<EOF >mise.toml
+# base values
+[[env]]
+STAGE = "one"
+ONLY_FIRST = "a"
+
+# overrides
+[[env]]
+STAGE = "two" # the value mise uses
+EOF
+assert "mise set STAGE" "two"
+
+# A key no group sets goes into the last group.
+assert "mise set NEW=1" ""
+assert "cat mise.toml" '# base values
+[[env]]
+STAGE = "one"
+ONLY_FIRST = "a"
+
+# overrides
+[[env]]
+STAGE = "two" # the value mise uses
+NEW = "1"'
+assert "mise set NEW" "1"
+
+# A key two groups set is updated in the last one, so the new value wins.
+assert "mise set STAGE=three" ""
+assert "cat mise.toml" '# base values
+[[env]]
+STAGE = "one"
+ONLY_FIRST = "a"
+
+# overrides
+[[env]]
+STAGE = "three" # the value mise uses
+NEW = "1"'
+assert "mise set STAGE" "three"
+
+# A key only an earlier group sets is updated where it is.
+assert "mise set ONLY_FIRST=z" ""
+assert "cat mise.toml" '# base values
+[[env]]
+STAGE = "one"
+ONLY_FIRST = "z"
+
+# overrides
+[[env]]
+STAGE = "three" # the value mise uses
+NEW = "1"'
+assert "mise set ONLY_FIRST" "z"
+
+# unset removes the key from every group, or the earlier value would take over.
+assert "mise unset STAGE" ""
+assert "cat mise.toml" '# base values
+[[env]]
+ONLY_FIRST = "z"
+
+# overrides
+[[env]]
+NEW = "1"'
+assert_fail "mise set STAGE" "Environment variable STAGE not found"
+
+# `mise set --rm` goes through the same code.
+assert "mise set --rm NEW" ""
+assert_fail "mise set NEW" "Environment variable NEW not found"
+assert "mise set ONLY_FIRST" "z"
+
+# An inline table is edited too.
+cat <<EOF >mise.toml
+env = { STAGE = "one" }
+EOF
+assert "mise set NEW=1" ""
+assert "cat mise.toml" 'env = { STAGE = "one", NEW = "1" }'
+assert "mise unset STAGE" ""
+assert "cat mise.toml" 'env = { NEW = "1" }'

@@ -326,7 +326,9 @@ impl Set {
         // For local configs, check directives directly
         let env_entries = config.env_entries()?;
         for eva in filter {
-            match env_entries.iter().find_map(|ev| match ev {
+            // the last entry wins: `[[env]]` groups can set a key more than once, and mise
+            // uses the value of the last group that does
+            match env_entries.iter().rev().find_map(|ev| match ev {
                 EnvDirective::Val(k, v, _) if k == &eva.key => Some((v.clone(), Some(ev))),
                 EnvDirective::Age {
                     key: k, value: v, ..
