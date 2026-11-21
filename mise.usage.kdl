@@ -3873,6 +3873,12 @@ Put the command after `--`, or pass a shell command string with `-c`. Missing
 tools are installed first unless the `exec_auto_install` or `auto_install`
 setting is off; when you name tools, only those are installed. The --allow-* and
 --deny-* flags sandbox the command; see https://mise.jdx.dev/sandboxing.html.
+
+`PATH` entries that come before mise's shims directory stay ahead of mise's
+tool directories in the command's environment. `mise exec -- node` looks the
+program up with mise's tools first, but a child that searches `PATH` itself,
+such as `/usr/bin/env node` or a `-c` command, finds those entries first. Set
+`activate_aggressive` to put mise's tool directories first for that run.
 """#
     flag "-c --command" help="Command string to run through a shell (supports pipes and redirection)" conflicts=COMMAND {
         arg <COMMAND>

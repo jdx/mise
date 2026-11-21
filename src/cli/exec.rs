@@ -34,6 +34,12 @@ use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset, Tools
 /// tools are installed first unless the `exec_auto_install` or `auto_install`
 /// setting is off; when you name tools, only those are installed. The --allow-* and
 /// --deny-* flags sandbox the command; see https://mise.jdx.dev/sandboxing.html.
+///
+/// `PATH` entries that come before mise's shims directory stay ahead of mise's
+/// tool directories in the command's environment. `mise exec -- node` looks the
+/// program up with mise's tools first, but a child that searches `PATH` itself,
+/// such as `/usr/bin/env node` or a `-c` command, finds those entries first. Set
+/// `activate_aggressive` to put mise's tool directories first for that run.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "x",
