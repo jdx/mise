@@ -38,6 +38,7 @@ pub struct ToolsetBuilder {
     config_files: Option<ConfigMap>,
     warn_overridden_lockfiles: bool,
     skip_runtime_env: bool,
+    args_are_task_tools: bool,
 }
 
 impl ToolsetBuilder {
@@ -57,6 +58,16 @@ impl ToolsetBuilder {
 
     pub fn with_scope(mut self, scope: ConfigScope) -> Self {
         self.scope = scope;
+        self
+    }
+
+    /// The args are a task's tools (and `mise run --tool`), which the task
+    /// itself declares. A task tool that no config lists is still pinned by the
+    /// lockfile, so its version and dependency graph are read from it, as
+    /// installing the task's tools does. Without this, installing used the
+    /// lock and running did not, and the two named different install dirs.
+    pub fn with_task_tool_args(mut self) -> Self {
+        self.args_are_task_tools = true;
         self
     }
 
@@ -352,6 +363,10 @@ impl ToolsetBuilder {
                         }
                         // Environment overrides retain their existing lookup policy.
                         Some(_) => LockfileScope::Default,
+                        // A task's own tools are declared by the task, so any
+                        // lockfile may pin them; `mise x tool@1` is not, and
+                        // must not borrow a pin from an unrelated config.
+                        None if self.args_are_task_tools => LockfileScope::Default,
                         None => LockfileScope::NoOwner,
                     };
                     tvr.set_lockfile_scope(scope);
@@ -597,6 +612,18 @@ mod tests {
         let request = &ts.versions[&ba].requests[0];
         assert_eq!(request.source(), &ToolSource::Argument);
         assert_eq!(request.lockfile_source(), None);
+
+        // A task's own tools are pinned by the lockfile even when no config lists them.
+        let mut ts = Toolset::default();
+        ToolsetBuilder::new()
+            .with_args(&["dummy@1".parse().unwrap()])
+            .with_task_tool_args()
+            .load_runtime_args(&mut ts)
+            .unwrap();
+        assert_eq!(
+            ts.versions[&ba].requests[0].lockfile_source(),
+            Some(&ToolSource::Argument)
+        );
 
         let source = ToolSource::Environment("MISE_DUMMY_VERSION".into(), "2".into());
         let mut ts = Toolset::new(source.clone());

@@ -178,6 +178,7 @@ impl TaskContextBuilder {
             let task_ts = ToolsetBuilder::new()
                 .with_config_files(task_config_files)
                 .with_args(tools)
+                .with_task_tool_args()
                 .build(config)
                 .await?;
 
@@ -201,7 +202,11 @@ impl TaskContextBuilder {
         } else {
             trace!("task {} using standard toolset build", task.name);
             // Standard toolset build - includes all config files
-            ToolsetBuilder::new().with_args(tools).build(config).await
+            ToolsetBuilder::new()
+                .with_args(tools)
+                .with_task_tool_args()
+                .build(config)
+                .await
         }
     }
 
