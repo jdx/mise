@@ -736,10 +736,10 @@ impl Backend for JavaPlugin {
     }
 }
 
-/// SDKMAN names a Temurin hotfix release with a fourth component, such as `26.0.2.1+1`.
-/// The catalog has no such version: it lists the hotfix as `26.0.2+101`, the hotfix number
-/// followed by the two-digit build. A `.0` fourth component marks a regular release and maps to
-/// the three-part version with its build number. Returns `None` for any other shape.
+/// SDKMAN names a Temurin release with a fourth component: a hotfix such as `26.0.2.1+1`, which
+/// the catalog lists under that same version, or a regular release such as `21.0.13.0+9`, where
+/// the zero is padding. A `.0` fourth component maps to the three-part version with its build
+/// number. Returns `None` for any other shape, so the version is used as it is.
 fn temurin_hotfix_version(version: &str) -> Option<String> {
     let (core, build) = version.split_once('+')?;
     let build: u32 = build.parse().ok()?;
@@ -753,10 +753,7 @@ fn temurin_hotfix_version(version: &str) -> Option<String> {
         // entry (`21.0.13+9.0.LTS`) without also matching a hotfix such as `21.0.13+101`.
         return Some(format!("{major}.{minor}.{patch}+{build}"));
     }
-    if build >= 100 {
-        return None;
-    }
-    Some(format!("{major}.{minor}.{patch}+{}", hotfix * 100 + build))
+    None
 }
 
 /// Every metadata entry under its full version string, plus a shorthand entry like
@@ -1237,15 +1234,10 @@ mod tests {
     /// A numeric query must not bleed into a longer version: "11.0.1" selects
     /// "11.0.1" and its build numbers, never "11.0.10".
     #[test]
-    fn temurin_hotfix_versions_use_the_catalog_build_number() {
-        assert_eq!(
-            temurin_hotfix_version("26.0.2.1+1").as_deref(),
-            Some("26.0.2+101")
-        );
-        assert_eq!(
-            temurin_hotfix_version("21.0.12.1+1").as_deref(),
-            Some("21.0.12+101")
-        );
+    fn temurin_padded_versions_use_the_catalog_build_number() {
+        // a hotfix is listed under its own version, so it is left alone
+        assert_eq!(temurin_hotfix_version("26.0.2.1+1"), None);
+        assert_eq!(temurin_hotfix_version("25.0.5.1+2"), None);
         assert_eq!(temurin_hotfix_version("21.0.2+13"), None);
         assert_eq!(temurin_hotfix_version("26.0.2.1"), None);
         assert_eq!(
@@ -1255,7 +1247,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sdkmanrc_temurin_hotfix_maps_to_the_catalog_version() {
+    async fn sdkmanrc_temurin_versions_match_the_catalog() {
         let dir = tempfile::tempdir().unwrap();
         let parse = async |contents: &str| {
             let path = dir.path().join(".sdkmanrc");
@@ -1265,7 +1257,7 @@ mod tests {
                 .await
                 .unwrap()
         };
-        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2+101"]);
+        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2.1"]);
         assert_eq!(parse("java=21.0.2+13-tem\n").await, ["temurin-21.0.2"]);
         assert_eq!(parse("java=21.0.13.0+9-tem\n").await, ["temurin-21.0.13+9"]);
         assert_eq!(parse("java=8.0.512.0+9-tem\n").await, ["temurin-8.0.512+9"]);
