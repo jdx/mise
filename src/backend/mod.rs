@@ -1068,6 +1068,27 @@ impl OptionSpec {
             })
     }
 
+    /// The suggestion for a mistyped flat per-platform option: the platform is kept and only
+    /// the option after it is compared, so `platform_linux_x64_ur` suggests
+    /// `platform_linux_x64_url`. An option name may itself contain `_`, so every split after a
+    /// platform is tried, the longest option name first.
+    fn flat_platform_suggestion(
+        key: &str,
+        nearest: impl Fn(&str) -> Option<String>,
+    ) -> Option<String> {
+        let rest = key
+            .strip_prefix("platforms_")
+            .or_else(|| key.strip_prefix("platform_"))?;
+        let prefix = &key[..key.len() - rest.len()];
+        rest.match_indices('_').find_map(|(at, _)| {
+            let (platform, name) = (&rest[..at], &rest[at + 1..]);
+            if !platform.contains(['_', '-']) {
+                return None;
+            }
+            nearest(name).map(|option| format!("{prefix}{platform}_{option}"))
+        })
+    }
+
     /// The options a platform override may carry. A backend that declares no platform options
     /// reads none from a platform override, so only the options every tool shares are accepted
     /// there.
@@ -1133,13 +1154,16 @@ impl OptionSpec {
                 if allowed.contains(&name) {
                     return None;
                 }
-                let candidates = if key.starts_with("platforms.") || key.starts_with("platform.") {
-                    &platform_known
-                } else {
-                    &known
+                let nearest = |name: &str, candidates: &[String]| {
+                    crate::fuzzy::nearest(name, candidates.iter().map(String::as_str))
+                        .map(str::to_string)
                 };
-                let suggestion = crate::fuzzy::nearest(name, candidates.iter().map(String::as_str))
-                    .map(str::to_string);
+                let suggestion = if key.starts_with("platforms.") || key.starts_with("platform.") {
+                    nearest(name, &platform_known)
+                } else {
+                    Self::flat_platform_suggestion(&key, |name| nearest(name, &platform_known))
+                        .or_else(|| nearest(name, &known))
+                };
                 Some(UnknownOption { key, suggestion })
             })
             .collect()
@@ -10119,6 +10143,37 @@ mod option_spec_tests {
         assert!(err.to_string().ends_with(
             "hint: Remove it, or check the spelling against the backend's documented options"
         ));
+    }
+
+    #[test]
+    fn a_flat_platform_option_is_suggested_with_its_platform() {
+        let spec = OptionSpec::with_platforms(&["tool_cargo_options"], &["tool_cargo_platforms"]);
+        let mut o = ToolVersionOptions::default();
+        for key in [
+            "platform_linux_x64_bn",
+            "platforms_macos-arm64_bn",
+            // cargo reads `features` only at the top level, so there is nothing to suggest.
+            "platform_linux_x64_feature",
+        ] {
+            o.opts.insert(key.into(), toml::Value::String("x".into()));
+        }
+        assert_eq!(
+            spec.unknown_options(&BackendType::Cargo, &o, &[]),
+            vec![
+                UnknownOption {
+                    key: "platform_linux_x64_bn".into(),
+                    suggestion: Some("platform_linux_x64_bin".into()),
+                },
+                UnknownOption {
+                    key: "platform_linux_x64_feature".into(),
+                    suggestion: None,
+                },
+                UnknownOption {
+                    key: "platforms_macos-arm64_bn".into(),
+                    suggestion: Some("platforms_macos-arm64_bin".into()),
+                },
+            ]
+        );
     }
 
     #[test]
