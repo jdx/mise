@@ -30,6 +30,7 @@ its declaration. For example, `../mirror-pipeline/mise.toml` declares a worker:
 ```toml
 [daemons.worker]
 run = "exec npm run worker"
+port = 4100
 ```
 
 Reference it from your application's `mise.toml`:
@@ -100,7 +101,7 @@ PIPELINE_API_URL = "{{ env.PIPELINE_URL }}"
 ```
 
 When the reference is in a daemon's `depends`, templates can use the same name:
-`{{ daemons.pipeline.url }}` in `run`, `ready_cmd` or the daemon's `env`. This
+<code v-pre>{{ daemons.pipeline.url }}</code> in `run`, `ready_cmd` or the daemon's `env`. This
 needs pitchfork 2.36.0 or later; with an older pitchfork, templates reach the
 dependency by its qualified key, which includes a namespace mise generates per
 checkout.

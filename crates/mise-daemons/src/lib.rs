@@ -1516,7 +1516,7 @@ fn rewrite_depends(
     let Some(depends) = table.get_mut("depends") else {
         return Ok(None);
     };
-    let mut missing: Option<String> = None;
+    let missing: Option<String>;
     // The name the project gave the reference rides along as `as`, so pitchfork
     // can offer the dependency to templates under it: `{{ daemons.search.url }}`
     // rather than the generated namespace. A name outside what `as` accepts
@@ -1544,15 +1544,19 @@ fn rewrite_depends(
             .filter(|name| unresolved.contains_key(*name))
             .map(str::to_string)
     };
-    let mut empty = false;
+    let empty: bool;
     match depends {
         toml::Value::String(_) => {
-            if let Some(name) = dangling(depends) {
-                missing = Some(name);
-                empty = true;
-            } else {
-                rewrite(depends);
-            }
+            // A single name becomes a one-element list, the shape every reader
+            // of `depends` handles for a rewritten entry.
+            *depends = toml::Value::Array(vec![depends.clone()]);
+            let toml::Value::Array(entries) = depends else {
+                unreachable!()
+            };
+            missing = entries.iter().find_map(dangling);
+            entries.retain(|entry| dangling(entry).is_none());
+            entries.iter_mut().for_each(rewrite);
+            empty = entries.is_empty();
         }
         toml::Value::Array(entries) => {
             if entries.iter().any(|entry| entry.as_str().is_none()) {
@@ -1904,7 +1908,12 @@ impl DaemonSet {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             import_errors: self.import_errors.clone(),
-            references: self.references.clone(),
+            references: self
+                .references
+                .iter()
+                .filter(|((r, _), _)| r.as_path() == root)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             blocked: self.blocked.clone(),
             // Narrowed like `namespaces`, so an imported project's checkout
             // name cannot reach this root's generated file.
@@ -3139,6 +3148,30 @@ mod tests {
                 .exports
                 .contains_key("SEARCH_API_PORT")
         );
+    }
+
+    #[test]
+    fn a_scalar_depends_on_a_reference_stays_readable() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let search = tmp.path().join("search");
+        referenced_project(&search, "[daemons.app]\nrun = 'exec s'\nport = 4100\n");
+        let shop = tmp.path().join("shop");
+        std::fs::create_dir_all(&shop).unwrap();
+        let config = files(&[(
+            shop.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.search]\nproject = {}\nname = 'app'\n\
+                 [daemons.web]\nrun = 'exec w'\ndepends = 'search'\n",
+                toml::Value::String(search.to_string_lossy().into_owned())
+            ),
+        )]);
+        let set = load(&config).unwrap();
+        let mut table = set.daemons["web"].table.clone();
+        assert!(names_dependencies(&table));
+        assert_eq!(depends_names(&table).len(), 1);
+        plain_depends(&mut table);
+        assert!(table["depends"][0].is_str());
     }
 
     #[test]

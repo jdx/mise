@@ -421,13 +421,11 @@ impl Runtime {
 
     /// Whether this pitchfork reads `{ id, as }` entries in `depends` (2.36.0).
     /// Asked of the config schema, like `supports_argv_run`. A failed probe
-    /// counts as no, which only costs templates the short name.
-    pub(crate) async fn supports_named_depends(&self, root: &Path) -> bool {
-        self.output(root, &["schema".into()])
-            .await
-            .ok()
-            .and_then(|schema| serde_json::from_str(&schema).ok())
-            .is_some_and(|schema| schema_accepts_named_depends(&schema))
+    /// is None: it counts as no for this run but is asked again next time.
+    pub(crate) async fn supports_named_depends(&self, root: &Path) -> Option<bool> {
+        let schema = self.output(root, &["schema".into()]).await.ok()?;
+        let schema = serde_json::from_str(&schema).ok()?;
+        Some(schema_accepts_named_depends(&schema))
     }
 
     pub async fn status(&self, root: &Path, id: &str) -> Result<serde_json::Value> {
@@ -671,8 +669,14 @@ impl Runtime {
         {
             let identity = pitchfork_identity(&self.bin);
             if state.named_depends_for != identity {
-                state.named_depends = self.supports_named_depends(root).await;
-                state.named_depends_for = identity;
+                match self.supports_named_depends(root).await {
+                    Some(supported) => {
+                        state.named_depends = supported;
+                        state.named_depends_for = identity;
+                    }
+                    // A failed probe is retried on the next registration.
+                    None => state.named_depends = false,
+                }
             }
             state.named_depends
         } else {
