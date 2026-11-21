@@ -599,14 +599,20 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32, roots: &[PathBuf]) -> Re
 }
 
 /// Finish a removal the way an unprivileged one does
-/// (`runtime_symlinks::remove_missing_symlinks_in_dir`): drop the version links
-/// left pointing at nothing, then the tool directory once only its backend
-/// metadata is left. The caller cannot do either in a root-owned directory.
+/// (`runtime_symlinks::remove_missing_symlinks_in_dir` and the backend's
+/// `cleanup_empty_installs_dir`): drop the version links left pointing at
+/// nothing, then the tool directory once only its backend metadata is left.
+/// The caller cannot do either in a root-owned directory.
 fn remove_dangling_links(tool_dir: &Path) -> Result<()> {
-    const METADATA: [&str; 2] = [".mise.backend.json", ".mise.backend"];
+    const METADATA: [&str; 3] = [".mise.backend.toml", ".mise.backend.json", ".mise.backend"];
+    // Read the whole directory before changing it: entries unlinked during
+    // `readdir` can make it skip others, and a skipped version would look like
+    // a directory holding only metadata.
+    let entries = fs::read_dir(tool_dir)?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
     let mut only_metadata = true;
-    for entry in fs::read_dir(tool_dir)? {
-        let path = entry?.path();
+    for path in entries {
         if path.is_symlink() && !path.exists() {
             fs::remove_file(&path)?;
         } else if !path
@@ -841,16 +847,19 @@ mod tests {
         assert!(root.join("uv/.mise.backend.toml").is_file());
         assert!(apply_for_owner(&remove_request("../uv")?[..], owner, &roots).is_err());
         symlink("./1", root.join("uv/1.0"))?;
+        fs::create_dir(root.join("uv/2"))?;
         apply_for_owner(&remove_request("1")?[..], owner, &roots)?;
         assert!(fs::symlink_metadata(root.join("uv/1")).is_err());
         // Links to the removed version go with it; other entries stay.
         assert!(fs::symlink_metadata(root.join("uv/1.0")).is_err());
+        assert!(root.join("uv/2").is_dir());
         assert!(root.join("uv/.mise.backend.toml").is_file());
         apply_for_owner(&remove_request("1")?[..], owner, &roots)?;
         // The tool directory goes once only backend metadata is left.
         fs::create_dir(root.join("gone"))?;
         fs::create_dir(root.join("gone/2"))?;
         symlink("./2", root.join("gone/latest"))?;
+        fs::write(root.join("gone/.mise.backend.toml"), "")?;
         fs::write(root.join("gone/.mise.backend.json"), "{}")?;
         let mut bytes = serde_json::to_vec(&Request::Remove {
             directory: root.clone(),

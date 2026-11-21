@@ -1333,16 +1333,20 @@ impl PruneScope {
     /// copy, so the system copy is added on its own here.
     fn installs_of(self, tv: ToolVersion, system_installs: &Path) -> Vec<ToolVersion> {
         let install_path = tv.install_path();
+        // `mise install --system` always writes `<tool>/<version>`, even where the
+        // user's own copy is in the identity layout. A runtime link such as
+        // `<tool>/20 -> ./20.0.0` is not an installation of its own.
         let system_copy = (self != Self::User
             && crate::env::install_path_category(&install_path)
-                == crate::env::InstallPathCategory::Local
-            && crate::install_layout::resolver::dir_name_of(&install_path).is_none())
-        .then(|| {
-            system_installs
-                .join(tv.ba().tool_dir_name())
-                .join(tv.tv_pathname())
-        })
-        .filter(|path| *path != install_path && path.is_dir());
+                == crate::env::InstallPathCategory::Local)
+            .then(|| {
+                system_installs
+                    .join(tv.ba().tool_dir_name())
+                    .join(tv.tv_pathname())
+            })
+            .filter(|path| {
+                *path != install_path && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+            });
         let mut installs = vec![];
         if let Some(path) = system_copy {
             let mut copy = tv.clone();

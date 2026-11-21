@@ -14,8 +14,8 @@ mise install tiny@1.1.0
 # before an administrator installed it for everyone. The listing merges the
 # two copies, and the system one must still be found.
 cp -a "$system_installs/tiny/1.0.0" "$user_installs/tiny/1.0.0"
-# The version's cache belongs to it, not to one copy, so it stays while the
-# user's copy does.
+# The version's cache belongs to it, not to one copy, so it stays while either
+# copy does.
 user_cache="$MISE_CACHE_DIR/tiny/1.0.0"
 mkdir -p "$user_cache"
 mise reshim --system
@@ -31,7 +31,7 @@ EOF
 output="$(mise prune --dry-run --tools 2>&1)"
 [[ $output == *"mise/installs/tiny/1.0.0"* ]] || fail "user install was not in prune plan: $output"
 [[ $output == *"mise/installs/tiny/1.1.0"* ]] || fail "user install was not in prune plan: $output"
-[[ $output == *"mise/tiny/1.0.0"* ]] || fail "user cache was not in prune plan: $output"
+[[ $output != *"mise/tiny/1.0.0"* ]] || fail "cache of a version with a system copy was in prune plan: $output"
 [[ $output != *"mise-system/installs"* ]] || fail "plain prune planned a system install: $output"
 
 # --system plans unused system versions, keeps the configured one and leaves
@@ -53,6 +53,8 @@ assert_directory_exists "$system_installs/tiny/2.1.0"
 assert_directory_exists "$user_installs/tiny/1.0.0"
 assert_directory_exists "$user_installs/tiny/1.1.0"
 assert_directory_exists "$user_cache"
+output="$(mise prune --dry-run --tools 2>&1)"
+[[ $output == *"mise/tiny/1.0.0"* ]] || fail "cache of the last copy was not in prune plan: $output"
 assert "readlink '$system_installs/tiny/latest'" "./2.1.0"
 assert_fail "test -L '$system_installs/tiny/1'"
 # dummy has no system install left, so its system shim goes too.

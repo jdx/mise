@@ -3200,16 +3200,24 @@ mod tests {
     }
 }
 
-/// Whether `tv` names one copy of a version, such as the system copy pruning
-/// found beside the user's, and the version is still installed somewhere else.
+/// Whether the version `tv` names is still installed somewhere other than
+/// `install_path`: the user's own copy of a version also installed for the
+/// system, or the other way round.
 fn other_copy_remains(tv: &ToolVersion, install_path: &Path) -> bool {
-    if tv.install_path.is_none() {
-        return false;
-    }
+    let tool_dir = tv.ba().tool_dir_name();
+    let pathname = tv.tv_pathname();
     let mut version = tv.clone();
     version.install_path = None;
-    let path = version.install_path();
-    path != install_path && path.is_dir()
+    [
+        version.install_path(),
+        dirs::INSTALLS.join(&tool_dir).join(&pathname),
+        Settings::get()
+            .system_installs_dir()
+            .join(&tool_dir)
+            .join(&pathname),
+    ]
+    .into_iter()
+    .any(|path| path != install_path && std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir()))
 }
 
 /// Delete a system installation the user cannot write to through `sudo`, the
@@ -6197,8 +6205,8 @@ pub trait Backend: Debug + Send + Sync {
             // it must not outlive the removal if the download or cache cleanup below fails.
             install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
         }
-        // The download and cache belong to the version, not to one copy of it: removing
-        // the system copy of a version the user also has keeps them for the user's copy.
+        // The download and cache belong to the version, not to one copy of it, so they
+        // stay while the user's or the system copy of the same version is still there.
         if !other_copy_remains(tv, &install_path) {
             if !Settings::get().always_keep_download {
                 rmdir(&tv.download_path())?;
