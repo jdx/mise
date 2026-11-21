@@ -52,6 +52,12 @@ reads the publisher's script only when you complete a command. Switching
 projects or tool versions selects the matching completion, and leaving the
 project removes its registration.
 
+In zsh, registration needs `compdef`. If it is not defined yet, activation runs
+`compinit -i` itself. A plugin manager that defers `compinit` (zinit, for
+example) can turn that off with
+[`packslip.compinit`](/configuration/settings.html#packslip.compinit) set to
+`false`; mise then skips registration until `compdef` exists.
+
 ### Manual setup without shell activation
 
 Without shell activation, mise can install a completion file for a tool whose

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use usage_rs::complete::Shell;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::toolset::Toolset;
 
 /// Keep native paths intact while passing them through shell source as ASCII.
@@ -120,7 +120,12 @@ pub fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
             }
         }
     }
-    registration(shell, completion_shell, &commands)
+    registration(
+        shell,
+        completion_shell,
+        &commands,
+        Settings::get().packslip.compinit,
+    )
 }
 
 fn safe_command(command: &str) -> bool {
@@ -133,7 +138,15 @@ fn safe_command(command: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || b"_-.+".contains(&c))
 }
 
-fn registration(shell_name: &str, shell: Shell, commands: &BTreeSet<String>) -> String {
+/// `compinit` is whether zsh may run `compinit -i` itself when `compdef` is
+/// missing. A shell whose plugin manager defers `compinit` turns it off, and
+/// registration is then skipped until `compdef` exists.
+fn registration(
+    shell_name: &str,
+    shell: Shell,
+    commands: &BTreeSet<String>,
+    compinit: bool,
+) -> String {
     let mut cleanup = String::new();
     // A shell restored from a snapshot can have `compdef` but a plain `_comps`
     // array; reset it and run compinit before the previous cleanup (which calls
@@ -142,6 +155,8 @@ fn registration(shell_name: &str, shell: Shell, commands: &BTreeSet<String>) -> 
     if shell == Shell::Zsh {
         output.push_str(if commands.is_empty() {
             "if typeset -f __mise_clear_completions >/dev/null && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
+        } else if !compinit {
+            "if (( $+functions[compdef] )) && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\nif (( $+functions[compdef] )); then\n"
         } else {
             "if ! typeset -f compdef >/dev/null || [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         });
@@ -208,6 +223,9 @@ if ($__mise_completion_table_ready) {
             "function global:__mise_clear_completions {{\n{cleanup}}}\n"
         )),
         _ => output.push_str(&format!("__mise_clear_completions() {{\n{cleanup}}}\n")),
+    }
+    if shell == Shell::Zsh && !compinit {
+        output.push_str("fi\n");
     }
     if shell == Shell::PowerShell {
         output.push_str("}\nRemove-Variable __mise_context, __mise_completion_table, __mise_completion_table_ready -ErrorAction Ignore\n");
