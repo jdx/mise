@@ -254,6 +254,116 @@ fn open_forms_declare_the_keys_mise_reads() {
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
+/// A `port` or `ports.<name>` table is closed, and each form has its own declaration type for
+/// it. Every key any of them names loads where its type declares it and is rejected elsewhere.
+#[test]
+fn port_tables_take_the_declared_keys() {
+    let custom = "run = 'exec server'\nready_cmd = 'true'";
+    let task = "task = 'serve'\nready_cmd = 'true'";
+    let preset = "preset = 'cockroachdb'\nversion = '25'";
+    let container = "image = 'redis:8'\nready_cmd = 'true'";
+    let per_worktree = "auto = true\nbase = 27000";
+    // (where the table is, the daemon around it, the keys a valid table starts from, its type)
+    let shapes: [(&str, &str, &str, &str, BTreeSet<&str>); 8] = [
+        (
+            "custom port",
+            custom,
+            "port",
+            per_worktree,
+            fields::<DaemonPortAuto>(),
+        ),
+        (
+            "task port",
+            task,
+            "port",
+            per_worktree,
+            fields::<DaemonPortAuto>(),
+        ),
+        (
+            "preset port",
+            preset,
+            "port",
+            per_worktree,
+            fields::<DaemonPortAuto>(),
+        ),
+        (
+            "container port",
+            container,
+            "port",
+            per_worktree,
+            fields::<DaemonPortAuto>(),
+        ),
+        (
+            "custom ports.<name>",
+            "run = 'exec server'\nport = 4000\nready_cmd = 'true'",
+            "ports.metrics",
+            per_worktree,
+            fields::<DaemonCommandNamedPortAuto>(),
+        ),
+        (
+            "task ports.<name>",
+            "task = 'serve'\nport = 4000\nready_cmd = 'true'",
+            "ports.metrics",
+            per_worktree,
+            fields::<DaemonCommandNamedPortAuto>(),
+        ),
+        (
+            "preset ports.<name>",
+            preset,
+            "ports.http_port",
+            "auto = true",
+            fields::<DaemonNamedPortAuto>(),
+        ),
+        (
+            "container ports.<name>",
+            "image = 'redis:8'\nport = 4000\nready_cmd = 'true'",
+            "ports.metrics",
+            "container = 8080",
+            fields::<DaemonContainerPortTable>(),
+        ),
+    ];
+    let mut problems = vec![];
+    for (shape, daemon, at, start, declared) in shapes {
+        for key in port_table_keys() {
+            let mut table: toml::Table = toml::from_str(start).unwrap();
+            // a per-worktree host port is asked for with `auto`
+            if shape.starts_with("container ports") && matches!(key, "base" | "stride") {
+                table.insert("auto".into(), true.into());
+            }
+            let value = match key {
+                "auto" => true.into(),
+                "base" => 27000.into(),
+                "container" => 8080.into(),
+                "host" => 8081.into(),
+                "stride" => 2.into(),
+                _ => panic!("add a sample value for the port key {key:?}"),
+            };
+            table.insert(key.into(), value);
+            let mut daemon: toml::Table = toml::from_str(daemon).unwrap();
+            let table = toml::Value::Table(table);
+            match at.split_once('.') {
+                Some((ports, name)) => {
+                    let named = toml::Table::from_iter([(name.to_string(), table)]);
+                    daemon.insert(ports.into(), toml::Value::Table(named));
+                }
+                None => {
+                    daemon.insert(at.into(), table);
+                }
+            }
+            match (load_one(&daemon), declared.contains(key)) {
+                (Err(err), true) => problems.push(format!(
+                    "the declaration type of a {shape} table has `{key}`, but mise rejects it: {err:#}"
+                )),
+                (Ok(_), false) => problems.push(format!(
+                    "mise reads `{key}` in a {shape} table, but its declaration type has no such field"
+                )),
+                _ => {}
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
 /// A key the source reads by name is declared for some form, or is one of pitchfork's.
 #[test]
 fn keys_read_by_name_are_declared() {
