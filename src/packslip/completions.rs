@@ -184,7 +184,7 @@ if ($__mise_completion_table_ready) {
                     "typeset -g {saved}=\"${{_comps[{command}]-}}\"\ntypeset -g {saved}_function=\"${{functions[_{command}]-}}\"\n_{command}() {{\n{stub}\n}}\ncompdef _{command} '{command}'\n"
                 ));
                 cleanup.push_str(&format!(
-                    "if [[ -n ${{{saved}:-}} ]]; then compdef \"${{{saved}}}\" '{command}'; else compdef -d '{command}'; fi\nif [[ -n ${{{saved}_function:-}} ]]; then functions[_{command}]=\"${{{saved}_function}}\"; elif (( $+functions[_{command}] )); then unfunction _{command}; fi\nunset {saved} {saved}_function\n"
+                    "if [[ -n ${{{saved}:-}} ]]; then compdef \"${{{saved}}}\" '{command}'; else compdef -d '{command}'; fi\nif [[ -n ${{{saved}_function:-}} ]]; then functions[_{command}]=\"${{{saved}_function}}\"; elif (( ${{+functions[_{command}]}} )); then unfunction _{command}; fi\nunset {saved} {saved}_function\n"
                 ));
             }
             Shell::Fish => {
@@ -240,7 +240,7 @@ mod tests {
         let commands = BTreeSet::from(["wt".to_string()]);
         let output = registration("zsh", Shell::Zsh, &commands);
         assert!(
-            output.contains("elif (( $+functions[_wt] )); then unfunction _wt"),
+            output.contains("elif (( ${+functions[_wt]} )); then unfunction _wt"),
             "{output}"
         );
     }
@@ -257,7 +257,7 @@ mod tests {
         let output = registration("zsh", Shell::Zsh, &commands);
         // A snapshot-restored shell keeps `__mise_clear_completions` but not `_wt`.
         let script = format!(
-            "autoload -Uz compinit; compinit -u -D\n{output}\nunfunction _wt\n__mise_clear_completions\n"
+            "setopt ksh_arrays\nautoload -Uz compinit; compinit -u -D\n{output}\nunfunction _wt\n__mise_clear_completions\n"
         );
         let mut child = Command::new("zsh")
             .arg("-f")
