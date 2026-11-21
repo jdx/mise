@@ -39,7 +39,7 @@ pub struct ToolsetBuilder {
     warn_overridden_lockfiles: bool,
     skip_runtime_env: bool,
     args_are_task_tools: bool,
-    task_tools_lockfile_owner: Option<(ToolSource, Vec<Arc<BackendArg>>)>,
+    task_tools_lockfile_owner: Option<(ToolSource, Vec<ToolArg>)>,
 }
 
 impl ToolsetBuilder {
@@ -75,15 +75,14 @@ impl ToolsetBuilder {
     /// The config that declares the task. Its lockfile pins the task's tools,
     /// including for a monorepo subproject whose config is not in
     /// `config.config_files`, which the default lookup would not read. It
-    /// applies only to `task_tools`, the tools the task declares; other args,
-    /// such as `mise run --tool`, keep the default lookup.
+    /// applies only to the args equal to one of `task_tools`, the tools the task
+    /// declares; other args, such as `mise run --tool`, keep the default lookup.
     pub fn with_task_tool_lockfile_owner(
         mut self,
         owner: ToolSource,
         task_tools: &[ToolArg],
     ) -> Self {
-        let tools = task_tools.iter().map(|arg| arg.ba.clone()).collect();
-        self.task_tools_lockfile_owner = Some((owner, tools));
+        self.task_tools_lockfile_owner = Some((owner, task_tools.to_vec()));
         self
     }
 
@@ -361,13 +360,12 @@ impl ToolsetBuilder {
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
-            let group_ba = args[0].ba.clone();
             let configured = ts
                 .versions
                 .get(&args[0].ba)
                 .map(|tvl| tvl.requests.clone())
                 .unwrap_or_default();
-            let apply_arg_options = |mut tvr: ToolRequest| {
+            let apply_arg_options = |mut tvr: ToolRequest, arg: &ToolArg| {
                 if let Some(config_options) =
                     configured_options_for_runtime_request(&configured, &tvr)
                 {
@@ -381,7 +379,7 @@ impl ToolsetBuilder {
                         // lockfile would not find it. `mise x tool@1` is not declared
                         // by anything and keeps the owner scope below.
                         _ if self.args_are_task_tools => match &self.task_tools_lockfile_owner {
-                            Some((owner, tools)) if tools.contains(&group_ba) => {
+                            Some((owner, tools)) if tools.contains(arg) => {
                                 LockfileScope::Source(owner.clone())
                             }
                             _ => LockfileScope::Default,
@@ -399,7 +397,7 @@ impl ToolsetBuilder {
             };
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
-                    let tvr = apply_arg_options(tvr.clone());
+                    let tvr = apply_arg_options(tvr.clone(), arg);
                     arg_ts.add_version(tvr);
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
@@ -420,12 +418,12 @@ impl ToolsetBuilder {
                             &current_active.version(),
                             ToolSource::Argument,
                         )?;
-                        let tvr = apply_arg_options(tvr);
+                        let tvr = apply_arg_options(tvr, arg);
                         arg_ts.add_version(tvr);
                     } else {
                         // no active version, so use "latest"
                         let tvr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
-                        let tvr = apply_arg_options(tvr);
+                        let tvr = apply_arg_options(tvr, arg);
                         arg_ts.add_version(tvr);
                     }
                 }
@@ -675,6 +673,26 @@ mod tests {
             .load_runtime_args(&mut ts)
             .unwrap();
         assert_eq!(ts.versions[&ba].requests[0].lockfile_source(), Some(&owner));
+
+        // ...nor does a `--tool` argument for a tool the task declares at another version.
+        let mut ts = Toolset::default();
+        ToolsetBuilder::new()
+            .with_args(&["dummy@1".parse().unwrap(), "dummy@3".parse().unwrap()])
+            .with_task_tool_args()
+            .with_task_tool_lockfile_owner(owner.clone(), &["dummy@1".parse().unwrap()])
+            .load_runtime_args(&mut ts)
+            .unwrap();
+        let sources = |version: &str| {
+            ts.versions[&ba]
+                .requests
+                .iter()
+                .find(|request| request.version() == version)
+                .unwrap()
+                .lockfile_source()
+                .cloned()
+        };
+        assert_eq!(sources("1"), Some(owner.clone()));
+        assert_eq!(sources("3"), Some(ToolSource::Argument));
 
         // ...but a `--tool` argument that the task does not declare does not.
         let mut ts = Toolset::default();
