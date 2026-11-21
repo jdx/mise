@@ -153,10 +153,15 @@ fn registration(
     // `compdef`) and before registering.
     let mut output = String::new();
     if shell == Shell::Zsh {
+        // A registration still waiting for `compdef` belongs to the previous
+        // state; drop it before this one replaces it.
+        output.push_str(
+            "if typeset -f __mise_pending_completions >/dev/null; then precmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\"); unfunction __mise_pending_completions; fi\n",
+        );
         output.push_str(if commands.is_empty() {
             "if typeset -f __mise_clear_completions >/dev/null && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         } else if !compinit {
-            "if (( $+functions[compdef] )) && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\nif (( $+functions[compdef] )); then\n"
+            "if (( $+functions[compdef] )) && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n__mise_pending_completions() {\n(( $+functions[compdef] )) || return 0\nprecmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\")\n"
         } else {
             "if ! typeset -f compdef >/dev/null || [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         });
@@ -225,7 +230,9 @@ if ($__mise_completion_table_ready) {
         _ => output.push_str(&format!("__mise_clear_completions() {{\n{cleanup}}}\n")),
     }
     if shell == Shell::Zsh && !compinit {
-        output.push_str("fi\n");
+        // Registration is a function so a shell whose compinit runs later can
+        // finish it from a prompt hook: normal prompts emit nothing here.
+        output.push_str("unfunction __mise_pending_completions\n}\n__mise_pending_completions\nif typeset -f __mise_pending_completions >/dev/null; then precmd_functions+=(__mise_pending_completions); fi\n");
     }
     if shell == Shell::PowerShell {
         output.push_str("}\nRemove-Variable __mise_context, __mise_completion_table, __mise_completion_table_ready -ErrorAction Ignore\n");

@@ -270,7 +270,8 @@ cd "$FIXTURE_ROOT/project-1.0.0"
 eval "$(mise hook-env -s zsh --force)"
 autoload -Uz compinit
 compinit -i
-eval "$(mise hook-env -s zsh --force)"
+# A normal prompt emits nothing; the queued registration runs from precmd.
+for hook in $precmd_functions; do $hook; done
 (( $+functions[__mise_clear_completions] )) && print -r -- registered
 ZSH
 assert 'cat zsh-no-compinit-later.out' 'registered'
