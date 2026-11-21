@@ -219,11 +219,7 @@ pub(crate) fn validate_remote_url(base_url: &Url, authenticated: bool) -> Result
     if base_url.scheme() != "http" {
         bail!("remote cache URL must use HTTPS");
     }
-    let is_loopback = base_url.host().is_some_and(|host| match host {
-        Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
-        Host::Ipv4(address) => address.is_loopback(),
-        Host::Ipv6(address) => address.is_loopback(),
-    });
+    let is_loopback = is_loopback(base_url);
     if !is_loopback && authenticated {
         bail!("remote cache URL must use HTTPS except for loopback development servers");
     }
@@ -234,6 +230,27 @@ pub(crate) fn validate_remote_url(base_url: &Url, authenticated: bool) -> Result
         );
     }
     Ok(())
+}
+
+fn is_loopback(url: &Url) -> bool {
+    url.host().is_some_and(|host| match host {
+        Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
+        Host::Ipv4(address) => address.is_loopback(),
+        Host::Ipv6(address) => address.is_loopback(),
+    })
+}
+
+/// The URL a blob read was redirected to. It is absolute and uses HTTPS, or
+/// HTTP to a loopback development server. The error leaves the URL out: its
+/// query can hold a signature.
+pub(crate) fn delegated_url(location: &str) -> Result<Url> {
+    let Ok(url) = Url::parse(location) else {
+        bail!("remote cache redirect must name an absolute URL");
+    };
+    if url.scheme() == "https" || (url.scheme() == "http" && is_loopback(&url)) {
+        return Ok(url);
+    }
+    bail!("remote cache redirect must use HTTPS except to loopback development servers");
 }
 
 pub(crate) fn normalized_base_url(mut url: Url) -> Url {

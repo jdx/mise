@@ -92,6 +92,38 @@ impl RemoteCacheClient {
         }
     }
 
+    /// The response to a blob read. The server may answer `307` with a
+    /// delegated URL, which is fetched once and gets neither the cache's
+    /// headers nor its credentials; a redirect from that URL is an error.
+    async fn blob_response(
+        &self,
+        url: &Url,
+        media_type: &'static str,
+    ) -> Result<reqwest::Response> {
+        let response = self
+            .request(reqwest::Method::GET, url.clone(), media_type)
+            .await?
+            .send()
+            .await?;
+        if response.status() != StatusCode::TEMPORARY_REDIRECT {
+            return ensure_success(response);
+        }
+        let Some(location) = response
+            .headers()
+            .get(LOCATION)
+            .and_then(|value| value.to_str().ok())
+        else {
+            bail!("remote cache redirect for {url} has no Location header");
+        };
+        let response = self
+            .client
+            .get(delegated_url(location)?)
+            .send()
+            .await
+            .map_err(reqwest::Error::without_url)?;
+        ensure_delegated_success(response)
+    }
+
     async fn blob_pack_limits(&self) -> Result<Option<BlobPackLimits>> {
         self.capabilities
             .get_or_try_init(|| async {
@@ -110,7 +142,7 @@ impl RemoteCacheClient {
                     return Ok(None);
                 }
                 let Some(body) =
-                    read_body_limited(response.error_for_status()?, MAX_CAPABILITIES_BYTES).await?
+                    read_body_limited(ensure_success(response)?, MAX_CAPABILITIES_BYTES).await?
                 else {
                     bail!(
                         "remote cache capabilities are larger than {MAX_CAPABILITIES_BYTES} bytes"
@@ -217,7 +249,7 @@ impl RemoteCacheClient {
             ) {
                 return Ok(None);
             }
-            let response = response.error_for_status()?;
+            let response = ensure_success(response)?;
             let media_type = response
                 .headers()
                 .get(CONTENT_TYPE)
@@ -251,8 +283,7 @@ impl RemoteCacheClient {
                 return Ok(None);
             }
             Ok(Some(
-                response
-                    .error_for_status()?
+                ensure_success(response)?
                     .json::<RemoteActionResult>()
                     .await?,
             ))
@@ -279,7 +310,7 @@ impl RemoteCacheClient {
                 .send()
                 .await?;
             if response.status() != StatusCode::PRECONDITION_FAILED {
-                response.error_for_status()?;
+                ensure_success(response)?;
             }
             Ok(())
         })
@@ -296,12 +327,7 @@ impl RemoteCacheClient {
         digest.validate()?;
         let url = self.blob_endpoint(digest)?;
         retry_async("GET", &url, self.retries, || async {
-            let response = self
-                .request(reqwest::Method::GET, url.clone(), media_type)
-                .await?
-                .send()
-                .await?
-                .error_for_status()?;
+            let response = self.blob_response(&url, media_type).await?;
             let Some(bytes) = read_body_limited(response, digest.size).await? else {
                 bail!("remote cache blob failed digest verification: it is larger than its digest records");
             };
@@ -320,12 +346,7 @@ impl RemoteCacheClient {
     ) -> Result<tempfile::NamedTempFile> {
         let url = self.blob_endpoint(digest)?;
         let download = retry_async("GET", &url, self.retries, || async {
-            let mut response = self
-                .request(reqwest::Method::GET, url.clone(), BLOB_MEDIA_TYPE)
-                .await?
-                .send()
-                .await?;
-            response.error_for_status_ref()?;
+            let mut response = self.blob_response(&url, BLOB_MEDIA_TYPE).await?;
             fs::create_dir_all(staging_dir)?;
             let temporary = tempfile::NamedTempFile::new_in(staging_dir)?;
             let mut output = tokio::fs::File::from_std(temporary.reopen()?);
@@ -381,7 +402,7 @@ impl RemoteCacheClient {
                 .send()
                 .await?;
             if response.status() != StatusCode::PRECONDITION_FAILED {
-                response.error_for_status()?;
+                ensure_success(response)?;
             }
             Ok(())
         })

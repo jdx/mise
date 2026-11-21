@@ -7032,6 +7032,7 @@ dependencies = [
  "eyre",
  "futures-util",
  "hex",
+ "httpdate",
  "log",
  "mise-tls",
  "mockito",
