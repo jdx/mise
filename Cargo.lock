@@ -6149,9 +6149,9 @@ checksum = "4754a1731458af0443709c9667302793d3f63cc90ec4ba4c8259f2b9515478e5"
 
 [[package]]
 name = "jdx-tar"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75b74f32b9d5022efb76727235a4f3c393336d1f7dc570dee35cd701479365aa"
+checksum = "257a6b37adbbd1ca9ae9331b1543419841cf49dacc31dc1b51b36b9bd0e4ea94"
 dependencies = [
  "filetime",
 ]
