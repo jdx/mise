@@ -730,8 +730,7 @@ impl Config {
         };
         set.references
             .values()
-            .filter_map(|r| set.daemons.get(&r.key))
-            .map(|d| d.source.clone())
+            .flat_map(|r| r.inputs.iter().cloned())
             .collect()
     }
 

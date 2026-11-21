@@ -102,6 +102,9 @@ pub struct Reference {
     pub source: PathBuf,
     /// Key of the imported daemon in `DaemonSet::daemons`.
     pub key: String,
+    /// Every config file of the referenced project's hierarchy. The exported
+    /// URL depends on inherited `[daemons_settings]`, so any of them can change it.
+    pub inputs: Vec<PathBuf>,
     pub exports: IndexMap<String, String>,
 }
 
@@ -360,7 +363,7 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
             && table.contains_key("project")
         {
             let spec = parse_import(&name, table.clone())?;
-            let (key, daemon) = match import(
+            let (key, daemon, inputs) = match import(
                 &name,
                 &spec,
                 &source,
@@ -394,6 +397,7 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 Reference {
                     source: source.clone(),
                     key: key.clone(),
+                    inputs,
                     // Filled in once every local daemon has claimed its names, so
                     // a reference never takes a variable from one declared later.
                     exports: IndexMap::new(),
@@ -1352,7 +1356,7 @@ fn import(
     root: &Path,
     namespaces: &mut IndexMap<PathBuf, String>,
     state: &mut LoadState,
-) -> Result<(String, Daemon)> {
+) -> Result<(String, Daemon, Vec<PathBuf>)> {
     let Import {
         project,
         remote_name,
@@ -1477,7 +1481,7 @@ fn import(
     let namespace = runtime::resolve_namespace(&remote_root, Some(&remote_settings))?;
     let id = format!("{namespace}/{}", daemon.name);
     namespaces.insert(remote_root, namespace);
-    Ok((id, daemon))
+    Ok((id, daemon, paths))
 }
 
 /// The port and URL a reference exports, named after the reference.
