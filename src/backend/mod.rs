@@ -3200,6 +3200,18 @@ mod tests {
     }
 }
 
+/// Whether `tv` names one copy of a version, such as the system copy pruning
+/// found beside the user's, and the version is still installed somewhere else.
+fn other_copy_remains(tv: &ToolVersion, install_path: &Path) -> bool {
+    if tv.install_path.is_none() {
+        return false;
+    }
+    let mut version = tv.clone();
+    version.install_path = None;
+    let path = version.install_path();
+    path != install_path && path.is_dir()
+}
+
 /// Delete a system installation the user cannot write to through `sudo`, the
 /// way `mise install --system` publishes one. Returns false for any other
 /// installation, which the caller deletes itself.
@@ -6185,10 +6197,14 @@ pub trait Backend: Debug + Send + Sync {
             // it must not outlive the removal if the download or cache cleanup below fails.
             install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
         }
-        if !Settings::get().always_keep_download {
-            rmdir(&tv.download_path())?;
+        // The download and cache belong to the version, not to one copy of it: removing
+        // the system copy of a version the user also has keeps them for the user's copy.
+        if !other_copy_remains(tv, &install_path) {
+            if !Settings::get().always_keep_download {
+                rmdir(&tv.download_path())?;
+            }
+            rmdir(&tv.cache_path())?;
         }
-        rmdir(&tv.cache_path())?;
         if dryrun {
             if !would_remove.is_empty() {
                 pr.set_message(format!("remove {}", would_remove.join(", ")));

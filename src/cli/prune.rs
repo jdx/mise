@@ -128,19 +128,15 @@ impl Prune {
             } = scan_prunable(&config, tools, scope).await?;
             explain_running(&running);
             let has_work = !to_delete.is_empty();
-            // The shim directory to rebuild follows the installs directory the
-            // removed versions were in.
-            let removed_paths = to_delete
-                .iter()
-                .map(|(_, tv)| tv.install_path())
-                .collect::<Vec<_>>();
             if self.system && has_work {
                 warn!(
                     "mise only knows the config files your user has loaded; other users must reinstall a removed version they still use"
                 );
             }
             let explain = self.is_dry_run().then_some(&needed);
-            delete(
+            // The shim directory to rebuild follows the installs directory the
+            // removed versions were in.
+            let removed_paths = delete(
                 &config,
                 self.is_dry_run(),
                 to_delete,
@@ -214,7 +210,8 @@ pub(super) async fn prune_scoped(
         None,
         UnavailableConfirmation::Decline,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 /// Say which of the versions that were asked for stay, and what needs them.
@@ -257,7 +254,7 @@ async fn delete(
     to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>,
     explain: Option<&NeededVersions>,
     unavailable: UnavailableConfirmation,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let mpr = MultiProgressReport::get();
     if dry_run {
         for (p, tv) in to_delete {
@@ -269,7 +266,7 @@ async fn delete(
             p.uninstall_version(config, &tv, pr.as_ref(), true).await?;
             pr.finish();
         }
-        return Ok(());
+        return Ok(vec![]);
     }
 
     // Ask about everything first, then remove. A prompt in the middle of a
@@ -293,6 +290,7 @@ async fn delete(
         }
     }
 
+    let mut removed = Vec::with_capacity(confirmed.len());
     let mut progress = removal_progress(
         &mpr,
         confirmed
@@ -312,6 +310,7 @@ async fn delete(
             tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
         }
         result?;
+        removed.push(tv.install_path());
         if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
             warn!("failed to clear tool purgatory entry: {err:#}");
         }
@@ -323,7 +322,7 @@ async fn delete(
     if let Some(progress) = progress.as_mut() {
         progress.finish(vec![]);
     }
-    Ok(())
+    Ok(removed)
 }
 
 /// The session key for a version being removed: the same `short@version`
