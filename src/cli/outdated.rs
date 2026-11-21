@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ConfigScope, ResolveOptions, ToolsetBuilder};
+use crate::toolset::{ConfigScope, OutdatedSelection, ResolveOptions, ToolsetBuilder};
 use crate::ui::table;
 use eyre::Result;
 use indexmap::IndexMap;
@@ -172,15 +172,21 @@ impl Outdated {
         let outdated = std::mem::take(&mut checked.outdated);
         let bump_available = if !self.json && !self.bump && outdated.is_empty() {
             let bumps = ts
-                .list_outdated_versions_filtered(
+                .list_outdated_versions_selecting(
                     &config,
                     true,
                     &ResolveOptions {
                         inactive: self.inactive,
                         ..Default::default()
                     },
-                    named,
-                    None,
+                    OutdatedSelection {
+                        filter_tools: named,
+                        exclude_tools: None,
+                        named_tools: named,
+                        honor_bump_option: false,
+                        show_progress: false,
+                        select: &|_| true,
+                    },
                 )
                 .await;
             // A tool whose backend-wide lookup failed may be out of date too.

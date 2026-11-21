@@ -320,6 +320,7 @@ impl Upgrade {
                     filter_tools,
                     exclude_tools,
                     named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
+                    honor_bump_option: true,
                     show_progress: self.show_resolution_progress(),
                     select: &|tv| !unrun.contains(&tv.request),
                 },
@@ -349,6 +350,7 @@ impl Upgrade {
                         filter_tools,
                         exclude_tools,
                         named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
+                        honor_bump_option: true,
                         show_progress: false,
                         select: &|tv| needed.contains(&tv.request),
                     },
@@ -798,6 +800,7 @@ impl Upgrade {
                             filter_tools,
                             exclude_tools,
                             named_tools: (!self.tool.is_empty()).then_some(self.tool.as_slice()),
+                            honor_bump_option: false,
                             show_progress: false,
                             select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
                         },
@@ -848,8 +851,16 @@ impl Upgrade {
                 if hidden > 0 {
                     updates.push_str(&format!("\n  … and {hidden} more"));
                 }
+                let needs_name = if bump_outdated
+                    .iter()
+                    .any(|o| !o.tool_request.options().bump_enabled())
+                {
+                    "\nA tool that sets `bump = false` is bumped only when named, such as `mise upgrade --bump <tool>`."
+                } else {
+                    ""
+                };
                 info!(
-                    "Newer versions are available but do not match the configured version ranges:\n{updates}\nRun `mise outdated --bump` to view all, or `mise upgrade --bump` to update the configuration and upgrade."
+                    "Newer versions are available but do not match the configured version ranges:\n{updates}\nRun `mise outdated --bump` to view all, or `mise upgrade --bump` to update the configuration and upgrade.{needs_name}"
                 );
             }
         } else {
