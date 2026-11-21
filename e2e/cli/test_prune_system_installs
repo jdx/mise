@@ -77,3 +77,11 @@ output="$(mise current dummy 2>&1)"
 [[ $output != *"ignoring tool purgatory entry"* ]] || fail "system receipt was dropped: $output"
 assert_fail "test -d '$system_installs/dummy/1.0.0'"
 assert_directory_exists "$system_installs/dummy/1.1.0"
+
+# tiny's only system version is now also the user's, and the listing names the
+# user's copy. Rebuilding the system shims must keep tiny's.
+system_shims_before="$(ls "$system_shims")"
+[[ $system_shims_before == *tiny* ]] || fail "tiny has no system shim: $system_shims_before"
+cp -a "$system_installs/tiny/2.1.0" "$user_installs/tiny/2.1.0"
+mise reshim --system
+assert "ls '$system_shims'" "$system_shims_before"

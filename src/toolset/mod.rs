@@ -1327,37 +1327,43 @@ impl PruneScope {
     }
 
     /// The installations of a listed version that this scope may remove.
-    ///
-    /// The listing merges a version installed in both the user and the system
-    /// installs directories into one entry whose `install_path` is the user's
-    /// copy, so the system copy is added on its own here.
     fn installs_of(self, tv: ToolVersion, system_installs: &Path) -> Vec<ToolVersion> {
-        let install_path = tv.install_path();
-        // `mise install --system` always writes `<tool>/<version>`, even where the
-        // user's own copy is in the identity layout. A runtime link such as
-        // `<tool>/20 -> ./20.0.0` is not an installation of its own.
-        let system_copy = (self != Self::User
-            && crate::env::install_path_category(&install_path)
-                == crate::env::InstallPathCategory::Local)
-            .then(|| {
-                system_installs
-                    .join(tv.ba().tool_dir_name())
-                    .join(tv.tv_pathname())
-            })
-            .filter(|path| {
-                *path != install_path && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
-            });
         let mut installs = vec![];
-        if let Some(path) = system_copy {
-            let mut copy = tv.clone();
-            copy.install_path = Some(path);
+        if self != Self::User
+            && let Some(copy) = system_copy_of(&tv, system_installs)
+        {
             installs.push(copy);
         }
-        if self.includes(&install_path) {
+        if self.includes(&tv.install_path()) {
             installs.push(tv);
         }
         installs
     }
+}
+
+/// The system installation of a listed version whose `install_path` is the
+/// user's own copy. The listing merges a version installed in both the user and
+/// the system installs directories into one entry for the user's copy, so
+/// whatever works on system installations finds the other copy here.
+///
+/// `mise install --system` always writes `<tool>/<version>`, even where the
+/// user's own copy is in the identity layout. A runtime link such as
+/// `<tool>/20 -> ./20.0.0` is not an installation of its own.
+pub(crate) fn system_copy_of(tv: &ToolVersion, system_installs: &Path) -> Option<ToolVersion> {
+    let install_path = tv.install_path();
+    if crate::env::install_path_category(&install_path) != crate::env::InstallPathCategory::Local {
+        return None;
+    }
+    let path = system_installs
+        .join(tv.ba().tool_dir_name())
+        .join(tv.tv_pathname());
+    (path != install_path && std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir())).then(
+        || {
+            let mut copy = tv.clone();
+            copy.install_path = Some(path);
+            copy
+        },
+    )
 }
 
 /// The outcome of deciding which installed versions are unused.
@@ -1418,23 +1424,6 @@ pub async fn prunable_tools_with_sources(
     // Tools the user excluded from pruning are never candidates.
     to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
 
-    // A system installation that needs sudo is removed by the privileged helper,
-    // which cannot remove every one; that one is left for its owner.
-    #[cfg(unix)]
-    to_delete.retain(|_, (_, tv)| {
-        let path = tv.install_path();
-        let kept = crate::env::install_path_category(&path) == crate::env::InstallPathCategory::System
-            && crate::tool_purgatory::needs_sudo_to_remove(&path)
-            && !crate::system_install::can_remove(&path);
-        if kept {
-            warn!(
-                "not pruning {}: it is an identity-layout installation; remove it as the user that installed it",
-                display_path(&path)
-            );
-        }
-        !kept
-    });
-
     // Remove versions that are still needed by tracked configs
     let mut needed = get_versions_needed_by_tracked_configs_with_progress(
         config,
@@ -1469,6 +1458,24 @@ pub async fn prunable_tools_with_sources(
             false
         }
         None => true,
+    });
+
+    // A system installation that needs sudo is removed by the privileged helper,
+    // which cannot remove every one; that one is left for its owner. This comes
+    // last, so only a version that would have been pruned is warned about.
+    #[cfg(unix)]
+    to_delete.retain(|_, (_, tv)| {
+        let path = tv.install_path();
+        let kept = crate::env::install_path_category(&path) == crate::env::InstallPathCategory::System
+            && crate::tool_purgatory::needs_sudo_to_remove(&path)
+            && !crate::system_install::can_remove(&path);
+        if kept {
+            warn!(
+                "not pruning {}: it is an identity-layout installation; remove it as the user that installed it",
+                display_path(&path)
+            );
+        }
+        !kept
     });
 
     Ok(PrunableTools {

@@ -56,21 +56,28 @@ pub(crate) fn processes_running_from(
         .iter()
         .map(|tv| {
             let path = tv.install_path();
-            let links_dir = links_dir_of(&path, tv.ba().installs_path());
-            Candidate { path, links_dir }
+            let links_dirs = links_dirs_of(&path, tv.ba().installs_path());
+            Candidate { path, links_dirs }
         })
         .collect::<Vec<_>>();
     scan(&candidates)
 }
 
-/// The directory holding the runtime links that may point at `install_path`.
+/// The directories holding the runtime links that may point at `install_path`.
 /// A `<tool>/<version>` installation keeps them beside it, which for a system
-/// or shared copy of a version is not the backend's own `installs_path`.
-fn links_dir_of(install_path: &Path, backend_links_dir: &Path) -> PathBuf {
+/// or shared copy of a version is not the backend's own `installs_path`. The
+/// user's own links are checked too: `mise installs select` can point them at a
+/// system or shared installation.
+fn links_dirs_of(install_path: &Path, backend_links_dir: &Path) -> Vec<PathBuf> {
     let identity = crate::install_layout::resolver::dir_name_of(install_path).is_some();
-    links_dir_in(install_path, backend_links_dir, identity, |store| {
+    let own = links_dir_in(install_path, backend_links_dir, identity, |store| {
         crate::install_layout::resolver::is_primary_store(store)
-    })
+    });
+    let mut dirs = vec![own];
+    if dirs[0] != backend_links_dir {
+        dirs.push(backend_links_dir.to_path_buf());
+    }
+    dirs
 }
 
 /// An identity-layout installation sits in an install store. The user's own
@@ -122,9 +129,9 @@ const MAX_LINKS: usize = 8;
 pub(super) struct Candidate {
     /// The version's install directory.
     pub(super) path: PathBuf,
-    /// The directory holding the tool's runtime links, such as `latest` or
+    /// The directories holding the tool's runtime links, such as `latest` or
     /// `20`, which may point at `path`.
-    pub(super) links_dir: PathBuf,
+    pub(super) links_dirs: Vec<PathBuf>,
 }
 
 /// What the platform could read about one process.
@@ -208,7 +215,11 @@ pub(super) fn scan(candidates: &[Candidate]) -> BTreeMap<PathBuf, Vec<RunningPro
         .map(|candidate| Install {
             candidate,
             roots: with_resolved(&candidate.path),
-            links_dirs: with_resolved(&candidate.links_dir),
+            links_dirs: candidate
+                .links_dirs
+                .iter()
+                .flat_map(|dir| with_resolved(dir))
+                .collect(),
         })
         .collect::<Vec<_>>();
     let version_files = VersionFiles::default();
@@ -414,7 +425,7 @@ mod tests {
     fn candidate(path: &Path) -> Candidate {
         Candidate {
             path: path.to_path_buf(),
-            links_dir: path.parent().unwrap().to_path_buf(),
+            links_dirs: vec![path.parent().unwrap().to_path_buf()],
         }
     }
 
@@ -423,10 +434,10 @@ mod tests {
         let user = Path::new("/home/u/.local/share/mise/installs/tiny");
         let system = Path::new("/usr/local/share/mise/installs/tiny/1.0.0");
         assert_eq!(
-            links_dir_of(system, user),
-            Path::new("/usr/local/share/mise/installs/tiny")
+            links_dirs_of(system, user),
+            [Path::new("/usr/local/share/mise/installs/tiny"), user]
         );
-        assert_eq!(links_dir_of(&user.join("1.0.0"), user), user);
+        assert_eq!(links_dirs_of(&user.join("1.0.0"), user), [user]);
     }
 
     #[test]
@@ -670,7 +681,7 @@ mod windows_tests {
     fn candidate(path: &Path) -> Candidate {
         Candidate {
             path: path.to_path_buf(),
-            links_dir: path.parent().unwrap().to_path_buf(),
+            links_dirs: vec![path.parent().unwrap().to_path_buf()],
         }
     }
 

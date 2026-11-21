@@ -1924,7 +1924,16 @@ async fn get_desired_shims(
 ) -> Result<HashSet<String>> {
     let _mise_bin = mise_bin; // used on Windows only
     let mut shims = HashSet::new();
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
     for (t, tv) in toolset.list_installed_versions(config).await? {
+        // The listing names the user's copy of a version installed in both
+        // directories, and the system shims still need its system copy.
+        let tv = match scope {
+            ShimScope::System => {
+                crate::toolset::system_copy_of(&tv, &system_installs).unwrap_or(tv)
+            }
+            ShimScope::User | ShimScope::Both => tv,
+        };
         if !shim_scope_contains_install(scope, &tv.install_path()) {
             continue;
         }
