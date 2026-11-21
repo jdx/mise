@@ -498,7 +498,10 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // The first claimant of an ambiguous key or hostname kept it while it
     // looked unique; drop it now so neither side is handed the other's
     // endpoint, and so mise never advertises a hostname the proxy refuses.
+    // Names two references fold onto stay among references: they must not
+    // join `state.ambiguous`, which also strips local daemons' exports.
     let mut claimed: BTreeMap<String, String> = BTreeMap::new();
+    let mut ambiguous_references = std::collections::BTreeSet::new();
     for ((_, name), reference) in set.references.iter_mut() {
         if let Some(daemon) = set.daemons.get(&reference.key) {
             reference.exports = reference_exports(
@@ -506,14 +509,14 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 daemon,
                 &state.keys,
                 &mut claimed,
-                &mut state.ambiguous,
+                &mut ambiguous_references,
             );
         }
     }
     for reference in set.references.values_mut() {
         reference
             .exports
-            .retain(|var, _| !state.ambiguous.contains(var));
+            .retain(|var, _| !state.ambiguous.contains(var) && !ambiguous_references.contains(var));
         // The referenced daemon's hostname, when the proxy will not route it.
         if state.withdrawn_hosts.contains(&reference.key)
             && let Some(host) = set.daemons.get(&reference.key).and_then(|d| d.host.clone())
