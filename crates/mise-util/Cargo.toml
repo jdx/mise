@@ -39,6 +39,7 @@ gix = { version = "<1", default-features = false, features = [
   "sha256",
   "interrupt",
   "auto-chain-error",
+  "blocking-network-client",
 ] }
 globset = "0.4"
 heck = "0.5"

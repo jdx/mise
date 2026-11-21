@@ -324,6 +324,10 @@ jobs:
                 rm -rf ~/.cargo/advisory-dbs && mise x -- cargo-deny check advisories
               fi
           - run: cargo machete --with-metadata
+          # A workspace build gives every crate the features its siblings turn
+          # on, so it cannot tell that a published crate compiles by itself.
+          # Uses the cached target directory, which nothing else here builds in.
+          - run: mise run test:crates-standalone
           - run: ./scripts/test-standalone.sh
           - run: ./scripts/test-check-glibc.sh
           # Online checks (action refs, known-vulnerable actions, impostor commits)

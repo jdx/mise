@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+#MISE description="Check that each workspace crate compiles on its own"
+set -euo pipefail
+
+# Every member crate is published by itself, so it has to compile with only the
+# features its own manifest turns on. A workspace build cannot show that: Cargo
+# gives a dependency the features of every member that uses it, so a feature one
+# crate forgot is supplied by another.
+#
+# Each crate is checked twice: as a dependency (the library alone) and with its
+# tests, whose dev-dependencies add features of their own.
+#
+# Pass crate names to check only those. The default is every member except
+# `mise`, which a plain `cargo clippy` already builds by itself in CI.
+
+if [[ ${1:-} == --help ]]; then
+	cat >&2 <<EOF
+Usage: mise run test:crates-standalone [CRATE...]
+
+Runs cargo check on each workspace crate by itself, so a crate that only
+compiles when the rest of the workspace turns on a feature for it fails.
+EOF
+	exit 0
+fi
+
+metadata=$(cargo metadata --no-deps --format-version 1)
+if [[ $# -gt 0 ]]; then
+	crates=("$@")
+else
+	mapfile -t crates < <(jq -r '.packages[].name | select(. != "mise")' <<<"$metadata")
+fi
+
+failed=()
+for crate in "${crates[@]}"; do
+	args=(--package "$crate" --ignore-rust-version)
+	# Without the feature, vfox links the system's Lua 5.1, which CI runners
+	# and most development machines do not have.
+	if jq -e --arg crate "$crate" \
+		'.packages[] | select(.name == $crate) | .features | has("vendored-lua")' \
+		<<<"$metadata" >/dev/null; then
+		args+=(--features vendored-lua)
+	fi
+	echo "::group::$crate"
+	if ! cargo check "${args[@]}" || ! cargo check "${args[@]}" --all-targets; then
+		failed+=("$crate")
+	fi
+	echo "::endgroup::"
+done
+
+if [[ ${#failed[@]} -gt 0 ]]; then
+	echo "These crates do not compile on their own: ${failed[*]}" >&2
+	echo "Reproduce one with: cargo check -p <crate> --all-targets" >&2
+	exit 1
+fi
+echo "All ${#crates[@]} crates compile on their own."

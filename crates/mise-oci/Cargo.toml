@@ -43,3 +43,7 @@ walkdir = "2"
 
 [dev-dependencies]
 mockito = "1"
+
+[features]
+# Compiles the Lua that vfox embeds instead of linking the Lua 5.1 on the system.
+vendored-lua = ["mise-system/vendored-lua"]
