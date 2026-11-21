@@ -249,6 +249,10 @@ assert_not_contains "mise dot status 2>&1" "ignoring group"
 # but not onto the group's target itself
 sed -i 's|target = "~/.elsewhere"|target = "~/.config"|' mise.toml
 assert_contains "mise dot status 2>&1" "must not be the group's target or a directory that contains it"
+# nor through a template that renders to it
+sed -i 's|{ os = "linux", target = "~/.config" }|{ os = "linux", target = "{{ env.HOME }}/.config" }|' mise.toml
+assert_contains "cat mise.toml" "{{ env.HOME }}/.config"
+assert_contains "mise dot status 2>&1" "must not be the group's target or a directory that contains it"
 
 # Removal works under a target whose parent directory is a symlink.
 mkdir -p "$HOME/realcfg" "$DOTS/linked"

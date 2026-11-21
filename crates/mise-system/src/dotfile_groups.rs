@@ -437,6 +437,7 @@ fn expand_group(
         files::merge_group_toml_entry(
             entry.key,
             toml::Value::Table(table),
+            &target,
             base,
             origin,
             &mut merged,
@@ -592,21 +593,6 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         .strip_prefix(group_target)
         .ok()
         .map(Path::to_path_buf);
-    // a variant may deploy elsewhere, but never over the tree as a whole
-    for variant in table
-        .get("variants")
-        .and_then(toml::Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        if let Some(variant_target) = variant.get("target").and_then(toml::Value::as_str)
-            && group_target.starts_with(files::resolve_target_arg(variant_target))
-        {
-            bail!(
-                "entries.{key:?}: variant target {variant_target:?} must not be the group's target or a directory that contains it"
-            );
-        }
-    }
     let mode = table
         .get("mode")
         .and_then(toml::Value::as_str)
@@ -1464,6 +1450,19 @@ mod tests {
         ] {
             let err = expand(dir.path(), &entry).unwrap_err().to_string();
             assert!(err.contains(expected), "{err}");
+        }
+        // a variant target is compared as it deploys, after rendering
+        for variant_target in [
+            dir.path().join("home").to_string_lossy().to_string(),
+            "{{ config_root }}/home".to_string(),
+            "{{ config_root }}".to_string(),
+        ] {
+            let entry = format!(
+                "{:?} = {{ source = \"app\", variants = [{{ default = true, target = {variant_target:?} }}] }}",
+                dir.path().join("home/app"),
+            );
+            let err = expand(dir.path(), &entry).unwrap_err().to_string();
+            assert!(err.contains("must not be the group's target"), "{err}");
         }
         // an entry that takes no source needs none
         let absent = format!(
