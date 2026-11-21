@@ -66,7 +66,7 @@ pub async fn create_age_directive(
 }
 
 pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
-    Settings::get().ensure_experimental("age encryption")?;
+    Settings::get().ensure_experimental(mise_config::experimental::AGE.what)?;
     match directive {
         EnvDirective::Age { value, format, .. } => {
             let decoded = base64::engine::general_purpose::STANDARD_NO_PAD

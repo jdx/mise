@@ -2901,7 +2901,7 @@ impl TaskExecutor {
             return Ok(());
         }
         if !items.is_empty() {
-            Settings::get().ensure_experimental("mise secrets")?;
+            Settings::get().ensure_experimental(mise_config::experimental::SECRETS.what)?;
             Settings::ensure_not_safe("mise secrets")?;
         }
         if !self.dry_run && !privilege_problem {

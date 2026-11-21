@@ -92,7 +92,7 @@ pub struct BootstrapTomlConfig {
         "description": "secret name using ASCII letters, digits, '.', '_' or '-'"
     }))]
     pub secrets: IndexMap<String, secrets::SecretTomlConfig>,
-    /// [experimental] Linux groups that bootstrap creates or removes, keyed by group name
+    /// Linux groups that bootstrap creates or removes, keyed by group name
     #[serde(default)]
     #[schemars(extend("propertyNames" = {
         "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
@@ -100,7 +100,7 @@ pub struct BootstrapTomlConfig {
         "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'"
     }))]
     pub groups: IndexMap<String, accounts::GroupTomlConfig>,
-    /// [experimental] Linux users that bootstrap creates or removes, keyed by user name
+    /// Linux users that bootstrap creates or removes, keyed by user name
     #[serde(default)]
     #[schemars(extend("propertyNames" = {
         "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
@@ -108,10 +108,13 @@ pub struct BootstrapTomlConfig {
         "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'"
     }))]
     pub users: IndexMap<String, accounts::UserTomlConfig>,
-    /// [experimental] settings that bootstrap settings plugins apply, keyed by plugin name; which keys a plugin accepts is up to the plugin
+    /// settings that bootstrap settings plugins apply, keyed by plugin name; which keys a plugin accepts is up to the plugin
     // Raw tables: the plugin, not mise, knows their keys. mise flattens them to dotted keys.
     #[serde(default)]
-    #[schemars(schema_with = "plugin_settings")]
+    #[schemars(
+        schema_with = "plugin_settings",
+        transform = crate::experimental::BOOTSTRAP_SETTINGS.labels()
+    )]
     pub settings: IndexMap<String, toml::Table>,
 }
 

@@ -12,6 +12,8 @@
 use schemars::{Schema, json_schema};
 use serde_json::{Value, json};
 
+use crate::experimental::{self, Experimental};
+
 /// A backend, as the schema picks it by the key of a tool.
 struct Backend {
     /// The `$defs` name of the wrapper, `tool_<backend>`.
@@ -23,6 +25,19 @@ struct Backend {
     options: &'static [&'static str],
     /// The `$defs` name of the table of per-platform overrides, if the backend has one.
     platforms: Option<&'static str>,
+}
+
+/// The backends mise only installs with when `experimental = true`, by `$defs` name.
+const EXPERIMENTAL: &[(&str, Experimental)] = &[("tool_spinel", experimental::SPINEL)];
+
+impl Backend {
+    /// The description, labelled when the backend is experimental.
+    fn description(&self) -> String {
+        match EXPERIMENTAL.iter().find(|(def, _)| *def == self.def) {
+            Some((_, feature)) => feature.label(self.description),
+            None => self.description.to_string(),
+        }
+    }
 }
 
 /// A table of per-platform overrides: some of a backend's options, which each platform may set.
@@ -288,7 +303,7 @@ pub(crate) fn tools() -> Schema {
             (
                 b.pattern.to_string(),
                 json!({
-                    "description": b.description,
+                    "description": b.description(),
                     "oneOf": [{"type": "array", "items": wrapper}, wrapper]
                 }),
             )
@@ -339,7 +354,7 @@ fn backend(backend: &Backend) -> Schema {
         }}));
     }
     json_schema!({
-        "description": backend.description,
+        "description": backend.description(),
         "oneOf": [
             {"description": "version of the tool to install", "type": "string"},
             {"allOf": all_of, "type": "object"}

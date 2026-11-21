@@ -63,6 +63,14 @@ impl Settings {
         Ok(())
     }
 
+    /// Whether mise acts on the experimental config `_feature`, for the checks that skip
+    /// that config or report it in their own words instead of failing with
+    /// [`Self::ensure_experimental`]. The argument names what is being checked: mise-config
+    /// tests that every key its schema labels experimental is named by a check.
+    pub fn experimental_enabled(&self, _feature: &mise_config::experimental::Experimental) -> bool {
+        self.experimental
+    }
+
     pub fn log_level(&self) -> log::LevelFilter {
         self.log_level.parse().unwrap_or(log::LevelFilter::Info)
     }

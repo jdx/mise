@@ -5104,7 +5104,7 @@ impl ResolvedTaskEnvironment {
         if self.global_env.is_empty() && self.global_pass_through_env.is_empty() {
             return Ok(());
         }
-        Settings::get().ensure_experimental("global task environment configuration")?;
+        Settings::get().ensure_experimental(mise_config::experimental::TASK_GLOBAL_ENV.what)?;
 
         if let Some(cache) = &mut task.cache {
             cache.env.extend(self.global_env.iter().cloned());
@@ -5315,7 +5315,7 @@ async fn apply_task_config_inputs(
     if task_inputs.is_empty() && !has_group_references {
         return Ok(());
     }
-    Settings::get().ensure_experimental("task input groups")?;
+    Settings::get().ensure_experimental(mise_config::experimental::TASK_INPUT_GROUPS.what)?;
 
     let tera_ctx = task.tera_ctx(config).await?;
     let global_inputs = match &task_inputs.global_inputs {

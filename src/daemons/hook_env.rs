@@ -29,7 +29,10 @@ pub async fn emit(
     shell: &dyn Shell,
     force: bool,
 ) -> Result<String> {
-    if Settings::no_hooks() || Settings::safe_mode() || !Settings::get().experimental {
+    if Settings::no_hooks()
+        || Settings::safe_mode()
+        || !Settings::get().experimental_enabled(&mise_config::experimental::DAEMONS)
+    {
         return Ok(String::new());
     }
     let set = config.daemons()?;

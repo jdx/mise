@@ -71,10 +71,11 @@ fn validate_image_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// [experimental] configuration for `mise oci build`
+/// configuration for `mise oci build`
 // All fields are optional.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = crate::experimental::OCI.labels())]
 pub struct OciConfig {
     /// Base image reference (overrides the oci.default_from setting)
     #[serde(default)]

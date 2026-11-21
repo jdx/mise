@@ -254,7 +254,7 @@ impl Daemons {
     }
 
     pub(crate) async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise daemons")?;
+        Settings::get().ensure_experimental(mise_config::experimental::DAEMONS.what)?;
         Settings::ensure_not_safe("managing daemons")?;
         let (action, args, json) = match self.command {
             Some(Commands::Init(args)) => {

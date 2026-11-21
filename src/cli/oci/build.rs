@@ -97,7 +97,7 @@ pub(super) struct Build {
 
 impl Build {
     pub(super) async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise oci build")?;
+        Settings::get().ensure_experimental(mise_config::experimental::OCI.what)?;
 
         let opts = BuildOptions {
             out_dir: self.output.clone(),
