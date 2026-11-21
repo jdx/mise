@@ -162,7 +162,7 @@ fn registration(
     // `compdef`) and before registering.
     let mut output = String::new();
     if shell == Shell::Zsh {
-        if !commands.is_empty() && !compinit {
+        if !commands.is_empty() {
             output.push_str(DROP_PENDING_ZSH);
         }
         output.push_str(if commands.is_empty() {

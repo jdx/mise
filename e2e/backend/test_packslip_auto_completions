@@ -305,3 +305,17 @@ for hook in ${precmd_functions-}; do $hook; done
 [[ ${(t)_comps} == association* ]] && (( $+functions[__mise_clear_completions] )) && print -r -- repaired
 ZSH
 assert 'cat zsh-no-compinit-plain-comps.out' 'repaired'
+
+# A queued registration from one project does not replace the next project's.
+zsh -f <<'ZSH' >zsh-pending-replaced.out 2>&1
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+export MISE_PACKSLIP_COMPINIT=0
+eval "$(mise hook-env -s zsh --force)"
+unset MISE_PACKSLIP_COMPINIT
+(( $+functions[__mise_pending_completions] )) || { print -r -- not-queued; exit 1; }
+cd ../project-2.0.0
+eval "$(mise hook-env -s zsh --force)"
+if (( $+functions[__mise_pending_completions] )); then print -r -- still-queued; else print -r -- replaced; fi
+ZSH
+assert 'cat zsh-pending-replaced.out' 'replaced'
