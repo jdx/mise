@@ -551,8 +551,8 @@ mod tests {
             .collect()
     }
 
-    fn verdict(line: &str) -> Result<(), String> {
-        let spec = crate::cli::usage::spec();
+    /// Takes the spec, which is slow to build, so a test builds it once.
+    fn verdict(spec: &usage::Spec, line: &str) -> Result<(), String> {
         let commands = simple_commands(line);
         assert_eq!(commands.len(), 1, "{line}");
         check(&spec.cmd, &commands[0])
@@ -600,6 +600,7 @@ mod tests {
 
     #[test]
     fn accepts_what_mise_accepts() {
+        let spec = crate::cli::usage::spec();
         for line in [
             "mise use -g node@24",
             "mise install --jobs 4 node",
@@ -618,12 +619,13 @@ mod tests {
             "mise sync ruby <--brew>",
             "mise exec --allow-env='MYAPP_*' -- node app.js",
         ] {
-            assert_eq!(verdict(line), Ok(()), "{line}");
+            assert_eq!(verdict(&spec, line), Ok(()), "{line}");
         }
     }
 
     #[test]
     fn rejects_what_mise_rejects() {
+        let spec = crate::cli::usage::spec();
         for (line, problem) in [
             ("mise instal node", "mise has no command `instal`"),
             ("mise install --bogus", "`mise install` has no flag --bogus"),
@@ -640,7 +642,7 @@ mod tests {
             ("mise cache bogus", "`mise cache` has no subcommand `bogus`"),
             ("mise help bogus", "mise has no command `bogus`"),
         ] {
-            let got = verdict(line).unwrap_err();
+            let got = verdict(&spec, line).unwrap_err();
             assert!(got.contains(problem), "{line}: {got}");
         }
     }
