@@ -319,6 +319,31 @@ are listed on each [backend page](/dev-tools/backends/).
 mise's HTTP client does not read proxy variables from `install_env`, so set
 `HTTPS_PROXY` and similar variables in the environment that starts mise.
 
+### Options a backend does not read {#unread-options}
+
+An option the tool's backend does not read, such as a misspelled name or an
+option that belongs to another backend, is reported when the tool installs.
+The message names the option and, when a name the backend reads is close to
+it, suggests that one. The option is not reported by commands that do not
+install, such as `mise ls` or the shell hook.
+
+| Tools                                                                                                                                        | What an unread option does                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `cargo:`, `conda:`, `gem:`, `github:`, `gitlab:`, `forgejo:`, `go:`, `http:`, `npm:`, `packslip:`, `pypi:`, `s3:`, `spinel:`, `spm:`, `ubi:` | The install fails.                                                                        |
+| Core tools such as `node` and `python`, and `dotnet:`                                                                                        | mise warns and installs the tool; the option has no effect.                               |
+| `aqua:`                                                                                                                                      | Not checked: any other option is a [recipe variable](/dev-tools/backends/aqua.html#vars). |
+| `asdf:`, `vfox:`, and tools from backend plugins                                                                                             | Not checked: the plugin receives every option.                                            |
+
+```toml
+[tools]
+"github:cli/cli" = { version = "latest", asset_patern = "*.tar.gz" }
+```
+
+```text
+github:cli/cli: option `asset_patern` is not used by the github backend
+hint: Did you mean `asset_pattern`?
+```
+
 ### Inline or table syntax {#table-format}
 
 Short options fit on one line; use a table when a tool has several. These are

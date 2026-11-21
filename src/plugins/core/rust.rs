@@ -764,6 +764,12 @@ impl Backend for RustPlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[
+            "tool_core_rust_options",
+        ]))
+    }
+
     /// Rust uses rustup for installation, which handles its own downloads.
     /// Lockfile URLs are not applicable since we don't download artifacts directly.
     fn supports_lockfile_url(&self) -> bool {

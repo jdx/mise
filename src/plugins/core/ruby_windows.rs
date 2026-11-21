@@ -186,6 +186,10 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
+
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[]))
+    }
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         // TODO: use windows set of versions
         //  match self.core.fetch_remote_versions_from_mise() {
