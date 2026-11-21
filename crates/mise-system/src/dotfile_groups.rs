@@ -144,7 +144,7 @@ pub(crate) fn warn_unknown_selection(
 }
 
 /// Groups declared in config that could not be expanded, such as one
-/// missing its `root`. Their recorded files are still the group's, so they
+/// with an unknown `mode`. Their recorded files are still the group's, so they
 /// are never orphaned and pruned for a configuration mistake.
 fn unexpanded() -> std::sync::MutexGuard<'static, HashSet<String>> {
     static UNEXPANDED: std::sync::LazyLock<std::sync::Mutex<HashSet<String>>> =
@@ -262,11 +262,7 @@ pub(crate) fn implicit_group_requests(
         {
             continue;
         }
-        let group = GroupToml {
-            root: Some(name.clone()),
-            ..Default::default()
-        };
-        match expand_group(name, group, &base, &origin) {
+        match expand_group(name, GroupToml::default(), &base, &origin) {
             Ok((requests, _)) => out.extend(requests),
             Err(err) => {
                 unexpanded().insert(name.clone());
