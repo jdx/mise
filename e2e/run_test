@@ -243,20 +243,18 @@ stop_watchdog() {
   wait "$WATCHDOG_PID" 2>/dev/null || true
 }
 
-# Runs the test command in the isolated environment. With a limit, it runs in a
-# process group of its own and is killed when it has not finished after $1
-# seconds, which sets TIMED_OUT. Without one (0) it runs as part of this group.
+# Runs the test command in the isolated environment, in a process group of its
+# own so that stop_test can end it and everything it started. With a limit, it
+# is killed when it has not finished after $1 seconds, which sets TIMED_OUT; 0
+# means no limit.
 run_with_time_limit() {
   local limit="$1" status=0
   shift
   TIMED_OUT=0
-  if [[ $limit == 0 ]]; then
-    within_isolated_env "$@" || status=$?
-    return "$status"
-  fi
-
+  WATCHDOG_PID=
   trap 'TIMED_OUT=1' USR1
-  # The test no longer shares this script's group, so Ctrl-C does not reach it.
+  # The test no longer shares this script's group, so Ctrl-C does not reach it,
+  # and neither does the TERM run_all_tests sends when it is interrupted.
   trap 'stop_test; stop_watchdog; exit 130' INT
   trap 'stop_test; stop_watchdog; exit 143' TERM
   # Job control gives each background job its own process group. That needs no
@@ -264,13 +262,23 @@ run_with_time_limit() {
   set -m
   within_isolated_env "$@" </dev/null &
   TEST_PID=$!
-  (sleep "$limit" && kill -USR1 $$) </dev/null >/dev/null 2>&1 &
-  WATCHDOG_PID=$!
+  if [[ $limit != 0 ]]; then
+    # The signal repeats until this script is gone or stops the watchdog, so one
+    # that arrives before `wait` starts, and is lost to it, is sent again.
+    (
+      sleep "$limit"
+      while kill -USR1 $$ 2>/dev/null; do sleep 1; done
+    ) </dev/null >/dev/null 2>&1 &
+    WATCHDOG_PID=$!
+  fi
   set +m
 
   # A trapped signal ends `wait` early, so this returns when the test does or
   # when the watchdog fires, whichever is first.
-  wait "$TEST_PID" 2>/dev/null || status=$?
+  if [[ $TIMED_OUT != 1 ]]; then
+    wait "$TEST_PID" 2>/dev/null || status=$?
+  fi
+  stop_watchdog
   if [[ $TIMED_OUT == 1 ]] && kill -0 "$TEST_PID" 2>/dev/null; then
     echo "$TEST is still running after ${limit}s; its processes:" >&2
     echo "    PID    PPID    PGID STAT     ELAPSED COMMAND" >&2
@@ -289,7 +297,6 @@ run_with_time_limit() {
     fi
     TIMED_OUT=0
   fi
-  stop_watchdog
   trap - USR1 INT TERM
   return "$status"
 }

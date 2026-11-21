@@ -419,20 +419,23 @@ echo "output after the hang"
             self.assertFalse(self.running(pid), f"process {pid} outlived the test")
 
     def test_interrupting_the_run_stops_the_test(self):
-        with tempfile.TemporaryDirectory() as pids:
-            result, output = self.run_tests(
-                {"test_hang": self.hanging_test(pids)},
-                interrupt_after=Path(pids) / "ready",
-                E2E_TEST_TIMEOUT_SECONDS="60",
-            )
-            children = self.children(pids)
-        self.assertEqual(result.returncode, 130, output)
-        # The run is over before the test's processes are; they get SIGTERM.
-        deadline = time.monotonic() + 10
-        while any(map(self.running, children)) and time.monotonic() < deadline:
-            time.sleep(0.1)
-        for pid in children:
-            self.assertFalse(self.running(pid), f"process {pid} outlived the run")
+        for limit in ("60", "0"):
+            with self.subTest(limit=limit), tempfile.TemporaryDirectory() as pids:
+                result, output = self.run_tests(
+                    {"test_hang": self.hanging_test(pids)},
+                    interrupt_after=Path(pids) / "ready",
+                    E2E_TEST_TIMEOUT_SECONDS=limit,
+                )
+                children = self.children(pids)
+                self.assertEqual(result.returncode, 130, output)
+                # The run is over before the test's processes are; they get SIGTERM.
+                deadline = time.monotonic() + 10
+                while any(map(self.running, children)) and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                for pid in children:
+                    self.assertFalse(
+                        self.running(pid), f"process {pid} outlived the run"
+                    )
 
     def test_slow_tests_have_their_own_limit(self):
         result, output = self.run_tests(
