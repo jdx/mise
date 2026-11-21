@@ -4822,15 +4822,15 @@ cmd local hide=#true help="Set or show local tool versions (deprecated; use `mis
 Set or show local tool versions (deprecated; use `mise use`)
 
 Writes `mise.toml` in the current directory, or an existing `.tool-versions`
-there when there is no `mise.toml`. Set MISE_USE_TOML=0 to create
+there when there is no `mise.toml`. The deprecated MISE_USE_TOML=0 creates
 `.tool-versions` instead. Use `mise global` for the global config.
 """#
     flag "-p --parent" help="Use the nearest `mise.toml` in this or a parent directory" {
         long_help #"""
 Use the nearest `mise.toml` in this or a parent directory
 
-By default, only the current directory is used. With MISE_USE_TOML=0, a
-`.tool-versions` file also counts.
+By default, only the current directory is used. With the deprecated
+MISE_USE_TOML=0, a `.tool-versions` file also counts.
 """#
     }
     flag --fuzzy help="Save the version as written, such as `24`" overrides=--pin {
