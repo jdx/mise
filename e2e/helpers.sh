@@ -13,6 +13,12 @@ resolve_mise_bin() {
       err "MISE_E2E_BIN is set to '$MISE_E2E_BIN', which is not an executable file."
       return 1
     fi
+    # Outside Docker the tests find the binary by name on PATH. A Docker run
+    # mounts the file as `mise`, so any name works there.
+    if [[ ${MISE_E2E_DOCKER:-0} != 1 && $(basename "$MISE_E2E_BIN") != mise ]]; then
+      err "MISE_E2E_BIN is set to '$MISE_E2E_BIN', but the tests call the binary by name: the file must be named 'mise'."
+      return 1
+    fi
     printf '%s\n' "$MISE_E2E_BIN"
     return
   fi

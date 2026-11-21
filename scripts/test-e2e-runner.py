@@ -23,6 +23,7 @@ class E2ERunnerTests(unittest.TestCase):
         jobs="2",
         mise_bin="stub",
         dangling_target=False,
+        docker=False,
     ):
         """Run e2e/run_all_tests, or the `mise run test:e2e` task script when
         task_args is given. Records the executed test order in self.order."""
@@ -97,6 +98,8 @@ exit "$status"
                 GITHUB_ACTIONS="true",
                 GITHUB_STEP_SUMMARY=str(summary),
             )
+            if docker:
+                env["MISE_E2E_DOCKER"] = "1"
             if jobs is not None:
                 env["E2E_JOBS"] = jobs
             if attempts is not None:
@@ -222,6 +225,69 @@ exit "$status"
         result, counts, _ = self.run_runner(mise_bin="debug", args=("test_pass",))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(counts, {"test_pass": 1})
+
+    def test_selected_binary_is_the_mise_a_test_runs(self):
+        """Run the real e2e/run_test with stub binaries that say who they are:
+        the test calls `mise` by name and has to get the selected one."""
+        for selected in ("debug", "override"):
+            with self.subTest(selected=selected), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                e2e = root / "e2e"
+                e2e.mkdir()
+                for name in ("run_test", "style.sh", "helpers.sh"):
+                    shutil.copy(ROOT / "e2e" / name, e2e / name)
+                (e2e / "assert.sh").write_text("")
+                (e2e / "test_which").write_text('mise >"$ROOT/seen"\n')
+                (root / "test" / "data" / "plugins").mkdir(parents=True)
+                # A decoy earlier on the caller's PATH must not be picked up.
+                bins = {
+                    "decoy": root / "decoy" / "mise",
+                    "debug": root / "target" / "debug" / "mise",
+                    "override": root / "elsewhere" / "mise",
+                }
+                for name, path in bins.items():
+                    if name in ("decoy", selected):
+                        path.parent.mkdir(parents=True)
+                        path.write_text(f"#!/bin/sh\necho {name}\n")
+                        path.chmod(0o755)
+                env = {
+                    key: value
+                    for key, value in os.environ.items()
+                    if not key.startswith(("E2E_", "TEST_", "GITHUB_", "MISE_"))
+                }
+                env.pop("CARGO_TARGET_DIR", None)
+                env["PATH"] = f"{bins['decoy'].parent}{os.pathsep}{env['PATH']}"
+                env["TMPDIR"] = str(root)
+                if selected == "override":
+                    env["MISE_E2E_BIN"] = str(bins["override"])
+                result = subprocess.run(
+                    ["bash", str(e2e / "run_test"), "test_which"],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((root / "seen").read_text(), f"{selected}\n")
+
+    def test_override_must_be_named_mise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            other = Path(tmp) / "mise-release"
+            other.write_text("#!/bin/sh\n")
+            other.chmod(0o755)
+            result, counts, _ = self.run_runner(mise_bin=str(other))
+            self.assertEqual(result.returncode, 1)
+            # Rejected once, before any test starts or is retried.
+            self.assertEqual(counts, {})
+            self.assertEqual(result.stderr.count("must be named 'mise'"), 1)
+            self.assertNotIn("E2E: ran", result.stderr)
+            # A Docker run mounts the file as `mise`, so the name is free there.
+            result, counts, _ = self.run_runner(
+                mise_bin=str(other), args=("test_pass",), docker=True
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(counts, {"test_pass": 1})
 
     def test_override_must_be_an_executable_file(self):
         result, counts, _ = self.run_runner(mise_bin="/no/such/mise")

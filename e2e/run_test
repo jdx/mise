@@ -176,10 +176,6 @@ run_test() {
   # `mise` on PATH.
   local mise_bin
   mise_bin="$(resolve_mise_bin)" || return 1
-  if [[ $(basename "$mise_bin") != mise ]]; then
-    err "MISE_E2E_BIN is set to '$mise_bin', but the tests call the binary by name: the file must be named 'mise'."
-    return 1
-  fi
   MISE_BIN_DIR="$(cd "$(dirname "$mise_bin")" && pwd)"
 
   setup_isolated_env
