@@ -721,6 +721,19 @@ impl Config {
             .get_or_try_init(|| crate::daemons::glue::load(&self.config_files))
     }
 
+    /// Config files of the projects this config references with `project =`.
+    /// Their ports feed the exported environment, so editing one is an input
+    /// even though none of this config's own files changed.
+    pub fn referenced_config_paths(&self) -> Vec<PathBuf> {
+        let Ok(set) = self.daemons() else {
+            return vec![];
+        };
+        set.references
+            .values()
+            .flat_map(|r| r.inputs.iter().cloned())
+            .collect()
+    }
+
     /// Use `set` as this config's daemons instead of loading them from its files.
     /// A configuration reloaded for one project root still sees a daemon name a
     /// nearer project has taken over, so a caller that already resolved ownership
@@ -1666,6 +1679,7 @@ impl Config {
                 .config_files
                 .iter()
                 .flat_map(|(p, cf)| std::iter::once(p.clone()).chain(cf.included_paths()))
+                .chain(self.referenced_config_paths())
                 .map(|p| {
                     let mtime = get_file_mtime(&p).unwrap_or(0);
                     (p, mtime)
@@ -1951,6 +1965,11 @@ impl Config {
                     .map(|p| p.as_path().into()),
             )
             .chain(self.tera_files.iter().map(|p| p.as_path().into()))
+            .chain(
+                self.referenced_config_paths()
+                    .into_iter()
+                    .map(WatchFilePattern::from),
+            )
             .collect())
     }
 

@@ -30,6 +30,7 @@ its declaration. For example, `../mirror-pipeline/mise.toml` declares a worker:
 ```toml
 [daemons.worker]
 run = "exec npm run worker"
+port = 4100
 ```
 
 Reference it from your application's `mise.toml`:
@@ -84,6 +85,26 @@ The worker runs in its own project, with that project's tools, environment,
 namespace, and data directories. Referencing a preset does not add its exports,
 such as `DATABASE_URL`, to your application's environment; configure the
 application's connection yourself.
+
+A reference does export the daemon's port and URL, named after the reference
+rather than the daemon it points at. The `pipeline` reference above exports
+`PIPELINE_PORT` and, when the daemon has a [stable URL](/daemons/worktrees.html#stable-urls-per-worktree),
+`PIPELINE_URL`. They follow the rules for a local daemon's
+`<NAME>_PORT` and `<NAME>_URL`: two names
+that fold onto one variable export neither, and a variable one of your own
+daemons already exports keeps its value. Pointing the reference at another
+checkout, for example in `mise.local.toml`, moves the variables with it:
+
+```toml
+[env]
+PIPELINE_API_URL = "{{ env.PIPELINE_URL }}"
+```
+
+When the reference is in a daemon's `depends`, templates can use the same name:
+<code v-pre>{{ daemons.pipeline.url }}</code> in `run`, `ready_cmd` or the daemon's `env`. This
+needs pitchfork 2.36.0 or later; with an older pitchfork, templates reach the
+dependency by its qualified key, which includes a namespace mise generates per
+checkout.
 
 `mise daemons start` and `restart` install missing tools in each project, then
 start the selected daemons and their dependencies. The referenced project's

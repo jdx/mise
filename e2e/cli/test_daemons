@@ -14,6 +14,9 @@ case "$1" in
     # How pitchfork 2.28.0 declares `run`, and how older releases did.
     if [[ ${OLD_ARGV:-0} == 1 ]]; then
       echo '{"$defs":{"PitchforkTomlDaemon":{"properties":{"run":{"type":"string"}}}}}'
+    elif [[ ${NAMED_DEPENDS:-0} == 1 ]]; then
+      # pitchfork 2.36.0 added the `depends` entry that carries `as`.
+      echo '{"$defs":{"PitchforkTomlDaemon":{"properties":{"run":{"$ref":"#/$defs/RunCommand"}}},"RunCommand":{"anyOf":[{"type":"string"},{"type":"array"}]},"DependencySchema":{"anyOf":[{"type":"string"},{"type":"object"}]}}}'
     else
       echo '{"$defs":{"PitchforkTomlDaemon":{"properties":{"run":{"$ref":"#/$defs/RunCommand"}}},"RunCommand":{"anyOf":[{"type":"string"},{"type":"array"}]}}}'
     fi
@@ -717,3 +720,45 @@ assert_not_contains "cat '$DAEMON_LOG'" 'args=start '
 assert_not_contains "cat '$DAEMON_LOG'" 'args=restart '
 assert_contains "cat '$(daemon_state_dir)/pitchfork.toml'" '[daemons.extra]'
 assert_contains "cat '$(daemon_state_dir ../shared)/pitchfork.toml'" '[daemons.storage]'
+
+# A reference exports its port under the name the project gave it, so the
+# project can wire the two together without knowing the other project's names.
+mkdir -p "$HOME/named/search" "$HOME/named/shop"
+cat >"$HOME/named/search/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "named-search"
+[daemons.app]
+run = "sleep 600"
+port = 4100
+TOML
+cat >"$HOME/named/shop/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "named-shop"
+[daemons.search]
+project = "../search"
+name = "app"
+[daemons.app]
+run = "sleep 600"
+port = 3100
+depends = ["search"]
+TOML
+mise trust "$HOME/named/search/mise.toml"
+cd "$HOME/named/shop"
+assert_contains "mise env -s bash" "SEARCH_PORT=4100"
+assert_contains "mise env -s bash" "APP_PORT=3100"
+assert_not_contains "mise env -s bash" "APP_PORT=4100"
+
+# A pitchfork that predates `as` gets the plain ID.
+mise daemons register
+assert_contains "cat '$(daemon_state_dir)/pitchfork.toml'" 'named-search/app'
+assert_not_contains "cat '$(daemon_state_dir)/pitchfork.toml'" 'as = "search"'
+
+# One that reads it gets the name too, so templates can say `daemons.search`.
+touch "$HOME/bin/pitchfork"
+NAMED_DEPENDS=1 mise daemons register
+assert_contains "cat '$(daemon_state_dir)/pitchfork.toml'" 'as = "search"'
+assert_contains "cat '$(daemon_state_dir)/pitchfork.toml'" 'named-search/app'

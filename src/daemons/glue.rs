@@ -369,6 +369,14 @@ impl DaemonSetExt for DaemonSet {
                     )
                 })
             })
+            .chain(self.references.values().flat_map(|reference| {
+                reference.exports.iter().map(|(k, v)| {
+                    (
+                        EnvDirective::Val(k.clone(), v.clone(), Default::default()),
+                        reference.source.clone(),
+                    )
+                })
+            }))
             .collect()
     }
 

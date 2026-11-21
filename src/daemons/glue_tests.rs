@@ -164,7 +164,7 @@ fn referenced_project_daemons_belong_to_that_project() {
     // A short depends on an imported daemon is rewritten; pitchfork resolves
     // bare names inside one namespace only.
     assert_eq!(
-        set.daemons["api"].table["depends"][0].as_str(),
+        set.daemons["api"].table["depends"][0]["id"].as_str(),
         Some("mirror/worker")
     );
     // The referenced project installs and exports for its own daemon, and

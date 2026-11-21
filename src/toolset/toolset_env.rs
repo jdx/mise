@@ -459,6 +459,7 @@ impl Toolset {
             .config_files
             .iter()
             .flat_map(|(p, cf)| std::iter::once(p.clone()).chain(cf.included_paths()))
+            .chain(config.referenced_config_paths())
             .map(|p| {
                 let mtime = get_file_mtime(&p).unwrap_or(0);
                 (p, mtime)
