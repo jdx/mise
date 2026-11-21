@@ -4749,7 +4749,8 @@ pub(crate) async fn auto_lock_new_versions(
                             backend,
                             &platform_key,
                             msg,
-                            resolution.7,
+                            (resolution.7 == LockResolutionStatus::Unsupported)
+                                .then_some(&resolution.5),
                         ) {
                             provenance_errors.push(err);
                         } else {
@@ -4815,12 +4816,22 @@ fn deferred_provenance_resolution_error(
     backend: &str,
     platform_key: &str,
     resolution_error: &str,
-    status: LockResolutionStatus,
+    no_build_for: Option<&BTreeMap<String, String>>,
 ) -> Option<String> {
-    // The release source answered that this version has no build for the
-    // platform: no artifact is locked, so there is nothing left to verify.
-    // `mise lock` records the platform the same way, and later runs skip it.
-    if status == LockResolutionStatus::Unsupported {
+    // `no_build_for` holds the entry's options when the release source
+    // answered that this version has no build for the platform. With no
+    // artifact locked there is nothing left to verify, and `mise lock` records
+    // the platform the same way. An artifact row already locked for it stays
+    // in place, unverified, so that still fails closed.
+    if let Some(options) = no_build_for
+        && !existing_tools.is_some_and(|tools| {
+            tools.iter().any(|tool| {
+                tool.version == version
+                    && &tool.options == options
+                    && tool.platforms.contains_key(platform_key)
+            })
+        })
+    {
         return None;
     }
     find_provenance_regression_baseline(existing_tools, version, backend, platform_key, None)?;

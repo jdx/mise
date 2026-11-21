@@ -4303,7 +4303,7 @@ fn test_deferred_resolution_failure_blocks_when_baseline_present() {
         "github:owner/repo",
         &platform,
         "network unavailable",
-        LockResolutionStatus::Required,
+        None,
     )
     .expect("failure must fail-closed while the provenance baseline is present");
     assert!(err.contains("could not verify provenance for repo@0.12.0"));
@@ -4319,9 +4319,32 @@ fn test_deferred_resolution_failure_blocks_when_baseline_present() {
             "github:owner/repo",
             &platform,
             "no asset for this platform",
-            LockResolutionStatus::Unsupported,
+            Some(&BTreeMap::new()),
         )
         .is_none()
+    );
+
+    // An artifact already locked for that platform stays in place, and it
+    // was never verified, so the failure still blocks.
+    let mut with_row = tools.clone();
+    with_row[1].platforms.insert(
+        platform.clone(),
+        PlatformInfo {
+            url: Some("https://example.com/repo-0.12.0.tar.gz".to_string()),
+            ..Default::default()
+        },
+    );
+    assert!(
+        deferred_provenance_resolution_error(
+            Some(&with_row),
+            "repo",
+            "0.12.0",
+            "github:owner/repo",
+            &platform,
+            "no asset for this platform",
+            Some(&BTreeMap::new()),
+        )
+        .is_some()
     );
 
     // Without a provenance-bearing prior version, a failure stays best-effort.
@@ -4337,7 +4360,7 @@ fn test_deferred_resolution_failure_blocks_when_baseline_present() {
             "github:owner/repo",
             &platform,
             "network unavailable",
-            LockResolutionStatus::Required,
+            None,
         )
         .is_none(),
         "no baseline means a resolution failure should remain non-blocking"
