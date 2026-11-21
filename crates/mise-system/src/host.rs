@@ -212,6 +212,7 @@ pub fn render_config_str(
     context: &tera::Context,
     config_path: &Path,
 ) -> tera::TeraResult<String> {
+    let _source = mise_util::tera::template_source(config_path);
     if safe_mode_ignores_bootstrap(config_path) {
         mise_util::tera::render_str(tera, input, context)
     } else {

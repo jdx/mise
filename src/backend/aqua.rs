@@ -288,6 +288,29 @@ impl Backend for AquaBackend {
             .and_then(|p| p.description.clone())
     }
 
+    /// By the package's repository, not the aqua package name: `kubernetes/kubectl`
+    /// is released from kubernetes/kubernetes. A version or platform override can name
+    /// another repository, so the package is resolved as an install resolves
+    /// it: by the version's release tag, which picks one override where the
+    /// version alone can match several. Not validated: a release this platform
+    /// can't install still comes from that repository. Finding the tag can
+    /// list the repository's releases, so it is only done when an override
+    /// names another repository.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await else {
+            return vec![];
+        };
+        let pkg = if pkg.overrides_name_other_repositories() {
+            let Ok(ResolvedPackage { pkg, .. }) = self.resolve_package(tv).await else {
+                return vec![];
+            };
+            pkg
+        } else {
+            pkg
+        };
+        crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, &tv.version)
+    }
+
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let pkg = match self.package_with_version_candidates(tv).await {
             Ok(pkg) => pkg,
@@ -1153,6 +1176,15 @@ impl AquaBackend {
     /// the wrong block would call a tool impossible when it installs fine -- a worse answer than
     /// the optimism it replaces.
     async fn resolve_validated_package(&self, tv: &ToolVersion) -> Result<ResolvedPackage> {
+        let resolved = self.resolve_package(tv).await?;
+        validate(&resolved.pkg, &resolved.v)?;
+        ensure_url_safe_version(&resolved.v)?;
+        Ok(resolved)
+    }
+
+    /// The package, version override and release tag an install of `tv` uses,
+    /// before checking that this platform can install it.
+    async fn resolve_package(&self, tv: &ToolVersion) -> Result<ResolvedPackage> {
         // Check if URL already exists in lockfile platforms first
         // This allows us to skip API calls when lockfile has the URL
         let platform_key = self.get_platform_key();
@@ -1218,9 +1250,7 @@ impl AquaBackend {
                     .flatten()
                     .is_some_and(|(version, _)| version == tv.version)
             });
-        let versions = resolved_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
-        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-        let pkg = Self::package_with_options_for_pkg(tv, pkg, &versions)?;
+        let pkg = Self::package_for_release(tv, pkg, tag.as_deref())?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
         {
@@ -1234,8 +1264,6 @@ impl AquaBackend {
                 }
             });
         }
-        validate(&pkg, &v)?;
-        ensure_url_safe_version(&v)?;
         let release_tag = match tag {
             Some(_) => tag_names_version.then(|| v.clone()),
             None => pkg.version_prefix.is_some().then(|| v.clone()),
@@ -1250,6 +1278,19 @@ impl AquaBackend {
             v_prefixed,
             release_tag,
         })
+    }
+
+    /// The package with the version override for the release `tag`, or for
+    /// the version when its tag is not known. Nothing here checks that this
+    /// platform can install it.
+    fn package_for_release(
+        tv: &ToolVersion,
+        pkg: AquaPackage,
+        tag: Option<&str>,
+    ) -> Result<AquaPackage> {
+        let versions = resolved_package_version_candidates(&tv.version, tag, &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        Self::package_with_options_for_pkg(tv, pkg, &versions)
     }
 
     fn package_with_options_for_pkg(
@@ -5695,6 +5736,97 @@ version_overrides:
 
         assert_eq!(tag, "jq-1.8.1");
         assert_eq!(versioned.asset, "jq-{{.OS}}-{{.Arch}}");
+    }
+
+    #[test]
+    fn test_release_tag_selects_its_override_repository() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: example
+repo_name: tool
+version_constraint: "false"
+version_overrides:
+  - version_constraint: 'Version startsWith "old-"'
+    version_prefix: old-
+    repo_owner: old-owner
+    repo_name: old-tool
+  - version_constraint: 'Version startsWith "new-"'
+    version_prefix: new-
+    repo_owner: new-owner
+    repo_name: new-tool
+"#,
+        );
+        let select = |tag: Option<&str>| {
+            let versions = resolved_package_version_candidates("1.0.0", tag, &pkg);
+            let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+            let pkg = pkg.clone().with_version(&versions, "linux", "amd64");
+            format!("{}/{}", pkg.repo_owner, pkg.repo_name)
+        };
+
+        // The version alone matches both overrides, and the first one wins.
+        assert_eq!(select(None), "old-owner/old-tool");
+        // An install uses the release tag, which matches only its own.
+        assert_eq!(select(Some("new-1.0.0")), "new-owner/new-tool");
+        assert!(pkg.overrides_name_other_repositories());
+    }
+
+    #[test]
+    fn test_advisory_repository_survives_an_override_this_platform_cannot_install() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: example
+repo_name: tool
+version_constraint: "false"
+version_overrides:
+  - version_constraint: 'Version startsWith "old-"'
+    version_prefix: old-
+    repo_owner: old-owner
+    repo_name: old-tool
+  - version_constraint: 'Version startsWith "new-"'
+    version_prefix: new-
+    repo_owner: new-owner
+    repo_name: new-tool
+    error_message: not released for this platform
+"#,
+        );
+        let ba = Arc::new(BackendArg::new(
+            "aqua:example/tool".to_string(),
+            Some("aqua:example/tool".to_string()),
+        ));
+        let request =
+            crate::toolset::ToolRequest::new(ba, "1.0.0", crate::toolset::ToolSource::Unknown)
+                .unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+
+        // The path an advisory lookup takes: the release tag picks the
+        // override, which an install would then reject.
+        let pkg = AquaBackend::package_for_release(&tv, pkg, Some("new-1.0.0")).unwrap();
+        assert!(validate(&pkg, "new-1.0.0").is_err());
+        let git = crate::audit::github_queries(&pkg.repo_owner, &pkg.repo_name, &tv.version)
+            .into_iter()
+            .flat_map(|q| q.packages)
+            .filter(|p| p.ecosystem == "GIT")
+            .map(|p| p.name)
+            .collect_vec();
+        assert_eq!(git, ["https://github.com/new-owner/new-tool"]);
+    }
+
+    #[test]
+    fn test_overrides_in_the_same_repository_do_not_move_it() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: jqlang
+repo_name: jq
+version_overrides:
+  - version_constraint: "true"
+    repo_owner: jqlang
+    asset: jq-{{.OS}}-{{.Arch}}
+"#,
+        );
+        assert!(!pkg.overrides_name_other_repositories());
     }
 
     fn pkg_from_yaml(yaml: &str) -> AquaPackage {

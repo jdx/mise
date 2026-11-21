@@ -196,26 +196,37 @@ impl SourceMemo {
 
 impl MemoValues {
     /// What still has to be asked of the source, or the earlier failure that rules it out.
+    /// `own` are the keys from the user's own fnox config that an all-in-scope call does not
+    /// cover: the requested ones, which are asked for by name, and the others when that call
+    /// leaves them out. `batch_skips_own` says whether it does.
     fn pending_for(
         &self,
         keys: &BTreeSet<SecretName>,
         all: bool,
+        own: &BTreeSet<SecretName>,
+        batch_skips_own: bool,
     ) -> std::result::Result<Option<Pending>, Earlier> {
-        match &self.all {
-            // the whole document is here; a key it did not return is missing
-            Some(Ok(())) => return Ok(None),
+        // with the whole document here, a key it did not return is missing, so only the
+        // user's own keys can still be asked for
+        let own_only = match &self.all {
+            Some(Ok(())) => true,
             Some(Err(_)) if all => return Err(Earlier::All),
-            _ => {}
-        }
-        if all {
-            if let Some(key) = self.failed.keys().next() {
+            _ => false,
+        };
+        if all && !own_only {
+            // a failed key of the user's own that this request does not name is not part of
+            // the batch, so it does not rule the batch out
+            let in_batch = |key: &&SecretName| keys.contains(*key) || !own.contains(*key);
+            if let Some(key) = self.failed.keys().find(in_batch) {
                 return Err(Earlier::Key(key.clone()));
             }
             return Ok(Some(Pending::All));
         }
         let mut pending = vec![];
         for key in keys {
-            if self.set.contains_key(key)
+            let is_own = own.contains(key);
+            if (own_only && !is_own)
+                || self.set.contains_key(key)
                 || self.files.contains_key(key)
                 || self.missing.contains(key)
             {
@@ -224,9 +235,11 @@ impl MemoValues {
             if self.failed.contains_key(key) {
                 return Err(Earlier::Key(key.clone()));
             }
-            // the failed all-in-scope batch covered every key, so a key that is not already
-            // here would need a new call, which is not made; keys already here stay usable
-            if matches!(self.all, Some(Err(_))) {
+            // the failed all-in-scope batch covered every project key, so one that is not
+            // already here would need a new call, which is not made; keys already here stay
+            // usable. A batch that named the project keys never asked for the user's own keys,
+            // so those are still asked; one that asked for everything did, so they are not.
+            if !(is_own && batch_skips_own) && matches!(self.all, Some(Err(_))) {
                 return Err(Earlier::All);
             }
             pending.push(key.clone());
@@ -976,6 +989,7 @@ impl SecretBroker {
             for (key, entry) in &catalog.entries {
                 if keys.contains(key)
                     || !entry.injectable
+                    || entry.personal.is_some()
                     || mise_util::env::is_reserved_secret_name(key.as_str())
                 {
                     continue;
@@ -988,6 +1002,12 @@ impl SecretBroker {
         }
         self.ensure_resolved(memo, &catalog, &resolve_keys, all, req, &who)
             .await?;
+        if all {
+            // `--secrets-all` leaves the user's own keys out; the ones this task names
+            // itself are asked for by name
+            self.ensure_resolved(memo, &catalog, &resolve_keys, false, req, &who)
+                .await?;
+        }
 
         let v = memo.values.lock().await;
         let mut env_values = BTreeMap::new();
@@ -1008,6 +1028,14 @@ impl SecretBroker {
                     return false;
                 }
                 if skipped.contains(key) {
+                    return false;
+                }
+                // one of the user's own keys, here because another task named it
+                if catalog
+                    .entries
+                    .get(key)
+                    .is_some_and(|e| e.personal.is_some())
+                {
                     return false;
                 }
                 if !catalog.entries.contains_key(key)
@@ -1063,10 +1091,22 @@ impl SecretBroker {
         req: &SpawnRequest<'_>,
         who: &str,
     ) -> Result<()> {
+        // an all-in-scope call that names the project keys leaves out every key of the
+        // user's own, so those count here too; one that asks for everything does not
+        let batch_skips_own = matches!(all_selection(catalog), KeySelection::Keys(_));
+        let own: BTreeSet<SecretName> = catalog
+            .entries
+            .iter()
+            .filter(|(key, e)| e.personal.is_some() && (batch_skips_own || keys.contains(*key)))
+            .map(|(key, _)| key.clone())
+            .collect();
         let pending;
         {
             let mut v = memo.values.lock().await;
-            let Some(missing) = v.pending_for(keys, all).map_err(|e| g15(who, &e))? else {
+            let Some(missing) = v
+                .pending_for(keys, all, &own, batch_skips_own)
+                .map_err(|e| g15(who, &e))?
+            else {
                 return Ok(());
             };
             if !req.interactive {
@@ -1082,7 +1122,10 @@ impl SecretBroker {
         let _terminal = req.terminal.acquire(&pending).await;
         let _pause = MultiProgressReport::try_get().map(|r| r.pause_progress());
         let mut v = memo.values.lock().await;
-        let Some(missing) = v.pending_for(keys, all).map_err(|e| g15(who, &e))? else {
+        let Some(missing) = v
+            .pending_for(keys, all, &own, batch_skips_own)
+            .map_err(|e| g15(who, &e))?
+        else {
             return Ok(());
         };
         v.resolve(memo, catalog, missing, true, who).await
@@ -1239,6 +1282,8 @@ mod tests {
         omit: BTreeSet<String>,
         /// catalog keys from the user's own config
         personal: BTreeSet<String>,
+        /// dynamic leases in the catalog
+        leases: Vec<String>,
     }
 
     fn catalog() -> Catalog {
@@ -1284,6 +1329,7 @@ mod tests {
         }
         async fn describe(&self) -> Result<Catalog> {
             let mut catalog = catalog();
+            catalog.dynamic_leases = self.leases.clone();
             for k in self.file_keys.iter().chain(self.omit.iter()) {
                 catalog.entries.insert(
                     SecretName::new(k).unwrap(),
@@ -1925,39 +1971,118 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_personal_key_needs_the_users_own_flag() {
+    async fn a_task_can_list_a_personal_key() {
         let term = terminal();
-        let (fake, memo) = fake_with_personal(&[], &["PERSONAL_KEY"]);
+        let (_, memo) = fake_with_personal(&[], &["PERSONAL_KEY"]);
         let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
-        let err = SecretBroker::default()
+        let spawn = SecretBroker::default()
+            .grant_values(&memo, &listed.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "PERSONAL_KEY");
+
+        // --secrets-all leaves the user's own keys out, but not one the task names itself
+        let (_, memo) = fake_with_personal(&[], &["PERSONAL_KEY"]);
+        let mut both = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        both.grant.all = Some(GrantOrigin::CliAll);
+        let spawn = SecretBroker::default()
+            .grant_values(&memo, &both.req(&term, false))
+            .await
+            .unwrap();
+        assert!(spawn.marker_value().split(',').any(|k| k == "PERSONAL_KEY"));
+        // a later task that only asks for everything does not inherit it
+        let mut all = Inputs::new("build", &[]);
+        all.grant.all = Some(GrantOrigin::CliAll);
+        let spawn = SecretBroker::default()
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn.marker_value().split(',').any(|k| k == "PERSONAL_KEY"));
+    }
+
+    #[tokio::test]
+    async fn a_personal_key_is_still_asked_for_after_a_failed_all_in_scope_call() {
+        let term = terminal();
+        // with a personal key in the catalog the batch names the project keys, so one fails it
+        let (fake, memo) = fake_with_personal(&["B"], &["PERSONAL_KEY"]);
+        let broker = SecretBroker::default();
+        let mut all = Inputs::new("build", &[]);
+        all.grant.all = Some(GrantOrigin::CliAll);
+        let _ = broker
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap_err();
+        // the failed batch never asked for the user's own key, so it is not ruled out
+        let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        let spawn = broker
+            .grant_values(&memo, &listed.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "PERSONAL_KEY");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_failed_personal_key_does_not_rule_out_a_later_all_only_task() {
+        let term = terminal();
+        let (fake, memo) = fake_with_personal(&["PERSONAL_KEY"], &["PERSONAL_KEY"]);
+        let broker = SecretBroker::default();
+        let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        let _ = broker
+            .grant_values(&memo, &listed.req(&term, false))
+            .await
+            .unwrap_err();
+        // the batch names the project keys only, so the failed key is not part of it
+        let all = with_all(Inputs::new("build", &[]));
+        let spawn = broker
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn.marker_value().split(',').any(|k| k == "PERSONAL_KEY"));
+        // a task that names the failed key is still refused, with or without --secrets-all
+        let both = with_all(Inputs::new("release", &["PERSONAL_KEY"]));
+        let err = broker
+            .grant_values(&memo, &both.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("task release: not retrying"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_personal_key_is_not_asked_again_after_a_failed_call_that_covered_it() {
+        let term = terminal();
+        // with a dynamic lease the batch asks for everything, the user's own keys included
+        let fake = Arc::new(Fake {
+            id: Some(SourceId {
+                kind: "fake",
+                root: PathBuf::from("/p"),
+                profile: None,
+            }),
+            fail: BTreeSet::from(["*".to_string()]),
+            personal: BTreeSet::from(["PERSONAL_KEY".to_string()]),
+            leases: vec!["build_token".into()],
+            ..Default::default()
+        });
+        let memo = SourceMemo::new(fake.clone());
+        let broker = SecretBroker::default();
+        let all = with_all(Inputs::new("build", &[]));
+        let _ = broker
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap_err();
+        let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        let err = broker
             .grant_values(&memo, &listed.req(&term, false))
             .await
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains(
-                "task deploy: PERSONAL_KEY comes from your own fnox config, so the project cannot grant it"
-            ),
+            err.contains("task deploy: not retrying the secrets"),
             "{err}"
         );
-        assert!(
-            err.contains("mise run --secrets PERSONAL_KEY deploy"),
-            "{err}"
-        );
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
-
-        let mut asked = Inputs::new("deploy", &["PERSONAL_KEY"]);
-        asked
-            .grant
-            .keys
-            .get_mut(&SecretName::new("PERSONAL_KEY").unwrap())
-            .unwrap()
-            .push(GrantOrigin::CliFlag);
-        let spawn = SecretBroker::default()
-            .grant_values(&memo, &asked.req(&term, false))
-            .await
-            .unwrap();
-        assert_eq!(spawn.marker_value(), "PERSONAL_KEY");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::args::{BackendArg, ToolArg};
+use crate::backend::ABackend;
 use crate::backend::pipx::PIPXBackend;
 use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::errors::split_install_result;
@@ -31,6 +32,7 @@ use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use jiff::Timestamp;
 
 const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
@@ -41,6 +43,8 @@ struct ExplicitConfigBump {
     // Keep the original selector for matching successful resolutions even when pinning.
     request: ToolRequest,
     persisted_request: ToolRequest,
+    /// The request the config holds now, which the bump replaces.
+    configured: ToolRequest,
 }
 
 /// Upgrade outdated tools
@@ -61,6 +65,7 @@ struct ExplicitConfigBump {
     example(r###"mise upgrade --dry-run"###, help = r###"Show what would be upgraded"###),
     example(r###"mise upgrade --exclude go"###, help = r###"Upgrade everything except go"###),
     example(r###"mise upgrade --interactive"###, help = r###"Choose tools from a menu"###),
+    example(r###"mise upgrade --vulnerable"###, help = r###"Upgrade only tools with a known vulnerability (see `mise audit`)"###),
     example(r###"mise upgrade --global claude"###, help = r###"Upgrade claude within the global config's request, leaving project config alone"###))]
 pub(crate) struct Upgrade {
     /// Tools to upgrade, such as node@20 python@3.10
@@ -110,6 +115,15 @@ pub(crate) struct Upgrade {
     /// Tools to exclude from upgrading, such as go python
     #[usage(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
     exclude: Vec<ToolArg>,
+
+    /// Only upgrade tools with a known vulnerability
+    ///
+    /// Looks up the installed versions in OSV.dev, as `mise audit` does, and
+    /// upgrades only the affected tools: within their configured range, or to
+    /// the newest release with `--bump`. Warns about affected tools that have
+    /// no newer version to upgrade to, and about upgrades that are still affected.
+    #[usage(long)]
+    vulnerable: bool,
 
     /// Like --dry-run, but exit with code 1 if there are outdated tools
     ///
@@ -459,6 +473,7 @@ impl Upgrade {
                     path,
                     persisted_request: request.clone(),
                     request,
+                    configured: configured_request.clone(),
                 });
             }
             explicit_config_bumps.retain(|bump| {
@@ -616,6 +631,7 @@ impl Upgrade {
                         path: path.to_path_buf(),
                         persisted_request: configured.clone(),
                         request: configured.clone(),
+                        configured: configured.clone(),
                     });
                 }
             }
@@ -657,6 +673,14 @@ impl Upgrade {
         }
         if self.installed_only {
             outdated.retain(|o| o.current.is_some());
+        }
+        if self.vulnerable {
+            self.keep_vulnerable(&config, &ts, &mut outdated, &mut explicit_config_bumps)
+                .await?;
+            if outdated.is_empty() && explicit_config_bumps.is_empty() {
+                checked.warn_unchecked();
+                return Ok(());
+            }
         }
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
@@ -827,6 +851,223 @@ impl Upgrade {
         }
         checked.warn_unchecked();
 
+        Ok(())
+    }
+
+    /// Narrows `outdated` and `bumps` to the tools whose installed version has a
+    /// known vulnerability, and warns about the ones an upgrade will not fix.
+    async fn keep_vulnerable(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        outdated: &mut Vec<OutdatedInfo>,
+        bumps: &mut Vec<ExplicitConfigBump>,
+    ) -> Result<()> {
+        let selected = |ba: &BackendArg| {
+            (self.tool.is_empty()
+                || self
+                    .tool
+                    .iter()
+                    .any(|tool| backend_args_match(tool.ba.as_ref(), ba)))
+                && !self
+                    .exclude
+                    .iter()
+                    .any(|tool| backend_args_match(tool.ba.as_ref(), ba))
+        };
+        // `--inactive` also upgrades installed versions the config doesn't use.
+        let versions = if self.inactive {
+            ts.list_all_versions(config).await?
+        } else {
+            ts.list_current_versions()
+        };
+        let mut installed = versions
+            .into_iter()
+            .filter(|(backend, tv)| {
+                selected(tv.ba()) && backend.is_version_installed(config, tv, true)
+            })
+            // A version can resolve to another backend than its group's.
+            .map(|(backend, tv)| (tv.backend().unwrap_or(backend), tv))
+            .collect_vec();
+        // The pending install of a bump's target, which replaces nothing
+        // installed.
+        let installs_bump = |o: &OutdatedInfo, bump: &ExplicitConfigBump| {
+            backend_args_match(o.tool_version.ba(), bump.request.ba())
+                && o.tool_version.request.version() == bump.request.version()
+        };
+        // A version named on the command line replaces the configured request,
+        // so installing it replaces what the configured request resolves to.
+        let configured = self
+            .tool
+            .iter()
+            .any(|t| t.tvr.is_some())
+            .then(|| self.toolset_builder().build_unresolved(config))
+            .transpose()?;
+        // The installed version an upgrade replaces, which is not the resolved
+        // one when that is not installed yet. Each upgrade keeps the index of
+        // its item, so it is judged by its own advisory source.
+        let mut outdated_items = vec![];
+        let mut replaced = vec![];
+        for o in outdated.iter() {
+            let mut item = None;
+            // A new version, not a copy of the resolved one: lockfile metadata
+            // such as a release tag describes the resolved release.
+            let mut current = o.current.clone().and_then(|current| {
+                let tv = ToolVersion::new(o.tool_version.request.clone(), current);
+                Some((tv.backend().ok()?, tv))
+            });
+            if o.current.is_none()
+                && let Some(configured) = &configured
+                && self.tool.iter().any(|t| {
+                    t.tvr.is_some() && backend_args_match(t.ba.as_ref(), o.tool_version.ba())
+                })
+                && !bumps.iter().any(|bump| installs_bump(o, bump))
+            {
+                current =
+                    configured_installed_version(config, configured, o.tool_version.ba()).await;
+            }
+            if let Some((backend, tv)) = &current
+                && selected(tv.ba())
+            {
+                item = Some(installed.len());
+                installed.push((backend.clone(), tv.clone()));
+            }
+            outdated_items.push(item);
+            replaced.push(current.map(|(_, tv)| tv.version));
+        }
+        // The version a config bump moves away from: what the configured
+        // request resolves to now. The toolset holds the bump's target instead
+        // when the target was named on the command line.
+        let mut bumped = vec![];
+        for bump in bumps.iter() {
+            let entry = match installed_version(config, &bump.configured).await {
+                Some((backend, tv)) => {
+                    let mut item = None;
+                    if selected(tv.ba()) {
+                        item = Some(installed.len());
+                        installed.push((backend, tv.clone()));
+                    }
+                    (Some(tv.version), item)
+                }
+                // The request can resolve to a version that is not installed,
+                // such as one a lockfile pins. The upgrade of the same request
+                // then replaces the installed version, so the bump goes with it.
+                None => outdated
+                    .iter()
+                    .zip(&outdated_items)
+                    .find(|(o, _)| {
+                        backend_args_match(o.tool_version.ba(), bump.configured.ba())
+                            && o.tool_version.request.version() == bump.configured.version()
+                    })
+                    .map_or((None, None), |(o, item)| (o.current.clone(), *item)),
+            };
+            bumped.push(entry);
+        }
+        let report = crate::audit::scan(installed).await?;
+        report.log_unchecked();
+        let affected = |item: Option<usize>| item.is_some_and(|i| report.affected[i]);
+        let bumped = std::mem::take(bumps)
+            .into_iter()
+            .zip(bumped)
+            .filter(|(_, (_, item))| affected(*item))
+            .map(|(bump, (version, _))| (bump, version))
+            .collect_vec();
+        *bumps = bumped.iter().map(|(bump, _)| bump.clone()).collect();
+        // Keep an upgrade when the version it replaces is affected, and the
+        // install of a kept bump's target.
+        let kept = outdated
+            .iter()
+            .zip(&outdated_items)
+            .map(|(o, item)| {
+                affected(*item) || bumped.iter().any(|(bump, _)| installs_bump(o, bump))
+            })
+            .collect_vec();
+        let mut kept_iter = kept.iter();
+        outdated.retain(|_| *kept_iter.next().unwrap());
+        let replaced = replaced
+            .into_iter()
+            .zip(&kept)
+            .filter_map(|(version, kept)| kept.then_some(version))
+            .collect_vec();
+        if report.findings.is_empty() {
+            let checked = report.checked;
+            if checked > 0 {
+                info!(
+                    "no known vulnerabilities in {checked} installed tool version{}",
+                    if checked == 1 { "" } else { "s" }
+                );
+            }
+            return Ok(());
+        }
+        let stuck = report
+            .findings
+            .iter()
+            .filter(|f| {
+                !outdated.iter().zip(&replaced).any(|(o, version)| {
+                    version.as_deref() == Some(f.version.as_str())
+                        && backend_args_match(o.tool_version.ba(), &f.ba)
+                }) && !bumped.iter().any(|(bump, version)| {
+                    backend_args_match(bump.configured.ba(), &f.ba)
+                        && version.as_deref() == Some(f.version.as_str())
+                })
+            })
+            .map(|f| format!("{}@{}", f.tool, f.version))
+            .unique()
+            .collect_vec();
+        if !stuck.is_empty() {
+            let (range, hint) = if self.bump {
+                ("", "")
+            } else {
+                (
+                    " in the configured range",
+                    "\nRun `mise upgrade --vulnerable --bump` to upgrade past the range.",
+                )
+            };
+            warn!(
+                "known vulnerabilities, but no newer version{range}: {}{hint}",
+                stuck.join(", ")
+            );
+        }
+        // The version an upgrade or a config bump moves to can be affected too.
+        let mut targets = outdated
+            .iter()
+            .filter_map(|o| {
+                // A new version, not a copy of the installed one: lockfile
+                // metadata such as a release URL describes the old release.
+                // The registry can install the new version with another
+                // backend, which this picks too.
+                let tv = ToolVersion::new(o.tool_version.request.clone(), o.latest.clone());
+                Some((tv.backend().ok()?, tv))
+            })
+            .collect_vec();
+        // A bump with a pending install has its target in `targets` already.
+        // Only a bump whose target is installed resolves it here.
+        for (bump, _) in &bumped {
+            if outdated.iter().any(|o| installs_bump(o, bump)) {
+                continue;
+            }
+            if let Some(target) = resolve_request(config, &bump.persisted_request).await {
+                targets.push(target);
+            }
+        }
+        let target_report = crate::audit::scan(targets).await?;
+        target_report.log_unchecked();
+        let still = target_report
+            .findings
+            .iter()
+            .map(|f| format!("{}@{}", f.tool, f.version))
+            .unique()
+            .collect_vec();
+        if !still.is_empty() {
+            let hint = if self.bump {
+                ""
+            } else {
+                "\nRun `mise upgrade --vulnerable --bump` to upgrade past the configured range."
+            };
+            warn!(
+                "upgrading to versions that still have known vulnerabilities: {}{hint}",
+                still.join(", ")
+            );
+        }
         Ok(())
     }
 
@@ -1818,6 +2059,54 @@ Use `-b` or `--bump` instead.
 The `--local` flag is deprecated in favor of `--no-global`. mise warns about it from
 2027.1.0 and removes it in 2027.7.0."###
 );
+
+/// What `request` resolves to now, with the backend it resolved to.
+async fn resolve_request(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+) -> Option<(ABackend, ToolVersion)> {
+    let tv = request
+        .resolve(config, &ResolveOptions::default())
+        .await
+        .ok()?;
+    let backend = tv.backend().ok()?;
+    Some((backend, tv))
+}
+
+/// What `request` resolves to now, if that version is installed.
+async fn installed_version(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+) -> Option<(ABackend, ToolVersion)> {
+    let (backend, tv) = resolve_request(config, request).await?;
+    backend
+        .is_version_installed(config, &tv, true)
+        .then_some((backend, tv))
+}
+
+/// The installed version the configured request for `ba` uses, as
+/// `mise outdated` finds it: one matching the request when the version it
+/// resolves to is not installed.
+async fn configured_installed_version(
+    config: &Arc<Config>,
+    configured: &Toolset,
+    ba: &BackendArg,
+) -> Option<(ABackend, ToolVersion)> {
+    let request = configured
+        .versions
+        .iter()
+        .find(|(configured_ba, _)| backend_args_match(configured_ba, ba))?
+        .1
+        .requests
+        .iter()
+        .find(|request| request.is_os_supported())?;
+    let (backend, tv) = resolve_request(config, request).await?;
+    let current = OutdatedInfo::current_version(config, &backend, &tv).ok()??;
+    // Not the resolved version with its number changed: its lockfile metadata
+    // describes the resolved release, not the installed one.
+    let tv = ToolVersion::new(tv.request, current);
+    Some((tv.backend().ok()?, tv))
+}
 
 #[cfg(test)]
 mod tests {

@@ -191,6 +191,14 @@ assert_contains "mise deps --list" "pnpm"
 assert_contains "mise deps --list" "pnpm-lock.yaml"
 assert_contains "mise deps --dry-run 2>&1" "pnpm"
 
+# pnpm workspace settings and members' manifests are sources too
+mkdir -p packages/app
+echo "packages:
+  - packages/*" >pnpm-workspace.yaml
+echo '{"name": "app"}' >packages/app/package.json
+assert_contains "mise deps --list" "pnpm-workspace.yaml"
+assert_contains "mise deps --list" "packages/app/package.json"
+
 # Test bun provider (binary lockfile)
 rm -f pnpm-lock.yaml
 touch bun.lockb
@@ -235,6 +243,14 @@ EOF
 assert_contains "mise deps --list" "aube"
 assert_contains "mise deps --list" "aube-lock.yaml"
 assert_contains "mise deps --dry-run 2>&1" "aube"
+
+# aube workspace settings and members' manifests are sources too
+mkdir -p libs/lib
+echo "packages:
+  - libs/*" >aube-workspace.yaml
+echo '{"name": "lib"}' >libs/lib/package.json
+assert_contains "mise deps --list" "aube-workspace.yaml"
+assert_contains "mise deps --list" "libs/lib/package.json"
 
 # Test deno provider
 rm -f aube-lock.yaml

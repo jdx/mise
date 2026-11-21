@@ -213,11 +213,9 @@ impl SecretGrant {
 pub enum ProblemKind {
     Unknown,
     NotInjectable,
-    Personal,
     InvalidName,
     Wildcard,
     Remote,
-    NotProject,
     Denied,
     Collision,
     Reserved,
@@ -232,11 +230,9 @@ impl ProblemKind {
         match self {
             Self::Unknown => "unknown",
             Self::NotInjectable => "not_injectable",
-            Self::Personal => "personal",
             Self::InvalidName => "invalid_name",
             Self::Wildcard => "wildcard",
             Self::Remote => "remote",
-            Self::NotProject => "not_project_config",
             Self::Denied => "denied_launcher",
             Self::Collision => "collision",
             Self::Reserved => "reserved",
@@ -573,7 +569,7 @@ pub(crate) fn static_problems(
     if grant.is_empty() {
         return problems;
     }
-    // Only a task's own `secrets = [...]` is held to where the task is defined. A person who
+    // Only a task's own `secrets = [...]` is held to where the task comes from. A person who
     // names the task and its secrets on the command line is the one granting.
     let own = grant.has_self_grant();
     // what the task's own config does to ask: list keys, or name them in env values
@@ -595,23 +591,6 @@ pub(crate) fn static_problems(
             format!(
                 "task {} comes from a remote source ({source}) and cannot {asks}; grant for one run with mise run --secrets-all {} or --secrets KEY",
                 task.name, task.name
-            ),
-        ));
-    }
-    let project_root = task
-        .config_root
-        .as_deref()
-        .is_some_and(|r| super::config::is_project_secrets_root(r, &crate::dirs::HOME));
-    if own && task.secrets_remote_source().is_none() && (task.global || !project_root) {
-        problems.push(Problem::new(
-            &task.name,
-            None,
-            ProblemKind::NotProject,
-            format!(
-                "task {} is defined in {}, which is not project config (global or system config, or a file in or above your home directory), so it cannot {asks}; grant for one run with mise run --secrets-all {} or --secrets KEY",
-                task.name,
-                crate::file::display_path(&task.config_source),
-                task.name
             ),
         ));
     }
@@ -890,51 +869,10 @@ pub(crate) fn key_problems(
                     .detail(format!("Granted by: {}", grant.granted_by(key))),
                 );
             }
-            // The user naming the key on the command line is the one way to hand it to a
-            // project's task.
-            Some(super::CatalogEntry {
-                personal: Some(file),
-                ..
-            }) if !grant
-                .keys
-                .get(key)
-                .is_some_and(|origins| origins.contains(&GrantOrigin::CliFlag)) =>
-            {
-                problems.push(
-                    Problem::new(
-                        &name,
-                        Some(key.as_str()),
-                        ProblemKind::Personal,
-                        format!("{who}: {key} comes from your own fnox config, so the project cannot grant it"),
-                    )
-                    .detail(format!(
-                        "{} supplies all or part of {key}. fnox adds its global config, and fnox.toml files in or above your home directory, to every project.",
-                        escape_controls(&crate::file::display_path(file))
-                    ))
-                    .detail(format!("Granted by: {}", grant.granted_by(key)))
-                    .detail(format!(
-                        "Pass it for one run yourself with `mise run --secrets {key} {name}`, or define {key} in the project's fnox.toml."
-                    )),
-                );
-            }
             Some(_) => {}
         }
     }
     problems
-}
-
-/// A file name comes from the user's config and reaches the terminal.
-fn escape_controls(s: &str) -> String {
-    s.chars()
-        .flat_map(|c| {
-            let escaped: Vec<char> = if c.is_control() {
-                c.escape_default().collect()
-            } else {
-                vec![c]
-            };
-            escaped
-        })
-        .collect()
 }
 
 /// A close name: transposition-aware edit distance of at most 2, else a fuzzy match.
@@ -1389,14 +1327,6 @@ fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn escapes_control_characters_in_a_displayed_file_name() {
-        assert_eq!(
-            escape_controls("/h/.config/fnox/a\nb\u{1b}[31m.toml"),
-            "/h/.config/fnox/a\\nb\\u{1b}[31m.toml"
-        );
-    }
 
     fn parse(s: &str) -> Result<TaskSecrets, String> {
         #[derive(serde::Deserialize)]
@@ -2075,8 +2005,8 @@ mod tests {
     }
 
     #[test]
-    fn command_line_grants_are_not_held_to_where_the_task_is_defined() {
-        // a global task: its own list is G9, the command line is the person asking
+    fn a_global_task_can_list_secrets() {
+        // the global config is the user's own file, so its tasks grant like any other
         let task = Task {
             global: true,
             ..named("deploy", &[])
@@ -2092,11 +2022,7 @@ mod tests {
             all: None,
             late: vec![],
         };
-        assert!(
-            static_problems(&task, &own, None, &EnvView::default())
-                .iter()
-                .any(|p| p.kind == ProblemKind::NotProject)
-        );
+        assert!(static_problems(&task, &own, None, &EnvView::default()).is_empty());
         let cli = SecretGrant {
             keys: BTreeMap::from([(a.clone(), vec![GrantOrigin::CliFlag])]),
             all: None,
@@ -2110,13 +2036,8 @@ mod tests {
         };
         assert!(!all.is_empty());
         assert!(static_problems(&task, &all, None, &EnvView::default()).is_empty());
-        // both: the task's own list still counts
         let both = own.merged(cli);
-        assert!(
-            static_problems(&task, &both, None, &EnvView::default())
-                .iter()
-                .any(|p| p.kind == ProblemKind::NotProject)
-        );
+        assert!(static_problems(&task, &both, None, &EnvView::default()).is_empty());
         assert_eq!(
             both.granted_by(&a),
             "--secrets, secrets = [...] in config.toml"

@@ -28,8 +28,20 @@ impl DepsProvider for PnpmDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        self.base
-            .sources(vec![root.join("pnpm-lock.yaml"), root.join("package.json")])
+        let mut sources = vec![root.join("pnpm-lock.yaml"), root.join("package.json")];
+        // Workspace settings and members' manifests can change what
+        // `pnpm install` does without touching `pnpm-lock.yaml`.
+        // Skipped when `sources` is configured, since that replaces the defaults.
+        if self.base.config.sources.is_none() {
+            let workspace = root.join("pnpm-workspace.yaml");
+            if workspace.is_file() {
+                sources.push(workspace);
+                sources.extend(crate::task::workspace::node::workspace_member_manifests(
+                    &root,
+                ));
+            }
+        }
+        self.base.sources(sources)
     }
 
     fn outputs(&self) -> Vec<PathBuf> {

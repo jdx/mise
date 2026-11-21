@@ -2881,9 +2881,7 @@ impl TaskExecutor {
             privilege_problem |= found.iter().any(|p| {
                 matches!(
                     p.kind,
-                    crate::secrets::ProblemKind::Remote
-                        | crate::secrets::ProblemKind::NotProject
-                        | crate::secrets::ProblemKind::Denied
+                    crate::secrets::ProblemKind::Remote | crate::secrets::ProblemKind::Denied
                 )
             });
             if !grant.is_empty() && !self.dry_run {

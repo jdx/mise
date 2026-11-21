@@ -644,11 +644,9 @@ because cached logs or outputs could contain them. Freshness checks still
 apply.
 
 `secrets` is not allowed in task templates or `monorepo.task_defaults`. It is
-not available to tasks defined in global or system config or in a config file
-in or above your home directory, to remote tasks, or to tasks started by hooks,
-`watch_files`, daemons, or `mise bootstrap`. Grant
-secrets to a global or remote task for one run with `mise run --secrets KEY` or
-`mise run --secrets-all`.
+not available to remote tasks, or to tasks started by hooks, `watch_files`,
+daemons, or `mise bootstrap`. Grant secrets to a remote task for one run with
+`mise run --secrets KEY` or `mise run --secrets-all`.
 
 ### `tools`
 

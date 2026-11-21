@@ -39,6 +39,9 @@ Pass `--prune` to remove it now or `--no-prune` to keep it.
   **Environment Variable:** `MISE_JOBS`
 - **`-n --dry-run`** — Show what would change without changing anything
 - **`-x --exclude <INSTALLED_TOOL>`** — Tools to exclude from upgrading, such as go python
+- **`--vulnerable`** — Only upgrade tools with a known vulnerability
+
+  Looks up the installed versions in OSV.dev, as `mise audit` does, and upgrades only the affected tools: within their configured range, or to the newest release with `--bump`. Warns about affected tools that have no newer version to upgrade to, and about upgrades that are still affected.
 - **`--dry-run-code`** — Like --dry-run, but exit with code 1 if there are outdated tools
 
   Use it in scripts that check whether tools need upgrading.
@@ -106,6 +109,12 @@ Choose tools from a menu
 
 ```
 mise upgrade --interactive
+```
+
+Upgrade only tools with a known vulnerability (see `mise audit`)
+
+```
+mise upgrade --vulnerable
 ```
 
 Upgrade claude within the global config's request, leaving project config alone

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# An aqua version override that names another repository moves the advisory
+# lookup there, even when this platform cannot install that release.
+
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_AQUA_REGISTRY_URL="file://$ROOT/vendor/aqua-registry"
+
+# jq 1.7.1 has known advisories, but this registry releases it from another
+# repository, which has none, and only with an error.
+cat <<'EOF_REGISTRY' >registry.yaml
+packages:
+  - type: github_release
+    name: example/jq-moved
+    repo_owner: jqlang
+    repo_name: jq
+    asset: jq-{{.OS}}-{{.Arch}}
+    format: raw
+    version_constraint: "false"
+    version_prefix: jq-
+    version_overrides:
+      - version_constraint: Version == "jq-1.7.1"
+        repo_owner: mise-e2e-no-such-owner
+        repo_name: jq
+        error_message: not released for this platform
+      - version_constraint: "true"
+EOF_REGISTRY
+
+cat <<'EOF_MISE' >mise.toml
+[settings]
+aqua.registries = ["registry.yaml"]
+
+[tools]
+"aqua:example/jq-moved" = "1.7.1"
+EOF_MISE
+
+assert_contains "mise audit 2>&1" "no known vulnerabilities in 1 tool version"
+assert_not_contains "mise audit 2>&1" "CVE-"
+assert_not_contains "mise audit 2>&1" "not checked"

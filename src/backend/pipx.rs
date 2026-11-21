@@ -577,6 +577,27 @@ impl Backend for PIPXBackend {
         Ok(())
     }
 
+    /// A package from another index than PyPI is not the PyPI package of the
+    /// same name, so it has no known advisory source. A git install is looked
+    /// up by its repository either way.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let Ok(config) = Config::get().await else {
+            return vec![];
+        };
+        let public = match self.tool_name().parse() {
+            Ok(PipxRequest::Git(_)) => true,
+            Ok(PipxRequest::Pypi(_)) => self
+                .get_registry_url(&config)
+                .await
+                .is_ok_and(|url| is_pypi_index(&url)),
+            Err(_) => false,
+        };
+        if !public {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &self.tool_name(), &tv.version)
+    }
+
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(_) => {
@@ -1153,6 +1174,13 @@ impl Backend for PIPXBackend {
         }
         options
     }
+}
+
+/// Whether the index `registry_url` names, with its `{}` placeholder, is
+/// PyPI's, in either its JSON or its simple form.
+fn is_pypi_index(registry_url: &str) -> bool {
+    url::Url::parse(&registry_url.replace("{}", "package"))
+        .is_ok_and(|url| url.host_str() == Some("pypi.org"))
 }
 
 /// PEP 503 name normalization, for comparing package names.
@@ -2197,8 +2225,16 @@ fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
 mod tests {
     use super::{
         GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, SelectedPython,
-        UV_EXCLUDE_NEWER_VERSION, uv_args_select_python,
+        UV_EXCLUDE_NEWER_VERSION, is_pypi_index, uv_args_select_python,
     };
+
+    #[test]
+    fn test_is_pypi_index() {
+        assert!(is_pypi_index("https://pypi.org/pypi/{}/json"));
+        assert!(is_pypi_index("https://pypi.org/simple/{}/"));
+        assert!(!is_pypi_index("https://pypi.example.com/simple/{}/"));
+        assert!(!is_pypi_index("https://test.pypi.org/pypi/{}/json"));
+    }
     use crate::args::BackendArg;
     use crate::backend::{Backend, VersionInfo};
     use crate::config::Config;

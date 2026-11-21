@@ -45,6 +45,7 @@ fn command_local_settings(layer: &usage_rs::config::CliLayer) -> Result<Settings
 mod activate;
 pub(crate) use crate::args;
 mod asdf;
+mod audit;
 pub(crate) mod backends;
 mod bin_paths;
 mod bootstrap;
@@ -335,6 +336,7 @@ pub(crate) enum Commands {
     #[usage(name = "__tool-update", hide = true)]
     ToolUpdate(tool_update::ToolUpdate),
     Asdf(asdf::Asdf),
+    Audit(audit::Audit),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
     #[usage(visible_alias = "bs")]
@@ -527,6 +529,7 @@ impl Commands {
             Self::ToolAlias(cmd) => Box::pin(cmd.run()),
             Self::ToolUpdate(cmd) => Box::pin(cmd.run()),
             Self::Asdf(cmd) => Box::pin(cmd.run()),
+            Self::Audit(cmd) => Box::pin(cmd.run()),
             Self::Backends(cmd) => Box::pin(cmd.run()),
             Self::BinPaths(cmd) => Box::pin(cmd.run()),
             Self::Bootstrap(cmd) => Box::pin(cmd.run()),

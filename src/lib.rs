@@ -32,6 +32,7 @@ mod inline_command;
 pub mod agecrypt;
 pub mod aqua;
 pub mod args;
+pub mod audit;
 pub mod backend;
 pub mod build_time;
 pub mod cache;

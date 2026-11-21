@@ -149,6 +149,9 @@ Remove a backend alias or a version alias from the global config
 \fIAliases: \fRrm, remove, delete, del
 .RE
 .TP
+\fBaudit\fR
+Check tool versions for known vulnerabilities
+.TP
 \fBbackends\fR
 Manage backends
 .RS
@@ -1326,6 +1329,62 @@ Remove node's project version alias
 .PP
 .RS 4
 mise tool\-alias unset node project
+.RE
+.SH "MISE AUDIT"
+Check tool versions for known vulnerabilities
+
+Looks up each tool version the current config uses in the OSV.dev
+vulnerability database and lists the advisories that affect it. Exits
+with status 1 when it finds any. Run `mise upgrade \-\-vulnerable` to
+upgrade only the affected tools.
+
+Package registry tools (npm, pipx, cargo, gem, go, dotnet) are looked up
+by package name. Tools released from GitHub (github, aqua, packslip) are
+looked up by repository and release tag, and Go programs also as Go
+modules. Of the core tools, go, node, python, deno, bun and erlang are
+covered. Other tools are listed as not checked.
+.PP
+\fBUsage:\fR mise audit [OPTIONS] [<TOOL@VERSION>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Do not print the table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL@VERSION>\fR
+Tools to check, such as `node` or `node@20`
+
+Checks every tool in the current config when omitted.
+\fBExamples:\fR
+.PP
+Check every tool in the current config
+.PP
+.RS 4
+mise audit
+Tool        Version  ID                   Severity  Fixed    Summary
+npm:lodash  4.17.15  GHSA\-35jh\-r3h4\-6jhm  high      4.17.21  Command Injection in lodash
+go          1.22.0   GO\-2024\-2887         \-         1.22.4   Unexpected behavior from Is methods for IPv4\-mapped IPv6 addresses in net/netip
+.RE
+.PP
+Check only some tools
+.PP
+.RS 4
+mise audit node python
+.RE
+.PP
+Print the advisories as JSON
+.PP
+.RS 4
+mise audit \-\-json
 .RE
 .SH "MISE BACKENDS"
 Manage backends
@@ -11849,6 +11908,11 @@ Show what would change without changing anything
 \fB\-x, \-\-exclude\fR \fI<INSTALLED_TOOL>\fR
 Tools to exclude from upgrading, such as go python
 .TP
+\fB\-\-vulnerable\fR
+Only upgrade tools with a known vulnerability
+
+Looks up the installed versions in OSV.dev, as `mise audit` does, and upgrades only the affected tools: within their configured range, or to the newest release with `\-\-bump`. Warns about affected tools that have no newer version to upgrade to, and about upgrades that are still affected.
+.TP
 \fB\-\-dry\-run\-code\fR
 Like \-\-dry\-run, but exit with code 1 if there are outdated tools
 
@@ -11944,6 +12008,12 @@ Choose tools from a menu
 .PP
 .RS 4
 mise upgrade \-\-interactive
+.RE
+.PP
+Upgrade only tools with a known vulnerability (see `mise audit`)
+.PP
+.RS 4
+mise upgrade \-\-vulnerable
 .RE
 .PP
 Upgrade claude within the global config's request, leaving project config alone
@@ -12284,6 +12354,8 @@ mise version \-\-json
 Run tasks and rerun them when files change
 
 Runs the tasks with `mise run` under watchexec, then reruns them whenever one of their `sources` changes, including the sources of their dependencies unless you pass `\-\-skip\-deps`. When no selected task declares `sources`, watchexec watches the current directory. With no task, runs the `default` task.
+
+Several tasks separated by `:::` share one watcher and one `mise run`. A change that matches any of their sources runs all of them again, each subject to its usual up\-to\-date check, and `\-\-restart` restarts them all. A change while they are running is ignored unless you set `\-\-restart`, `\-\-signal` or `\-\-on\-busy\-update`. To watch tasks independently, run a separate `mise watch` for each, for example from a wrapper task.
 
 Choose what to watch with `\-\-watch`, `\-\-exts`, and `\-\-filter`, and use `\-\-print\-events` to see what triggered a run. Arguments for the task go after `\-\-`. Requires watchexec, which `mise use \-g watchexec` installs.
 

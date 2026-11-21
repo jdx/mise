@@ -1138,6 +1138,16 @@ impl Backend for NPMBackend {
         options
     }
 
+    /// A package `.npmrc` routes to another registry is not the public npm
+    /// package of the same name, so it has no known advisory source.
+    async fn advisory_queries(&self, tv: &ToolVersion) -> Vec<crate::audit::AdvisoryQuery> {
+        let name = self.tool_name();
+        if !npm_registry::is_public_registry(&npm_registry::package_registry(&name)) {
+            return vec![];
+        }
+        crate::audit::queries_for(&self.get_type(), &name, &tv.version)
+    }
+
     /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
     /// its own versions, which the shared versions host cannot know.
     ///

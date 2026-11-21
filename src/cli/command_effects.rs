@@ -47,6 +47,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     // upgrade `mise upgrade <tool>` performs.
     ("__tool-update", Write),
     ("activate", Read),
+    // Sends tool names and versions to OSV.dev; changes nothing.
+    ("audit", Read),
     ("backends", Read),
     ("backends ls", Read),
     // Rewrites lock entries and reinstalls the same versions from another

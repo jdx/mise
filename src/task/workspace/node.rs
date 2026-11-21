@@ -14,6 +14,7 @@ use super::{
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
+const AUBE_WORKSPACE: &str = "aube-workspace.yaml";
 const SHARED_LOCKFILES: [&str; 5] = [
     "package-lock.json",
     "npm-shrinkwrap.json",
@@ -266,6 +267,48 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         }
         Ok(None)
     }
+}
+
+/// Member `package.json` files of the pnpm or aube workspace rooted at
+/// `workspace_root`, from the `packages` globs of `aube-workspace.yaml` or
+/// `pnpm-workspace.yaml`.
+///
+/// Returns an empty list when the root has neither file or the members cannot
+/// be discovered. The root manifest is not included.
+pub fn workspace_member_manifests(workspace_root: &Path) -> Vec<PathBuf> {
+    let context = WorkspaceDiscoveryContext::new();
+    if ![AUBE_WORKSPACE, PNPM_WORKSPACE]
+        .iter()
+        .any(|name| context.is_file(&workspace_root.join(name)))
+    {
+        return Vec::new();
+    }
+    let Ok(canonical_root) = context.canonicalize(workspace_root) else {
+        return Vec::new();
+    };
+    let Ok(roots) = aube::embed::discover_workspace_packages(
+        &canonical_root,
+        WorkspaceDiscoveryOptions::confined_to_root(),
+    ) else {
+        return Vec::new();
+    };
+    let mut manifests = roots
+        .into_iter()
+        .filter_map(|root| {
+            root.strip_prefix(&canonical_root)
+                .ok()
+                .map(Path::to_path_buf)
+        })
+        .filter(|relative| {
+            !relative.as_os_str().is_empty()
+                && !relative
+                    .components()
+                    .any(|component| component.as_os_str() == ".git")
+        })
+        .map(|relative| workspace_root.join(relative).join(PACKAGE_JSON))
+        .collect::<Vec<_>>();
+    manifests.sort();
+    manifests
 }
 
 /// Node projects selected by a change to a lockfile that cannot be attributed
@@ -736,6 +779,47 @@ mod tests {
             )
             .unwrap()
             .unwrap()
+    }
+
+    #[test]
+    fn lists_workspace_member_manifests() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PNPM_WORKSPACE),
+            "packages:\n  - packages/*\n  - '!packages/skip'\n",
+        );
+        write(&temp.path().join(PACKAGE_JSON), r#"{"name":"root"}"#);
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+        write(
+            &temp.path().join("packages/skip/package.json"),
+            r#"{"name":"skip"}"#,
+        );
+        assert_eq!(
+            workspace_member_manifests(temp.path()),
+            vec![temp.path().join("packages/app/package.json")]
+        );
+        assert!(workspace_member_manifests(&temp.path().join("packages/app")).is_empty());
+    }
+
+    #[test]
+    fn lists_aube_workspace_member_manifests() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(AUBE_WORKSPACE),
+            "packages:\n  - packages/*\n",
+        );
+        write(&temp.path().join(PACKAGE_JSON), r#"{"name":"root"}"#);
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+        assert_eq!(
+            workspace_member_manifests(temp.path()),
+            vec![temp.path().join("packages/app/package.json")]
+        );
     }
 
     #[test]

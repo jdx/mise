@@ -470,6 +470,38 @@ cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf
     arg "[ARGS]…" help="all arguments" required=#false double_dash=automatic var=#true
     complete args type=command_args
 }
+cmd audit help="Check tool versions for known vulnerabilities" effect=read {
+    long_help #"""
+Check tool versions for known vulnerabilities
+
+Looks up each tool version the current config uses in the OSV.dev
+vulnerability database and lists the advisories that affect it. Exits
+with status 1 when it finds any. Run `mise upgrade --vulnerable` to
+upgrade only the affected tools.
+
+Package registry tools (npm, pipx, cargo, gem, go, dotnet) are looked up
+by package name. Tools released from GitHub (github, aqua, packslip) are
+looked up by repository and release tag, and Go programs also as Go
+modules. Of the core tools, go, node, python, deno, bun and erlang are
+covered. Other tools are listed as not checked.
+"""#
+    flag "-J --json" help="Output in JSON format"
+    flag --no-header help="Do not print the table header"
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg "[TOOL@VERSION]…" help="Tools to check, such as `node` or `node@20`" help_long=#"""
+Tools to check, such as `node` or `node@20`
+
+Checks every tool in the current config when omitted.
+"""# required=#false var=#true
+    example #"""
+mise audit
+Tool        Version  ID                   Severity  Fixed    Summary
+npm:lodash  4.17.15  GHSA-35jh-r3h4-6jhm  high      4.17.21  Command Injection in lodash
+go          1.22.0   GO-2024-2887         -         1.22.4   Unexpected behavior from Is methods for IPv4-mapped IPv6 addresses in net/netip
+"""# help="Check every tool in the current config"
+    example "mise audit node python" help="Check only some tools"
+    example "mise audit --json" help="Print the advisories as JSON"
+}
 cmd backends help="Manage backends" effect=read {
     alias b backend backend-list
     long_help #"""
@@ -8176,6 +8208,13 @@ With --bump, write the resolved version instead of keeping the request's precisi
     flag "-x --exclude" help="Tools to exclude from upgrading, such as go python" var=#true {
         arg <INSTALLED_TOOL>
     }
+    flag --vulnerable help="Only upgrade tools with a known vulnerability" {
+        long_help #"""
+Only upgrade tools with a known vulnerability
+
+Looks up the installed versions in OSV.dev, as `mise audit` does, and upgrades only the affected tools: within their configured range, or to the newest release with `--bump`. Warns about affected tools that have no newer version to upgrade to, and about upgrades that are still affected.
+"""#
+    }
     flag --dry-run-code help="Like --dry-run, but exit with code 1 if there are outdated tools" {
         long_help #"""
 Like --dry-run, but exit with code 1 if there are outdated tools
@@ -8257,6 +8296,7 @@ Upgrades every configured tool when omitted.
     example "mise upgrade --dry-run" help="Show what would be upgraded"
     example "mise upgrade --exclude go" help="Upgrade everything except go"
     example "mise upgrade --interactive" help="Choose tools from a menu"
+    example "mise upgrade --vulnerable" help="Upgrade only tools with a known vulnerability (see `mise audit`)"
     example "mise upgrade --global claude" help="Upgrade claude within the global config's request, leaving project config alone"
 }
 cmd usage hide=#true help="Generate a usage CLI spec" effect=read {
@@ -8498,6 +8538,8 @@ cmd watch help="Run tasks and rerun them when files change" unknown_flags=value 
 Run tasks and rerun them when files change
 
 Runs the tasks with `mise run` under watchexec, then reruns them whenever one of their `sources` changes, including the sources of their dependencies unless you pass `--skip-deps`. When no selected task declares `sources`, watchexec watches the current directory. With no task, runs the `default` task.
+
+Several tasks separated by `:::` share one watcher and one `mise run`. A change that matches any of their sources runs all of them again, each subject to its usual up-to-date check, and `--restart` restarts them all. A change while they are running is ignored unless you set `--restart`, `--signal` or `--on-busy-update`. To watch tasks independently, run a separate `mise watch` for each, for example from a wrapper task.
 
 Choose what to watch with `--watch`, `--exts`, and `--filter`, and use `--print-events` to see what triggered a run. Arguments for the task go after `--`. Requires watchexec, which `mise use -g watchexec` installs.
 
