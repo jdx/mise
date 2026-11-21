@@ -245,6 +245,8 @@ fn code_spans(line: &str) -> Vec<&str> {
 /// `mise`, as the words after `mise`. Redirections and comments end a command.
 fn simple_commands(line: &str) -> Vec<Vec<Word>> {
     let mut split = Splitter::default();
+    // the commands around the `$(...)` being read, innermost last
+    let mut outer: Vec<Outer> = vec![];
     let mut quote: Option<char> = None;
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
@@ -252,11 +254,11 @@ fn simple_commands(line: &str) -> Vec<Vec<Word>> {
         let c = chars[i];
         let next = chars.get(i + 1).copied();
         i += 1;
-        // a command substitution starts a command of its own, also inside quotes
+        // a command substitution holds a command of its own, also inside quotes;
+        // the command around it goes on after the closing parenthesis
         if c == '$' && next == Some('(') && quote != Some('\'') {
             i += 1;
-            quote = None;
-            split.end_command();
+            outer.push(split.enter(quote.take()));
             continue;
         }
         if let Some(q) = quote {
@@ -280,10 +282,22 @@ fn simple_commands(line: &str) -> Vec<Vec<Word>> {
             '#' if bare => break,
             // `2>&1` and `&>` are redirections, not the end of a command
             '&' if split.cur.is_empty() && (split.redirected || next == Some('>')) => {}
+            '(' if !outer.is_empty() => {
+                outer.last_mut().unwrap().parens += 1;
+                split.end_command();
+            }
+            ')' if outer.last().is_some_and(|o| o.parens > 0) => {
+                outer.last_mut().unwrap().parens -= 1;
+                split.end_command();
+            }
+            ')' if !outer.is_empty() => quote = split.leave(outer.pop().unwrap()),
             ';' | '|' | '&' | '(' | ')' | '`' => split.end_command(),
             // a pipe inside a Markdown table is written `\|`
             '\\' if next == Some('|') => {}
-            '<' if bare && is_placeholder_start(&chars[i..]) => split.cur.push(c),
+            // `<name>` is a placeholder and `<--flag <VALUE>>` usage notation
+            '<' if bare && (next == Some('-') || is_placeholder_start(&chars[i..])) => {
+                split.cur.push(c)
+            }
             '>' if split.cur.contains('<') => split.cur.push(c),
             '<' | '>' if !split.quoted && split.cur.chars().all(|d| d.is_ascii_digit()) => {
                 split.cur.clear();
@@ -291,6 +305,10 @@ fn simple_commands(line: &str) -> Vec<Vec<Word>> {
             }
             _ => split.cur.push(c),
         }
+    }
+    // a substitution left open ends with the line
+    while let Some(around) = outer.pop() {
+        split.leave(around);
     }
     split.end_command();
 
@@ -315,17 +333,56 @@ struct Splitter {
     cur: String,
     /// The word in `cur` starts with a quote, so it is a word even when empty.
     quoted: bool,
-    /// A redirection was read: the rest of this command is not its arguments.
+    /// A redirection was read: the next word is its target, not an argument.
     redirected: bool,
+}
+
+/// The command `simple_commands` sets aside while it reads a `$(...)` inside it.
+struct Outer {
+    words: Vec<Word>,
+    cur: String,
+    quoted: bool,
+    redirected: bool,
+    /// The quote the substitution is written inside.
+    quote: Option<char>,
+    /// Parentheses opened inside the substitution and not closed yet.
+    parens: usize,
 }
 
 impl Splitter {
     fn end_word(&mut self) {
         let text = std::mem::take(&mut self.cur);
         let quoted = std::mem::take(&mut self.quoted);
-        if (quoted || !text.is_empty()) && !self.redirected {
+        if !quoted && text.is_empty() {
+            return;
+        }
+        if !std::mem::take(&mut self.redirected) {
             self.words.push(Word { text, quoted });
         }
+    }
+
+    /// Sets the command being read aside for the `$(...)` that starts here.
+    fn enter(&mut self, quote: Option<char>) -> Outer {
+        Outer {
+            words: std::mem::take(&mut self.words),
+            cur: std::mem::take(&mut self.cur),
+            quoted: std::mem::take(&mut self.quoted),
+            redirected: std::mem::take(&mut self.redirected),
+            quote,
+            parens: 0,
+        }
+    }
+
+    /// Ends the `$(...)` and goes back to the command around it, where the
+    /// substitution stands for a value. Returns the quote it was written inside.
+    fn leave(&mut self, around: Outer) -> Option<char> {
+        self.end_command();
+        self.words = around.words;
+        self.cur = around.cur;
+        self.cur.push('…');
+        self.quoted = around.quoted;
+        self.redirected = around.redirected;
+        around.quote
     }
 
     fn end_command(&mut self) {
@@ -384,7 +441,8 @@ fn check(root: &SpecCommand, words: &[Word]) -> Result<(), String> {
         if !word.quoted && (text.starts_with('[') || text.starts_with("<-")) {
             return Ok(());
         }
-        if is_placeholder(text) {
+        // a flag is checked by its name, also when its value is a placeholder
+        if !text.starts_with('-') && is_placeholder(text) {
             if positional(cmd, &mut positionals, text)? {
                 return Ok(());
             }
@@ -604,6 +662,24 @@ mod tests {
         );
         assert_eq!(shown("mise use <tool>@<version>"), ["use <tool>@<version>"]);
         assert_eq!(shown("mise run build 2>&1"), ["run build"]);
+        assert_eq!(
+            shown("mise bootstrap packages export <--format <FORMAT>>"),
+            ["bootstrap packages export <--format <FORMAT>>"]
+        );
+        // only the target of a redirection is left out
+        assert_eq!(
+            shown("mise ls >tools.txt --json 2> /dev/null --current"),
+            ["ls --json --current"]
+        );
+        // a substitution is a command of its own and a value of the one around it
+        assert_eq!(
+            shown("mise install $(mise ls --json | (jq -r keys)) --force"),
+            ["ls --json", "install … --force"]
+        );
+        assert_eq!(
+            shown(r#"mise x "node@$(cat .node-version)" -- node -v"#),
+            ["x node@… -- node -v"]
+        );
         assert_eq!(shown(r"mise activate fish \| source"), ["activate fish"]);
         assert_eq!(shown("echo mise install"), Vec::<String>::new());
         assert_eq!(shown("mise"), Vec::<String>::new());
@@ -675,6 +751,10 @@ mod tests {
             "mise sync ruby <--brew>",
             "mise exec --allow-env='MYAPP_*' -- node app.js",
             "mise set 'GREETING=hello world'",
+            "mise install $(printf node) --force",
+            "mise ls >tools.txt --json",
+            "mise install --jobs=<n> node",
+            "mise bootstrap packages export <--format <FORMAT>>",
         ] {
             assert_eq!(verdict(&spec, line), Ok(()), "{line}");
         }
@@ -697,6 +777,22 @@ mod tests {
             ),
             ("mise ls '-Z'", "`mise ls` has no flag -Z"),
             ("mise ls -Z", "`mise ls` has no flag -Z"),
+            (
+                "mise install $(printf node) --bogus",
+                "`mise install` has no flag --bogus",
+            ),
+            (
+                "mise install >out.log --bogus",
+                "`mise install` has no flag --bogus",
+            ),
+            (
+                "mise install --bogus=...",
+                "`mise install` has no flag --bogus",
+            ),
+            (
+                "mise install --bogus=<n>",
+                "`mise install` has no flag --bogus",
+            ),
             (
                 "mise settings bogus x y z",
                 "`mise settings` takes no argument",
