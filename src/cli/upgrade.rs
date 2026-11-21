@@ -1885,6 +1885,14 @@ impl Upgrade {
         }
     }
 
+    /// Whether `--bump` applies to this tool: a `bump = false` tool stays in its range
+    /// unless it is named on the command line.
+    fn bump_applies(&self, tv: &ToolVersion) -> bool {
+        self.bump
+            && (self.tool.iter().any(|t| t.ba.as_ref() == tv.ba())
+                || tv.request.options().bump_enabled())
+    }
+
     async fn latest_for_upgrade(
         &self,
         config: &Arc<Config>,
@@ -1892,7 +1900,7 @@ impl Upgrade {
         opts: &ResolveOptions,
     ) -> Result<Option<String>> {
         let backend = tv.backend()?;
-        if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+        if self.bump_applies(tv) || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             backend
                 .latest_version(
@@ -1913,7 +1921,9 @@ impl Upgrade {
         opts: &ResolveOptions,
     ) -> Result<Option<String>> {
         let backend = tv.backend()?;
-        let query = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+        let query = if self.bump_applies(tv)
+            || (opts.inactive && tv.request.source() == &ToolSource::Unknown)
+        {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             prefixed_latest_query(&prefix, &prefix_version)
         } else {
