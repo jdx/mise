@@ -124,6 +124,12 @@ Run all lint checks
 
 Automatically fix lint issues
 
+## `lint:clippy`
+
+- **Usage:** `lint:clippy`
+
+Run Clippy with the flags CI uses
+
 ## `lint:hk`
 
 - **Usage:** `lint:hk`

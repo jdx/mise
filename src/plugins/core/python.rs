@@ -1001,6 +1001,12 @@ impl Backend for PythonPlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[
+            "tool_core_python_options",
+        ]))
+    }
+
     fn resolves_locked_url_from_checksum(&self) -> bool {
         // Only the precompiled path checks the download against the locked checksum.
         cfg!(windows) || Settings::get().python_compile(CompilePurpose::Install) != Some(true)

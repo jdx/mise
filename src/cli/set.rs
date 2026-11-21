@@ -218,7 +218,7 @@ impl Set {
 
             // Handle age encryption if requested
             if self.age_encrypt {
-                Settings::get().ensure_experimental("age encryption")?;
+                Settings::get().ensure_experimental(mise_config::experimental::AGE.what)?;
                 // Collect recipients once before the loop to avoid repeated I/O
                 let recipients = self.collect_age_recipients().await?;
                 for ev in env_vars {

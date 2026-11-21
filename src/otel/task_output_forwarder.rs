@@ -120,10 +120,10 @@ impl TaskOutputForwarder {
     /// line to the OTLP log exporter. Returns the cmd unchanged when either
     /// the forwarder or the trace context is absent.
     ///
-    /// Only call this when the output is actually captured — under `--raw` or
-    /// a fully silenced task the hooks never fire, and the claim path handed
-    /// to the child would then tell a nested `mise run` to take over a stream
-    /// nobody is reading.
+    /// Only call this for output that is exported. Under `--raw` the hooks
+    /// never fire, and the claim path handed to the child would tell a nested
+    /// `mise run` to take over a stream nobody is reading. In the silent style
+    /// they fire whenever the task cache or the task log pipes the streams.
     pub(crate) fn attach_hooks<'a>(
         forwarder: Option<&Self>,
         task_name: &str,

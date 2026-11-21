@@ -34,7 +34,7 @@ pub(super) struct DepsAdd {
 
 impl DepsAdd {
     pub(super) async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("deps")?;
+        Settings::get().ensure_experimental(mise_config::experimental::DEPS.what)?;
 
         let mut config = Config::get().await?;
 

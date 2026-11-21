@@ -57,6 +57,25 @@ the accepted versions.
 
 Set to `1` to load no config files at all, the same as the `--no-config` flag.
 
+### `MISE_USE_TOML` {#mise-use-toml}
+
+::: warning Deprecated
+Since 2026.11.0, mise prints a deprecation warning, once per run, when
+`MISE_USE_TOML=0` changes what it does. The variable will be removed in mise
+2027.11.0.
+:::
+
+`MISE_USE_TOML=0` makes `~/.tool-versions` a global config file, and makes
+`mise use --global` write to it when the global config directory has no TOML
+file. mise reads [`.tool-versions`](/dev-tools/versions.html#tool-versions)
+files without it. Instead of setting it:
+
+- Run `mise use --path .tool-versions` to write a `.tool-versions` file. In a
+  directory whose only config is `.tool-versions`, `mise use` writes to that
+  file without `--path`.
+- Set `MISE_GLOBAL_CONFIG_FILE=~/.tool-versions` to keep `~/.tool-versions` as
+  your global config.
+
 ### Settings for config files
 
 mise reads these settings before any `mise.toml`, because they control which

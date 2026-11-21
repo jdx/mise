@@ -111,6 +111,12 @@ impl Backend for DotnetPlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[
+            "tool_core_dotnet_options",
+        ]))
+    }
+
     fn supports_lockfile_url(&self) -> bool {
         false
     }

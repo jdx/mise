@@ -646,14 +646,20 @@ pub struct TaskConfig {
     pub cache: Option<TaskCacheConfig>,
     #[schemars(with = "Option<shapes::RustCacheDecl>")]
     pub rust_cache: Option<TaskRustCacheConfig>,
-    /// experimental ambient environment variable names added to every enabled task cache key in this config scope
+    /// ambient environment variable names added to every enabled task cache key in this config scope
+    #[schemars(transform = crate::experimental::TASK_GLOBAL_ENV.labels())]
     pub global_env: Vec<String>,
-    /// experimental ambient environment variable names preserved under environment denial without affecting task cache keys
+    /// ambient environment variable names preserved under environment denial without affecting task cache keys
+    #[schemars(transform = crate::experimental::TASK_GLOBAL_ENV.labels())]
     pub global_pass_through_env: Vec<String>,
-    /// experimental config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>
+    /// config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>
+    #[schemars(transform = crate::experimental::TASK_INPUT_GROUPS.labels())]
     pub global_inputs: Vec<String>,
-    /// experimental reusable config-root-relative source groups referenced with @group:<name>
-    #[schemars(with = "IndexMap<String, shapes::TaskInputGroup>")]
+    /// reusable config-root-relative source groups referenced with @group:<name>
+    #[schemars(
+        with = "IndexMap<String, shapes::TaskInputGroup>",
+        transform = crate::experimental::TASK_INPUT_GROUPS.labels()
+    )]
     pub input_groups: IndexMap<String, Vec<String>>,
     #[schemars(with = "Option<shapes::TaskIncludes>")]
     pub includes: Option<Vec<String>>,

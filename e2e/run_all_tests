@@ -5,6 +5,8 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
+# shellcheck source-path=SCRIPTDIR
+source "$SCRIPT_DIR/helpers.sh"
 
 # Tests named as arguments (paths relative to e2e/) run in the given order,
 # including slow ones; `mise run test:e2e` passes them when E2E_JOBS is set.
@@ -75,6 +77,11 @@ for index in "${!FILES[@]}"; do
   SUMMARY_ENTRY_VALUES+=("${#RUN_FILES[@]}")
   RUN_FILES+=("$TEST_NAME")
 done
+
+# Fail once, before any test starts, when there is no mise binary to test.
+if ((${#RUN_FILES[@]} > 0)); then
+  resolve_mise_bin >/dev/null || exit 1
+fi
 
 cpu_count() {
   if command -v getconf >/dev/null 2>&1; then

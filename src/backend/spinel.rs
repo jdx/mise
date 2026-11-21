@@ -104,7 +104,7 @@ impl Backend for SpinelBackend {
         _ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> Result<crate::toolset::ToolVersion> {
-        Settings::get().ensure_experimental("the spinel backend")?;
+        Settings::get().ensure_experimental(mise_config::experimental::SPINEL.what)?;
         if cfg!(windows) {
             bail!("the spinel backend does not support Windows");
         }

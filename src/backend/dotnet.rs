@@ -49,6 +49,10 @@ impl Backend for DotnetBackend {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[]))
+    }
+
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         Ok(vec!["dotnet"])
     }

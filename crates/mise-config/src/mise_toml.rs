@@ -90,10 +90,13 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     /// minimum version of mise required to use this config
     #[serde(default, deserialize_with = "deserialize_min_version")]
     pub min_version: Option<MinVersionSpec>,
-    /// [experimental] Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only.
+    /// Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only.
     // Raw on purpose: a malformed `[secrets]` must not fail the whole file.
     #[serde(default)]
-    #[schemars(with = "Option<crate::secrets::SecretsDecl>")]
+    #[schemars(
+        with = "Option<crate::secrets::SecretsDecl>",
+        transform = crate::experimental::SECRETS.labels()
+    )]
     pub secrets: Option<toml::Value>,
     /// env or vars keys to redact from logs
     #[serde(default)]
@@ -102,8 +105,9 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     #[serde(default)]
     #[schemars(schema_with = "plugins")]
     pub plugins: IndexMap<String, String>,
-    /// [experimental] configure deps providers
+    /// configure deps providers
     #[serde(default)]
+    #[schemars(transform = crate::experimental::DEPS.labels())]
     pub deps: Option<DepsDecl>,
     #[serde(default)]
     pub oci: Option<OciConfig>,
@@ -162,18 +166,22 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     #[serde(default)]
     #[schemars(schema_with = "refs::doctor")]
     pub doctor: DoctorConfig,
-    /// Experimental project daemons: custom pitchfork commands or managed presets.
+    /// Project daemons: custom pitchfork commands or managed presets.
     #[serde(default)]
-    #[schemars(schema_with = "daemons")]
+    #[schemars(schema_with = "daemons", transform = crate::experimental::DAEMONS.labels())]
     pub daemons: IndexMap<String, Declaration>,
-    /// Experimental shared servers owned by the user. Only allowed in global configuration.
+    /// Shared servers owned by the user. Only allowed in global configuration.
     #[serde(default)]
-    #[schemars(schema_with = "daemon_providers")]
+    #[schemars(
+        schema_with = "daemon_providers",
+        transform = crate::experimental::DAEMONS.labels()
+    )]
     pub daemon_providers: IndexMap<String, toml::Table>,
     #[serde(default)]
     pub daemons_settings: Option<DaemonSettings>,
-    /// Experimental named groups of project daemons. Members are daemon names or other group names declared in the same project.
+    /// Named groups of project daemons. Members are daemon names or other group names declared in the same project.
     #[serde(default)]
+    #[schemars(transform = crate::experimental::DAEMONS.labels())]
     pub daemon_groups: IndexMap<String, GroupDeclaration>,
 }
 

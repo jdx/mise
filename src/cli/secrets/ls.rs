@@ -91,7 +91,7 @@ impl SecretsLs {
         if self.complete {
             return self.complete().await;
         }
-        Settings::get().ensure_experimental("mise secrets")?;
+        Settings::get().ensure_experimental(mise_config::experimental::SECRETS.what)?;
         Settings::ensure_not_safe("mise secrets")?;
         let config = Config::get().await?;
         let Inventory {

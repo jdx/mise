@@ -538,6 +538,7 @@ export const anchorRedirects = {
     "/dev-tools/tool-options.html#tool-dependencies",
   "/dev-tools/#tool-postinstall-commands":
     "/dev-tools/tool-options.html#tool-postinstall-commands",
+  "/dev-tools/#unread-options": "/dev-tools/tool-options.html#unknown-options",
   "/dev-tools/#version-ordering": "/dev-tools/versions.html#version-ordering",
   "/dev-tools/#vfox-plugin-hook-dependencies":
     "/tool-plugin-development.html#depends",

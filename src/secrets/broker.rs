@@ -803,7 +803,7 @@ impl SecretBroker {
         if req.grant.is_empty() {
             return Ok(None);
         }
-        Settings::get().ensure_experimental("mise secrets")?;
+        Settings::get().ensure_experimental(mise_config::experimental::SECRETS.what)?;
         Settings::ensure_not_safe("mise secrets")?;
         let Some(task) = req.grantee.task() else {
             bail!("prepare_spawn is for tasks; use prepare_exec");

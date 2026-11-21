@@ -52,8 +52,9 @@ does not read depends on the backend:
 | Backend                                                                                                                       | An option the backend does not read                                                                                                                                                 |
 | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cargo`, `conda`, `forgejo`, `gem`, `github`, `gitlab`, `go`, `http`, `npm`, `packslip`, `pypi`, `s3`, `spinel`, `spm`, `ubi` | Fails the install.                                                                                                                                                                  |
-| `asdf`, `vfox`                                                                                                                | Goes to the plugin, which decides what to do with it; see the [asdf](/dev-tools/backends/asdf.html#plugin-options) and [vfox](/dev-tools/backends/vfox.html#tool-options) backends. |
-| `aqua`, `dotnet`, and [core tools](/core-tools.html) such as `node`                                                           | Has no effect, and mise reports nothing.                                                                                                                                            |
+| `dotnet`, and [core tools](/core-tools.html) such as `node`                                                                   | Has no effect. mise warns and installs the tool.                                                                                                                                    |
+| `aqua`                                                                                                                        | Is not checked: any other option is a [recipe variable](/dev-tools/backends/aqua.html#vars).                                                                                        |
+| `asdf`, `vfox`, and tools from backend plugins                                                                                | Goes to the plugin, which decides what to do with it; see the [asdf](/dev-tools/backends/asdf.html#plugin-options) and [vfox](/dev-tools/backends/vfox.html#tool-options) backends. |
 
 A failed install names the option and the backend. Here the `cargo` backend
 is given `asset_pattern`, an option of the `github` backend:
@@ -61,6 +62,20 @@ is given `asset_pattern`, an option of the `github` backend:
 ```text
 mise ERROR Failed to install cargo:eza@0.23.4: cargo:eza: option `asset_pattern` is not used by the cargo backend
 hint: Remove it, or check the spelling against the backend's documented options
+```
+
+When the backend reads an option with a similar name, the hint suggests it.
+Here `asset_pattern` is misspelled on a `github` tool:
+
+```text
+mise ERROR Failed to install github:cli/cli@2.60.0: github:cli/cli: option `asset_patern` is not used by the github backend
+hint: Did you mean `asset_pattern`?
+```
+
+The warning from a core tool names the option in the same way:
+
+```text
+mise WARN  node: option `lazy_bin` is not used by the core backend, so it has no effect (did you mean `lazy_bins`?)
 ```
 
 The check applies however the option was written: in `mise.toml`, in brackets

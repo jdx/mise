@@ -200,9 +200,11 @@ pub enum EnvVariable {
     Value(EnvValueTable),
     Default(EnvDefaultTable),
     Required(EnvRequiredTable),
-    /// [experimental] age-encrypted environment variable
+    /// age-encrypted environment variable
+    #[schemars(transform = crate::experimental::AGE.labels())]
     Age(EnvAgeTable),
-    /// [experimental] age-encrypted environment variable
+    /// age-encrypted environment variable
+    #[schemars(transform = crate::experimental::AGE.labels())]
     AgeTable(EnvAgeComplexTable),
     Plain(#[schemars(schema_with = "refs::env_value")] ()),
 }
@@ -278,10 +280,13 @@ pub struct EnvAgeComplexTable {
     pub age: EnvAgeComplex,
 }
 
-/// [experimental] age-encrypted value (complex format)
+/// age-encrypted value (complex format)
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = crate::schema::unevaluated)]
+#[schemars(
+    transform = crate::schema::unevaluated,
+    transform = crate::experimental::AGE.labels()
+)]
 pub struct EnvAgeComplex {
     #[schemars(schema_with = "refs::env_age_value")]
     pub value: (),
@@ -315,7 +320,8 @@ pub enum VarsVariable {
     Value(VarsValueTable),
     Default(VarsDefaultTable),
     Required(VarsRequiredTable),
-    /// [experimental] age-encrypted variable
+    /// age-encrypted variable
+    #[schemars(transform = crate::experimental::AGE.labels())]
     Age(VarsAgeTable),
     AgeTable(VarsAgeComplexTable),
 }
@@ -389,9 +395,10 @@ pub struct VarsAgeComplexTable {
     pub age: VarsAgeComplex,
 }
 
-/// [experimental] age-encrypted value (complex format)
+/// age-encrypted value (complex format)
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = crate::experimental::AGE.labels())]
 #[schemars(transform = crate::schema::unevaluated)]
 pub struct VarsAgeComplex {
     #[schemars(schema_with = "refs::env_age_value")]
@@ -530,17 +537,20 @@ pub enum EnvDefaultDecl {
     Integer(i64),
 }
 
-/// [experimental] age-encrypted value (simplified format)
+/// age-encrypted value (simplified format)
 #[derive(JsonSchema)]
+#[schemars(transform = crate::experimental::AGE.labels())]
 pub struct EnvAgeDecl(pub String);
 
-/// [experimental] age-encrypted value
+/// age-encrypted value
 #[derive(JsonSchema)]
+#[schemars(transform = crate::experimental::AGE.labels())]
 pub struct EnvAgeValueDecl(pub String);
 
-/// [experimental] compression format for the encrypted value
+/// compression format for the encrypted value
 #[derive(JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(transform = crate::experimental::AGE.labels())]
 pub enum EnvAgeFormatDecl {
     Raw,
     Zstd,

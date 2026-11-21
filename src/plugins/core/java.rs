@@ -468,6 +468,12 @@ impl Backend for JavaPlugin {
         &self.ba
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::warn_only(&[
+            "tool_core_java_options",
+        ]))
+    }
+
     fn include_prereleases(&self, _opts: &ToolVersionOptions) -> bool {
         // Java selects early-access metadata with `release_type = "ea"`; the
         // unrelated generic `prerelease` option has never applied here.

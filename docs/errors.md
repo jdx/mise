@@ -50,11 +50,11 @@ real problem.
 
 A project file that is a symlink, or that mise reaches through a linked config
 directory such as `.config`, is not quoted, because the text belongs to
-whatever the link points at rather than to the project. mise prints the
-position and the parser's message on their own:
-`Invalid TOML in config file <path>:<line>:<column>: <message>`. Links inside
-the global and system config directories are the user's own and keep the
-excerpt.
+whatever the link points at rather than to the project. mise prints only the
+position, `Invalid TOML in config file <path>:<line>:<column>:`, followed by
+`details hidden because the file is reached through a link out of the project`.
+Links inside the global and system config directories are the user's own and
+keep the excerpt.
 
 ### `Config files in <path> are not trusted` {#untrusted-config}
 
@@ -79,6 +79,8 @@ reports an untrusted file only as
 `failed to load config: error parsing config file: <path>`; run
 `mise trust --show` to see the trust status of each config directory from the
 current one up.
+
+<!-- errors: unchecked `failed to load config: error parsing config file: <path>`: mise doctor puts its own prefix before the error -->
 
 Paths under
 [`ignored_config_paths`](/configuration/settings.html#ignored_config_paths)
@@ -147,6 +149,8 @@ versions, such as `mise ls` or `mise lock`.
 
 ### `<tool> not found in mise tool registry` {#not-in-registry}
 
+<!-- errors: unchecked `Failed to install <tool>@<version>: <tool> not found in mise tool registry`: two messages, joined when the install fails -->
+
 There is no [registry](/registry.html) entry with that name. `mise install` and
 `mise use` report it as
 `Failed to install <tool>@<version>: <tool> not found in mise tool registry`,
@@ -183,6 +187,8 @@ mise install node@24 --raw
 
 ### `HTTP status client error (404 Not Found)` {#http-404}
 
+<!-- errors: unchecked `HTTP status client error (404 Not Found)`: worded by the reqwest crate -->
+
 The URL in the message does not exist. Common causes:
 
 - The version does not exist. When a request matches no listed version, mise
@@ -201,6 +207,9 @@ The URL in the message does not exist. Common causes:
   [GitHub, GitLab, and Forgejo tokens](/dev-tools/github-tokens.html).
 
 ### `[<config file>] <tool>@<version>: <cause>` {#failed-to-resolve-version}
+
+<!-- errors: unchecked `[<config file>] <tool>@<version>: <cause>`: every fixed part is punctuation -->
+<!-- errors: unchecked `[~/src/app/mise.toml] node@24: <cause>`: an example of the message above -->
 
 mise could not resolve the version that the named config file requests, for
 example `[~/src/app/mise.toml] node@24: <cause>`. The text after
@@ -225,6 +234,8 @@ versions at all; the cause says why.
 
 ### `HTTP status client error (401 Unauthorized)` {#http-401}
 
+<!-- errors: unchecked `HTTP status client error (401 Unauthorized)`: worded by the reqwest crate -->
+
 The server rejected the credential that mise sent. For GitHub, the token is
 invalid, expired, meant for another host, or missing a scope. The message
 includes a `github auth:` line:
@@ -240,6 +251,8 @@ mise uses and where it came from. See
 hosts, check that backend's authentication settings.
 
 ### `HTTP status client error (403 Forbidden)` / `GitHub rate limit exceeded` {#http-403}
+
+<!-- errors: unchecked `HTTP status client error (403 Forbidden)`: worded by the reqwest crate -->
 
 A 403 (or 429) from GitHub usually means you hit the API rate limit, which is
 common in CI. It can also mean that the token has no access to the repository,
@@ -384,7 +397,27 @@ current directory is untrusted or was declined, mise reports
 A dependency that names a missing task fails with `task not found: <name>`
 instead; see [Dependencies and execution order](/tasks/architecture.html).
 
+### `task <name> has sources defined but no matching files found` {#sources-no-match}
+
+This is a warning. The task lists
+[`sources`](/tasks/task-configuration.html#sources), and its patterns match no
+file, which usually means a pattern has a typo or resolves from another
+directory than you expect. Relative patterns resolve from the task's
+[`dir`](/tasks/task-configuration.html#dir), or from the project root when it
+has none. Fix the patterns, or remove `sources` if the task should run every
+time.
+
+The file that defines the task always counts as a source,
+so [freshness checks](/tasks/caching.html#skip-up-to-date-tasks) and the
+[artifact cache](/tasks/caching.html#enable-artifact-caching) keep working, but
+they only notice changes to that file. When mise finds no file that defines the
+task either, the warning reads
+`task <name> has sources defined but no matching files found; artifact caching disabled`,
+and the task runs without the artifact cache.
+
 ### `[<task>] ERROR task failed` / `<command> exited with non-zero status` {#command-failed}
+
+<!-- errors: unchecked `[<task>] ERROR task failed`: the task prefix and the colored ERROR are added separately -->
 
 A task, plugin script, hook, or installer that mise ran exited with an error.
 For a task, mise prints `[<task>] ERROR task failed` and exits with the task's

@@ -32,11 +32,12 @@ pub enum Declaration {
     Definition(toml::Table),
 }
 
-/// Experimental project-wide daemon options.
+/// Project-wide daemon options.
 // Every field is optional so a higher-precedence file can set one key without discarding the
 // others; see [`DaemonSettings::merge`].
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = crate::experimental::DAEMONS.labels())]
 pub struct DaemonSettings {
     /// Fixed pitchfork namespace for this project, replacing the hashed default so other projects can refer to its daemons by qualified ID.
     #[serde(default)]

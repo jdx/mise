@@ -192,10 +192,13 @@ pub struct TaskDependencyTable {
     pub optional: Option<bool>,
 }
 
-/// [experimental] project daemons that must be running and ready before this task runs
+/// project daemons that must be running and ready before this task runs
 #[derive(JsonSchema)]
 #[serde(untagged)]
-#[schemars(transform = crate::schema::one_of)]
+#[schemars(
+    transform = crate::schema::one_of,
+    transform = crate::experimental::DAEMONS.labels()
+)]
 pub enum TaskDaemonsDecl {
     /// true requires every daemon declared in [daemons]
     All(bool),
@@ -244,10 +247,13 @@ pub enum TaskSourcesDecl {
 #[derive(JsonSchema)]
 pub struct TaskSourcePattern(pub String);
 
-/// experimental local artifact cache for declared task outputs
+/// local artifact cache for declared task outputs
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = crate::schema::unevaluated)]
+#[schemars(
+    transform = crate::schema::unevaluated,
+    transform = crate::experimental::TASK_CACHE.labels()
+)]
 pub struct TaskCacheDecl {
     /// store and restore task outputs from the local mise cache
     #[schemars(extend("default" = false))]
@@ -261,10 +267,13 @@ pub struct TaskCacheDecl {
     pub command_inputs: Option<Vec<String>>,
 }
 
-/// default experimental local artifact cache configuration for eligible tasks with sources and explicit outputs
+/// default local artifact cache configuration for eligible tasks with sources and explicit outputs
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = crate::schema::unevaluated)]
+#[schemars(
+    transform = crate::schema::unevaluated,
+    transform = crate::experimental::TASK_CACHE.labels()
+)]
 pub struct TaskConfigCacheDecl {
     /// store and restore eligible task outputs from the local mise cache
     #[schemars(extend("default" = false))]
@@ -380,10 +389,13 @@ pub struct TaskRunGroup {
 #[derive(JsonSchema)]
 pub struct TaskNameAndArgs(pub String);
 
-/// [experimental] Secret keys this task receives when it starts, e.g. ["DEPLOY_KEY"]. Dependencies do not inherit them. See `mise secrets ls`.
+/// Secret keys this task receives when it starts, e.g. ["DEPLOY_KEY"]. Dependencies do not inherit them. See `mise secrets ls`.
 #[derive(JsonSchema)]
 #[serde(untagged)]
-#[schemars(transform = crate::schema::one_of)]
+#[schemars(
+    transform = crate::schema::one_of,
+    transform = crate::experimental::SECRETS.labels()
+)]
 pub enum TaskSecretsDecl {
     One(#[schemars(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$"))] String),
     Many(Vec<TaskSecretKey>),
