@@ -184,7 +184,7 @@ if ($__mise_completion_table_ready) {
                     "typeset -g {saved}=\"${{_comps[{command}]-}}\"\ntypeset -g {saved}_function=\"${{functions[_{command}]-}}\"\n_{command}() {{\n{stub}\n}}\ncompdef _{command} '{command}'\n"
                 ));
                 cleanup.push_str(&format!(
-                    "if [[ -n ${{{saved}:-}} ]]; then compdef \"${{{saved}}}\" '{command}'; else compdef -d '{command}'; fi\nif [[ -n ${{{saved}_function:-}} ]]; then functions[_{command}]=\"${{{saved}_function}}\"; else unfunction _{command}; fi\nunset {saved} {saved}_function\n"
+                    "if [[ -n ${{{saved}:-}} ]]; then compdef \"${{{saved}}}\" '{command}'; else compdef -d '{command}'; fi\nif [[ -n ${{{saved}_function:-}} ]]; then functions[_{command}]=\"${{{saved}_function}}\"; elif (( $+functions[_{command}] )); then unfunction _{command}; fi\nunset {saved} {saved}_function\n"
                 ));
             }
             Shell::Fish => {
@@ -232,6 +232,16 @@ mod tests {
         assert_ne!(
             super::super::completion_ident("my-tool"),
             super::super::completion_ident("my_tool")
+        );
+    }
+
+    #[test]
+    fn zsh_cleanup_tolerates_a_missing_completion_function() {
+        let commands = BTreeSet::from(["wt".to_string()]);
+        let output = registration("zsh", Shell::Zsh, &commands);
+        assert!(
+            output.contains("elif (( $+functions[_wt] )); then unfunction _wt"),
+            "{output}"
         );
     }
 
