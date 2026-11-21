@@ -1003,12 +1003,15 @@ impl Upgrade {
             return Ok(());
         }
         // A tool with `bump = false` stays in its range under `--bump`, unless named.
-        let opted_out = |ba: &BackendArg| {
+        let opted_out = |ba: &BackendArg, version: &str| {
             self.bump
                 && self.tool.is_empty()
                 && ts.versions.iter().any(|(b, tvl)| {
                     backend_args_match(b, ba)
-                        && tvl.requests.iter().any(|r| !r.options().bump_enabled())
+                        && tvl
+                            .versions
+                            .iter()
+                            .any(|tv| tv.version == version && !tv.request.options().bump_enabled())
                 })
         };
         let (kept_in_range, stuck): (Vec<_>, Vec<_>) = report
@@ -1023,7 +1026,7 @@ impl Upgrade {
                         && version.as_deref() == Some(f.version.as_str())
                 })
             })
-            .partition(|f| opted_out(&f.ba));
+            .partition(|f| opted_out(&f.ba, &f.version));
         let name = |findings: Vec<&crate::audit::Finding>| {
             findings
                 .into_iter()
