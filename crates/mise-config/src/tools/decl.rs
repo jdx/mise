@@ -111,6 +111,10 @@ pub struct ToolOptions {
     #[serde(default)]
     #[schemars(schema_with = "tool_options_version_order")]
     pub version_order: Option<toml::Value>,
+    /// false keeps the tool out of `mise upgrade --bump` and `mise outdated --bump`, which then treat it like a plain upgrade
+    #[serde(default)]
+    #[schemars(schema_with = "refs::tool_bool")]
+    pub bump: Option<bool>,
     /// include pre-release versions when listing versions and resolving latest
     #[serde(default)]
     #[schemars(schema_with = "refs::tool_bool")]
