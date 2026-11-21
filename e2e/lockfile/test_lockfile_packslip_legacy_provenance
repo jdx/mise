@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A Packslip lock entry that an older mise wrote with the previous backend's
+# `provenance = "cosign"` must not block `mise lock --bump`: the Packslip signer
+# is the replacement trust baseline.
+export MISE_LOCKFILE=1
+export MISE_MINIMUM_RELEASE_AGE=0
+detect_platform
+
+cat <<'EOF2' >mise.toml
+[tools]
+hk = "1"
+EOF2
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+
+# Recreate what an older mise wrote: the previous backend's provenance and no
+# signer, with a checksum that differs from the release so the entry is re-locked.
+sed -i.bak -E '/^signer = /d; /^repository_ids = /d; s/^provenance = .*/provenance = "cosign"/; s/^checksum = .*/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/' mise.lock
+grep -q 'provenance = "cosign"' mise.lock || sed -i.bak -E 's/^(url = .*)$/\1\nprovenance = "cosign"/' mise.lock
+assert_contains "cat mise.lock" 'provenance = "cosign"'
+assert_not_contains "cat mise.lock" 'signer = '
+
+mise lock --platform "$MISE_PLATFORM" --bump hk
+assert_contains "cat mise.lock" 'signer = '
+assert_not_contains "cat mise.lock" 'sha256:0000'

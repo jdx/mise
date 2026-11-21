@@ -1036,10 +1036,11 @@ fn slsa_signer_hint(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> &'
 
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
     // A verified Packslip signer is the replacement trust baseline for an
-    // artifact authenticated by its signed release manifest. Older incremental
-    // lock updates could carry detected GitHub provenance into a Packslip entry,
-    // but complete generation intentionally does not persist that unverified
-    // link. Without a signer, retain the ordinary provenance ratchet.
+    // artifact authenticated by its signed release manifest. Older mise versions
+    // could leave provenance from the previous backend (GitHub attestations,
+    // cosign, minisign) on a Packslip entry, but complete generation
+    // intentionally does not persist that unverified link. SLSA stays
+    // ratcheted. Without a signer, retain the ordinary provenance ratchet.
     let packslip_signer_replaces_provenance =
         backend.starts_with("packslip:") && new.signer.is_some();
     if provenance_is_downgrade(
@@ -1111,9 +1112,7 @@ pub(super) fn provenance_is_downgrade(
     new: Option<&ProvenanceType>,
     packslip_signer_replaces_provenance: bool,
 ) -> bool {
-    if packslip_signer_replaces_provenance
-        && old.is_some_and(ProvenanceType::is_github_attestations)
-    {
+    if packslip_signer_replaces_provenance && old.is_some_and(|old| !old.is_slsa()) {
         return false;
     }
     new < old
@@ -2058,6 +2057,22 @@ mod tests {
 
         assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
         assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
+
+        for legacy in [ProvenanceType::Cosign, ProvenanceType::Minisign] {
+            let old = PlatformInfo {
+                provenance: Some(legacy),
+                ..Default::default()
+            };
+            let mut new = PlatformInfo {
+                signer: Some(
+                    "sigstore-oidc:https://github.com/o/r/.github/workflows/release.yml".into(),
+                ),
+                ..Default::default()
+            };
+            assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
+            new.signer = None;
+            assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+        }
 
         new.signer = None;
         assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
