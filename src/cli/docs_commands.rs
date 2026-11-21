@@ -36,7 +36,8 @@ const SHELLS: &[&str] = &[
     "yaml",
 ];
 
-/// Words that come before the command they run.
+/// Words that come before the command they run. `env`, with its options, is
+/// one more.
 const PREFIXES: &[&str] = &[
     "$", "❯", "%", "sudo", "exec", "eval", "command", "time", "RUN", "run:", "-", "if", "!",
     "then", "do", "else", "&",
@@ -279,6 +280,14 @@ fn simple_commands(line: &str) -> Vec<Vec<Word>> {
                 split.quoted |= split.cur.is_empty();
             }
             c if c.is_whitespace() => split.end_word(),
+            // a shebang line names the command that runs the script
+            '#' if bare
+                && next == Some('!')
+                && split.words.is_empty()
+                && split.commands.is_empty() =>
+            {
+                i += 1;
+            }
             '#' if bare => break,
             // `2>&1` and `&>` are redirections, not the end of a command
             '&' if split.cur.is_empty() && (split.redirected || next == Some('>')) => {}
@@ -316,8 +325,18 @@ fn simple_commands(line: &str) -> Vec<Vec<Word>> {
         .commands
         .into_iter()
         .filter_map(|words| {
+            let mut env = false;
             let start = words.iter().position(|w| {
-                w.quoted || !(PREFIXES.contains(&w.text.as_str()) || is_assignment(&w.text))
+                let text = w.text.as_str();
+                if w.quoted {
+                    return true;
+                }
+                // `env -S mise ...`: the options of `env` come before the command too
+                if env && text.starts_with('-') {
+                    return false;
+                }
+                env = text == "env" || text.ends_with("/env");
+                !(env || PREFIXES.contains(&text) || is_assignment(text))
             })?;
             let (name, rest) = words[start..].split_first()?;
             (name.text == "mise" && !rest.is_empty()).then(|| rest.to_vec())
@@ -666,6 +685,15 @@ mod tests {
             shown("mise bootstrap packages export <--format <FORMAT>>"),
             ["bootstrap packages export <--format <FORMAT>>"]
         );
+        assert_eq!(
+            shown("env -i FOO=bar mise ls --json && sudo env mise doctor"),
+            ["ls --json", "doctor"]
+        );
+        assert_eq!(
+            shown("#!/usr/bin/env -S mise exec node@24 -- node"),
+            ["exec node@24 -- node"]
+        );
+        assert_eq!(shown("#!/bin/sh mise ls"), [] as [&str; 0]);
         // only the target of a redirection is left out
         assert_eq!(
             shown("mise ls >tools.txt --json 2> /dev/null --current"),
@@ -784,6 +812,10 @@ mod tests {
             (
                 "mise install >out.log --bogus",
                 "`mise install` has no flag --bogus",
+            ),
+            (
+                "env mise not-a-command",
+                "mise has no command `not-a-command`",
             ),
             (
                 "mise install --bogus=...",
