@@ -190,7 +190,7 @@ and is removed in 2027.7.0. Use `_.python.venv` instead.
 
 `python.uv_venv_auto = true` warns since mise 2026.7.0 and is removed in
 2027.7.0. Use `"source"` or `"create|source"`. Besides creating and activating
-the environment, `true` exported `UV_PYTHON` set to only the Python version
+the environment, `true` exports `UV_PYTHON` set to only the Python version
 number; use the `UV_PYTHON` recipe above to point uv at mise's interpreter.
 
 ## How mise installs Python {#precompiled-python-binaries}
@@ -362,7 +362,7 @@ version without a precompiled build):
 python = { version = "3.14", install_env = { PYTHON_CONFIGURE_OPTS = "--enable-optimizations" } }
 ```
 
-Other generic options are described in [tool options](/dev-tools/#tool-options).
+Other generic options are described in [tool options](/dev-tools/tool-options.html).
 
 ## Default packages file <Badge type="danger" text="deprecated" /> {#default-python-packages}
 
@@ -372,7 +372,7 @@ with `pip install` into each new Python version. mise warns about this file from
 2026.11.0 and stops reading it in 2027.11.0. Install Python CLIs with the
 [PyPI backend](/dev-tools/backends/pypi.html) instead, for example
 `"pypi:black" = "latest"`, or use a
-[`postinstall`](/dev-tools/#tool-postinstall-commands) command for packages
+[`postinstall`](/dev-tools/tool-options.html#tool-postinstall-commands) command for packages
 every Python version needs.
 
 ## Settings

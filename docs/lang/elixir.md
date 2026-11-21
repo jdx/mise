@@ -98,6 +98,6 @@ installer. If mise behaves differently from this page, check
 
 Elixir has no Elixir-specific options. Generic options such as `install_env`,
 `postinstall` and `os` work as described in
-[tool options](/dev-tools/#tool-options). `install_env` reaches only the
+[tool options](/dev-tools/tool-options.html). `install_env` reaches only the
 `elixir --version` check and `postinstall` commands; it does not set `MIX_HOME`
 or other variables for later use. Set those in `[env]`.

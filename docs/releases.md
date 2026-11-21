@@ -11,9 +11,10 @@ import Releases from '@jdxcode/docs-releases/Releases.vue';
 import { data } from './releases.data';
 </script>
 
-mise ships several releases a week. To update, run `mise self-update` or use the
-package manager that installed mise; see
-[Updating mise](/installing-mise.html#updating).
+This page lists every mise release with its changes and the issues it
+resolved, and explains how version numbers work. mise ships several releases a
+week. To update, run `mise self-update` or use the package manager that
+installed mise; see [Updating mise](/installing-mise.html#updating).
 
 ## Release timeline {#timeline}
 

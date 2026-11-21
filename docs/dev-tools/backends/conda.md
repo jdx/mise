@@ -84,7 +84,7 @@ send credentials from an `https://` URL to an `http://` one.
 
 Set these on the tool's entry in `[tools]`, or inline, as in
 `'conda:my-tool[channel=my-team]'`. Options every backend accepts are described
-under [tool options](/dev-tools/#tool-options).
+under [tool options](/dev-tools/tool-options.html).
 
 ### `channel`
 

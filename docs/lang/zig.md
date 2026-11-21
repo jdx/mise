@@ -95,7 +95,7 @@ installer. If mise behaves differently from this page, check
 
 Zig has no Zig-specific options. Generic options such as `install_env`,
 `postinstall` and `os` work as described in
-[tool options](/dev-tools/#tool-options). `install_env` reaches the
+[tool options](/dev-tools/tool-options.html). `install_env` reaches the
 `zig version` check and `postinstall` commands, not the download. To download
 through a proxy, set `https_proxy` in the environment that runs mise (see the
 [FAQ](/faq.html#how-do-i-use-mise-with-http-proxies)).

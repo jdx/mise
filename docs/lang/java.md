@@ -38,16 +38,18 @@ A request without a vendor uses `java.shorthand_vendor`, which defaults to
 update jdk.java.net published for a release (`java@21` is then 21.0.2). Name a
 vendor in shared config so every machine resolves the same build.
 
-An OpenJDK build still installed when the default changes keeps working, and
-plain `mise lock` locks it again under the new default, so machines without it
-install the same OpenJDK build from the lockfile. Without the installed build,
-a lockfile entry recorded with `shorthand_vendor = "openjdk"` no longer
-matches: `mise install --locked` fails, and plain `mise lock` or `mise install`
-replaces the entry with the newest matching Temurin build. Set
-`java.shorthand_vendor = "openjdk"` to keep the old pin. `mise lock --bump java`
-always moves to the newest matching Temurin build. Temurin publishes no builds
-for some releases, such as Java 12, so request those with a vendor, for example
-`openjdk-12`.
+`mise.lock` records the `java.shorthand_vendor` value that resolved a request
+without a vendor, and the entry matches only while the setting has that value.
+With an entry written under `openjdk` and the setting at `temurin`,
+`mise install --locked` fails, and plain `mise lock` or `mise install` replaces
+the entry with the newest matching Temurin build. The exception is an OpenJDK
+build that is still installed: it keeps working, and plain `mise lock` locks it
+again, so machines without it install the same build from the lockfile.
+`mise lock --bump java` always moves to the newest matching Temurin build. To
+keep such an entry valid, set `java.shorthand_vendor = "openjdk"`.
+
+Temurin publishes no builds for some releases, such as Java 12, so request
+those with a vendor, for example `openjdk-12`.
 
 Vendor names also carry variants, such as `temurin-jre`, `zulu-javafx`,
 `zulu-crac` and `liberica-nik-openjdk`. On Alpine and other musl systems, mise
@@ -193,7 +195,7 @@ java = { version = "openjdk-28", release_type = "ea" }
 ```
 
 Generic options such as `install_env` and `postinstall` work as described in
-[tool options](/dev-tools/#tool-options). `install_env` reaches the
+[tool options](/dev-tools/tool-options.html). `install_env` reaches the
 `java -version` check and `postinstall` commands, not the download. To download
 through a proxy, set `https_proxy` in the environment that runs mise (see the
 [FAQ](/faq.html#how-do-i-use-mise-with-http-proxies)).

@@ -212,11 +212,11 @@ mise run --affected --affected-base origin/main --affected-head HEAD test
 A bare task name such as `build` means `//...:build`, the task of that name in
 every project. mise combines three sources of change:
 
-- **committed**: the changes on the head side of `<base>...<head>` since the
-  merge base;
-- **uncommitted**: staged and unstaged edits to tracked files, compared with
-  `HEAD`;
-- **untracked**: new files that your `.gitignore` does not exclude.
+- committed changes, on the head side of `<base>...<head>` since the merge
+  base;
+- uncommitted changes, the staged and unstaged edits to tracked files compared
+  with `HEAD`;
+- untracked files, the new files that your `.gitignore` does not exclude.
 
 The working tree only counts when the head revision is the commit you have
 checked out. With a different `--affected-head`, mise compares just the

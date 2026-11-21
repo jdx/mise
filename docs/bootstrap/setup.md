@@ -339,7 +339,7 @@ track it with `mise dot track --dry-run <dir>`: themes, plugins, caches, and
 application state usually do not belong in history. mise skips a nested Git
 repository and records nothing for it; track its root as a separate entry, or
 back it up separately. See
-[nested repositories](/dotfiles/history.html#nested-repositories).
+[nested repositories](/dotfiles/reference.html#nested-repositories).
 
 Before a system upgrade, save everything once:
 

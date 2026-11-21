@@ -169,9 +169,8 @@ during installs. mise loads a file that only lists tool versions,
 trust it, so cloning a repository and entering its directory does not run its
 code. Read the file, then run [`mise trust`](/cli/trust.html).
 
-`mise run`, `mise install`, `mise exec`, `mise watch`, and
-`mise daemons start`, `restart`, and `register` trust the project's config
-themselves, because running them is already a decision to run its code. In CI,
+Commands that run a project's code, such as `mise run`, `mise install` and
+`mise exec`, [trust its config themselves](/security.html#implicit-trust). In CI,
 mise treats config as trusted. Outside CI, `--yes` or `MISE_YES=1` answers the
 trust prompt with yes, so use them only for configs you have reviewed.
 [Paranoid mode](/paranoid.html) turns off this automatic trust. Your global
@@ -279,14 +278,15 @@ file, mise warns and trusts a bundled copy of Mozilla's root certificates for
 its own HTTP clients, such as downloads, `mise self-update`, vfox plugins, the
 remote task cache and attestation lookups. Git operations and sigstore's
 trust-root updates use separate clients that this does not cover. Install
-`ca-certificates` or fix the path
-to use your system store again. Certificates that do load are never
-supplemented, so a bundle that loads still replaces the system store as
-described above. This fallback applies to Linux and other Unix systems except
-macOS, and only to the rustls release binaries. The npm backend always trusts
-the same bundled roots in addition to the system store. Package managers and plugins that mise runs read their own
-certificate settings, for example `NODE_EXTRA_CA_CERTS` for node or
-`REQUESTS_CA_BUNDLE` for Python's requests.
+`ca-certificates` or fix the path to use your system store again. Certificates
+that do load are never supplemented, so a bundle that loads still replaces the
+system store as described above. This fallback applies to Linux and other Unix
+systems except macOS, and only to the rustls release binaries.
+
+The npm backend always trusts the same bundled roots in addition to the system
+store. Package managers and plugins that mise runs read their own certificate
+settings, for example `NODE_EXTRA_CA_CERTS` for node or `REQUESTS_CA_BUNDLE`
+for Python's requests.
 
 ## Coming from asdf {#migration}
 

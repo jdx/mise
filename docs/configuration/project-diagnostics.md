@@ -102,9 +102,9 @@ hint = "examplectl config set project <name>"
 
 When `examplectl:auth` fails, `examplectl:project` is `blocked`: it does not
 run and its hint is not shown. A dependency that ends in `fail`, `error`,
-`skipped` (excluded by `os`) or `blocked` blocks its dependents. Checks without
-`depends` run as before. A `depends` entry that names an unknown check, or a
-cycle between checks, is an error and no check runs.
+`skipped` (excluded by `os`) or `blocked` blocks its dependents. A `depends`
+entry that names an unknown check, or a cycle between checks, is an error and
+no check runs.
 
 ## What a check sees
 

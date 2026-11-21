@@ -191,7 +191,7 @@ Both that download and the script's downloads then use it (see the
 
 To opt out of .NET CLI telemetry, set
 [`dotnet.cli_telemetry_optout`](/lang/dotnet.html#dotnet.cli_telemetry_optout) instead. Other
-generic options are described in [tool options](/dev-tools/#tool-options).
+generic options are described in [tool options](/dev-tools/tool-options.html).
 
 ## Settings
 

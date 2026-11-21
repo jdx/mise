@@ -89,5 +89,12 @@ Use `"opentofu"` for `.opentofu-version`.
 ## Load credentials from a dotenv file
 
 If you keep credentials in a local dotenv file, load it with
-[`_.file`](/environments/#env-file). Keep plaintext credential files out of
-version control; see [secrets](/environments/secrets/) for encrypted storage.
+[`_.file`](/environments/#env-file), and the tasks get its variables:
+
+```toml [mise.toml]
+[env]
+_.file = ".env"
+```
+
+Keep plaintext credential files out of version control; see
+[secrets](/environments/secrets/) for encrypted storage.

@@ -114,7 +114,7 @@ Sets environment variables for the `swift --version` check mise runs after
 installing, for `pkgutil` on macOS, and for `postinstall` commands. It does not
 affect the download. Its main use is the library workaround in
 [Missing shared libraries](#when-no-build-matches-your-distribution). Other
-generic options are described in [tool options](/dev-tools/#tool-options).
+generic options are described in [tool options](/dev-tools/tool-options.html).
 
 ## Further reading
 

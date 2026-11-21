@@ -69,7 +69,7 @@ Connect the server only to a project and a client you trust.
   `mise trust <dir>` for the directory that holds `mise-tasks/`. `run_task`
   takes the name of a task, not the path of a script to run.
 - `install_tool` takes a tool and a version, not
-  [tool options](/dev-tools/#tool-options): it refuses `"tool[option=value]"`,
+  [tool options](/dev-tools/tool-options.html): it refuses `"tool[option=value]"`,
   because options such as `postinstall` are commands.
 - `run_task` runs without stdin and sets `MISE_YES=1`, which answers mise's
   other confirmation prompts. Use your client's tool approval settings to decide

@@ -22,8 +22,10 @@ and `mise env` see the plaintext. mise redacts them in task output by default.
 ### 1. Get an identity
 
 An existing SSH key works: `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`, with its
-`.pub` file beside it. To use a dedicated age identity instead, create one. Skip
-`age-keygen` if `age.txt` already holds an identity you want to keep:
+`.pub` file beside it. The key must have no passphrase: mise does not prompt for
+one, so a protected key can encrypt values but not decrypt them. To use a
+dedicated age identity instead, create one. Skip `age-keygen` if `age.txt`
+already holds an identity you want to keep:
 
 ```sh
 mise use -g age

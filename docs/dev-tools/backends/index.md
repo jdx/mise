@@ -37,9 +37,10 @@ installs ripgrep from its GitHub releases and writes the identifier to
 The part after the colon is whatever the backend uses to find the tool: an
 `owner/repo` for `github:`, a package name for `npm:`, a module path for `go:`.
 Each backend's page lists its forms. Tool options can follow the name in
-brackets, such as `'pypi:black[extras=jupyter]'`. Options belong to a backend:
-one that `pypi:` understands means nothing to `aqua:`, so check the backend's
-page before you add one.
+brackets, such as `'pypi:black[extras=jupyter]'`. Options belong to a backend,
+and most backends fail the install when given
+[an option they do not read](/dev-tools/tool-options.html#unknown-options), so
+check the backend's page before you add one.
 
 Any identifier works in `mise.toml` without a registry entry; the
 [registry](/registry.html) only adds short names. Run `mise backends ls` to list
@@ -58,18 +59,31 @@ Versions are not necessarily semantic versions. Each backend decides what
 <span id="when-to-use-each-backend"></span>
 <span id="backend-capabilities-comparison"></span>
 
-Start with the tool's registry short name. When you choose a backend yourself,
-prefer one that installs the publisher's own prebuilt release:
+Start with the tool's registry short name: its registry entry lists the
+backends that can install the tool, most preferred first, with the options the
+tool needs. When you choose a backend yourself, use the first of these that
+can install the tool. The order runs from backends that need nothing but mise
+and can check what they download to backends that need a language toolchain or
+run a plugin's code:
 
 1. `packslip:` when the publisher signs its releases with packslip manifests.
    mise checks the signer and every artifact digest.
-2. `aqua:` when the aqua registry has an entry for the tool, or `github:`,
-   `gitlab:` or `forgejo:` for release assets on those forges.
-3. `http:` or `s3:` for archives you host yourself.
-4. A language package backend when the tool ships only as a package, or when
+2. `aqua:` when the aqua registry has a recipe for the tool. The recipe names
+   the asset for each platform and the checksums, signatures or provenance the
+   publisher provides, so mise does not have to guess them.
+3. `github:`, `gitlab:` or `forgejo:` for release assets on those forges. mise
+   picks the asset for your platform by its file name, and options correct a
+   wrong pick.
+4. `http:` or `s3:` for archives at URLs you provide, such as ones you host
+   yourself.
+5. `conda:` when the tool has no self-contained release but a conda channel
+   packages it. mise installs the package and its dependencies itself.
+6. A language package backend when the tool ships only as a package, or when
    you need package options such as Cargo features or Python extras. You then
-   supply that language's runtime.
-5. A plugin only when installing the tool needs custom logic.
+   supply that language's runtime or toolchain.
+7. A plugin (`vfox:`, or the legacy `asdf:`) only when installing the tool
+   needs custom logic. A plugin is code from its author's repository that runs
+   with your permissions.
 
 | Backend                                                                                                                           | Installs                                      | Example                            | Needs                                            |
 | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------- | ------------------------------------------------ |

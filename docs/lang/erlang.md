@@ -120,7 +120,7 @@ so values for those in `install_env` are ignored.
 Erlang has no Erlang-specific options. `install_env` reaches kerl source
 builds, the install step of precompiled Linux builds, and `postinstall`
 commands. Other generic options are described in
-[tool options](/dev-tools/#tool-options).
+[tool options](/dev-tools/tool-options.html).
 
 ## Settings
 

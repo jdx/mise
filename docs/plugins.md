@@ -138,11 +138,11 @@ optional, on the command line and in `[plugins]`, where
 `my-plugin = "packslip:your-org/my-plugin#1.0.0"` works as well as
 `"vfox:my-plugin" = ...`. A [backend plugin](/backend-plugin-development.html)
 installs the same way with the `vfox-backend:` prefix, in both places. Another
-type prefix such as `asdf:` is rejected. A plugin that is already installed keeps the type it was
-installed with. Omit `#1.0.0` to use
-the latest eligible release. mise verifies the archive's signature, digest and
-signer, and `mise plugins update` keeps an explicit version pin. Only GitHub
-repositories that publish `packslip.sigstore.json` are supported; see
+type prefix such as `asdf:` is rejected. A plugin that is already installed
+keeps the type it was installed with. Omit `#1.0.0` to use the latest eligible
+release. mise verifies the archive's signature, digest and signer, and
+`mise plugins update` keeps an explicit version pin. Only GitHub repositories
+that publish `packslip.sigstore.json` are supported; see
 [the vfox backend](/dev-tools/backends/vfox.html#install-from-a-signed-packslip).
 
 ### From a tool identifier {#vfox-identifiers}
@@ -203,8 +203,8 @@ _.my-env-plugin = { api_url = "https://api.example.com", debug = true }
 pass them to the plugin: `tools = true` runs the directive after the configured
 tools are on `PATH`, and `redact = true` marks the values for
 [redaction](/environments/secrets/#redaction). Install the plugin, or list it
-under `[plugins]`, before you add the directive; see
-[Troubleshooting](#troubleshooting).
+under `[plugins]`, before you add the directive: mise skips the directive of a
+plugin it cannot find, with a warning; see [Troubleshooting](#troubleshooting).
 
 ### Package manager plugins {#package-plugins}
 
@@ -236,7 +236,7 @@ my-tool = { version = "2.0.0", mirror = "https://mirror.example.com" }
 ```
 
 mise keeps `os`, `depends`, `install_env`, `lazy`, `lazy_bins` and
-`auto_update` to itself; see [tool options](/dev-tools/#tool-options). Every
+`auto_update` to itself; see [tool options](/dev-tools/tool-options.html). Every
 other option reaches the plugin, including `postinstall` and
 `minimum_release_age`, which mise also acts on. Lua hooks read options from
 `ctx.options`. Install, uninstall and environment hooks, and the asdf scripts
@@ -302,11 +302,11 @@ plugins. See [Security](/security.html) for trust and verification.
 
 ## Troubleshooting {#troubleshooting}
 
-| Symptom                                                                | What to do                                                                                                                                                                  |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mise plugins install` fails to clone                                  | Check the URL and ref with `git ls-remote <url>`, and your Git credentials for a private repository.                                                                        |
-| `Plugin my-tool already installed` and nothing changes                 | Run `mise plugins install --force my-tool`, with the URL or from `[plugins]`.                                                                                               |
-| A warning that the plugin does not match `[plugins]`                   | Run `mise plugins install --force my-tool` to reinstall it from `[plugins]`.                                                                                                |
-| A tool fails to install                                                | Run `MISE_DEBUG=1 mise install my-tool@2.0.0` to see the plugin's output. Check that the plugin supports your platform and that the programs it runs are installed.         |
-| Every command in a project fails with `Invalid version: my-env-plugin` | The environment plugin named in `_.my-env-plugin` is not installed. List it under `[plugins]`, or run `mise plugins install` or `mise plugins link` from another directory. |
-| An environment plugin's variables are missing                          | Run `mise env` and check that `mise plugins ls` shows the plugin under the directive's name. `mise env` output can contain secrets; do not paste it into issues.            |
+| Symptom                                                   | What to do                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise plugins install` fails to clone                     | Check the URL and ref with `git ls-remote <url>`, and your Git credentials for a private repository.                                                                                                                                     |
+| `Plugin my-tool already installed` and nothing changes    | Run `mise plugins install --force my-tool`, with the URL or from `[plugins]`.                                                                                                                                                            |
+| A warning that the plugin does not match `[plugins]`      | Run `mise plugins install --force my-tool` to reinstall it from `[plugins]`.                                                                                                                                                             |
+| A tool fails to install                                   | Run `MISE_DEBUG=1 mise install my-tool@2.0.0` to see the plugin's output. Check that the plugin supports your platform and that the programs it runs are installed.                                                                      |
+| A warning that starts `skipping env plugin my-env-plugin` | The environment plugin named in `_.my-env-plugin` is not installed and mise has no source for it, so its variables are not set. List it under `[plugins]`, or run `mise plugins install my-env-plugin <git-url>` or `mise plugins link`. |
+| An environment plugin's variables are missing             | Run `mise env` and check that `mise plugins ls` shows the plugin under the directive's name. `mise env` output can contain secrets; do not paste it into issues.                                                                         |

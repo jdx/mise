@@ -85,15 +85,15 @@ The top level can contain:
 New lockfiles use version 4. mise keeps an existing lockfile at its version
 during ordinary updates, so teammates on an older mise can still read it. A
 lockfile older than version 3 omits packslip repository IDs, and one older than
-version 4 omits npm source repositories; mise warns when a release provides them. A mise that is older than a lockfile's format refuses to
-read it.
+version 4 omits npm source repositories; mise warns when a release provides
+them. A mise that is older than a lockfile's format refuses to read it.
 
 Run `mise lock --upgrade` to move a lockfile to the latest format. It processes
 every configured tool and cannot be combined with tool arguments. `mise lock`
 warns when a lockfile uses an older format. Other lockfile-aware commands warn
 once a newer format has been out for six months: version 0 lockfiles after
-23 February 2027, version 1 after 13 March 2027, and version 2 after
-27 March 2027, and version 3 after 3 May 2027.
+23 February 2027, version 1 after 13 March 2027, version 2 after 27 March 2027,
+and version 3 after 3 May 2027.
 
 ## Entry fields {#tool-entry-fields}
 
@@ -184,7 +184,7 @@ for why revisions exist and how to update older lockfiles.
 
 With [`npm.provenance`](/configuration/settings.html#npm.provenance) on, an
 `npm:` tool's entry records the repository its package was built from. This
-needs lockfile revision 4 (`mise lock --upgrade` raises an older lockfile):
+needs format version 4 (`mise lock --upgrade` raises an older lockfile):
 
 <!-- schema: skip -->
 
@@ -198,12 +198,11 @@ provenance = { repository = "github.com/sigstore/sigstore-js" }
 `repository` is `github.com/owner/repo` or `gitlab.com/group/project`. A later
 install must show provenance from that repository, so a release published from
 another repository fails. A package that stops publishing provenance fails too,
-rather than installing unchecked. The entry is recorded by `mise install`, not by
-`mise lock`, and only while `npm.provenance` or the paranoid `provenance`
-category is on. A version that is already
-installed is not verified again; reinstall it to check it against the entry. To add
-the pin to an existing revision 3 lockfile, run `mise lock --upgrade` and then
-`mise install --force`.
+rather than installing unchecked. The entry is recorded by `mise install`, not
+by `mise lock`, and only while `npm.provenance` or the paranoid `provenance`
+category is on. A version that is already installed is not verified again;
+reinstall it to check it against the entry. To add the pin to an existing
+version 3 lockfile, run `mise lock --upgrade` and then `mise install --force`.
 
 ## Platform keys
 
@@ -329,7 +328,7 @@ sidecar is missing.
 ## Complete lockfile generation
 
 By default, mise rebuilds the whole lockfile from the current requests and
-reuses unchanged artifacts. The older `merge` mode of
+reuses unchanged artifacts. The `merge` mode of
 [`lockfile_mode`](/configuration/settings.html#lockfile_mode) only updates
 entries as tools are installed:
 
@@ -370,7 +369,8 @@ It applies in both modes, including to `mise lock --global`, and it keeps only
 tools outside the active configuration. Configured tools are still refreshed,
 and stale versions, option variants for refreshed platforms, and dependency
 graphs are still removed. An option variant for a platform that the run does not
-resolve can remain while its version is current. `mise lock node` already keeps tools outside its filter.
+resolve can remain while its version is current. `mise lock node` already keeps
+tools outside its filter.
 
 ## Which lock entry a command reads {#runtime-resolution}
 

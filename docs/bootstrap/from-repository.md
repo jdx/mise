@@ -50,6 +50,14 @@ the command. Add `--dry-run` to preview, and `-E <env>` to select a
 [config environment](/configuration/environments.html), such as `-E work` for
 `mise.work.toml` in a bootstrap project or `config.work.toml` in global config.
 
+Cloning needs `git`, and an SSH URL such as `git@github.com:you/setup.git` also
+needs `ssh`. On a fresh machine that lacks them, mise offers to install them with
+the host package manager (apt, dnf, pacman, zypper, apk, Homebrew, winget,
+scoop, or Chocolatey) before it clones. Pass `--yes` to accept without being
+asked. The repository's own `[bootstrap.packages]` can't do this, because it has
+not been cloned yet. With `--dry-run`, mise reports what is missing instead of
+installing it.
+
 ## Bootstrap project (`--from`) {#a-bootstrap-project}
 
 A bootstrap project is a repository with a `mise.toml` and the source files it
@@ -119,14 +127,6 @@ checkout; a tag or a commit is refused. mise never moves an existing checkout
 to another branch: if it is on a different one, switch it with Git first.
 `--update` then fast-forwards the branch it is on. The same works for a setup
 repository and with [`mise bootstrap remote`](/bootstrap/remote.html).
-
-Cloning needs `git`, and an SSH URL such as `git@github.com:you/setup.git` also
-needs `ssh`. On a fresh machine that lacks them, mise offers to install them with
-the host package manager (apt, dnf, pacman, apk, zypper, Homebrew, scoop, or
-winget) before it clones. Pass `--yes` to accept without being asked. The
-repository's own `[bootstrap.packages]` can't do this, because it has not been
-cloned yet. With `--dry-run`, mise reports what is missing instead of
-installing it.
 
 The destination must be missing, empty, or already a Git checkout whose
 `origin` is the repository you name. Move an existing `~/.config/mise` aside

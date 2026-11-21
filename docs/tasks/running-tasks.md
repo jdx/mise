@@ -136,7 +136,7 @@ run = "./e2e/run"
 ```sh
 mise run --tag lint                # clippy and shellcheck
 mise run --tag lint --tag test     # every task tagged lint or test
-mise run --tag slow 'test:*'      # test:e2e, the only test:* task tagged slow
+mise run --tag slow 'test:*'       # test:e2e, the only test:* task tagged slow
 mise tasks ls --tag lint           # list them instead
 ```
 
@@ -193,6 +193,13 @@ These [`mise run`](/cli/run.html) flags change how a run proceeds:
 
 A task's own [`timeout`](/tasks/task-configuration.html#timeout) still limits
 its commands when you pass `--timeout`.
+
+The [`mise run` reference](/cli/run.html) lists the remaining flags. Among them
+are `--shell` for the shell that runs TOML tasks, `--no-deps` to skip
+[`[deps]` providers](/dev-tools/deps.html), `--lock-timeout` for tasks that
+wait on a [`lock`](/tasks/task-configuration.html#lock), and the flags for the
+[sandbox](/sandboxing.html), [secrets](/tasks/task-configuration.html#secrets),
+and the [artifact cache](/tasks/caching.html).
 
 ### When a task fails
 
@@ -429,24 +436,9 @@ mise run --affected --affected-explain --dry-run 'test:*'
 ```
 
 A task is also affected when a changed file is the config file that defines it
-or the script its `file` names. Symlinks in the task directory and in the
-leading directories of its `sources` are followed, as Git reports each file by
-its own path. A literal source that is a symlink matches its target too, but a
-glob that matches a link matches only the link's name; list the target, or the
-link literally, to catch edits to the target. A changed submodule counts as the
-files that changed in it, under its path, so `sources` match inside submodules
-like any other directory. mise can only look inside an initialized submodule:
-for one that is not checked out, Git reports just its path, so add that path
-itself (such as `sub`) to `sources` to catch the change. mise compares the
-commit the parent records for the submodule at the merge base with the one at
-the head, and adds the submodule's working tree only when it is checked out at
-that head; untracked files in such a submodule count even when its recorded
-commit did not change. Run from inside a submodule, `--affected` compares that
-submodule's own history. A separate checkout nested in the project, such as an
-ignored clone, counts its own changes.
-A task without `sources` might read any file, so mise runs it whenever anything
-changed. When nothing changed, `--affected` runs nothing. Dependencies of a
-selected task still run, and the usual
+or the script its `file` names. A task without `sources` might read any file,
+so mise runs it whenever anything changed. When nothing changed, `--affected`
+runs nothing. Dependencies of a selected task still run, and the usual
 [up-to-date check](#skip-tasks-that-are-up-to-date) still applies to every task;
 add `--force` to run them regardless.
 
@@ -464,6 +456,27 @@ Under a monorepo root (`monorepo_root = true`), `--affected` selects
 [projects](/tasks/workspace-graph.html#affected-tasks) instead, and runs the
 matching tasks in every affected project.
 
+### Symlinks and submodules in `sources` {#affected-symlinks-and-submodules}
+
+Symlinks in the task directory and in the leading directories of a task's
+`sources` are followed, as Git reports each file by its own path. A literal
+source that is a symlink matches its target too, but a glob that matches a link
+matches only the link's name; list the target, or the link literally, to catch
+edits to the target.
+
+A changed submodule counts as the files that changed in it, under its path, so
+`sources` match inside submodules like any other directory. mise can only look
+inside an initialized submodule: for one that is not checked out, Git reports
+just its path, so add that path itself (such as `sub`) to `sources` to catch
+the change. mise compares the commit the parent records for the submodule at
+the merge base with the one at the head, and adds the submodule's working tree
+only when it is checked out at that head; untracked files in such a submodule
+count even when its recorded commit did not change.
+
+Run from inside a submodule, `--affected` compares that submodule's own
+history. A separate checkout nested in the project, such as an ignored clone,
+counts its own changes.
+
 ## See how long tasks take
 
 mise records each task run in this project: its arguments, start time,
@@ -480,8 +493,8 @@ lint   8     0       6.05s   5.87s   ok
 test   10    2       62.04s  58.30s  failed
 ```
 
-The median counts only the runs that executed and succeeded.
-The median is a task's typical cost, so a person or an agent can tell which
+The median counts only the runs that executed and succeeded. It is a task's
+typical cost, so a person or an agent can tell which
 checks are slow before choosing what to run. `--json` prints the same data for
 scripts:
 

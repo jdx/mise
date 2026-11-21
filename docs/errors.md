@@ -74,7 +74,8 @@ commands skip that config without an error until you run `mise trust` on it.
 
 When `mise run` finds no tasks because a config in the current directory is
 untrusted or was declined, it prints
-`Config file(s) in <dir> are not trusted: <files>` instead. `mise doctor` reports an untrusted file only as
+`Config file(s) in <dir> are not trusted: <files>` instead. `mise doctor`
+reports an untrusted file only as
 `failed to load config: error parsing config file: <path>`; run
 `mise trust --show` to see the trust status of each config directory from the
 current one up.
@@ -89,6 +90,18 @@ your global config. In [paranoid mode](/paranoid.html), every project config
 needs trust, again each time it changes. See
 [Configuration trust](/security.html#configuration-trust) for which files need
 trust and which commands trust config for you.
+
+### `The environment file or script <path> is not trusted` {#untrusted-env-file}
+
+The `env_files` category of [paranoid mode](/paranoid.html#environment-files)
+is on, and config loads a dotenv file or sources a script that you have not
+approved, or that changed since you approved it. Read the file, then trust it by
+path. `mise trust` with no path also trusts the environment files that trusted
+configs read:
+
+```sh
+mise trust .env
+```
 
 ### `mise version <X> is required, but you are using <Y>` {#min-version}
 
@@ -286,6 +299,28 @@ Run `mise lock`, as the `hint:` line under the message says, and commit the
 updated `mise.lock`. To add entries for other platforms, such as your CI
 runners, see
 [Preparing platform entries](/dev-tools/mise-lock.html#preparing-platform-entries).
+
+### `Paranoid mode is enabled, refusing to install community-developed plugin` {#paranoid-plugin}
+
+The `plugins` category of [paranoid mode](/paranoid.html#plugins) is on, and
+mise had to install an asdf or vfox plugin from a short name. It refuses when
+the repository that name resolves to is not a plugin in mise's
+[registry](/registry.html) and is not in the `mise-plugins` GitHub
+organization. The warning above the error names the plugin and its repository.
+When a tool needs the plugin, `mise install` reports the error after
+`Plugin '<name>' installation failed:`.
+
+Read the plugin's source, then install it by its Git URL. Naming the URL is
+your decision to trust that repository:
+
+```sh
+mise plugins install example https://github.com/example/asdf-example
+```
+
+To share that choice with a project, list the plugin under
+[`[plugins]`](/configuration.html#plugins) and run `mise install`. The check
+also does not run with `--yes`, `MISE_YES=1`, in CI, or with
+`mise plugins install --force`.
 
 ## Running tools {#running-tools}
 

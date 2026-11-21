@@ -139,6 +139,10 @@ mise WARN  Required environment variable 'DATABASE_URL' is not defined. It must 
 Help: Set DATABASE_URL to your PostgreSQL connection string
 ```
 
+A value that a `_.file` or `_.source` directive loads also passes the check,
+even when the directive is in the same config file, so `required` can declare a
+variable that an untracked `.env` supplies.
+
 `required` cannot be combined with `value` or `default`.
 
 To mask a value in task output, including one a caller supplies for a
@@ -172,7 +176,9 @@ lower-precedence config file, or in the environment mise started with.
 | `$VAR`            | The value of `VAR`                                               |
 | `${VAR}`          | The same; use it before letters or digits, as in `${VAR}_suffix` |
 | `${VAR:-default}` | `default` when `VAR` is unset or empty                           |
+| `${VAR-default}`  | `default` only when `VAR` is unset; an empty `VAR` stays empty   |
 | `${VAR:-}`        | An empty string when `VAR` is unset, without a warning           |
+| `$$`              | A literal `$`                                                    |
 
 Expansion runs after template rendering, so a value can mix both. A variable
 that is not defined and has no default stays as written, and mise prints a
@@ -280,9 +286,11 @@ unquoted parts next to each other are joined with their quotes removed, so
 `'it'\''s'` is `it's`. A quote with no partner later on its line, as in
 `O'Brien`, is kept as written. A partner in a trailing comment still counts, so
 write `NAME="O'Brien" # owner's name`. Single-quote a value that must keep its
-own quotes, such as JSON: `CONFIG='{"debug": true}'`. A dotenv value can
-reference variables assigned earlier in the same file, then variables from the
-environment mise started with. JSON, YAML and TOML values are read literally, so a `$` stays a `$`. Set `expand = true` to let a file of
+own quotes, such as JSON: `CONFIG='{"debug": true}'`.
+
+A dotenv value can reference variables assigned earlier in the same file, then
+variables from the environment mise started with. JSON, YAML and TOML values
+are read literally, so a `$` stays a `$`. Set `expand = true` to let a file of
 any format reference values loaded before it, from earlier files or earlier
 `[env]` entries:
 

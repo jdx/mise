@@ -208,10 +208,13 @@ read.
 Removing the secret from the file does not help, because the earlier version
 still holds it, and encrypting the file only protects later saves. Rotate the
 secret, [remove the plaintext from history](#remove-plaintext-from-history),
-and encrypt the file before you save it again. To publish anyway, use [`--allow-plaintext-history`](#allow-plaintext-history),
-which skips this check along with the encryption check. Versions the origin
-already has are not read again. When the scan flags a harmless value, such as a
-placeholder in an app's config, list it in
+and encrypt the file before you save it again. To publish anyway, use
+[`--allow-plaintext-history`](#allow-plaintext-history), which skips this check
+along with the encryption check. Versions the origin already has are not read
+again.
+
+When the scan flags a harmless value, such as a placeholder in an app's config,
+list it in
 [`history.allow_secret_values`](/configuration/settings.html#history.allow_secret_values)
 in your global config instead of skipping the check:
 
@@ -220,9 +223,10 @@ in your global config instead of skipping the check:
 allow_secret_values = ["ctx7_api_key"]
 ```
 
-The scan then ignores that value when it is a whole value, never a key name or part of a longer value, and still checks the rest
-of every file. The scan is a safety net for obvious cases,
-not proof that a version is free of secrets.
+The scan then ignores that value where it is a whole value, not a key name or
+part of a longer value. A line that also holds another suspicious value is
+still refused, and the encryption check still runs. The scan is a safety net
+for obvious cases, not proof that a version is free of secrets.
 
 ### Allow plaintext history {#allow-plaintext-history}
 

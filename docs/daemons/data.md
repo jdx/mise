@@ -63,13 +63,13 @@ removing a worktree or cleaning ignored files deletes data stored inside it.
 Use `mise daemons ls --json` to locate a project's daemon data and check its
 size before you delete the project or a worktree. Each daemon row includes:
 
-| Field             | Value                                                                                     |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `root`            | Project directory                                                                         |
-| `data_dir`        | Resolved preset data directory (`null` for custom commands and provider consumers)        |
-| `state_dir`       | Directory with the generated config, state, and default data                              |
-| `data_size`       | Total size of default data under `state_dir` in bytes (excludes `data_dir` paths you set) |
-| `data_size_human` | The same size formatted for display                                                       |
+| Field             | Value                                                                                                                      |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `root`            | Project directory                                                                                                          |
+| `data_dir`        | Resolved data directory of a preset, or of a container with `data_mount` (`null` for other daemons and provider consumers) |
+| `state_dir`       | Directory with the generated config, state, and default data                                                               |
+| `data_size`       | Total size of default data under `state_dir` in bytes (excludes `data_dir` paths you set)                                  |
+| `data_size_human` | The same size formatted for display                                                                                        |
 
 Except for `data_dir`, these fields describe the whole project, so daemons of
 the same project report the same values.
@@ -150,3 +150,12 @@ A database's PID or lock file can also block removal. A PID file naming a live
 process blocks pruning; a stale PID does not. An unreadable marker, or one
 without a valid PID, counts as possibly active. Resolve the reported condition
 and run `mise daemons prune` again.
+
+## Next steps
+
+- [Service presets](/daemons/presets.html): the options that apply only when a
+  preset first initializes its data.
+- [Ports, URLs, and worktrees](/daemons/worktrees.html): how each worktree gets
+  its own namespace, ports, and state.
+- [Share daemons across projects](/daemons/sharing.html): keep one server and
+  its data for every checkout.

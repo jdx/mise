@@ -61,6 +61,10 @@ Requests carry these headers:
 | `mbx-cache-namespace` | The namespace for the operation. Servers must not require it on `GET /v1/capabilities` and `GET /v1/status` |
 | `Authorization`       | `Bearer <token>` when the deployment uses bearer or OIDC tokens                                             |
 
+The mise client also sends `Accept` on every request. It names the media type
+of the object the request reads or writes: the action-result, client-metadata,
+or directory media type, or `application/octet-stream` for a file blob.
+
 The URL prefix `/v1` is the protocol's major version. Compatible additions are
 advertised as capabilities and do not need a new URL prefix. An incompatible
 wire or integrity change requires a new major version; version 1 must not be
@@ -177,7 +181,9 @@ affect its result. Action schema version 1 defines `task`:
   "outputs": ["target/release/widget"],
   "root": "crates/widget",
   "source_hash": "3efccd93f9ade4f470d8902c431ae261a20c8f38191becd8906d21c4aed4ba8a",
-  "environment": { "PROFILE": "release" },
+  "environment": {
+    "PROFILE": "blake3:f9be0b9cfc027c59b579b9db23e196072ebda7436269e08953299246394d83e2"
+  },
   "vars": {},
   "tools": ["core:rust@1.92.0"],
   "os": "linux",
@@ -192,15 +198,15 @@ affect its result. Action schema version 1 defines `task`:
 | `task`            | string           | The task name                                                                                                                                                |
 | `phase`           | string           | `normal`, or `post` when the task runs as a `depends_post` dependency                                                                                        |
 | `run`             | array            | The task's `run` entries in declaration order. A script is a string; a task reference is an object such as `{ "task": "lint" }` or `{ "tasks": ["a", "b"] }` |
-| `args`            | array of strings | The task's arguments in order                                                                                                                                |
+| `args`            | array of strings | A value digest of each of the task's arguments, in order                                                                                                     |
 | `shell`           | string or null   | The task's shell override                                                                                                                                    |
 | `outputs`         | array of strings | Output patterns in declaration order, including `!` exclusions                                                                                               |
 | `root`            | string           | The task directory relative to the outermost config root; `""` for a task at that root                                                                       |
 | `source_hash`     | string           | A 64-character lowercase hexadecimal BLAKE3 digest over the source paths and contents, with no algorithm prefix                                              |
 | `dependency_keys` | array of strings | Cache keys of cached dependencies, sorted and deduplicated. Omitted when empty                                                                               |
-| `environment`     | object           | Variable name to value, or `null` for an unset variable                                                                                                      |
+| `environment`     | object           | Variable name to the value digest of its value, or `null` for an unset variable                                                                              |
 | `command_inputs`  | array of objects | One `{ "command", "stdout_hash", "stderr_hash" }` object per command input, in declaration order. Omitted when empty                                         |
-| `vars`            | object           | mise variable name to value                                                                                                                                  |
+| `vars`            | object           | mise variable name to the value digest of its value                                                                                                          |
 | `tools`           | array of strings | Resolved tools as `backend:name@version`, sorted                                                                                                             |
 | `os`              | string           | The client's operating system, such as `linux` or `macos`                                                                                                    |
 | `arch`            | string           | The client's architecture, such as `x86_64` or `aarch64`                                                                                                     |
@@ -209,13 +215,26 @@ Version strings are opaque and are never semantically ordered. Every action kind
 defines its own canonical fields and cacheability rules; a server may reject
 kinds it does not advertise.
 
-Secrets must not appear in an action descriptor. mise's client writes the
-resolved values of the task's `env` entries, of every variable named in
-`cache.env` or `task_config.global_env`, and of every mise variable visible to
-the task (config-level `[vars]` as well as task `vars`) into the descriptor
-verbatim, and uploads it to the remote CAS. `redactions` and `redact = true` are
-not applied. Only tasks that receive `secrets` grants are excluded from caching.
-Keep secret values out of those fields for any remotely cached task, and use
+A value digest is the string `blake3:` followed by the 64-character lowercase
+hexadecimal BLAKE3 hash of the value's UTF-8 bytes. The example's `PROFILE` is
+the digest of `release`. `environment` holds the task's own `env` entries and
+every variable named in `cache.env` or `task_config.global_env`; `vars` holds
+every mise variable visible to the task, from config-level `[vars]` and the
+task's `vars`.
+
+A single-task reference in `run` also carries its `args` (an array of strings)
+and `env` (an object of strings) when they are not empty, such as
+`{ "task": "lint", "args": ["--fix"], "env": { "CI": "1" } }`. These are plain
+values, not value digests.
+
+Secrets must not appear in an action descriptor, which the client uploads to
+the remote CAS. The mise client keeps argument and variable values out of it by
+writing value digests, and does not cache a task that receives `secrets`
+grants. It writes `run` entries, including the `args` and `env` of a task
+reference, and command-input text as they are, without applying `redactions`
+or `redact = true`. Value digests are not salted, so anyone who can read the
+descriptor can test a guessed value against one. Keep secrets out of `run`
+entries and command inputs for any remotely cached task, and use
 `pass_through_env` for credentials.
 
 `source_hash` binds the declared source paths and contents without uploading
@@ -255,7 +274,8 @@ path component and must not be empty, `.`, or `..`, contain a slash or NUL, or
 collide with another node. Absolute symlink targets and targets that escape the
 declared output root must be rejected during restoration. A `..` component is
 only allowed at the start of a target: after a named component, which may itself
-be a symlink, it cannot be checked without resolving the tree.
+be a symlink, it cannot be checked without resolving the tree. The mise client
+also refuses to restore a name that contains a backslash.
 
 The portable metadata set is file contents, directory structure, symbolic links,
 executable state, and the portable permission bits in `mode`. Owners, groups,
@@ -345,7 +365,9 @@ bytes.
 A server that advertises delegated transfers may return
 `307 Temporary Redirect` to a short-lived HTTPS URL. The redirect must grant
 access only to the requested immutable object. Clients must not forward the
-cache service's `Authorization` header to the delegated host.
+cache service's `Authorization` header to the delegated host. The mise client
+does not follow redirects, so a server that mise reads from must return the
+blob's content itself.
 
 Clients verify the complete uncompressed digest before they use downloaded
 content. A mismatch is a cache miss and produces a visible integrity warning.
@@ -395,7 +417,10 @@ and `If-None-Match: *`. The server returns:
 - `413 Content Too Large` when an advertised limit is exceeded.
 
 The mise client uploads every blob with a single `PUT` and treats a `412`
-response like `204`.
+response like `204`. It sends `Content-Length` and
+`Content-Type: application/octet-stream` for every CAS object, including action
+descriptors, client metadata, and directory objects, so a server cannot tell
+the kind of an object from the upload request.
 
 Large or resumable uploads use an upload session:
 
@@ -438,6 +463,15 @@ result, `409 Conflict` when a different result already owns the action key, or
 `412 Precondition Failed` when the immutable precondition is absent or fails.
 Concurrent valid writers may upload identical CAS data, but only one
 action-result commit wins.
+
+The mise client uploads the action descriptor, the client metadata, and every
+directory object and file blob the result references, each digest once, and then
+commits the action result. It treats `412` on the commit like `204`. Any other
+error status, including `409`, produces a warning and leaves the local cache
+entry in place. When it reads a result, it requires `version` 1, an `action`
+equal to the digest it requested, a `metadata` reference, and an `output_root`
+whenever the metadata lists roots; otherwise it warns and uses the local cache
+only.
 
 Ordinary cache writers do not receive delete permission. Administrative deletion
 uses a separately authorized endpoint and must remove the action-result mapping
@@ -488,6 +522,12 @@ contain sensitive values; see
 
 Version 1 does not define an error response body; clients act on the status
 code.
+
+The mise client retries timeouts, connection errors other than a failed DNS
+lookup, interrupted response bodies, and `408`, `429`, and `5xx` responses. It
+retries up to [`http_retries`](/configuration/settings.html#http_retries) times
+and waits about 200 ms, 1 s, 4 s, and then 15 s between attempts, each scaled by
+a random factor between 0.5 and 1. It does not read `Retry-After`.
 
 Cache unavailability, malformed objects, missing referenced objects, and
 integrity failures normally degrade to a cache miss so that local task execution

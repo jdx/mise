@@ -272,7 +272,11 @@ directory is rejected. Any other file is moved into the install directory and
 marked executable. Without a `url`, mise downloads nothing and `PostInstall`
 does the install, as in a build from source.
 
-### Authenticated downloads
+mise also calls `PreInstall` to record download URLs in `mise.lock` for other
+platforms. `RUNTIME` then describes the target platform, so build the URL from
+`RUNTIME` and do not probe the host or install anything in this hook.
+
+#### Authenticated downloads {#authenticated-downloads}
 
 When the artifact needs a token, return a `headers` table next to `url`:
 
@@ -293,14 +297,11 @@ end
 mise sends the headers only to the origin (scheme, host and port) of `url`. It
 drops them when a redirect leads to another origin, which is what signed
 storage URLs such as GitHub's need. A mirror configured with
-[`url_replacements`](/url-replacements) never receives them. A `headers` `Authorization` wins over
-netrc and the automatic GitHub token. Header values are kept out of debug
-output, and headers are not recorded in `mise.lock`. mise downloads the file
-with these headers, so checksums, retries and `mise lock` keep working.
-
-mise also calls `PreInstall` to record download URLs in `mise.lock` for other
-platforms. `RUNTIME` then describes the target platform, so build the URL from
-`RUNTIME` and do not probe the host or install anything in this hook.
+[`url_replacements`](/url-replacements.html) never receives them. A `headers`
+`Authorization` wins over netrc and the automatic GitHub token. Header values
+are kept out of debug output, and headers are not recorded in `mise.lock`. mise
+downloads the file with these headers, so checksums, retries and `mise lock`
+keep working.
 
 #### Verify downloads {#verify-downloads}
 
@@ -414,7 +415,7 @@ end
 ```
 
 `mise.cache` is a mise addition, so load it with `pcall` if the plugin also
-runs on the vfox CLI or on older mise releases.
+runs on the vfox CLI.
 
 ### PostInstall {#postinstall-hook}
 
@@ -564,7 +565,7 @@ choose a version or install a tool the project does not configure; an
 unconfigured one can still come from the existing `PATH`. Do not list the
 plugin's own tool.
 
-Users can add more with the [`depends` tool option](/dev-tools/#tool-dependencies);
+Users can add more with the [`depends` tool option](/dev-tools/tool-options.html#tool-dependencies);
 mise combines both lists. Backend plugins declare `depends` the same way.
 
 ### System dependencies {#system-dependencies}
@@ -620,14 +621,13 @@ Each entry sets exactly one check:
 - `packages`: the package that provides the dependency, for each package
   manager that has one. Keys are any package manager mise knows, such as
   `brew`, `brew-cask`, `apt`, `dnf`, `zypper`, `pacman`, `aur`, `apk`, `nix`,
-  `choco`, `flatpak`, `flatpak-user`, `macports`, `mas`, `scoop`, `snap`, `winget`, or an installed package
-  manager plugin's name. mise uses the first available manager that has an
-  entry. For a list of names, `apt` installs the first one it offers, and the
-  other managers use the first entry.
+  `choco`, `flatpak`, `flatpak-user`, `macports`, `mas`, `scoop`, `snap`,
+  `winget`, or an installed package manager plugin's name. mise uses the first
+  available manager that has an entry. For a list of names, `apt` installs the
+  first one it offers, and the other managers use the first entry.
 
 A passing check is enough: mise does not care how the dependency was installed,
-and uses `packages` only to install what is missing. Older mise versions ignore
-`systemDependencies`.
+and uses `packages` only to install what is missing.
 
 ## Tool options {#tool-options}
 
@@ -661,21 +661,14 @@ end
 The install, environment and uninstall hooks, and the commands they run, also
 see each option as an environment variable named `MISE_TOOL_OPTS__` and the key
 in uppercase, such as `MISE_TOOL_OPTS__BUNDLED`. Arrays and tables appear there
-in TOML syntax. Plugins written before `ctx.options` existed read these
-variables; new plugins should use `ctx.options`. See
-[Plugins](/plugins.html#tool-options) for how users set options.
+in TOML syntax. Prefer `ctx.options` in Lua, and use the variables in the
+commands a hook runs. See [Plugins](/plugins.html#tool-options) for how users
+set options.
 
 ## Testing {#testing-your-plugin}
 
-Use a separate test project and a plugin name that does not replace a tool you
-use:
-
-```sh
-mise plugins link example ./mise-example
-mise ls-remote example
-mise use example@1.10.0
-mise exec -- example --version
-```
+Run the [Quick start](#quick-start) commands in a separate test project, under
+a plugin name that does not replace a tool you use.
 
 To test a version file, use another empty project with no `[tools]` entry for
 the tool, so that the file decides the version:
@@ -729,9 +722,6 @@ isolated test setup.
 - mise installs only the main download from `PreInstall` and ignores
   `addition` entries. Install extra components in `PostInstall`, or declare
   them as tool dependencies.
-- mise ignores `headers` in `PreInstall`'s result. It applies its own
-  [`url_replacements`](/url-replacements.html) and
-  [`netrc`](/configuration/settings.html#netrc) settings to the download.
 - mise does not read `minRuntimeVersion`.
 - mise ignores `note` in the results of `Available` and `PreInstall`.
 - `ctx.args` is always empty.

@@ -42,6 +42,14 @@ The list of short tool names that mise knows, each mapped to one or more
 backends. For example, `aws-cli` maps to `aqua:aws/aws-cli`. See
 [Registry](/registry.html).
 
+### packslip {#packslip}
+
+A format in which a tool's publisher signs a release manifest that lists each
+download with its digest. The `packslip:` backend is built into mise: it
+verifies the signer and the download before it installs the tool. The registry
+prefers this backend for tools that publish packslip releases. See
+[packslip backend](/dev-tools/backends/packslip.html).
+
 ### Plugin {#plugin}
 
 An extension, written in Lua or as legacy asdf shell scripts, that adds a tool,
@@ -104,7 +112,7 @@ The version file that asdf uses, with one tool per line, such as
 Settings for one tool entry, such as a download URL, an asset pattern, `os`, or
 a `postinstall` command, written as a table:
 `node = { version = "24", postinstall = "corepack enable" }`. See
-[Tool options](/dev-tools/#tool-options).
+[Tool options](/dev-tools/tool-options.html).
 
 ### Tool alias {#tool-alias}
 
@@ -131,6 +139,13 @@ to GitHub. Turn it off with
 [`use_versions_host`](/configuration/settings.html#use_versions_host). See
 [A new release is not listed](/troubleshooting.html#new-version-of-a-tool-is-not-available).
 
+### aube {#aube}
+
+A Node.js package manager that is embedded in mise. The `npm` backend installs
+`npm:` tools with it by default, so installing them needs neither Node.js nor
+npm. To use npm, pnpm, or Bun instead, see
+[Choosing an installer](/dev-tools/backends/npm.html#choosing-an-installer).
+
 ## Configuration {#configuration}
 
 ### mise.toml {#mise-toml}
@@ -149,6 +164,20 @@ Your personal overrides for a project's `mise.toml`. Keep it out of Git with
 `~/.config/mise/config.toml`, which applies in every directory. `mise use -g`
 writes to it, and project config overrides it. See
 [Global and system config](/configuration.html#global-config).
+
+### System config {#system-config}
+
+Config in `/etc/mise`, such as `/etc/mise/config.toml`, that applies to every
+user on the machine. It has the lowest precedence, so global and project config
+override it. See [Global and system config](/configuration.html#global-config).
+
+### conf.d {#conf-d}
+
+A directory of `*.toml` fragments that splits config by topic, such as
+`~/.config/mise/conf.d/git.toml`. mise loads the fragments in alphabetical
+order, before the `config.toml` next to `conf.d`, which overrides them.
+Project, global, and system config directories can each have one. See
+[Split config with conf.d](/configuration.html#conf-d).
 
 ### Config file precedence {#config-file-precedence}
 
@@ -187,6 +216,14 @@ set in global config. See [Settings](/configuration/settings.html).
 Values such as <code v-pre>{{ env.HOME }}</code> or
 <code v-pre>{{ arch() }}</code> that mise renders when it reads a config file.
 See [Tera templates](/templates.html).
+
+### Vars {#vars}
+
+Values defined under `[vars]` that [Tera templates](#templates) read as
+<code v-pre>{{ vars.NAME }}</code>, such as a version number that several
+entries share. Use them for values that mise needs to render config. Unlike
+`[env]` values, mise does not export them to commands. See
+[Config variables](/configuration/vars.html).
 
 ### Directories {#directories}
 
@@ -241,6 +278,15 @@ An `[env]` entry with `tools = true`, which mise resolves after it adds tools
 to `PATH`, so the value can use them. See
 [Use values that tools set](/environments/#lazy-eval).
 
+### Secrets {#secrets}
+
+Values such as API keys and passwords that should stay out of plaintext config.
+mise secrets, which is experimental, fetches them from
+[fnox](/environments/secrets/fnox.html) and passes each one only to the tasks
+that list it in `secrets` and to commands run with `--secrets`. A SOPS file or
+an age value is decrypted into `[env]` instead, so everything that loads the
+config sees it. See [Secrets](/environments/secrets/).
+
 ### Redaction {#redaction}
 
 Replacing values marked `redact = true` with `[redacted]` in task output and
@@ -283,11 +329,33 @@ A task defined under `[tasks]` in `mise.toml`. See
 A task defined as an executable script in a task directory such as
 `mise-tasks/` or `.mise/tasks/`. See [File tasks](/tasks/file-tasks.html).
 
+### Remote task {#remote-task}
+
+A task whose `file` is an `https://` or `git::` URL instead of a local path.
+mise downloads the script, caches it, and runs it, so use only sources you
+trust. See [Remote tasks](/tasks/toml-tasks.html#remote-tasks).
+
+### Usage spec {#usage-spec}
+
+A description of a task's arguments and flags in the
+[usage](https://usage.jdx.dev) format, written in a TOML task's `usage` field
+or in `#USAGE` comments in a file task. mise parses the command line against
+it, which gives the task validation, `--help` output, and shell completions,
+and passes each value to the script as a `usage_*` environment variable. See
+[Task arguments](/tasks/task-arguments.html).
+
 ### Task dependencies {#task-dependencies}
 
 The order between tasks: `depends` runs other tasks first, `depends_post` runs
 them after, and `wait_for` waits for tasks that are already part of the run.
 See [Dependencies and execution order](/tasks/architecture.html).
+
+### Task template {#task-template}
+
+A named set of task properties under `[task_templates.<name>]`, such as a
+command, tools, and dependencies, that tasks inherit with `extends`. A template
+is not a task, so you cannot run it. It is unrelated to
+[Tera templates](#templates). See [Task templates](/tasks/templates.html).
 
 ### Monorepo root {#monorepo-root}
 
@@ -314,9 +382,53 @@ does not control. See [Safe mode](/security.html#safe-mode).
 
 ### Paranoid mode {#paranoid-mode}
 
-A setting that requires trust for every project config file, again whenever
-the file changes. It also turns off automatic trust, including in CI, and
-re-verifies provenance on every install. See [Paranoid mode](/paranoid.html).
+A setting with four categories that you turn on together or one at a time.
+`config` requires trust for every project config file, again whenever the file
+changes, and turns off automatic trust, including in CI. `env_files` requires
+the same approval for dotenv files and sourced scripts. `plugins` refuses to
+install an unregistered community plugin by short name. `provenance` re-verifies
+provenance on every install. See [Paranoid mode](/paranoid.html).
+
+### Sandbox {#sandbox}
+
+Limits on what a command started by `mise exec` or `mise run` can read, write,
+reach on the network, and see in its environment. Turn them on with `--deny-*`
+and `--allow-*` flags, the matching task properties, or the `sandbox.*`
+settings. The sandbox covers only that command: mise loads config, installs
+tools, and runs hooks outside it. See [Sandboxing](/sandboxing.html).
+
+### Checksum {#checksum}
+
+A digest of a downloaded file, such as a SHA-256 hash, that mise compares with
+an expected value. A match shows that the bytes are the expected ones, not who
+published them. A [lockfile](#lockfile) records checksums so that later
+installs get the same bytes. See
+[Download verification](/security.html#download-verification).
+
+### Provenance {#provenance}
+
+Signed evidence that ties a release artifact to a signer or to the build that
+produced it: SLSA provenance, Cosign and Minisign signatures, and GitHub
+artifact attestations. Which of these mise verifies depends on the backend and
+on what the project publishes. A lockfile records the provenance mise verified,
+and later installs reuse that result. See
+[Download verification](/security.html#download-verification).
+
+### Attestation {#attestation}
+
+A GitHub artifact attestation, one kind of [provenance](#provenance). The
+`aqua:` and `github:` backends and precompiled Ruby and Python verify one when
+a release publishes it, and mise requires it to name the artifact's repository.
+See [Download verification](/security.html#download-verification).
+
+### Minimum release age {#minimum-release-age}
+
+A delay, 24 hours by default, before mise picks a newly published version for a
+request such as `node@24` or `latest`. It gives a compromised release time to
+be noticed. It does not hold back an exact version or one recorded in
+`mise.lock`. Change it with
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age). See
+[Minimum release age](/security.html#minimum-release-age).
 
 ## Machine setup {#machine-setup}
 

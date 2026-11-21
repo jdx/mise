@@ -255,9 +255,12 @@ again: mise prompts only for that token and leaves the other two as they are.
 
 Edits apply without `--force`. mise reports an error when a block's markers
 are damaged, or when the target is a symlink; point the edit at the real file
-you want to change instead. Editing a root-owned file, such as `/etc/hosts`,
-requires running mise as root; see
+you want to change instead. A `[dotfiles]` edit to a root-owned file, such as
+`/etc/hosts`, requires running mise as root; see
 [Files outside your home directory](/dotfiles/managed.html#root-owned-files).
+To keep a block in such a file as a normal user, declare it under
+[`[bootstrap.files]`](/bootstrap/files.html#blocks), which makes the change
+with root privileges when the filesystem refuses it.
 
 Deleting an edit entry from your config leaves its block, line, or keys in the
 file. [`mise dot unapply`](/cli/dotfiles/unapply.html) removes a block
@@ -269,4 +272,6 @@ Edit entries merge across config files by target path and id, so a more local
 config replaces an edit with the same id. An edit declared in
 [a dotfile group](/dotfiles/groups.html#group-edits) applies only while that
 group is selected. The
-[reference](/dotfiles/reference.html#edit-keys) lists every edit key.
+[reference](/dotfiles/reference.html#edit-keys) lists every edit key. A key
+that belongs to a whole-file entry, such as `mode`, `variants`, or `enabled`,
+makes mise warn and ignore the edit entry.

@@ -56,7 +56,7 @@ import { data as showreel } from "./.vitepress/showreel.data";
         <span class="card-link">Read the bootstrap guide</span>
       </a>
     </div>
-    <p class="landing-note version-files-note">Already have <code>.tool-versions</code>, <code>.nvmrc</code>, or <code>.python-version</code> files? mise reads <code>.tool-versions</code> as it is and <a href="/dev-tools/versions.html#idiomatic-version-files">reads the others once you enable them</a>.</p>
+    <p class="landing-note version-files-note">Each part works without the others, so you can start with one tool or one task. A project that already has <code>.nvmrc</code> or <code>.python-version</code> can keep it: mise <a href="/dev-tools/versions.html#idiomatic-version-files">reads those files once you enable them</a>.</p>
   </div>
 
   <div class="landing-section landing-switch">
@@ -71,49 +71,11 @@ import { data as showreel } from "./.vitepress/showreel.data";
         </p>
         <ul class="landing-checklist">
           <li>Shell activation for bash, zsh, fish, Nushell, PowerShell, and <a href="/shell-setup.html">more</a></li>
-          <li>Shims for editors and scripts that never read your shell startup file</li>
+          <li>Shims for <a href="/ide-integration.html">editors</a> and scripts that never read your shell startup file</li>
           <li><code>mise exec</code> for scripts and containers, and a <a href="/continuous-integration.html">GitHub Action</a> for CI</li>
         </ul>
       </div>
       <ProjectSwitchDiagram />
-    </div>
-  </div>
-
-  <div class="landing-section landing-machine">
-    <div class="landing-machine-grid">
-      <figure class="bootstrap-diagram" aria-label="mise bootstrap applies one configuration to packages, repositories, dotfiles, and services">
-        <div class="bootstrap-source">
-          <span class="bootstrap-label">Declare your setup</span>
-          <strong>mise.toml</strong>
-          <code>[bootstrap.packages]<br>[bootstrap.repos]<br>[dotfiles]<br>[bootstrap.services]</code>
-        </div>
-        <div class="bootstrap-connector"><span aria-hidden="true">↓</span> <code>mise bootstrap</code></div>
-        <div class="bootstrap-resources">
-          <div><strong>Packages</strong><span>brew · apt · scoop · winget · choco</span></div>
-          <div><strong>Repositories</strong><span>Project checkouts</span></div>
-          <div><strong>Dotfiles</strong><span>Track · link · template</span></div>
-          <div><strong>Services</strong><span>Background processes</span></div>
-        </div>
-        <figcaption><code>mise bootstrap --dry-run</code> shows what will change before you apply it.</figcaption>
-      </figure>
-      <div>
-        <h2>Set up a machine with mise bootstrap</h2>
-        <p class="landing-lede">
-          Declare the packages, repositories, dotfiles, and services a machine
-          needs, then apply them with <code>mise bootstrap</code>. Run
-          <code>mise bootstrap --dry-run</code> first to see what will change. This
-          setup belongs to the machine, not to a project, so it usually lives
-          in your global config or in a repository of your own.
-        </p>
-        <ul class="landing-checklist">
-          <li><a href="/bootstrap/packages/">Packages</a> from apt, dnf, pacman, AUR, zypper, apk, nix, flatpak, snap, Homebrew formulae and casks, MacPorts, direct macOS app downloads, mas, scoop, winget, Chocolatey, and package manager plugins</li>
-          <li>Dotfiles tracked in place with history you can roll back and sync between machines, or applied as symlinks, copies, templates, and line or block edits</li>
-          <li>Remote hosts over SSH with <code>mise bootstrap remote</code></li>
-        </ul>
-        <p class="landing-note">Set up a new machine from a repository that holds your <code>mise.toml</code>:</p>
-        <div class="landing-inline-cmd"><code>mise bootstrap --from git@github.com:you/dotfiles.git</code></div>
-        <p class="landing-note"><a href="/bootstrap.html">Read the bootstrap guide</a> or the <a href="/dotfiles.html">dotfiles guide</a>.</p>
-      </div>
     </div>
   </div>
 
@@ -162,6 +124,80 @@ import { data as showreel } from "./.vitepress/showreel.data";
         <a href="/dev-tools/backends/vfox.html">vfox</a>, and
         <a href="/dev-tools/backends/">more</a>.
       </p>
+    </div>
+  </div>
+
+  <div class="landing-section landing-lock">
+    <div class="landing-lock-grid">
+      <figure class="landing-terminal lock-card" aria-label="An excerpt of a mise.lock file">
+        <div class="terminal-bar"><span>mise.lock</span><span>written by mise lock</span></div>
+        <div class="terminal-lines">
+          <div><span class="key">[[tools.node]]</span></div>
+          <div>version = <span class="ok">"24.21.0"</span></div>
+          <div>backend = <span class="ok">"core:node"</span></div>
+          <div>&nbsp;</div>
+          <div><span class="key">[tools.node."platforms.linux-x64"]</span></div>
+          <div>checksum = <span class="ok">"sha256:6e1db87ef58b…"</span></div>
+          <div>url = <span class="ok">"https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz"</span></div>
+          <div>&nbsp;</div>
+          <div><span class="key">[tools.node."platforms.macos-arm64"]</span></div>
+          <div>checksum = <span class="ok">"sha256:bed7eea5325e…"</span></div>
+          <div>url = <span class="ok">"https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-arm64.tar.gz"</span></div>
+        </div>
+      </figure>
+      <div>
+        <h2>Lock and verify what you install</h2>
+        <p class="landing-lede">
+          <code>node = "24"</code> in <code>mise.toml</code> is a request.
+          <code>mise lock</code> resolves it and writes the exact version,
+          download URL, and checksum for every platform your team uses to
+          <code>mise.lock</code>. Commit that file, and
+          <code>mise install --locked</code> installs exactly what it records.
+        </p>
+        <ul class="landing-checklist">
+          <li><a href="/security.html#download-verification">Checksums, signatures, and build attestations</a>, where a tool publishes them, checked by mise itself with no <code>gpg</code> or <code>cosign</code> to install</li>
+          <li>A <a href="/security.html#minimum-release-age">minimum release age</a>: by default mise skips versions published in the last 24 hours when it resolves a request</li>
+          <li><a href="/security.html#configuration-trust">Configuration trust</a>: a config that can run code loads only after you approve it</li>
+        </ul>
+        <p class="landing-note"><a href="/dev-tools/mise-lock.html">Read the lockfile guide</a> or the <a href="/security.html">security overview</a>.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="landing-section landing-machine">
+    <div class="landing-machine-grid">
+      <div>
+        <h2>Set up a machine with mise bootstrap</h2>
+        <p class="landing-lede">
+          Declare the packages, repositories, dotfiles, and services a machine
+          needs, then apply them with <code>mise bootstrap</code>. This setup
+          belongs to the machine, not to a project, so it usually lives in your
+          global config or in a repository of your own.
+        </p>
+        <ul class="landing-checklist">
+          <li><a href="/bootstrap/packages/">Packages</a> from apt, dnf, pacman, Homebrew, scoop, winget, and other package managers</li>
+          <li><a href="/dotfiles.html">Dotfiles</a> tracked in place with history you can roll back, or applied as symlinks, copies, and templates</li>
+          <li><a href="/bootstrap/remote.html">Remote hosts</a> over SSH with <code>mise bootstrap remote</code></li>
+        </ul>
+        <p class="landing-note">Set up a new machine from a repository that holds your <code>mise.toml</code>:</p>
+        <div class="landing-inline-cmd"><code>mise bootstrap --from git@github.com:you/dotfiles.git</code></div>
+        <p class="landing-note"><a href="/bootstrap.html">Read the bootstrap guide</a> or the <a href="/dotfiles.html">dotfiles guide</a>.</p>
+      </div>
+      <figure class="bootstrap-diagram" aria-label="mise bootstrap applies one configuration to packages, repositories, dotfiles, and services">
+        <div class="bootstrap-source">
+          <span class="bootstrap-label">Declare your setup</span>
+          <strong>mise.toml</strong>
+          <code>[bootstrap.packages]<br>[bootstrap.repos]<br>[dotfiles]<br>[bootstrap.services]</code>
+        </div>
+        <div class="bootstrap-connector"><span aria-hidden="true">↓</span> <code>mise bootstrap</code></div>
+        <div class="bootstrap-resources">
+          <div><strong>Packages</strong><span>brew · apt · scoop · winget · choco</span></div>
+          <div><strong>Repositories</strong><span>Project checkouts</span></div>
+          <div><strong>Dotfiles</strong><span>Track · link · template</span></div>
+          <div><strong>Services</strong><span>Background processes</span></div>
+        </div>
+        <figcaption><code>mise bootstrap --dry-run</code> shows what changes before you apply it.</figcaption>
+      </figure>
     </div>
   </div>
 
@@ -224,6 +260,36 @@ import { data as showreel } from "./.vitepress/showreel.data";
         </div>
       </li>
     </ol>
+  </div>
+
+  <div class="landing-section landing-next">
+    <h2>Fit mise into your setup</h2>
+    <div class="next-grid">
+      <a href="/walkthrough.html">
+        <h3>Existing projects</h3>
+        <p>Add mise to a repository that already has version files, scripts, and CI.</p>
+      </a>
+      <a href="/continuous-integration.html">
+        <h3>Continuous integration</h3>
+        <p>Install the same tools and run the same tasks in GitHub Actions, GitLab CI, and other CI systems.</p>
+      </a>
+      <a href="/ide-integration.html">
+        <h3>Editors and IDEs</h3>
+        <p>Give your editor the project's tools and environment variables.</p>
+      </a>
+      <a href="/agents.html">
+        <h3>Coding agents</h3>
+        <p>Let an agent find and run the project's tools and tasks.</p>
+      </a>
+      <a href="/environments/secrets/">
+        <h3>Secrets</h3>
+        <p>Keep encrypted values next to the config and decrypt them when the environment loads.</p>
+      </a>
+      <a href="/tasks/monorepo.html">
+        <h3>Monorepos</h3>
+        <p>Give each package its own tools and tasks, and run them across the repository.</p>
+      </a>
+    </div>
   </div>
 
   <div class="landing-cta">

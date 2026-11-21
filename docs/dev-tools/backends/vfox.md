@@ -12,8 +12,8 @@ when the tool needs custom install logic.
 
 ## Requirements {#dependencies}
 
-The Lua interpreter is built into mise. A plugin may still run external commands
-or install software that needs system libraries, so read the plugin's
+mise needs nothing else to run a plugin. The plugin itself may run external
+commands or install software that needs system libraries, so read the plugin's
 requirements.
 
 ## Usage
@@ -96,7 +96,7 @@ plugin sets itself takes precedence while the request stays on the same origin.
 ## Tool options
 
 mise handles its own options, such as `version`, `install_env`, `depends`, `os`
-and `postinstall`; see [tool options](/dev-tools/#tool-options). Every other
+and `postinstall`; see [tool options](/dev-tools/tool-options.html). Every other
 option goes to the plugin, so check the plugin's README for the options it
 accepts. Plugin authors can read how options reach the hooks in
 [tool plugins](/tool-plugin-development.html).
@@ -119,7 +119,7 @@ plugin does not declare them itself. When a listed tool is also in `[tools]`,
 mise installs it first and puts it on `PATH` for the plugin's install commands.
 `depends` does not install a tool you have not configured; add it to `[tools]`,
 or have it on `PATH` already. See
-[tool dependencies](/dev-tools/#tool-dependencies); plugin authors declare their
+[tool dependencies](/dev-tools/tool-options.html#tool-dependencies); plugin authors declare their
 own with [`PLUGIN.depends`](/tool-plugin-development.html#depends).
 
 Implementation: [`src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).

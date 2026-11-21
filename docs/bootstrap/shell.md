@@ -84,8 +84,8 @@ shell's default files, and a file key sets one file:
 | `fish`         | fish  | `~/.config/fish/config.fish` | `activate`   | `mise activate fish \| source`         |
 
 The other mode adds or removes `--shims`. The `bash` and `zsh` shortcuts cover
-the login and interactive startup files above. They never write `~/.zshenv`, which zsh reads
-for every script; set `zshenv` explicitly if you want it.
+the login and interactive startup files above. They never write `~/.zshenv`,
+which zsh reads for every script; set `zshenv` explicitly if you want it.
 
 Every key takes one of these values:
 
@@ -223,11 +223,11 @@ login_shell = "fish"
 
 mise resolves the name when it checks or applies the setting, so after
 `bootstrap.packages` has installed the shell. It searches `PATH`, never the mise
-shims directory, then the usual package-manager locations (`/opt/homebrew/bin`,
-`/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `~/.linuxbrew/bin`,
-`/usr/bin`, and `/bin`), and uses the first executable it finds. The resolved
-path is what goes into `/etc/shells` and `chsh`, and what
-`mise bootstrap user status` shows (`resolved` in `--json`).
+shims directory, then the usual package-manager locations in this order
+(`~/.linuxbrew/bin`, `/opt/homebrew/bin`, `/usr/local/bin`,
+`/home/linuxbrew/.linuxbrew/bin`, `/usr/bin`, and `/bin`), and uses the first
+executable it finds. The resolved path is what goes into `/etc/shells` and
+`chsh`, and what `mise bootstrap user status` shows (`resolved` in `--json`).
 
 Shells from [package manager plugins](/bootstrap/packages/plugins.html) are
 installed after the login shell step in a full `mise bootstrap` run (see the

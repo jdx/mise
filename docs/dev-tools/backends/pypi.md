@@ -232,8 +232,7 @@ a numeric CPython minor or exact patch. mise resolves and installs that runtime
 as a private dependency of the tool; it does not add Python to the shell's
 active tools. The selected runtime is recorded as an ordinary `python` entry in
 the same lockfile scope, so commit the refreshed lockfile before using locked
-installs. This requires a mise version that supports the `python` PyPI-tool
-option.
+installs.
 
 ```toml
 [tools]
@@ -298,7 +297,7 @@ mean mise runs the `uvx` command.
 
 Set these on the tool's entry in `[tools]`, or inline, as in
 `'pypi:psf/black[extras=jupyter]@latest'`. Options every backend accepts are
-described under [tool options](/dev-tools/#tool-options).
+described under [tool options](/dev-tools/tool-options.html).
 
 | Option                   | Installer                 |
 | ------------------------ | ------------------------- |
