@@ -328,9 +328,12 @@ jobs:
           - run: ./scripts/test-check-glibc.sh
           # Online checks (action refs, known-vulnerable actions, impostor commits)
           # run here only; locally: JACTIONLINT_ONLINE=1 hk check --all
+          # lint:clippy is skipped here: the Clippy steps below run the same
+          # commands in their own target directories, after MSRV.
           - run: mise run lint
             env:
               HK_SKIP_STEPS: cargo-check
+              MISE_TASK_SKIP: lint:clippy
               JACTIONLINT_ONLINE: 1
               GITHUB_TOKEN: ${{ github.token }}
           # MSRV uses a separate target directory so its older compiler cannot

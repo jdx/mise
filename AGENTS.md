@@ -53,7 +53,8 @@ The same rule applies to `crates/vfox/embedded-plugins/`: those plugins are vend
 - Use `MISE_DEBUG=1` or `MISE_TRACE=1` environment variables to enable debug output (not `RUST_LOG`)
 
 ### Code Quality and Testing
-- `mise run lint` - Run all linting tasks (hk; does not run clippy — see below)
+- `mise run lint` - Run all linting tasks (hk, plus Clippy with the flags CI uses)
+- `mise run lint:clippy` - Run only the Clippy passes
 - `mise run lint-fix` - Run linting and automatically fix issues
 - `mise run format` - Format code (part of CI task)
 - `mise run ci` - Run format, build, and test
@@ -66,8 +67,8 @@ The same rule applies to `crates/vfox/embedded-plugins/`: those plugins are vend
 ### Clippy Exclusions
 
 - Do not add `#[allow(clippy::...)]`, `#[expect(clippy::...)]`, Cargo lint levels set to `allow`, or `-A clippy::...` command-line flags.
-- Refactor the code so `cargo clippy --workspace --all-features --all-targets -- -D warnings` passes without exclusions.
-- `mise run lint` does not cover this: the clippy step in `hk.pkl` is disabled, and `cargo check` does not enforce `-D warnings`. CI runs clippy separately, so run the command above yourself before pushing Rust changes.
+- Refactor the code so `mise run lint:clippy` passes without exclusions. It runs the two Clippy commands of the CI lint job: `cargo clippy --ignore-rust-version -- -D warnings` and `cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings` (on Windows, the `windows-lint` command: `cargo clippy --workspace --all-targets --ignore-rust-version -- -D warnings`).
+- `mise run lint` includes `lint:clippy`, so run it before pushing Rust changes. The git pre-commit hook runs only the hk steps, which have no Clippy step, so a commit that passes the hook can still fail Clippy.
 - If a feature or fix needs a preparatory refactor to satisfy Clippy cleanly, put that refactor in a prerequisite PR and stack the behavior change on top of it.
 
 ### Documentation and Generation
@@ -197,7 +198,7 @@ Communique generates release notes from PR titles and descriptions, so write the
 2. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
 3. Never run e2e tests by executing them directly — always use the mise task
 
-`hk.pkl` defines `check` and `fix` steps and a git `pre-commit` hook that runs the same linters with auto-fix (`stash = "git"` preserves unstaged work). `hk install --mise` installs that hook. You can still run `mise run lint` / `mise run lint-fix` by hand; on Linux and macOS they run hk, but on Windows `lint-fix` runs only Clippy, oxfmt, and `cargo fmt`, so the other hk steps do not run there.
+`hk.pkl` defines `check` and `fix` steps and a git `pre-commit` hook that runs the same linters with auto-fix (`stash = "git"` preserves unstaged work). `hk install --mise` installs that hook. You can still run `mise run lint` / `mise run lint-fix` by hand. `mise run lint` runs hk and Clippy (`lint:clippy`); the hook does not run Clippy. On Linux and macOS `lint-fix` runs hk; on Windows it runs only Clippy, oxfmt, and `cargo fmt`, so the other hk steps do not run there.
 
 ### hk Agent Workflow
 

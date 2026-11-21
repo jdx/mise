@@ -29,7 +29,8 @@ you post it, and end it with a disclosure line in this form:
 
 For the maintainer's PRs, and agents that open them:
 
-1. CI passes, including [Clippy](#clippy), which `mise run lint` does not run.
+1. CI passes, including [Clippy](#clippy), which `mise run lint` runs and the
+   pre-commit hook does not.
 2. The title follows the [title format](#pull-request-titles-and-descriptions),
    and the description explains the user-visible change. Both feed the release
    notes.
@@ -146,7 +147,7 @@ is defined. Tasks come from `tasks.toml`, file tasks under `xtasks/`, and the
 | Task                          | Alias           | What it does                                                         |
 | ----------------------------- | --------------- | -------------------------------------------------------------------- |
 | `mise run build`              | `b`             | Debug build, with all features except on Windows                     |
-| `mise run lint`               |                 | hk checks; does not run Clippy                                       |
+| `mise run lint`               |                 | hk checks and [Clippy](#clippy) (`lint:clippy`)                      |
 | `mise run lint-fix`           | `fix`, `format` | Applies hk's fixes                                                   |
 | `mise run test:unit`          |                 | `cargo test --all-features`                                          |
 | `mise run test:e2e <pattern>` | `e`, `e2e`      | Builds, then runs the [E2E tests](#e2e-tests) you select             |
@@ -175,19 +176,30 @@ mise exec -- hk check --pr  # check only the files your branch changed
 ```
 
 `hk install --mise` runs the same fixes as a Git pre-commit hook and stashes
-unstaged changes while it runs. On Windows, `lint-fix` runs only Clippy,
-oxfmt, and `cargo fmt`.
+unstaged changes while it runs. The hook runs the hk steps only, not Clippy.
+On Windows, `lint-fix` runs only Clippy, oxfmt, and `cargo fmt`.
 
 ### Clippy {#clippy}
 
-CI runs Clippy with warnings denied, and `mise run lint` does not run it.
-Before you push Rust changes, run:
+CI runs Clippy with warnings denied. `mise run lint` runs the same commands
+through the `lint:clippy` task; the pre-commit hook does not, because they take
+minutes. Before you push Rust changes, run `mise run lint`, or Clippy alone:
 
 ```sh
-cargo clippy --workspace --all-features --all-targets -- -D warnings
+mise run lint:clippy
 ```
 
-CI also runs Clippy with the default features and on Windows. Fix a warning by
+On Linux and macOS it runs the two commands of the CI lint job:
+
+```sh
+cargo clippy --ignore-rust-version -- -D warnings
+cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+```
+
+On Windows it runs the command of the CI `windows-lint` job,
+`cargo clippy --workspace --all-targets --ignore-rust-version -- -D warnings`.
+`#[cfg]` hides Windows-only code from Clippy on Linux, so only CI checks it
+unless you run the task on Windows. Fix a warning by
 changing the code. Do not add `#[allow(clippy::...)]`, `#[expect(clippy::...)]`,
 a Cargo lint level set to `allow`, or `-A clippy::...`. If the fix needs a
 preparatory refactor, put the refactor in its own PR first. `clippy.toml`

@@ -33,10 +33,9 @@ local linters = new Mapping<String, Step> {
       }
       depends = List("schema")
     }
-    //["clippy"] = (Builtins.cargo_clippy) {
-    //  check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
-    //  fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
-    //}
+    // Clippy is not a step here: the pre-commit hook runs every step, and the
+    // two Clippy passes CI runs take minutes. `mise run lint` runs them through
+    // the `lint:clippy` task in tasks.toml.
     ["cargo-fmt"] {
       glob = List("**/*.rs")
       check = new CommandSpec {
