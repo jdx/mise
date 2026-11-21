@@ -179,31 +179,6 @@ impl JavaPlugin {
         Ok(metadata)
     }
 
-    /// The catalog version of a SDKMAN Temurin hotfix. This runs while reading `.sdkmanrc`,
-    /// including from the shell hook, so it reads the cached catalog first, whatever its age,
-    /// and fetches only when that has no such release and mise is online. A failed fetch
-    /// leaves the caller to fall back to the computed version.
-    async fn temurin_catalog_version_for(&self, version: &str) -> Option<String> {
-        if let Ok(metadata) = self.java_metadata_ga_cache.get_cached()
-            && let Some(found) =
-                temurin_catalog_version(&metadata, version, &current_java_platform())
-        {
-            return Some(found);
-        }
-        // The shell hook must not wait on the network; `exec` and friends may, so an
-        // installed JDK keeps matching when the catalog cache is cold.
-        if Settings::get().offline() || running_hook_env() {
-            return None;
-        }
-        match self.fetch_java_metadata("ga").await {
-            Ok(metadata) => temurin_catalog_version(metadata, version, &current_java_platform()),
-            Err(err) => {
-                debug!("could not look up temurin {version} in the catalog: {err}");
-                None
-            }
-        }
-    }
-
     fn insert_java_metadata(
         metadata: &mut HashMap<String, JavaMetadata>,
         m: JavaMetadata,
@@ -614,17 +589,10 @@ impl Backend for JavaPlugin {
                 "tem" => "temurin",
                 _ => vendor, // either same vendor name or unsupported
             };
-            if vendor == "temurin" {
-                // The catalog shape of a hotfix build has changed before, so look the release
-                // up by its Java version rather than computing a build number.
-                let catalog = if is_temurin_hotfix(version) {
-                    self.temurin_catalog_version_for(version).await
-                } else {
-                    None
-                };
-                if let Some(version) = catalog.or_else(|| temurin_hotfix_version(version)) {
-                    return Ok(vec![format!("{vendor}-{version}")]);
-                }
+            if vendor == "temurin"
+                && let Some(version) = temurin_hotfix_version(version)
+            {
+                return Ok(vec![format!("{vendor}-{version}")]);
             }
             let mut version = version.split(['+', '-']).collect::<Vec<&str>>()[0];
             // if vendor is zulu, we can only match the major version
@@ -768,10 +736,10 @@ impl Backend for JavaPlugin {
     }
 }
 
-/// SDKMAN names a Temurin hotfix release with a fourth component, such as `26.0.2.1+1`.
-/// The catalog has no such version: it lists the hotfix as `26.0.2+101`, the hotfix number
-/// followed by the two-digit build. A `.0` fourth component marks a regular release and maps to
-/// the three-part version with its build number. Returns `None` for any other shape.
+/// SDKMAN names a Temurin release with a fourth component: a hotfix such as `26.0.2.1+1`, which
+/// the catalog lists under that same version, or a regular release such as `21.0.13.0+9`, where
+/// the zero is padding. A `.0` fourth component maps to the three-part version with its build
+/// number. Returns `None` for any other shape, so the version is used as it is.
 fn temurin_hotfix_version(version: &str) -> Option<String> {
     let (core, build) = version.split_once('+')?;
     let build: u32 = build.parse().ok()?;
@@ -785,53 +753,7 @@ fn temurin_hotfix_version(version: &str) -> Option<String> {
         // entry (`21.0.13+9.0.LTS`) without also matching a hotfix such as `21.0.13+101`.
         return Some(format!("{major}.{minor}.{patch}+{build}"));
     }
-    if build >= 100 {
-        return None;
-    }
-    Some(format!("{major}.{minor}.{patch}+{}", hotfix * 100 + build))
-}
-
-/// Whether a SDKMAN Temurin version has a component after the patch that is not zero, such as
-/// `26.0.2.1+1` or `27.0.1.0.2+1`. Those releases need a catalog lookup.
-/// Whether this run is the shell hook, which parses config on every prompt.
-fn running_hook_env() -> bool {
-    let args = crate::env::ARGS.read().unwrap();
-    mise_util::args::first_non_global_arg_idx_cached(&args)
-        .and_then(|idx| args.get(idx))
-        .is_some_and(|cmd| cmd == "hook-env")
-}
-
-fn is_temurin_hotfix(version: &str) -> bool {
-    let core = version.split_once('+').map_or(version, |(core, _)| core);
-    let parts = core.split('.').collect::<Vec<_>>();
-    parts.len() > 3 && parts[3..].iter().any(|p| *p != "0")
-}
-
-/// The catalog version of the Temurin release SDKMAN calls `version`, as `<core>+<build>`
-/// without the `.0.LTS` suffix. The catalog keeps Adoptium's own Java version for each entry
-/// (`25.0.5.1+2-LTS`), which names a release the same way SDKMAN does, whereas the build
-/// number in the catalog version has used more than one encoding for hotfixes (`+101`,
-/// `+100000002`). Returns `None` when no JDK entry matches.
-fn temurin_catalog_version(
-    metadata: &HashMap<String, JavaMetadata>,
-    version: &str,
-    platform: &Platform,
-) -> Option<String> {
-    metadata
-        .values()
-        // Only an entry whose key is the bare "temurin-<version>" on this platform
-        // can be selected by the install query (a musl feature is dropped on musl).
-        .filter(|m| {
-            m.vendor == "temurin"
-                && m.to_version_string(platform) == format!("temurin-{}", m.version)
-        })
-        .filter(|m| m.java_version.split('-').next() == Some(version))
-        .filter_map(|m| {
-            let (core, build) = m.version.split_once('+')?;
-            let digits: String = build.chars().take_while(char::is_ascii_digit).collect();
-            (!digits.is_empty()).then(|| format!("{core}+{digits}"))
-        })
-        .min()
+    None
 }
 
 /// Every metadata entry under its full version string, plus a shorthand entry like
@@ -1312,15 +1234,10 @@ mod tests {
     /// A numeric query must not bleed into a longer version: "11.0.1" selects
     /// "11.0.1" and its build numbers, never "11.0.10".
     #[test]
-    fn temurin_hotfix_versions_use_the_catalog_build_number() {
-        assert_eq!(
-            temurin_hotfix_version("26.0.2.1+1").as_deref(),
-            Some("26.0.2+101")
-        );
-        assert_eq!(
-            temurin_hotfix_version("21.0.12.1+1").as_deref(),
-            Some("21.0.12+101")
-        );
+    fn temurin_padded_versions_use_the_catalog_build_number() {
+        // a hotfix is listed under its own version, so it is left alone
+        assert_eq!(temurin_hotfix_version("26.0.2.1+1"), None);
+        assert_eq!(temurin_hotfix_version("25.0.5.1+2"), None);
         assert_eq!(temurin_hotfix_version("21.0.2+13"), None);
         assert_eq!(temurin_hotfix_version("26.0.2.1"), None);
         assert_eq!(
@@ -1329,144 +1246,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn temurin_catalog_version_follows_the_catalog_encoding() {
-        let entry = |version: &str, java_version: &str, image_type: &str| {
-            (
-                // the catalog keys a jre entry apart from the jdk one
-                match image_type {
-                    "jre" => format!("temurin-jre-{version}"),
-                    _ => format!("temurin-{version}"),
-                },
-                JavaMetadata {
-                    vendor: "temurin".to_string(),
-                    version: version.to_string(),
-                    java_version: java_version.to_string(),
-                    image_type: Some(image_type.to_string()),
-                    ..Default::default()
-                },
-            )
-        };
-        let metadata = HashMap::from([
-            entry("25.0.4+7.0.LTS", "25.0.4+7-LTS", "jdk"),
-            entry("25.0.4+101.0.LTS", "25.0.4.1+1-LTS", "jdk"),
-            entry("25.0.5+100000002.0.LTS", "25.0.5.1+2-LTS", "jdk"),
-            entry("25.0.5+100000002.0.LTS", "25.0.5.1+2-LTS", "jre"),
-            entry("17.0.21+100000002", "17.0.21.1+2", "jdk"),
-        ]);
-        let platform = current_java_platform();
-        let lookup = |v| temurin_catalog_version(&metadata, v, &platform);
-        // the older and the newer hotfix encodings both resolve
-        assert_eq!(lookup("25.0.4.1+1").as_deref(), Some("25.0.4+101"));
-        assert_eq!(lookup("25.0.5.1+2").as_deref(), Some("25.0.5+100000002"));
-        assert_eq!(lookup("17.0.21.1+2").as_deref(), Some("17.0.21+100000002"));
-        assert_eq!(lookup("25.0.5.1+3"), None);
-        // entries keyed with an "unknown" image type or a feature segment cannot be
-        // selected by the install query, so they are not offered
-        let odd = HashMap::from([
-            (
-                "temurin-unknown-30.0.1+100000002".to_string(),
-                JavaMetadata {
-                    vendor: "temurin".to_string(),
-                    version: "30.0.1+100000002".to_string(),
-                    java_version: "30.0.1.1+2".to_string(),
-                    image_type: None,
-                    ..Default::default()
-                },
-            ),
-            (
-                "temurin-31.0.1+100000002-musl".to_string(),
-                JavaMetadata {
-                    vendor: "temurin".to_string(),
-                    version: "31.0.1+100000002".to_string(),
-                    java_version: "31.0.1.1+2".to_string(),
-                    image_type: Some("jdk".to_string()),
-                    features: Some(vec!["musl".to_string()]),
-                    ..Default::default()
-                },
-            ),
-        ]);
-        assert_eq!(temurin_catalog_version(&odd, "30.0.1.1+2", &platform), None);
-        let glibc = Platform::parse("linux-x64").unwrap();
-        let musl = Platform::parse("linux-x64-musl").unwrap();
-        // the musl feature is dropped from the key on musl hosts only
-        assert_eq!(temurin_catalog_version(&odd, "31.0.1.1+2", &glibc), None);
-        assert_eq!(
-            temurin_catalog_version(&odd, "31.0.1.1+2", &musl).as_deref(),
-            Some("31.0.1+100000002")
-        );
-        // a regular release resolves too, though only hotfixes are looked up
-        assert_eq!(lookup("25.0.4+7").as_deref(), Some("25.0.4+7"));
-
-        // the result selects exactly that build in the catalog
-        let versions = [
-            "temurin-25.0.5+8.0.LTS",
-            "temurin-25.0.5+100000002.0.LTS",
-            "temurin-25.0.5+1000000021.0.LTS",
-        ];
-        assert_eq!(
-            match_versions(&versions, "temurin-25.0.5+100000002"),
-            ["temurin-25.0.5+100000002.0.LTS".to_string()]
-        );
-    }
-
-    /// `.sdkmanrc` parsing for Temurin hotfixes against a controlled catalog cache, so
-    /// nothing reaches the live catalog: the cache is fresh, which stops the fetch.
     #[tokio::test]
-    async fn sdkmanrc_temurin_hotfix_uses_the_cached_catalog_with_a_computed_fallback() {
-        let dir = tempfile::tempdir().unwrap();
-        let entry = |version: &str, java_version: &str| {
-            (
-                format!("temurin-{version}"),
-                JavaMetadata {
-                    vendor: "temurin".to_string(),
-                    version: version.to_string(),
-                    java_version: java_version.to_string(),
-                    image_type: Some("jdk".to_string()),
-                    ..Default::default()
-                },
-            )
-        };
-        let plugin = {
-            let mut plugin = JavaPlugin::new();
-            plugin.java_metadata_ga_cache =
-                CacheManagerBuilder::new(dir.path().join("java_metadata_ga.msgpack.z"))
-                    .with_fresh_duration(Some(std::time::Duration::from_secs(3600)))
-                    .build();
-            plugin
-                .java_metadata_ga_cache
-                .write(&HashMap::from([
-                    entry("25.0.4+101.0.LTS", "25.0.4.1+1-LTS"),
-                    entry("25.0.5+100000002.0.LTS", "25.0.5.1+2-LTS"),
-                ]))
-                .unwrap();
-            plugin
-        };
-        let parse = async |contents: &str| {
-            let path = dir.path().join(".sdkmanrc");
-            std::fs::write(&path, contents).unwrap();
-            plugin._parse_idiomatic_file(&path).await.unwrap()
-        };
-        // both encodings come from the catalog entry
-        assert_eq!(
-            parse("java=25.0.5.1+2-tem\n").await,
-            ["temurin-25.0.5+100000002"]
-        );
-        assert_eq!(parse("java=25.0.4.1+1-tem\n").await, ["temurin-25.0.4+101"]);
-        // a release the catalog lacks falls back to the computed version
-        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2+101"]);
-    }
-
-    #[test]
-    fn is_temurin_hotfix_needs_a_nonzero_component_after_the_patch() {
-        assert!(is_temurin_hotfix("26.0.2.1+1"));
-        assert!(is_temurin_hotfix("27.0.1.0.2+1"));
-        assert!(!is_temurin_hotfix("21.0.13.0+9"));
-        assert!(!is_temurin_hotfix("21.0.2+13"));
-    }
-
-    #[tokio::test]
-    async fn sdkmanrc_temurin_hotfix_maps_to_the_catalog_version() {
+    async fn sdkmanrc_temurin_versions_match_the_catalog() {
         let dir = tempfile::tempdir().unwrap();
         let parse = async |contents: &str| {
             let path = dir.path().join(".sdkmanrc");
@@ -1476,6 +1257,7 @@ mod tests {
                 .await
                 .unwrap()
         };
+        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2.1"]);
         assert_eq!(parse("java=21.0.2+13-tem\n").await, ["temurin-21.0.2"]);
         assert_eq!(parse("java=21.0.13.0+9-tem\n").await, ["temurin-21.0.13+9"]);
         assert_eq!(parse("java=8.0.512.0+9-tem\n").await, ["temurin-8.0.512+9"]);
