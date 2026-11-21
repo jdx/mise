@@ -105,6 +105,16 @@ other block that is not a whole mise config, such as an excerpt or a registry
 file, and `<!-- schema: invalid -->` above an example of a mistake, which the
 schema must then reject.
 
+The `quoted_messages_are_in_the_source` unit test reads `docs/errors.md` and
+fails when a message it quotes is no longer in the Rust source: every code
+span in a heading, and every code span in the body that is not a single word,
+a mise command line, or a config line. Write the parts that vary as
+`<placeholders>`, keep each code span on one line, and update the page when a
+message is reworded. For a message the test cannot find because mise builds it
+from several strings or a dependency words it, add
+``<!-- errors: unchecked `the message as quoted`: reason -->`` on its own
+line. The test does not find messages that are missing from the page.
+
 ## Voice and style
 
 - Write for a developer who knows their shell but not mise. Use "you", the
