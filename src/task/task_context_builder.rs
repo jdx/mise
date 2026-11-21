@@ -5,7 +5,7 @@ use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, 
 use crate::env;
 use crate::task::Task;
 use crate::task::task_helpers::canonicalize_path;
-use crate::toolset::{Toolset, ToolsetBuilder};
+use crate::toolset::{ToolSource, Toolset, ToolsetBuilder};
 use eyre::Result;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -179,6 +179,7 @@ impl TaskContextBuilder {
                 .with_config_files(task_config_files)
                 .with_args(tools)
                 .with_task_tool_args()
+                .with_task_tool_lockfile_owner(ToolSource::MiseToml(config_path.clone()))
                 .build(config)
                 .await?;
 

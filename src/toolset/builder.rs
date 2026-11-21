@@ -39,6 +39,7 @@ pub struct ToolsetBuilder {
     warn_overridden_lockfiles: bool,
     skip_runtime_env: bool,
     args_are_task_tools: bool,
+    task_tools_lockfile_owner: Option<ToolSource>,
 }
 
 impl ToolsetBuilder {
@@ -68,6 +69,14 @@ impl ToolsetBuilder {
     /// lock and running did not, and the two named different install dirs.
     pub fn with_task_tool_args(mut self) -> Self {
         self.args_are_task_tools = true;
+        self
+    }
+
+    /// The config that declares the task. Its lockfile pins the task's tools,
+    /// including for a monorepo subproject whose config is not in
+    /// `config.config_files`, which the default lookup would not read.
+    pub fn with_task_tool_lockfile_owner(mut self, owner: ToolSource) -> Self {
+        self.task_tools_lockfile_owner = Some(owner);
         self
     }
 
@@ -363,7 +372,10 @@ impl ToolsetBuilder {
                         // tool at a different version; reading only that config's
                         // lockfile would not find it. `mise x tool@1` is not declared
                         // by anything and keeps the owner scope below.
-                        _ if self.args_are_task_tools => LockfileScope::Default,
+                        _ if self.args_are_task_tools => self
+                            .task_tools_lockfile_owner
+                            .clone()
+                            .map_or(LockfileScope::Default, LockfileScope::Source),
                         Some(configured) if configured.source().path().is_some() => {
                             LockfileScope::Source(configured.source().clone())
                         }
@@ -642,6 +654,17 @@ mod tests {
             .find(|request| request.version() == "1")
             .unwrap();
         assert_eq!(task_request.lockfile_scope(), &LockfileScope::Default);
+
+        // A monorepo task reads the lockfile of the config that declares it.
+        let owner = ToolSource::MiseToml("/sub/mise.toml".into());
+        let mut ts = Toolset::default();
+        ToolsetBuilder::new()
+            .with_args(&["dummy@1".parse().unwrap()])
+            .with_task_tool_args()
+            .with_task_tool_lockfile_owner(owner.clone())
+            .load_runtime_args(&mut ts)
+            .unwrap();
+        assert_eq!(ts.versions[&ba].requests[0].lockfile_source(), Some(&owner));
 
         let source = ToolSource::Environment("MISE_DUMMY_VERSION".into(), "2".into());
         let mut ts = Toolset::new(source.clone());
