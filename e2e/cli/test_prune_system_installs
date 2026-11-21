@@ -46,7 +46,7 @@ assert_fail "test -d '$system_installs/tiny/1.0.0'"
 assert_directory_exists "$system_installs/tiny/2.1.0"
 assert_directory_exists "$user_installs/tiny/1.0.0"
 assert_directory_exists "$user_installs/tiny/1.1.0"
-assert "readlink $system_installs/tiny/latest" "./2.1.0"
+assert "readlink '$system_installs/tiny/latest'" "./2.1.0"
 assert_fail "test -L '$system_installs/tiny/1'"
 # dummy has no system install left, so its system shim goes too.
 assert_fail "test -e '$system_shims/dummy'"

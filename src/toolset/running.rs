@@ -54,12 +54,27 @@ pub(crate) fn processes_running_from(
     }
     let candidates = tvs
         .iter()
-        .map(|tv| Candidate {
-            path: tv.install_path(),
-            links_dir: tv.ba().installs_path().to_path_buf(),
+        .map(|tv| {
+            let path = tv.install_path();
+            let links_dir = links_dir_of(&path, tv.ba().installs_path());
+            Candidate { path, links_dir }
         })
         .collect::<Vec<_>>();
     scan(&candidates)
+}
+
+/// The directory holding the runtime links that may point at `install_path`.
+/// A `<tool>/<version>` installation keeps them beside it, which for a system
+/// or shared copy of a version is not the backend's own `installs_path`. An
+/// identity-layout installation sits in the install store, and its links are
+/// in the backend's tool directory.
+fn links_dir_of(install_path: &Path, backend_links_dir: &Path) -> PathBuf {
+    match install_path.parent() {
+        Some(parent) if crate::install_layout::resolver::dir_name_of(install_path).is_none() => {
+            parent.to_path_buf()
+        }
+        _ => backend_links_dir.to_path_buf(),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -388,6 +403,17 @@ mod tests {
             path: path.to_path_buf(),
             links_dir: path.parent().unwrap().to_path_buf(),
         }
+    }
+
+    #[test]
+    fn links_dir_of_a_system_copy_is_beside_it() {
+        let user = Path::new("/home/u/.local/share/mise/installs/tiny");
+        let system = Path::new("/usr/local/share/mise/installs/tiny/1.0.0");
+        assert_eq!(
+            links_dir_of(system, user),
+            Path::new("/usr/local/share/mise/installs/tiny")
+        );
+        assert_eq!(links_dir_of(&user.join("1.0.0"), user), user);
     }
 
     fn pids(found: &BTreeMap<PathBuf, Vec<RunningProcess>>, install: &Path) -> Vec<u32> {

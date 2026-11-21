@@ -6148,12 +6148,32 @@ pub trait Backend: Debug + Send + Sync {
         if !dryrun {
             crate::install_layout::resolver::guard_removal(&install_path)?;
         }
+        let was_incomplete = !dryrun && install_state::is_incomplete(tv.ba(), &tv.state_key());
         if !dryrun {
             // A removal in progress leaves a directory that is not the install it was, which a
             // check that takes no lock must not read as complete; the marker is cleared below.
             install_state::mark_incomplete(tv.ba(), &tv.state_key())?;
         }
-        if dryrun || !remove_system_install_with_sudo(tv, &install_path)? {
+        let removed_with_sudo = if dryrun {
+            false
+        } else {
+            match remove_system_install_with_sudo(tv, &install_path) {
+                Ok(removed) => removed,
+                Err(err) => {
+                    // The root helper moves the installation away before deleting anything,
+                    // so one still in place was not touched (sudo was unavailable or
+                    // refused) and is as complete as it was.
+                    if !was_incomplete && install_path.exists() {
+                        install_state::clear_incomplete_marker_best_effort(
+                            tv.ba(),
+                            &tv.state_key(),
+                        );
+                    }
+                    return Err(err);
+                }
+            }
+        };
+        if !removed_with_sudo {
             rmdir(&install_path)?;
         }
         if !dryrun {

@@ -272,7 +272,10 @@ pub async fn auto_prune() -> Result<()> {
             continue;
         };
         // Deferred pruning runs inside whatever command came next, which must
-        // not stop to ask for a sudo password.
+        // not stop to ask for a sudo password. `upgrade` does not schedule a
+        // version that needs sudo, but a receipt can still get here: the
+        // directory may have become root-owned since, or the receipt was
+        // written by a mise from before that check.
         if install_path.exists() && needs_sudo_to_remove(install_path) {
             warn!(
                 "not removing {display} automatically because it needs sudo; remove it with `mise prune --system`"
@@ -338,6 +341,12 @@ pub async fn auto_prune() -> Result<()> {
     }
     mpr.finish_progress();
     if install_state_changed {
+        // The removed paths say which install roots lost a version, so a system
+        // version's shims are rebuilt as well as the user's.
+        let removed_paths = entries_awaiting_reconciliation
+            .iter()
+            .map(|(_, entry)| entry.install_path.clone())
+            .collect::<Vec<_>>();
         let reconcile = async {
             let config = Config::reset().await?;
             // Resolved here and not through `get_toolset`, which would cache a
@@ -346,11 +355,10 @@ pub async fn auto_prune() -> Result<()> {
             let mut ts =
                 crate::toolset::Toolset::from(config.get_tool_request_set().await?.clone());
             ts.resolve(&config).await?;
-            crate::config::rebuild_shims_and_runtime_symlinks(
+            crate::config::rebuild_shims_and_runtime_symlinks_after_removal(
                 &config,
                 &ts,
-                &[],
-                crate::lockfile::LockfileUpdateMode::Normal,
+                &removed_paths,
             )
             .await
         }
