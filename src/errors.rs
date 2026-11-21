@@ -210,6 +210,9 @@ impl Error {
     }
 }
 
+#[cfg(test)]
+mod docs_reference;
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
