@@ -49,9 +49,18 @@ pub fn decode_spec_path(encoded: &str) -> eyre::Result<std::path::PathBuf> {
     Ok(path.into())
 }
 
+/// Drop a zsh registration that is still waiting for `compdef`.
+const DROP_PENDING_ZSH: &str = "if typeset -f __mise_pending_completions >/dev/null; then precmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\"); unfunction __mise_pending_completions; fi\n";
+
 pub(crate) fn clear(shell: &str) -> &'static str {
     match shell {
-        "bash" | "zsh" => {
+        "zsh" => {
+            concat!(
+                "if typeset -f __mise_pending_completions >/dev/null; then precmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\"); unfunction __mise_pending_completions; fi\n",
+                "if typeset -f __mise_clear_completions >/dev/null; then __mise_clear_completions; unset -f __mise_clear_completions; fi\n"
+            )
+        }
+        "bash" => {
             "if typeset -f __mise_clear_completions >/dev/null; then __mise_clear_completions; unset -f __mise_clear_completions; fi\n"
         }
         "fish" => {
@@ -153,11 +162,9 @@ fn registration(
     // `compdef`) and before registering.
     let mut output = String::new();
     if shell == Shell::Zsh {
-        // A registration still waiting for `compdef` belongs to the previous
-        // state; drop it before this one replaces it.
-        output.push_str(
-            "if typeset -f __mise_pending_completions >/dev/null; then precmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\"); unfunction __mise_pending_completions; fi\n",
-        );
+        if !commands.is_empty() && !compinit {
+            output.push_str(DROP_PENDING_ZSH);
+        }
         output.push_str(if commands.is_empty() {
             "if typeset -f __mise_clear_completions >/dev/null && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         } else if !compinit {
@@ -170,7 +177,12 @@ fn registration(
         output.push_str(clear(shell_name));
         return output;
     }
-    output.push_str(clear(shell_name));
+    // Inside the pending function the previous pending state is already gone.
+    output.push_str(clear(if shell == Shell::Zsh {
+        "bash"
+    } else {
+        shell_name
+    }));
     if shell == Shell::PowerShell {
         // PowerShell exposes registration but no public lookup. Preserve the
         // existing entry when its completion table is available; if a host
