@@ -272,6 +272,13 @@ used, and no tool stub that has run, still needs. mise records those files in
 that a running process started from. Run `mise ls --prunable` or
 `mise prune --dry-run` to see what it would delete.
 
+A recorded file that is deleted stops protecting its versions straight away,
+and mise forgets it a week later unless it comes back. mise also forgets a file
+that no mise command has loaded or run for
+[`prune.forget_unused_after`](/configuration/settings.html#prune.forget_unused_after)
+(90 days by default). A project you come back to after that is recorded again
+the next time you run mise in it, and installs what it needs.
+
 ## Automatic installation {#auto-install-mechanisms}
 
 When a configured tool is missing, mise can install it instead of failing.

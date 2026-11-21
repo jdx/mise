@@ -249,7 +249,9 @@ impl Toolset {
                     if Error::is_required_channel_resolution_err(&err) {
                         return Err(err);
                     }
-                    if ignorable(&err) {
+                    // A tracked project's failure is counted into the scan's
+                    // summary instead of warned about on its own.
+                    if ignorable(&err) || crate::config::count_quiet_tracked_problem() {
                         debug!("Failed to resolve tool version list for {ba}: {err}");
                     } else {
                         // warn_once: a command may resolve the same toolset more than
@@ -1127,7 +1129,10 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
     // Prune also passes offline=true: it only protects installed versions, so
     // remote resolution can never affect the outcome and just adds latency.
     let tracked = config.get_tracked_config_files().await?;
+    let projects = crate::config::TrackedProjects::new(&tracked);
     let mut workspace_graphs = crate::config::WorkspaceGraphCache::new();
+    // Many projects lock the same versions, and each lookup reads the install catalogs.
+    let mut installs_matching = HashMap::new();
     for (done, (path, cf)) in tracked.clone().into_iter().enumerate() {
         // Without the animated display each message is a separate log line, so
         // a long list of configs would flood CI logs and piped output.
@@ -1174,12 +1179,15 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
                                 .platforms
                                 .get(&crate::platform::Platform::current().to_key())
                                 .and_then(|p| p.checksum.clone());
-                            for (dir, checksum) in
-                                crate::install_layout::resolver::installs_matching(
-                                    &backend_name,
-                                    &tool.version,
-                                )
-                            {
+                            let installs = installs_matching
+                                .entry((backend_name.clone(), tool.version.clone()))
+                                .or_insert_with(|| {
+                                    crate::install_layout::resolver::installs_matching(
+                                        &backend_name,
+                                        &tool.version,
+                                    )
+                                });
+                            for (dir, checksum) in installs.iter().cloned() {
                                 if pinned.is_none() || checksum == pinned {
                                     needed
                                         .entry((String::new(), dir))
@@ -1196,7 +1204,7 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
                         }
                     }
                 }
-                Err(err) => warn!(
+                Err(err) => crate::config::tracked_warn!(
                     "error loading tracked lockfile {}: {err:#}",
                     lockfile_path.display()
                 ),
@@ -1215,9 +1223,10 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
         };
         // A tool version that no longer parses is skipped like a config that no
         // longer parses, so one broken project does not stop the whole prune.
+        let project = projects.around(&cf);
         let mut requests = match requests {
             Ok(requests) => {
-                crate::config::route_project_tool_aliases(config, &tracked, &cf, requests)
+                crate::config::route_project_tool_aliases(config, &project, &cf, requests)
             }
             Err(err) => {
                 crate::config::report_tracked_config_error(&path, &err);
@@ -1242,7 +1251,7 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
         crate::daemons::glue::load(&files)?.add_tool_requests(&mut requests)?;
         // Tools scoped to a task are still referenced by the config.
         let (task_requests, task_templated) =
-            crate::config::task_tool_requests(config, &tracked, &cf, &mut workspace_graphs);
+            crate::config::task_tool_requests(config, &project, &cf, &mut workspace_graphs);
         for tvr in task_requests {
             requests.add_version(tvr, &cf.source());
         }
@@ -1276,7 +1285,7 @@ pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Resul
         let stub = match crate::tool_stub::ToolStubFile::from_file(&path) {
             Ok(stub) => stub,
             Err(err) => {
-                warn!(
+                crate::config::tracked_warn!(
                     "error loading tracked tool stub {}: {err:#}",
                     display_path(&path)
                 );
@@ -1286,7 +1295,7 @@ pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Resul
         let tr = match stub.to_tool_request(&path) {
             Ok(tr) => tr,
             Err(err) => {
-                warn!(
+                crate::config::tracked_warn!(
                     "error resolving tracked tool stub {}: {err:#}",
                     display_path(&path)
                 );
@@ -1296,7 +1305,7 @@ pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Resul
         let mut ts = Toolset::new(ToolSource::ToolStub(path.clone()));
         ts.add_version(tr);
         if let Err(err) = ts.resolve_with_opts(config, &opts).await {
-            warn!(
+            crate::config::tracked_warn!(
                 "error resolving tracked tool stub version {}: {err:#}",
                 display_path(&path)
             );

@@ -77,6 +77,14 @@ pub use command_wrapper::{CommandWrapper, CommandWrapperOptions};
 type AliasMap = IndexMap<String, Alias>;
 pub type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 
+/// `warn!` for a problem with a tracked config or stub: see [`report_tracked_problem`].
+macro_rules! tracked_warn {
+    ($($arg:tt)*) => {
+        $crate::config::report_tracked_problem(&format!($($arg)*))
+    };
+}
+pub(crate) use tracked_warn;
+
 /// Whether the config root of the config at `path` sets `tool_config.locked`,
 /// looking the root up among `config_files`. Callers that load more configs
 /// than [`Config`] does, such as the sibling configs of a monorepo lockfile,
@@ -1593,11 +1601,49 @@ impl Config {
                 );
                 continue;
             }
-            match config_file::parse_detected(&path, detection).await {
-                Ok(cf) => {
+            // A command can read the tracked configs more than once (an upgrade, then
+            // the reshim after it), and a file that has not changed parses the same.
+            let stamp = std::fs::metadata(&path)
+                .ok()
+                .map(|m| (m.modified().ok(), m.len()));
+            let cached = stamp.and_then(|stamp| {
+                let parsed = TRACKED_PARSES.lock().unwrap();
+                parsed
+                    .get(&path)
+                    .filter(|(at, _)| *at == stamp)
+                    .map(|(_, cf)| cf.clone())
+            });
+            let parsed = match cached {
+                Some(cf) => cf,
+                None => {
+                    let parsed = config_file::parse_detected(&path, detection)
+                        .await
+                        .map_err(|err| {
+                            report_tracked_config_error(&path, &err);
+                        })
+                        .ok();
+                    if let Some(stamp) = stamp {
+                        TRACKED_PARSES
+                            .lock()
+                            .unwrap()
+                            .insert(path.clone(), (stamp, parsed.clone()));
+                    }
+                    if parsed.is_none() {
+                        continue;
+                    }
+                    parsed
+                }
+            };
+            match parsed {
+                Some(cf) => {
                     config_files.insert(path, cf);
                 }
-                Err(err) => report_tracked_config_error(&path, &err),
+                // Warned about when it was first read.
+                None if count_quiet_tracked_problem() => {}
+                None => debug!(
+                    "skipping tracked config that failed to load: {}",
+                    display_path(&path)
+                ),
             }
         }
         Ok(config_files)
@@ -8535,6 +8581,92 @@ mod write_target_tests {
     }
 }
 
+/// The tracked configs by the directories a lookup for a project can reach them from, so a
+/// scan of every tracked project reads the few configs at and above each one rather than
+/// comparing each project with every tracked config.
+pub(crate) struct TrackedProjects<'a> {
+    tracked: &'a ConfigMap,
+    /// The root of each tracked config, by its position in `tracked`.
+    roots: Vec<PathBuf>,
+    /// Tracked global configs, which every project sees.
+    globals: Vec<usize>,
+    by_dir: HashMap<PathBuf, Vec<usize>>,
+}
+
+impl<'a> TrackedProjects<'a> {
+    pub(crate) fn new(tracked: &'a ConfigMap) -> Self {
+        let names = DEFAULT_CONFIG_FILENAMES
+            .iter()
+            .filter_map(|name| {
+                let pattern = glob::Pattern::new(name).ok()?;
+                Some((Path::new(name).components().count(), pattern))
+            })
+            .collect::<Vec<_>>();
+        let options = glob::MatchOptions {
+            require_literal_separator: true,
+            ..Default::default()
+        };
+        let mut index = Self {
+            tracked,
+            roots: Vec::with_capacity(tracked.len()),
+            globals: vec![],
+            by_dir: HashMap::new(),
+        };
+        for (i, path) in tracked.keys().enumerate() {
+            let root = config_file::config_root::config_root(path);
+            index.roots.push(root.clone());
+            if is_global_config(path) {
+                index.globals.push(i);
+                continue;
+            }
+            // A project's layers and cascaded task config come from the configs whose root is
+            // its root or above, as given or with symlinks resolved.
+            let mut dirs = vec![file::desymlink_path_cached(&root), root];
+            // `configs_at_root` finds a config by the directory its file name is joined to.
+            let components = path.components().collect::<Vec<_>>();
+            for (count, pattern) in &names {
+                let Some(split) = components.len().checked_sub(*count).filter(|s| *s > 0) else {
+                    continue;
+                };
+                let name = components[split..].iter().collect::<PathBuf>();
+                if pattern.matches_path_with(&name, options) {
+                    dirs.push(components[..split].iter().collect());
+                }
+            }
+            for dir in dirs.into_iter().unique() {
+                index.by_dir.entry(dir).or_default().push(i);
+            }
+        }
+        index
+    }
+
+    /// The tracked configs that the lookups for the project of `cf` can reach, in tracked
+    /// order: the global ones, `cf`, and those at and above its root.
+    pub(crate) fn around(&self, cf: &Arc<dyn ConfigFile>) -> ConfigMap {
+        let dir = config_file::config_root::config_root(cf.get_path());
+        let resolved = file::desymlink_path_cached(&dir);
+        let mut found = self.globals.iter().copied().collect::<BTreeSet<_>>();
+        found.extend(self.tracked.get_index_of(cf.get_path()));
+        for ancestor in dir.ancestors().chain(resolved.ancestors()) {
+            found.extend(self.by_dir.get(ancestor).into_iter().flatten());
+        }
+        // The cascade reads the configs at each root it found, which a root reached only with
+        // symlinks resolved is not an ancestor of as given.
+        let roots = found.iter().map(|&i| &self.roots[i]).collect::<Vec<_>>();
+        let at_roots = roots
+            .into_iter()
+            .flat_map(|root| self.by_dir.get(root).into_iter().flatten())
+            .copied()
+            .collect::<Vec<_>>();
+        found.extend(at_roots);
+        found
+            .into_iter()
+            .filter_map(|i| self.tracked.get_index(i))
+            .map(|(path, cf)| (path.clone(), Arc::clone(cf)))
+            .collect()
+    }
+}
+
 /// The configs a project's templates and aliases come from, nearest root last: the global
 /// configs as one layer, then the tracked configs under the same roots and the directories above
 /// `cf`, never those of the directory prune happens to run in.
@@ -8693,7 +8825,7 @@ pub(crate) fn task_tool_requests(
                     }
                 }
                 if candidates.is_empty() {
-                    warn!(
+                    tracked_warn!(
                         "task {} in {} extends template {name}, which was not found",
                         task.name,
                         display_path(&source)
@@ -8734,7 +8866,7 @@ pub(crate) fn task_tool_requests(
                 });
                 match request {
                     Ok(tvrs) => requests.extend(tvrs),
-                    Err(err) => warn!(
+                    Err(err) => tracked_warn!(
                         "error loading tool {tool} of task {} in {}: {err:#}",
                         task.name,
                         display_path(&source)
@@ -8834,7 +8966,7 @@ pub(crate) fn route_project_tool_aliases(
                     }
                 }
                 Some(Err(err)) => {
-                    warn!(
+                    tracked_warn!(
                         "error routing alias {} of {}: {err:#}",
                         ba.short,
                         display_path(cf.get_path())
@@ -8873,7 +9005,7 @@ fn project_workspace_task_defaults(
             |root| match discover_workspace_project_graph(config_files) {
                 Ok(graph) => Some(Arc::new(graph)),
                 Err(err) => {
-                    warn!(
+                    tracked_warn!(
                         "error discovering the workspace projects of {}: {err:#}",
                         display_path(root)
                     );
@@ -8904,14 +9036,14 @@ fn included_task_definitions(
     config_files: &ConfigMap,
 ) -> Vec<(Task, PathBuf)> {
     let includes = task_includes_for_dir(dir, config_files).unwrap_or_else(|err| {
-        warn!(
+        tracked_warn!(
             "error loading task includes of {}: {err:#}",
             display_path(dir)
         );
         vec![]
     });
     let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_else(|err| {
-        warn!(
+        tracked_warn!(
             "error loading task excludes of {}: {err:#}",
             display_path(dir)
         );
@@ -8925,7 +9057,7 @@ fn included_task_definitions(
                 Ok(Some(own_excludes)) => resolve_task_excludes(&root, &own_excludes),
                 Ok(None) => excludes.clone(),
                 Err(err) => {
-                    warn!(
+                    tracked_warn!(
                         "error loading task excludes of {}: {err:#}",
                         display_path(cf.get_path())
                     );
@@ -8940,7 +9072,7 @@ fn included_task_definitions(
             groups.push((own, own_excludes));
         }
         Ok(None) => {}
-        Err(err) => warn!(
+        Err(err) => tracked_warn!(
             "error loading task includes of {}: {err:#}",
             display_path(cf.get_path())
         ),
@@ -8978,7 +9110,7 @@ fn included_task_definitions(
                         })
                         .collect(),
                     Err(err) => {
-                        warn!(
+                        tracked_warn!(
                             "error reading task directory {}: {err:#}",
                             display_path(&include)
                         );
@@ -9011,7 +9143,9 @@ fn included_task_definitions(
                 };
                 match loaded {
                     Ok(loaded) => tasks.extend(loaded.into_iter().map(|task| (task, path.clone()))),
-                    Err(err) => warn!("error loading task file {}: {err:#}", display_path(&path)),
+                    Err(err) => {
+                        tracked_warn!("error loading task file {}: {err:#}", display_path(&path))
+                    }
                 }
             }
         }
@@ -9019,15 +9153,25 @@ fn included_task_definitions(
     tasks
 }
 
+/// The tracked configs this process has parsed, by path, with the modification time and
+/// size they were read at; `None` for a config that failed to parse.
+type TrackedParse = (
+    (Option<std::time::SystemTime>, u64),
+    Option<Arc<dyn ConfigFile>>,
+);
+static TRACKED_PARSES: Lazy<std::sync::Mutex<HashMap<PathBuf, TrackedParse>>> =
+    Lazy::new(Default::default);
+
 tokio::task_local! {
-    /// Set while work nobody asked for (the deferred tool-purgatory cleanup) loads
-    /// tracked configs: failures are counted instead of warned about one by one.
+    /// Set while a command scans every tracked config for something the user did not
+    /// ask about directly (which old versions an upgrade may remove, the deferred
+    /// tool-purgatory cleanup): problems are counted instead of warned about one by one.
     static TRACKED_ERRORS_QUIET: std::sync::atomic::AtomicUsize;
 }
 
-/// Runs `future` with tracked-config load failures demoted to debug output.
-/// Returns its result and how many tracked configs failed to load.
-pub(crate) async fn with_quiet_tracked_config_errors<T>(
+/// Runs `future` with problems in tracked configs and stubs demoted to debug output.
+/// Returns its result and how many problems there were.
+pub async fn with_quiet_tracked_config_errors<T>(
     future: impl std::future::Future<Output = T>,
 ) -> (T, usize) {
     TRACKED_ERRORS_QUIET
@@ -9042,18 +9186,36 @@ pub(crate) async fn with_quiet_tracked_config_errors<T>(
 
 /// Reports a tracked config that could not be loaded.
 pub(crate) fn report_tracked_config_error(path: &Path, err: &eyre::Report) {
-    let counted = TRACKED_ERRORS_QUIET
+    report_tracked_problem(&format!(
+        "error loading tracked config file {}: {err:#}",
+        display_path(path)
+    ));
+}
+
+/// Whether problems with tracked configs are being counted rather than shown, see
+/// [`with_quiet_tracked_config_errors`]. Counts the problem when they are.
+pub(crate) fn count_quiet_tracked_problem() -> bool {
+    TRACKED_ERRORS_QUIET
         .try_with(|count| count.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
-        .is_ok();
-    if counted {
-        debug!(
-            "error loading tracked config file {}: {err:#}",
-            display_path(path)
-        );
+        .is_ok()
+}
+
+/// Warns about a problem with a tracked config or stub, or counts it and logs it at
+/// debug level inside [`with_quiet_tracked_config_errors`].
+pub(crate) fn report_tracked_problem(message: &str) {
+    if count_quiet_tracked_problem() {
+        debug!("{message}");
     } else {
+        warn!("{message}");
+    }
+}
+
+/// The warning for the problems [`with_quiet_tracked_config_errors`] counted while doing
+/// `what`.
+pub fn warn_quiet_tracked_problems(count: usize, what: &str) {
+    if count > 0 {
         warn!(
-            "error loading tracked config file {}: {err:#}",
-            display_path(path)
+            "{what} ignored {count} problem(s) with tracked configs; run `mise prune --dry-run` to see them"
         );
     }
 }
