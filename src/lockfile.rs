@@ -4749,6 +4749,7 @@ pub(crate) async fn auto_lock_new_versions(
                             backend,
                             &platform_key,
                             msg,
+                            resolution.7,
                         ) {
                             provenance_errors.push(err);
                         } else {
@@ -4814,7 +4815,14 @@ fn deferred_provenance_resolution_error(
     backend: &str,
     platform_key: &str,
     resolution_error: &str,
+    status: LockResolutionStatus,
 ) -> Option<String> {
+    // The release source answered that this version has no build for the
+    // platform: no artifact is locked, so there is nothing left to verify.
+    // `mise lock` records the platform the same way, and later runs skip it.
+    if status == LockResolutionStatus::Unsupported {
+        return None;
+    }
     find_provenance_regression_baseline(existing_tools, version, backend, platform_key, None)?;
     Some(format!(
         "could not verify provenance for {short}@{version} on \

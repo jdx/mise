@@ -4303,10 +4303,26 @@ fn test_deferred_resolution_failure_blocks_when_baseline_present() {
         "github:owner/repo",
         &platform,
         "network unavailable",
+        LockResolutionStatus::Required,
     )
     .expect("failure must fail-closed while the provenance baseline is present");
     assert!(err.contains("could not verify provenance for repo@0.12.0"));
     assert!(err.contains("network unavailable"));
+
+    // A release that has no build for the platform locks no artifact, so it
+    // is recorded as unsupported instead of failing, as `mise lock` does.
+    assert!(
+        deferred_provenance_resolution_error(
+            Some(&tools),
+            "repo",
+            "0.12.0",
+            "github:owner/repo",
+            &platform,
+            "no asset for this platform",
+            LockResolutionStatus::Unsupported,
+        )
+        .is_none()
+    );
 
     // Without a provenance-bearing prior version, a failure stays best-effort.
     let no_baseline = vec![
@@ -4321,6 +4337,7 @@ fn test_deferred_resolution_failure_blocks_when_baseline_present() {
             "github:owner/repo",
             &platform,
             "network unavailable",
+            LockResolutionStatus::Required,
         )
         .is_none(),
         "no baseline means a resolution failure should remain non-blocking"
