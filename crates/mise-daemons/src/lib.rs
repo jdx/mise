@@ -394,7 +394,9 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 Reference {
                     source: source.clone(),
                     key: key.clone(),
-                    exports: reference_exports(&name, &daemon, &mut state),
+                    // Filled in once every local daemon has claimed its names, so
+                    // a reference never takes a variable from one declared later.
+                    exports: IndexMap::new(),
                 },
             );
             set.aliases.insert((root.clone(), name), key.clone());
@@ -496,6 +498,18 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // The first claimant of an ambiguous key or hostname kept it while it
     // looked unique; drop it now so neither side is handed the other's
     // endpoint, and so mise never advertises a hostname the proxy refuses.
+    let mut claimed: BTreeMap<String, String> = BTreeMap::new();
+    for ((_, name), reference) in set.references.iter_mut() {
+        if let Some(daemon) = set.daemons.get(&reference.key) {
+            reference.exports = reference_exports(
+                name,
+                daemon,
+                &state.keys,
+                &mut claimed,
+                &mut state.ambiguous,
+            );
+        }
+    }
     for reference in set.references.values_mut() {
         reference
             .exports
@@ -1474,7 +1488,9 @@ fn import(
 fn reference_exports(
     name: &str,
     daemon: &Daemon,
-    state: &mut LoadState,
+    local: &BTreeMap<String, String>,
+    claimed: &mut BTreeMap<String, String>,
+    ambiguous: &mut std::collections::BTreeSet<String>,
 ) -> IndexMap<String, String> {
     let mut exports = IndexMap::new();
     if daemon.port.is_none() && daemon.host.is_none() {
@@ -1483,12 +1499,19 @@ fn reference_exports(
     let Some(base) = env_var_base(name) else {
         return exports;
     };
-    if let Some(other) = state.keys.insert(base.clone(), name.to_string()) {
+    // A local daemon already owns the variable, and keeps it.
+    if let Some(other) = local.get(&base) {
+        warn_once!(
+            "[daemons] {other} and the reference {name} both map to {base}_PORT; the local daemon keeps it and the reference exports nothing. Rename one of them."
+        );
+        return exports;
+    }
+    if let Some(other) = claimed.insert(base.clone(), name.to_string()) {
         warn_once!(
             "[daemons] {other} and {name} both map to {base}_PORT; their names differ only by punctuation, so neither endpoint is exported. Rename one of them."
         );
-        state.ambiguous.insert(format!("{base}_PORT"));
-        state.ambiguous.insert(format!("{base}_URL"));
+        ambiguous.insert(format!("{base}_PORT"));
+        ambiguous.insert(format!("{base}_URL"));
         return exports;
     }
     if let Some(claim) = daemon.port {
@@ -3136,11 +3159,8 @@ mod tests {
         )]);
         let set = load(&config).unwrap();
         assert!(reference(&set, "search_api").exports.is_empty());
-        assert!(
-            !set.daemons["search-api"]
-                .exports
-                .contains_key("SEARCH_API_PORT")
-        );
+        // The local daemon keeps its variable, wherever it was declared.
+        assert_eq!(set.daemons["search-api"].exports["SEARCH_API_PORT"], "3100");
     }
 
     #[test]
@@ -3171,6 +3191,20 @@ mod tests {
         );
         plain_depends(&mut table);
         assert!(table["depends"][0].is_str());
+        // Both rendering modes: the name for a new pitchfork, the plain ID for
+        // an older one.
+        let state = runtime::State {
+            namespace: "shop".into(),
+            root: shop.clone(),
+            ..Default::default()
+        };
+        let named = runtime::render(&set.for_root(&shop), &state, true).unwrap();
+        assert!(named.contains("as = \"search\""), "{named}");
+        let plain = runtime::render(&set.for_root(&shop), &state, false).unwrap();
+        assert!(
+            plain.contains("depends = [\"") && !plain.contains("as ="),
+            "{plain}"
+        );
     }
 
     #[test]
