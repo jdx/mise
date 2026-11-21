@@ -473,23 +473,25 @@ fn source_changed_since(path: &Path, since: SystemTime) -> bool {
             let Ok(metadata) = metadata else {
                 return true;
             };
-            if metadata.modified().is_ok_and(|modified| modified > since) {
-                return true;
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::MetadataExt;
-                let changed = SystemTime::UNIX_EPOCH
-                    + Duration::new(
-                        metadata.ctime().max(0) as u64,
-                        metadata.ctime_nsec().clamp(0, 999_999_999) as u32,
-                    );
-                if changed > since {
-                    return true;
-                }
-            }
-            false
+            metadata.modified().is_ok_and(|modified| modified > since)
+                || status_changed_since(&metadata, since)
         })
+}
+
+#[cfg(unix)]
+fn status_changed_since(metadata: &fs::Metadata, since: SystemTime) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let changed = SystemTime::UNIX_EPOCH
+        + Duration::new(
+            metadata.ctime().max(0) as u64,
+            metadata.ctime_nsec().clamp(0, 999_999_999) as u32,
+        );
+    changed > since
+}
+
+#[cfg(not(unix))]
+fn status_changed_since(_metadata: &fs::Metadata, _since: SystemTime) -> bool {
+    false
 }
 
 fn value_digest(value: &str) -> String {

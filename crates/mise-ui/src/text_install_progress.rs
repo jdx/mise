@@ -98,7 +98,7 @@ impl Transfer {
         }
         let seconds = now.saturating_duration_since(self.started).as_secs_f64();
         let moved = self.done.saturating_sub(self.resumed_at);
-        (seconds > 0.5 && moved > 0).then(|| moved as f64 / seconds)
+        (seconds > 0.5 && moved > 0).then_some(moved as f64 / seconds)
     }
 }
 
