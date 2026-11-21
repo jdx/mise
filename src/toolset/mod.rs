@@ -1,7 +1,7 @@
 use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::config::Config;
-use crate::config::settings::{Settings, SettingsStatusMissingTools};
+use crate::config::settings::{Settings, SettingsExt, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
 use crate::daemons::glue::DaemonSetExt;
 use crate::env::TERM_WIDTH;
@@ -1310,10 +1310,77 @@ pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Resul
 pub async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    scope: PruneScope,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    Ok(prunable_tools_with_sources(config, tools, None)
+    Ok(prunable_tools_with_sources(config, tools, scope, None)
         .await?
         .to_delete)
+}
+
+/// Which install directories pruning may remove versions from.
+///
+/// Configured shared directories are never pruned: mise only reads them. The
+/// system installs directory is pruned only when asked, because the configs
+/// that keep a version are the ones this user has loaded, and other users of
+/// the machine may need versions that none of them names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PruneScope {
+    /// The user's own installs directory.
+    User,
+    /// The system installs directory.
+    System,
+    /// Both, for removing the versions an upgrade replaced wherever they were.
+    UserAndSystem,
+}
+
+impl PruneScope {
+    fn includes(self, path: &Path) -> bool {
+        use crate::env::InstallPathCategory::{Local, System};
+        matches!(
+            (self, crate::env::install_path_category(path)),
+            (Self::User | Self::UserAndSystem, Local)
+                | (Self::System | Self::UserAndSystem, System)
+        )
+    }
+
+    /// The installations of a listed version that this scope may remove.
+    fn installs_of(self, tv: ToolVersion, system_installs: &Path) -> Vec<ToolVersion> {
+        let mut installs = vec![];
+        if self != Self::User
+            && let Some(copy) = system_copy_of(&tv, system_installs)
+        {
+            installs.push(copy);
+        }
+        if self.includes(&tv.install_path()) {
+            installs.push(tv);
+        }
+        installs
+    }
+}
+
+/// The system installation of a listed version whose `install_path` is the
+/// user's own copy. The listing merges a version installed in both the user and
+/// the system installs directories into one entry for the user's copy, so
+/// whatever works on system installations finds the other copy here.
+///
+/// `mise install --system` always writes `<tool>/<version>`, even where the
+/// user's own copy is in the identity layout. A runtime link such as
+/// `<tool>/20 -> ./20.0.0` is not an installation of its own.
+pub(crate) fn system_copy_of(tv: &ToolVersion, system_installs: &Path) -> Option<ToolVersion> {
+    let install_path = tv.install_path();
+    if crate::env::install_path_category(&install_path) != crate::env::InstallPathCategory::Local {
+        return None;
+    }
+    let path = system_installs
+        .join(tv.ba().tool_dir_name())
+        .join(tv.tv_pathname());
+    (path != install_path && std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir())).then(
+        || {
+            let mut copy = tv.clone();
+            copy.install_path = Some(path);
+            copy
+        },
+    )
 }
 
 /// The outcome of deciding which installed versions are unused.
@@ -1335,6 +1402,7 @@ pub struct PrunableTools {
 pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    scope: PruneScope,
     progress: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<PrunableTools> {
     // Resolving the toolset of this directory inspects it from the environment
@@ -1347,18 +1415,24 @@ pub async fn prunable_tools_with_sources(
     if let Some(progress) = progress {
         progress.set_message("listing installed versions".into());
     }
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    // Keyed by install path as well, because a version can be installed in both
+    // the user and the system installs directories.
     let mut to_delete = ts
         .list_installed_versions(config)
         .await?
         .into_iter()
-        // System and shared installs are read-only fallback locations. Prune only
-        // manages versions in the user's primary install directory.
-        .filter(|(_, tv)| {
-            crate::env::install_path_category(&tv.install_path())
-                == crate::env::InstallPathCategory::Local
+        .flat_map(|(p, tv)| {
+            // A system copy is keyed like the version it was found beside. In the
+            // identity layout the user's copy is keyed by its own directory, which
+            // the system copy's `<tool>/<version>` name would never match.
+            let key = needed_key(&tv);
+            scope
+                .installs_of(tv, &system_installs)
+                .into_iter()
+                .map(move |tv| ((key.clone(), tv.install_path()), (p.clone(), tv)))
         })
-        .map(|(p, tv)| (needed_key(&tv), (p, tv)))
-        .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
+        .collect::<BTreeMap<((String, String), PathBuf), (Arc<dyn Backend>, ToolVersion)>>();
 
     if !tools.is_empty() {
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
@@ -1383,9 +1457,23 @@ pub async fn prunable_tools_with_sources(
         needed.entry(key).or_default().extend(sources);
     }
 
-    for key in needed.keys() {
-        to_delete.remove(key);
+    // A system copy found beside several identity-layout variants of one version
+    // is listed once per variant, under each variant's key. It is one
+    // installation: needed when any of them is, and kept once, so the running
+    // processes below are checked against it once.
+    let mut keys_by_path: BTreeMap<PathBuf, BTreeSet<(String, String)>> = BTreeMap::new();
+    for ((key, path), (_, tv)) in &to_delete {
+        let keys = keys_by_path.entry(path.clone()).or_default();
+        keys.insert(key.clone());
+        keys.insert(needed_key(tv));
     }
+    let mut seen = HashSet::new();
+    to_delete.retain(|(_, path), _| {
+        seen.insert(path.clone())
+            && !keys_by_path[path]
+                .iter()
+                .any(|key| needed.contains_key(key))
+    });
 
     // A process started before its version stopped being needed may still be
     // running from it. Removing the version would delete files from under it.
@@ -1401,6 +1489,24 @@ pub async fn prunable_tools_with_sources(
             false
         }
         None => true,
+    });
+
+    // A system installation that needs sudo is removed by the privileged helper,
+    // which cannot remove every one; that one is left for its owner. This comes
+    // last, so only a version that would have been pruned is warned about.
+    #[cfg(unix)]
+    to_delete.retain(|_, (_, tv)| {
+        let path = tv.install_path();
+        let kept = crate::env::install_path_category(&path) == crate::env::InstallPathCategory::System
+            && crate::tool_purgatory::needs_sudo_to_remove(&path)
+            && !crate::system_install::can_remove(&path);
+        if kept {
+            warn!(
+                "not pruning {}: it is an identity-layout installation; remove it as the user that installed it",
+                display_path(&path)
+            );
+        }
+        !kept
     });
 
     Ok(PrunableTools {
@@ -1501,6 +1607,13 @@ fn keep_uv_python_variants(
     // key. A receipt that cannot be mapped safely aborts pruning rather than
     // leaving a retained environment with a deleted interpreter.
     let python_ba = BackendArg::from("python");
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    // A system environment's receipt names a system interpreter, which has the
+    // same tool/version key as the user's copy.
+    let python_roots = [
+        python_ba.installs_path().to_path_buf(),
+        system_installs.join(python_ba.tool_dir_name()),
+    ];
     if selected_python {
         let mut variant_dirs: Vec<_> = crate::install_layout::resolver::installs_of(tv.ba())
             .into_iter()
@@ -1509,13 +1622,21 @@ fn keep_uv_python_variants(
         // The default layout stores environments under `<tool>/<version>`, which
         // `installs_of` intentionally does not enumerate. Include those retained
         // variants so an older receipt can keep its exact interpreter alive too.
+        // The listing names one copy of a version installed both for the user
+        // and for the system, so read the receipt in each directory.
+        let roots = [
+            tv.ba().installs_path().to_path_buf(),
+            system_installs.join(tv.ba().tool_dir_name()),
+        ];
         variant_dirs.extend(
             backend
                 .list_installed_versions()
                 .into_iter()
                 .filter(|version| version.starts_with(&prefix))
-                .map(|version| tv.ba().installs_path().join(version)),
+                .flat_map(|version| roots.iter().map(move |root| root.join(&version))),
         );
+        variant_dirs.sort();
+        variant_dirs.dedup();
         for dir in variant_dirs {
             let receipt = dir.join(".mise-uv/python.json");
             let contents = match crate::file::read_to_string(&receipt) {
@@ -1538,14 +1659,24 @@ fn keep_uv_python_variants(
                     });
                 }
             };
-            let (python, version) = selected_python_receipt(&contents, &receipt)?;
+            let Some((python, version)) = selected_python_receipt(&contents, &receipt)? else {
+                // An administrator may have built the system copy with an
+                // interpreter from outside mise, under a config other than this
+                // user's; it owns no mise runtime to keep. In the user's own
+                // directory a selector records a mise Python, so anything else
+                // means the receipt cannot be trusted.
+                if crate::env::install_path_category(&dir)
+                    == crate::env::InstallPathCategory::System
+                {
+                    continue;
+                }
+                bail!(
+                    "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
+                    receipt.display()
+                );
+            };
             let identity_installs = crate::install_layout::resolver::installs_of(&python_ba);
-            match receipt_python_install(
-                &python,
-                &version,
-                &identity_installs,
-                python_ba.installs_path(),
-            ) {
+            match receipt_python_install(&python, &version, &identity_installs, &python_roots) {
                 Some(ReceiptPython::Identity(python_dir)) => {
                     let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
                     else {
@@ -1632,7 +1763,7 @@ fn receipt_python_install(
     python: &Path,
     version: &str,
     identity_installs: &[(String, PathBuf)],
-    legacy_root: &Path,
+    legacy_roots: &[PathBuf],
 ) -> Option<ReceiptPython> {
     let resolved = resolve_receipt_python(python);
     let in_dir = |dir: &Path| receipt_python_in_dir(python, &resolved, dir);
@@ -1643,10 +1774,13 @@ fn receipt_python_install(
     if let Some((_, dir)) = identity {
         return Some(ReceiptPython::Identity(dir.clone()));
     }
-    if in_dir(&legacy_root.join(version)) {
+    if legacy_roots.iter().any(|root| in_dir(&root.join(version))) {
         return Some(ReceiptPython::Legacy(version.to_string()));
     }
-    receipt_legacy_install_name(&resolved, legacy_root).map(ReceiptPython::Legacy)
+    legacy_roots
+        .iter()
+        .find_map(|root| receipt_legacy_install_name(&resolved, root))
+        .map(ReceiptPython::Legacy)
 }
 
 /// The legacy installation directory (`python/<version>`) that `python` resolves into, for a
@@ -1660,7 +1794,9 @@ fn receipt_legacy_install_name(resolved: &Path, installs: &Path) -> Option<Strin
     root.join(name).is_dir().then(|| name.to_string())
 }
 
-fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
+/// The interpreter and version a receipt records, or `None` for one that names
+/// an interpreter from outside mise.
+fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<Option<(PathBuf, String)>> {
     let (python, identity) =
         serde_json::from_str::<(PathBuf, String)>(contents).wrap_err_with(|| {
             format!(
@@ -1672,12 +1808,9 @@ fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, S
     let (Some("core"), Some("python"), Some(version), Some(_runtime_identity)) =
         (parts.next(), parts.next(), parts.next(), parts.next())
     else {
-        bail!(
-            "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
-            receipt.display()
-        );
+        return Ok(None);
     };
-    Ok((python, version.to_string()))
+    Ok(Some((python, version.to_string())))
 }
 
 /// What a rolling `latest` points at on its remote, asked once per source for
@@ -1837,6 +1970,7 @@ mod tests {
             r#"["/data/installs/python/3.11.9/bin/python","core:python:3.11.9:old-runtime"]"#,
             receipt,
         )
+        .unwrap()
         .unwrap();
         assert_eq!(
             python,
@@ -1846,21 +1980,19 @@ mod tests {
     }
 
     #[test]
-    fn selected_python_receipt_fails_closed_when_malformed_or_not_mise_python() {
+    fn selected_python_receipt_fails_closed_when_malformed_and_names_no_foreign_python() {
         let receipt = Path::new("/data/installs/pypi:demo/demo/.mise-uv/python.json");
         let invalid_json = selected_python_receipt("not json", receipt).unwrap_err();
         assert!(invalid_json.to_string().contains("invalid Python receipt"));
 
+        // The caller decides: a foreign interpreter is expected in a system copy
+        // and fails closed in the user's own directory.
         let foreign_runtime = selected_python_receipt(
             r#"["/usr/bin/python3","system:python:3.12:system"]"#,
             receipt,
         )
-        .unwrap_err();
-        assert!(
-            foreign_runtime
-                .to_string()
-                .contains("does not name a mise core Python runtime")
-        );
+        .unwrap();
+        assert_eq!(foreign_runtime, None);
     }
 
     #[cfg(unix)]
@@ -1875,7 +2007,7 @@ mod tests {
 
         // Legacy layout: the receipt records 3.14.7, but the link leads into 3.14.8.
         assert_eq!(
-            receipt_python_install(&python, "3.14.7", &[], &root),
+            receipt_python_install(&python, "3.14.7", &[], std::slice::from_ref(&root)),
             Some(ReceiptPython::Legacy("3.14.8".into()))
         );
         // Identity layout: the installation the link resolves into is kept, not an
@@ -1887,13 +2019,39 @@ mod tests {
             ("3.14.9".to_string(), root.join("hash-3149")),
         ];
         assert_eq!(
-            receipt_python_install(&python, "3.14.7", &installs, &root),
+            receipt_python_install(&python, "3.14.7", &installs, std::slice::from_ref(&root)),
             Some(ReceiptPython::Identity(root.join("hash-3149")))
         );
         // An interpreter outside every mise installation still fails closed.
         let elsewhere = tmp.path().join("other/bin/python");
         assert_eq!(
-            receipt_python_install(&elsewhere, "3.14.7", &installs, &root),
+            receipt_python_install(&elsewhere, "3.14.7", &installs, std::slice::from_ref(&root)),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_python_install_finds_a_system_interpreter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user/python");
+        let system = tmp.path().join("system/python");
+        std::fs::create_dir_all(user.join("3.13.1/bin")).unwrap();
+        std::fs::create_dir_all(system.join("3.12.4/bin")).unwrap();
+        let roots = [user, system.clone()];
+
+        // A system environment's receipt names the system copy, which has the
+        // same tool/version key as a user copy would.
+        assert_eq!(
+            receipt_python_install(&system.join("3.12.4/bin/python"), "3.12.4", &[], &roots),
+            Some(ReceiptPython::Legacy("3.12.4".into()))
+        );
+        assert_eq!(
+            receipt_python_install(&system.join("3.12.4/bin/python"), "3.12", &[], &roots),
+            Some(ReceiptPython::Legacy("3.12.4".into()))
+        );
+        assert_eq!(
+            receipt_python_install(&tmp.path().join("other/bin/python"), "3.12.4", &[], &roots),
             None
         );
     }

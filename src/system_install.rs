@@ -60,6 +60,55 @@ enum Request {
         /// Names whose real directory a link in `links` may replace.
         replace: Vec<String>,
     },
+    /// Delete the installation `directory/tool/version`.
+    Remove {
+        directory: PathBuf,
+        tool: String,
+        version: String,
+    },
+}
+
+/// Whether [`remove`] can delete `install_path`. It deletes the
+/// `<tool>/<version>` installations `mise install --system` writes. An
+/// identity-layout installation placed in the system root, by its owner running
+/// `mise install` with that root as the installs directory, also has catalog
+/// records that only the owner's mise clears.
+pub(crate) fn can_remove(install_path: &Path) -> bool {
+    crate::install_layout::resolver::dir_name_of(install_path).is_none()
+}
+
+/// Delete a system installation the user cannot write to, through `sudo`.
+/// `manual_cmd` is what to run instead when `sudo` is unavailable.
+pub(crate) fn remove(install_path: &Path, manual_cmd: &str) -> Result<()> {
+    ensure!(
+        can_remove(install_path),
+        "{} is an identity-layout installation; remove it as the user that installed it",
+        install_path.display()
+    );
+    let name = |path: Option<&Path>| {
+        path.and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .map(str::to_string)
+    };
+    let tool_dir = install_path.parent();
+    let (Some(version), Some(tool), Some(directory)) = (
+        name(Some(install_path)),
+        name(tool_dir),
+        tool_dir.and_then(Path::parent),
+    ) else {
+        bail!(
+            "invalid system installation path: {}",
+            install_path.display()
+        );
+    };
+    sudo::ensure_elevation_available(manual_cmd)?;
+    let mut input = serde_json::to_vec(&Request::Remove {
+        directory: directory.to_path_buf(),
+        tool,
+        version,
+    })?;
+    input.push(b'\n');
+    publish(&input[..])
 }
 
 pub(crate) async fn install<B: Backend + ?Sized>(
@@ -341,7 +390,9 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32, roots: &[PathBuf]) -> Re
     input.read_line(&mut header)?;
     let request: Request = serde_json::from_str(&header)?;
     let directory = match &request {
-        Request::Install { directory, .. } | Request::Links { directory, .. } => directory,
+        Request::Install { directory, .. }
+        | Request::Links { directory, .. }
+        | Request::Remove { directory, .. } => directory,
     };
     ensure!(
         roots
@@ -524,6 +575,69 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32, roots: &[PathBuf]) -> Re
                 fs::rename(link, destination)?;
             }
         }
+        Request::Remove { tool, version, .. } => {
+            ensure!(
+                crate::file::is_plain_file_name(&tool)
+                    && crate::file::is_plain_file_name(&version)
+                    && !tool.starts_with('.')
+                    && !version.starts_with('.'),
+                "invalid tool or version directory"
+            );
+            let tool_dir = directory.join(&tool);
+            let destination = tool_dir.join(&version);
+            let metadata = match fs::symlink_metadata(&destination) {
+                Ok(metadata) => metadata,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(err) => return Err(err.into()),
+            };
+            // Version links are removed with a `Links` request; only a real
+            // installation directory is deleted here.
+            ensure!(
+                metadata.is_dir(),
+                "refusing to remove non-directory {}",
+                destination.display()
+            );
+            validate_directory(&tool_dir, owner)?;
+            // Move the installation out of its name first, so the version is
+            // gone at once and a failed delete leaves nothing under that name.
+            {
+                let stage = tempfile::tempdir_in(&tool_dir)?;
+                let old = stage.path().join("old");
+                fs::rename(&destination, &old)?;
+                fs::remove_dir_all(&old)?;
+            }
+            remove_dangling_links(&tool_dir)?;
+        }
+    }
+    Ok(())
+}
+
+/// Finish a removal the way an unprivileged one does
+/// (`runtime_symlinks::remove_missing_symlinks_in_dir` and the backend's
+/// `cleanup_empty_installs_dir`): drop the version links left pointing at
+/// nothing, then the tool directory once only its backend metadata is left.
+/// The caller cannot do either in a root-owned directory.
+fn remove_dangling_links(tool_dir: &Path) -> Result<()> {
+    const METADATA: [&str; 3] = [".mise.backend.toml", ".mise.backend.json", ".mise.backend"];
+    // Read the whole directory before changing it: entries unlinked during
+    // `readdir` can make it skip others, and a skipped version would look like
+    // a directory holding only metadata.
+    let entries = fs::read_dir(tool_dir)?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let mut only_metadata = true;
+    for path in entries {
+        if path.is_symlink() && !path.exists() {
+            fs::remove_file(&path)?;
+        } else if !path
+            .file_name()
+            .is_some_and(|name| METADATA.iter().any(|m| name.eq_ignore_ascii_case(m)))
+        {
+            only_metadata = false;
+        }
+    }
+    if only_metadata {
+        fs::remove_dir_all(tool_dir)?;
     }
     Ok(())
 }
@@ -728,6 +842,47 @@ mod tests {
         apply_for_owner(&migrate[..], owner, &roots)?;
         assert!(root.join("uv/latest").is_symlink());
         assert_eq!(fs::read_to_string(root.join("uv/latest/tool"))?, "binary");
+        // Removal deletes an installation directory, never a link or a reserved
+        // name, and accepts a version that is already gone.
+        let remove_request = |version: &str| -> Result<Vec<u8>> {
+            let mut bytes = serde_json::to_vec(&Request::Remove {
+                directory: root.clone(),
+                tool: "uv".into(),
+                version: version.into(),
+            })?;
+            bytes.push(b'\n');
+            Ok(bytes)
+        };
+        assert!(apply_for_owner(&remove_request("latest")?[..], owner, &roots).is_err());
+        assert!(root.join("uv/latest").is_symlink());
+        assert!(
+            apply_for_owner(&remove_request(".mise.backend.toml")?[..], owner, &roots).is_err()
+        );
+        assert!(root.join("uv/.mise.backend.toml").is_file());
+        assert!(apply_for_owner(&remove_request("../uv")?[..], owner, &roots).is_err());
+        symlink("./1", root.join("uv/1.0"))?;
+        fs::create_dir(root.join("uv/2"))?;
+        apply_for_owner(&remove_request("1")?[..], owner, &roots)?;
+        assert!(fs::symlink_metadata(root.join("uv/1")).is_err());
+        // Links to the removed version go with it; other entries stay.
+        assert!(fs::symlink_metadata(root.join("uv/1.0")).is_err());
+        assert!(root.join("uv/2").is_dir());
+        assert!(root.join("uv/.mise.backend.toml").is_file());
+        apply_for_owner(&remove_request("1")?[..], owner, &roots)?;
+        // The tool directory goes once only backend metadata is left.
+        fs::create_dir(root.join("gone"))?;
+        fs::create_dir(root.join("gone/2"))?;
+        symlink("./2", root.join("gone/latest"))?;
+        fs::write(root.join("gone/.mise.backend.toml"), "")?;
+        fs::write(root.join("gone/.mise.backend.json"), "{}")?;
+        let mut bytes = serde_json::to_vec(&Request::Remove {
+            directory: root.clone(),
+            tool: "gone".into(),
+            version: "2".into(),
+        })?;
+        bytes.push(b'\n');
+        apply_for_owner(&bytes[..], owner, &roots)?;
+        assert!(fs::symlink_metadata(root.join("gone")).is_err());
         fs::set_permissions(&root, fs::Permissions::from_mode(0o777))?;
         assert!(validate_directory(&root, owner).is_err());
         Ok(())

@@ -423,13 +423,15 @@ impl Ls {
     /// consistencies.
     async fn get_prunable_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
         let installed_tool = self.installed_tool.clone().unwrap_or_default();
-        Ok(
-            crate::toolset::prunable_tools(config, installed_tool.iter().collect())
-                .await?
-                .into_iter()
-                .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
-                .collect(),
+        Ok(crate::toolset::prunable_tools(
+            config,
+            installed_tool.iter().collect(),
+            crate::toolset::PruneScope::User,
         )
+        .await?
+        .into_iter()
+        .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
+        .collect())
     }
     async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
         let mut trs = if self.project {

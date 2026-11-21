@@ -8,7 +8,7 @@ use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::runtime_symlinks;
 use crate::toolset::{
-    NeededVersions, PrunableTools, RunningProcess, ToolVersion, needed_key,
+    NeededVersions, PrunableTools, PruneScope, RunningProcess, ToolVersion, needed_key,
     prunable_tools_with_sources,
 };
 use crate::ui::install_progress::removal_progress;
@@ -34,6 +34,12 @@ use super::trust::Trust;
 /// It also forgets tracked, trusted, and ignored config files that no longer
 /// exist. Pass `--tools` or `--configs` to do only one of the two. List the
 /// versions it would delete with `mise ls --prunable`.
+///
+/// Versions in the system installs directory (see `mise install --system`) are
+/// left alone unless you pass `--system`, which prunes that directory instead of
+/// your own. mise only knows the config files your user has loaded, so preview
+/// with `--dry-run` first: another user's project may need a version that none
+/// of them names.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -43,7 +49,11 @@ mise node@20.0.0 is prunable: node is required at 20.19.5 by ~/src/app/mise.toml
 mise node@20.0.0 [dryrun]  remove ~/.local/share/mise/installs/node/20.0.0, ~/.cache/mise/node/20.0.0"###,
         help = "Preview what would be deleted and why"
     ),
-    example("mise prune --tools node", help = "Delete unused node versions only")
+    example("mise prune --tools node", help = "Delete unused node versions only"),
+    example(
+        "mise prune --system --dry-run",
+        help = "Preview unused versions in the system installs directory"
+    )
 )]
 pub(crate) struct Prune {
     /// Prune only these tools
@@ -55,7 +65,7 @@ pub(crate) struct Prune {
     pub dry_run: bool,
 
     /// Only forget tracked, trusted, and ignored config files that no longer exist
-    #[usage(long)]
+    #[usage(long, conflicts = ["system"])]
     pub configs: bool,
 
     /// Like --dry-run, but exit with code 1 if there are tools to prune
@@ -67,6 +77,15 @@ pub(crate) struct Prune {
     /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
     #[usage(long, hide = true, verbatim_doc_comment)]
     pub monorepo: bool,
+
+    /// Delete unused versions from the system installs directory instead of your own
+    ///
+    /// A version is kept when a config file your user has loaded, such as the
+    /// system config, still selects it, or when a process you can inspect runs
+    /// from it. Config files of other users are not known. mise uses `sudo`
+    /// when it cannot write to the directory. Implies `--tools`.
+    #[usage(long)]
+    pub system: bool,
 
     /// Only delete unused tool versions
     #[usage(long)]
@@ -87,24 +106,37 @@ impl Prune {
         // a use of the project, so it must not replace the project's snapshots.
         let _suspended = crate::install_layout::snapshots::suspend();
         let mut config = Config::get().await?;
-        if self.configs || !self.tools {
+        let tools_only = self.tools || self.system;
+        if self.configs || !tools_only {
             self.prune_configs()?;
         }
-        if self.tools || !self.configs {
+        if tools_only || !self.configs {
             let backends = self
                 .installed_tool
                 .as_ref()
                 .map(|it| it.iter().map(|ta| ta.ba.as_ref()).collect());
             let tools = backends.unwrap_or_default();
+            let scope = if self.system {
+                PruneScope::System
+            } else {
+                PruneScope::User
+            };
             let PrunableTools {
                 to_delete,
                 needed,
                 running,
-            } = scan_prunable(&config, tools).await?;
+            } = scan_prunable(&config, tools, scope).await?;
             explain_running(&running);
             let has_work = !to_delete.is_empty();
+            if self.system && has_work {
+                warn!(
+                    "mise only knows the config files your user has loaded; other users must reinstall a removed version they still use"
+                );
+            }
             let explain = self.is_dry_run().then_some(&needed);
-            delete(
+            // The shim directory to rebuild follows the installs directory the
+            // removed versions were in.
+            let removed_paths = delete(
                 &config,
                 self.is_dry_run(),
                 to_delete,
@@ -120,13 +152,8 @@ impl Prune {
             }
             config = Config::reset().await?;
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(
-                &config,
-                ts,
-                &[],
-                crate::lockfile::LockfileUpdateMode::Normal,
-            )
-            .await?;
+            config::rebuild_shims_and_runtime_symlinks_after_removal(&config, ts, &removed_paths)
+                .await?;
         }
         Ok(())
     }
@@ -166,7 +193,7 @@ pub(super) async fn prune_scoped(
         mut to_delete,
         needed,
         running,
-    } = scan_prunable(config, scanned).await?;
+    } = scan_prunable(config, scanned, PruneScope::User).await?;
     let selected = versions.iter().map(needed_key).collect::<BTreeSet<_>>();
     to_delete.retain(|(_, tv)| tools.contains(&tv.ba()) || selected.contains(&needed_key(tv)));
     // A running process only matters for what this call could have removed.
@@ -183,7 +210,8 @@ pub(super) async fn prune_scoped(
         None,
         UnavailableConfirmation::Decline,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 /// Say which of the versions that were asked for stay, and what needs them.
@@ -198,9 +226,13 @@ fn explain_kept(versions: &[ToolVersion], needed: &NeededVersions) {
 
 /// Find the prunable versions behind a progress line, since resolving every
 /// tracked config can take a while and nothing else is on screen yet.
-async fn scan_prunable(config: &Arc<Config>, tools: Vec<&BackendArg>) -> Result<PrunableTools> {
+async fn scan_prunable(
+    config: &Arc<Config>,
+    tools: Vec<&BackendArg>,
+    scope: PruneScope,
+) -> Result<PrunableTools> {
     let pr = MultiProgressReport::get().add("scanning tracked configs");
-    let result = prunable_tools_with_sources(config, tools, Some(pr.as_ref())).await;
+    let result = prunable_tools_with_sources(config, tools, scope, Some(pr.as_ref())).await;
     match &result {
         Ok(_) => pr.finish(),
         Err(_) => pr.finish_with_icon(String::new(), ProgressIcon::Error),
@@ -222,7 +254,7 @@ async fn delete(
     to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>,
     explain: Option<&NeededVersions>,
     unavailable: UnavailableConfirmation,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let mpr = MultiProgressReport::get();
     if dry_run {
         for (p, tv) in to_delete {
@@ -234,7 +266,7 @@ async fn delete(
             p.uninstall_version(config, &tv, pr.as_ref(), true).await?;
             pr.finish();
         }
-        return Ok(());
+        return Ok(vec![]);
     }
 
     // Ask about everything first, then remove. A prompt in the middle of a
@@ -258,6 +290,7 @@ async fn delete(
         }
     }
 
+    let mut removed = Vec::with_capacity(confirmed.len());
     let mut progress = removal_progress(
         &mpr,
         confirmed
@@ -272,15 +305,23 @@ async fn delete(
             Some(tool) => tool.reporter(),
             None => mpr.add(&tv.style()),
         };
+        // Checked before removal: the helper may remove the tool directory too.
+        let removed_with_sudo = crate::tool_purgatory::needs_sudo_to_remove(&tv.install_path());
         let result = p.uninstall_version(config, &tv, pr.as_ref(), false).await;
         if let Some(tool) = &tool {
             tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
         }
         result?;
+        removed.push(tv.install_path());
         if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
             warn!("failed to clear tool purgatory entry: {err:#}");
         }
-        runtime_symlinks::remove_missing_symlinks(p)?;
+        // In a root-owned system installs directory the privileged helper has
+        // already dropped the links the removal left dangling, and this user
+        // cannot. The system links are rebuilt after the loop.
+        if !removed_with_sudo {
+            runtime_symlinks::remove_missing_symlinks(p)?;
+        }
         if tool.is_none() {
             pr.finish();
         }
@@ -288,7 +329,7 @@ async fn delete(
     if let Some(progress) = progress.as_mut() {
         progress.finish(vec![]);
     }
-    Ok(())
+    Ok(removed)
 }
 
 /// The session key for a version being removed: the same `short@version`

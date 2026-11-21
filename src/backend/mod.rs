@@ -3200,6 +3200,73 @@ mod tests {
     }
 }
 
+/// Whether the version `tv` names is still installed somewhere other than
+/// `install_path`: the user's own copy of a version also installed for the
+/// system, or the other way round.
+fn other_copy_remains(tv: &ToolVersion, install_path: &Path) -> bool {
+    let tool_dir = tv.ba().tool_dir_name();
+    let pathname = tv.tv_pathname();
+    let mut version = tv.clone();
+    version.install_path = None;
+    [
+        version.install_path(),
+        dirs::INSTALLS.join(&tool_dir).join(&pathname),
+        Settings::get()
+            .system_installs_dir()
+            .join(&tool_dir)
+            .join(&pathname),
+    ]
+    .into_iter()
+    .any(|path| path != install_path && std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir()))
+}
+
+/// Names of the cached entries of a version that describe one physical
+/// installation: bin paths and a plugin's `exec-env` can name its path. Each
+/// cache file gets a key suffix (`exec_env-<key>.msgpack.z`, vfox's
+/// `exec_env_<hash>.msgpack.z`), so they are matched by prefix.
+const INSTALL_CACHE_PREFIXES: [&str; 3] = ["bin_paths", "exec_env", "list_bin_paths"];
+
+/// Drops the cached entries that describe one installation of `tv`. The user's
+/// and the system copy of a version share its cache, so these go when either
+/// copy is removed, while the other keeps the rest of the cache.
+fn forget_install_cache(tv: &ToolVersion) {
+    let Ok(entries) = std::fs::read_dir(tv.cache_path()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if INSTALL_CACHE_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+        {
+            let _ = remove_all_with_warning(entry.path());
+        }
+    }
+}
+
+/// Whether uninstalling `install_path` goes through the root helper, as a
+/// version in a root-owned system installs directory does for a normal user.
+/// Backend hooks run as this user then, and cannot change that installation.
+pub(crate) fn removes_with_sudo(install_path: &Path) -> bool {
+    env::install_path_category(install_path) == env::InstallPathCategory::System
+        && crate::tool_purgatory::needs_sudo_to_remove(install_path)
+}
+
+/// Delete a system installation the user cannot write to through `sudo`, the
+/// way `mise install --system` publishes one. Returns false for any other
+/// installation, which the caller deletes itself.
+fn remove_system_install_with_sudo(tv: &ToolVersion, install_path: &Path) -> eyre::Result<bool> {
+    #[cfg(unix)]
+    if removes_with_sudo(install_path) {
+        let manual = format!("mise uninstall {}@{}", tv.ba().short, tv.version);
+        crate::system_install::remove(install_path, &manual)?;
+        return Ok(true);
+    }
+    let _ = (tv, install_path);
+    Ok(false)
+}
+
 fn make_install_dirs(tv: &ToolVersion) -> eyre::Result<()> {
     let _ = remove_all_with_warning(tv.install_path());
     if !Settings::get().always_keep_download {
@@ -6139,12 +6206,43 @@ pub trait Backend: Debug + Send + Sync {
         if !dryrun {
             crate::install_layout::resolver::guard_removal(&install_path)?;
         }
-        if !dryrun {
+        let other_copy = other_copy_remains(tv, &install_path);
+        // The marker is per version, shared by the user's and the system copy.
+        // Removing the system copy while the user's stays leaves it as it is:
+        // the listing resolves the version to the user's copy, which marking
+        // would make look uninstalled, and for good if this process is killed.
+        // A user copy being removed is the one readers resolve to, so it is
+        // still marked while it is half deleted.
+        let keep_marker = other_copy
+            && env::install_path_category(&install_path) == env::InstallPathCategory::System;
+        let was_incomplete = !dryrun && install_state::is_incomplete(tv.ba(), &tv.state_key());
+        if !dryrun && !keep_marker {
             // A removal in progress leaves a directory that is not the install it was, which a
             // check that takes no lock must not read as complete; the marker is cleared below.
             install_state::mark_incomplete(tv.ba(), &tv.state_key())?;
         }
-        rmdir(&install_path)?;
+        let removed_with_sudo = if dryrun {
+            false
+        } else {
+            match remove_system_install_with_sudo(tv, &install_path) {
+                Ok(removed) => removed,
+                Err(err) => {
+                    // The root helper moves the installation away before deleting anything,
+                    // so one still in place was not touched (sudo was unavailable or
+                    // refused) and is as complete as it was.
+                    if !keep_marker && !was_incomplete && install_path.exists() {
+                        install_state::clear_incomplete_marker_best_effort(
+                            tv.ba(),
+                            &tv.state_key(),
+                        );
+                    }
+                    return Err(err);
+                }
+            }
+        };
+        if !removed_with_sudo {
+            rmdir(&install_path)?;
+        }
         if !dryrun {
             // Version links into the removed installation, from every tool that
             // linked it. The catalog record stays, so a reinstall lands on the
@@ -6152,12 +6250,20 @@ pub trait Backend: Debug + Send + Sync {
             crate::install_layout::resolver::unlink_installation(&install_path);
             // The install is gone. The marker is shared by every install of this version, so
             // it must not outlive the removal if the download or cache cleanup below fails.
-            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
+            if !keep_marker {
+                install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
+            }
         }
-        if !Settings::get().always_keep_download {
-            rmdir(&tv.download_path())?;
+        // The download and cache belong to the version, not to one copy of it, so they
+        // stay while the user's or the system copy of the same version is still there.
+        if !other_copy {
+            if !Settings::get().always_keep_download {
+                rmdir(&tv.download_path())?;
+            }
+            rmdir(&tv.cache_path())?;
+        } else if !dryrun {
+            forget_install_cache(tv);
         }
-        rmdir(&tv.cache_path())?;
         if dryrun {
             if !would_remove.is_empty() {
                 pr.set_message(format!("remove {}", would_remove.join(", ")));

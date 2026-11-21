@@ -8872,6 +8872,12 @@ long\-running program keeps its files.
 It also forgets tracked, trusted, and ignored config files that no longer
 exist. Pass `\-\-tools` or `\-\-configs` to do only one of the two. List the
 versions it would delete with `mise ls \-\-prunable`.
+
+Versions in the system installs directory (see `mise install \-\-system`) are
+left alone unless you pass `\-\-system`, which prunes that directory instead of
+your own. mise only knows the config files your user has loaded, so preview
+with `\-\-dry\-run` first: another user's project may need a version that none
+of them names.
 .PP
 \fBUsage:\fR mise prune [OPTIONS] [<INSTALLED_TOOL>] ...
 .PP
@@ -8891,6 +8897,11 @@ Use it in scripts that check whether tools need pruning.
 .TP
 \fB\-\-monorepo\fR
 Placeholder for future monorepo pruning; `mise prune \-\-monorepo` is not implemented yet.
+.TP
+\fB\-\-system\fR
+Delete unused versions from the system installs directory instead of your own
+
+A version is kept when a config file your user has loaded, such as the system config, still selects it, or when a process you can inspect runs from it. Config files of other users are not known. mise uses `sudo` when it cannot write to the directory. Implies `\-\-tools`.
 .TP
 \fB\-\-tools\fR
 Only delete unused tool versions
@@ -8916,6 +8927,12 @@ Delete unused node versions only
 .PP
 .RS 4
 mise prune \-\-tools node
+.RE
+.PP
+Preview unused versions in the system installs directory
+.PP
+.RS 4
+mise prune \-\-system \-\-dry\-run
 .RE
 .SH "MISE REGISTRY"
 List registry shorthand names and their backends
@@ -11874,6 +11891,9 @@ are enabled; see https://mise.jdx.dev/dev\-tools/mise\-lock.html
 The version you upgraded from is removed after the `upgrade.prune_after`
 setting's grace period unless a tracked config or tool stub still uses it.
 Pass `\-\-prune` to remove it now or `\-\-no\-prune` to keep it.
+A replaced system install that needs `sudo` to remove is kept instead,
+because later commands never prompt for a password; pass `\-\-prune` or run
+`mise prune \-\-system` to remove it.
 .PP
 \fBUsage:\fR mise upgrade [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP

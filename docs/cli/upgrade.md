@@ -20,6 +20,9 @@ are enabled; see <https://mise.jdx.dev/dev-tools/mise-lock.html>
 The version you upgraded from is removed after the `upgrade.prune_after`
 setting's grace period unless a tracked config or tool stub still uses it.
 Pass `--prune` to remove it now or `--no-prune` to keep it.
+A replaced system install that needs `sudo` to remove is kept instead,
+because later commands never prompt for a password; pass `--prune` or run
+`mise prune --system` to remove it.
 
 ## Arguments
 - **`[INSTALLED_TOOL@VERSION]…`** — Tools to upgrade, such as node@20 python@3.10

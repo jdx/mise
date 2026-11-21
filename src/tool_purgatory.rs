@@ -6,7 +6,7 @@ use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::args::BackendArg;
-use crate::config::Config;
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -143,6 +143,39 @@ pub fn schedule(tv: &ToolVersion, after: Duration) -> Result<()> {
     save_state(&state)
 }
 
+/// Whether removing the installation at `install_path` needs sudo, as one in a
+/// root-owned system installs directory does for a normal user.
+pub fn needs_sudo_to_remove(install_path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        install_path
+            .parent()
+            .is_some_and(crate::system_install::needs_elevation)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = install_path;
+        false
+    }
+}
+
+/// Whether pruning the installation at `install_path` needs sudo: to remove it,
+/// or to rebuild the system shims that removing a system version changes, which
+/// can be root-owned when the installs directory is not.
+pub fn needs_sudo_to_prune(install_path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        needs_sudo_to_remove(install_path)
+            || (crate::env::install_path_category(install_path)
+                == crate::env::InstallPathCategory::System
+                && crate::system_install::needs_elevation(&crate::dirs::system_shims()))
+    }
+    #[cfg(not(unix))]
+    {
+        needs_sudo_to_remove(install_path)
+    }
+}
+
 pub fn forget_path(path: &Path) -> Result<()> {
     if !state_path().exists() {
         return Ok(());
@@ -196,10 +229,13 @@ pub async fn auto_prune() -> Result<()> {
     let config = Config::get().await?;
     // The user did not ask for this, so a tracked config that cannot be loaded here
     // is summarized in one line instead of warned about file by file.
-    let (prunable, skipped) = crate::config::with_quiet_tracked_config_errors(
-        crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()),
-    )
-    .await;
+    let (prunable, skipped) =
+        crate::config::with_quiet_tracked_config_errors(crate::toolset::prunable_tools(
+            &config,
+            Vec::<&BackendArg>::new(),
+            crate::toolset::PruneScope::UserAndSystem,
+        ))
+        .await;
     if skipped > 0 {
         warn!(
             "deferred prune skipped {skipped} tracked config(s) that could not be loaded; run `mise prune --dry-run` for details"
@@ -219,6 +255,9 @@ pub async fn auto_prune() -> Result<()> {
         .map(|(_, tv)| tv.install_path())
         .collect::<HashSet<_>>();
 
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    let installs_roots = [crate::dirs::INSTALLS.to_path_buf(), system_installs];
+
     let mpr = MultiProgressReport::get();
     let mut install_state_changed = false;
     let mut entries_awaiting_reconciliation = vec![];
@@ -235,20 +274,39 @@ pub async fn auto_prune() -> Result<()> {
             prunable_by_path
                 .get(install_path)
                 .map(|(_, tv)| tv.ba().installs_path().to_path_buf())
-        } else if let Some(installs_dir) = install_path
-            .parent()
-            .filter(|parent| parent.starts_with(*crate::dirs::INSTALLS))
-            .filter(|parent| *parent != *crate::dirs::INSTALLS)
-        {
+        } else if let Some(installs_dir) = install_path.parent().filter(|parent| {
+            installs_roots
+                .iter()
+                .any(|root| parent.starts_with(root) && parent != root)
+        }) {
             Some(installs_dir.to_path_buf())
         } else {
             warn!(
-                "ignoring tool purgatory entry outside the user installs directory: {}",
+                "ignoring tool purgatory entry outside the user and system installs directories: {}",
                 display_path(install_path)
             );
             entries_to_remove.push((key, entry));
             continue;
         };
+        // Deferred pruning runs inside whatever command came next, which must
+        // not stop to ask for a sudo password. `upgrade` does not schedule a
+        // version that needs sudo, but a receipt can still get here: the
+        // directory may have become root-owned since, or the receipt was
+        // written by a mise from before that check. A version that is already
+        // gone still has its system shims rebuilt below, which can need sudo too.
+        if needs_sudo_to_prune(install_path) {
+            if install_path.exists() {
+                warn!(
+                    "not removing {display} automatically because it needs sudo; remove it with `mise prune --system`"
+                );
+            } else {
+                warn!(
+                    "{display} was removed, but updating the system shims needs sudo; run `mise reshim --system`"
+                );
+            }
+            entries_to_remove.push((key, entry));
+            continue;
+        }
         let remove_missing_links = |dir: &Option<PathBuf>| match dir {
             Some(dir) => crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir),
             None => Ok(()),
@@ -307,6 +365,12 @@ pub async fn auto_prune() -> Result<()> {
     }
     mpr.finish_progress();
     if install_state_changed {
+        // The removed paths say which install roots lost a version, so a system
+        // version's shims are rebuilt as well as the user's.
+        let removed_paths = entries_awaiting_reconciliation
+            .iter()
+            .map(|(_, entry)| entry.install_path.clone())
+            .collect::<Vec<_>>();
         let reconcile = async {
             let config = Config::reset().await?;
             // Resolved here and not through `get_toolset`, which would cache a
@@ -315,11 +379,10 @@ pub async fn auto_prune() -> Result<()> {
             let mut ts =
                 crate::toolset::Toolset::from(config.get_tool_request_set().await?.clone());
             ts.resolve(&config).await?;
-            crate::config::rebuild_shims_and_runtime_symlinks(
+            crate::config::rebuild_shims_and_runtime_symlinks_after_removal(
                 &config,
                 &ts,
-                &[],
-                crate::lockfile::LockfileUpdateMode::Normal,
+                &removed_paths,
             )
             .await
         }

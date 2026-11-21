@@ -23,6 +23,12 @@ It also forgets tracked, trusted, and ignored config files that no longer
 exist. Pass `--tools` or `--configs` to do only one of the two. List the
 versions it would delete with `mise ls --prunable`.
 
+Versions in the system installs directory (see `mise install --system`) are
+left alone unless you pass `--system`, which prunes that directory instead of
+your own. mise only knows the config files your user has loaded, so preview
+with `--dry-run` first: another user's project may need a version that none
+of them names.
+
 ## Arguments
 - **`[INSTALLED_TOOL]…`** — Prune only these tools
 
@@ -32,6 +38,9 @@ versions it would delete with `mise ls --prunable`.
 - **`--dry-run-code`** — Like --dry-run, but exit with code 1 if there are tools to prune
 
   Use it in scripts that check whether tools need pruning.
+- **`--system`** — Delete unused versions from the system installs directory instead of your own
+
+  A version is kept when a config file your user has loaded, such as the system config, still selects it, or when a process you can inspect runs from it. Config files of other users are not known. mise uses `sudo` when it cannot write to the directory. Implies `--tools`.
 - **`--tools`** — Only delete unused tool versions
 - **`-h --help`** — Print help
 
@@ -49,6 +58,12 @@ Delete unused node versions only
 
 ```
 mise prune --tools node
+```
+
+Preview unused versions in the system installs directory
+
+```
+mise prune --system --dry-run
 ```
 
 <!-- generated reference navigation -->

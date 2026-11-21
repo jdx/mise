@@ -5953,9 +5953,15 @@ long-running program keeps its files.
 It also forgets tracked, trusted, and ignored config files that no longer
 exist. Pass `--tools` or `--configs` to do only one of the two. List the
 versions it would delete with `mise ls --prunable`.
+
+Versions in the system installs directory (see `mise install --system`) are
+left alone unless you pass `--system`, which prunes that directory instead of
+your own. mise only knows the config files your user has loaded, so preview
+with `--dry-run` first: another user's project may need a version that none
+of them names.
 """#
     flag "-n --dry-run" help="Show what would change without changing anything"
-    flag --configs help="Only forget tracked, trusted, and ignored config files that no longer exist"
+    flag --configs help="Only forget tracked, trusted, and ignored config files that no longer exist" conflicts=--system
     flag --dry-run-code help="Like --dry-run, but exit with code 1 if there are tools to prune" {
         long_help #"""
 Like --dry-run, but exit with code 1 if there are tools to prune
@@ -5964,6 +5970,13 @@ Use it in scripts that check whether tools need pruning.
 """#
     }
     flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet." hide=#true
+    flag --system help="Delete unused versions from the system installs directory instead of your own" {
+        long_help #"""
+Delete unused versions from the system installs directory instead of your own
+
+A version is kept when a config file your user has loaded, such as the system config, still selects it, or when a process you can inspect runs from it. Config files of other users are not known. mise uses `sudo` when it cannot write to the directory. Implies `--tools`.
+"""#
+    }
     flag --tools help="Only delete unused tool versions"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
@@ -5973,6 +5986,7 @@ mise node@20.0.0 is prunable: node is required at 20.19.5 by ~/src/app/mise.toml
 mise node@20.0.0 [dryrun]  remove ~/.local/share/mise/installs/node/20.0.0, ~/.cache/mise/node/20.0.0
 """# help="Preview what would be deleted and why"
     example "mise prune --tools node" help="Delete unused node versions only"
+    example "mise prune --system --dry-run" help="Preview unused versions in the system installs directory"
 }
 cmd __publish-system-install hide=#true help="[internal] publish a staged system installation as root" effect=destructive {
     long_help #"""
@@ -8183,6 +8197,9 @@ are enabled; see https://mise.jdx.dev/dev-tools/mise-lock.html
 The version you upgraded from is removed after the `upgrade.prune_after`
 setting's grace period unless a tracked config or tool stub still uses it.
 Pass `--prune` to remove it now or `--no-prune` to keep it.
+A replaced system install that needs `sudo` to remove is kept instead,
+because later commands never prompt for a password; pass `--prune` or run
+`mise prune --system` to remove it.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mDeprecation:\u{1b}[22m\u{1b}[24m\n\nThe `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.\nUse `-b` or `--bump` instead.\n\nThe `--local` flag is deprecated in favor of `--no-global`. mise warns about it from\n2027.1.0 and removes it in 2027.7.0."
     flag "-b --bump" help="Upgrade past the configured range to the newest release, and update the config to match" {

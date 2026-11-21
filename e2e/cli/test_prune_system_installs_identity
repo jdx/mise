@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# With the identity layout, the user's own copies of a version are keyed by
+# their hashed directories, and the system copy by its `<tool>/<version>` name.
+# A version the user's config needs keeps its system copy.
+
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+export MISE_EXPERIMENTAL=1 MISE_INSTALL_LAYOUT=identity
+system_installs="$MISE_SYSTEM_DATA_DIR/installs"
+
+# Two variants of one version, of which the config below needs only the first.
+mise install tiny@1.0.0
+mise install 'tiny[foo=bar]@1.0.0'
+user_copy="$(mise where tiny@1.0.0)"
+[[ $user_copy != *"/installs/tiny/"* ]] || fail "user copy is not in the identity layout: $user_copy"
+variants=("$MISE_DATA_DIR"/installs/tiny-*)
+[[ ${#variants[@]} == 2 ]] || fail "expected two variants: ${variants[*]}"
+# An administrator installed the same version for everyone afterwards.
+mkdir -p "$system_installs/tiny"
+cp -a "$user_copy" "$system_installs/tiny/1.0.0"
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+output="$(mise prune --system --dry-run 2>&1)"
+[[ $output != *"mise-system/installs/tiny/1.0.0"* ]] || fail "system copy of a needed version was in prune plan: $output"
+
+cat >mise.toml <<'EOF'
+[tools]
+EOF
+output="$(mise prune --system --dry-run 2>&1)"
+removals="$(grep -c 'remove .*mise-system/installs/tiny/1.0.0' <<<"$output")"
+[[ $removals == 1 ]] || fail "system copy of an unused version was planned $removals times: $output"

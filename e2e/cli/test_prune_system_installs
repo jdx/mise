@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# `mise prune --system` removes unused versions from the system installs
+# directory, and `mise upgrade` cleans up the system version it replaced.
+# https://github.com/jdx/mise/issues/15932
+
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+system_installs="$MISE_SYSTEM_DATA_DIR/installs"
+system_shims="$MISE_SYSTEM_DATA_DIR/shims"
+user_installs="$MISE_DATA_DIR/installs"
+
+mise install --system dummy@1.0.0 tiny@1.0.0 tiny@2.1.0
+mise install tiny@1.1.0
+# tiny@1.0.0 is also in the user's own directory, as when the user installed it
+# before an administrator installed it for everyone. The listing merges the
+# two copies, and the system one must still be found.
+cp -a "$system_installs/tiny/1.0.0" "$user_installs/tiny/1.0.0"
+# The version's cache belongs to it, not to one copy, so it stays while either
+# copy does. A plugin's cached environment can name the removed copy's path,
+# so that entry goes.
+user_cache="$MISE_CACHE_DIR/tiny/1.0.0"
+mkdir -p "$user_cache"
+mise x tiny@1.0.0 -- true
+compgen -G "$user_cache/exec_env*" >/dev/null || fail "no cached environment: $(ls "$user_cache")"
+mise reshim --system
+assert "test -x '$system_shims/dummy'"
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "2"
+EOF
+
+# A plain prune only looks at the user's own installs. The dry run names each
+# directory it would remove.
+output="$(mise prune --dry-run --tools 2>&1)"
+[[ $output == *"mise/installs/tiny/1.0.0"* ]] || fail "user install was not in prune plan: $output"
+[[ $output == *"mise/installs/tiny/1.1.0"* ]] || fail "user install was not in prune plan: $output"
+[[ $output != *"mise/tiny/1.0.0"* ]] || fail "cache of a version with a system copy was in prune plan: $output"
+[[ $output != *"mise-system/installs"* ]] || fail "plain prune planned a system install: $output"
+
+# --system plans unused system versions, keeps the configured one and leaves
+# the user's installs alone.
+output="$(mise prune --system --dry-run 2>&1)"
+[[ $output == *"mise-system/installs/dummy/1.0.0"* ]] || fail "unused system install was not in prune plan: $output"
+[[ $output == *"mise-system/installs/tiny/1.0.0"* ]] || fail "system copy of a user install was not in prune plan: $output"
+[[ $output != *"tiny/2.1.0"* ]] || fail "configured system install was in prune plan: $output"
+[[ $output != *"mise/installs/"* ]] || fail "user install was in system prune plan: $output"
+[[ $output != *"mise/tiny/1.0.0"* ]] || fail "user cache was in system prune plan: $output"
+assert_contains "mise prune --system --dry-run 2>&1" "other users must reinstall"
+
+assert_fail "mise prune --system --configs"
+
+mise prune --system
+assert_fail "test -d '$system_installs/dummy/1.0.0'"
+assert_fail "test -d '$system_installs/tiny/1.0.0'"
+assert_directory_exists "$system_installs/tiny/2.1.0"
+assert_directory_exists "$user_installs/tiny/1.0.0"
+assert_directory_exists "$user_installs/tiny/1.1.0"
+assert_directory_exists "$user_cache"
+! compgen -G "$user_cache/exec_env*" >/dev/null || fail "cached environment of the removed copy stayed: $(ls "$user_cache")"
+output="$(mise prune --dry-run --tools 2>&1)"
+[[ $output == *"mise/tiny/1.0.0"* ]] || fail "cache of the last copy was not in prune plan: $output"
+assert "readlink '$system_installs/tiny/latest'" "./2.1.0"
+assert_fail "test -L '$system_installs/tiny/1'"
+# dummy has no system install left, so its system shim goes too.
+assert_fail "test -e '$system_shims/dummy'"
+
+# Upgrading a system install schedules the replaced version for removal like a
+# user install, instead of dropping the receipt.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+
+[settings]
+upgrade.prune_after = "0s"
+EOF
+mise install --system dummy@1.0.0
+mise upgrade dummy
+assert_directory_exists "$system_installs/dummy/1.1.0"
+assert_directory_exists "$system_installs/dummy/1.0.0"
+output="$(mise current dummy 2>&1)"
+[[ $output != *"ignoring tool purgatory entry"* ]] || fail "system receipt was dropped: $output"
+assert_fail "test -d '$system_installs/dummy/1.0.0'"
+assert_directory_exists "$system_installs/dummy/1.1.0"
+
+# tiny's only system version is now also the user's, and the listing names the
+# user's copy. Rebuilding the system shims must keep tiny's.
+system_shims_before="$(ls "$system_shims")"
+[[ $system_shims_before == *tiny* ]] || fail "tiny has no system shim: $system_shims_before"
+cp -a "$system_installs/tiny/2.1.0" "$user_installs/tiny/2.1.0"
+mise reshim --system
+assert "ls '$system_shims'" "$system_shims_before"

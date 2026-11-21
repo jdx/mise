@@ -54,12 +54,47 @@ pub(crate) fn processes_running_from(
     }
     let candidates = tvs
         .iter()
-        .map(|tv| Candidate {
-            path: tv.install_path(),
-            links_dir: tv.ba().installs_path().to_path_buf(),
+        .map(|tv| {
+            let path = tv.install_path();
+            let links_dirs = links_dirs_of(&path, tv.ba().installs_path());
+            Candidate { path, links_dirs }
         })
         .collect::<Vec<_>>();
     scan(&candidates)
+}
+
+/// The directories holding the runtime links that may point at `install_path`.
+/// A `<tool>/<version>` installation keeps them beside it, which for a system
+/// or shared copy of a version is not the backend's own `installs_path`. The
+/// user's own links are checked too: `mise installs select` can point them at a
+/// system or shared installation.
+fn links_dirs_of(install_path: &Path, backend_links_dir: &Path) -> Vec<PathBuf> {
+    let identity = crate::install_layout::resolver::dir_name_of(install_path).is_some();
+    let own = links_dir_in(install_path, backend_links_dir, identity, |store| {
+        crate::install_layout::resolver::is_primary_store(store)
+    });
+    let mut dirs = vec![own];
+    if dirs[0] != backend_links_dir {
+        dirs.push(backend_links_dir.to_path_buf());
+    }
+    dirs
+}
+
+/// An identity-layout installation sits in an install store. The user's own
+/// store is apart from the installs directory, whose tool directory
+/// (`backend_links_dir`) holds the links; a shared or system root is its own
+/// store, so the links are in that root's directory for the tool.
+fn links_dir_in(
+    install_path: &Path,
+    backend_links_dir: &Path,
+    identity: bool,
+    is_primary_store: impl Fn(&Path) -> bool,
+) -> PathBuf {
+    match (install_path.parent(), backend_links_dir.file_name()) {
+        (Some(parent), _) if !identity => parent.to_path_buf(),
+        (Some(store), Some(tool)) if !is_primary_store(store) => store.join(tool),
+        _ => backend_links_dir.to_path_buf(),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -94,9 +129,9 @@ const MAX_LINKS: usize = 8;
 pub(super) struct Candidate {
     /// The version's install directory.
     pub(super) path: PathBuf,
-    /// The directory holding the tool's runtime links, such as `latest` or
+    /// The directories holding the tool's runtime links, such as `latest` or
     /// `20`, which may point at `path`.
-    pub(super) links_dir: PathBuf,
+    pub(super) links_dirs: Vec<PathBuf>,
 }
 
 /// What the platform could read about one process.
@@ -180,7 +215,11 @@ pub(super) fn scan(candidates: &[Candidate]) -> BTreeMap<PathBuf, Vec<RunningPro
         .map(|candidate| Install {
             candidate,
             roots: with_resolved(&candidate.path),
-            links_dirs: with_resolved(&candidate.links_dir),
+            links_dirs: candidate
+                .links_dirs
+                .iter()
+                .flat_map(|dir| with_resolved(dir))
+                .collect(),
         })
         .collect::<Vec<_>>();
     let version_files = VersionFiles::default();
@@ -386,8 +425,39 @@ mod tests {
     fn candidate(path: &Path) -> Candidate {
         Candidate {
             path: path.to_path_buf(),
-            links_dir: path.parent().unwrap().to_path_buf(),
+            links_dirs: vec![path.parent().unwrap().to_path_buf()],
         }
+    }
+
+    #[test]
+    fn links_dir_of_a_system_copy_is_beside_it() {
+        let user = Path::new("/home/u/.local/share/mise/installs/tiny");
+        let system = Path::new("/usr/local/share/mise/installs/tiny/1.0.0");
+        assert_eq!(
+            links_dirs_of(system, user),
+            [Path::new("/usr/local/share/mise/installs/tiny"), user]
+        );
+        assert_eq!(links_dirs_of(&user.join("1.0.0"), user), [user]);
+    }
+
+    #[test]
+    fn links_dir_of_an_identity_install_is_its_roots_tool_dir() {
+        let user = Path::new("/home/u/.local/share/mise/installs/tiny");
+        let primary = Path::new("/home/u/.local/share/mise/store");
+        let is_primary = |store: &Path| store == primary;
+        assert_eq!(
+            links_dir_in(&primary.join("tiny-1.0.0-abc"), user, true, is_primary),
+            user
+        );
+        assert_eq!(
+            links_dir_in(
+                Path::new("/usr/local/share/mise/installs/tiny-1.0.0-abc"),
+                user,
+                true,
+                is_primary
+            ),
+            Path::new("/usr/local/share/mise/installs/tiny")
+        );
     }
 
     fn pids(found: &BTreeMap<PathBuf, Vec<RunningProcess>>, install: &Path) -> Vec<u32> {
@@ -611,7 +681,7 @@ mod windows_tests {
     fn candidate(path: &Path) -> Candidate {
         Candidate {
             path: path.to_path_buf(),
-            links_dir: path.parent().unwrap().to_path_buf(),
+            links_dirs: vec![path.parent().unwrap().to_path_buf()],
         }
     }
 
