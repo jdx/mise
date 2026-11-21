@@ -1121,6 +1121,11 @@ impl MiseToml {
     fn set_env_item(&mut self, key: &str, item: Item) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
         let mut groups = env_tables_mut(doc.get_mut().unwrap(), &self.path)?;
+        // an entry named exactly `key` is that variable, whatever dots its name has
+        if let Some(i) = groups.iter().rposition(|group| group.names(key)) {
+            groups.swap_remove(i).set_named(key, item);
+            return Ok(());
+        }
         let mut group = match groups.iter().rposition(|group| group.sets(key)) {
             Some(i) => groups.swap_remove(i),
             None => match groups.pop() {
@@ -1356,12 +1361,21 @@ impl MiseToml {
     }
 
     /// Removes `key` from this file's `env`: from every group when `env` is a list of tables
-    /// (`[[env]]`), since an earlier group's value would otherwise take over. A `.` in `key`
-    /// descends into a nested table, as it does in [`Self::update_env`].
+    /// (`[[env]]`), since an earlier group's value would otherwise take over.
+    ///
+    /// `key` is read the way [`Self::update_env`] reads it: when a group has an entry named
+    /// exactly `key`, those entries are what is removed, and an entry a `.` in `key` could also
+    /// descend to is left alone. Only otherwise does a `.` descend into a nested table.
     pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
-        for mut group in env_tables_mut(doc.get_mut().unwrap(), &self.path)? {
-            group.remove(key);
+        let mut groups = env_tables_mut(doc.get_mut().unwrap(), &self.path)?;
+        let named = groups.iter().any(|group| group.names(key));
+        for group in &mut groups {
+            if named {
+                group.remove_named(key);
+            } else {
+                group.remove(key);
+            }
         }
         Ok(())
     }
@@ -2468,6 +2482,11 @@ impl<'a> EnvTable<'a> {
         Some(Self { table, inline })
     }
 
+    /// Whether this table has an entry named exactly `key`.
+    fn names(&self, key: &str) -> bool {
+        self.table.contains_key(key)
+    }
+
     /// Whether this table has a value for `key`, where a `.` in `key` descends into a nested
     /// table.
     fn sets(&self, key: &str) -> bool {
@@ -2485,52 +2504,64 @@ impl<'a> EnvTable<'a> {
 
     /// Sets `key` to `item`, creating the tables a `.` in `key` descends into. Fails with the
     /// part of `key` that holds a value where a table is needed.
-    fn set(&mut self, key: &str, mut item: Item) -> Result<(), String> {
-        self.edit(|table| match key.split_once('.') {
-            None => {
-                // the comment after a value lives in the value's decor, so carry it over
-                let value_decor = table
-                    .get(key)
-                    .and_then(Item::as_value)
-                    .map(|v| v.decor().clone());
-                set_value_decor(&mut item, &value_decor);
-                match table.entry_format(&Key::from(key)) {
-                    // an existing key stays as written, with the comment above it
-                    Entry::Occupied(mut entry) => {
-                        entry.insert(item);
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(item);
-                    }
-                }
-                Ok(())
+    fn set(&mut self, key: &str, item: Item) -> Result<(), String> {
+        let Some((parent, rest)) = key.split_once('.') else {
+            self.set_named(key, item);
+            return Ok(());
+        };
+        self.edit(|table| {
+            if !table.contains_key(parent) {
+                table.insert(parent, toml_edit::table());
             }
-            Some((parent, rest)) => {
-                if !table.contains_key(parent) {
-                    table.insert(parent, toml_edit::table());
+            match table.get_mut(parent).and_then(EnvTable::of) {
+                Some(mut nested) => nested.set(rest, item),
+                None => Err(parent.to_string()),
+            }
+        })
+    }
+
+    /// Sets the entry named exactly `key` to `item`.
+    fn set_named(&mut self, key: &str, mut item: Item) {
+        self.edit(|table| {
+            // the comment after a value lives in the value's decor, so carry it over
+            let value_decor = table
+                .get(key)
+                .and_then(Item::as_value)
+                .map(|v| v.decor().clone());
+            set_value_decor(&mut item, &value_decor);
+            match table.entry_format(&Key::from(key)) {
+                // an existing key stays as written, with the comment above it
+                Entry::Occupied(mut entry) => {
+                    entry.insert(item);
                 }
-                match table.get_mut(parent).and_then(EnvTable::of) {
-                    Some(mut nested) => nested.set(rest, item),
-                    None => Err(parent.to_string()),
+                Entry::Vacant(entry) => {
+                    entry.insert(item);
                 }
             }
         })
     }
 
-    /// Removes `key`: the entry of that exact name, and the one a `.` in `key` descends to,
-    /// which is where [`Self::set`] writes it. A nested table the removal empties goes too.
+    /// Removes the entry a `.` in `key` descends to, which is where [`Self::set`] writes it,
+    /// and a nested table the removal empties.
     fn remove(&mut self, key: &str) {
+        let Some((parent, rest)) = key.split_once('.') else {
+            return self.remove_named(key);
+        };
         self.edit(|table| {
-            table.remove(key);
-            if let Some((parent, rest)) = key.split_once('.')
-                && let Some(mut nested) = table.get_mut(parent).and_then(EnvTable::of)
-            {
+            if let Some(mut nested) = table.get_mut(parent).and_then(EnvTable::of) {
                 let had_entries = !nested.table.is_empty();
                 nested.remove(rest);
                 if had_entries && nested.table.is_empty() {
                     table.remove(parent);
                 }
             }
+        })
+    }
+
+    /// Removes the entry named exactly `key`.
+    fn remove_named(&mut self, key: &str) {
+        self.edit(|table| {
+            table.remove(key);
         })
     }
 
@@ -6511,6 +6542,56 @@ run = "cargo build"
 
                 [[env]]
                 KEEP = "y"
+            "#}
+        );
+    }
+
+    /// A variable can be named with a `.`, next to a table the same dots would descend into.
+    const ENV_EXACT_NAME: &str = indoc! {r#"
+        [[env]]
+        "FOO.value" = "literal" # exact
+        FOO = { value = "keep", redact = true }
+
+        [[env]]
+        FOO = { value = "kept", redact = true }
+    "#};
+
+    #[tokio::test]
+    async fn test_remove_env_exact_name_wins_over_nested_key() {
+        let (result, dump) = edit_env_file(".env-remove-exact.mise.toml", ENV_EXACT_NAME, |cf| {
+            cf.remove_env("FOO.value")
+        })
+        .await;
+        result.unwrap();
+        // `value` inside `FOO` stays, in the group that had the exact name and the one without
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                FOO = { value = "keep", redact = true }
+
+                [[env]]
+                FOO = { value = "kept", redact = true }
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_exact_name_wins_over_nested_key() {
+        let (result, dump) = edit_env_file(".env-update-exact.mise.toml", ENV_EXACT_NAME, |cf| {
+            cf.update_env("FOO.value", "changed")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                "FOO.value" = "changed" # exact
+                FOO = { value = "keep", redact = true }
+
+                [[env]]
+                FOO = { value = "kept", redact = true }
             "#}
         );
     }

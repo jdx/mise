@@ -89,6 +89,21 @@ ONLY_FIRST = "z"
 # overrides
 [[env]]'
 
+# A variable named with a dot is that variable: the table the dots would descend into is
+# left alone.
+cat <<EOF >mise.toml
+[env]
+"FOO.value" = "literal"
+FOO = { value = "keep", redact = true }
+EOF
+assert "mise set FOO.value=changed" ""
+assert "cat mise.toml" '[env]
+"FOO.value" = "changed"
+FOO = { value = "keep", redact = true }'
+assert "mise unset FOO.value" ""
+assert "cat mise.toml" '[env]
+FOO = { value = "keep", redact = true }'
+
 # An inline table is edited too.
 cat <<EOF >mise.toml
 env = { STAGE = "one" }
