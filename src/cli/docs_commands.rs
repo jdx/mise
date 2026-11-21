@@ -74,6 +74,12 @@ fn docs_show_commands_that_exist() {
         eprintln!("skipping: docs/ is only in a checkout of the repository");
         return;
     }
+    // The docs show the commands of a unix build, which `docs/cli/` is rendered
+    // from. A Windows build has fewer: `mise bootstrap packages brew` is unix-only.
+    if cfg!(windows) {
+        eprintln!("skipping: the docs describe the commands of a unix build");
+        return;
+    }
     let spec = super::usage::spec();
     let shown = corpus(root);
     // guards against the extraction silently finding nothing
