@@ -91,6 +91,20 @@ pub struct Daemon {
     pub host: Option<String>,
 }
 
+/// The variables a `project =` reference adds to the declaring project's
+/// environment: `<NAME>_PORT` and `<NAME>_URL`, named after the reference
+/// rather than the daemon it points at. The referenced daemon's own exports
+/// stay in its project, because they would replace this project's variables of
+/// the same name (a referenced database's `DATABASE_URL`, say).
+#[derive(Debug, Clone)]
+pub struct Reference {
+    /// The config file that declares the reference.
+    pub source: PathBuf,
+    /// Key of the imported daemon in `DaemonSet::daemons`.
+    pub key: String,
+    pub exports: IndexMap<String, String>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct DaemonSet {
     /// Keyed by local name for own daemons and by qualified ID for imported ones.
@@ -116,6 +130,9 @@ pub struct DaemonSet {
     /// down with it. The failure is carried here and reported by `mise daemons`,
     /// which is the command that can act on it.
     pub import_errors: IndexMap<(PathBuf, String), String>,
+    /// What each `project =` reference exports into the project that declares
+    /// it, keyed by that project's root and the name it gave the reference.
+    pub references: IndexMap<(PathBuf, String), Reference>,
     /// Group names are project scoped, so nested projects may each declare one
     /// with the same name. They stay in a root-aware list until `for_root`.
     pub groups: Vec<Group>,
@@ -372,6 +389,14 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 );
             }
             imported_ids.insert((root.clone(), name.clone()), key.clone());
+            set.references.insert(
+                (root.clone(), name.clone()),
+                Reference {
+                    source: source.clone(),
+                    key: key.clone(),
+                    exports: reference_exports(&name, &daemon, &mut state),
+                },
+            );
             set.aliases.insert((root.clone(), name), key.clone());
             set.daemons.insert(key, daemon);
             continue;
@@ -471,6 +496,17 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // The first claimant of an ambiguous key or hostname kept it while it
     // looked unique; drop it now so neither side is handed the other's
     // endpoint, and so mise never advertises a hostname the proxy refuses.
+    for reference in set.references.values_mut() {
+        reference
+            .exports
+            .retain(|var, _| !state.ambiguous.contains(var));
+        // The referenced daemon's hostname, when the proxy will not route it.
+        if state.withdrawn_hosts.contains(&reference.key)
+            && let Some(host) = set.daemons.get(&reference.key).and_then(|d| d.host.clone())
+        {
+            reference.exports.retain(|_, value| !value.contains(&host));
+        }
+    }
     for (key, daemon) in set.daemons.iter_mut() {
         daemon
             .exports
@@ -591,6 +627,26 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
             if preset_keys.contains(key) {
                 warn_once!(
                     "[daemons] {name} would export {key}, which a preset already sets; the preset's value is kept. Rename {name} to get its own variable."
+                );
+                return false;
+            }
+            true
+        });
+    }
+    // A variable this project's own daemons export is theirs. The reference's
+    // `<NAME>_PORT` is a convenience derived from a name, like a custom
+    // daemon's, so it gives way rather than replace what a daemon published.
+    let local_vars: std::collections::BTreeSet<String> = set
+        .daemons
+        .values()
+        .filter(|d| !d.imported)
+        .flat_map(|d| d.exports.keys().cloned())
+        .collect();
+    for ((_, name), reference) in set.references.iter_mut() {
+        reference.exports.retain(|var, _| {
+            if local_vars.contains(var) {
+                warn_once!(
+                    "[daemons] {name} would export {var}, which a daemon of this project already sets; that value is kept. Rename {name} to get its own variable."
                 );
                 return false;
             }
@@ -1408,6 +1464,42 @@ fn import(
     Ok((id, daemon))
 }
 
+/// The port and URL a reference exports, named after the reference.
+///
+/// Only those two cross over. Everything else the referenced daemon exports
+/// belongs to its own project, and the names it chose could collide with this
+/// one's. The reference name was chosen here, so it can only collide with
+/// another name of this project, which the same checks catch as for a local
+/// daemon.
+fn reference_exports(
+    name: &str,
+    daemon: &Daemon,
+    state: &mut LoadState,
+) -> IndexMap<String, String> {
+    let mut exports = IndexMap::new();
+    if daemon.port.is_none() && daemon.host.is_none() {
+        return exports;
+    }
+    let Some(base) = env_var_base(name) else {
+        return exports;
+    };
+    if let Some(other) = state.keys.insert(base.clone(), name.to_string()) {
+        warn_once!(
+            "[daemons] {other} and {name} both map to {base}_PORT; their names differ only by punctuation, so neither endpoint is exported. Rename one of them."
+        );
+        state.ambiguous.insert(format!("{base}_PORT"));
+        state.ambiguous.insert(format!("{base}_URL"));
+        return exports;
+    }
+    if let Some(claim) = daemon.port {
+        exports.insert(format!("{base}_PORT"), claim.port.to_string());
+    }
+    if let Some(host) = &daemon.host {
+        exports.insert(format!("{base}_URL"), urls::proxy_settings().url(host));
+    }
+    exports
+}
+
 /// Rewrite short `depends` entries that name an imported daemon. Pitchfork
 /// resolves bare names inside one namespace, so an imported dependency only
 /// works when it is written out in full.
@@ -1425,11 +1517,25 @@ fn rewrite_depends(
         return Ok(None);
     };
     let mut missing: Option<String> = None;
+    // The name the project gave the reference rides along as `as`, so pitchfork
+    // can offer the dependency to templates under it: `{{ daemons.search.url }}`
+    // rather than the generated namespace. A name outside what `as` accepts
+    // keeps the plain ID.
     let rewrite = |value: &mut toml::Value| {
         if let Some(name) = value.as_str()
             && let Some(id) = imported.get(name)
         {
-            *value = toml::Value::String(id.clone());
+            *value = if name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                toml::Value::Table(toml::Table::from_iter([
+                    ("id".to_string(), toml::Value::String(id.clone())),
+                    ("as".to_string(), toml::Value::String(name.to_string())),
+                ]))
+            } else {
+                toml::Value::String(id.clone())
+            };
         }
     };
     let dangling = |value: &toml::Value| {
@@ -1479,9 +1585,36 @@ fn depends_names(table: &toml::Table) -> Vec<String> {
     };
     entries
         .into_iter()
-        .filter_map(|entry| entry.as_str())
+        .filter_map(|entry| match entry {
+            toml::Value::Table(table) => table.get("id").and_then(toml::Value::as_str),
+            other => other.as_str(),
+        })
         .map(str::to_string)
         .collect()
+}
+
+/// Whether any daemon's `depends` names a dependency, which only a pitchfork
+/// that reads `{ id, as }` entries accepts.
+pub fn names_dependencies(table: &toml::Table) -> bool {
+    table
+        .get("depends")
+        .and_then(toml::Value::as_array)
+        .is_some_and(|entries| entries.iter().any(toml::Value::is_table))
+}
+
+/// Replace each `{ id, as }` entry of `depends` with its plain ID, for a
+/// pitchfork that predates `as`.
+pub fn plain_depends(table: &mut toml::Table) {
+    let Some(toml::Value::Array(entries)) = table.get_mut("depends") else {
+        return;
+    };
+    for entry in entries {
+        if let toml::Value::Table(named) = entry
+            && let Some(id) = named.get("id").and_then(toml::Value::as_str)
+        {
+            *entry = toml::Value::String(id.to_string());
+        }
+    }
 }
 
 /// A daemon name folded into the stem of a shell variable, or None when it
@@ -1771,6 +1904,7 @@ impl DaemonSet {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             import_errors: self.import_errors.clone(),
+            references: self.references.clone(),
             blocked: self.blocked.clone(),
             // Narrowed like `namespaces`, so an imported project's checkout
             // name cannot reach this root's generated file.
@@ -1901,6 +2035,7 @@ impl DaemonSet {
             namespaces: self.namespaces.clone(),
             aliases: self.aliases.clone(),
             import_errors: self.import_errors.clone(),
+            references: self.references.clone(),
             blocked: self.blocked.clone(),
             labels: self.labels.clone(),
             groups: self.groups.clone(),
@@ -1959,6 +2094,7 @@ impl DaemonSet {
             namespaces: self.namespaces.clone(),
             aliases: self.aliases.clone(),
             import_errors: self.import_errors.clone(),
+            references: self.references.clone(),
             blocked: self.blocked.clone(),
             labels: self.labels.clone(),
             groups: self.groups.clone(),
@@ -2522,6 +2658,15 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// What a reference exports, by the name the project gave it.
+    fn reference<'a>(set: &'a DaemonSet, name: &str) -> &'a Reference {
+        set.references
+            .iter()
+            .find(|((_, key), _)| key == name)
+            .map(|(_, reference)| reference)
+            .unwrap_or_else(|| panic!("no reference named {name}"))
+    }
+
     /// The recorded failure for an import, by the name the project gave it.
     fn failure(set: &DaemonSet, name: &str) -> String {
         set.import_errors
@@ -2917,13 +3062,94 @@ mod tests {
         // one is dropped, so nothing unresolvable reaches pitchfork.
         let depends = set.daemons["api"].table["depends"].as_array().unwrap();
         assert_eq!(depends.len(), 1);
-        assert_eq!(depends[0].as_str(), Some("remote/worker"));
+        // The name the project gave the reference rides along, so a template
+        // can say `daemons.pipeline`.
+        assert_eq!(depends[0]["id"].as_str(), Some("remote/worker"));
+        assert_eq!(depends[0]["as"].as_str(), Some("pipeline"));
         // Starting it is refused, naming the one that is unavailable.
         assert_eq!(
             set.blocked.get("api").map(|(name, _)| name.as_str()),
             Some("absent")
         );
         assert!(set.imported_in(&child, "pipeline"));
+    }
+
+    #[test]
+    fn a_reference_exports_its_port_under_the_name_it_was_given() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let search = tmp.path().join("search");
+        referenced_project(
+            &search,
+            "[daemons_settings]\nnamespace = 'remote'\n\
+             [daemons.postgres]\npreset = 'postgres'\nversion = '18'\nport = 5433\n\
+             [daemons.app]\nrun = 'exec search-api'\nport = 4100\ndepends = ['postgres']\n",
+        );
+        let shop = tmp.path().join("shop");
+        std::fs::create_dir_all(&shop).unwrap();
+        let config = files(&[(
+            shop.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.search]\nproject = {}\nname = 'app'\n\
+                 [daemons.app]\nrun = 'exec shop'\nport = 3100\ndepends = ['search']\n",
+                toml::Value::String(search.to_string_lossy().into_owned())
+            ),
+        )]);
+        let set = load(&config).unwrap();
+        let reference = reference(&set, "search");
+        // Named after the reference, not after the daemon it points at.
+        assert_eq!(reference.exports["SEARCH_PORT"], "4100");
+        assert!(!reference.exports.contains_key("APP_PORT"));
+        // The referenced daemon's own exports and its dependencies' stay home,
+        // and shop's own daemon keeps its variables.
+        assert!(
+            reference
+                .exports
+                .keys()
+                .all(|var| var.starts_with("SEARCH_"))
+        );
+        assert_eq!(set.daemons["app"].exports["APP_PORT"], "3100");
+        assert!(set.daemons["remote/app"].imported);
+    }
+
+    #[test]
+    fn a_reference_gives_way_to_a_variable_a_local_daemon_exports() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let search = tmp.path().join("search");
+        referenced_project(
+            &search,
+            "[daemons.app]\nrun = 'exec search-api'\nport = 4100\n",
+        );
+        let shop = tmp.path().join("shop");
+        std::fs::create_dir_all(&shop).unwrap();
+        // `search-api` and the reference `search_api` fold onto one variable.
+        let config = files(&[(
+            shop.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.search_api]\nproject = {}\nname = 'app'\n\
+                 [daemons.search-api]\nrun = 'exec other'\nport = 3100\n",
+                toml::Value::String(search.to_string_lossy().into_owned())
+            ),
+        )]);
+        let set = load(&config).unwrap();
+        assert!(reference(&set, "search_api").exports.is_empty());
+        assert!(
+            !set.daemons["search-api"]
+                .exports
+                .contains_key("SEARCH_API_PORT")
+        );
+    }
+
+    #[test]
+    fn plain_depends_drops_the_name_for_an_older_pitchfork() {
+        let mut table: toml::Table =
+            toml::from_str("depends = ['db', { id = 'remote/worker', as = 'pipeline' }]").unwrap();
+        assert!(names_dependencies(&table));
+        assert_eq!(depends_names(&table), ["db", "remote/worker"]);
+        plain_depends(&mut table);
+        assert!(!names_dependencies(&table));
+        assert_eq!(table["depends"][1].as_str(), Some("remote/worker"));
     }
 
     #[test]
@@ -2956,7 +3182,7 @@ mod tests {
         ]);
         let set = load(&config).unwrap();
         assert_eq!(
-            set.daemons["api"].table["depends"][0].as_str(),
+            set.daemons["api"].table["depends"][0]["id"].as_str(),
             Some("remote/worker")
         );
         // The child reaches the inherited import by name on the command line too.

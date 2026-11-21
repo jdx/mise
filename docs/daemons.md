@@ -37,14 +37,15 @@ under `[settings]`.
 
 mise requires pitchfork 2.25.0 or later. Some features need a newer release:
 
-| Feature                                                                                                       | Minimum pitchfork |
-| ------------------------------------------------------------------------------------------------------------- | ----------------- |
-| Daemons, service presets, and tasks with `daemons`                                                            | 2.25.0            |
-| [Stable URLs](/daemons/worktrees.html#stable-urls-per-worktree) (`proxy`, `proxy_tls`)                        | 2.26.0            |
-| [`proxy_idle_timeout`](/daemons/worktrees.html#stop-idle-daemons)                                             | 2.27.0            |
-| [Daemons that run a task](#daemons-that-run-a-task)                                                           | 2.28.0            |
-| Clean PostgreSQL shutdown on [Windows](/daemons/presets.html#windows)                                         | 2.29.0            |
-| <code v-pre>{{ env.NAME }}</code> and <code v-pre>{{ vars.NAME }}</code> in [`run`](#use-env-and-vars-in-run) | 2.30.0            |
+| Feature                                                                                                              | Minimum pitchfork |
+| -------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| Daemons, service presets, and tasks with `daemons`                                                                   | 2.25.0            |
+| [Stable URLs](/daemons/worktrees.html#stable-urls-per-worktree) (`proxy`, `proxy_tls`)                               | 2.26.0            |
+| [`proxy_idle_timeout`](/daemons/worktrees.html#stop-idle-daemons)                                                    | 2.27.0            |
+| [Daemons that run a task](#daemons-that-run-a-task)                                                                  | 2.28.0            |
+| Clean PostgreSQL shutdown on [Windows](/daemons/presets.html#windows)                                                | 2.29.0            |
+| <code v-pre>{{ env.NAME }}</code> and <code v-pre>{{ vars.NAME }}</code> in [`run`](#use-env-and-vars-in-run)        | 2.30.0            |
+| <code v-pre>{{ daemons.NAME.url }}</code> for a [project reference](/daemons/sharing.html#environment-and-lifecycle) | 2.36.0            |
 
 ## Quick start
 
