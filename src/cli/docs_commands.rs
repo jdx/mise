@@ -46,8 +46,9 @@ const LOG_LEVELS: &[&str] = &["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
 #[derive(Debug, Clone, PartialEq)]
 struct Word {
     text: String,
-    /// The word starts with a quote, so it is an argument and never a flag,
-    /// a prefix or usage notation. `--flag='value'` is not quoted: only its
+    /// The word starts with a quote, so it is never a command prefix or usage
+    /// notation. The shell removes the quotes before mise sees the word, so
+    /// `"--flag"` is still a flag. `--flag='value'` is not quoted: only its
     /// value is.
     quoted: bool,
 }
@@ -121,10 +122,13 @@ fn corpus(root: &Path) -> Vec<Shown> {
 
 static SKIP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<!--\s*cli:\s*skip\s*-->").unwrap());
 
-/// The number of backticks a line opens with: three or more make a fence.
-fn fence_len(line: &str) -> usize {
+/// The fence a line opens: its character, a backtick or a tilde, and how many
+/// of them the line starts with. Fewer than three are not a fence.
+fn fence(line: &str) -> Option<(char, usize)> {
     let trimmed = line.trim_start();
-    trimmed.len() - trimmed.trim_start_matches('`').len()
+    let marker = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let len = trimmed.len() - trimmed.trim_start_matches(marker).len();
+    (len >= 3).then_some((marker, len))
 }
 
 /// Whether the text right after a code span is the skip marker.
@@ -142,8 +146,7 @@ fn commands_in(markdown: &str) -> Vec<(usize, Vec<Word>)> {
     while i < lines.len() {
         let line = lines[i];
         let trimmed = line.trim_start();
-        let fence = fence_len(line);
-        if fence < 3 {
+        let Some((marker, len)) = fence(line) else {
             if !trimmed.is_empty() {
                 let skipped_heading = skip_next && trimmed.starts_with('#');
                 skip_next = SKIP.replace(line, "").trim().is_empty();
@@ -155,8 +158,8 @@ fn commands_in(markdown: &str) -> Vec<(usize, Vec<Word>)> {
             }
             i += 1;
             continue;
-        }
-        let lang = trimmed[fence..].split_whitespace().next().unwrap_or("");
+        };
+        let lang = trimmed[len..].split_whitespace().next().unwrap_or("");
         let checked = SHELLS.contains(&lang) && !skip_next;
         skip_next = false;
         i += 1;
@@ -166,7 +169,10 @@ fn commands_in(markdown: &str) -> Vec<(usize, Vec<Word>)> {
         while i < lines.len() {
             let content = lines[i].trim_start();
             i += 1;
-            if content.len() >= fence && content.trim_end().chars().all(|c| c == '`') {
+            // the block ends at a line of the same character, at least as long
+            // as the opening fence; spaces after it do not count
+            let closing = content.trim_end();
+            if closing.len() >= len && closing.chars().all(|c| c == marker) {
                 break;
             }
             if logical.is_empty() {
@@ -352,7 +358,7 @@ fn check(root: &SpecCommand, words: &[Word]) -> Result<(), String> {
         if !word.quoted && (text.starts_with('[') || text.starts_with("<-")) {
             return Ok(());
         }
-        if word.quoted || is_placeholder(text) {
+        if is_placeholder(text) {
             if positional(cmd, &mut positionals, text)? {
                 return Ok(());
             }
@@ -599,6 +605,28 @@ mod tests {
     }
 
     #[test]
+    fn ends_a_block_at_its_own_fence() {
+        // a tilde fence holding a backtick line, then a four-backtick fence
+        // holding a shorter one that is followed by a space
+        let markdown = "~~~sh\nmise install\n```\nmise ls\n~~~  \n\n\
+                        ````sh\nmise use node\n``` \nmise doctor\n````\n\nThen `mise prune`.\n";
+        let found: Vec<(usize, String)> = commands_in(markdown)
+            .into_iter()
+            .map(|(line, words)| (line, words[0].text.clone()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (2, "install".to_string()),
+                (4, "ls".to_string()),
+                (8, "use".to_string()),
+                (10, "doctor".to_string()),
+                (13, "prune".to_string())
+            ]
+        );
+    }
+
+    #[test]
     fn accepts_what_mise_accepts() {
         let spec = crate::cli::usage::spec();
         for line in [
@@ -618,6 +646,7 @@ mod tests {
             "mise help lsp",
             "mise sync ruby <--brew>",
             "mise exec --allow-env='MYAPP_*' -- node app.js",
+            "mise set 'GREETING=hello world'",
         ] {
             assert_eq!(verdict(&spec, line), Ok(()), "{line}");
         }
@@ -633,6 +662,12 @@ mod tests {
                 "mise exec --bogus='MYAPP_*' -- node app.js",
                 "`mise exec` has no flag --bogus",
             ),
+            // the shell removes the quotes, so mise reads a flag
+            (
+                "mise install \"--bogus\"",
+                "`mise install` has no flag --bogus",
+            ),
+            ("mise ls '-Z'", "`mise ls` has no flag -Z"),
             ("mise ls -Z", "`mise ls` has no flag -Z"),
             (
                 "mise settings bogus x y z",

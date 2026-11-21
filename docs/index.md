@@ -156,7 +156,7 @@ import { data as showreel } from "./.vitepress/showreel.data";
         </p>
         <ul class="landing-checklist">
           <li><a href="/security.html#download-verification">Checksums, signatures, and build attestations</a>, where a tool publishes them, checked by mise itself with no <code>gpg</code> or <code>cosign</code> to install</li>
-          <li>A <a href="/security.html#minimum-release-age">minimum release age</a>: by default mise skips versions published in the last 24 hours when it resolves a request, for backends that report release dates</li>
+          <li>A <a href="/security.html#minimum-release-age">minimum release age</a>: by default mise skips versions published in the last 24 hours when it chooses a version for a prefix such as <code>node@24</code> or for <code>latest</code>, for backends that report release dates</li>
           <li><a href="/security.html#configuration-trust">Configuration trust</a>: outside CI, a config that can run code loads only once you trust it, at the prompt or by running a command such as <code>mise install</code> or <code>mise run</code> in the project</li>
         </ul>
         <p class="landing-note"><a href="/dev-tools/mise-lock.html">Read the lockfile guide</a> or the <a href="/security.html">security overview</a>.</p>

@@ -299,6 +299,15 @@ the value to the unit unchanged, and
 [systemd.service(5)](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Type=)
 describes what each one means. Without `type`, systemd uses `simple`.
 
+A `"dbus"` service also needs systemd's `BusName=`, which has no key here, and
+systemd refuses to load the unit without it. Set it in a drop-in, such as
+`~/.config/systemd/user/dev.mise.<name>.service.d/bus-name.conf`:
+
+```ini
+[Service]
+BusName=com.example.MyService
+```
+
 `[Timer]` keys; setting any of them makes the entry a timer:
 
 | Key                    | systemd key          | Notes                                       |
