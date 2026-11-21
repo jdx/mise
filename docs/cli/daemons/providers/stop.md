@@ -6,7 +6,7 @@ description: "[experimental] Stop shared servers (data is kept)"
 # `mise daemons providers stop`
 
 - **Usage:** `mise daemons providers stop [NAMES]…`
-- **Source code:** [`src/daemons/providers.rs`](https://github.com/jdx/mise/blob/main/src/daemons/providers.rs)
+- **Source code:** [`src/daemons/provider_commands.rs`](https://github.com/jdx/mise/blob/main/src/daemons/provider_commands.rs)
 
 [experimental] Stop shared servers (data is kept)
 

@@ -183,6 +183,53 @@ mod tests {
         }
     }
 
+    /// Every command page in `docs/cli` links to the file that implements the
+    /// command. The link comes from `source_code_link_template` in
+    /// `mise-extra.usage.kdl`, which maps command paths to files by hand, so a
+    /// moved or renamed file leaves a link to nothing unless this fails.
+    #[test]
+    fn source_code_links_point_at_existing_files() {
+        const BLOB: &str = "https://github.com/jdx/mise/blob/main/";
+        fn visit<'a>(cmd: &'a usage::SpecCommand, out: &mut Vec<&'a usage::SpecCommand>) {
+            for sub in cmd.subcommands.values().filter(|sub| !sub.hide) {
+                out.push(sub);
+                visit(sub, out);
+            }
+        }
+
+        let spec = super::completion_spec();
+        let mut cmds = vec![];
+        visit(&spec.cmd, &mut cmds);
+        let markdown = usage::docs::markdown::MarkdownRenderer::new(spec.clone());
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut missing = vec![];
+        for cmd in &cmds {
+            let name = cmd.full_cmd.join(" ");
+            let page = markdown.render_cmd(cmd).unwrap();
+            let line = page
+                .lines()
+                .find(|line| line.starts_with("- **Source code:**"))
+                .unwrap_or_else(|| panic!("mise {name} has no source code link:\n{page}"));
+            let href = line
+                .rsplit_once("](")
+                .and_then(|(_, href)| href.strip_suffix(')'))
+                .unwrap_or_else(|| panic!("mise {name}: unexpected source code line: {line}"));
+            let path = href
+                .strip_prefix(BLOB)
+                .unwrap_or_else(|| panic!("mise {name}: {href} is not a file on main"));
+            if !root.join(path).is_file() {
+                missing.push(format!("mise {name}: {path}"));
+            }
+        }
+        assert!(cmds.len() > 100, "only {} commands visited", cmds.len());
+        assert!(
+            missing.is_empty(),
+            "source code links to files that do not exist; fix the paths in \
+             src/assets/mise-extra.usage.kdl and run `mise run render:usage`:\n{}",
+            missing.join("\n")
+        );
+    }
+
     #[test]
     fn command_examples_survive_spec_roundtrip() {
         let spec = super::spec();

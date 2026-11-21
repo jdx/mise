@@ -9,7 +9,7 @@ source_code_link_template #"""
 {%- set path = path | replace(from="bootstrap/dotfiles", to="dotfiles") -%}
 {%- endif -%}
 {%- if path == "daemons/providers" or path is starting_with(pat="daemons/providers/") -%}
-{%- set path = "daemons/providers.rs" -%}
+{%- set path = "daemons/provider_commands.rs" -%}
 {%- elif path == "daemons" or path is starting_with(pat="daemons/") -%}
 {%- set path = "cli/daemons.rs" -%}
 {%- elif path == "dotfiles/history" -%}
