@@ -1117,7 +1117,11 @@ impl MiseToml {
     /// When `env` is a list of tables (`[[env]]`), mise reads the groups in file order and a
     /// later one overrides an earlier one. So the group rewritten is the last one that sets
     /// `key`, and a key no group sets goes into the last group: either way the new value is
-    /// the one mise ends up with, as it is with a single `[env]`.
+    /// the one that reading the groups in order ends with, as it is with a single `[env]`.
+    ///
+    /// Only file order is followed. An entry with `tools = true` is applied in a later pass and
+    /// still wins over the value written here, from an earlier group as it does from another
+    /// config file.
     ///
     /// A `.` in `key` descends into a nested table, unless a group has an entry named exactly
     /// `key`. Fails, leaving the document as it was, when mise could not load the result.
