@@ -1516,7 +1516,6 @@ fn rewrite_depends(
     let Some(depends) = table.get_mut("depends") else {
         return Ok(None);
     };
-    let missing: Option<String>;
     // The name the project gave the reference rides along as `as`, so pitchfork
     // can offer the dependency to templates under it: `{{ daemons.search.url }}`
     // rather than the generated namespace. A name outside what `as` accepts
@@ -1544,31 +1543,23 @@ fn rewrite_depends(
             .filter(|name| unresolved.contains_key(*name))
             .map(str::to_string)
     };
-    let empty: bool;
-    match depends {
-        toml::Value::String(_) => {
-            // A single name becomes a one-element list, the shape every reader
-            // of `depends` handles for a rewritten entry.
-            *depends = toml::Value::Array(vec![depends.clone()]);
-            let toml::Value::Array(entries) = depends else {
-                unreachable!()
-            };
-            missing = entries.iter().find_map(dangling);
-            entries.retain(|entry| dangling(entry).is_none());
-            entries.iter_mut().for_each(rewrite);
-            empty = entries.is_empty();
-        }
+    // A single name becomes a one-element list, the shape every reader of
+    // `depends` handles for a rewritten entry.
+    if let toml::Value::String(_) = depends {
+        *depends = toml::Value::Array(vec![depends.clone()]);
+    }
+    let (missing, empty) = match depends {
         toml::Value::Array(entries) => {
             if entries.iter().any(|entry| entry.as_str().is_none()) {
                 bail!("daemon depends must be a string or an array of strings");
             }
-            missing = entries.iter().find_map(dangling);
+            let missing = entries.iter().find_map(dangling);
             entries.retain(|entry| dangling(entry).is_none());
             entries.iter_mut().for_each(rewrite);
-            empty = entries.is_empty();
+            (missing, entries.is_empty())
         }
         _ => bail!("daemon depends must be a string or an array of strings"),
-    }
+    };
     // Dropping the last entry leaves nothing to depend on, so drop the key too
     // rather than registering an empty list.
     if empty {
@@ -1911,7 +1902,9 @@ impl DaemonSet {
             references: self
                 .references
                 .iter()
-                .filter(|((r, _), _)| r.as_path() == root)
+                // A reference an ancestor declared stays visible, since this
+                // root's config inherits the ancestor's `[env]` templates.
+                .filter(|((r, _), _)| root.starts_with(r))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             blocked: self.blocked.clone(),
@@ -3170,6 +3163,12 @@ mod tests {
         let mut table = set.daemons["web"].table.clone();
         assert!(names_dependencies(&table));
         assert_eq!(depends_names(&table).len(), 1);
+        assert!(
+            set.with_dependencies(&["web".to_string()])
+                .daemons
+                .values()
+                .any(|d| d.imported)
+        );
         plain_depends(&mut table);
         assert!(table["depends"][0].is_str());
     }

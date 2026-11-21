@@ -668,17 +668,20 @@ impl Runtime {
             .any(|d| crate::names_dependencies(&d.table))
         {
             let identity = pitchfork_identity(&self.bin);
-            if state.named_depends_for != identity {
+            if state.named_depends_for == identity {
+                state.named_depends
+            } else {
                 match self.supports_named_depends(root).await {
                     Some(supported) => {
                         state.named_depends = supported;
                         state.named_depends_for = identity;
+                        supported
                     }
-                    // A failed probe is retried on the next registration.
-                    None => state.named_depends = false,
+                    // A failed probe counts as no for this run only; nothing
+                    // is recorded, so the next registration asks again.
+                    None => false,
                 }
             }
-            state.named_depends
         } else {
             false
         };
