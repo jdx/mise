@@ -48,8 +48,8 @@ pub use mise_config::dotfiles::DotfileGroupsTomlConfig;
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GroupToml {
-    /// the group's directory tree (required); relative paths resolve
-    /// against `dotfiles.root`
+    /// the group's directory tree, named after the group when omitted;
+    /// relative paths resolve against `dotfiles.root`
     #[serde(default)]
     root: Option<String>,
     /// target directory, `~` by default
@@ -117,14 +117,23 @@ pub(crate) fn group_selected(group: Option<&str>, selection: Option<&[String]>) 
 }
 
 /// Warn about selected names nothing declares: a typo there would otherwise
-/// silently deselect every group.
-pub(crate) fn warn_unknown_selection(selection: &[String], requests: &[FileRequest]) {
+/// silently deselect every group. `declared` holds the names the tables
+/// declare. A group that could not be expanded has already been reported
+/// with the reason, so it is not also reported as unknown.
+pub(crate) fn warn_unknown_selection(
+    selection: &[String],
+    requests: &[FileRequest],
+    declared: &HashSet<String>,
+) {
     let known = requests
         .iter()
         .filter_map(|req| req.group.as_deref())
         .collect::<HashSet<_>>();
     for name in selection {
-        if !known.contains(name.as_str()) {
+        if !known.contains(name.as_str())
+            && !declared.contains(name)
+            && !unexpanded().contains(name)
+        {
             warn_once!(
                 "[bootstrap] dotfile_groups selects {name:?}, but no [dotfile_groups] table declares it and {} has no directory of that name",
                 file::display_path(files::dotfiles_root())
@@ -281,10 +290,9 @@ fn expand_group(
     if group.depends.iter().any(|dep| dep == name) {
         bail!("depends: a group cannot depend on itself");
     }
-    let Some(root) = group.root.as_deref() else {
-        bail!("root is required: the directory tree the group deploys");
-    };
-    let root = group_root(root);
+    // a table that leaves `root` out deploys the directory named after the
+    // group, as a selected name with no table does
+    let root = group_root(group.root.as_deref().unwrap_or(name));
     let target_raw = group.target.unwrap_or_else(|| "~".to_string());
     let target = files::resolve_target_arg(&target_raw);
     if mode == FileMode::Symlink && !group.entries.is_empty() {
@@ -1371,6 +1379,29 @@ mod tests {
             source: None,
         };
         expand_group("common", group, dir, &origin)
+    }
+
+    #[test]
+    fn a_group_without_a_root_deploys_the_directory_named_after_it() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let group: GroupToml = toml::from_str(&format!(
+            "target = {:?}\nexclude = [\"*.md\"]",
+            dir.path().join("home")
+        ))?;
+        let origin = ResourceOrigin {
+            config: dir.path().join("mise.toml"),
+            config_root: dir.path().to_path_buf(),
+            environment: vec![],
+            source: None,
+        };
+        let (files, _) = expand_group("pkg", group, dir.path(), &origin)?;
+        let [tree] = files.as_slice() else {
+            panic!("expected the tree only, got {files:?}");
+        };
+        assert_eq!(tree.group.as_deref(), Some("pkg"));
+        assert_eq!(tree.source, group_root("pkg"));
+        assert!(tree.exclude.iter().any(|p| p.as_str() == "*.md"));
+        Ok(())
     }
 
     #[test]

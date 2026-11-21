@@ -196,17 +196,24 @@ target = "~/.config"
 EOF
 assert_contains "mise dot status 2>&1" "must be inside the group's target"
 
-# Every group names its root, and [dotfiles] entries take no group.
+# A group that leaves root out deploys the directory named after it, and
+# [dotfiles] entries take no group.
+mkdir -p "$DOTS/rootless"
+echo "rootless" >"$DOTS/rootless/.rootlessrc"
+echo "notes" >"$DOTS/rootless/NOTES.md"
 cat <<EOF >mise.toml
 [dotfile_groups.rootless]
+exclude = ["*.md"]
 
 [dotfiles]
 "~/.grouped" = { source = "$DOTS/zsh/.zshrc", group = "zsh" }
 EOF
-assert_contains "mise dot status 2>&1" "root is required"
+assert_not_contains "mise dot status 2>&1" "ignoring group"
 assert_fail "test -e $HOME/.grouped"
 assert_succeed "mise dot apply --yes"
 assert_fail "test -e $HOME/.grouped"
+assert "readlink $HOME/.rootlessrc" "$DOTS/rootless/.rootlessrc"
+assert_fail "test -e $HOME/NOTES.md"
 
 # A walking entry with its own source reads like the group's tree
 # (dot_prefix), and a nested entry's source inside it is not walked too.
@@ -306,7 +313,9 @@ assert_succeed "mise dot apply --yes"
 # schema: invalid
 cat <<EOF >mise.toml
 [dotfile_groups.keep]
+mode = "symlinks"
 EOF
+assert_contains "mise dot status 2>&1" "ignoring group"
 assert_not_contains "mise dot status 2>&1" ".keeprc"
 assert_succeed "mise dot apply --prune --yes"
 assert "readlink $HOME/.keeprc" "$DOTS/keep/.keeprc"

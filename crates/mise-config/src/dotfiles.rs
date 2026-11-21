@@ -146,8 +146,8 @@ pub struct DotfileVariantDecl {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DotfileGroupDecl {
-    /// the directory tree the group deploys; a relative path resolves against dotfiles.root
-    pub root: String,
+    /// the directory tree the group deploys, by default the directory named after the group; a relative path resolves against dotfiles.root
+    pub root: Option<String>,
     /// target directory, absolute or starting with ~/
     #[schemars(extend("default" = "~"))]
     pub target: Option<String>,

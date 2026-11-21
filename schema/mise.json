@@ -8084,7 +8084,7 @@
         "properties": {
           "root": {
             "type": "string",
-            "description": "the directory tree the group deploys; a relative path resolves against dotfiles.root"
+            "description": "the directory tree the group deploys, by default the directory named after the group; a relative path resolves against dotfiles.root"
           },
           "target": {
             "type": "string",
@@ -8772,8 +8772,7 @@
               ]
             }
           }
-        },
-        "required": ["root"]
+        }
       },
       "propertyNames": {
         "pattern": "^[A-Za-z0-9_.-]+$"
