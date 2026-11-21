@@ -11434,6 +11434,10 @@
                 "type": "string",
                 "description": "Version request for the preset's tool."
               },
+              "tool": {
+                "type": "string",
+                "description": "Tool to install the server from, in place of the preset's default."
+              },
               "port": {
                 "$ref": "#/$defs/daemon_port"
               },

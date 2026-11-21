@@ -25,6 +25,7 @@ serde_json = "1"
 sha2 = "0.11"
 sigstore-verify = { version = "0.16", default-features = false, features = [
   "aws-lc-rs",
+  "tuf",
 ] }
 snap = "1"
 thiserror = "2"
@@ -53,11 +54,5 @@ native-tls = [
   "reqwest/native-tls",
   "mise-tls/native-tls",
   "sigstore-verify/native-tls",
-  "sigstore-verify/tuf",
 ]
-rustls = [
-  "reqwest/rustls",
-  "mise-tls/rustls",
-  "sigstore-verify/rustls",
-  "sigstore-verify/tuf",
-]
+rustls = ["reqwest/rustls", "mise-tls/rustls", "sigstore-verify/rustls"]

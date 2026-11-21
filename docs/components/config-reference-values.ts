@@ -292,6 +292,7 @@ export const values: Record<string, string> = {
   "daemons.<name>.args": '["--port", "3000"]',
   "daemons.<name>.data_dir": '".data/postgres"',
   "daemons.<name>.version": '"18"',
+  "daemons.<name>.tool": '"aqua:cockroachdb/cockroach"',
   "daemons.<name>.ports": "{ replication = 5434 }",
   "daemons.<name>.ports.<key>": "5434",
   "daemons.<name>.options": '{ database = "app" }',

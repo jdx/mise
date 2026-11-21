@@ -297,6 +297,8 @@ pub struct DaemonPresetDecl {
     pub preset: String,
     /// Version request for the preset's tool.
     pub version: String,
+    /// Tool to install the server from, in place of the preset's default.
+    pub tool: Option<String>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_port")]
     pub port: Option<DaemonPort>,

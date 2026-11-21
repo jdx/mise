@@ -273,6 +273,9 @@ pub(crate) fn implicit_group_requests(
     out
 }
 
+/// The modes a group's `mode` key may name.
+pub(crate) const GROUP_MODES: [&str; 3] = ["symlink-each", "copy", "symlink"];
+
 fn expand_group(
     name: &str,
     group: GroupToml,
@@ -280,7 +283,7 @@ fn expand_group(
     origin: &ResourceOrigin,
 ) -> Result<(Vec<FileRequest>, Vec<EditRequest>)> {
     let mode = group.mode.as_deref().unwrap_or("symlink-each");
-    if !matches!(mode, "symlink-each" | "copy" | "symlink") {
+    if !GROUP_MODES.contains(&mode) {
         bail!("mode must be \"symlink-each\", \"copy\", or \"symlink\", not {mode:?}");
     }
     let mode = FileMode::parse(mode).expect("validated group mode");

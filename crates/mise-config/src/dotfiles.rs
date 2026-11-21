@@ -123,6 +123,11 @@ pub enum MergeSetting {
     Mode(String),
 }
 
+impl MergeSetting {
+    /// The mode that sets only the keys the target has no value for.
+    pub const MISSING: &str = "missing";
+}
+
 // One `variants = [{ … }]` element of a `[dotfiles]` entry.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
