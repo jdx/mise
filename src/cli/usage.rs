@@ -193,9 +193,15 @@ mod tests {
         // Read the committed pages, which CI keeps equal to what the template
         // renders: rendering every command here takes seconds.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let docs = root.join("docs/cli");
+        // the pages live in the repository, not in the published crate
+        if !docs.is_dir() {
+            eprintln!("skipping: docs/cli is only in a checkout of the repository");
+            return;
+        }
         let mut pages = 0;
         let mut missing = vec![];
-        for entry in walkdir::WalkDir::new(root.join("docs/cli")) {
+        for entry in walkdir::WalkDir::new(docs) {
             let entry = entry.unwrap();
             let page = entry.path();
             if page.extension().is_none_or(|ext| ext != "md") {
