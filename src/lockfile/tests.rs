@@ -2919,6 +2919,41 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
 }
 
 #[test]
+fn test_unsupported_platform_does_not_need_auto_lock() {
+    let tools = vec![LockfileTool {
+        version: "0.1.8".to_string(),
+        backend: Some("aqua:reproducible-containers/diffoci".to_string()),
+        specifiers: BTreeSet::new(),
+        options: BTreeMap::new(),
+        platforms: BTreeMap::new(),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: BTreeSet::from(["windows-x64".to_string()]),
+    }];
+
+    assert!(!lockfile_target_needs_auto_lock(
+        &tools,
+        "0.1.8",
+        "windows-x64",
+        &BTreeMap::new(),
+    ));
+    assert!(lockfile_target_needs_auto_lock(
+        &tools,
+        "0.1.8",
+        "linux-x64",
+        &BTreeMap::new(),
+    ));
+    // A new version may have a build, so it is resolved again.
+    assert!(lockfile_target_needs_auto_lock(
+        &tools,
+        "0.1.9",
+        "windows-x64",
+        &BTreeMap::new(),
+    ));
+}
+
+#[test]
 fn test_complete_target_still_auto_locks_deferred_provenance_upgrade() {
     let platform = Platform::current().to_key();
     let mut baseline = basic_tool("0.11.0", "github:owner/repo");

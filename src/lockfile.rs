@@ -4404,7 +4404,9 @@ fn lockfile_target_needs_auto_lock(
         return true;
     };
     let Some(info) = tool.platforms.get(platform_key) else {
-        return true;
+        // `mise lock` found no build of this version for the platform, so
+        // resolving it again on every install would only repeat the warning.
+        return !tool.unsupported_platforms.contains(platform_key);
     };
     if info.checksum.is_none() || info.url.is_none() {
         return true;
