@@ -416,15 +416,18 @@ fn expand_group(
     }
 
     // the same cut once more, between the destinations as they deploy: a
-    // wildcard's matches and a selected variant's target are not in the keys
+    // wildcard's matches and a selected variant's target are not in the keys.
+    // An edit is claimed here too, since the entry that walks over its file
+    // may be one of those.
     let resolved = entry_requests
         .values()
-        .map(|request| {
-            (
-                request.target.clone(),
-                files::lexical_normalize(&request.source),
-            )
-        })
+        .map(|request| (request.target.clone(), request.source.clone()))
+        .chain(
+            edits
+                .iter()
+                .map(|edit| (edit.target.clone(), edit.source.clone())),
+        )
+        .map(|(target, source)| (target, files::lexical_normalize(&source)))
         .collect::<Vec<_>>();
     for outer in entry_requests.values_mut() {
         if !matches!(outer.mode, FileMode::SymlinkEach | FileMode::Copy) || !outer.source.is_dir() {
@@ -1556,6 +1559,29 @@ mod tests {
             "{app:?}"
         );
         assert!(settings.exclude.is_empty(), "{settings:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn an_edit_is_cut_out_of_a_wildcard_entry_that_walks_over_it() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        file::create_dir_all(dir.path().join("root/extras/app"))?;
+        file::write(dir.path().join("root/extras/app/rc"), "")?;
+        // the key of the entry that walks `apps/app` does not name it
+        let (files, edits) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"extras/*\", mode = \"copy\" }}\n{:?} = {{ line = \"x\" }}",
+                dir.path().join("apps/*"),
+                dir.path().join("apps/app/rc/x"),
+            ),
+        )?;
+        let [_tree, app] = files.as_slice() else {
+            panic!("expected the tree and one entry, got {files:?}");
+        };
+        assert_eq!(app.target, dir.path().join("apps/app"));
+        assert_eq!(edits.len(), 1);
+        assert!(app.exclude.iter().any(|p| p.as_str() == "/rc"), "{app:?}");
         Ok(())
     }
 
