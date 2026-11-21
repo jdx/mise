@@ -867,59 +867,62 @@ fn retry_after_is_seconds_or_an_http_date() {
 
 #[tokio::test]
 async fn retries_wait_for_retry_after() {
+    // One second is the shortest wait the header can ask for, so this test
+    // sleeps that long once; nextest gives it a longer limit for that. The
+    // test below covers 503 without waiting.
     let (bytes, digest) = test_blob();
-    for status in [429, 503] {
-        let mut cache = mockito::Server::new_async().await;
-        let busy = cache
-            .mock("GET", blob_path(&digest).as_str())
-            .with_status(status)
-            .with_header("retry-after", "1")
-            .expect(1)
-            .create_async()
-            .await;
-        let ready = cache
-            .mock("GET", blob_path(&digest).as_str())
-            .with_status(200)
-            .with_body(bytes)
-            .expect(1)
-            .create_async()
-            .await;
+    let mut cache = mockito::Server::new_async().await;
+    let busy = cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(429)
+        .with_header("retry-after", "1")
+        .expect(1)
+        .create_async()
+        .await;
+    let ready = cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(200)
+        .with_body(bytes)
+        .expect(1)
+        .create_async()
+        .await;
 
-        // The first backoff delay is at most 200ms, so a wait of a second is
-        // the header's.
-        let started_at = Instant::now();
-        let blob = retrying_client(&cache, 1)
-            .get_blob(&digest, BLOB_MEDIA_TYPE)
-            .await
-            .unwrap();
-        assert_eq!(blob, bytes);
-        assert!(started_at.elapsed() >= Duration::from_secs(1));
-        busy.assert_async().await;
-        ready.assert_async().await;
-    }
+    // The first backoff delay is at most 200ms, so a wait of a second is
+    // the header's.
+    let started_at = Instant::now();
+    let blob = retrying_client(&cache, 1)
+        .get_blob(&digest, BLOB_MEDIA_TYPE)
+        .await
+        .unwrap();
+    assert_eq!(blob, bytes);
+    assert!(started_at.elapsed() >= Duration::from_secs(1));
+    busy.assert_async().await;
+    ready.assert_async().await;
 }
 
 #[tokio::test]
 async fn a_retry_after_past_the_limit_ends_the_retries() {
     let (_, digest) = test_blob();
-    let mut cache = mockito::Server::new_async().await;
-    let busy = cache
-        .mock("GET", blob_path(&digest).as_str())
-        .with_status(429)
-        .with_header("retry-after", "31")
-        .expect(1)
-        .create_async()
-        .await;
+    for status in [429, 503] {
+        let mut cache = mockito::Server::new_async().await;
+        let busy = cache
+            .mock("GET", blob_path(&digest).as_str())
+            .with_status(status)
+            .with_header("retry-after", "31")
+            .expect(1)
+            .create_async()
+            .await;
 
-    let started_at = Instant::now();
-    let error = retrying_client(&cache, 3)
-        .get_blob(&digest, BLOB_MEDIA_TYPE)
-        .await
-        .unwrap_err();
-    assert!(started_at.elapsed() < MAX_RETRY_AFTER);
-    assert!(error.to_string().contains("429"), "{error}");
-    assert!(is_transient(&error));
-    busy.assert_async().await;
+        let started_at = Instant::now();
+        let error = retrying_client(&cache, 3)
+            .get_blob(&digest, BLOB_MEDIA_TYPE)
+            .await
+            .unwrap_err();
+        assert!(started_at.elapsed() < MAX_RETRY_AFTER);
+        assert!(error.to_string().contains(&status.to_string()), "{error}");
+        assert!(is_transient(&error));
+        busy.assert_async().await;
+    }
 }
 
 #[test]
