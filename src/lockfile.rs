@@ -394,6 +394,12 @@ pub struct LockfileTool {
     pub uv: Option<GraphRef<UvLock>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub provenance: Option<PackageProvenance>,
+    /// Platforms `mise lock` tried and the backend has no build of this
+    /// version for. Recording them lets `mise lock --check` tell such a
+    /// platform from an entry that went missing. A platform is never both
+    /// listed here and in `platforms`.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
+    pub unsupported_platforms: BTreeSet<String>,
 }
 
 /// The source repository an `npm:` tool's package was built from, as the
@@ -2092,7 +2098,7 @@ impl Lockfile {
         let mut platforms = BTreeSet::new();
         for tools in self.tools.values() {
             for tool in tools {
-                for platform_key in tool.platforms.keys() {
+                for platform_key in tool.platforms.keys().chain(&tool.unsupported_platforms) {
                     platforms.insert(platform_key.clone());
                 }
             }
@@ -2393,6 +2399,7 @@ impl Lockfile {
             };
             // Only insert non-empty platform info to avoid `"platforms.linux-x64" = {}`
             if !merged.is_empty() {
+                tool.unsupported_platforms.remove(platform_key);
                 tool.platforms.insert(platform_key.to_string(), merged);
             }
         } else {
@@ -2410,6 +2417,7 @@ impl Lockfile {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: BTreeSet::new(),
             });
         }
 
@@ -2418,6 +2426,39 @@ impl Lockfile {
         // for multiple requests with different options. Legacy migration is
         // handled by the consensus-based merge pass, where all contributing
         // requests are available.
+    }
+
+    /// Record that the backend has no build of `short@version` for
+    /// `platform_key`, in the entry `set_platform_info` would write. A
+    /// platform that already has an entry keeps it.
+    pub fn set_unsupported_platform(
+        &mut self,
+        short: &str,
+        version: &str,
+        backend: Option<&str>,
+        options: &BTreeMap<String, String>,
+        platform_key: &str,
+    ) {
+        self.set_platform_info(
+            short,
+            version,
+            backend,
+            options,
+            platform_key,
+            PlatformInfo::default(),
+        );
+        let key = self
+            .tool_key(short)
+            .cloned()
+            .unwrap_or_else(|| crate::toolset::install_state::state_short(short).into_owned());
+        if let Some(tool) = self.tools.get_mut(&key).and_then(|tools| {
+            tools
+                .iter_mut()
+                .find(|t| t.version == version && &t.options == options)
+        }) && !tool.platforms.contains_key(platform_key)
+        {
+            tool.unsupported_platforms.insert(platform_key.to_string());
+        }
     }
 
     pub(crate) fn set_aube_lock(
@@ -4994,10 +5035,18 @@ pub async fn resolve_tool_lock_info(
 /// or if a locked artifact is replaced by one with weaker provenance, which could
 /// indicate a supply chain attack.
 pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<bool> {
-    let (short, version, backend, platform, info, options, conda_packages, _error_is_fatal) =
-        result;
+    let (short, version, backend, platform, info, options, conda_packages, status) = result;
     let platform_key = platform.to_key();
     let mut applied = false;
+    if info.is_err() && status == LockResolutionStatus::Unsupported {
+        lockfile.set_unsupported_platform(
+            &short,
+            &version,
+            Some(&backend),
+            &options,
+            &platform_key,
+        );
+    }
     if let Ok(ref info) = info {
         if let Some(err) = check_single_tool_provenance(
             lockfile.tools_for(&short).map(Vec::as_slice),
@@ -5086,10 +5135,12 @@ fn build_rekey_decisions(
         .flatten()
         .filter(|tool| tool.options.is_empty())
         .fold(HashMap::new(), |mut platforms, tool| {
-            platforms
-                .entry(tool.version.as_str())
-                .or_default()
-                .extend(tool.platforms.keys().map(String::as_str));
+            platforms.entry(tool.version.as_str()).or_default().extend(
+                tool.platforms
+                    .keys()
+                    .chain(&tool.unsupported_platforms)
+                    .map(String::as_str),
+            );
             platforms
         });
     let mut decisions = HashMap::new();
@@ -5117,6 +5168,40 @@ fn build_rekey_decisions(
     }
 
     decisions
+}
+
+/// The merged entry an existing empty-options entry's platform moves to:
+/// the variant `resolved_options` names, or the entry's own key when the
+/// platform's options cannot be resolved.
+fn rekeyed_entry<'a>(
+    by_key: &'a mut HashMap<(String, BTreeMap<String, String>), LockfileTool>,
+    existing_tool: &LockfileTool,
+    resolved_options: Option<BTreeMap<String, String>>,
+) -> &'a mut LockfileTool {
+    let rekeyed = resolved_options.is_some();
+    let options = resolved_options.unwrap_or_else(|| existing_tool.options.clone());
+    let target = by_key
+        .entry((existing_tool.version.clone(), options.clone()))
+        .or_insert_with(|| LockfileTool {
+            version: existing_tool.version.clone(),
+            backend: existing_tool.backend.clone(),
+            specifiers: existing_tool.specifiers.clone(),
+            options,
+            platforms: BTreeMap::new(),
+            aube: existing_tool.aube.clone(),
+            uv: existing_tool.uv.clone(),
+            provenance: existing_tool.provenance.clone(),
+            unsupported_platforms: BTreeSet::new(),
+        });
+    if rekeyed {
+        if target.provenance.is_none() {
+            target.provenance = existing_tool.provenance.clone();
+        }
+        target
+            .specifiers
+            .extend(existing_tool.specifiers.iter().cloned());
+    }
+    target
 }
 
 /// Merge tool entries with deduplication by (version, options).
@@ -5159,6 +5244,9 @@ where
                 .and_modify(|existing| *existing = info.merge_with(existing))
                 .or_insert(info);
         }
+        entry
+            .unsupported_platforms
+            .extend(tool.unsupported_platforms);
     }
     let fresh_versions: HashSet<String> =
         by_key.keys().map(|(version, _)| version.clone()).collect();
@@ -5167,6 +5255,7 @@ where
         .flat_map(|((version, _), tool)| {
             tool.platforms
                 .keys()
+                .chain(&tool.unsupported_platforms)
                 .map(|platform| (version.clone(), platform.clone()))
         })
         .collect();
@@ -5199,6 +5288,9 @@ where
                 if entry.provenance.is_none() {
                     entry.provenance = existing_tool.provenance.clone();
                 }
+                entry
+                    .unsupported_platforms
+                    .extend(existing_tool.unsupported_platforms.iter().cloned());
             }
             if !existing_tool.options.is_empty() {
                 if let Some(entry) = by_key.get_mut(&key) {
@@ -5219,11 +5311,13 @@ where
                     // toolset only resolves the current platform's options. Keep
                     // the platforms that no fresh entry of this version refreshed.
                     let mut kept = existing_tool.clone();
-                    kept.platforms.retain(|platform, _| {
-                        !fresh_platforms
-                            .contains(&(existing_tool.version.clone(), platform.clone()))
-                    });
-                    if !kept.platforms.is_empty() {
+                    let refreshed = |platform: &String| {
+                        fresh_platforms.contains(&(existing_tool.version.clone(), platform.clone()))
+                    };
+                    kept.platforms.retain(|platform, _| !refreshed(platform));
+                    kept.unsupported_platforms
+                        .retain(|platform| !refreshed(platform));
+                    if !kept.platforms.is_empty() || !kept.unsupported_platforms.is_empty() {
                         by_key.insert(key, kept);
                     }
                 }
@@ -5237,46 +5331,19 @@ where
                 let resolved_options = Platform::parse(platform_key)
                     .ok()
                     .and_then(|platform| resolve(&existing_tool.version, &platform));
-                let Some(resolved_options) = resolved_options else {
-                    by_key
-                        .entry(key.clone())
-                        .or_insert_with(|| LockfileTool {
-                            version: existing_tool.version.clone(),
-                            backend: existing_tool.backend.clone(),
-                            specifiers: existing_tool.specifiers.clone(),
-                            options: existing_tool.options.clone(),
-                            platforms: BTreeMap::new(),
-                            aube: existing_tool.aube.clone(),
-                            uv: existing_tool.uv.clone(),
-                            provenance: existing_tool.provenance.clone(),
-                        })
-                        .platforms
-                        .insert(platform_key.clone(), info.clone());
-                    continue;
-                };
-
-                let target_key = (existing_tool.version.clone(), resolved_options.clone());
-                let target = by_key.entry(target_key).or_insert_with(|| LockfileTool {
-                    version: existing_tool.version.clone(),
-                    backend: existing_tool.backend.clone(),
-                    specifiers: existing_tool.specifiers.clone(),
-                    options: resolved_options,
-                    platforms: BTreeMap::new(),
-                    aube: existing_tool.aube.clone(),
-                    uv: existing_tool.uv.clone(),
-                    provenance: existing_tool.provenance.clone(),
-                });
-                if target.provenance.is_none() {
-                    target.provenance = existing_tool.provenance.clone();
-                }
-                target
-                    .specifiers
-                    .extend(existing_tool.specifiers.iter().cloned());
-                target
+                rekeyed_entry(&mut by_key, existing_tool, resolved_options)
                     .platforms
                     .entry(platform_key.clone())
                     .and_modify(|fresh| *fresh = fresh.merge_with(info))
                     .or_insert_with(|| info.clone());
+            }
+            for platform_key in &existing_tool.unsupported_platforms {
+                let resolved_options = Platform::parse(platform_key)
+                    .ok()
+                    .and_then(|platform| resolve(&existing_tool.version, &platform));
+                rekeyed_entry(&mut by_key, existing_tool, resolved_options)
+                    .unsupported_platforms
+                    .insert(platform_key.clone());
             }
             if !by_key.contains_key(&key) {
                 consumed_keys.insert(key);
@@ -5286,6 +5353,13 @@ where
 
     let tools = by_key
         .into_values()
+        .map(|mut tool| {
+            // A platform with a resolved entry is not unsupported.
+            let platforms = &tool.platforms;
+            tool.unsupported_platforms
+                .retain(|platform| !platforms.contains_key(platform));
+            tool
+        })
         .sorted_by(|a, b| {
             a.version
                 .cmp(&b.version)
@@ -6796,6 +6870,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: BTreeSet::new(),
             },
             toml::Value::Table(mut t) => {
                 let mut platforms = BTreeMap::new();
@@ -6838,6 +6913,13 @@ impl TryFrom<toml::Value> for LockfileTool {
                     .remove("provenance")
                     .map(|value| value.try_into())
                     .transpose()?;
+                let mut unsupported_platforms: BTreeSet<String> = t
+                    .remove("unsupported_platforms")
+                    .map(|value| value.try_into())
+                    .transpose()?
+                    .unwrap_or_default();
+                // A platform with an entry is not unsupported.
+                unsupported_platforms.retain(|platform| !platforms.contains_key(platform));
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
                 LockfileTool {
@@ -6857,6 +6939,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                     aube,
                     uv,
                     provenance,
+                    unsupported_platforms,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -6885,6 +6968,17 @@ impl LockfileTool {
                 .map(|(k, v)| (k, toml::Value::String(v)))
                 .collect();
             table.insert("options".to_string(), toml::Value::Table(opts_table));
+        }
+        let unsupported_platforms: Vec<String> = self
+            .unsupported_platforms
+            .into_iter()
+            .filter(|platform| !self.platforms.contains_key(platform))
+            .collect();
+        if !unsupported_platforms.is_empty() {
+            table.insert(
+                "unsupported_platforms".to_string(),
+                unsupported_platforms.into(),
+            );
         }
         if !self.platforms.is_empty() {
             table.insert("platforms".to_string(), self.platforms.clone().into());
@@ -6936,6 +7030,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
         aube: tv.aube_lock.clone(),
         uv: tv.uv_lock.clone(),
         provenance: tv.npm_provenance.clone(),
+        unsupported_platforms: tv.lock_unsupported_platforms.clone(),
     })
 }
 

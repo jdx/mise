@@ -472,8 +472,7 @@ impl Lock {
             for platform in variants {
                 let target = PlatformTarget::new(platform.clone());
                 let options = lock_options(&target);
-                let reads_host = options.is_none() || options == host_options;
-                let entry = if reads_host {
+                let entry = if options.is_none() || options == host_options {
                     host.clone()
                 } else {
                     own_entries = true;
@@ -483,7 +482,7 @@ impl Lock {
                         Err(err) => Err(first_line(&err)),
                     }
                 };
-                rows.push((platform, entry, reads_host));
+                rows.push((platform, entry));
             }
             // A tool no platform reads its own entry for fails as a whole.
             if let (Err(problem), false) = (&host, own_entries) {
@@ -493,9 +492,9 @@ impl Lock {
             let Some(first) = host
                 .as_ref()
                 .ok()
-                .or_else(|| rows.iter().find_map(|(_, entry, _)| entry.as_ref().ok()))
+                .or_else(|| rows.iter().find_map(|(_, entry)| entry.as_ref().ok()))
             else {
-                for (platform, entry, _) in rows {
+                for (platform, entry) in rows {
                     if let Err(problem) = entry {
                         let key = platform.to_key();
                         check.push_unresolved(
@@ -521,7 +520,7 @@ impl Lock {
                 );
                 check.push(Some(first), None, vec![problem]);
             }
-            for (platform, entry, reads_host) in rows {
+            for (platform, entry) in rows {
                 let key = platform.to_key();
                 let tv = match entry {
                     Ok(tv) => tv,
@@ -535,21 +534,11 @@ impl Lock {
                     }
                 };
                 let locked_platform = tv.lock_platforms.get(&key);
-                // `mise lock` records nothing for a platform a tool has no
-                // build for, and warns only when the user named it. Without a
-                // named platform, a missing entry on a tool that has others is
-                // that skip, not an entry that went missing.
-                // The host platform is always locked, so it stays checked, under
-                // the key the backend selects there (Bun's `-baseline`). A
-                // platform with its own lock options reads another entry of
-                // the tool, so its gap is not a missing build either.
+                // `mise lock` lists a platform the tool has no build for in
+                // `unsupported_platforms`. That is up to date unless the user
+                // named the platform, where `locked_entry_error` says so.
                 if locked_platform.is_none()
-                    && !tv.lock_platforms.is_empty()
-                    && reads_host
-                    && key != Platform::current().to_key()
-                    && tv
-                        .backend()
-                        .is_ok_and(|backend| backend.get_platform_key_for(&tv) != key)
+                    && tv.lock_unsupported_platforms.contains(&key)
                     && !lockfile::is_named_platform(named.as_ref(), &key)
                 {
                     continue;

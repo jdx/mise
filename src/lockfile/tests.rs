@@ -14,6 +14,7 @@ fn test_retain_unsuperseded_unbound_entries() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let mut lockfile = Lockfile::default();
     lockfile.tools.insert(
@@ -335,6 +336,7 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }
 }
 
@@ -573,6 +575,7 @@ fn new_lockfiles_write_current_version_and_request_bindings() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -863,6 +866,7 @@ fn request_binding_moves_between_versions_with_matching_options() {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: Default::default(),
             },
             basic_tool("1.1.0", "asdf:dummy"),
         ],
@@ -891,6 +895,7 @@ fn failed_request_binding_preserves_the_existing_binding() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -1059,6 +1064,7 @@ fn tool_with_conda_dep(version: &str, backend: &str, platform: &str, dep: &str) 
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }
 }
 
@@ -1136,6 +1142,172 @@ fn empty_resolution_creates_new_tool_entry_without_platform_metadata() {
 }
 
 #[test]
+fn unsupported_resolution_records_the_platform() {
+    let mut lockfile = Lockfile::default();
+    let result = (
+        "dummy".to_string(),
+        "1.0.0".to_string(),
+        "github:o/dummy".to_string(),
+        Platform::parse("windows-x64").unwrap(),
+        Err("no asset for windows-x64".to_string()),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        crate::lockfile::LockResolutionStatus::Unsupported,
+    );
+    assert!(!apply_lock_result(&mut lockfile, result).unwrap());
+    let tool = &lockfile.tools["dummy"][0];
+    assert!(tool.platforms.is_empty());
+    assert_eq!(
+        tool.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+
+    // Any other failure records nothing.
+    let mut lockfile = Lockfile::default();
+    let result = (
+        "dummy".to_string(),
+        "1.0.0".to_string(),
+        "github:o/dummy".to_string(),
+        Platform::parse("windows-x64").unwrap(),
+        Err("connection reset".to_string()),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        crate::lockfile::LockResolutionStatus::Optional,
+    );
+    assert!(!apply_lock_result(&mut lockfile, result).unwrap());
+    assert!(lockfile.tools.get("dummy").is_none_or(|tools| {
+        tools
+            .iter()
+            .all(|tool| tool.unsupported_platforms.is_empty())
+    }));
+}
+
+#[test]
+fn unsupported_platform_yields_to_a_resolved_entry() {
+    let url = PlatformInfo {
+        url: Some("https://example.com/dummy.zip".to_string()),
+        checksum: Some("sha256:abc".to_string()),
+        ..Default::default()
+    };
+    let options = BTreeMap::new();
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "linux-x64",
+        url.clone(),
+    );
+    // A platform with an entry is never listed.
+    lockfile.set_unsupported_platform(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "linux-x64",
+    );
+    lockfile.set_unsupported_platform(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "windows-x64",
+    );
+    let tool = &lockfile.tools["dummy"][0];
+    assert_eq!(
+        tool.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+    assert_eq!(
+        lockfile.all_platform_keys(),
+        BTreeSet::from(["linux-x64".to_string(), "windows-x64".to_string()])
+    );
+    // A later build for the platform replaces the marker.
+    lockfile.set_platform_info(
+        "dummy",
+        "1.0.0",
+        Some("github:o/dummy"),
+        &options,
+        "windows-x64",
+        url,
+    );
+    assert!(lockfile.tools["dummy"][0].unsupported_platforms.is_empty());
+}
+
+#[test]
+fn unsupported_platforms_round_trip() {
+    let toml = r#"
+[[tools.dummy]]
+version = "1.0.0"
+backend = "github:o/dummy"
+unsupported_platforms = ["windows-x64", "linux-x64"]
+
+[tools.dummy."platforms.linux-x64"]
+url = "https://example.com/dummy.tar.gz"
+"#;
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(&path, toml).unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    let tool = &lockfile.tools["dummy"][0];
+    // A platform with an entry is not unsupported.
+    assert_eq!(
+        tool.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+    lockfile.save(&path).unwrap();
+    let written = file::read_to_string(&path).unwrap();
+    assert!(
+        written.contains(r#"unsupported_platforms = ["windows-x64"]"#),
+        "{written}"
+    );
+    assert_eq!(Lockfile::read(&path).unwrap().tools, lockfile.tools);
+}
+
+#[test]
+fn merge_keeps_unsupported_platforms_until_resolved() {
+    let entry = |platforms: &[&str], unsupported: &[&str]| LockfileTool {
+        version: "1.0.0".to_string(),
+        backend: Some("github:o/dummy".to_string()),
+        specifiers: BTreeSet::new(),
+        options: BTreeMap::new(),
+        platforms: platforms
+            .iter()
+            .map(|p| {
+                (
+                    p.to_string(),
+                    PlatformInfo {
+                        url: Some(format!("https://example.com/{p}")),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect(),
+        aube: None,
+        uv: None,
+        provenance: None,
+        unsupported_platforms: unsupported.iter().map(|p| p.to_string()).collect(),
+    };
+    let existing = vec![entry(&["linux-x64"], &["windows-x64", "macos-arm64"])];
+    // This run resolved macos-arm64 and found no windows build again.
+    let (tools, _) = merge_tool_entries(
+        vec![entry(&["linux-x64", "macos-arm64"], &[])],
+        Some(&existing),
+        |_, _| None,
+    );
+    assert_eq!(tools.len(), 1);
+    assert_eq!(
+        tools[0].platforms.keys().collect::<Vec<_>>(),
+        ["linux-x64", "macos-arm64"]
+    );
+    assert_eq!(
+        tools[0].unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+}
+
+#[test]
 fn test_array_format_required() {
     // Test that multi-version (array) format is read correctly
     let multi_version_toml = r#"
@@ -1206,6 +1378,7 @@ fn test_save_uses_array_format() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
 
     lockfile.tools.insert("node".to_string(), vec![tool]);
@@ -1348,6 +1521,7 @@ fn test_options_field_not_serialized_when_empty() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -1379,6 +1553,7 @@ fn test_options_field_serialized_when_present() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -1936,6 +2111,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let mut options = BTreeMap::new();
     options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
@@ -1956,6 +2132,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
         Some(&existing),
         |_, _| Some(options.clone()),
@@ -1983,6 +2160,7 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     });
     let mut merged = vec![basic_tool("22.0.0", "core:node")];
     preserve_absent_tool_entries(&mut merged, Some(&fragmented), &HashSet::new());
@@ -2025,6 +2203,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let mut new_options = BTreeMap::new();
@@ -2047,6 +2226,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) =
@@ -2094,6 +2274,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2110,6 +2291,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
     let fresh = vec![
@@ -2128,6 +2310,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2144,6 +2327,7 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
 
@@ -2200,6 +2384,7 @@ fn locked_backend_inherits_only_an_unambiguous_backend() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let aqua_old = entry("1.57.0", "aqua:jdx/hk");
     let aqua_new = entry("1.58.1", "aqua:jdx/hk");
@@ -2305,6 +2490,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let fresh = vec![LockfileTool {
         version: "1.0.0".to_string(),
@@ -2321,6 +2507,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) =
@@ -2351,6 +2538,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let fresh = vec![LockfileTool {
         version: "26.0.1".to_string(),
@@ -2361,6 +2549,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
@@ -2390,6 +2579,7 @@ fn test_merge_tool_entries_keeps_other_platform_option_variants() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let existing = vec![
         variant("shellcheck-*.zip", "windows-x64", "sha256:WIN"),
@@ -2434,6 +2624,7 @@ fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let existing = vec![tool(
         "shellcheck-*.old",
@@ -2475,6 +2666,7 @@ fn test_merge_tool_entries_retained_variants_do_not_count_as_fresh() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     let existing = vec![
         tool("a", &["windows-x64"]),
@@ -2536,6 +2728,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2552,6 +2745,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
     let fresh = vec![LockfileTool {
@@ -2569,6 +2763,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
 
     let (merged, consumed) =
@@ -2595,6 +2790,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let fresh = vec![LockfileTool {
         version: "1.0.0".to_string(),
@@ -2605,6 +2801,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     }];
     let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
 
@@ -2679,6 +2876,7 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
         LockfileTool {
             version: "3.4.2".to_string(),
@@ -2696,6 +2894,7 @@ fn test_tool_version_needs_auto_lock_uses_target_specific_options() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         },
     ];
 
@@ -2882,6 +3081,7 @@ fn test_merge_lockfile_for_lookup_keeps_request_bindings_enabled() {
                 aube: None,
                 uv: None,
                 provenance: None,
+                unsupported_platforms: Default::default(),
             }],
         );
         let mut other = Lockfile {
@@ -2959,6 +3159,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
     primary.save(&primary_path).unwrap();
@@ -3108,6 +3309,7 @@ fn test_conda_packages_serialization() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -3199,6 +3401,7 @@ fn test_cleanup_unreferenced_conda_packages() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -3316,6 +3519,7 @@ fn test_retain_tools_by_short_or_backend_preserves_legacy_keyed_entries() {
             aube: None,
             uv: None,
             provenance: None,
+            unsupported_platforms: Default::default(),
         }],
     );
 
@@ -4945,6 +5149,7 @@ fn test_lockfile_write_refuses_credential_queries() {
         aube: None,
         uv: None,
         provenance: None,
+        unsupported_platforms: Default::default(),
     };
     lockfile
         .tools

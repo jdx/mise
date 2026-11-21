@@ -97,15 +97,23 @@ once a newer format has been out for six months: version 0 lockfiles after
 
 ## Entry fields {#tool-entry-fields}
 
-| Field        | Version | Meaning                                                                                                                  |
-| ------------ | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `version`    | 0       | The resolved version. mise compares it as an opaque string.                                                              |
-| `backend`    | 0       | The backend that installs it, such as `core:node` or `aqua:jqlang/jq`                                                    |
-| `options`    | 0       | Backend options that select the artifact, such as `{ swift_platform = "ubuntu24.04" }`; entries match on options exactly |
-| `specifiers` | 1       | The requests that resolve to this version and option variant                                                             |
-| `aube`       | 2       | `{ path, digest }` of an npm tool's embedded-aube [sidecar](#native-dependency-sidecars)                                 |
-| `uv`         | 2       | `{ path, digest }` of a PyPI tool's uv [sidecar](#native-dependency-sidecars)                                            |
-| `provenance` | 4       | `{ repository }` an npm tool's package was built from, as its [provenance](#npm-package-provenance) showed               |
+| Field                   | Version | Meaning                                                                                                                  |
+| ----------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `version`               | 0       | The resolved version. mise compares it as an opaque string.                                                              |
+| `backend`               | 0       | The backend that installs it, such as `core:node` or `aqua:jqlang/jq`                                                    |
+| `options`               | 0       | Backend options that select the artifact, such as `{ swift_platform = "ubuntu24.04" }`; entries match on options exactly |
+| `specifiers`            | 1       | The requests that resolve to this version and option variant                                                             |
+| `aube`                  | 2       | `{ path, digest }` of an npm tool's embedded-aube [sidecar](#native-dependency-sidecars)                                 |
+| `uv`                    | 2       | `{ path, digest }` of a PyPI tool's uv [sidecar](#native-dependency-sidecars)                                            |
+| `provenance`            | 4       | `{ repository }` an npm tool's package was built from, as its [provenance](#npm-package-provenance) showed               |
+| `unsupported_platforms` | any     | Platforms `mise lock` tried that the backend has no build of this version for, such as `["windows-x64"]`                 |
+
+`mise lock` writes `unsupported_platforms` instead of a platform entry when the
+backend reports no build for that platform. A platform is never in both. It
+tells [`mise lock --check`](/dev-tools/mise-lock.html#checking-the-lockfile)
+that the gap is expected, and auto-lock treats the platform as done instead of
+trying it again on every install. `mise lock` tries listed platforms again and
+replaces the entry if a build appears.
 
 A shorthand keeps the `backend` recorded here after the registry moves the tool
 to another backend; see

@@ -490,8 +490,14 @@ is set. This is informational; the check does not fail on it.
 
 The platforms are the [`lockfile_platforms`](/configuration/settings.html#lockfile_platforms)
 setting plus the current platform when that setting is set, else the
-platforms already in the lockfile; pass `--platform` to choose others. A tool that does not support one of them fails
-the check unless its `os` option excludes that platform. Each platform is
+platforms already in the lockfile; pass `--platform` to choose others. A
+platform the tool has no build for passes when `mise lock` listed it in the
+entry's [`unsupported_platforms`](/dev-tools/mise-lock-reference.html#tool-entry-fields)
+and you did not name it with `--platform` or `lockfile_platforms`. A named one
+fails with `has no build for platform`; set the tool's `os` option to the
+platforms it supports to skip the others. A platform missing from an entry for
+any other reason, such as a failed download during `mise lock`, fails the
+check. Each platform is
 checked against the entry a locked install there would use, so a tool that
 locks one entry per Linux distro, such as `core:swift`, is checked per distro,
 and a tool with a per-platform `asset_pattern` is checked against the entry
