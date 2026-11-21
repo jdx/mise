@@ -166,12 +166,12 @@ pub struct DotfileGroupDecl {
     pub manifest: Option<String>,
     /// link by a path relative to the link's directory; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
-    /// entries for parts of the tree, written like [dotfiles] entries and applied only while the group is selected. A whole-file entry is keyed by its target path inside the group's target and cut out of the walk; a block, line, or merge edit is keyed by the path of the file it edits, inside the group's target, then "/" and an id. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root
+    /// entries for parts of the tree, written like [dotfiles] entries and applied only while the group is selected. A whole-file entry is keyed by its target path and cut out of the walk; a block, line, or merge edit is keyed by the path of the file it edits, then "/" and an id. A missing source is found under the root at the entry's path inside the group's target, and a relative source starts at the root; an entry outside the group's target needs a source
     pub entries: Option<IndexMap<String, DotfileGroupEntryDecl>>,
 }
 
 // One `[dotfile_groups.<name>.entries]` value.
-/// an entry for a path inside the group's target: a whole-file entry's source path, or a table as in [dotfiles] for a whole-file entry or a block, line, or merge edit
+/// an entry of a group: a whole-file entry's source path, or a table as in [dotfiles] for a whole-file entry or a block, line, or merge edit
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
