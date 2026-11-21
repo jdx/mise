@@ -61,7 +61,8 @@ terminal.
 mise run --multi
 ```
 
-The selector also lists global tasks, the ones in `~/.config/mise/config.toml`.
+The selector also lists global tasks: those defined in the global config, such as
+`~/.config/mise/config.toml`, and executable tasks in `~/.config/mise/tasks`.
 `--no-global` leaves them out so a project's own tasks stand alone, and
 `--global` lists only them. Both work with `--all` and `--multi`.
 

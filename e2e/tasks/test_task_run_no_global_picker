@@ -43,3 +43,5 @@ assert_fail_contains "mise run --global --no-global" "cannot be used with"
 # A filter that leaves nothing says which tasks are missing.
 rm "$HOME/.config/mise/config.toml"
 assert_fail_contains "mise run --global </dev/null" "no global tasks defined"
+assert_fail_contains "mise run --no-global --tag lint" "cannot be used with"
+assert_fail_contains "mise run --global --tag lint" "cannot be used with"

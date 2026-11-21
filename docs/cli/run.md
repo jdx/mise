@@ -58,10 +58,10 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--all`** — Open the task picker with tasks from every project in the monorepo
 - **`--global`** — Open the task picker with only the global tasks
 
-  Global tasks come from the global config, such as `~/.config/mise/config.toml`.
+  Global tasks come from the global config, such as `~/.config/mise/config.toml`, and the global task directory, `~/.config/mise/tasks`.
 - **`--no-global`** — Open the task picker without the global tasks
 
-  Global tasks come from the global config, such as `~/.config/mise/config.toml`. Combine with `--all` or `--multi` to filter those pickers too.
+  Global tasks come from the global config, such as `~/.config/mise/config.toml`, and the global task directory, `~/.config/mise/tasks`. Combine with `--all` or `--multi` to filter those pickers too.
 - **`--multi`** — Open the task picker as a checklist and run every task you check
 
   Space checks a task, `/` filters, and Enter runs the checked tasks as if they were named with `:::`. Needs an interactive terminal. Combine with `--all` to list the tasks from every project in the monorepo.

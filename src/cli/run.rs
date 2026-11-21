@@ -209,15 +209,17 @@ pub(crate) struct Run {
 
     /// Open the task picker with only the global tasks
     ///
-    /// Global tasks come from the global config, such as `~/.config/mise/config.toml`.
-    #[usage(long, conflicts = ["task", "affected", "no_global"])]
+    /// Global tasks come from the global config, such as `~/.config/mise/config.toml`,
+    /// and the global task directory, `~/.config/mise/tasks`.
+    #[usage(long, conflicts = ["task", "affected", "tag", "no_global"])]
     pub global: bool,
 
     /// Open the task picker without the global tasks
     ///
-    /// Global tasks come from the global config, such as `~/.config/mise/config.toml`.
+    /// Global tasks come from the global config, such as `~/.config/mise/config.toml`,
+    /// and the global task directory, `~/.config/mise/tasks`.
     /// Combine with `--all` or `--multi` to filter those pickers too.
-    #[usage(long, conflicts = ["task", "affected", "global"])]
+    #[usage(long, conflicts = ["task", "affected", "tag", "global"])]
     pub no_global: bool,
 
     /// Open the task picker as a checklist and run every task you check
