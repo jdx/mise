@@ -3109,26 +3109,6 @@ still fail the install.
 env = "MISE_PROVENANCE_API_FAILURES_FATAL"
 type = "Bool"
 
-[prune.forget_unused_after]
-default = "90d"
-description = "Forget a tracked config or tool stub that no mise command has loaded for this long."
-docs = """
-mise records each config file it loads and each tool stub it runs, and
-`mise prune` and `mise upgrade` keep the tool versions those still use. A
-project you have not used in this long stops protecting its versions, so they
-can be pruned; the next mise command run in that project tracks it again, and
-`mise install` reinstalls any that were pruned. Set to `0s` to keep tracking until the file is deleted.
-mise records a use to within a day, so a value under a day counts as a day.
-
-A tracked file that no longer exists stops protecting its versions at once and
-is forgotten after a week without use, whatever this is set to, so a project
-that is only away for a while is not lost. `mise prune --configs` forgets it
-straight away.
-"""
-env = "MISE_PRUNE_FORGET_UNUSED_AFTER"
-global_only = true
-type = "Duration"
-
 [prune.exclude]
 default = []
 description = "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`."
@@ -3152,6 +3132,26 @@ env = "MISE_PRUNE_EXCLUDE"
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[prune.forget_unused_after]
+default = "90d"
+description = "Forget a tracked config or tool stub that no mise command has loaded for this long."
+docs = """
+mise records each config file it loads and each tool stub it runs, and
+`mise prune` and `mise upgrade` keep the tool versions those still use. A
+project you have not used in this long stops protecting its versions, so they
+can be pruned; the next mise command run in that project tracks it again, and
+`mise install` reinstalls any that were pruned. Set to `0s` to keep tracking
+until the file is deleted. mise records a use to within a day, so a value under a day counts as a day.
+
+A tracked file that no longer exists stops protecting its versions at once and
+is forgotten after a week without use, whatever this is set to, so a project
+that is only away for a while is not lost. `mise prune` forgets it straight
+away.
+"""
+env = "MISE_PRUNE_FORGET_UNUSED_AFTER"
+global_only = true
+type = "Duration"
 
 [pypi.keyring_provider]
 description = "Read a `pypi:` index password from a `keyring` command when the index URL names a user but no password."
