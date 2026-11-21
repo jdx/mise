@@ -6,7 +6,7 @@ description: "[experimental] Restart shared servers with their current configura
 # `mise daemons providers restart`
 
 - **Usage:** `mise daemons providers restart [NAMES]…`
-- **Source code:** [`src/daemons/providers.rs`](https://github.com/jdx/mise/blob/main/src/daemons/providers.rs)
+- **Source code:** [`src/daemons/provider_commands.rs`](https://github.com/jdx/mise/blob/main/src/daemons/provider_commands.rs)
 
 [experimental] Restart shared servers with their current configuration
 

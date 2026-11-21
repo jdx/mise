@@ -7,7 +7,7 @@ description: "[experimental] List shared servers"
 
 - **Usage:** `mise daemons providers ls [--json]`
 - **Effect:** read-only
-- **Source code:** [`src/daemons/providers.rs`](https://github.com/jdx/mise/blob/main/src/daemons/providers.rs)
+- **Source code:** [`src/daemons/provider_commands.rs`](https://github.com/jdx/mise/blob/main/src/daemons/provider_commands.rs)
 
 [experimental] List shared servers
 
