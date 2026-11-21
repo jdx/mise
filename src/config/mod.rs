@@ -1619,22 +1619,20 @@ impl Config {
                     .await
                     .map_err(|err| TrackedFailure {
                         message: tracked_config_error_message(&path, &err),
-                        warned: false,
+                        reported: false,
                     }),
             };
             match &mut parsed {
                 Ok(cf) => {
                     config_files.insert(path.clone(), cf.clone());
                 }
+                // Reported once per process, however often it is read: warned
+                // about, or counted into a quiet scan's summary, which points at
+                // `mise prune --dry-run` to name it.
+                Err(failure) if failure.reported => debug!("{}", failure.message),
                 Err(failure) => {
-                    if count_quiet_tracked_problem() || failure.warned {
-                        debug!("{}", failure.message);
-                    } else {
-                        // Once per process, however often it is read, but never
-                        // only inside a scan that summarized it.
-                        warn!("{}", failure.message);
-                        failure.warned = true;
-                    }
+                    report_tracked_problem(&failure.message);
+                    failure.reported = true;
                 }
             }
             if let Some(stamp) = stamp {
@@ -9155,11 +9153,11 @@ type TrackedParse = (
     std::result::Result<Arc<dyn ConfigFile>, TrackedFailure>,
 );
 
-/// A tracked config that failed to parse, and whether this process has warned about it.
+/// A tracked config that failed to parse, and whether this process has reported it.
 #[derive(Clone)]
 struct TrackedFailure {
     message: String,
-    warned: bool,
+    reported: bool,
 }
 static TRACKED_PARSES: Lazy<std::sync::Mutex<HashMap<PathBuf, TrackedParse>>> =
     Lazy::new(Default::default);
