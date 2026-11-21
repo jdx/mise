@@ -12,6 +12,17 @@ description = "Run all CI checks"
 description = 'Run all lint checks'
 depends = ['lint:*']
 
+# The Clippy passes CI runs (.github/workflows/test-impl.yml). Kept out of
+# hk.pkl so the git pre-commit hook, which runs every hk step, stays fast.
+["lint:clippy"]
+description = 'Run Clippy with the flags CI uses'
+wait_for = ["build"]
+run = [
+  "cargo clippy --ignore-rust-version -- -D warnings",
+  "cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings",
+]
+run_windows = "cargo clippy --workspace --all-targets --ignore-rust-version -- -D warnings"
+
 [build]
 alias = "b"
 run = "{{ get_env(name='MISE_CARGO_BUILD_COMMAND', default='cargo build') }} --all-features {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
