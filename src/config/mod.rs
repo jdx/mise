@@ -487,7 +487,7 @@ impl Config {
             }
         }
 
-        warn_if_use_toml_loads_home_tool_versions();
+        warn_if_use_toml_loads_home_tool_versions(&config);
         if !global_only {
             warn_if_auto_env_files_exist();
             warn_if_monorepo_lockfile_default_changes(&config);
@@ -3415,11 +3415,14 @@ pub fn warn_use_toml_disabled() {
     );
 }
 
-/// Warns when `MISE_USE_TOML=0` made an existing `~/.tool-versions` a global config
-/// file, which applies it outside the home directory and ranks it above the
-/// global config directory.
-fn warn_if_use_toml_loads_home_tool_versions() {
-    if use_toml_adds_home_tool_versions() && home_tool_versions_path().exists() {
+/// Warns when `MISE_USE_TOML=0` made `~/.tool-versions` a global config file,
+/// which applies it outside the home directory and ranks it above the global
+/// config directory. Only a file mise loaded counts: `--no-config` and an ignored
+/// path leave the variable without effect.
+fn warn_if_use_toml_loads_home_tool_versions(config: &Config) {
+    if use_toml_adds_home_tool_versions()
+        && config.config_files.contains_key(&home_tool_versions_path())
+    {
         warn_use_toml_disabled();
     }
 }

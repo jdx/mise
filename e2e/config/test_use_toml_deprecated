@@ -50,6 +50,10 @@ assert_fail "test -f $HOME/.config/mise/config.toml"
 assert "MISE_USE_TOML=0 mise ls 2>&1 | grep -c '$warning'" "1"
 assert_not_contains "mise ls 2>&1" "$warning"
 
+# skipped config files: the variable changes nothing, so no warning
+assert_not_contains "MISE_USE_TOML=0 mise --no-config ls 2>&1" "$warning"
+assert_not_contains "MISE_USE_TOML=0 MISE_IGNORED_CONFIG_PATHS=$HOME/.tool-versions mise ls 2>&1" "$warning"
+
 # the shell hook runs before every prompt and never prints it
 assert_not_contains "MISE_USE_TOML=0 mise hook-env -s bash 2>&1" "$warning"
 
