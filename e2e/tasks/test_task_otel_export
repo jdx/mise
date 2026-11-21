@@ -96,6 +96,9 @@ run = "echo from-a"
 run = "echo from-b; mise run inner"
 [tasks.inner]
 run = "echo from-inner"
+[tasks.styled]
+output = "silent"
+run = "echo from-styled"
 [tasks.all]
 depends = ["a", "b"]
 [tasks.fail]
@@ -152,3 +155,17 @@ assert_contains "echo '$logs'" "log a: from-a"
 assert_contains "echo '$logs'" "log b: from-b"
 assert_contains "echo '$logs'" "log inner: from-inner"
 assert "python3 summary.py logs | grep -c from-inner" "1"
+
+# Output in the silent style is not exported, also when mise reads the streams
+# anyway to keep a task log.
+rm logs.jsonl
+export MISE_OTEL_LOGS=1 MISE_TASK_LOGS=1
+mise run --output silent a
+mise run --silent a
+MISE_TASK_OUTPUT=silent mise run a
+mise run styled
+assert_not_contains "python3 summary.py logs" "from-a"
+assert_not_contains "python3 summary.py logs" "from-styled"
+# The same task in another style is still exported.
+mise run a
+assert_contains "python3 summary.py logs" "log a: from-a"
