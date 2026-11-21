@@ -1,5 +1,39 @@
 # Changelog
 
+## [2026.11.12](https://github.com/jdx/mise/releases/tag/v2026.11.12) - 2026-11-21
+
+### 🚀 Features
+
+- **(audit)** add `mise audit` and `mise upgrade --vulnerable` by @jdx in [#15942](https://github.com/jdx/mise/pull/15942)
+- **(daemons)** export a project reference's port and URL under its own name by @jdx in [#15956](https://github.com/jdx/mise/pull/15956)
+- **(dotfiles)** default a dotfile group's root to its name by @jdx in [#15953](https://github.com/jdx/mise/pull/15953)
+- **(dotfiles)** let a dotfile group entry deploy outside the group's target by @jdx in [#15954](https://github.com/jdx/mise/pull/15954)
+- **(prune)** add --system and prune replaced system installs after upgrade by @jdx in [#15949](https://github.com/jdx/mise/pull/15949)
+- **(upgrade)** add a per-tool bump option to exclude a tool from --bump by @jdx in [#15947](https://github.com/jdx/mise/pull/15947)
+
+### 🐛 Bug Fixes
+
+- **(java)** resolve sdkman temurin hotfixes by their canonical version by @jdx in [#15928](https://github.com/jdx/mise/pull/15928)
+- **(lock)** refuse version upgrades that drop a platform in generate mode by @jdx in [#15939](https://github.com/jdx/mise/pull/15939)
+- **(lock)** skip platforms a tool has no build for in --check by @jdx in [#15941](https://github.com/jdx/mise/pull/15941)
+- **(lock)** record platforms a tool has no build for in mise.lock by @jdx in [#15952](https://github.com/jdx/mise/pull/15952)
+- **(secrets)** let tasks, including global ones, list keys from your own fnox config by @jdx in [#15937](https://github.com/jdx/mise/pull/15937)
+- **(task)** put a locked task tool's install dir on the task's PATH by @jdx in [#15958](https://github.com/jdx/mise/pull/15958)
+
+### 📚 Documentation
+
+- **(watch)** say that ::: tasks share one watcher by @jdx in [#15938](https://github.com/jdx/mise/pull/15938)
+
+### 📦️ Dependency Updates
+
+- watch aube-workspace.yaml and workspace members' manifests by @jdx in [#15940](https://github.com/jdx/mise/pull/15940)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`ynqa/vy`](https://github.com/ynqa/vy)
+
 ## [2026.11.11](https://github.com/jdx/mise/releases/tag/v2026.11.11) - 2026-11-20
 
 ### 🚀 Features
