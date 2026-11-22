@@ -683,6 +683,9 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         .get("mode")
         .and_then(toml::Value::as_str)
         .map(str::to_string);
+    if mode.as_deref() == Some(files::SYMLINK_MAIN) {
+        bail!("entries.{key:?}: mode = \"symlink-main\" is only supported in [dotfiles]");
+    }
     let has_source = table.contains_key("source");
     let needs_source = !(has_source
         || table.contains_key("content")

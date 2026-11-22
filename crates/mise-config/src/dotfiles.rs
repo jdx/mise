@@ -54,10 +54,10 @@ pub struct DotfileTableDecl {
     pub source: Option<String>,
     /// literal inline file content; alternative to source
     pub content: Option<String>,
-    /// how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. "absent" removes a file or symlink at the target and takes no source. "track" saves the file's history where it is, and "track-local" saves it in this machine's local-only history, which is never shared. "fnox" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source
+    /// how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. "symlink-main" links to an explicit path in the main Git checkout. "absent" removes a file or symlink at the target and takes no source. "track" saves the file's history where it is, and "track-local" saves it in this machine's local-only history, which is never shared. "fnox" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source
     // A string, so a mode from a newer mise warns and is skipped.
     #[schemars(extend("anyOf" = [
-        {"enum": ["symlink", "symlink-each", "copy", "template", "absent", "track", "track-local", "fnox"]},
+        {"enum": ["symlink", "symlink-main", "symlink-each", "copy", "template", "absent", "track", "track-local", "fnox"]},
         {"type": "string"}
     ]))]
     pub mode: Option<String>,
@@ -192,7 +192,7 @@ pub enum DotfileGroupEntryDecl {
 // relative source starts at the group root.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = schema::entry_rules)]
+#[schemars(transform = schema::group_entry_rules)]
 pub struct DotfileGroupEntryTableDecl {
     /// encrypt tracked file contents before storing them in Git; the live file remains plaintext
     #[serde(default)]

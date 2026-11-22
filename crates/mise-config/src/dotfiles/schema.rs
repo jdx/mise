@@ -10,9 +10,17 @@ use serde_json::{Value, json};
 
 /// Adds the rules between an entry's keys to its derived schema.
 pub(crate) fn entry_rules(schema: &mut Schema) {
-    let rules: Vec<Value> = vec![
+    apply_entry_rules(schema, true);
+}
+
+pub(crate) fn group_entry_rules(schema: &mut Schema) {
+    apply_entry_rules(schema, false);
+}
+
+fn apply_entry_rules(schema: &mut Schema, symlink_main: bool) {
+    let mut rules: Vec<Value> = vec![
         rule_0(),
-        rule_1(),
+        rule_1(symlink_main),
         rule_2(),
         rule_3(),
         rule_4(),
@@ -25,6 +33,12 @@ pub(crate) fn entry_rules(schema: &mut Schema) {
         rule_11(),
         rule_12(),
     ];
+    if symlink_main {
+        rules.push(json!({
+            "if": {"properties": {"mode": {"const": "symlink-main"}}, "required": ["mode"]},
+            "then": {"required": ["source"], "properties": {"content": false}}
+        }));
+    }
     schema.insert("allOf".into(), rules.into());
     // an encrypted entry is a whole file from a source, never inline content or an edit
     schema.insert(
@@ -69,11 +83,15 @@ fn rule_0() -> Value {
 }
 
 /// `relative` applies to symlink modes only.
-fn rule_1() -> Value {
+fn rule_1(symlink_main: bool) -> Value {
+    let mut modes = vec!["symlink", "symlink-each"];
+    if symlink_main {
+        modes.push("symlink-main");
+    }
     json!({
         "anyOf": [
             {"properties": {"relative": {"const": false}}},
-            {"properties": {"mode": {"enum": ["symlink", "symlink-each"]}}, "required": ["mode"]},
+            {"properties": {"mode": {"enum": modes}}, "required": ["mode"]},
             {
                 "properties": {
                     "mode": false,
@@ -400,26 +418,29 @@ mod tests {
     /// applies to a value an editor offers.
     #[test]
     fn the_rules_name_declared_values() {
-        let mut schema = json_schema!({});
-        entry_rules(&mut schema);
-        let rules = schema.to_value();
-        for key in [
-            "mode", "merge", "format", "manifest", "position", "template",
-        ] {
-            let mut values = BTreeSet::new();
-            named(&rules, key, &mut values);
-            for declared in [
-                property_enum::<DotfileTableDecl>(key),
-                property_enum::<DotfileGroupEntryTableDecl>(key),
+        for symlink_main in [false, true] {
+            let mut schema = json_schema!({});
+            apply_entry_rules(&mut schema, symlink_main);
+            let rules = schema.to_value();
+            for key in [
+                "mode", "merge", "format", "manifest", "position", "template",
             ] {
+                let mut values = BTreeSet::new();
+                named(&rules, key, &mut values);
+                let declared = if symlink_main {
+                    property_enum::<DotfileTableDecl>(key)
+                } else {
+                    property_enum::<DotfileGroupEntryTableDecl>(key)
+                };
                 assert!(
                     values.is_subset(&declared),
                     "the rules name {key} values {values:?}, the declaration {declared:?}"
                 );
             }
+            let mut modes = BTreeSet::new();
+            named(&rules, "mode", &mut modes);
+            assert!(modes.contains("fnox"), "the rules were not read: {modes:?}");
+            assert_eq!(modes.contains("symlink-main"), symlink_main);
         }
-        let mut modes = BTreeSet::new();
-        named(&rules, "mode", &mut modes);
-        assert!(modes.contains("fnox"), "the rules were not read: {modes:?}");
     }
 }

@@ -971,6 +971,31 @@ pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Find an ordinary repository's main checkout without invoking Git.
+///
+/// Start at the declaring directory, not the process cwd. A linked worktree
+/// must be registered with its common Git directory. Stop at any other Git
+/// boundary rather than borrowing an enclosing repository's checkout.
+pub fn stable_main_checkout_root(path: &Path) -> Option<PathBuf> {
+    let path = path.canonicalize().ok()?;
+    for dir in path.ancestors() {
+        let dotgit = dir.join(".git");
+        let metadata = match dotgit.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return None,
+        };
+        return if metadata.is_dir() && dotgit.join("HEAD").is_file() {
+            Some(dir.to_path_buf())
+        } else if metadata.is_file() {
+            registered_main_checkout_root(&dotgit)
+        } else {
+            None
+        };
+    }
+    None
+}
+
 /// Where a path sits in a git repository: which checkout holds it, and which
 /// repository that checkout belongs to.
 ///

@@ -720,6 +720,25 @@ platform config file such as `config.macos.toml` instead, with the
 [Platform environments](/configuration/environments.html#platform-environments).
 Use `variants` when one entry needs a different target on each machine.
 
+## Symlinks to the main Git checkout {#symlink-main}
+
+To keep a link usable after removing a linked Git worktree, use `symlink-main`:
+
+```toml
+[dotfiles]
+"~/.config/mise/config.toml" = { mode = "symlink-main", source = "mise.global.toml" }
+```
+
+The source is a literal path from the root of the main checkout associated
+with the declaring config. It must exist there and cannot contain `..`,
+wildcards, or templates, or resolve through a symlink outside that checkout.
+It cannot point into a linked worktree nested inside the main checkout.
+A bare repository, a submodule configuration, or a directory without a
+recognized main checkout cannot use this mode. It is for whole-file entries
+in `[dotfiles]`, not directory tree groups or rendered templates. Ordinary
+symlink sources still resolve as before. Source resolution does not run Git or
+template commands, in a preview or during apply.
+
 ## Relative symlinks {#relative}
 
 By default, links point at their source by an absolute path. Set
