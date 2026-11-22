@@ -2,6 +2,7 @@ use eyre::Result;
 use itertools::sorted;
 use std::env::consts::{ARCH, OS};
 
+use crate::platform::Platform;
 use crate::{backend, config, dirs, env, file};
 use crate::{config::Config, env::PYENV_ROOT};
 
@@ -43,15 +44,17 @@ pub(super) struct SyncPython {
 
 /// The libc component of a uv python directory name: `gnu` or `musl` on Linux, `none` on
 /// every other OS (macOS and Windows builds do not link a libc uv distinguishes).
-fn uv_libc() -> &'static str {
-    if cfg!(target_os = "linux") {
-        if cfg!(target_env = "musl") {
-            "musl"
-        } else {
-            "gnu"
-        }
-    } else {
+///
+/// `host_libc` is the libc of the machine, as the python backend sees it (`Platform::libc`),
+/// not the one mise was built against: a musl build of mise can run on a glibc host, where the
+/// backend installs a GNU python. A host with no detected libc is glibc, as in the backend.
+fn uv_libc(os: &str, host_libc: Option<&str>) -> &'static str {
+    if os != "linux" {
         "none"
+    } else if host_libc == Some("musl") {
+        "musl"
+    } else {
+        "gnu"
     }
 }
 
@@ -149,7 +152,8 @@ impl SyncPython {
                 None if file::is_symlink_or_junction(&src) => continue,
                 None => src,
             };
-            let dst = uv_versions_path.join(uv_install_name(&v, OS, ARCH, uv_libc()));
+            let libc = uv_libc(OS, Platform::current().libc());
+            let dst = uv_versions_path.join(uv_install_name(&v, OS, ARCH, libc));
             if !dst.exists() {
                 if !uv_versions_path.exists() {
                     file::create_dir_all(uv_versions_path)?;
@@ -185,12 +189,14 @@ mod tests {
     }
 
     #[test]
-    fn uv_libc_is_none_outside_linux() {
-        let libc = uv_libc();
-        if cfg!(target_os = "linux") {
-            assert!(matches!(libc, "gnu" | "musl"));
-        } else {
-            assert_eq!(libc, "none");
-        }
+    fn uv_libc_follows_the_host_on_linux_and_is_none_elsewhere() {
+        assert_eq!(uv_libc("linux", Some("gnu")), "gnu");
+        assert_eq!(uv_libc("linux", Some("musl")), "musl");
+        // no detected libc is glibc, like the python backend
+        assert_eq!(uv_libc("linux", None), "gnu");
+        assert_eq!(uv_libc("windows", None), "none");
+        assert_eq!(uv_libc("macos", None), "none");
+        // a stale musl qualifier never leaks into a non-Linux name
+        assert_eq!(uv_libc("macos", Some("musl")), "none");
     }
 }
