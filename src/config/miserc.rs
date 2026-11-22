@@ -475,7 +475,7 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
 
     for path in files.into_iter().rev() {
         file::ensure_config_file_size(&path)?;
-        if let Ok(content) = file::read_config_to_string(&path) {
+        if let Ok(Some(content)) = file::read_config_to_string_if_exists(&path) {
             let config_root = path.parent().unwrap_or(Path::new("."));
             let content = render_miserc_template(&mut tera, &content, config_root);
             let mut settings = toml::from_str::<MisercSettings>(&content)
@@ -688,7 +688,7 @@ fn env_ceiling_paths() -> BTreeSet<PathBuf> {
         .map(|v| {
             std::env::split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
-                .map(file::replace_path)
+                .flat_map(|p| file::ceiling_path_forms(&p))
                 .collect()
         })
         .unwrap_or_default()

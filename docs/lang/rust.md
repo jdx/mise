@@ -114,7 +114,7 @@ mise passes your environment through to rustup, so a rustup mirror such as
 [panamax](https://github.com/panamax-rs/panamax) works by setting rustup's own
 variables:
 
-```toml
+```toml [mise.toml]
 [env]
 RUSTUP_DIST_SERVER = "https://mirror.example.com"
 RUSTUP_UPDATE_ROOT = "https://mirror.example.com/rustup"
@@ -254,7 +254,7 @@ in `RUSTUP_DIST_SERVER`, apply:
 rust = { version = "latest", install_env = { RUSTUP_DIST_SERVER = "https://rust-mirror.example.com" } }
 ```
 
-Other generic options are described in [tool options](/dev-tools/#tool-options).
+Other generic options are described in [tool options](/dev-tools/tool-options.html).
 
 ## Settings
 

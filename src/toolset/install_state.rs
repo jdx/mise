@@ -191,7 +191,10 @@ fn clean_root_manifest(raw: &Manifest) -> (Manifest, bool) {
 }
 
 fn read_raw_manifest_from(path: &Path) -> Manifest {
-    match file::read_to_string(path) {
+    // The manifest is missing until the first install. `std::fs` builds no
+    // eyre error for that, so no backtrace is resolved for it either.
+    trace!("cat {}", display_path(path));
+    match std::fs::read_to_string(path) {
         std::result::Result::Ok(body) => match toml::from_str(&body) {
             std::result::Result::Ok(m) => m,
             Err(err) => {

@@ -1528,19 +1528,27 @@ impl Upgrade {
                 if let Some(pr) = &scan_pr {
                     pr.set_message("resolving tracked configs".into());
                 }
-                let result: Result<_> = async {
+                // Only installed versions can be kept, so the scan resolves offline: what
+                // a project's request matches among them is what it uses now. Other
+                // projects' problems are not this upgrade's, so they are counted and
+                // summarized in one line rather than warned about one by one.
+                let (result, skipped) = crate::config::with_quiet_tracked_config_errors(async {
                     let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
                         config,
                         true,
-                        false,
+                        true,
                         &upgraded_config_paths,
                         self.defers_missing_lazy(),
                     )
                     .await?;
                     needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
-                    Ok(needed)
-                }
+                    Result::<_>::Ok(needed)
+                })
                 .await;
+                crate::config::warn_quiet_tracked_problems(
+                    skipped,
+                    "upgrade",
+                );
                 if let Some(pr) = &scan_pr {
                     match &result {
                         Ok(_) => pr.finish(),

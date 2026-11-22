@@ -4,6 +4,10 @@
 It is environment-only: detection does not inspect processes or the filesystem and
 does not spawn subprocesses.
 
+[mise](https://mise.jdx.dev) uses it to adapt its output when an agent runs a
+command. The crate has no dependencies and does not depend on mise, so other
+command-line tools can use it too.
+
 ```rust
 if mise_agent_env::is_agent() {
     // Prefer complete, machine-readable output.

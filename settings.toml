@@ -437,7 +437,8 @@ By default, mise looks for config files in the current directory and every
 parent up to the filesystem root. The search stops at a ceiling directory, which
 is not searched itself: with `MISE_CEILING_PATHS=/home/user`,
 `/home/user/projects/app/mise.toml` loads but `/home/user/mise.toml` does not.
-This matches Git's `GIT_CEILING_DIRECTORIES`.
+A ceiling that goes through a symlink also stops the search at the directory
+the link points to. This matches Git's `GIT_CEILING_DIRECTORIES`.
 
 `mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the
@@ -2116,11 +2117,11 @@ Versions without a vendor prefix, such as `java@21`, `java@lts` or
 Temurin), which keeps publishing quarterly updates for long-term-support
 releases.
 
-Earlier versions of mise defaulted to `openjdk`. jdk.java.net publishes OpenJDK
-builds only until the next feature release, so with that vendor `java@21` stays
-on 21.0.2. To keep the old behavior, set this to `openjdk`, or request
-`openjdk-21` explicitly. Temurin has no builds of Java 9, 10 or 12 through 15;
-request those with an `openjdk-` prefix.
+Set this to `openjdk` to install builds from jdk.java.net instead, or request
+`openjdk-21` explicitly. jdk.java.net publishes OpenJDK builds only until the
+next feature release, so with that vendor `java@21` stays on 21.0.2. Temurin
+has no builds of Java 9, 10 or 12 through 15; request those with an `openjdk-`
+prefix.
 
 Installed versions are not changed: a version such as `21.0.2` installed from
 OpenJDK keeps resolving to that OpenJDK build when the current vendor does not
@@ -2338,7 +2339,7 @@ Neither mode creates lockfiles; set [`lockfile = true`](#lockfile) or run
 [Complete lockfile generation](/dev-tools/mise-lock-reference.html#complete-lockfile-generation).
 
 ::: warning
-`merge` is deprecated. mise will start warning about it in 2027.4.0 and remove it in
+`merge` is deprecated. mise warns about it from 2027.4.0 and removes it in
 2027.10.0. Remove `lockfile_mode` to use the default `generate` mode.
 :::
 """
@@ -2932,6 +2933,23 @@ parse_env = "list_by_colon"
 rc = true
 type = "ListString"
 
+[packslip.compinit]
+default = true
+description = "Let zsh activation run `compinit -i` to register packslip completions when `compdef` is not defined yet."
+docs = """
+Packslip completions are registered with zsh's `compdef`. When `compdef` does
+not exist yet, `mise activate zsh` runs `compinit -i` itself so registration
+can proceed. A plugin manager that defers `compinit` (zinit, for example) then
+runs it a second time, and mise's run writes the default `~/.zcompdump`.
+
+Set this to `false` to skip registration while `compdef` is missing instead.
+Completions for packslip tools register once a later prompt finds `compdef`
+defined. A `compinit` that is already loaded but left `_comps` as a plain array
+is still repaired.
+"""
+env = "MISE_PACKSLIP_COMPINIT"
+type = "Bool"
+
 [packslip.exec]
 default = false
 description = "Let packslip tools run their own executable at install time to generate resources, such as an agent skill."
@@ -3132,6 +3150,26 @@ env = "MISE_PRUNE_EXCLUDE"
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[prune.forget_unused_after]
+default = "90d"
+description = "Forget a tracked config or tool stub that no mise command has loaded for this long."
+docs = """
+mise records each config file it loads and each tool stub it runs, and
+`mise prune` and `mise upgrade` keep the tool versions those still use. A
+project you have not used in this long stops protecting its versions, so they
+can be pruned; the next mise command run in that project tracks it again, and
+`mise install` reinstalls any that were pruned. Set to `0s` to keep tracking
+until the file is deleted. mise records a use to within a day, so a value under a day counts as a day.
+
+A tracked file that no longer exists stops protecting its versions at once and
+is forgotten after a week without use, whatever this is set to, so a project
+that is only away for a while is not lost. `mise prune` forgets it straight
+away.
+"""
+env = "MISE_PRUNE_FORGET_UNUSED_AFTER"
+global_only = true
+type = "Duration"
 
 [pypi.keyring_provider]
 description = "Read a `pypi:` index password from a `keyring` command when the index URL names a user but no password."

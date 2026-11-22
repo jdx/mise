@@ -324,9 +324,9 @@ MISE_LOCKED=1 mise install   # the same, set through the environment
 ```
 
 For backends that record download URLs, the entry also needs a URL for the
-current platform. Lockfiles that record only versions still work for most
-backends that record no URL; see [backend support](#backend-support). npm and
-PyPI tools in a format version 2 or newer lockfile also need their
+current platform. For the backends that record no URL, the locked version is
+enough; [backend support](#backend-support) lists both groups. npm and PyPI
+tools in a format version 2 or newer lockfile also need their
 [dependency graph](#dependency-graphs).
 
 Each of those URLs also needs a checksum, or mise fails before downloading,
@@ -488,22 +488,24 @@ and provenance, a locked install may check only the checksum unless
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 is set. This is informational; the check does not fail on it.
 
-The platforms are the [`lockfile_platforms`](/configuration/settings.html#lockfile_platforms)
-setting plus the current platform when that setting is set, else the
-platforms already in the lockfile; pass `--platform` to choose others. A
-platform the tool has no build for passes when `mise lock` listed it in the
+The platforms are chosen as in
+[Preparing platform entries](#preparing-platform-entries); pass `--platform` to
+choose others. Each platform is checked against the entry a locked install
+there would use, so a tool that locks one entry per Linux distro, such as
+`core:swift`, is checked per distro, and a tool with a per-platform
+`asset_pattern` is checked against the entry locked for that platform even when
+the current platform has none. The Python that a `pipx` tool selects is checked
+with it.
+
+A platform the tool has no build for passes when `mise lock` listed it in the
 entry's [`unsupported_platforms`](/dev-tools/mise-lock-reference.html#tool-entry-fields)
 and you did not name it with `--platform` or `lockfile_platforms`. A named one
 fails with `has no build for platform`; set the tool's `os` option to the
 platforms it supports to skip the others. A platform missing from an entry for
 any other reason, such as a failed download during `mise lock`, fails the
-check. Each platform is
-checked against the entry a locked install there would use, so a tool that
-locks one entry per Linux distro, such as `core:swift`, is checked per distro,
-and a tool with a per-platform `asset_pattern` is checked against the entry
-locked for that platform even when the current platform has none.
-The Python that a `pipx` tool selects is checked with it. Like a locked install,
-the check enforces only the scopes in
+check.
+
+Like a locked install, the check enforces only the scopes in
 [`locked_scopes`](/configuration/settings.html#locked_scopes) and the tools under
 `tool_config.locked`, and never the global override config. `--json` prints one
 object per platform entry with its `provenance` and `problems`, and still exits
@@ -657,6 +659,11 @@ A version recorded in `mise.lock` installs even when it is newer than
 [`minimum_release_age`](/security.html#minimum-release-age); the cutoff applies
 only when mise selects a new version. npm and PyPI tools also apply it when they
 resolve transitive dependencies that the lockfile does not record.
+
+`mise lock --minimum-release-age <date or duration>` sets the cutoff for one
+run, for example `90d` or `2026-06-01`. It filters only requests that are not
+exact, such as `node = "24"` or `latest`, and keeps existing lockfile entries
+that still match their request, so it does not downgrade them.
 
 ## Troubleshooting
 

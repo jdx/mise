@@ -112,13 +112,16 @@ mise reads the tokens that the forge CLIs store, without running them:
 The CLIs store a token per host, so one `gh auth login --hostname <host>` per
 GitHub Enterprise host is enough for mise to authenticate to all of them.
 
-mise looks for each file where the CLI keeps it and uses the first one found:
+mise looks for each file where the CLI keeps it and uses the first one found.
+When `GH_CONFIG_DIR` or `GLAB_CONFIG_DIR` is set, mise reads only the file in
+that directory:
 
-- `gh`: `$GH_CONFIG_DIR/hosts.yml`, then `$XDG_CONFIG_HOME/gh/hosts.yml` when
-  that variable is set, then `~/Library/Application Support/gh/hosts.yml` on
-  macOS or `%APPDATA%\GitHub CLI\hosts.yml` on Windows, then
+- `gh`: `$GH_CONFIG_DIR/hosts.yml`. Otherwise `$XDG_CONFIG_HOME/gh/hosts.yml`
+  when that variable is set, then `~/Library/Application Support/gh/hosts.yml`
+  on macOS or `%APPDATA%\GitHub CLI\hosts.yml` on Windows. When
+  `XDG_CONFIG_HOME` is not set, Linux and macOS fall back to
   `~/.config/gh/hosts.yml`.
-- `glab`: `$GLAB_CONFIG_DIR/config.yml`, then `~/.config/glab-cli/config.yml`
+- `glab`: `$GLAB_CONFIG_DIR/config.yml`. Otherwise `~/.config/glab-cli/config.yml`
   (glab's legacy location, which glab still prefers when it exists), then
   `$XDG_CONFIG_HOME/glab-cli/config.yml`, then
   `~/Library/Application Support/glab-cli/config.yml` on macOS or
@@ -180,10 +183,10 @@ mise's shims removed from `PATH`, with `GIT_TERMINAL_PROMPT=0` and no stdin, and
 at most once per host per mise command. If it exits with an error or prints
 nothing, mise moves on to the next source.
 
-::: warning Planned deprecation
+::: warning Deprecated
 sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh` and `zsh`) also receive
-the hostname as `$1`. That argument is deprecated: use `MISE_CREDENTIAL_HOST`
-instead. mise starts warning in 2026.11.0 and removes `$1` in 2027.11.0.
+the hostname as `$1`. That argument is deprecated: mise warns when a command
+uses it, and removes it in 2027.11.0. Use `MISE_CREDENTIAL_HOST` instead.
 :::
 
 #### Using ghtkn
@@ -292,12 +295,14 @@ project's `mise.toml` cannot set them.
 mise writes the refresh token with `oauth_cache_set` when you authorize and each
 time it is rotated, and reads it with `oauth_cache_get` when the access token
 has to be refreshed, about once every eight hours. Neither runs on every mise
-invocation. If `oauth_cache_get` fails when
-mise needs to refresh, for example because the vault is locked, mise skips the
-refresh and keeps the cached token; it may fail on an entry that does not exist
-yet when mise stores the first token. Each command is stopped after 60 seconds. If `oauth_cache_set` fails, mise warns and keeps the new refresh token in
-the cache file rather than losing it. A cache file that already holds a refresh
-token moves into the store at the next refresh.
+invocation. Each command is stopped after 60 seconds.
+
+If `oauth_cache_get` fails when mise needs to refresh, for example because the
+vault is locked, mise skips the refresh and keeps the cached token; it may fail
+on an entry that does not exist yet when mise stores the first token. If
+`oauth_cache_set` fails, mise warns and keeps the new refresh token in the cache
+file rather than losing it. A cache file that already holds a refresh token
+moves into the store at the next refresh.
 
 ##### Touch ID on macOS
 
@@ -442,20 +447,6 @@ action as `github_token` and to later steps as `MISE_GITHUB_TOKEN`. See GitHub's
 On other CI systems, store the token as a secret and expose it as
 `MISE_GITHUB_TOKEN`, `MISE_GITLAB_TOKEN` or `MISE_FORGEJO_TOKEN`.
 
-## Troubleshooting
-
-Start with [`mise token`](#check-which-token-mise-uses) to see which source mise
-picks.
-
-| Symptom                                                    | What to check                                                                                                          |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| The source is an environment variable you did not expect   | Remove or fix it in the environment that runs mise; mise does not consult lower sources once one has a token           |
-| `(none)` while `gh auth status` succeeds                   | gh keeps its token in the system keyring; see [the keyring section](#gh-keyring)                                       |
-| A token is found but the repository is not accessible      | The token's repository access, expiry and organization authorization, and the API host                                 |
-| `403` or `429` from GitHub                                 | The rate-limit details in the response; a `403` can also mean missing permissions. See [errors](/errors.html#http-403) |
-| No token is used for a self-managed GitLab or Forgejo host | The tool's `api_url`; mise keys tokens by its host and sends them only to its origin                                   |
-| OAuth refresh is rejected                                  | The GitHub App client ID; after fixing it, run `mise token github --oauth --refresh`                                   |
-
 ## Fewer API requests with lockfiles {#avoiding-tokens-entirely-with-lockfiles}
 
 A [lockfile](/dev-tools/mise-lock.html) that records artifact URLs and checksums
@@ -482,3 +473,17 @@ host. mise then drops the original host's credentials and uses matching netrc
 credentials for the new host. Turn this off with
 [`netrc`](/configuration/settings.html#netrc), or choose another file with
 [`netrc_file`](/configuration/settings.html#netrc_file).
+
+## Troubleshooting
+
+Start with [`mise token`](#check-which-token-mise-uses) to see which source mise
+picks.
+
+| Symptom                                                    | What to check                                                                                                          |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| The source is an environment variable you did not expect   | Remove or fix it in the environment that runs mise; mise does not consult lower sources once one has a token           |
+| `(none)` while `gh auth status` succeeds                   | gh keeps its token in the system keyring; see [the keyring section](#gh-keyring)                                       |
+| A token is found but the repository is not accessible      | The token's repository access, expiry and organization authorization, and the API host                                 |
+| `403` or `429` from GitHub                                 | The rate-limit details in the response; a `403` can also mean missing permissions. See [errors](/errors.html#http-403) |
+| No token is used for a self-managed GitLab or Forgejo host | The tool's `api_url`; mise keys tokens by its host and sends them only to its origin                                   |
+| OAuth refresh is rejected                                  | The GitHub App client ID; after fixing it, run `mise token github --oauth --refresh`                                   |

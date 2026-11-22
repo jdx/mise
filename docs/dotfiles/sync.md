@@ -79,11 +79,12 @@ applied on the others. Track them with a
 [`machine` variant](/dotfiles/history.html#machine-variants) so each machine
 keeps its own version.
 
-mise prints a preview of the connection and then connects. Without `--sync`,
-it asks which sync mode to use first, because `sync` lets the origin write your
-live files. With `--sync sync`, the
-watcher pushes saved changes and periodically fetches and applies changes from
-other machines. mise uses the repository's default branch unless you pass
+mise prints a preview of the connection, connects, and runs a first sync. That
+sync fetches in every mode and pushes your saved checkpoints unless the mode is
+`fetch-only`, so `manual` also shares what you have saved when you connect.
+After that, with `--sync sync`, the watcher pushes saved changes and
+periodically fetches and applies changes from other machines;
+[Choose a sync mode](#choose-a-sync-mode) covers the other modes. mise uses the repository's default branch unless you pass
 `--branch`; a repository with no branches gets `main`, which the first push
 creates.
 
@@ -152,8 +153,9 @@ controls what the watcher does on its own:
 
 Choose a mode with `--sync manual`, `--sync sync`, or `--sync fetch-only` when
 you connect, or change it later with `mise settings history.sync=manual`.
-Without `--sync`, `origin set` asks whether to turn on automatic sharing, and
-declining selects `manual`. With `--yes`, it uses the configured mode, which is
+Without `--sync`, `origin set` asks whether to turn on automatic sharing,
+because `sync` lets the origin write your live files, and declining selects
+`manual`. With `--yes`, it uses the configured mode, which is
 `sync` unless you changed it, so pass `--sync` in scripts.
 
 ## Sync now {#sync-immediately}
@@ -171,6 +173,11 @@ in `fetch-only` mode, pushes saved commits. It never changes your files.
 tracked files. In `sync` mode, use them when you do not want to wait for the
 next scheduled run. See [Pull and apply](#pull-and-apply) for when you also need
 `mise dot apply`.
+
+`mise dot sync --fetch-only` fetches without pushing in any mode, and
+`mise dot pull --dry-run` shows what a pull would write without changing
+anything. In a script that should continue when the origin is unreachable,
+`mise dot sync --best-effort` warns instead of failing.
 
 Each push includes all accumulated commits, including intermediate saves made
 in manual mode. Files waiting for a manual save or a delayed watcher save
@@ -287,12 +294,13 @@ conflict is resolved. It checks the plan again before it continues, and a
 newer local or remote edit can cancel a decision, in which case you choose
 again.
 
-Invalid incoming configuration or an unsafe local path also blocks the whole
-batch; `mise dot status` and `mise doctor` name the paths and the last
-successful application. A few conflicts cannot be resolved with `pull`, such
-as changes to tracking or encryption settings, inactive platform variants, or
-histories with several Git merge bases. For those, `status` prints Git
-commands to run in a separate clone.
+Invalid incoming configuration, an unsafe local path, or staged Git changes in
+your own checkout of a tracked path also block the whole batch (commit or
+unstage them first); `mise dot status` and `mise doctor` name the paths and
+the last successful application. A few conflicts cannot be resolved with
+`pull`, such as changes to tracking or encryption settings, inactive platform
+variants, or histories with several Git merge bases. For those, `status`
+prints Git commands to run in a separate clone.
 
 ### Conflict notifications {#conflict-notifications}
 
@@ -383,6 +391,9 @@ If your local checkpoints and the origin branch share no Git ancestry,
 history is replaced, even if the files have identical contents. Choose which
 history to keep before you try again.
 
+A local history that has never held a tracked file is the exception: it has
+nothing to keep, so `origin set` drops it and adopts the origin's history.
+
 ### Keep your local checkpoints {#keep-local-checkpoints}
 
 Connect an empty repository:
@@ -447,8 +458,7 @@ files without running setup. See
 
 ### Mixed mise versions {#mixed-mise-versions}
 
-Run a current mise on every machine that shares a history. Per-entry
-`include` and `exclude` lists on tracked directories need mise 2026.9.13 or
-later, and `allow_plaintext` needs 2026.9.16 or later; older versions reject a
-shared setup that uses them. Checkpoints written by 2026.9.13 and later use a
-format that older versions cannot roll back.
+Run the same mise release on every machine that shares a history, and upgrade
+them together. A machine whose mise does not recognize something in the shared
+setup, such as a tracking key added in a later release, refuses the incoming
+setup instead of applying part of it.

@@ -412,12 +412,88 @@ a:hover > div + .card-link::after {
   color: var(--vp-c-text-2);
 }
 
-/* 04 · New machine: bootstrap config beside the pitch */
+/* New machine: the pitch beside the bootstrap diagram */
 .landing-machine-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  gap: 56px;
+  align-items: start;
+}
+
+.landing-machine-grid > .bootstrap-diagram {
+  margin-top: 18px;
+}
+
+/* Lockfile: an excerpt of mise.lock beside the pitch */
+.landing-lock-grid {
   display: grid;
   grid-template-columns: minmax(360px, 1.1fr) minmax(0, 0.9fr);
   gap: 56px;
   align-items: center;
+}
+
+.lock-card {
+  min-width: 0;
+  margin: 0;
+}
+
+/* The longest line is a download URL; this size shows it whole beside the text. */
+.lock-card .terminal-lines {
+  font-size: 0.75rem;
+}
+
+/* The recipe above ends with its own rule. */
+.landing-next {
+  margin-top: 56px;
+  border-top: 0;
+}
+
+.lock-card .terminal-bar span:last-child {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Where to go next: plain link cards */
+.next-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 36px;
+}
+
+.next-grid a {
+  display: block;
+  padding: 18px 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  text-decoration: none !important;
+  transition: border-color 0.2s ease;
+}
+
+.next-grid a:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+.landing-page .next-grid h3 {
+  margin: 0 0 6px;
+  font-family: var(--vp-font-family-base);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--vp-c-text-1);
+}
+
+.next-grid a:hover h3 {
+  color: var(--vp-c-brand-1);
+}
+
+.landing-page .next-grid p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--vp-c-text-2);
 }
 
 .landing-inline-cmd {
@@ -730,13 +806,23 @@ a:hover > div + .card-link::after {
     gap: 36px 32px;
   }
 
-  .landing-machine-grid {
+  .landing-machine-grid,
+  .landing-lock-grid {
     grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
   }
 
-  /* pitch first, diagram second on narrow screens */
   .landing-machine-grid > .bootstrap-diagram {
+    margin-top: 0;
+  }
+
+  /* pitch first, lockfile second on narrow screens */
+  .landing-lock-grid > .lock-card {
     order: 2;
+  }
+
+  .next-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .landing-page .pantry-backends {
@@ -762,6 +848,10 @@ a:hover > div + .card-link::after {
   }
 
   .stations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .next-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1179,6 +1269,16 @@ a:hover > div + .card-link::after {
   .action-btn {
     padding-inline: 16px;
     gap: 16px;
+  }
+  /* Keep the install command on one line down to a 360px screen. */
+  .hero-install {
+    gap: 8px;
+    font-size: 0.75rem;
+  }
+  .hero-install button {
+    min-width: 52px;
+    margin-left: 0;
+    padding-inline: 8px;
   }
   .workbench-bar {
     padding-inline: 16px;

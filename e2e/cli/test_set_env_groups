@@ -121,3 +121,55 @@ assert "mise set NEW=1" ""
 assert "cat mise.toml" 'env = { STAGE = "one", NEW = "1" }'
 assert "mise unset STAGE" ""
 assert "cat mise.toml" 'env = { NEW = "1" }'
+
+# mise applies an entry with tools = true after every plain one, whatever group
+# it is in. That entry is the one set rewrites and reads, and it stays
+# tools = true, so the value written is the value exported.
+cat <<EOF >mise.toml
+[[env]]
+STAGE = { value = "early", tools = true } # after the tools load
+
+[[env]]
+STAGE = "late"
+PLAIN = "p"
+EOF
+assert "mise env --json | jq -r .STAGE" "early"
+assert "mise set STAGE" "early"
+assert "mise set STAGE=written" ""
+assert "cat mise.toml" '[[env]]
+STAGE = { value = "written", tools = true } # after the tools load
+
+[[env]]
+STAGE = "late"
+PLAIN = "p"'
+assert "mise env --json | jq -r .STAGE" "written"
+assert "mise set STAGE" "written"
+
+# Among several entries with tools = true, the last one wins.
+cat <<EOF >mise.toml
+[[env]]
+STAGE = { value = "one", tools = true }
+
+[[env]]
+STAGE = { value = "two", tools = true }
+
+[[env]]
+STAGE = "three"
+EOF
+assert "mise env --json | jq -r .STAGE" "two"
+assert "mise set STAGE" "two"
+assert "mise set STAGE=written" ""
+assert "cat mise.toml" '[[env]]
+STAGE = { value = "one", tools = true }
+
+[[env]]
+STAGE = { value = "written", tools = true }
+
+[[env]]
+STAGE = "three"'
+assert "mise env --json | jq -r .STAGE" "written"
+assert "mise set STAGE" "written"
+
+# unset removes the key from every group, with or without tools = true.
+assert "mise unset STAGE" ""
+assert "mise env --json | jq -r .STAGE" "null"

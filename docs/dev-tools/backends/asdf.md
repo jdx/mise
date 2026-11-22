@@ -52,7 +52,7 @@ also covers writing and maintaining asdf plugins and porting them to Lua.
 ## Tool options
 
 Set these on the tool's entry in `[tools]`. Options every backend accepts are
-described under [tool options](/dev-tools/#tool-options).
+described under [tool options](/dev-tools/tool-options.html).
 
 ### `install_env`
 
@@ -80,7 +80,7 @@ python = "3.14"
 Other mise tools are not added to that `PATH`, so list every mise tool the
 scripts run. `depends` does not add a tool to your config: the dependency also
 needs its own entry in `[tools]`. See
-[tool dependencies](/dev-tools/#tool-dependencies).
+[tool dependencies](/dev-tools/tool-options.html#tool-dependencies).
 
 ### Plugin options
 

@@ -74,6 +74,9 @@ selector.
 
 ## Tool options
 
+`provider`, `api_url`, `artifactbundle` and `artifactbundle_asset` can also be
+set for one platform, under `platforms.<os>-<arch>`.
+
 ### `install_env` {#install-env}
 
 Environment variables for the Swift commands mise runs, such as
@@ -102,11 +105,12 @@ a GitLab shorthand or a self-hosted GitLab URL.
 The provider's API URL. For a self-hosted package, write the full package URL,
 so that source builds clone from that server. mise derives the API URL from its
 host, `https://<host>/api/v3` for GitHub or `https://<host>/api/v4` for GitLab;
-set `api_url` when the API lives somewhere else. That host receives your GitHub
-or GitLab token, so, as with `api_url`, a config that names a package on a host
-other than github.com or gitlab.com this way needs [trust](/cli/trust.html).
-[Safe mode](/security.html#safe-mode) refuses such a package unless its
-`api_url` is set:
+set `api_url` when the API lives somewhere else.
+
+The API host receives your GitHub or GitLab token, so a config that names a
+package by the URL of a host other than github.com or gitlab.com needs
+[trust](/cli/trust.html). [Safe mode](/security.html#safe-mode) refuses such a
+package unless its `api_url` is set:
 
 ```toml
 [tools]

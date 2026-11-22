@@ -81,9 +81,8 @@ This downloads `sentinel_0.26.3_darwin_arm64.zip` on macOS arm64,
 when the template contains double quotes, as here.
 
 ::: v-pre
-The single-brace placeholder `{version}` is deprecated: mise has warned about it
-since 2026.3.0 and will stop accepting it in 2027.3.0. Write `{{ version }}`
-instead.
+The single-brace placeholder `{version}` is deprecated: mise warns when a URL
+uses it, and mise 2027.3.0 stops accepting it. Write `{{ version }}` instead.
 :::
 
 ### Local files
@@ -122,9 +121,9 @@ and `x64` or `arm64`. mise also accepts `darwin`, `amd64`, `x86_64` and
 the install fails with an error that lists the platforms that have one.
 
 Other download options can be set per platform the same way: `checksum`,
-`checksum_url`, `size`, `headers`, `format`, `strip_components`, `bin_path`,
-`bin`, `rename_exe`, `filter_bins` and `windows_script_interpreter`. A platform value overrides
-the top-level one:
+`checksum_url`, `size`, `headers`, `headers_forward`, `format`,
+`strip_components`, `bin_path`, `bin`, `rename_exe`, `filter_bins` and
+`windows_script_interpreter`. A platform value overrides the top-level one:
 
 ```toml
 [tools."http:my-tool".platforms]
@@ -284,7 +283,7 @@ When the dates live somewhere other than the version list, set `version_date_url
 listing needs `version_date_next_expr`, which sees each page as `body` and its
 address as `url`, and returns the address of the next page, or `nil` after the last.
 `bodies` holds every page in order. The next page must be on the same host, because
-`headers` are sent with every request, and mise stops after 100 pages.
+`headers` are sent with every request. A listing that runs past 100 pages fails.
 
 <!-- schema: skip -->
 
@@ -645,10 +644,9 @@ See [Restored caches and installed tools](/dev-tools/mise-lock.html#restored-cac
 :::
 
 `mise prune`, `mise cache prune` and `mise cache clear` leave `http-tarballs`
-alone, because installs may still link to it. Installs made by older mise
-versions may also link into it. To give an install its own copy, remove
-`shared_extraction` and run `mise install --force <tool>@<version>`. Changing the
-option alone does not change an installed version.
+alone, because installs may still link to it. To give an install its own copy,
+remove `shared_extraction` and run `mise install --force <tool>@<version>`.
+Changing the option alone does not change an installed version.
 
 To reclaim the space, give every such install its own copy or uninstall it,
 check that nothing links into the directory, then delete it:

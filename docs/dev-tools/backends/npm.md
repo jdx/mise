@@ -14,10 +14,10 @@ install them with its package manager or [mise deps](/dev-tools/deps.html).
 
 <span id="dependencies"></span>
 
-mise lists and installs npm tools with the embedded aube package manager, so it
-needs neither Node.js nor npm for that. Most CLIs still need Node.js to run, and so do some
-lifecycle scripts. Add `node` to `[tools]`: mise installs it before your npm
-tools, but never adds it for you.
+With the embedded installer, mise needs neither Node.js nor npm to list or
+install npm tools. Most CLIs still need Node.js to run, and so do some lifecycle
+scripts. Add `node` to `[tools]`: mise installs it before your npm tools, but
+never adds it for you.
 
 Other installers need their own executable; see
 [choosing an installer](#choosing-an-installer).
@@ -104,8 +104,9 @@ a registry problem with npm itself.
 ## Dependency locking
 
 With the embedded aube installer, `mise.lock` records each npm tool's full
-dependency graph (lockfile format 2 or later, which new lockfiles use). Create a
-lockfile, or upgrade one written by an older mise, then install from it:
+dependency graph. That needs lockfile format 2 or later. `mise lock --upgrade`
+creates the lockfile, or raises an existing one to the current format; then
+install from it:
 
 ```sh
 mise lock --upgrade
@@ -228,8 +229,10 @@ then a package that no longer publishes provenance fails to install. Dependencie
 are not checked. Only the
 embedded aube package manager supports this; with any other
 [`npm.package_manager`](/configuration/settings.html#npm.package_manager) the
-install is unchecked. A tool with a `checksum` option installs a downloaded
-archive that has no provenance to verify unless it is locked. With the paranoid
+install is unchecked. A package manager that `package.json` pins with a
+[checksum suffix](/lang/node.html#package-manager-versions-in-package-json)
+installs from a downloaded archive, which has no provenance to verify unless it
+is locked. With the paranoid
 `provenance` category on, both of those installs fail instead of going unchecked,
 and so does an install through another package manager of a tool whose
 `mise.lock` entry pins a provenance repository.
@@ -386,7 +389,7 @@ installer.
 
 Set these on the tool's entry in `[tools]`, or inline, as in
 `'npm:some-tool[allow_low_downloads=true]'`. Options every backend accepts are
-described under [tool options](/dev-tools/#tool-options).
+described under [tool options](/dev-tools/tool-options.html).
 
 | Option                  | Installers                                          | What it does                                                                                                                         |
 | ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |

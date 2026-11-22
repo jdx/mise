@@ -178,13 +178,15 @@ apps = ["/Applications/Ghostty.app"]
 exclusive = true
 ```
 
-Across config files, `apps` are combined and the most local `exclusive` wins. With several selected config roots, `exclusive` applies only if every root that sets it says `true`.
+Across config files, `apps` are combined and the most local `exclusive` wins.
+With several selected config roots, `exclusive` applies only if every root that
+sets it says `true`.
 
 mise manages the list with the `LSSharedFileList` API, because `SMAppService`
 can only register the calling app. Apple has deprecated that API since macOS
-10.11 but it still works. If a future macOS removes it, mise will report an
-error instead of changing anything. `mise bootstrap macos defaults
-apply` applies login items together with defaults.
+10.11 but it still works. If mise cannot open the list, it reports an error
+instead of changing anything. `mise bootstrap macos defaults apply` applies
+login items together with defaults.
 
 ## Raw defaults
 

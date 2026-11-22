@@ -64,7 +64,7 @@ the top level, without a `[tools]` table:
 | `url`, `checksum`, `size` | None                                                         | An HTTP download used on every platform                        |
 | `[platforms.<os>-<arch>]` | None                                                         | Per-platform `url`, `checksum`, `size`, and `bin`              |
 
-Any other key goes to the backend as a [tool option](/dev-tools/#tool-options).
+Any other key goes to the backend as a [tool option](/dev-tools/tool-options.html).
 For example, this stub installs the GitHub CLI from its releases:
 
 ```toml [bin/gh]

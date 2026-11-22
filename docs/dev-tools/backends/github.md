@@ -95,7 +95,8 @@ of them except the GitHub-only verification options; the
 and [forgejo](/dev-tools/backends/forgejo.html#differences-from-the-github-backend)
 pages list what behaves differently there. Options that every backend accepts,
 such as `postinstall` and `os`, are described in
-[tool options](/dev-tools/#tool-options).
+[tool options](/dev-tools/tool-options.html). Any other option
+[fails the install](/dev-tools/tool-options.html#unknown-options).
 
 | Option                                                                                       | Use it to                                                          |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -514,9 +515,8 @@ On Windows, name the file with its extension (`filter_bins = "pandoc.exe"`).
 The entries in `.mise-bins` are copies there, so `mise x` and shims start the
 installed file instead, and it finds the DLLs and data beside it. A shell that
 finds the copy on `PATH` by itself, as with `mise activate`, still runs the
-copy. Each copy records which file it came from when it is installed, so
-reinstall a tool installed by an older mise (`mise install --force`) to get
-this.
+copy. Each copy records which file it came from when it is installed, so if
+`mise x` still runs the copy, reinstall the tool with `mise install --force`.
 
 ### Verification
 
@@ -641,8 +641,8 @@ a single-quoted TOML string when the template contains double quotes, as in the
 
 ::: v-pre
 Single-brace placeholders such as `{version}` and `{x86_64_arch}` are
-deprecated. mise has warned about them since 2026.3.0 and will stop accepting
-them in 2027.3.0. Replace them as follows:
+deprecated. mise warns about them and stops accepting them in 2027.3.0.
+Replace them as follows:
 
 | Deprecated      | Replacement                                 |
 | --------------- | ------------------------------------------- |

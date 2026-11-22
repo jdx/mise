@@ -72,10 +72,8 @@ and `--dry-run`, for scripts that check what changes before writing it.
 ::: warning Replacing a task without `--force` is deprecated
 Pass `--force` to `mise tasks add` to replace a task that already has the same
 name in the file. Without it, mise still replaces the task. mise starts warning
-about this in 2027.5.0 and refuses it from 2028.5.0. The warning waits because
-mise versions before `--force` existed reject the flag, so a script shared with
-machines on those versions could not avoid the warning yet. Adding exactly the
-same task again is not a replacement: it changes nothing and never warns.
+about this in 2027.5.0 and refuses it from 2028.5.0. Adding exactly the same
+task again is not a replacement: it changes nothing and never warns.
 :::
 
 ## Common properties
@@ -182,6 +180,18 @@ e2e_args = "--headless"
 run = "./scripts/test-e2e.sh {{vars.e2e_args}} $VERBOSE_ARGS"
 ```
 
+### Tools
+
+[`tools`](/tasks/task-configuration.html#tools) installs and activates tools
+for this task only, not for its dependencies. Use it for a tool that one task
+needs and the rest of the project does not:
+
+```mise-toml
+[tasks.docs]
+tools = { node = "24" }
+run = "node scripts/build-docs.js"
+```
+
 ### Sources and outputs
 
 With [`sources`](/tasks/task-configuration.html#sources) and
@@ -202,7 +212,7 @@ returns the files that match `sources`.
 [tasks.release]
 confirm = "Are you sure you want to cut a new release?"
 description = "Cut a new release"
-file = "scripts/release.sh"
+run = "./scripts/release.sh"
 ```
 
 The task's `depends` have already run when the prompt appears. To prompt before

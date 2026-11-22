@@ -122,6 +122,7 @@ mise bootstrap unapply ssh gpg
 Unapply asks for confirmation before it removes anything. `--yes` approves the
 removal without a prompt, as do the global `--yes` flag, `MISE_YES`, and the
 [`yes`](/configuration/settings.html#yes) setting, which mise turns on in CI.
+Without one of them, unapply fails when there is no terminal to ask.
 
 ### How removal is planned
 

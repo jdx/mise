@@ -17,9 +17,9 @@ properties and values, except `run`, `run_windows` and `file`, since the script
 is the command, and `usage`, since arguments use `#USAGE` lines. mise warns
 about those four and ignores them. A header that sets a property to a value of
 the wrong type gets a warning and that property is ignored, so one broken
-script does not stop the other tasks loading. A bad `confirm` or `deny_*`
-value is an error instead, so a typo cannot remove a confirmation prompt or a
-sandbox restriction.
+script does not stop the other tasks loading. A bad `confirm`, `lock`,
+`deny_*` or `allow_unix` value is an error instead, so a typo cannot remove a
+confirmation prompt, a lock, or a sandbox restriction.
 To share properties between tasks, use [task templates](/tasks/templates.html).
 
 ::: warning Experimental
@@ -364,7 +364,8 @@ For how mise schedules tasks from these properties, see
 
 ### `depends`
 
-- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string }, optional?: bool })[]`
+- **Type**: `string | (string | string[] | { task?: string, tag?: string | string[], args?: string[], env?: { [key]: string }, optional?: bool })[]`.
+  A table entry needs `task`, `tag`, or both.
 
 Tasks that must finish before this task runs. When several tasks share a
 dependency, it runs once. Two entries share a dependency only when the task
@@ -372,8 +373,9 @@ name, arguments, and `env` all match: `build` and `build --release` are two
 separate runs, including when you run `mise run build --release` and another
 task depends on plain `build`. To get one run, give every dependent the same
 arguments, for example by forwarding them with
-`depends = ['build {% if usage.release %}--release{% endif %}']`. mise runs whatever it can in parallel, up to
-[`jobs`](/configuration/settings.html#jobs) tasks at a time.
+`depends = ['build {% if usage.release %}--release{% endif %}']`. mise runs
+whatever it can in parallel, up to [`jobs`](/configuration/settings.html#jobs)
+tasks at a time.
 
 Each entry is a task name, an alias, or a
 [pattern](/tasks/running-tasks.html#wildcards) such as `lint:*`, optionally
@@ -451,8 +453,8 @@ depends = [
 Use `tag` in a table entry to depend on every task in the loaded configs that
 has a [tag](#tags), whatever its name. It does not load other monorepo
 projects to look for tagged tasks. A remote task counts only when the tags are
-in its `mise.toml` entry, not in the `#MISE` header of the file. A list selects the tasks that have any of the
-tags.
+in its `mise.toml` entry, not in the `#MISE` header of the file. A list selects
+the tasks that have any of the tags.
 
 ```toml
 [tasks.clippy]
@@ -633,8 +635,8 @@ secrets = ["DEPLOY_KEY", "DATABASE_URL"]
 run = "./deploy.sh"
 ```
 
-mise releases before 2026.10.4 reject this field, so set
-`min_version = "2026.10.4"` if older clients read the config.
+`secrets` needs mise 2026.10.4 or later. Set `min_version = "2026.10.4"` if
+older clients read the config.
 
 mise redacts the values from the task's output and ignores `--raw` for the
 task. Set [`raw`](#raw) or [`interactive`](#interactive) on the task itself to
@@ -943,7 +945,7 @@ Windows at once. The run-wide timeout does not stop the processes of
 
 ### `lock`
 
-- **Type**: `boolean | string | { name, count, if_pool } | (string | { name, count, if_pool })[]`
+- **Type**: `bool | string | { name, count?, if_pool? } | (string | { name, count?, if_pool? })[]`
 - **Default**: unset
 
 Resources the task holds while its commands run. A run that needs a lock
@@ -982,6 +984,57 @@ lock = true
 - `false` or an empty list takes no lock, for example to turn off a lock a
   template sets.
 
+A lock name cannot contain a comma or end in `:` and a number, because
+`MISE_TASK_LOCKS` joins names with commas and numbers a lock's slots that way.
+
+A task takes its locks after its dependencies finish and once mise has decided
+it must run: a task skipped by `skip_if` or fresh `sources`, or restored from
+the [cache](/tasks/task-configuration.html#cache), never waits. It holds them
+until its last command ends, including tasks its `run` entries start, and
+releases them however it ends. Several names are taken in sorted order. Two
+tasks in the same `mise run` that name the same lock also run one after the
+other.
+
+Locks are files under `$MISE_STATE_DIR/task-locks` held with an operating-system
+file lock, so a lock is released as soon as the mise process holding it exits,
+even if it is killed. A command the task left running in the background does
+not keep the lock.
+
+If each worktree can have its own copy of a resource, prefer that to a lock:
+[daemons](/daemons/worktrees.html) give each worktree its own ports and data.
+
+#### Waiting for a lock
+
+While a task waits, it gives up its `--jobs` slot so other tasks in the run keep
+going, and mise says who holds the lock:
+
+```text
+[test] waiting for lock test-db, held by test in ~/src/shop-pr-42 (pid 4121, for 2m10s)
+[test] got lock test-db after 3m02s
+```
+
+A task's [`timeout`](#timeout) starts once it holds its locks. To limit the
+wait, set [`task.lock_timeout`](/configuration/settings.html#task.lock_timeout)
+or pass `mise run --lock-timeout 5m`; the task then fails and names the holder.
+
+A task holds its locks, its `--jobs` slot and its share of the terminal
+together, taking all of them or none, and keeps them until it ends. Tasks that
+its `{ task = ... }` and `{ tasks = [...] }` entries start run under that slot
+and do not take one of their own. This way a run that holds a lock never waits
+for something another task in the same run is holding while it waits for that
+lock. A locked task that is not [`interactive`](#interactive) shares the
+terminal with other tasks, so the tasks it starts cannot prompt for
+[secrets](/tasks/task-configuration.html#secrets), and an interactive task
+started from it fails; set `interactive = true` on the locked task instead.
+
+#### Locks in nested tasks
+
+The task's commands see the locks it holds in `MISE_TASK_LOCKS`. A task started
+under it, through a nested `mise run` or a `{ task = ... }` entry, already holds
+those locks and does not wait on its parent. It can add locks of its own only if
+they sort after the ones it inherits; otherwise it fails and asks you to add the
+lock to the parent, so two runs can never each hold a lock the other waits for.
+
 #### Locks with several slots
 
 A lock is a pool of slots. By default a name has one, so one run holds it at a
@@ -1008,9 +1061,9 @@ Here `lint` and `test` run together while their shares fit in the 8 slots, and
 a run that does not fit waits. A task takes all `count` slots or none, so two
 waiters never each hold part of what the other needs, and a task that does not
 fit leaves room for a smaller one that does. A `count` above the pool's slots
-takes all of them. A task that waits gives up its `--jobs` slot, as it does for
-any lock. Waiting tasks are not queued, so a steady stream of small tasks can
-keep a large one waiting; give the large one the whole pool if that matters.
+takes all of them. Waiting tasks are not queued, so a steady stream of small
+tasks can keep a large one waiting; give the large one the whole pool if that
+matters.
 
 `MISE_TASK_LOCKS` lists the slots a task holds, for example
 `cpu,cpu:2,cpu:5,cpu:6`: the first slot is the bare name and the others add
@@ -1022,49 +1075,6 @@ could each wait for the slots the other holds.
 Set the number of slots in one place per machine, normally the global config,
 not in each project: runs that disagree on how many slots a pool has can exceed
 the smaller number between them.
-
-A task takes its locks after its dependencies finish and once mise has decided
-it must run: a task skipped by `skip_if` or fresh `sources`, or restored from
-the [cache](/tasks/task-configuration.html#cache), never waits. It holds them until its last command ends,
-including tasks its `run` entries start, and releases them however it ends.
-Several names are taken in sorted order. While a task waits, it gives up its
-`--jobs` slot so other tasks in the run keep going, and mise says who holds the
-lock:
-
-```text
-[test] waiting for lock test-db, held by test in ~/src/shop-pr-42 (pid 4121, for 2m10s)
-[test] got lock test-db after 3m02s
-```
-
-A task holds its locks, its `--jobs` slot and its share of the terminal
-together, taking all of them or none, and keeps them until it ends. Tasks that
-its `{ task = ... }` and `{ tasks = [...] }` entries start run under that slot
-and do not take one of their own. This way a run that holds a lock never waits
-for something another task in the same run is holding while it waits for that
-lock. A locked task that is not [`interactive`](#interactive) shares the
-terminal with other tasks, so the tasks it starts cannot prompt for
-[secrets](/tasks/task-configuration.html#secrets), and an interactive task
-started from it fails; set `interactive = true` on the locked task instead.
-
-Two tasks in the same `mise run` that name the same lock also run one after the
-other. A task's [`timeout`](#timeout) starts once it holds its locks. To limit
-the wait, set
-[`task.lock_timeout`](/configuration/settings.html#task.lock_timeout) or pass
-`mise run --lock-timeout 5m`; the task then fails and names the holder.
-
-The task's commands see the locks it holds in `MISE_TASK_LOCKS`. A task started
-under it, through a nested `mise run` or a `{ task = ... }` entry, already holds
-those locks and does not wait on its parent. It can add locks of its own only if
-they sort after the ones it inherits; otherwise it fails and asks you to add the
-lock to the parent, so two runs can never each hold a lock the other waits for.
-
-Locks are files under `$MISE_STATE_DIR/task-locks` held with an operating-system
-file lock, so a lock is released as soon as the mise process holding it exits,
-even if it is killed. A command the task left running in the background does
-not keep the lock.
-
-If each worktree can have its own copy of a resource, prefer that to a lock:
-[daemons](/daemons/worktrees.html) give each worktree its own ports and data.
 
 ### `raw`
 
@@ -1111,8 +1121,8 @@ the task-name prefixes and hides mise's own messages. The `quiet` and `silent`
 values bundle a style with that verbosity and remain for compatibility.
 
 ::: warning Deprecated
-The `quiet` output value is deprecated. Warnings begin in mise `2026.9.3`, and
-support will be removed in `2027.9.3`. Use `output = "interleave"` with
+The `quiet` output value is deprecated: mise warns when a task uses it, and
+mise `2027.9.3` removes it. Use `output = "interleave"` with
 `quiet = true` instead. For a global default, set `task.output = "interleave"`
 and `task.quiet = true` under `[settings]`.
 :::
@@ -1173,14 +1183,15 @@ allow_env = ["NODE_*"]
 through `deny_env`, `deny_all`, `allow_env`, or an equivalent CLI flag or
 setting. Use it for values such as short-lived credentials that must not affect
 the cache key, and not for values that change generated outputs or logs. Use
-[`cache.env`](/tasks/task-configuration.html#cache) when a change to a variable should invalidate the cache.
-See [environment variables and cache keys](/tasks/caching.html#environment-variables-and-cache-keys).
+[`cache.env`](/tasks/task-configuration.html#cache) when a change to a variable
+should invalidate the cache. See
+[environment variables and cache keys](/tasks/caching.html#environment-variables-and-cache-keys).
 
 ## Deprecated
 
 ### `rust_cache` <Badge type="danger" text="deprecated" />
 
-- **Type**: `bool | { enabled?: bool }`
+- **Type**: `bool | { enabled?: bool, verify?: bool }`
 - **Default**: `false`
 
 No longer does anything. An enabled value prints a migration warning, and mise
@@ -1267,8 +1278,8 @@ installation, or tasks from another config root.
 
 The TOML task files and task directories to load for this config root. The
 list replaces the default task directories rather than adding to them. Entries
-can be paths, glob patterns, `git::` URLs, or `oci::` references, and mise
-renders them as Tera templates.
+can be paths, glob patterns, `git::` URLs, `oci::` references, or `zip::`
+URLs, and mise renders them as Tera templates.
 
 ```toml
 [task_config]
@@ -1280,8 +1291,9 @@ includes = [
 
 See [Task discovery and precedence](/tasks/task-discovery.html#include-task-files-and-directories)
 for which list applies, how to override included tasks, and
-[remote git](/tasks/task-discovery.html#remote-git-includes) and
-[OCI](/tasks/task-discovery.html#remote-oci-includes) includes.
+[remote git](/tasks/task-discovery.html#remote-git-includes),
+[OCI](/tasks/task-discovery.html#remote-oci-includes) and
+[zip](/tasks/task-discovery.html#remote-zip-includes) includes.
 
 ### `task_config.excludes` {#task_config.excludes}
 
@@ -1370,8 +1382,9 @@ task's `sources` stay relative to the task's directory.
 - **Default**: `[]`
 
 Names of inherited environment variables that mise adds to the cache key of
-every task under this config root that has a [`cache`](/tasks/task-configuration.html#cache) configuration.
-They add to each task's `cache.env` rather than replacing it.
+every task under this config root that has a
+[`cache`](/tasks/task-configuration.html#cache) configuration. They add to each
+task's `cache.env` rather than replacing it.
 
 ```toml
 [task_config]
@@ -1430,6 +1443,10 @@ defaults, and environment variables.
 | [`task.timings`](/configuration/settings.html#task.timings)                                                                                                                                                                                                           | Print each task's elapsed time when it finishes.                                      |
 | [`task.show_full_cmd`](/configuration/settings.html#task.show_full_cmd)                                                                                                                                                                                               | Print full command lines instead of truncating them.                                  |
 | [`task.timeout`](/configuration/settings.html#task.timeout)                                                                                                                                                                                                           | A time limit for a whole `mise run`.                                                  |
+| [`task.lock_pools`](/configuration/settings.html#task.lock_pools)                                                                                                                                                                                                     | How many slots each named [`lock`](#lock) has.                                        |
+| [`task.lock_timeout`](/configuration/settings.html#task.lock_timeout)                                                                                                                                                                                                 | How long a task waits for a lock before it fails.                                     |
+| [`task.history`](/configuration/settings.html#task.history), [`task.history_limit`](/configuration/settings.html#task.history_limit)                                                                                                                                  | Record runs for [`mise tasks history`](/cli/tasks/history.html), and how many.        |
+| [`task.logs`](/configuration/settings.html#task.logs)                                                                                                                                                                                                                 | Keep the output of each task's last run for [`mise tasks log`](/cli/tasks/log.html).  |
 | [`task.skip`](/configuration/settings.html#task.skip)                                                                                                                                                                                                                 | Tasks that `mise run` skips.                                                          |
 | [`task.skip_depends`](/configuration/settings.html#task.skip_depends)                                                                                                                                                                                                 | Run only the named tasks, without their dependencies.                                 |
 | [`task.run_auto_install`](/configuration/settings.html#task.run_auto_install)                                                                                                                                                                                         | Install missing tools before tasks run.                                               |

@@ -249,3 +249,73 @@ eval "$(mise hook-env -s zsh --force)"
 print -r -- done
 ZSH
 assert 'cat zsh-unset-comps.out' 'done'
+
+# With packslip.compinit off, a shell without compdef registers nothing and
+# does not run compinit.
+zsh -f <<'ZSH' >zsh-no-compinit.out 2>&1
+set -eu
+export MISE_PACKSLIP_COMPINIT=0
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise hook-env -s zsh --force)"
+if (( $+functions[compdef] )); then print -r -- compinit-ran; exit 1; fi
+print -r -- done
+ZSH
+assert 'cat zsh-no-compinit.out' 'done'
+
+# ...and still registers once compdef exists.
+zsh -f <<'ZSH' >zsh-no-compinit-later.out 2>&1
+set -eu
+export MISE_PACKSLIP_COMPINIT=0
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise hook-env -s zsh --force)"
+autoload -Uz compinit
+compinit -i
+# A normal prompt emits nothing; the queued registration runs from precmd.
+for hook in $precmd_functions; do $hook; done
+(( $+functions[__mise_clear_completions] )) && print -r -- registered
+ZSH
+assert 'cat zsh-no-compinit-later.out' 'registered'
+
+# Deactivating before compdef exists drops the queued registration.
+zsh -f <<'ZSH' >zsh-no-compinit-deactivated.out 2>&1
+set -eu
+export MISE_PACKSLIP_COMPINIT=0
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise activate zsh)"
+eval "$(mise hook-env -s zsh --force)"
+eval "$(command mise deactivate)"
+autoload -Uz compinit
+compinit -i
+for hook in ${precmd_functions-}; do $hook 2>/dev/null || :; done
+if (( $+functions[__mise_clear_completions] || $+functions[_probe] )); then print -r -- registered; else print -r -- clean; fi
+ZSH
+assert 'cat zsh-no-compinit-deactivated.out' 'clean'
+
+# A plain-array _comps is repaired when the queued registration finally runs.
+zsh -f <<'ZSH' >zsh-no-compinit-plain-comps.out 2>&1
+set -eu
+export MISE_PACKSLIP_COMPINIT=0
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise hook-env -s zsh --force)"
+autoload -Uz compinit
+compinit -i
+unset _comps
+typeset -ga _comps
+for hook in ${precmd_functions-}; do $hook; done
+[[ ${(t)_comps} == association* ]] && (( $+functions[__mise_clear_completions] )) && print -r -- repaired
+ZSH
+assert 'cat zsh-no-compinit-plain-comps.out' 'repaired'
+
+# A queued registration from one project does not replace the next project's.
+zsh -f <<'ZSH' >zsh-pending-replaced.out 2>&1
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+export MISE_PACKSLIP_COMPINIT=0
+eval "$(mise hook-env -s zsh --force)"
+unset MISE_PACKSLIP_COMPINIT
+(( $+functions[__mise_pending_completions] )) || { print -r -- not-queued; exit 1; }
+cd ../project-2.0.0
+eval "$(mise hook-env -s zsh --force)"
+if (( $+functions[__mise_pending_completions] )); then print -r -- still-queued; else print -r -- replaced; fi
+ZSH
+assert 'cat zsh-pending-replaced.out' 'replaced'

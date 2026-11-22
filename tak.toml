@@ -17,6 +17,32 @@
 # checks for updates, and the second cannot run offline because it has to
 # resolve a tool.
 
+# Variables no measured command inherits: the forge tokens tak removes by
+# default, then the mise overrides that would point a run at the caller's own
+# config, installs or environment instead of the fixture's. setup.sh removes the
+# same ones before it prepares the large fixture.
+[env]
+deny = [
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "MISE_CONFIG_FILE",
+  "MISE_DOWNLOADS_DIR",
+  "MISE_GLOBAL_CONFIG_FILE",
+  "MISE_INSTALL_STORE_DIR",
+  "MISE_PLUGINS_DIR",
+  "MISE_SHARED_INSTALL_DIRS",
+  "MISE_SHIMS_DIR",
+  "MISE_SYSTEM_CONFIG_DIR",
+  "MISE_SYSTEM_CONFIG_FILE",
+  "MISE_SYSTEM_DATA_DIR",
+  "MISE_SYSTEM_DIR",
+  "MISE_SYSTEM_INSTALLS_DIR",
+  "MISE_SYSTEM_PLUGINS_DIRS",
+  "MISE_TMP_DIR",
+  "MISE_ENV",
+  "MISE_PROFILE",
+]
+
 # The fixed cost every invocation pays: process start, dynamic linking, and
 # building the clap command tree. Reading the others against this separates
 # "mise got slower to start" from "this command's path got slower".
@@ -44,3 +70,100 @@ cmd = ["./target/release/mise", "-C", "benchmarks/perf-fixture", "hook-env"]
 [bench.registry]
 cmd = ["./target/release/mise", "registry"]
 runs = 10
+
+# The large benchmarks: a project the size of mise's own, with 29 tools across
+# the aqua, github, packslip, npm and core backends, every one installed, a
+# lockfile covering every platform, a nested config and 47 tasks. The fixture
+# above pins three tools and installs none of them, so it never reaches the
+# work mise does once per installed tool: building install paths, reading the
+# lockfile and install receipts, and listing each tool's bin directories. These
+# do, and that work is most of what a real `env` or `hook-env` costs.
+#
+# `setup.sh` builds the project in `$MISE_PERF_LARGE` (set by the `perf` tasks)
+# with its own HOME and mise directories, and fakes an install of every locked
+# version, so nothing is downloaded and nothing on the machine leaks in. Every
+# benchmark repeats the same `env` because tak has no way yet to share one
+# between some benchmarks and not others. MISE_CEILING_PATHS stops mise from
+# reading the configs of whatever directory holds the work directory.
+#
+# `mise x` and the shims are missing here too: each ends by exec-ing its
+# command, which leaves valgrind no process to count. `env-large` covers the config work they do first.
+
+[bench.env-large]
+cmd = [
+  "./target/release/mise",
+  "-C",
+  "{{ env.MISE_PERF_LARGE }}/project",
+  "env",
+]
+setup = [
+  "bash",
+  "benchmarks/large-fixture/setup.sh",
+  "target/release/mise",
+  "{{ env.MISE_PERF_LARGE }}",
+]
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+
+# What every prompt in an activated shell pays when it has to recompute.
+[bench.hook-env-large]
+cmd = [
+  "./target/release/mise",
+  "-C",
+  "{{ env.MISE_PERF_LARGE }}/project",
+  "hook-env",
+  "-s",
+  "bash",
+]
+setup = [
+  "bash",
+  "benchmarks/large-fixture/setup.sh",
+  "target/release/mise",
+  "{{ env.MISE_PERF_LARGE }}",
+]
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+
+[bench.ls-large]
+cmd = ["./target/release/mise", "-C", "{{ env.MISE_PERF_LARGE }}/project", "ls"]
+setup = [
+  "bash",
+  "benchmarks/large-fixture/setup.sh",
+  "target/release/mise",
+  "{{ env.MISE_PERF_LARGE }}",
+]
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+
+# Loading every task, as completion and `mise tasks` do.
+[bench.tasks-ls-large]
+cmd = [
+  "./target/release/mise",
+  "-C",
+  "{{ env.MISE_PERF_LARGE }}/project",
+  "tasks",
+  "ls",
+]
+setup = [
+  "bash",
+  "benchmarks/large-fixture/setup.sh",
+  "target/release/mise",
+  "{{ env.MISE_PERF_LARGE }}",
+]
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+
+# Planning a run of eight dependent tasks, without running them: everything
+# `mise run` does before its first task starts.
+[bench.run-large]
+cmd = [
+  "./target/release/mise",
+  "-C",
+  "{{ env.MISE_PERF_LARGE }}/project",
+  "run",
+  "--dry-run",
+  "build:step8",
+]
+setup = [
+  "bash",
+  "benchmarks/large-fixture/setup.sh",
+  "target/release/mise",
+  "{{ env.MISE_PERF_LARGE }}",
+]
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }

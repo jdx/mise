@@ -221,7 +221,7 @@ postinstall = "echo 'installed tools'"
   `mise upgrade`; run that step after the upgrade command instead.
 
 To run a command after one specific tool installs, use that tool's
-[`postinstall` option](/dev-tools/#tool-postinstall-commands). It runs as soon
+[`postinstall` option](/dev-tools/tool-options.html#tool-postinstall-commands). It runs as soon
 as that tool finishes, while `[hooks].postinstall` runs once for the whole
 install.
 

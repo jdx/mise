@@ -158,10 +158,47 @@ fn install_error_hooks() -> eyre::Result<()> {
     } else {
         color_eyre::config::HookBuilder::default()
     };
+    // The hook below wraps color-eyre's, so a captured backtrace starts with the
+    // frames of both closures and the boxed calls between them. color-eyre hides
+    // its own frames by name but not these, so drop everything up to the last of
+    // them. A panic never passes through the wrapper, so this leaves its trace as is.
+    let hook_builder = hook_builder.add_frame_filter(Box::new(|frames| {
+        let wrapper = frames.iter().rposition(|frame| {
+            frame.name.as_deref().is_some_and(|name| {
+                name.contains("install_error_hooks") || name.contains("EyreHandler")
+            })
+        });
+        if let Some(last) = wrapper {
+            frames.drain(..=last);
+        }
+    }));
     let (panic_hook, eyre_hook) = hook_builder.into_hooks();
-    eyre_hook.install()?;
+    // color-eyre resolves a backtrace for every report when RUST_BACKTRACE or
+    // RUST_LIB_BACKTRACE is set, which reads the symbols of the whole binary.
+    // A requested exit is a report nobody prints, so it skips the hook.
+    let eyre_hook = eyre_hook.into_eyre_hook();
+    eyre::set_hook(Box::new(move |err| {
+        if mise_util::exit::is_exit_request(err) {
+            Box::new(ExitRequestHandler)
+        } else {
+            eyre_hook(err)
+        }
+    }))?;
     install_panic_hook(panic_hook);
     Ok(())
+}
+
+/// The eyre handler for a requested exit: just its message, no backtrace.
+struct ExitRequestHandler;
+
+impl eyre::EyreHandler for ExitRequestHandler {
+    fn debug(
+        &self,
+        error: &(dyn std::error::Error + 'static),
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "{error}")
+    }
 }
 
 async fn main_() -> eyre::Result<()> {

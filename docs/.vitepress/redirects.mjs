@@ -144,7 +144,7 @@ export const pageRedirects = {
       "backend-capabilities-comparison":
         "/dev-tools/backends/#which-backend-to-use",
       "when-to-use-each-backend": "/dev-tools/backends/#which-backend-to-use",
-      "backend-dependencies": "/dev-tools/#tool-dependencies",
+      "backend-dependencies": "/dev-tools/tool-options.html#tool-dependencies",
       "configuration-and-overrides":
         "/dev-tools/backends/#choose-a-backend-yourself",
       "disable-backends": "/dev-tools/backends/#disable-backends",
@@ -190,13 +190,13 @@ export const pageRedirects = {
         "/dotfiles/history.html#preview-before-tracking",
       "choose-which-files-a-directory-saves":
         "/dotfiles/history.html#choose-which-files-a-directory-saves",
-      "capture-warnings": "/dotfiles/history.html#capture-warnings",
+      "capture-warnings": "/dotfiles/reference.html#capture-warnings",
       "exclude-files-from-one-directory":
         "/dotfiles/history.html#exclude-files-from-one-directory",
       "exclude-files-across-tracked-entries":
         "/dotfiles/history.html#exclude-files-across-tracked-entries",
       "credential-filtering-and-omissions":
-        "/dotfiles/history.html#credential-filtering-and-omissions",
+        "/dotfiles/reference.html#credential-filtering-and-omissions",
       "stop-saving-a-path": "/dotfiles/history.html#stop-tracking-a-file",
       "encrypted-shared-files": "/dotfiles/encryption.html",
       "choose-recipients": "/dotfiles/encryption.html#choose-recipients",
@@ -213,7 +213,7 @@ export const pageRedirects = {
       health: "/dotfiles/history.html#health",
       "what-a-checkpoint-records":
         "/dotfiles/reference.html#what-a-checkpoint-records",
-      "nested-repositories": "/dotfiles/history.html#nested-repositories",
+      "nested-repositories": "/dotfiles/reference.html#nested-repositories",
       "descriptions-from-an-agent":
         "/dotfiles/history.html#descriptions-from-an-agent",
       "recovery-details": "/dotfiles/reference.html#recovery-details",

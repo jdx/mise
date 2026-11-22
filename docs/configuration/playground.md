@@ -4,6 +4,9 @@ description: "Write a mise.toml in the browser: hover any key to see what it doe
 
 # mise.toml playground
 
+Edit this `mise.toml` in your browser to try config keys before you add them to
+a project.
+
 ```toml editor share
 min_version = "2026.10.0"
 

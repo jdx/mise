@@ -163,7 +163,7 @@ cache = { enabled = true }
 - [`experimental`](/configuration/settings.html#experimental) is `true`.
 - The task has at least one entry in `sources`.
 - The task has explicit `outputs` or `outputs = []`. Automatic outputs cannot be
-  stored.
+  stored, and a list that holds only `!` exclusions selects nothing.
 - Every output pattern, including the part after a `!` exclusion, is a relative
   path inside the task directory, and no output contains a source.
 
@@ -182,7 +182,10 @@ error such as `task build cache requires at least one source`.
   never cached, because its log or outputs could contain them. mise warns, and
   freshness checks still apply.
 - A `raw` or `interactive` task, or any task run with `--raw`, keeps the
-  terminal and is not cached. mise warns, and the task runs every time.
+  terminal, so mise has no log to capture and stores and restores nothing for
+  it. mise still computes the key and skips the task while the key and the
+  outputs are unchanged since its last run. Otherwise it warns and runs the
+  task.
 - A task runs instead of restoring when one of its dependencies has `sources`
   but no artifact cache and ran in the same `mise run`.
 
@@ -329,9 +332,9 @@ hashes the output without printing or keeping it.
 A command input must be non-empty and exit successfully. It inherits the task's
 `timeout`, or 30 seconds when the task has none, and may print at most 16 MiB
 across stdout and stderr. Keep command inputs fast, deterministic, and free of
-side effects, because they run every time mise computes the key. They do not run
-during a dry run or for `raw` and `interactive` tasks, unless you request a
-cache-key explanation with `--task-cache-explain` or
+side effects, because they run every time mise computes the key, including for
+`raw` and `interactive` tasks. They do not run during a dry run unless you
+request a cache-key explanation with `--task-cache-explain` or
 `--task-cache-explain-json`.
 
 ### Environment variables and cache keys
@@ -553,9 +556,9 @@ or one holding a path that the task's `outputs` do not select, counts as a miss,
 so the task runs. Errors while reading or writing the cache never turn a
 successful task into a failure.
 
-mise replays a restored log with the output mode of the current run, so
-`prefix`, `interleave`, `keep-order`, `timed`, `replacing`, `quiet`, `silent`,
-and per-stream silencing apply to it as they do to live output.
+mise replays a restored log with the [output style](/tasks/running-tasks.html#output)
+of the current run, so the style, including `silent`, and per-stream silencing
+apply to it as they do to live output.
 
 When a task depends on cached tasks, their keys are part of its key, so it can
 restore its own entry after its dependencies run, are skipped, or are restored.

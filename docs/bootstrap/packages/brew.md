@@ -125,6 +125,12 @@ tap in a repository with another name, add its URL under
 "brew-cask:acme/tools/widget-app" = "latest"
 ```
 
+A tap in a private repository needs
+[GitHub credentials](/dev-tools/github-tokens.html): mise reads the tap through
+the GitHub API with the token it is configured with. It downloads a release
+asset from a private repository the same way when the formula names its own
+download strategy for it.
+
 [`mise bootstrap packages brew tap`](/cli/bootstrap/packages/brew/tap.html) and
 [`untap`](/cli/bootstrap/packages/brew/untap.html) edit
 `[bootstrap.brew.taps]` in your global config by default. Pass `--local` to

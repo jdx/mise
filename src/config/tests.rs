@@ -2639,3 +2639,68 @@ vars = { target = "linux" }
     assert_eq!(tasks[0].description, "linux");
     Ok(())
 }
+
+#[test]
+fn tracked_projects_reach_the_configs_at_and_above_a_project() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("work");
+    let paths = [
+        root.join("mise.toml"),
+        root.join("app/mise.toml"),
+        root.join("app/.config/mise/config.toml"),
+        root.join("app/.mise/conf.d/extra.toml"),
+        root.join("app/web/mise.toml"),
+        root.join("other/mise.toml"),
+        root.join("other/.tool-versions"),
+    ];
+    let mut tracked: ConfigMap = Default::default();
+    for path in &paths {
+        fs::create_dir_all(path.parent().unwrap())?;
+        if path.ends_with(".tool-versions") {
+            fs::write(path, "")?;
+            tracked.insert(
+                path.clone(),
+                Arc::new(config_file::tool_versions::ToolVersions::from_file(path)?),
+            );
+        } else {
+            fs::write(path, "")?;
+            tracked.insert(
+                path.clone(),
+                Arc::new(config_file::mise_toml::MiseToml::from_file(path)?),
+            );
+        }
+    }
+    let projects = TrackedProjects::new(&tracked);
+    let around = |path: &Path| {
+        projects
+            .around(&tracked[path])
+            .keys()
+            .map(|p| p.strip_prefix(&root).unwrap().to_path_buf())
+            .collect::<Vec<_>>()
+    };
+    let rel = |names: &[&str]| names.iter().map(PathBuf::from).collect::<Vec<_>>();
+    assert_eq!(
+        around(&root.join("app/mise.toml")),
+        rel(&[
+            "mise.toml",
+            "app/mise.toml",
+            "app/.config/mise/config.toml",
+            "app/.mise/conf.d/extra.toml",
+        ])
+    );
+    assert_eq!(
+        around(&root.join("app/web/mise.toml")),
+        rel(&[
+            "mise.toml",
+            "app/mise.toml",
+            "app/.config/mise/config.toml",
+            "app/.mise/conf.d/extra.toml",
+            "app/web/mise.toml",
+        ])
+    );
+    assert_eq!(
+        around(&root.join("other/.tool-versions")),
+        rel(&["mise.toml", "other/mise.toml", "other/.tool-versions"])
+    );
+    Ok(())
+}

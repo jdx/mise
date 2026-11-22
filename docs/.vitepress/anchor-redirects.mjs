@@ -510,20 +510,35 @@ export const anchorRedirects = {
   "/dev-tools/#command-not-found-handler-shell-integration":
     "/dev-tools/#auto-install-mechanisms",
   "/dev-tools/#common-commands": "/dev-tools/#choose-the-right-command",
-  "/dev-tools/#dotted-notation": "/dev-tools/#table-format",
+  "/dev-tools/#dotted-notation": "/dev-tools/tool-options.html#table-format",
   "/dev-tools/#existing-version-files": "/dev-tools/#how-tools-are-selected",
-  "/dev-tools/#generic-nested-support": "/dev-tools/#table-format",
+  "/dev-tools/#generic-nested-support":
+    "/dev-tools/tool-options.html#table-format",
   "/dev-tools/#mise-exec-mise-x": "/dev-tools/#choose-the-right-command",
   "/dev-tools/#mise-install": "/dev-tools/#choose-the-right-command",
   "/dev-tools/#mise-use": "/dev-tools/#choose-the-right-command",
   "/dev-tools/#on-demand-execution-mise-x-mise-r":
     "/dev-tools/#auto-install-mechanisms",
-  "/dev-tools/#os-architecture-combinations": "/dev-tools/#os-specific-tools",
+  "/dev-tools/#on-the-command-line":
+    "/dev-tools/tool-options.html#on-the-command-line",
+  "/dev-tools/#os-architecture-combinations":
+    "/dev-tools/tool-options.html#os-specific-tools",
+  "/dev-tools/#os-specific-tools":
+    "/dev-tools/tool-options.html#os-specific-tools",
   "/dev-tools/#permissions-and-sudo":
     "/dev-tools/system-installs.html#permissions-and-sudo",
   "/dev-tools/#supported-tools":
     "/dev-tools/system-installs.html#supported-backends",
-  "/dev-tools/#table-format-recommended": "/dev-tools/#table-format",
+  "/dev-tools/#table-format": "/dev-tools/tool-options.html#table-format",
+  "/dev-tools/#table-format-recommended":
+    "/dev-tools/tool-options.html#table-format",
+  "/dev-tools/#templates-in-tool-configuration":
+    "/dev-tools/tool-options.html#templates-in-tool-configuration",
+  "/dev-tools/#tool-dependencies":
+    "/dev-tools/tool-options.html#tool-dependencies",
+  "/dev-tools/#tool-postinstall-commands":
+    "/dev-tools/tool-options.html#tool-postinstall-commands",
+  "/dev-tools/#unread-options": "/dev-tools/tool-options.html#unknown-options",
   "/dev-tools/#version-ordering": "/dev-tools/versions.html#version-ordering",
   "/dev-tools/#vfox-plugin-hook-dependencies":
     "/tool-plugin-development.html#depends",
@@ -937,6 +952,38 @@ export const anchorRedirects = {
   "/dotfiles.html#whole-file-entries":
     "/dotfiles/managed.html#whole-file-entries",
   "/dotfiles.html#windows": "/dotfiles/managed.html#windows",
+  "/dotfiles/history.html#capture-warnings":
+    "/dotfiles/reference.html#capture-warnings",
+  "/dotfiles/history.html#configuration-reference":
+    "/dotfiles/reference.html#configuration-reference",
+  "/dotfiles/history.html#credential-filtering-and-omissions":
+    "/dotfiles/reference.html#credential-filtering-and-omissions",
+  "/dotfiles/history.html#history.allow_plaintext_history":
+    "/dotfiles/reference.html#history.allow_plaintext_history",
+  "/dotfiles/history.html#history.allow_secret_values":
+    "/dotfiles/reference.html#history.allow_secret_values",
+  "/dotfiles/history.html#history.describe_command":
+    "/dotfiles/reference.html#history.describe_command",
+  "/dotfiles/history.html#history.enabled":
+    "/dotfiles/reference.html#history.enabled",
+  "/dotfiles/history.html#history.fetch_interval":
+    "/dotfiles/reference.html#history.fetch_interval",
+  "/dotfiles/history.html#history.lock_wait":
+    "/dotfiles/reference.html#history.lock_wait",
+  "/dotfiles/history.html#history.notify":
+    "/dotfiles/reference.html#history.notify",
+  "/dotfiles/history.html#history.sync":
+    "/dotfiles/reference.html#history.sync",
+  "/dotfiles/history.html#history.sync_interval":
+    "/dotfiles/reference.html#history.sync_interval",
+  "/dotfiles/history.html#history.watch.debounce":
+    "/dotfiles/reference.html#history.watch.debounce",
+  "/dotfiles/history.html#history.watch.max_interval":
+    "/dotfiles/reference.html#history.watch.max_interval",
+  "/dotfiles/history.html#history.watch.reconcile":
+    "/dotfiles/reference.html#history.watch.reconcile",
+  "/dotfiles/history.html#nested-repositories":
+    "/dotfiles/reference.html#nested-repositories",
   "/env-plugin-development.html#_4-use-built-in-caching-for-expensive-operations":
     "/env-plugin-development.html#caching",
   "/env-plugin-development.html#available-lua-modules":
@@ -1033,8 +1080,13 @@ export const anchorRedirects = {
   "/hooks.html#enter-hook": "/hooks.html#directory-hooks",
   "/hooks.html#leave-hook": "/hooks.html#directory-hooks",
   "/hooks.html#multiple-hooks-syntax": "/hooks.html#define-a-hook",
-  "/hooks.html#tool-level-postinstall": "/dev-tools/#tool-postinstall-commands",
+  "/hooks.html#tool-level-postinstall":
+    "/dev-tools/tool-options.html#tool-postinstall-commands",
   "/ide-integration.html#intellij-plugin": "/ide-integration.html#ide-plugins",
+  "/ide-integration.html#language-server-tasks":
+    "/lsp.html#language-server-tasks",
+  "/ide-integration.html#language-server-tools":
+    "/lsp.html#language-server-tools",
   "/ide-integration.html#shims": "/ide-integration.html#emacs",
   "/ide-integration.html#use-with-package-mise-el":
     "/ide-integration.html#emacs",
@@ -1609,6 +1661,7 @@ export const anchorRedirects = {
   "/templates.html#tera-filters": "/templates.html#filters",
   "/templates.html#tera-functions": "/templates.html#functions",
   "/templates.html#tera-tests": "/templates.html#tests",
+  "/tips-and-tricks.html#cargo-binstall": "/dev-tools/backends/cargo.html",
   "/tips-and-tricks.html#ci-cd": "/continuous-integration.html",
   "/tips-and-tricks.html#github-actions":
     "/continuous-integration.html#github-actions",
@@ -1625,6 +1678,12 @@ export const anchorRedirects = {
     "/tasks/running-tasks.html#mise-run-shorthand",
   "/tips-and-tricks.html#mise-set": "/environments/#set-and-unset",
   "/tips-and-tricks.html#mise-up-bump": "/dev-tools/#upgrade-tools",
+  "/tips-and-tricks.html#redact-secrets-from-task-output":
+    "/environments/secrets/#redaction",
+  "/tips-and-tricks.html#reuse-task-definitions-with-templates":
+    "/tasks/templates.html",
+  "/tips-and-tricks.html#share-task-catalogs":
+    "/tasks/task-discovery.html#include-task-files-and-directories",
   "/tips-and-tricks.html#software-verification":
     "/security.html#download-verification",
   "/tips-and-tricks.html#watch-tasks-while-editing":

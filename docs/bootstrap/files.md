@@ -78,8 +78,8 @@ A relative `source` is resolved from the directory that contains the declaring
 config file, and a `source` that starts with `~/` from your home directory.
 
 Targets must be absolute paths or start with `~/`. mise refuses to manage `/`
-itself. A file without `source` or `content` manages only its
-[permissions](#permissions-without-content).
+itself. A file without `source`, `content`, or a [`block`](#blocks) manages
+only its [permissions](#permissions-without-content).
 
 ### Render content as a template
 
@@ -169,9 +169,10 @@ mise keeps the block between two marker comments named by the `id`:
 
 Apply replaces what is between the markers, appends the block when the markers
 are missing, and creates the file with only the block when it does not exist.
-Everything outside the markers stays as it is, and an existing file keeps its
-owner and mode unless the entry declares them. Like other system files, the
-change runs through `sudo` only when the current user cannot make it. The
+Everything outside the markers stays as it is. An existing file keeps its
+owner and mode unless the entry declares them; without a declared `mode`, a
+file mise creates gets `0644`. Like other system files, the change runs
+through `sudo` only when the current user cannot make it. The
 marker comment is `#` unless the file's extension calls for another, such as
 `//` for `.js` or `--` for `.lua`. Dotfile blocks use the same markers; see
 [block edits](/dotfiles/edits.html#blocks) for the details.
@@ -200,7 +201,7 @@ Set `os` on a file or directory to manage it only on matching machines. It
 takes one selector or a list. A selector is an operating system (`linux`,
 `macos`, or `windows`), or `unix` for every platform except Windows, optionally
 followed by an architecture, such as `linux/x64` or `macos/arm64`. It uses the
-same names as [OS-specific tools](/dev-tools/#os-specific-tools), so aliases
+same names as [OS-specific tools](/dev-tools/tool-options.html#os-specific-tools), so aliases
 such as `darwin`, `win`, and `aarch64` also work.
 
 ```toml
@@ -439,6 +440,8 @@ contents, declare it absent with `recursive = true`.
 | -------------- | ----------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `source`       | files       | Path to read the content from                                               |                                                           |
 | `content`      | files       | Inline content                                                              |                                                           |
+| `block`        | files       | Content kept between marker comments; needs `id`. See [blocks](#blocks)     |                                                           |
+| `id`           | files       | Name in the block's marker comments, without whitespace; needs `block`      |                                                           |
 | `template`     | files       | `true` renders the content as a template                                    | `false`                                                   |
 | `remove_empty` | files       | `true` removes the target when the template renders empty; needs `template` | `false`                                                   |
 | `owner`        | both        | User name                                                                   | Not managed                                               |
@@ -452,9 +455,9 @@ contents, declare it absent with `recursive = true`.
 | `os`           | both        | Selector or list of selectors                                               | Every platform                                            |
 | `notify`       | both        | Names of system services in `[bootstrap.services]`                          | `[]`                                                      |
 
-An absent file cannot set `source`, `content`, or `remove_empty`. A file
-without `source` or `content` that sets no `mode`, `owner`, or `group` is an
-error.
+An absent file cannot set `source`, `content`, `block`, or `remove_empty`. A
+file without `source`, `content`, or `block` that sets no `mode`, `owner`, or
+`group` is an error.
 
 ### JSON output
 

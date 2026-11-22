@@ -235,9 +235,7 @@ return {
 mise then resolves `tool@recommended` to `9.10.3`, installs into `9.10.3/` and
 records `9.10.3` in the lockfile, so the tool follows the name as it moves.
 Aliases in your config win. A requested version that starts with a digit, or is
-`latest`, `system` or contains `:`, is never looked up as an alias. mise
-ignores `aliases` before the release that added it, so plugins can return it
-right away.
+`latest`, `system` or contains `:`, is never looked up as an alias.
 
 ### BackendInstall
 
@@ -391,16 +389,9 @@ puts it on `PATH` for the commands the hooks run; see
 
 ## Testing {#testing-your-plugin}
 
-```sh
-mise plugins link acme ./mise-acme
-mise ls-remote acme:deploy
-mise use acme:deploy@2.1.0
-mise exec -- deploy --version
-```
-
-Run a failing command with debug output to see the hook's error and output, and
-clear a tool's cache when a cached version list or environment hides an edit to
-a hook:
+Run the [Quick start](#quick-start) commands in a test project. Run a failing
+command with debug output to see the hook's error and output, and clear a
+tool's cache when a cached version list or environment hides an edit to a hook:
 
 ```sh
 MISE_DEBUG=1 mise install acme:deploy@2.1.0

@@ -67,11 +67,11 @@ test("a key's guide is the nearest one above it, then its section's", () => {
   );
   assert.equal(
     guideFor("tools.<tool>.os")?.link,
-    "/dev-tools/#os-specific-tools",
+    "/dev-tools/tool-options.html#os-specific-tools",
   );
   assert.equal(
     guideFor("tools.<tool>.platforms")?.link,
-    "/dev-tools/#tool-options",
+    "/dev-tools/tool-options.html",
   );
   assert.equal(guideFor("daemons.<name>.run")?.link, "/daemons.html");
   assert.equal(

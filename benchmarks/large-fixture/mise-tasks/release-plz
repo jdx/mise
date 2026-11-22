@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="release-plz"
+#MISE depends=["build:step1"]
+echo release-plz

@@ -12,9 +12,9 @@ way, `mise install` installs the project's tools during the build.
 
 ## Official images {#official-images}
 
-Starting with 2026.9.11, images are published for every stable release to
-`ghcr.io/jdx/mise` and Docker Hub (`jdxcode/mise`) for `linux/amd64` and
-`linux/arm64`. Both registries use the same tags.
+Images are published for every stable release to `ghcr.io/jdx/mise` and Docker
+Hub (`jdxcode/mise`) for `linux/amd64` and `linux/arm64`. Both registries use
+the same tags.
 
 | Image       | Example tags                                   | Use it for                                         |
 | ----------- | ---------------------------------------------- | -------------------------------------------------- |
@@ -80,6 +80,18 @@ COPY . .
 CMD ["mise", "exec", "--", "node", "server.js"]
 ```
 
+Build the image and check the tool it installed:
+
+```sh
+docker build -t my-app .
+docker run --rm my-app mise exec -- node --version
+```
+
+`mise trust` marks the copied config as trusted. A config with `[env]`, hooks,
+settings or tool options needs that before mise loads it; one with only tool
+versions and tasks loads without it. See
+[configuration trust](/security.html#configuration-trust).
+
 With the lockfile, the build installs the recorded versions without fetching
 any tool's list of available versions; the layer has no cached lists, so
 without one mise looks up every tool on each rebuild. Lock the image's
@@ -124,10 +136,10 @@ COPY . .
 
 ### What to copy into the build {#build-context}
 
-Copy `mise.lock` along with `mise.toml` when the project uses a lockfile, along
-with its `.mise/locks/` directory if it has one, plus any files the config
-reads. If an install hook needs application files, copy
-those before `mise install`.
+Before `mise install`, copy everything it reads: `mise.toml`, the lockfile and
+`.mise/locks/` when the project has them, and any file the config refers to,
+such as an idiomatic version file or an env file. If an install hook needs
+application files, copy those first too.
 
 Exclude local credentials and mise's personal config files from the build
 context with a `.dockerignore`, so `COPY . .` does not bake them into the image.
@@ -143,8 +155,13 @@ Adapt these patterns to your project:
 **/*.local.toml
 ```
 
-Docker build shells do not run interactive activation hooks. Use
-`mise exec -- <command>` or `mise run <task>` in `RUN` and `CMD` instructions.
+### Run tools in the image {#run-tools-in-the-image}
+
+`RUN` and `CMD` instructions do not start a shell that runs `mise activate`.
+Use `mise exec -- <command>` or `mise run <task>` in them, as the examples do.
+With `/mise/shims` on `PATH`, an installed tool also runs by its own name, such
+as `node server.js`: the [shim](/dev-tools/shims.html) reads the config for the
+working directory and runs the version it selects.
 
 ## Install mise without the official images {#installing-mise-yourself}
 
@@ -322,9 +339,11 @@ in full.
 
 Installing does not select a version. A project's `mise.toml` (for example
 `node = "26"`) or `mise exec node@26 -- node --version` still has to request
-it; mise then uses the system copy instead of downloading it again. `--system`
-shares the install location; it does not put binaries on `PATH` for use without
-mise. For tools other users can run with no mise involved, see the
+it; mise then uses the system copy instead of downloading it again. To select
+versions for every user, declare them in the system config
+`/etc/mise/config.toml`. `--system` shares the install location; it does not
+put binaries on `PATH` for use without mise. For tools other users can run with
+no mise involved, see the
 [FAQ](/faq.html#mise-is-for-dev-tools-not-applications-or-system-packages).
 
 The official images point `MISE_DATA_DIR`, `MISE_CONFIG_DIR` and
@@ -386,10 +405,12 @@ versions.
 
 ## Override libc detection {#overriding-libc-detection}
 
-In minimal images (scratch, busybox, distroless) without dynamic linker files,
-mise may not detect whether the system uses musl or glibc. Set the
-[`libc`](/configuration/settings.html#libc) setting or `MISE_LIBC` to override
-the detection:
+mise detects whether the system uses musl or glibc from `/etc/os-release` and
+the dynamic linker files in `/lib` and `/lib64`. In a minimal image (scratch,
+busybox, distroless) that has neither, mise assumes the libc it was built for:
+musl for the static binary from the scratch image, glibc otherwise. If that is
+wrong for the tools you install, set the
+[`libc`](/configuration/settings.html#libc) setting or `MISE_LIBC`:
 
 ```Dockerfile
 ENV MISE_LIBC=musl
@@ -397,9 +418,7 @@ RUN mise install
 ```
 
 Valid values are `musl`, `glibc` and `gnu` (case-insensitive, with `gnu` treated
-as glibc). mise ignores invalid values and falls back to runtime detection. The
-static `-musl` mise build, which the scratch image ships, falls back to musl
-when no linker is detected.
+as glibc). mise ignores any other value and detects the libc as usual.
 
 ## Reproduce an issue in a clean container {#task-to-run-mise-in-a-docker-container}
 

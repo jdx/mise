@@ -22,6 +22,7 @@ Daemons are experimental. Enable them with `experimental = true` under
 [daemons.postgres]
 image = "postgres:18"
 port = { auto = true, base = 5432 }
+proxy = false
 env = { POSTGRES_PASSWORD = "dev" }
 data_mount = "/var/lib/postgresql"
 ready_cmd = "{{ runtime }} exec {{ container }} pg_isready -U postgres"
@@ -30,8 +31,10 @@ ready_cmd = "{{ runtime }} exec {{ container }} pg_isready -U postgres"
 In the primary checkout, `mise daemons start postgres` publishes the container's
 port `5432` on `127.0.0.1:5432`. In a linked worktree the host port is the
 worktree's slot added to `base`, for example `5471`, and the container still
-listens on `5432`. The application reads `POSTGRES_PORT` in both. See [Automatic ports](/daemons/worktrees.html#automatic-ports) for how
-slots work.
+listens on `5432`. The application reads `POSTGRES_PORT` in both. See
+[Automatic ports](/daemons/worktrees.html#automatic-ports) for how slots work.
+`proxy = false` is there because PostgreSQL does not speak HTTP; see
+[Keys](#keys).
 
 mise runs the container in the foreground with `--rm`, so its output is the
 daemon's log (`mise daemons logs postgres`) and the container is removed when it
@@ -39,19 +42,19 @@ stops.
 
 ## Keys
 
-| Key              | Meaning                                                                                                                                                                       |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `image`          | The image to run. This is what makes the daemon a container; it cannot be combined with `run`, `task`, or `preset`.                                                           |
-| `command`        | The container's command and arguments, replacing the image's default. A string is shell text, as `run` is; an array is passed as-is.                                          |
-| `port`           | The host port for the container's main port: an integer, or `{ auto = true, base = 5432 }`. `"auto"` alone needs a `base`, because an image has no default port.              |
-| `container_port` | The port the container listens on for `port`. Defaults to `base` for an automatic port and to the port itself for a fixed one.                                                |
-| `ports`          | More published ports by name. See [Several ports](#several-ports).                                                                                                            |
-| `env`            | Variables passed into the container. Values are set in the daemon's environment and given to the runtime by name, so they stay off the command line.                          |
-| `volumes`        | `source:target[:options]` mounts. A source starting with `.`, `/` or `~` is a path (relative to the project root) and is created if missing; anything else is a named volume. |
-| `data_mount`     | A path inside the container to keep data at. See [Keep data](#keep-data).                                                                                                     |
-| `data_dir`       | The host directory for `data_mount`, relative to the project root or absolute.                                                                                                |
-| `runtime`        | `"auto"` (the default), `"docker"` or `"podman"`. See [Docker and Podman](#docker-and-podman).                                                                                |
-| `runtime_args`   | Extra arguments for `<runtime> run`, such as `["--shm-size=1g"]`, placed before the image.                                                                                    |
+| Key              | Meaning                                                                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image`          | The image to run. This is what makes the daemon a container; it cannot be combined with `run`, `task`, or `preset`.                                                              |
+| `command`        | The container's command and arguments, replacing the image's default. A string is shell text, as `run` is; an array is passed as-is.                                             |
+| `port`           | The host port for the container's main port: an integer, or `{ auto = true, base = 5432 }`. `"auto"` alone is an error, because an image has no default port to use as the base. |
+| `container_port` | The port the container listens on for `port`. Defaults to `base` for an automatic port and to the port itself for a fixed one.                                                   |
+| `ports`          | More published ports by name. See [Several ports](#several-ports).                                                                                                               |
+| `env`            | Variables passed into the container. Values are set in the daemon's environment and given to the runtime by name, so they stay off the command line.                             |
+| `volumes`        | `source:target[:options]` mounts. A source starting with `.`, `/` or `~` is a path (relative to the project root) and is created if missing; anything else is a named volume.    |
+| `data_mount`     | A path inside the container to keep data at. See [Keep data](#keep-data).                                                                                                        |
+| `data_dir`       | The host directory for `data_mount`, relative to the project root or absolute. It requires `data_mount`.                                                                         |
+| `runtime`        | `"auto"` (the default), `"docker"` or `"podman"`. See [Docker and Podman](#docker-and-podman).                                                                                   |
+| `runtime_args`   | Extra arguments for `<runtime> run`, such as `["--shm-size=1g"]`, placed before the image.                                                                                       |
 
 `init`, `depends`, `ready_port`, `ready_cmd`, `proxy`, and the other
 [daemon keys](/daemons.html#daemon-keys) work as they do on a custom daemon.
@@ -62,14 +65,16 @@ set `proxy = false` for a database or broker that does not speak HTTP.
 ## Several ports
 
 Give each additional published port a name. An integer publishes the same
-number on the host; a table sets the container port and a fixed host port, or
-turns on the same per-worktree allocation as `port`:
+number on the host. A table names the `container` port and either a fixed
+`host` port, as in `{ container = 8080, host = 8081 }`, or the same
+per-worktree allocation as `port`:
 
 ```toml
 [daemons.cockroach]
 image = "cockroachdb/cockroach:v25.1.0"
 command = ["start-single-node", "--insecure"]
 port = { auto = true, base = 26257 }
+proxy = false
 ports.http = { container = 8080, auto = true, base = 27000 }
 ready_cmd = "{{ runtime }} exec {{ container }} cockroach sql --insecure -e 'select 1'"
 ```
@@ -116,6 +121,7 @@ the checkout instead, as for [presets](/daemons/data.html#keep-data-in-the-check
 [daemons.postgres]
 image = "postgres:18"
 port = { auto = true, base = 5432 }
+proxy = false
 data_mount = "/var/lib/postgresql"
 data_dir = ".data/postgres"
 ```
@@ -130,8 +136,10 @@ The container is named `mise-<namespace>-<daemon>-<hash>`, where the
 [namespace](/daemons/worktrees.html#namespaces) carries the project and, in a
 linked worktree, the worktree, and `<hash>` is a short hash of the exact
 namespace and daemon name. Two checkouts, or two daemons whose names only read
-alike, therefore never share or fight over a container name, and each container is labelled `dev.mise.daemon` and
-`dev.mise.project` so you can find it with `docker ps --filter label=...`.
+alike, therefore never share or fight over a container name. Each container is
+labelled `dev.mise.daemon=<namespace>/<daemon>` and
+`dev.mise.project=<project root>`, so `docker ps --filter label=dev.mise.daemon`
+lists every container mise started.
 
 When the daemon stops, mise runs `<runtime> stop` for the container and waits
 for it to exit, so the image's shutdown signal and grace period apply. If a
@@ -154,7 +162,9 @@ Desktop, `podman machine`) must be running.
 
 ## Limitations
 
-- Windows is not supported. The container's command is a POSIX shell script; on Windows the configuration still loads, and starting the daemon fails with a message.
+- Windows is not supported. The container's command is a POSIX shell script; on
+  Windows the configuration still loads, and starting the daemon fails with a
+  message.
 - Only TCP ports are published, and only on `127.0.0.1`.
 - Container daemons are not [shared servers](/daemons/sharing.html#shared-server-providers),
   and mise does not pull or build images; `docker run` pulls the image on first
@@ -165,3 +175,12 @@ Desktop, `podman machine`) must be running.
   kills it. mise sets the daemon's `stop_signal` timeout to 15 seconds so
   pitchfork waits for that; a `stop_signal` you set yourself is kept, and should
   be longer than ten seconds.
+
+## Next steps
+
+- [Ports, URLs, and worktrees](/daemons/worktrees.html): how slots, named
+  ports, and port variables work.
+- [Data and cleanup](/daemons/data.html): find, reset, and prune the data a
+  `data_mount` keeps.
+- [Service presets](/daemons/presets.html): run PostgreSQL, Redis, CockroachDB,
+  NATS, or SpiceDB without a container runtime.

@@ -1119,9 +1119,11 @@ impl MiseToml {
     /// `key`, and a key no group sets goes into the last group: either way the new value is
     /// the one that reading the groups in order ends with, as it is with a single `[env]`.
     ///
-    /// Only file order is followed. An entry with `tools = true` is applied in a later pass and
-    /// still wins over the value written here, from an earlier group as it does from another
-    /// config file.
+    /// Entries with `tools = true` are the exception to file order: mise applies them after
+    /// every plain entry, in file order among themselves. When any group sets `key` that way,
+    /// the last one that does is rewritten instead, and the entry stays `tools = true`, since
+    /// a plain value would lose to the `tools = true` entries of other groups and other config
+    /// files.
     ///
     /// A `.` in `key` descends into a nested table, unless a group has an entry named exactly
     /// `key`. Fails, leaving the document as it was, when mise could not load the result.
@@ -1130,8 +1132,15 @@ impl MiseToml {
         self.edit_doc(|doc| {
             let mut groups = env_tables_mut(doc, path)?;
             // an entry named exactly `key` is that variable, whatever dots its name has
-            if let Some(i) = groups.iter().rposition(|group| group.names(key)) {
-                groups.swap_remove(i).set_named(key, item);
+            if let Some(last) = groups.iter().rposition(|group| group.names(key)) {
+                let after_tools = groups.iter().rposition(|group| group.after_tools(key));
+                let item = match after_tools {
+                    Some(_) => with_tools(item),
+                    None => item,
+                };
+                groups
+                    .swap_remove(after_tools.unwrap_or(last))
+                    .set_named(key, item);
                 return Ok(());
             }
             let mut group = match groups.iter().rposition(|group| group.sets(key)) {
@@ -2532,6 +2541,24 @@ impl<'a> EnvTable<'a> {
         self.table.contains_key(key)
     }
 
+    /// Whether the entry named exactly `key` has `tools = true`, so that mise applies it after
+    /// the tools load and it overrides every entry without the option.
+    fn after_tools(&self, key: &str) -> bool {
+        fn tools(entry: &dyn TableLike) -> bool {
+            entry.get("tools").and_then(Item::as_bool) == Some(true)
+        }
+        self.table
+            .get(key)
+            .and_then(Item::as_table_like)
+            // `{ age = { value = "..", tools = true } }` keeps its options beside the value
+            .is_some_and(
+                |entry| match entry.get("age").and_then(Item::as_table_like) {
+                    Some(age) => tools(age),
+                    None => tools(entry),
+                },
+            )
+    }
+
     /// Whether this table has a value for `key`, where a `.` in `key` descends into a nested
     /// table.
     fn sets(&self, key: &str) -> bool {
@@ -2694,6 +2721,27 @@ fn env_tables_mut<'a>(doc: &'a mut DocumentMut, path: &Path) -> eyre::Result<Vec
             other.type_name()
         ),
     }
+}
+
+/// `item`, the value of an environment variable, as an entry with `tools = true`.
+///
+/// `item` is what `mise set` writes: a plain value, `{ age = ".." }`, or
+/// `{ age = { value = "..", format = ".." } }`, whose options go beside its `value`.
+fn with_tools(item: Item) -> Item {
+    let mut entry = match item {
+        Item::Value(Value::InlineTable(entry)) => entry,
+        Item::Value(value) => {
+            let mut entry = InlineTable::new();
+            entry.insert("value", value);
+            entry
+        }
+        other => return other,
+    };
+    match entry.get_mut("age").and_then(Value::as_inline_table_mut) {
+        Some(age) => age.insert("tools", true.into()),
+        None => entry.insert("tools", true.into()),
+    };
+    Item::Value(Value::InlineTable(entry))
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -6536,6 +6584,147 @@ run = "cargo build"
             dump.contains(r#"STAGE = { age = "ciphertext" } # stage two"#),
             "the second group should hold the encrypted value: {dump}"
         );
+    }
+
+    /// The entries for `key` in `dump`, as mise loads them.
+    fn loaded_env(dump: &str, key: &str) -> Vec<EnvDirective> {
+        let doc = dump.parse::<DocumentMut>().unwrap();
+        let entries = load_env(&doc).unwrap().0.into_iter();
+        entries
+            .filter(|entry| match entry {
+                EnvDirective::Val(k, ..) | EnvDirective::Age { key: k, .. } => k == key,
+                _ => false,
+            })
+            .collect()
+    }
+
+    /// `STAGE` has `tools = true` in the first group and is plain in the second. mise applies
+    /// the first group's entry last, so `early` is the value it exports.
+    const ENV_GROUPS_TOOLS: &str = indoc! {r#"
+        [[env]]
+        STAGE = { value = "early", tools = true } # after the tools load
+
+        [[env]]
+        STAGE = "late"
+    "#};
+
+    #[tokio::test]
+    async fn test_update_env_groups_updates_the_tools_entry() {
+        let (result, dump) = edit_env_file(".env-groups-tools.mise.toml", ENV_GROUPS_TOOLS, |cf| {
+            cf.update_env("STAGE", "written")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                STAGE = { value = "written", tools = true } # after the tools load
+
+                [[env]]
+                STAGE = "late"
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_groups_updates_the_last_tools_entry() {
+        let contents = indoc! {r#"
+            [[env]]
+            STAGE = { value = "one", tools = true }
+
+            [[env]]
+            STAGE = { value = "two", tools = true }
+            OTHER = "kept"
+
+            [[env]]
+            STAGE = "three"
+        "#};
+        let (result, dump) = edit_env_file(".env-groups-tools-last.mise.toml", contents, |cf| {
+            cf.update_env("STAGE", "written")?;
+            // no group sets it with `tools = true`: the last group that sets it, as before
+            cf.update_env("OTHER", "plain")?;
+            cf.update_env("NEW", "1")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                STAGE = { value = "one", tools = true }
+
+                [[env]]
+                STAGE = { value = "written", tools = true }
+                OTHER = "plain"
+
+                [[env]]
+                STAGE = "three"
+                NEW = "1"
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_keeps_tools_in_a_single_table() {
+        let contents = "[env]\nSTAGE = { value = \"one\", tools = true }\n";
+        let (result, dump) = edit_env_file(".env-tools-single.mise.toml", contents, |cf| {
+            cf.update_env("STAGE", "two")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(dump, "[env]\nSTAGE = { value = \"two\", tools = true }\n");
+    }
+
+    #[tokio::test]
+    async fn test_update_env_age_groups_updates_the_tools_entry() {
+        // every shape `mise set --age-encrypt` writes has to load as `tools = true`, and be
+        // found as the entry to rewrite by the next edit
+        for (format, written) in [
+            (None, r#"{ age = "ciphertext", tools = true }"#),
+            (
+                Some(AgeFormat::Zstd),
+                r#"{ age = { value = "ciphertext", format = "zstd", tools = true } }"#,
+            ),
+        ] {
+            let (result, dump) =
+                edit_env_file(".env-groups-tools-age.mise.toml", ENV_GROUPS_TOOLS, |cf| {
+                    cf.update_env_age("STAGE", "ciphertext", format)
+                })
+                .await;
+            result.unwrap();
+            let rewritten = formatdoc! {r#"
+                [[env]]
+                STAGE = {written} # after the tools load
+
+                [[env]]
+                STAGE = "late"
+            "#};
+            assert_eq!(dump, rewritten);
+            let loaded = loaded_env(&dump, "STAGE");
+            assert!(
+                matches!(&loaded[0], EnvDirective::Age { value, options, .. }
+                    if value == "ciphertext" && options.tools),
+                "the first group should load as an encrypted `tools = true` entry: {loaded:?}"
+            );
+
+            let (result, dump) =
+                edit_env_file(".env-groups-tools-age.mise.toml", &rewritten, |cf| {
+                    cf.update_env("STAGE", "written")
+                })
+                .await;
+            result.unwrap();
+            assert_eq!(
+                dump,
+                indoc! {r#"
+                    [[env]]
+                    STAGE = { value = "written", tools = true } # after the tools load
+
+                    [[env]]
+                    STAGE = "late"
+                "#}
+            );
+        }
     }
 
     #[tokio::test]

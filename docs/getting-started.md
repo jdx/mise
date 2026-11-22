@@ -28,8 +28,9 @@ The installer puts the `mise` executable at `~/.local/bin/mise`. If your shell
 cannot find `mise` in the next steps, run it as `~/.local/bin/mise` until you
 [activate mise](#activate-mise) in step 4, which adds it to `PATH`.
 
-On Windows, run `irm https://mise.run/powershell | iex` in PowerShell. For Homebrew, apt, dnf and other
-package managers, see [Installing mise](/installing-mise.html).
+On Windows, run `irm https://mise.run/powershell | iex` in PowerShell. For
+Homebrew, apt, dnf and other package managers, see
+[Installing mise](/installing-mise.html).
 
 ## 2. Run a tool {#mise-exec-run}
 
@@ -123,7 +124,7 @@ mise tasks ls      # available tasks
 ### Trust project configuration {#trust}
 
 A `mise.toml` with `[env]`, hooks, templates or settings can run code or change
-your environment, so mise loads it only once it is trusted: files you write with
+your environment, so mise loads it only once it is trusted. Files you write with
 `mise use` or `mise set` are trusted, and so is a project where you run
 `mise install`, `mise exec` or `mise run`. For a project from someone else, read
 its config, tasks included, before running those commands or

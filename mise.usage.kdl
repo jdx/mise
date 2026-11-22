@@ -1216,7 +1216,7 @@ See https://mise.jdx.dev/dotfiles/sync.html
                 long_help #"""
 Connect an origin repository
 
-Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise shows the sync mode and the tracked files before you confirm, then runs the first sync. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
+Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync: it fetches in every mode, and pushes your saved checkpoints unless the mode is `fetch-only`. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
 
 The origin holds tracked-file history, not a checkout of your global config: connect a repository of its own, or a separate branch (`--branch`) of the one you adopt as global config with `mise bootstrap --adopt`.
 """#
@@ -1232,15 +1232,15 @@ Reconnecting a repository this machine already follows keeps that connection's b
                     long_help #"""
 How to sync with the repository: sync, fetch-only, or manual
 
-`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no automatic network calls: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
+`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no network calls after the first sync that connecting runs: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
 """#
                     arg <MODE>
                 }
-                flag "-y --yes" help="Skip the confirmation prompt"
+                flag "-y --yes" help="Skip the sync mode prompt and use the `history.sync` setting"
                 flag "-h --help" help="Print help" action=help builtin=#true
                 arg <URL> help="The repository URL (any Git URL; use a private repository)"
                 example "mise dot origin set https://github.com/you/dotfiles.git" help="Connect and choose a sync mode at the prompt"
-                example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect without automatic network activity"
+                example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect, then sync only when you run `mise dot sync`"
             }
             example "mise dot origin" help="Show the connected repository"
             example "mise dot origin set git@github.com:you/dotfiles.git" help="Connect a repository"
@@ -1731,7 +1731,8 @@ Install or remove packages to match `[bootstrap.packages]`
 
 Installs each configured package that is missing or does not match its
 declared version, and removes packages declared `state = "absent"` on the
-managers that support removal (macports, pacman, scoop, snap, and zypper). On other
+managers that support removal (macports, pacman, scoop, snap, zypper, and dnf
+when it layers packages with rpm-ostree). On other
 managers, an installed package declared absent is left in place with a
 warning; `apply` fails for it only when you pass `--manager` or name the
 package.
@@ -1753,7 +1754,7 @@ or pass `--manager`, an unavailable manager is an error instead of a skip.
                 long_help #"""
 Refresh package manager metadata first, where the manager supports it
 
-For example, apt runs `apt-get update` and dnf adds `--refresh`. brew, brew-cask, flatpak, flatpak-user, macos-app, mas, and snap ignore this flag.
+For example, apt runs `apt-get update` and dnf adds `--refresh`. brew, brew-cask, choco, flatpak, flatpak-user, macos-app, mas, and snap ignore this flag.
 """#
             }
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -3432,7 +3433,7 @@ See https://mise.jdx.dev/dotfiles/sync.html
             long_help #"""
 Connect an origin repository
 
-Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise shows the sync mode and the tracked files before you confirm, then runs the first sync. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
+Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise prints the sync mode and the tracked files, then connects and runs the first sync: it fetches in every mode, and pushes your saved checkpoints unless the mode is `fetch-only`. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
 
 The origin holds tracked-file history, not a checkout of your global config: connect a repository of its own, or a separate branch (`--branch`) of the one you adopt as global config with `mise bootstrap --adopt`.
 """#
@@ -3448,15 +3449,15 @@ Reconnecting a repository this machine already follows keeps that connection's b
                 long_help #"""
 How to sync with the repository: sync, fetch-only, or manual
 
-`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no automatic network calls: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
+`sync` pushes saved checkpoints and applies incoming changes automatically. `fetch-only` fetches automatically and never pushes. `manual` makes no network calls after the first sync that connecting runs: `mise dot sync` pushes and fetches, and `mise dot pull` applies, only when you run them; local history is still saved automatically. When omitted, mise prompts; with `--yes`, it uses the `history.sync` setting.
 """#
                 arg <MODE>
             }
-            flag "-y --yes" help="Skip the confirmation prompt"
+            flag "-y --yes" help="Skip the sync mode prompt and use the `history.sync` setting"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <URL> help="The repository URL (any Git URL; use a private repository)"
             example "mise dot origin set https://github.com/you/dotfiles.git" help="Connect and choose a sync mode at the prompt"
-            example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect without automatic network activity"
+            example "mise dot origin set git@github.com:you/dotfiles.git --sync manual" help="Connect, then sync only when you run `mise dot sync`"
         }
         example "mise dot origin" help="Show the connected repository"
         example "mise dot origin set git@github.com:you/dotfiles.git" help="Connect a repository"
@@ -4959,8 +4960,8 @@ Upgrade lockfiles to the latest format
 mise keeps an existing lockfile at its format version during normal updates,
 so collaborators on an older mise can still read it. This flag rewrites it in
 the newest format, which adds request bindings, dependency-graph sidecars,
-and packslip repository IDs. It processes every configured tool and cannot be
-combined with tool arguments. See
+packslip repository IDs, and npm source repositories. It processes every
+configured tool and cannot be combined with tool arguments. See
 https://mise.jdx.dev/dev-tools/mise-lock-reference.html#format-versions.
 """#
     }
@@ -5196,7 +5197,7 @@ It offers:
 - quick fixes that replace an unknown key or task name with the suggested one, and rewrite a deprecated key to its replacement when the schema names one
 - formatting, as `mise fmt` does
 - semantic tokens, which color task, tool and env var names, env directives, deprecated keys and the `{{ }}` and `{% %}` of templates
-- for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
+- for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and the `{ task = "..." }` and `{ tasks = [...] }` entries of `run` and `run_windows` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
 
 Tasks come from the open file, the configs in the directories above it and the TOML files their `[task_config] includes` name.
 
@@ -5204,9 +5205,9 @@ A client that runs another TOML server beside this one can switch features off w
 
 The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
 
-A mise that predates this command runs a task named `lsp` instead, so a client that needs to know whether the command exists can check that `mise help lsp` prints `Usage: mise lsp`.
+A client that needs to know whether the installed mise has this command can check that `mise help lsp` prints `Usage: mise lsp`.
 
-See https://mise.jdx.dev/ide-integration.html for editor configuration.
+See https://mise.jdx.dev/lsp.html for editor configuration.
 """#
     flag "-h --help" help="Print help" action=help builtin=#true
     example "mise lsp" help="Start the server; an editor's LSP configuration runs this command"
@@ -5702,7 +5703,7 @@ Pass a name that the registry or a `[plugins]` entry knows, a name and a
 URL, or only a URL. With only a URL, the plugin is named after the
 repository without an `asdf-`, `mise-`, or `vfox-` prefix. Pass several names
 to install several plugins. Prefix a name with `vfox:`, `vfox-backend:`,
-`package:`, or `asdf:` to choose the plugin type.
+`package:`, `bootstrap-settings:`, or `asdf:` to choose the plugin type.
 
 A Git URL may end in `#ref` to select a plugin commit, tag, or branch. This
 selects the plugin code, separately from the tool version `mise use` installs.
@@ -5810,9 +5811,10 @@ backends in order.
 Remove an installed plugin
 
 Installed tool versions are kept unless you pass `--purge`, which also
-removes a tool plugin's installs, downloads, and cache. `--purge` does not
-remove the tools of a backend plugin (`<plugin>:<tool>`); uninstall those
-first with `mise uninstall --all <plugin>:<tool>`.
+removes the plugin's installs, downloads, and cache. For a backend plugin,
+`--purge` removes those of every `<plugin>:<tool>` tool that is installed or
+configured. It skips a tool whose directory another tool also uses, with a
+warning.
 """#
         flag "-a --all" help="Remove all plugins" conflicts=PLUGIN
         flag "-p --purge" help="Also remove a tool plugin's installs, downloads, and cache"
@@ -5957,7 +5959,8 @@ deleted. Versions that a running process was started from are kept, so a
 long-running program keeps its files.
 
 It also forgets tracked, trusted, and ignored config files that no longer
-exist. Pass `--tools` or `--configs` to do only one of the two. List the
+exist; without it, mise forgets a missing tracked file a week after its last
+use, and one unused for `prune.forget_unused_after`. Pass `--tools` or `--configs` to do only one of the two. List the
 versions it would delete with `mise ls --prunable`.
 
 Versions in the system installs directory (see `mise install --system`) are
@@ -8049,8 +8052,8 @@ untrusted-config error when it cannot prompt.
 A file with no template syntax that contains only `min_version`, `[tools]`
 entries with plain version strings (or arrays of them), and `[tasks]` in
 which no task lists `secrets` does not need trust unless paranoid mode is on.
-Commands that run project code (`mise run`, task shorthand such as
-`mise build`, `mise install`, `mise exec`, `mise watch`, and
+Commands that run project code (`mise run`, the `mise <task>` shorthand,
+`mise install`, `mise exec`, `mise watch`, and
 `mise daemons start|restart|register`) trust their active config
 automatically.
 

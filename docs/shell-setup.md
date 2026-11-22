@@ -170,9 +170,7 @@ Shims do not set `[env]` variables in the shell itself; see
 
 To request support for another shell, open an
 [idea discussion](https://github.com/jdx/mise/discussions/categories/ideas).
-Each integration is a small module in
-[`src/shell/`](https://github.com/jdx/mise/tree/main/src/shell) if you want to
-contribute one.
+Until then, [shims](/dev-tools/shims.html) work in any shell.
 
 ## Shell feature support {#shell-feature-compatibility}
 
@@ -197,9 +195,9 @@ it.
 complete mise's commands, flags, tools, versions and task names. The scripts are
 self-contained and do not need the separate `usage` CLI.
 
-The Homebrew, Arch Linux (pacman), Ubuntu PPA and COPR (dnf) packages install
-bash, zsh and fish completions for you. The extrepo apt repository, the yum and
-zypper repository, and the mise.run installer do not.
+The Homebrew, Arch Linux (pacman), apt (extrepo and Ubuntu PPA) and COPR (dnf)
+packages install bash, zsh and fish completions for you. The yum and zypper
+repository and the mise.run installer do not.
 
 `--install` writes the script where your shell looks for it. It does not edit
 your startup files; for zsh, Nushell and PowerShell it prints a line to add once:

@@ -26,6 +26,6 @@ mv purgatory.json "$MISE_STATE_DIR/tool-purgatory.json"
 
 mise -C other version >out.txt 2>&1
 assert_not_contains "cat out.txt" "error loading tracked config file"
-assert_contains "cat out.txt" "deferred prune skipped 1 tracked config(s)"
+assert_contains "cat out.txt" "deferred prune ignored 1 problem(s) with tracked configs"
 
 assert_contains "mise -C other prune --dry-run 2>&1" "error loading tracked config file"

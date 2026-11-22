@@ -149,7 +149,9 @@ and add that directory to your `PATH` yourself.
 | `GOROOT` | The selected version's install directory. Turn off with [`go.set_goroot`](/lang/go.html#go.set_goroot). |
 | `GOBIN`  | The selected version's `bin` directory, unless `GOBIN` is already set or `go.set_gobin` is `false`.     |
 
-mise does not set `GOPATH`. Set it in `[env]` if you need a specific value.
+mise does not set `GOPATH` unless the deprecated
+[`go.set_gopath`](/lang/go.html#go.set_gopath) setting is on. Set it in `[env]`
+if you need a specific value.
 
 ## How mise installs Go
 
@@ -182,7 +184,7 @@ go = {
 }
 ```
 
-Other generic options are described in [tool options](/dev-tools/#tool-options).
+Other generic options are described in [tool options](/dev-tools/tool-options.html).
 
 ## Default packages file <Badge type="danger" text="deprecated" /> {#default-packages}
 
@@ -192,7 +194,7 @@ mise installs the packages listed in `~/.default-go-packages`
 and stops reading it in 2027.11.0. Install Go CLIs with the
 [`go:` backend](/dev-tools/backends/go.html) instead, for example
 `"go:github.com/jesseduffield/lazygit" = "latest"`, or use a
-[`postinstall`](/dev-tools/#tool-postinstall-commands) command for packages
+[`postinstall`](/dev-tools/tool-options.html#tool-postinstall-commands) command for packages
 every Go version needs.
 
 ## Settings

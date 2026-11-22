@@ -2818,6 +2818,11 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "compinit": {
+              "default": true,
+              "description": "Let zsh activation run `compinit -i` to register packslip completions when `compdef` is not defined yet.",
+              "type": "boolean"
+            },
             "exec": {
               "default": false,
               "description": "Let packslip tools run their own executable at install time to generate resources, such as an agent skill.",
@@ -2901,6 +2906,11 @@
               "items": {
                 "type": "string"
               }
+            },
+            "forget_unused_after": {
+              "default": "90d",
+              "description": "Forget a tracked config or tool stub that no mise command has loaded for this long.",
+              "type": "string"
             }
           }
         },
@@ -9503,7 +9513,7 @@
                   },
                   "state": {
                     "type": "string",
-                    "description": "desired package state; macports, pacman, scoop, snap, and zypper support absent",
+                    "description": "desired package state; macports, pacman, scoop, snap, zypper, and dnf layering packages with rpm-ostree support absent",
                     "enum": ["present", "absent"],
                     "default": "present"
                   },
@@ -9774,7 +9784,7 @@
                       },
                       "kickstart": {
                         "type": "boolean",
-                        "description": "run `launchctl kickstart -k` after loading the agent",
+                        "description": "run `launchctl kickstart` after loading the agent",
                         "default": false
                       }
                     },
@@ -10763,7 +10773,7 @@
     },
     "history": {
       "type": "object",
-      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)",
+      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/dotfiles/history.html)",
       "properties": {
         "encryption": {
           "type": "object",
@@ -10805,7 +10815,7 @@
         },
         "origin": {
           "type": "object",
-          "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`",
+          "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise dot origin set`",
           "additionalProperties": false,
           "properties": {
             "url": {
@@ -11200,6 +11210,15 @@
                     "not": {
                       "required": ["auto"]
                     }
+                  },
+                  {
+                    "type": "array",
+                    "description": "Ports the daemon is expected to listen on, forwarded to pitchfork verbatim.",
+                    "items": {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 0
+                    }
                   }
                 ]
               },
@@ -11316,6 +11335,15 @@
                     "description": "Pitchfork's structured port configuration, forwarded verbatim.",
                     "not": {
                       "required": ["auto"]
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "description": "Ports the daemon is expected to listen on, forwarded to pitchfork verbatim.",
+                    "items": {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 0
                     }
                   }
                 ]

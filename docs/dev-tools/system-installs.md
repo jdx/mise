@@ -74,7 +74,7 @@ later.
 When mise has to elevate, it supports tools from the `aqua`, `github`,
 `gitlab`, `forgejo`, `http`, and `s3` backends. The tool must still work after
 it moves from a temporary directory to its final location, and it must not have
-a tool-level [`postinstall`](/dev-tools/#tool-postinstall-commands) command.
+a tool-level [`postinstall`](/dev-tools/tool-options.html#tool-postinstall-commands) command.
 Symlinks inside the installation are kept; symlinks that point outside it are
 rejected.
 
@@ -103,7 +103,7 @@ per-user locations.
 A distribution can keep its system config while storing every tool in the
 user's home directory. Omarchy, for example, can do this with:
 
-```toml
+```toml [/etc/mise/config.toml]
 [settings]
 system_installs_dir = "~/.local/share/mise/installs"
 shims_dir = "~/.local/share/mise/shims"
