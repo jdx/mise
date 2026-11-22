@@ -16,7 +16,7 @@ use path_absolutize::Absolutize;
 use tera::Context;
 
 use crate::config::config_file::diagnostic::toml_parse_error;
-use crate::config::settings::{MisercSettings, warn_settings_file_error};
+use crate::config::settings::{MisercSettings, warn_while_loading_settings};
 use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
@@ -210,7 +210,7 @@ fn render_miserc_template(
     let global = is_global_miserc_dir(config_root);
     if !global && let Err(reason) = check_project_template(content) {
         // queued: the logger is not up yet while miserc loads
-        warn_settings_file_error(format!(
+        warn_while_loading_settings(format!(
             "not rendering the templates of the .miserc.toml in {}: {reason}",
             file::display_path(config_root)
         ));
@@ -531,7 +531,7 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) 
         envs.retain(|name| {
             let valid = !name.contains(['/', '\\']);
             if !valid {
-                warn_settings_file_error(format!(
+                warn_while_loading_settings(format!(
                     "{}: ignoring environment {name:?}: a name cannot contain a path separator",
                     file::display_path(path)
                 ));
@@ -547,7 +547,7 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) 
         members.retain(|name| {
             let valid = !name.contains(['/', '\\']);
             if !valid {
-                warn_settings_file_error(format!(
+                warn_while_loading_settings(format!(
                     "{}: ignoring environment {name:?} in env_sets: a name cannot contain a path separator",
                     file::display_path(path)
                 ));
@@ -568,7 +568,7 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) 
                     .components()
                     .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
             if !valid {
-                warn_settings_file_error(format!(
+                warn_while_loading_settings(format!(
                     "{}: ignoring override filename {filename:?}: it must stay in its directory",
                     file::display_path(path)
                 ));
