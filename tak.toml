@@ -19,16 +19,22 @@
 
 # Variables no measured command inherits: the forge tokens tak removes by
 # default, then the mise overrides that would point a run at the caller's own
-# config, installs or environment instead of the fixture's. setup.sh removes the
-# same ones before it prepares the large fixture.
+# config, config file names, installs or environment instead of the fixture's.
+# setup.sh removes the same ones before it prepares the large fixture. The large
+# benchmarks set the system directories again, to empty ones in the work
+# directory, so that a machine's `/etc/mise` cannot reach them either.
 [env]
 deny = [
   "GITHUB_TOKEN",
   "GH_TOKEN",
   "MISE_CONFIG_FILE",
+  "MISE_DEFAULT_CONFIG_FILENAME",
+  "MISE_DEFAULT_TOOL_VERSIONS_FILENAME",
   "MISE_DOWNLOADS_DIR",
   "MISE_GLOBAL_CONFIG_FILE",
   "MISE_INSTALL_STORE_DIR",
+  "MISE_OVERRIDE_CONFIG_FILENAMES",
+  "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
   "MISE_PLUGINS_DIR",
   "MISE_SHARED_INSTALL_DIRS",
   "MISE_SHIMS_DIR",
@@ -84,7 +90,8 @@ runs = 10
 # version, so nothing is downloaded and nothing on the machine leaks in. Every
 # benchmark repeats the same `env` because tak has no way yet to share one
 # between some benchmarks and not others. MISE_CEILING_PATHS stops mise from
-# reading the configs of whatever directory holds the work directory.
+# reading the configs of whatever directory holds the work directory, and the
+# system directories point at empty ones inside it.
 #
 # `mise x` and the shims are missing here too: each ends by exec-ing its
 # command, which leaves valgrind no process to count. `env-large` covers the config work they do first.
@@ -102,7 +109,7 @@ setup = [
   "target/release/mise",
   "{{ env.MISE_PERF_LARGE }}",
 ]
-env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}", MISE_SYSTEM_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/system/config", MISE_SYSTEM_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/system/data", MISE_SYSTEM_PLUGINS_DIRS = "{{ env.MISE_PERF_LARGE }}/system/data/plugins" }
 
 # What every prompt in an activated shell pays when it has to recompute.
 [bench.hook-env-large]
@@ -120,7 +127,7 @@ setup = [
   "target/release/mise",
   "{{ env.MISE_PERF_LARGE }}",
 ]
-env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}", MISE_SYSTEM_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/system/config", MISE_SYSTEM_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/system/data", MISE_SYSTEM_PLUGINS_DIRS = "{{ env.MISE_PERF_LARGE }}/system/data/plugins" }
 
 [bench.ls-large]
 cmd = ["./target/release/mise", "-C", "{{ env.MISE_PERF_LARGE }}/project", "ls"]
@@ -130,7 +137,7 @@ setup = [
   "target/release/mise",
   "{{ env.MISE_PERF_LARGE }}",
 ]
-env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}", MISE_SYSTEM_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/system/config", MISE_SYSTEM_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/system/data", MISE_SYSTEM_PLUGINS_DIRS = "{{ env.MISE_PERF_LARGE }}/system/data/plugins" }
 
 # Loading every task, as completion and `mise tasks` do.
 [bench.tasks-ls-large]
@@ -147,7 +154,7 @@ setup = [
   "target/release/mise",
   "{{ env.MISE_PERF_LARGE }}",
 ]
-env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}", MISE_SYSTEM_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/system/config", MISE_SYSTEM_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/system/data", MISE_SYSTEM_PLUGINS_DIRS = "{{ env.MISE_PERF_LARGE }}/system/data/plugins" }
 
 # Planning a run of eight dependent tasks, without running them: everything
 # `mise run` does before its first task starts.
@@ -166,4 +173,4 @@ setup = [
   "target/release/mise",
   "{{ env.MISE_PERF_LARGE }}",
 ]
-env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}" }
+env = { HOME = "{{ env.MISE_PERF_LARGE }}/home", MISE_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/data", MISE_INSTALLS_DIR = "{{ env.MISE_PERF_LARGE }}/data/installs", MISE_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/config", MISE_STATE_DIR = "{{ env.MISE_PERF_LARGE }}/state", MISE_CACHE_DIR = "{{ env.MISE_PERF_LARGE }}/cache", MISE_CEILING_PATHS = "{{ env.MISE_PERF_LARGE }}", MISE_SYSTEM_CONFIG_DIR = "{{ env.MISE_PERF_LARGE }}/system/config", MISE_SYSTEM_DATA_DIR = "{{ env.MISE_PERF_LARGE }}/system/data", MISE_SYSTEM_PLUGINS_DIRS = "{{ env.MISE_PERF_LARGE }}/system/data/plugins" }
