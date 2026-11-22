@@ -41,6 +41,29 @@ pub(super) struct SyncPython {
     uv: bool,
 }
 
+/// The libc component of a uv python directory name: `gnu` or `musl` on Linux, `none` on
+/// every other OS (macOS and Windows builds do not link a libc uv distinguishes).
+fn uv_libc() -> &'static str {
+    if cfg!(target_os = "linux") {
+        if cfg!(target_env = "musl") {
+            "musl"
+        } else {
+            "gnu"
+        }
+    } else {
+        "none"
+    }
+}
+
+/// The directory name uv gives an installed python, `cpython-{version}-{os}-{arch}-{libc}`:
+///
+/// - `cpython-3.10.16-macos-aarch64-none`
+/// - `cpython-3.13.0-linux-x86_64-gnu`
+/// - `cpython-3.13.0-windows-x86_64-none`
+fn uv_install_name(version: &str, os: &str, arch: &str, libc: &str) -> String {
+    format!("cpython-{version}-{os}-{arch}-{libc}")
+}
+
 impl SyncPython {
     pub(super) async fn run(self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
@@ -126,17 +149,7 @@ impl SyncPython {
                 None if file::is_symlink_or_junction(&src) => continue,
                 None => src,
             };
-            // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none
-            // ~/.local/share/uv/python/cpython-3.13.0-linux-x86_64-gnu
-            let os = OS;
-            let arch = if cfg!(target_arch = "x86_64") {
-                "x86_64-gnu"
-            } else if cfg!(target_arch = "aarch64") {
-                "aarch64-none"
-            } else {
-                ARCH
-            };
-            let dst = uv_versions_path.join(format!("cpython-{v}-{os}-{arch}"));
+            let dst = uv_versions_path.join(uv_install_name(&v, OS, ARCH, uv_libc()));
             if !dst.exists() {
                 if !uv_versions_path.exists() {
                     file::create_dir_all(uv_versions_path)?;
@@ -148,5 +161,36 @@ impl SyncPython {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uv_install_name_matches_the_names_uv_writes() {
+        assert_eq!(
+            uv_install_name("3.13.0", "windows", "x86_64", "none"),
+            "cpython-3.13.0-windows-x86_64-none"
+        );
+        assert_eq!(
+            uv_install_name("3.13.0", "linux", "aarch64", "gnu"),
+            "cpython-3.13.0-linux-aarch64-gnu"
+        );
+        assert_eq!(
+            uv_install_name("3.10.16", "macos", "x86_64", "none"),
+            "cpython-3.10.16-macos-x86_64-none"
+        );
+    }
+
+    #[test]
+    fn uv_libc_is_none_outside_linux() {
+        let libc = uv_libc();
+        if cfg!(target_os = "linux") {
+            assert!(matches!(libc, "gnu" | "musl"));
+        } else {
+            assert_eq!(libc, "none");
+        }
     }
 }
