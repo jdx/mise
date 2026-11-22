@@ -89,20 +89,37 @@ const DEFAULT_LOCKFILE_DOC_URL: &str = "https://mise.jdx.dev/dev-tools/mise-lock
 
 /// Invalidate all lockfile caches. Call this after modifying a lockfile.
 pub fn invalidate_caches() {
+    advance_generation_after(clear_lockfile_caches);
+}
+
+/// Runs `clear`, then advances [`CACHE_GENERATION`]. A lookup that read the
+/// generation before the advance keeps its answer under the older generation,
+/// which is dropped, whatever caches it read; one that reads it after finds the
+/// caches already cleared.
+fn advance_generation_after(clear: impl FnOnce()) {
+    clear();
     CACHE_GENERATION.fetch_add(1, Ordering::SeqCst);
-    if let Ok(mut cache) = ALL_LOCKFILES_CACHE.lock() {
-        cache.clear();
-    }
-    if let Ok(mut cache) = SINGLE_LOCKFILE_CACHE.lock() {
-        cache.clear();
-    }
-    if let Ok(mut cache) = LOCKFILES_BY_PRECEDENCE_CACHE.lock() {
+}
+
+/// Parsed files first, then the views built from them. A view is built while
+/// its cache's lock is held, so clearing it waits for a build in progress and
+/// drops what that build stored, and a view built after the parsed files are
+/// cleared reads the files again. The precedence view is stored while the
+/// merged view's lock is held, so it is cleared after the merged view.
+fn clear_lockfile_caches() {
+    if let Ok(mut cache) = PARSED_LOCKFILE_CACHE.lock() {
         cache.clear();
     }
     if let Ok(mut cache) = LEGACY_LOCKFILE_PATHS_CACHE.lock() {
         cache.clear();
     }
-    if let Ok(mut cache) = PARSED_LOCKFILE_CACHE.lock() {
+    if let Ok(mut cache) = SINGLE_LOCKFILE_CACHE.lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = ALL_LOCKFILES_CACHE.lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = LOCKFILES_BY_PRECEDENCE_CACHE.lock() {
         cache.clear();
     }
 }
@@ -6887,8 +6904,9 @@ pub(crate) fn get_locked_backend_for_version(
         return None;
     }
     let discovery = config.lockfile_discovery(|| derive_lockfile_discovery(config));
-    // Read before the lockfiles are, so an invalidation while this call reads
-    // them leaves its answer under the older generation, which is dropped.
+    // Read before the lockfiles are. An invalidation advances the generation
+    // only after it clears the caches, so an answer stored under this
+    // generation never comes from caches an invalidation after it dropped.
     let generation = CACHE_GENERATION.load(Ordering::SeqCst);
     memoized_locked_backend(
         &discovery.locked_backends,

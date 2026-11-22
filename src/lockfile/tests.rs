@@ -1079,6 +1079,25 @@ fn test_locked_backends_are_memoized_per_generation() {
 }
 
 #[test]
+fn test_lookup_during_an_invalidation_is_not_kept() {
+    let memo = Mutex::new(LockedBackends::default());
+    let key = || ("node".to_string(), None);
+
+    // A lookup that starts while the caches are being cleared reads the
+    // generation then and may read a lockfile from before the clear.
+    advance_generation_after(|| {
+        let during = CACHE_GENERATION.load(Ordering::SeqCst);
+        let stale = memoized_locked_backend(&memo, during, key(), || Some("core:node".into()));
+        assert_eq!(stale.as_deref(), Some("core:node"));
+    });
+
+    // Once the invalidation returns, that answer is gone.
+    let after = CACHE_GENERATION.load(Ordering::SeqCst);
+    let found = memoized_locked_backend(&memo, after, key(), || Some("aqua:nodejs/node".into()));
+    assert_eq!(found.as_deref(), Some("aqua:nodejs/node"));
+}
+
+#[test]
 fn test_legacy_lockfile_path_discovery_is_cached() {
     let temp_dir = tempfile::tempdir().unwrap();
     let cache_key = (
