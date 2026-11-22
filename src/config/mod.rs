@@ -2930,11 +2930,12 @@ fn is_in_global_config_dir(path: &Path) -> bool {
 
 /// The `env_conf_d` setting and decision that apply to `path`.
 fn env_conf_d_for(path: &Path) -> (Option<bool>, bool) {
-    if is_in_global_config_dir(path) {
-        (env::global_env_conf_d_setting(), env::global_env_conf_d())
+    let setting = if is_in_global_config_dir(path) {
+        env::global_env_conf_d_setting()
     } else {
-        (env::env_conf_d_setting(), env::env_conf_d())
-    }
+        env::env_conf_d_setting()
+    };
+    (setting, setting.unwrap_or_else(env::env_conf_d_default))
 }
 
 /// Warn about a dotted `conf.d` fragment whose name will become an environment
