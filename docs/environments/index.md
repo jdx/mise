@@ -469,8 +469,11 @@ form: `[vars]` and a task's `env` are single tables.
 
 `mise set` and `mise unset` edit a file that uses `[[env]]` by the same order.
 `mise set KEY=value` rewrites the last group that sets `KEY`, or adds `KEY` to
-the last group when none does, so the new value is the one mise uses.
-`mise unset KEY` removes `KEY` from every group.
+the last group when none does. `mise unset KEY` removes `KEY` from every group.
+
+When an earlier group sets `KEY` with [`tools = true`](#lazy-eval) and a later
+group sets it without, `mise set` rewrites the later one and the earlier entry
+still wins, because mise resolves it after tools load.
 
 ## Variables that configure mise {#mise-variables}
 
