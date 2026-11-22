@@ -3617,7 +3617,13 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     if cfg!(target_os = "macos") {
         cmd!("/bin/cp", "-cR", from, to).run()?;
     } else if cfg!(windows) {
-        cmd!("robocopy", from, to, "/MIR").run()?;
+        // robocopy exits 0-7 when the copy succeeded (1 means files were copied) and 8 or
+        // more on failure, so a nonzero exit is not an error by itself. Only 0-7 is success.
+        let output = cmd!("robocopy", from, to, "/MIR").unchecked().run()?;
+        // A negative code is a crash such as an access violation, not a copy result.
+        if !matches!(output.status.code(), Some(0..=7)) {
+            eyre::bail!("robocopy failed with {}", output.status);
+        }
     } else {
         cmd!("cp", "--reflink=auto", "-r", from, to).run()?;
     }

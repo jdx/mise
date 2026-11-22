@@ -2,6 +2,7 @@ use eyre::Result;
 use itertools::sorted;
 use std::env::consts::{ARCH, OS};
 
+use crate::platform::Platform;
 use crate::{backend, config, dirs, env, file};
 use crate::{config::Config, env::PYENV_ROOT};
 
@@ -39,6 +40,31 @@ pub(super) struct SyncPython {
     /// Link uv's python versions into mise and mise's python versions into uv
     #[usage(long)]
     uv: bool,
+}
+
+/// The libc component of a uv python directory name: `gnu` or `musl` on Linux, `none` on
+/// every other OS (macOS and Windows builds do not link a libc uv distinguishes).
+///
+/// `host_libc` is the libc of the machine, as the python backend sees it (`Platform::libc`),
+/// not the one mise was built against: a musl build of mise can run on a glibc host, where the
+/// backend installs a GNU python. A host with no detected libc is glibc, as in the backend.
+fn uv_libc(os: &str, host_libc: Option<&str>) -> &'static str {
+    if os != "linux" {
+        "none"
+    } else if host_libc == Some("musl") {
+        "musl"
+    } else {
+        "gnu"
+    }
+}
+
+/// The directory name uv gives an installed python, `cpython-{version}-{os}-{arch}-{libc}`:
+///
+/// - `cpython-3.10.16-macos-aarch64-none`
+/// - `cpython-3.13.0-linux-x86_64-gnu`
+/// - `cpython-3.13.0-windows-x86_64-none`
+fn uv_install_name(version: &str, os: &str, arch: &str, libc: &str) -> String {
+    format!("cpython-{version}-{os}-{arch}-{libc}")
 }
 
 impl SyncPython {
@@ -126,17 +152,8 @@ impl SyncPython {
                 None if file::is_symlink_or_junction(&src) => continue,
                 None => src,
             };
-            // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none
-            // ~/.local/share/uv/python/cpython-3.13.0-linux-x86_64-gnu
-            let os = OS;
-            let arch = if cfg!(target_arch = "x86_64") {
-                "x86_64-gnu"
-            } else if cfg!(target_arch = "aarch64") {
-                "aarch64-none"
-            } else {
-                ARCH
-            };
-            let dst = uv_versions_path.join(format!("cpython-{v}-{os}-{arch}"));
+            let libc = uv_libc(OS, Platform::current().libc());
+            let dst = uv_versions_path.join(uv_install_name(&v, OS, ARCH, libc));
             if !dst.exists() {
                 if !uv_versions_path.exists() {
                     file::create_dir_all(uv_versions_path)?;
@@ -148,5 +165,38 @@ impl SyncPython {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uv_install_name_matches_the_names_uv_writes() {
+        assert_eq!(
+            uv_install_name("3.13.0", "windows", "x86_64", "none"),
+            "cpython-3.13.0-windows-x86_64-none"
+        );
+        assert_eq!(
+            uv_install_name("3.13.0", "linux", "aarch64", "gnu"),
+            "cpython-3.13.0-linux-aarch64-gnu"
+        );
+        assert_eq!(
+            uv_install_name("3.10.16", "macos", "x86_64", "none"),
+            "cpython-3.10.16-macos-x86_64-none"
+        );
+    }
+
+    #[test]
+    fn uv_libc_follows_the_host_on_linux_and_is_none_elsewhere() {
+        assert_eq!(uv_libc("linux", Some("gnu")), "gnu");
+        assert_eq!(uv_libc("linux", Some("musl")), "musl");
+        // no detected libc is glibc, like the python backend
+        assert_eq!(uv_libc("linux", None), "gnu");
+        assert_eq!(uv_libc("windows", None), "none");
+        assert_eq!(uv_libc("macos", None), "none");
+        // a stale musl qualifier never leaks into a non-Linux name
+        assert_eq!(uv_libc("macos", Some("musl")), "none");
     }
 }

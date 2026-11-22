@@ -745,9 +745,31 @@ pub static AI_AGENT: Lazy<bool> = Lazy::new(mise_agent_env::is_agent);
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
+/// Where uv keeps the pythons it installs: `UV_PYTHON_INSTALL_DIR`, else `python` under uv's
+/// data directory.
 pub static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
+    var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| {
+        uv_data_dir(cfg!(windows), &XDG_DATA_HOME, var_path("APPDATA"), &HOME).join("python")
+    })
 });
+
+/// uv's data directory, resolved the way uv's `etcetera` strategy does. On Unix that is
+/// `$XDG_DATA_HOME/uv`. On Windows `XDG_DATA_HOME` plays no part: it is the roaming
+/// `%APPDATA%\uv`, not `%LOCALAPPDATA%` where mise keeps its own data.
+fn uv_data_dir(
+    windows: bool,
+    xdg_data_home: &Path,
+    appdata: Option<PathBuf>,
+    home: &Path,
+) -> PathBuf {
+    if windows {
+        appdata
+            .unwrap_or_else(|| home.join("AppData").join("Roaming"))
+            .join("uv")
+    } else {
+        xdg_data_home.join("uv")
+    }
+}
 
 fn var_u8(key: &str) -> u8 {
     var(key)
@@ -2356,5 +2378,27 @@ mod tests {
             "--prefer-offline",
             "lock",
         ])));
+    }
+
+    #[test]
+    fn uv_data_dir_follows_uv_not_mise_on_each_platform() {
+        let xdg = Path::new("/xdg");
+        let home = Path::new("/home/u");
+        let appdata = || Some(PathBuf::from("/roaming"));
+        // Unix: uv honors XDG_DATA_HOME.
+        assert_eq!(
+            uv_data_dir(false, xdg, appdata(), home),
+            PathBuf::from("/xdg/uv")
+        );
+        // Windows: roaming %APPDATA%, never XDG_DATA_HOME (which mise points at LocalAppData).
+        assert_eq!(
+            uv_data_dir(true, xdg, appdata(), home),
+            PathBuf::from("/roaming/uv")
+        );
+        // Windows with no %APPDATA%: the same fallback etcetera uses.
+        assert_eq!(
+            uv_data_dir(true, xdg, None, home),
+            home.join("AppData").join("Roaming").join("uv")
+        );
     }
 }
