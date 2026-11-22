@@ -117,6 +117,15 @@ if [[ ! $E2E_RETRY_WAIT_SECONDS =~ ^(0|[1-9][0-9]*)$ ]]; then
   err "E2E_RETRY_WAIT_SECONDS must be a non-negative integer"
   exit 1
 fi
+# run_test enforces the limits; a bad value is rejected here, once, not per test.
+for limit_var in E2E_TEST_TIMEOUT_SECONDS E2E_SLOW_TEST_TIMEOUT_SECONDS; do
+  if [[ -n ${!limit_var:-} && ! ${!limit_var} =~ ^(0|[1-9][0-9]*)$ ]]; then
+    err "$limit_var must be a non-negative integer"
+    exit 1
+  fi
+done
+# What run_test exits with when it killed a test that ran into its time limit.
+TIMED_OUT_STATUS=124
 
 PIDS=()
 LOG_FILES=()
@@ -182,13 +191,20 @@ start_test() {
     else
       unset GITHUB_STEP_SUMMARY
     fi
+    # cleanup ends this subshell with SIGTERM. run_test gets it too, because the
+    # test runs in a process group of its own, where Ctrl-C does not reach it,
+    # and only run_test knows which processes to stop.
+    run_test_pid=
+    trap '[[ -z $run_test_pid ]] || kill "$run_test_pid" 2>/dev/null; exit 143' TERM
     for ((attempt = 1; attempt <= E2E_MAX_ATTEMPTS; attempt++)); do
       # The step summary reports the final attempt; logs retain every attempt.
       if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
         : >"$GITHUB_STEP_SUMMARY"
       fi
       test_status=0
-      "$ROOT/e2e/run_test" "$test_name" || test_status=$?
+      "$ROOT/e2e/run_test" "$test_name" &
+      run_test_pid=$!
+      wait "$run_test_pid" || test_status=$?
       # Setup failures and Docker runs may not produce their own summary row.
       if [[ -n ${GITHUB_STEP_SUMMARY:-} && ! -s $GITHUB_STEP_SUMMARY ]]; then
         if [[ $test_status == 0 ]]; then
@@ -197,7 +213,11 @@ start_test() {
           summary "$test_name" "-" ":x:"
         fi
       fi
-      if [[ $test_status == 0 || $attempt == "$E2E_MAX_ATTEMPTS" ]]; then
+      # A test that ran into its time limit is not retried. Retries are for
+      # failures that pass on a second try, such as a download; a hang that
+      # passed on the second try would stay hidden, and one that did not would
+      # cost the limit again for every attempt.
+      if [[ $test_status == 0 || $test_status == "$TIMED_OUT_STATUS" || $attempt == "$E2E_MAX_ATTEMPTS" ]]; then
         break
       fi
       echo "Retrying $test_name (attempt $((attempt + 1))/$E2E_MAX_ATTEMPTS) after ${E2E_RETRY_WAIT_SECONDS}s" >&2
@@ -241,7 +261,11 @@ while [[ $completed -lt $total ]]; do
     test_status="${test_status:-1}"
     if [[ $test_status != 0 ]]; then
       status=1
-      FAILED_TESTS+=("${RUN_FILES[$printed]}")
+      if [[ $test_status == "$TIMED_OUT_STATUS" ]]; then
+        FAILED_TESTS+=("${RUN_FILES[$printed]} (timed out)")
+      else
+        FAILED_TESTS+=("${RUN_FILES[$printed]}")
+      fi
       cat "${LOG_FILES[$printed]}"
     elif [[ $SHOW_PASSING_LOGS == 1 || -f $LOG_DIR/$printed.retried ]]; then
       cat "${LOG_FILES[$printed]}"
