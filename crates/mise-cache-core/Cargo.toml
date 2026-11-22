@@ -12,6 +12,7 @@ blake3 = "1"
 eyre = "0.6"
 futures-util = "0.3"
 hex = "0.4"
+httpdate = "1"
 log = "0.4"
 mise-tls = { path = "../mise-tls", version = "0.1", default-features = false }
 rand = "0.10"
