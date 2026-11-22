@@ -217,6 +217,10 @@ pub struct Config {
     /// lookups ask for them hundreds of times per invocation, so derive once
     /// per config.
     lockfile_discovery: std::sync::OnceLock<Arc<crate::lockfile::LockfileDiscovery>>,
+    /// [`Self::monorepo_lockfile_root`], derived once. Finding the monorepo
+    /// config globs every `conf.d` directory, and lockfile lookups ask for
+    /// the root once or more per tool.
+    monorepo_lockfile_root: std::sync::OnceLock<Option<PathBuf>>,
 }
 
 pub use mise_config::alias::Alias;
@@ -351,6 +355,7 @@ impl Config {
             vars: self.vars.clone(),
             vars_results: OnceCell::new(),
             lockfile_discovery: Default::default(),
+            monorepo_lockfile_root: Default::default(),
         })
     }
 
@@ -423,6 +428,7 @@ impl Config {
             vars: Default::default(),
             vars_results: OnceCell::new(),
             lockfile_discovery: Default::default(),
+            monorepo_lockfile_root: Default::default(),
         };
         let vars_config = Arc::new(Self {
             tera_ctx: config.tera_ctx.clone(),
@@ -448,6 +454,7 @@ impl Config {
             vars: config.vars.clone(),
             vars_results: OnceCell::new(),
             lockfile_discovery: Default::default(),
+            monorepo_lockfile_root: Default::default(),
         });
         let vars_results = measure!("config::load vars_results", {
             let results = load_vars(&vars_config).await?;
@@ -1085,7 +1092,9 @@ impl Config {
     /// `[monorepo].config_roots` to match directories, because legacy lockfiles
     /// can exist in roots whose live config is idiomatic-only or was removed.
     pub fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
-        monorepo_lockfile_root_for(&self.config_files)
+        self.monorepo_lockfile_root
+            .get_or_init(|| monorepo_lockfile_root_for(&self.config_files))
+            .clone()
     }
 
     /// Returns true when lockfile creation is enabled by a TOML settings file.

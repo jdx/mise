@@ -168,6 +168,107 @@ fn test_outdated_lockfile_version_waits_six_months_after_newer_format() {
 }
 
 #[test]
+fn test_lockfile_version_at_matches_a_full_read() {
+    let temp = tempfile::tempdir().unwrap();
+    let cases = [
+        (
+            "set before the tools",
+            "lockfile_version = 2\n\n[[tools.node]]\nversion = \"20\"\n",
+        ),
+        (
+            "indented",
+            "  lockfile_version = 1\n[[tools.node]]\nversion = \"20\"\n",
+        ),
+        ("not set", "# comment\n[[tools.node]]\nversion = \"20\"\n"),
+        ("empty", ""),
+        ("without tables", "lockfile_version = 3\n"),
+        ("inside a table", "[settings]\nlockfile_version = 1\n"),
+        (
+            "cut inside a multi-line string",
+            "lockfile_version = 2\nnote = '''\n[x]\n'''\n",
+        ),
+        ("not TOML", "lockfile_version = \n["),
+    ];
+    for (name, content) in cases {
+        let path = temp.path().join(format!("{}.lock", name.replace(' ', "-")));
+        std::fs::write(&path, content).unwrap();
+        assert_eq!(
+            lockfile_version_at(&path).ok(),
+            Lockfile::read(&path).ok().map(|l| l.lockfile_version()),
+            "{name}"
+        );
+    }
+    let path = temp.path().join("set-before-the-tools.lock");
+    assert_eq!(lockfile_version_at(&path).unwrap(), 2);
+    // Not a file: whatever a full read decides, without reading it.
+    assert_eq!(
+        lockfile_version_at(temp.path()).unwrap(),
+        Lockfile::read(temp.path()).unwrap().lockfile_version()
+    );
+}
+
+#[test]
+fn read_parsed_lockfile_parses_again_only_once_the_file_changes() {
+    use std::time::{Duration, SystemTime};
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    let cache = Mutex::new(ParsedLockfiles::default());
+    let read = || {
+        read_parsed_lockfile_in(&cache, &path, |path| Lockfile::read(path))
+            .unwrap()
+            .lockfile_version()
+    };
+    let first = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let second = first + Duration::from_secs(1);
+
+    write_with_time(&path, "lockfile_version = 2\n", first);
+    assert_eq!(read(), 2);
+    // The same length and time: the earlier parse stands.
+    write_with_time(&path, "lockfile_version = 3\n", first);
+    assert_eq!(read(), 2);
+    // A new time is a new file.
+    write_with_time(&path, "lockfile_version = 3\n", second);
+    assert_eq!(read(), 3);
+    // So is a new length.
+    write_with_time(&path, "lockfile_version = 1\n# a longer file\n", second);
+    assert_eq!(read(), 1);
+}
+
+#[test]
+fn read_parsed_lockfile_drops_a_parse_that_a_clear_overtook() {
+    use std::time::{Duration, SystemTime};
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    let cache = Mutex::new(ParsedLockfiles::default());
+    let time = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    write_with_time(&path, "lockfile_version = 2\n", time);
+
+    // The file changes, keeping its time and length, and the caches are
+    // cleared after the parse read it but before the parse stored it.
+    let overtaken = read_parsed_lockfile_in(&cache, &path, |path| {
+        let lockfile = Lockfile::read(path);
+        write_with_time(path, "lockfile_version = 3\n", time);
+        cache.lock().unwrap().clear();
+        lockfile
+    })
+    .unwrap();
+    assert_eq!(overtaken.lockfile_version(), 2);
+
+    let next = read_parsed_lockfile_in(&cache, &path, |path| Lockfile::read(path)).unwrap();
+    assert_eq!(next.lockfile_version(), 3);
+}
+
+fn write_with_time(path: &Path, content: &str, modified: std::time::SystemTime) {
+    std::fs::write(path, content).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+}
+
+#[test]
 fn test_url_contradicts_version_reports_a_different_release() {
     assert_eq!(
         url_contradicts_version(
@@ -962,6 +1063,63 @@ fn failed_request_binding_preserves_the_existing_binding() {
         lockfile.tools["dummy"][0].specifiers,
         BTreeSet::from(["1".to_string()])
     );
+}
+
+#[test]
+fn test_locked_backends_are_memoized_per_generation() {
+    let memo = Mutex::new(LockedBackends::default());
+    let finds = AtomicUsize::new(0);
+    let find = |backend: &str| {
+        finds.fetch_add(1, Ordering::Relaxed);
+        Some(backend.to_string())
+    };
+    let key = || ("node".to_string(), Some("22".to_string()));
+
+    for _ in 0..3 {
+        let found = memoized_locked_backend(&memo, 0, key(), || find("core:node"));
+        assert_eq!(found.as_deref(), Some("core:node"));
+    }
+    assert_eq!(finds.load(Ordering::Relaxed), 1);
+
+    // Another version is another answer.
+    let other = ("node".to_string(), None);
+    assert_eq!(
+        memoized_locked_backend(&memo, 0, other, || find("aqua:nodejs/node")).as_deref(),
+        Some("aqua:nodejs/node")
+    );
+    assert_eq!(finds.load(Ordering::Relaxed), 2);
+
+    // An invalidation drops every answer from before it.
+    let found = memoized_locked_backend(&memo, 1, key(), || find("aqua:nodejs/node"));
+    assert_eq!(found.as_deref(), Some("aqua:nodejs/node"));
+    assert_eq!(finds.load(Ordering::Relaxed), 3);
+
+    // A caller that started before that invalidation gets its own answer, but
+    // does not put it back.
+    let stale = memoized_locked_backend(&memo, 0, key(), || find("core:node"));
+    assert_eq!(stale.as_deref(), Some("core:node"));
+    let found = memoized_locked_backend(&memo, 1, key(), || find("core:node"));
+    assert_eq!(found.as_deref(), Some("aqua:nodejs/node"));
+    assert_eq!(finds.load(Ordering::Relaxed), 4);
+}
+
+#[test]
+fn test_lookup_during_an_invalidation_is_not_kept() {
+    let memo = Mutex::new(LockedBackends::default());
+    let key = || ("node".to_string(), None);
+
+    // A lookup that starts while the caches are being cleared reads the
+    // generation then and may read a lockfile from before the clear.
+    advance_generation_after(|| {
+        let during = CACHE_GENERATION.load(Ordering::SeqCst);
+        let stale = memoized_locked_backend(&memo, during, key(), || Some("core:node".into()));
+        assert_eq!(stale.as_deref(), Some("core:node"));
+    });
+
+    // Once the invalidation returns, that answer is gone.
+    let after = CACHE_GENERATION.load(Ordering::SeqCst);
+    let found = memoized_locked_backend(&memo, after, key(), || Some("aqua:nodejs/node".into()));
+    assert_eq!(found.as_deref(), Some("aqua:nodejs/node"));
 }
 
 #[test]
@@ -3333,7 +3491,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
         .insert("node".to_string(), vec![basic_tool("20.0.0", "core:node")]);
     legacy.save(&legacy_path).unwrap();
 
-    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()), true);
+    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()), |_| true);
     assert_eq!(legacy_only.lockfile_version(), 0);
 
     let mut primary = Lockfile::default();
@@ -3354,7 +3512,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
     primary.save(&primary_path).unwrap();
     invalidate_caches();
 
-    let mixed = read_lockfile_at(primary_path, Some(legacy_path), true);
+    let mixed = read_lockfile_at(primary_path, Some(legacy_path), |_| true);
     assert_eq!(mixed.lockfile_version(), CURRENT_LOCKFILE_VERSION);
     assert!(mixed.uses_request_bindings());
     assert!(
