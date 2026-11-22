@@ -2050,7 +2050,9 @@ pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
 /// written through a symlink would never match one of them.
 pub fn ceiling_path_forms(path: &Path) -> impl Iterator<Item = PathBuf> + use<> {
     let path = replace_path(path);
-    let resolved = fs::canonicalize(&path).ok().filter(|p| *p != path);
+    // dunce leaves out the `\\?\` prefix std adds on Windows, which the ancestors
+    // of the current directory never have.
+    let resolved = dunce::canonicalize(&path).ok().filter(|p| *p != path);
     std::iter::once(path).chain(resolved)
 }
 
