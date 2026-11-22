@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn zsh_cleanup_tolerates_a_missing_completion_function() {
         let commands = BTreeSet::from(["wt".to_string()]);
-        let output = registration("zsh", Shell::Zsh, &commands);
+        let output = registration("zsh", Shell::Zsh, &commands, true);
         assert!(
             output.contains("elif (( ${+functions[_wt]} )); then unfunction _wt"),
             "{output}"
@@ -291,7 +291,7 @@ mod tests {
             return;
         }
         let commands = BTreeSet::from(["wt".to_string()]);
-        let output = registration("zsh", Shell::Zsh, &commands);
+        let output = registration("zsh", Shell::Zsh, &commands, true);
         // A snapshot-restored shell keeps `__mise_clear_completions` but not `_wt`.
         let script = format!(
             "setopt ksh_arrays\nautoload -Uz compinit; compinit -u -D\n{output}\nunfunction _wt\n__mise_clear_completions\n"
