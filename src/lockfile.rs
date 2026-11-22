@@ -52,6 +52,12 @@ type LegacyLockfilePathsCacheKey = (PathBuf, Option<bool>, Vec<String>);
 static LEGACY_LOCKFILE_PATHS_CACHE: Lazy<
     Mutex<HashMap<LegacyLockfilePathsCacheKey, IndexSet<PathBuf>>>,
 > = Lazy::new(Default::default);
+/// The modification time and length a lockfile had when it was parsed.
+type FileStamp = (Option<std::time::SystemTime>, u64);
+/// Lockfiles as [`Lockfile::read`] returned them, by path. The merged view and
+/// each config's own view read the same files into separate caches, and parsing
+/// a lockfile that covers every platform costs more than the lookups it serves.
+static PARSED_LOCKFILE_CACHE: Lazy<Mutex<ParsedLockfiles>> = Lazy::new(Default::default);
 /// What [`read_all_lockfiles`] derives once per [`Config`]: the paths that key
 /// the shared cache, plus the monorepo/legacy discovery results the cache-miss
 /// path needs, so a miss doesn't repeat that discovery.
@@ -96,6 +102,43 @@ pub fn invalidate_caches() {
     if let Ok(mut cache) = LEGACY_LOCKFILE_PATHS_CACHE.lock() {
         cache.clear();
     }
+    if let Ok(mut cache) = PARSED_LOCKFILE_CACHE.lock() {
+        cache.clear();
+    }
+}
+
+/// [`Lockfile::read`], parsing a file again only once it has changed. A
+/// symlinked lockfile is always read, since its target can change without the
+/// link's stamp changing.
+fn read_parsed_lockfile(path: &Path) -> Result<Lockfile> {
+    read_parsed_lockfile_in(&PARSED_LOCKFILE_CACHE, path)
+}
+
+type ParsedLockfiles = HashMap<PathBuf, (FileStamp, Arc<Lockfile>)>;
+
+fn read_parsed_lockfile_in(cache: &Mutex<ParsedLockfiles>, path: &Path) -> Result<Lockfile> {
+    let stamp = fs::symlink_metadata(path)
+        .ok()
+        .filter(|meta| meta.is_file())
+        .map(|meta| (meta.modified().ok(), meta.len()));
+    let Some(stamp) = stamp else {
+        return Lockfile::read(path);
+    };
+    let cached = cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(path)
+        .filter(|(cached, _)| *cached == stamp)
+        .map(|(_, lockfile)| Arc::clone(lockfile));
+    if let Some(lockfile) = cached {
+        return Ok(lockfile.as_ref().clone());
+    }
+    let lockfile = Lockfile::read(path)?;
+    cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(path.to_path_buf(), (stamp, Arc::new(lockfile.clone())));
+    Ok(lockfile)
 }
 
 pub const CURRENT_LOCKFILE_VERSION: u32 = 4;
@@ -3448,7 +3491,7 @@ fn merge_legacy_lockfile_if_present(
     legacy_path: &Path,
     primary_exists: bool,
 ) -> Result<()> {
-    match Lockfile::read(legacy_path) {
+    match read_parsed_lockfile(legacy_path) {
         Ok(legacy) => {
             // Stub references are relative to their lockfile, so rebase them.
             let stubs = live_tool_stub_paths(&legacy, legacy_path);
@@ -5676,7 +5719,7 @@ fn push_existing_lockfile(config: &Config, lockfiles: &mut Vec<Lockfile>, path: 
     if !path.exists() {
         return;
     }
-    match Lockfile::read(path) {
+    match read_parsed_lockfile(path) {
         Ok(mut lockfile) => {
             if !lockfile_is_trusted(config, path) {
                 lockfile.drop_what_needs_trust(path);
@@ -5960,7 +6003,7 @@ fn read_lockfile_at(
     }
 
     let primary_exists = lockfile_path.exists();
-    let mut lockfile = Lockfile::read(&lockfile_path)
+    let mut lockfile = read_parsed_lockfile(&lockfile_path)
         .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
     if let Some(legacy_path) = &legacy_path
         && let Err(err) = merge_legacy_lockfile_if_present(

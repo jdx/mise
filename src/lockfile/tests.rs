@@ -208,6 +208,42 @@ fn test_lockfile_version_at_matches_a_full_read() {
 }
 
 #[test]
+fn read_parsed_lockfile_parses_again_only_once_the_file_changes() {
+    use std::time::{Duration, SystemTime};
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    let cache = Mutex::new(ParsedLockfiles::new());
+    let write = |content: &str, modified: SystemTime| {
+        std::fs::write(&path, content).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    };
+    let read = || {
+        read_parsed_lockfile_in(&cache, &path)
+            .unwrap()
+            .lockfile_version()
+    };
+    let first = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let second = first + Duration::from_secs(1);
+
+    write("lockfile_version = 2\n", first);
+    assert_eq!(read(), 2);
+    // The same length and time: the earlier parse stands.
+    write("lockfile_version = 3\n", first);
+    assert_eq!(read(), 2);
+    // A new time is a new file.
+    write("lockfile_version = 3\n", second);
+    assert_eq!(read(), 3);
+    // So is a new length.
+    write("lockfile_version = 1\n# a longer file\n", second);
+    assert_eq!(read(), 1);
+}
+
+#[test]
 fn test_url_contradicts_version_reports_a_different_release() {
     assert_eq!(
         url_contradicts_version(
