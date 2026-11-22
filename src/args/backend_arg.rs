@@ -19,7 +19,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{LazyLock as Lazy, Mutex};
+use std::sync::{Arc, LazyLock as Lazy, Mutex};
 
 /// Longest tool name searched for "did you mean" candidates. No registry name
 /// comes near it, so a longer name cannot be a typo of one.
@@ -270,6 +270,33 @@ fn plugin_overrides_registry(short: &str) -> bool {
         PluginType::Package | PluginType::BootstrapSettings => return true,
     };
     !backend::is_disabled_backend_type(&backend_type)
+}
+
+/// The environment variables that can set the backend of the tool `short`, in
+/// the order they are read: `MISE_BACKENDS_<NAME>`, then, for a `pypi:` tool,
+/// the `MISE_BACKENDS_PIPX_<NAME>` it had as a pipx tool.
+///
+/// `BackendArg::full` and the checks around it read these on every lookup,
+/// several thousand times in a `mise run`, and building the names was most of
+/// that work. The names are built once per tool; the variables themselves are
+/// read every time, since they can change while mise runs.
+fn backend_override_env_keys(short: &str) -> Arc<[String]> {
+    static KEYS: Lazy<Mutex<HashMap<String, Arc<[String]>>>> = Lazy::new(Default::default);
+    let mut keys = KEYS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(found) = keys.get(short) {
+        return Arc::clone(found);
+    }
+    let name = unalias_backend(short);
+    let mut found = vec![format!("MISE_BACKENDS_{}", name.to_shouty_snake_case())];
+    if let Some(pypi) = name.strip_prefix("pypi:") {
+        found.push(format!(
+            "MISE_BACKENDS_PIPX_{}",
+            pypi.to_shouty_snake_case()
+        ));
+    }
+    let found: Arc<[String]> = found.into();
+    keys.insert(short.to_string(), Arc::clone(&found));
+    found
 }
 
 fn parse_backend_components(
@@ -973,18 +1000,9 @@ impl BackendArg {
     }
 
     fn env_backend_override(&self) -> Option<String> {
-        let short = unalias_backend(&self.short);
-        let short = short.as_ref();
-        let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
-        env::var(&env_key).ok().or_else(|| {
-            short.strip_prefix("pypi:").and_then(|name| {
-                env::var(format!(
-                    "MISE_BACKENDS_PIPX_{}",
-                    name.to_shouty_snake_case()
-                ))
-                .ok()
-            })
-        })
+        backend_override_env_keys(&self.short)
+            .iter()
+            .find_map(|key| env::var(key).ok())
     }
 
     fn backend_alias_opts_from_loaded_config(&self) -> Option<ToolVersionOptions> {
@@ -1527,6 +1545,43 @@ mod tests {
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("solc"));
         assert_eq!(opts.get("foo"), Some("resolved"));
+    }
+
+    #[test]
+    fn backend_override_env_keys_are_built_once_per_tool() {
+        assert_eq!(
+            &*backend_override_env_keys("nodejs"),
+            ["MISE_BACKENDS_NODE"]
+        );
+        assert_eq!(
+            &*backend_override_env_keys("core:node"),
+            ["MISE_BACKENDS_NODE"]
+        );
+        assert_eq!(
+            &*backend_override_env_keys("pypi:black"),
+            ["MISE_BACKENDS_PYPI_BLACK", "MISE_BACKENDS_PIPX_BLACK"]
+        );
+        assert!(Arc::ptr_eq(
+            &backend_override_env_keys("pypi:black"),
+            &backend_override_env_keys("pypi:black")
+        ));
+    }
+
+    /// The names are cached, not the values: a variable set or removed after
+    /// the first lookup still takes effect.
+    #[test]
+    fn env_backend_override_reads_the_variable_each_time() {
+        let ba = BackendArg::from("pypi:env-override-reread");
+        assert_eq!(ba.env_backend_override(), None);
+        unsafe { std::env::set_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD", "pipx:legacy") };
+        assert_eq!(ba.env_backend_override().as_deref(), Some("pipx:legacy"));
+        unsafe { std::env::set_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD", "pypi:current") };
+        assert_eq!(ba.env_backend_override().as_deref(), Some("pypi:current"));
+        unsafe {
+            std::env::remove_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD");
+            std::env::remove_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD");
+        }
+        assert_eq!(ba.env_backend_override(), None);
     }
 }
 
