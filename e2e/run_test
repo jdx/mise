@@ -28,6 +28,21 @@ if [[ -n ${MISE_TEST_PITCHFORK:-} && -f $MISE_TEST_PITCHFORK ]]; then
   MISE_TEST_PITCHFORK="$(realpath "$MISE_TEST_PITCHFORK")"
 fi
 
+# A test that never returns is killed when its time limit is up, so it fails
+# with what it printed instead of holding the run until CI gives up. The limits
+# are in seconds, slow tests have their own, and 0 means no limit.
+E2E_TEST_TIMEOUT_SECONDS="${E2E_TEST_TIMEOUT_SECONDS:-300}"
+E2E_SLOW_TEST_TIMEOUT_SECONDS="${E2E_SLOW_TEST_TIMEOUT_SECONDS:-900}"
+for limit_var in E2E_TEST_TIMEOUT_SECONDS E2E_SLOW_TEST_TIMEOUT_SECONDS; do
+  if [[ ! ${!limit_var} =~ ^(0|[1-9][0-9]*)$ ]]; then
+    err "$limit_var must be a non-negative integer"
+    exit 1
+  fi
+done
+# What this script exits with for a test that ran into its limit, as `timeout`
+# does. run_all_tests does not retry it.
+TIMED_OUT_STATUS=124
+
 setup_isolated_env() {
   # macOS's per-user TMPDIR can exceed Pitchfork's Unix socket path limit.
   # Keep daemon fixtures short while preserving other tests' temporary roots.
@@ -165,6 +180,127 @@ within_isolated_env() {
   ) || return $?
 }
 
+# The test's live processes, as "pid ppid pgid stat elapsed command" lines:
+# everything descended from the test, and everything left in its process group.
+test_processes() {
+  ps -A -o pid= -o ppid= -o pgid= -o stat= -o etime= -o args= 2>/dev/null |
+    awk -v root="$TEST_PID" '
+      $4 !~ /^Z/ { parent[$1] = $2; group[$1] = $3; line[$1] = $0 }
+      END {
+        for (pid in line) {
+          p = pid
+          for (depth = 0; depth < 100 && p != root && (p in parent); depth++) p = parent[p]
+          if (p == root || group[pid] == root) print substr(line[pid], 1, 200)
+        }
+      }' | sort -n || true
+}
+
+# The process groups to signal: the test's own, and those its descendants made.
+# mise gives every task a group of its own, so the test's group alone would
+# leave a `mise run task &` and its children running.
+test_process_groups() {
+  local own
+  own="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ' || true)"
+  {
+    echo "$TEST_PID"
+    test_processes | awk '{ print $3 }'
+  } | awk -v own="${own:-0}" '$1 + 0 > 1 && $1 + 0 != own + 0 && !seen[$1]++' | tr '\n' ' '
+}
+
+# Whether a process of one of the given groups is still alive.
+groups_alive() {
+  ps -A -o pgid= -o stat= 2>/dev/null |
+    awk -v groups="$1" '
+      BEGIN { n = split(groups, list, " "); for (i = 1; i <= n; i++) wanted[list[i]] = 1 }
+      $2 !~ /^Z/ && ($1 in wanted) { found = 1 }
+      END { exit found ? 0 : 1 }'
+}
+
+# Ends the test: SIGTERM so its traps can clean up, then SIGKILL for whatever is
+# left after five seconds. The groups are listed before the first signal,
+# because a child whose parent has died no longer shows up as a descendant.
+stop_test() {
+  local groups group
+  [[ -n ${TEST_PID:-} ]] || return 0
+  groups="$(test_process_groups)"
+  for group in $groups; do
+    kill -TERM -- "-$group" 2>/dev/null || true
+  done
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    groups_alive "$groups" || break
+    sleep 0.5
+  done
+  groups="$groups $(test_process_groups)"
+  for group in $groups; do
+    kill -KILL -- "-$group" 2>/dev/null || true
+  done
+}
+
+# The watchdog and its sleep share a group too, so neither outlives the test.
+stop_watchdog() {
+  [[ -n ${WATCHDOG_PID:-} ]] || return 0
+  kill -KILL -- "-$WATCHDOG_PID" 2>/dev/null || true
+  wait "$WATCHDOG_PID" 2>/dev/null || true
+}
+
+# Runs the test command in the isolated environment, in a process group of its
+# own so that stop_test can end it and everything it started. With a limit, it
+# is killed when it has not finished after $1 seconds, which sets TIMED_OUT; 0
+# means no limit.
+run_with_time_limit() {
+  local limit="$1" status=0
+  shift
+  TIMED_OUT=0
+  WATCHDOG_PID=
+  trap 'TIMED_OUT=1' USR1
+  # The test no longer shares this script's group, so Ctrl-C does not reach it,
+  # and neither does the TERM run_all_tests sends when it is interrupted.
+  trap 'stop_test; stop_watchdog; exit 130' INT
+  trap 'stop_test; stop_watchdog; exit 143' TERM
+  # Job control gives each background job its own process group. That needs no
+  # setsid or timeout, which macOS does not have, and bash 3.2 does it too.
+  set -m
+  within_isolated_env "$@" </dev/null &
+  TEST_PID=$!
+  if [[ $limit != 0 ]]; then
+    # The signal repeats until this script is gone or stops the watchdog, so one
+    # that arrives before `wait` starts, and is lost to it, is sent again.
+    (
+      sleep "$limit"
+      while kill -USR1 $$ 2>/dev/null; do sleep 1; done
+    ) </dev/null >/dev/null 2>&1 &
+    WATCHDOG_PID=$!
+  fi
+  set +m
+
+  # A trapped signal ends `wait` early, so this returns when the test does or
+  # when the watchdog fires, whichever is first.
+  if [[ $TIMED_OUT != 1 ]]; then
+    wait "$TEST_PID" 2>/dev/null || status=$?
+  fi
+  stop_watchdog
+  if [[ $TIMED_OUT == 1 ]] && kill -0 "$TEST_PID" 2>/dev/null; then
+    echo "$TEST is still running after ${limit}s; its processes:" >&2
+    echo "    PID    PPID    PGID STAT     ELAPSED COMMAND" >&2
+    test_processes >&2
+    stop_test
+    wait "$TEST_PID" 2>/dev/null || true
+  else
+    # The signal can land as the test finishes: the interrupted wait then left
+    # the test's real status uncollected, and what is in $status is the signal's.
+    # When the wait already reaped the test, this one fails with 127 and the
+    # status stays.
+    if [[ $TIMED_OUT == 1 ]]; then
+      local collected=0
+      wait "$TEST_PID" 2>/dev/null || collected=$?
+      [[ $collected == 127 ]] || status=$collected
+    fi
+    TIMED_OUT=0
+  fi
+  trap - USR1 INT TERM
+  return "$status"
+}
+
 run_test() {
   # Check for problematic /tmp/mise.toml that can interfere with tests
   if [[ -f /tmp/mise.toml ]]; then
@@ -188,17 +324,23 @@ run_test() {
   # directory a test watches (hook-env's fast path checks their mtimes).
   E2E_ASSERTION_LOG="$(mktemp "${TMPDIR:-/tmp}/mise-e2e-assertions.XXXXXX")"
 
+  local limit="$E2E_TEST_TIMEOUT_SECONDS" limit_var=E2E_TEST_TIMEOUT_SECONDS
+  if [[ $TEST == *_slow ]]; then
+    limit="$E2E_SLOW_TEST_TIMEOUT_SECONDS" limit_var=E2E_SLOW_TEST_TIMEOUT_SECONDS
+  fi
+
   START="$(date +%s)"
   # Check shebang to determine which shell to use
-  local shebang
+  local shebang test_command
   shebang="$(head -n 1 "$TEST_SCRIPT")"
   if [[ $shebang == "#!/usr/bin/env zsh"* ]]; then
-    within_isolated_env zsh -f -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+    test_command=(zsh -f -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"")
   elif [[ $shebang == "#!/usr/bin/env fish"* ]]; then
-    within_isolated_env fish --no-config "$TEST_SCRIPT" || status=$?
+    test_command=(fish --no-config "$TEST_SCRIPT")
   else
-    within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+    test_command=(bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"")
   fi
+  run_with_time_limit "$limit" "${test_command[@]}" || status=$?
   END="$(date +%s)"
   DURATION=$((END - START))s
 
@@ -207,6 +349,13 @@ run_test() {
     echo "$TEST: $(wc -l <"$E2E_ASSERTION_LOG" | tr -d ' ') assertions" >&2
   fi
   rm -f "$E2E_ASSERTION_LOG"
+
+  if [[ $TIMED_OUT == 1 ]]; then
+    title="E2E test $TEST timed out" err "killed after exceeding its ${limit}s time limit ($limit_var)"
+    echo "Test environment can be examined in $TEST_ISOLATED_DIR" >&2
+    summary "$TEST" "$DURATION" ":x: timed out after ${limit}s"
+    return "$TIMED_OUT_STATUS"
+  fi
 
   # Check if test took >20s and isn't marked as slow
   DURATION_NUM="${DURATION%s}"
@@ -226,6 +375,11 @@ run_test() {
     summary "$TEST" "$DURATION" ":x:"
   fi
 
+  # run_all_tests reads that status as a time limit, so a test that exits with
+  # it on its own (a failed `timeout`) is passed on as a plain failure.
+  if [[ $status == "$TIMED_OUT_STATUS" ]]; then
+    return 1
+  fi
   return "$status"
 }
 
@@ -287,6 +441,9 @@ run_in_docker() {
     -e RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
     -e MISE_E2E_INSIDE_DOCKER=1
     -e CARGO_TARGET_DIR=/usr/local/lib/mise
+    # The limit applies inside the container, where the test's processes are.
+    -e E2E_TEST_TIMEOUT_SECONDS="$E2E_TEST_TIMEOUT_SECONDS"
+    -e E2E_SLOW_TEST_TIMEOUT_SECONDS="$E2E_SLOW_TEST_TIMEOUT_SECONDS"
   )
   # Same rule as the non-docker path: an empty token var is not an absent one.
   [[ -n ${MISE_GITHUB_TOKEN:-} ]] && docker_args+=(-e MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")

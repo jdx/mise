@@ -4,8 +4,10 @@
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -303,6 +305,177 @@ exit "$status"
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(counts, {})
                 self.assertIn("E2E_MAX_ATTEMPTS must be", result.stderr)
+
+
+class E2ETimeLimitTests(unittest.TestCase):
+    """The per-test time limit, with the real e2e/run_test running the tests."""
+
+    def run_tests(self, tests, interrupt_after=None, **settings):
+        """Run e2e/run_all_tests on `tests`, a dict of test name to script.
+        With interrupt_after, the run gets SIGINT once that file exists."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            e2e = root / "e2e"
+            e2e.mkdir()
+            for name in ("run_all_tests", "run_test", "style.sh", "helpers.sh", "assert.sh"):
+                shutil.copy(ROOT / "e2e" / name, e2e / name)
+            for name, script in tests.items():
+                (e2e / name).write_text(f"#!/usr/bin/env bash\n{script}\n")
+            home = root / "home"
+            home.mkdir()
+            # The runner refuses to start without a mise binary to test; these
+            # tests never call it.
+            stub = root / "bin" / "mise"
+            stub.parent.mkdir()
+            stub.write_text("#!/bin/sh\n")
+            stub.chmod(0o755)
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith(("E2E_", "TEST_", "GITHUB_", "MISE_"))
+            }
+            env.pop("CARGO_TARGET_DIR", None)
+            env.update(
+                MISE_E2E_BIN=str(stub),
+                HOME=str(home),
+                TMPDIR=str(root),
+                E2E_JOBS="2",
+                E2E_RETRY_WAIT_SECONDS="0",
+                **settings,
+            )
+            command = ["bash", str(e2e / "run_all_tests"), *tests]
+            process = subprocess.Popen(
+                command,
+                cwd=root,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                if interrupt_after is not None:
+                    deadline = time.monotonic() + 30
+                    while not interrupt_after.exists() and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                    process.send_signal(signal.SIGINT)
+                stdout, stderr = process.communicate(timeout=60)
+            finally:
+                process.kill()
+            result = subprocess.CompletedProcess(
+                command, process.returncode, stdout, stderr
+            )
+            return result, stdout + stderr
+
+    @staticmethod
+    def running(pid):
+        state = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
+        ).stdout.strip()
+        return state != "" and not state.startswith("Z")
+
+    @staticmethod
+    def hanging_test(pids):
+        """A test with a child in its process group, one in a group of its own
+        (as a task `mise run` starts is), and a step that never returns. It
+        records the children in `pids`, then creates `ready` there."""
+        return f"""
+echo "output before the hang"
+sleep 600 &
+echo "$!" >"{pids}/child"
+set -m
+sleep 600 &
+echo "$!" >"{pids}/own-group"
+set +m
+touch "{pids}/ready"
+sleep 600
+echo "output after the hang"
+"""
+
+    @staticmethod
+    def children(pids):
+        return [int((Path(pids) / name).read_text()) for name in ("child", "own-group")]
+
+    def test_hanging_test_is_killed_with_its_output_and_not_retried(self):
+        with tempfile.TemporaryDirectory() as pids:
+            result, output = self.run_tests(
+                {"test_hang": self.hanging_test(pids)},
+                E2E_TEST_TIMEOUT_SECONDS="1",
+                E2E_MAX_ATTEMPTS="3",
+            )
+            children = self.children(pids)
+        self.assertEqual(result.returncode, 1, output)
+        self.assertEqual(output.count("output before the hang"), 1, output)
+        self.assertNotIn("output after the hang", output)
+        self.assertIn("test_hang is still running after 1s; its processes:", output)
+        self.assertIn(
+            "E2E test test_hang timed out: killed after exceeding its 1s time limit"
+            " (E2E_TEST_TIMEOUT_SECONDS)",
+            output,
+        )
+        self.assertNotIn("Retrying", output)
+        self.assertIn("  - test_hang (timed out)", result.stderr)
+        self.assertIn("ran 1 tests (0 passed, 1 failed)", result.stderr)
+        for pid in children:
+            self.assertFalse(self.running(pid), f"process {pid} outlived the test")
+
+    def test_interrupting_the_run_stops_the_test(self):
+        for limit in ("60", "0"):
+            with self.subTest(limit=limit), tempfile.TemporaryDirectory() as pids:
+                result, output = self.run_tests(
+                    {"test_hang": self.hanging_test(pids)},
+                    interrupt_after=Path(pids) / "ready",
+                    E2E_TEST_TIMEOUT_SECONDS=limit,
+                )
+                children = self.children(pids)
+                self.assertEqual(result.returncode, 130, output)
+                # The run is over before the test's processes are; they get SIGTERM.
+                deadline = time.monotonic() + 10
+                while any(map(self.running, children)) and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                for pid in children:
+                    self.assertFalse(
+                        self.running(pid), f"process {pid} outlived the run"
+                    )
+
+    def test_slow_tests_have_their_own_limit(self):
+        result, output = self.run_tests(
+            {"test_hang_slow": "sleep 600", "test_quick": "sleep 2"},
+            E2E_TEST_TIMEOUT_SECONDS="30",
+            E2E_SLOW_TEST_TIMEOUT_SECONDS="1",
+        )
+        self.assertEqual(result.returncode, 1, output)
+        self.assertIn(
+            "killed after exceeding its 1s time limit (E2E_SLOW_TEST_TIMEOUT_SECONDS)",
+            output,
+        )
+        self.assertIn("PASS: test_quick", result.stderr)
+        self.assertIn("ran 2 tests (1 passed, 1 failed)", result.stderr)
+
+    def test_limit_of_zero_disables_it(self):
+        result, output = self.run_tests(
+            {"test_quick": "sleep 2"}, E2E_TEST_TIMEOUT_SECONDS="0"
+        )
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn("PASS: test_quick", result.stderr)
+
+    def test_own_exit_status_124_is_a_failure_that_is_retried(self):
+        result, output = self.run_tests(
+            {"test_exit_124": "exit 124"}, E2E_MAX_ATTEMPTS="2"
+        )
+        self.assertEqual(result.returncode, 1, output)
+        self.assertEqual(output.count("exited with status code 124"), 2, output)
+        self.assertNotIn("timed out", output)
+
+    def test_invalid_time_limit(self):
+        for name in ("E2E_TEST_TIMEOUT_SECONDS", "E2E_SLOW_TEST_TIMEOUT_SECONDS"):
+            for value in ("-1", "abc", "08"):
+                with self.subTest(name=name, value=value):
+                    result, output = self.run_tests(
+                        {"test_quick": "echo ran"}, **{name: value}
+                    )
+                    self.assertEqual(result.returncode, 1, output)
+                    self.assertIn(f"{name} must be a non-negative integer", output)
+                    self.assertNotIn("test_quick", output)
 
 
 if __name__ == "__main__":
