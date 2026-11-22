@@ -5,7 +5,7 @@ use serde::Deserialize;
 // The doc comments on these types are their descriptions in schema/mise.json, which editors show
 // to users. Notes for Rust readers go in plain comments.
 
-/// dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)
+/// dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/dotfiles/history.html)
 // `[history]` as parsed from a single mise.toml, before the layers are merged.
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 pub struct HistoryTomlConfig {
@@ -27,7 +27,7 @@ pub struct HistoryTomlConfig {
     #[serde(default)]
     #[schemars(with = "IndexMap<String, HistoryReloadCommand>")]
     pub reload: IndexMap<String, String>,
-    /// the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`
+    /// the setup repository this machine publishes to and fetches from; machine-local, written by `mise dot origin set`
     #[serde(default)]
     pub origin: Option<OriginTomlConfig>,
 }

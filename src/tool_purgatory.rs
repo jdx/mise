@@ -236,11 +236,7 @@ pub async fn auto_prune() -> Result<()> {
             crate::toolset::PruneScope::UserAndSystem,
         ))
         .await;
-    if skipped > 0 {
-        warn!(
-            "deferred prune skipped {skipped} tracked config(s) that could not be loaded; run `mise prune --dry-run` for details"
-        );
-    }
+    crate::config::warn_quiet_tracked_problems(skipped, "deferred prune");
     let prunable = prunable?;
     let prunable_by_path = prunable
         .into_iter()

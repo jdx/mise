@@ -1,5 +1,5 @@
 ---
-description: "mise does not accept external pull requests. Where to report bugs and request changes, plus the maintainer reference for building, testing, and documenting mise."
+description: "Find where to report bugs and request changes, since mise accepts no external pull requests, and how to build, test, and document mise."
 outline: [2, 3]
 ---
 
@@ -15,15 +15,15 @@ using mise. Say what you were trying to do, what you ran, the relevant config,
 and what happened. Reports found by reading the source or by having an agent
 search the code will be closed.
 
-The rest of this page is the maintainer's reference for building, testing, and
-documenting mise. It is also useful if you want to build from source.
-
 Using AI to help write a Discussion, Issue, or reply is fine. Review it before
 you post it, and end it with a disclosure line in this form:
 
 ```text
 *AI-assisted — Tool: <tool>; model: <provider>/<model>; version: <version-or-unavailable>.*
 ```
+
+The rest of this page is the maintainer's reference for building, testing, and
+documenting mise. It is also useful if you want to build from source.
 
 ## Before you open a pull request {#before-you-open-a-pull-request}
 
@@ -149,7 +149,7 @@ is defined. Tasks come from `tasks.toml`, file tasks under `xtasks/`, and the
 | `mise run build`              | `b`             | Debug build, with all features except on Windows                     |
 | `mise run lint`               |                 | hk checks and [Clippy](#clippy) (`lint:clippy`)                      |
 | `mise run lint-fix`           | `fix`, `format` | Applies hk's fixes                                                   |
-| `mise run test:unit`          |                 | `cargo test --all-features`                                          |
+| `mise run test:unit`          |                 | `cargo test --all-features --workspace`                              |
 | `mise run test:e2e <pattern>` | `e`, `e2e`      | Builds, then runs the [E2E tests](#e2e-tests) you select             |
 | `mise run test:crates-standalone` |             | `cargo check` on each workspace crate by itself, as crates.io builds it |
 | `mise run snapshots`          |                 | Accepts changed insta snapshots and deletes unreferenced ones        |
@@ -159,16 +159,17 @@ is defined. Tasks come from `tasks.toml`, file tasks under `xtasks/`, and the
 | `mise run perf`               |                 | Release build plus instruction-count benchmarks                      |
 | `mise run clean`              |                 | `cargo clean`                                                        |
 
-`mise run test` (alias `t`) runs the unit tests, then `test:e2e` with no
-arguments, which selects no E2E tests; run `mise run test:e2e --all` for the
-suite. `mise run ci` runs `lint-fix`, `build`, and `test`, which is not what CI
-runs. `mise run release-plz` refuses to run outside GitHub Actions.
+`mise run test` (alias `t`) runs the unit tests, then `mise run test:e2e --all`,
+which is every E2E test except the `*_slow` ones. `mise run ci` runs
+`lint-fix`, `build`, and `test`, which is not what CI runs.
+`mise run release-plz` refuses to run outside GitHub Actions.
 
 ## Linting and formatting {#linting-and-formatting}
 
 [`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) configures oxfmt,
-markdownlint, taplo, ShellCheck, shfmt, stylua, lua-language-server,
-`cargo fmt`, `cargo check`, and JSON schema validation.
+markdownlint, taplo, tombi, ShellCheck, shfmt, stylua, lua-language-server,
+jactionlint, `cargo fmt`, `cargo check`, JSON schema validation, and a check
+that `docs/public/llms.txt` matches the docs.
 
 ```sh
 mise run lint               # check every file
@@ -264,14 +265,16 @@ The wrapper reduces each argument to its file name and does not anchor the
 pattern. `e2e/cli/test_version` therefore also runs `test_version_order`,
 `test_version_range`, and `test_version_update_hint`, and `e2e/tasks` runs every
 test whose name contains `tasks`, not the tests in that directory. With no
-arguments, it runs nothing. Check the `PASS:` lines to see which tests ran.
+arguments, it runs nothing, and an argument that matches no test fails with
+`No test matches`. Check the `PASS:` lines to see which tests ran.
 
 A passing test prints one line, with its time and the number of assertions
 that passed: `PASS: cli/test_version (2s, 4 assertions)`. A failing test prints
 everything it wrote, and the run ends with `E2E: ran 3 tests (2 passed, 1
-failed)` and the failed tests' names. Set `E2E_SHOW_PASSING_LOGS=1` to see
-passing tests' output too. Output is printed in the order the tests were
-given, each once it and the tests before it have finished, not as it runs.
+failed), skipped 0 tests` and the failed tests' names. Set
+`E2E_SHOW_PASSING_LOGS=1` to see passing tests' output too. Output is printed
+in the order the tests were given, each once it and the tests before it have
+finished, not as it runs.
 
 `--all` runs up to four tests at a time; set `E2E_JOBS` to change that, or to
 run selected tests in parallel. `TEST_TRANCHE` and `TEST_TRANCHE_COUNT` split
@@ -540,6 +543,21 @@ Run `mise run render:llms` after you change a page title, a page's lead, or the
 page list, and again after you rebase. It builds mise and renders the CLI pages
 first; when only Markdown pages changed,
 `mise exec node -- node docs/.vitepress/llms.ts` writes just the index.
+`mise run lint` fails when the index is out of date, and `mise run lint-fix`
+rewrites it.
+
+A unit test checks the commands the docs show:
+`cargo test -p mise --bin mise docs_commands` walks every `mise ...` command in
+a shell block, a block with no language or an inline code span in `docs/` and
+`README.md` through the usage spec, and fails on a subcommand or flag mise does
+not have. A command is read where `mise` starts it, also behind a prompt,
+`sudo` or `env`; a `mise` that another program is handed as an argument is
+not. Give a block of output the `text` language. The test checks nothing
+on Windows, where it still reports a pass, so run it on Linux or macOS. Text that starts
+with `mise` and is not a command to type, such as a message mise prints, needs
+a `<!-- cli: skip -->` comment: on its own line above a fenced block or a
+heading, or directly after the inline code with no space between. For a page under
+`docs/cli/`, fix the command's help text and run `mise run render`.
 
 ## Pull request titles and descriptions {#pull-request-titles-and-descriptions}
 
@@ -569,8 +587,8 @@ the same format.
 
 Scope a change by the command it affects (`install`, `use`, `exec`,
 `activate`) or by subsystem (`config`, `backend`, `env`, `task`, `vfox`,
-`python`, `github`, `schema`, `doctor`, `shim`, `deps`, `ci`). Use `task`, not
-`run`, for the task runner.
+`python`, `github`, `release`, `completions`, `http`, `schema`, `doctor`,
+`shim`, `core`, `deps`, `ci`). Use `task`, not `run`, for the task runner.
 
 Start the description with a lowercase letter or an acronym such as `CLI` or
 `PGO`, in the imperative mood: "add", not "added". Mark a breaking change with
@@ -626,8 +644,9 @@ rather than `"1.2.3"`, and `"0.12"` for a pre-1.0 crate. A routine update
 changes only `Cargo.lock`. Run `cargo update -p <crate> --precise <version>`,
 and drop unrelated changes from the lockfile.
 
-CI checks dependencies with these tools, which the project's `mise.toml` does
-not install. See
+CI checks dependencies with these tools. `mise.toml` lists cargo-deny as a
+lazy tool, so `mise x` installs it the first time you run it; install
+cargo-machete and cargo-msrv yourself. See
 [test-impl.yml](https://github.com/jdx/mise/blob/main/.github/workflows/test-impl.yml)
 for the exact flags.
 

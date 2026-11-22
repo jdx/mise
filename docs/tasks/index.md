@@ -98,5 +98,7 @@ project's checks. When one step must finish before the next starts, use
   not changed.
 - [Monorepo tasks](/tasks/monorepo.html): run tasks across several project
   roots.
+- [OpenTelemetry](/tasks/opentelemetry.html): export a trace of each run to
+  see which tasks are slow or failing.
 - [Task configuration reference](/tasks/task-configuration.html): every task
   property and `task.*` setting.

@@ -73,6 +73,8 @@ config.
   `groups = []` removes every supplementary membership.
 - Changing `home` updates only the account entry, unless you also set
   `move_home = true` to move the existing directory.
+- mise does not change the UID 0 user or the GID 0 group. One that differs from
+  its declaration is reported as `unknown`, and apply fails.
 
 ## How configs combine
 

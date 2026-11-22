@@ -29,6 +29,12 @@ pub fn requested_exit_code(err: &Report) -> Option<i32> {
     err.downcast_ref::<ExitRequest>().map(|exit| exit.code)
 }
 
+/// Whether `err` is the error [`request`] makes. An eyre hook can skip its work
+/// for one: it carries a status, not a failure, and is never printed.
+pub fn is_exit_request(err: &(dyn Error + 'static)) -> bool {
+    err.is::<ExitRequest>()
+}
+
 pub fn kill_all() {
     #[cfg(unix)]
     CmdLineRunner::kill_all(SIGTERM);
@@ -63,5 +69,13 @@ mod tests {
     fn finds_requested_exit_code_through_context() {
         let err = request(42).wrap_err("context");
         assert_eq!(requested_exit_code(&err), Some(42));
+    }
+
+    #[test]
+    fn tells_exit_requests_from_other_errors() {
+        let exit = ExitRequest { code: 1 };
+        assert!(is_exit_request(&exit));
+        let other = std::io::Error::other("failure");
+        assert!(!is_exit_request(&other));
     }
 }

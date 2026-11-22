@@ -128,9 +128,10 @@ include = [
 ]
 ```
 
-### Environment files {#environment-files}
+## Environment files {#environment-files}
 
-The `env_files` category applies to this. A file that [`env._.file`](/environments/#env-file) loads, or a script that
+With the `env_files` category on, a file that
+[`env._.file`](/environments/#env-file) loads, or a script that
 [`env._.source`](/environments/#env-source) runs, is not covered by the trust of
 the config that names it, because an edit to it changes the environment of every
 command. Each existing file needs its own trust, bound to its content, and fails
@@ -151,21 +152,23 @@ file that a global `find_up = true` entry or a glob finds in a repository. It
 does not apply to a global `_.file` or `_.source` entry that names one file
 without a glob, which you chose.
 
-Approval is bound to the file's content whether or not `config` is on. To load a file without approving each change, put it under
+Approval is bound to the file's content whether or not `config` is on. To load
+a file without approving each change, put it under
 [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).
 Like the other settings that stay trusted by path, it is global-only, so a
 project cannot opt its own files out.
 
 ## Community plugins {#plugins}
 
-The `plugins` category changes this. In normal mode, installing a community plugin by short name asks for
-confirmation. Paranoid mode refuses instead. Unlike config trust, `--yes`,
-`MISE_YES=1`, CI and `--force` still allow the install.
+Without paranoid mode, installing a community plugin by short name asks for
+confirmation. With the `plugins` category on, mise refuses instead. Unlike
+config trust, `--yes`, `MISE_YES=1`, CI and `--force` still allow the install.
 
 A short name counts as trusted when its URL matches an asdf or vfox plugin in
 mise's registry, or when the plugin is in the `mise-plugins` GitHub
-organization. To install any other plugin, give its full Git URL on the command
-line or in `[plugins]`. Naming the URL is your decision to trust that source:
+organization. To install any other plugin, give its full Git URL to
+`mise plugins install`, or list it in `[plugins]` and run `mise install`.
+Naming the URL is your decision to trust that source:
 
 ```sh
 mise plugins install example https://github.com/example/asdf-example
@@ -181,6 +184,18 @@ Minisign and GitHub attestations, instead of reusing the result recorded in
 network access. It adds no check the backend does not support, and it does not
 re-check a tool that is already installed.
 
+The category also tightens two checks that work differently:
+
+- For `npm:` tools, Sigstore provenance verification stays on even when
+  [`npm.provenance`](/configuration/settings.html#npm.provenance) is `false`.
+  An install mise cannot verify fails instead of going unchecked: one through a
+  package manager other than the embedded aube, or one of a local archive
+  pinned only by a `checksum` option. See
+  [npm provenance](/dev-tools/backends/npm.html#provenance).
+- The [download cache](/configuration/settings.html#download_cache) reuses and
+  keeps only downloads with a pinned checksum, because only those are checked
+  after the download.
+
 ## Attestations from mise-versions
 
 mise asks [mise-versions](/configuration/settings.html#use_versions_host)
@@ -190,8 +205,8 @@ and requires it to name the artifact's repository, so mise-versions cannot vouch
 for an artifact. It can, however, answer that an artifact has none. Normal mode
 accepts that answer, and a lockfile written afterwards records no provenance.
 
-The `provenance` category confirms a "none" answer with GitHub before it skips verification.
-This costs one GitHub API request per artifact without attestations.
+The `provenance` category confirms a "none" answer with GitHub before it skips
+verification. This costs one GitHub API request per artifact without attestations.
 
 Neither mode accepts "none" for a release the mise registry says must have
 attestations: a `github:` backend, or an `aqua:` backend whose recipe declares

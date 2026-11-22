@@ -1,30 +1,29 @@
-# Security Policy
+# Security policy
 
-mise is a convenient tool to manage developer tools, however its model is also open to potential risks. The following
-are major areas of mise and the security considerations currently being made and what needs to be made in the future.
+mise installs and runs developer tools, which carries risk. This page lists the major areas of mise, the security
+measures in place for each, and what remains to be done. To report a vulnerability, see
+[Reporting a vulnerability](#reporting-a-vulnerability).
 
 Please open a ticket or send me an email if you have thoughts on how mise can be made more secure.
 
-## Core CLI Security
+## Core CLI security
 
-Development of the "core CLI" is done on jdx/mise which only a single developer (me, @jdx) has access to.
-Other contributors may only submit contributions via public Pull Requests. Reducing the number
-of developers with access down to 1 minimizes the chance of keys being leaked.
+The core CLI is developed in jdx/mise, which only a single developer (me, @jdx) has access to. mise does not accept
+pull requests from external contributors. Keeping access to one developer minimizes the chance of keys being leaked.
 
-This does create a [bus factor](https://en.wikipedia.org/wiki/Bus_factor) problem. If I suddenly died one day
-or otherwise wasn't able to continue development at all there are some successors listed in my GitHub account
-that can take over my account if need be.
+This creates a [bus factor](https://en.wikipedia.org/wiki/Bus_factor) problem. If I died or could not continue
+development, the successors listed in my GitHub account can take over the account.
 
-The dependencies in the core CLI are a security vector. I've tried to be judicious about what dependencies make it into
-the project. I only select dependencies with broad usage across the Rust community where possible.
-I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
-mise more secure.
+The dependencies in the core CLI are a security vector. I've tried to be judicious about which dependencies make it
+into the project, and where possible I only select dependencies with broad usage across the Rust community. I'm open
+to suggestions for reducing the dependency count, even at the cost of functionality, because it makes mise more
+secure.
 
 ## mise.jdx.dev
 
-mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a "[VERSION](https://mise.jdx.dev/VERSION)"
-which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
-vendor to reduce surface area.
+mise.jdx.dev is the asset host for mise. It hosts precompiled mise CLI binaries and a
+[`VERSION`](https://mise.jdx.dev/VERSION) file, which mise reads occasionally to check for a new release. Everything
+hosted there uses a single vendor to reduce surface area.
 
 ## Download verification
 
@@ -61,16 +60,16 @@ releases. The asdf plugins it still uses are hosted in the
 plugins maintained by anyone except me. If you _manually_ add plugins from
 elsewhere, make sure they come from a trusted source.
 
-To help move tools off asdf plugins, check whether a tool works with the
-packslip, aqua or github backend and submit a PR to
-[registry/](https://github.com/jdx/mise/blob/main/registry/). New tools that use
-asdf are **not** likely to be accepted unless no other backend can support them.
+To help move a tool off an asdf plugin, check whether it works with the
+packslip, aqua or github backend and report the result in a
+[Discussion](https://github.com/jdx/mise/discussions). The registry does not
+accept new entries that use asdf.
 
-## Supported Versions
+## Supported versions
 
 The only supported version is the most recent one.
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
 Send an email to security@<MISE_JDX_DOMAIN_IN_README>
 
@@ -139,10 +138,10 @@ M/8dLMPkiPRkA96ZEx5h3GrTEpQLLaUhZo0BHLjbTcQ=
 
 </details>
 
-## Release gpg key
+## Release GPG key
 
-This is the gpg key used to sign deb releases and the SHASUMS files
-contained within releases.
+This GPG key signs deb releases and the SHASUMS files contained within
+releases.
 
 <details>
   <summary>Release gpg key</summary>

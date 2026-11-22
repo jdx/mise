@@ -432,8 +432,11 @@ port = 3000
 proxy_tls = "passthrough"
 ```
 
-Both keys go to pitchfork unchanged and need pitchfork 2.26.0 or later. An
-older supervisor starts the daemons but does not serve their hostnames.
+`proxy_tls` applies only to a daemon the proxy routes: setting it with
+`proxy = false`, or on a daemon without a `port`, is an error.
+
+Both keys need pitchfork 2.26.0 or later. An older supervisor starts the
+daemons but does not serve their hostnames.
 
 ### Choose hostname labels
 
@@ -609,3 +612,12 @@ port 443 under `.localhost`. `mise env` therefore exports a URL even before the
 proxy is turned on. See pitchfork's
 [port management guide](https://pitchfork.jdx.dev/guides/port-management) to
 enable the proxy and trust its certificate.
+
+## Next steps
+
+- [Set up a development stack](/daemons/development-stack.html): turn on the
+  proxy and use these ports and URLs in a worked example.
+- [Share daemons across projects](/daemons/sharing.html): share one process or
+  one database server between worktrees instead of running one each.
+- [Data and cleanup](/daemons/data.html): prune the state a removed worktree
+  leaves behind.

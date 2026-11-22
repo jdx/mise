@@ -18,9 +18,10 @@ Pick an installation method for your platform, check the executable, then
 | CI       | [mise-action or a committed wrapper](/continuous-integration.html) |                                                                                                              |
 | Docker   | [Official images](/mise-cookbook/docker.html)                      |                                                                                                              |
 
-mise.run, the Windows [PowerShell script](#windows-script), packslip and [GitHub Releases](#github-releases) install the official
-release binaries, which are built with mise's optimized release profile and
-update with `mise self-update`. Package-manager builds can trail a release, and
+mise.run, the Windows [PowerShell script](#windows-script), packslip and
+[GitHub Releases](#github-releases) install the official release binaries, which
+are built with mise's optimized release profile and update with
+`mise self-update`. Package-manager builds can trail a release, and
 the Homebrew formula's build can be noticeably slower and larger.
 
 Use one method per machine. Two installations on `PATH` can leave an older
@@ -34,7 +35,8 @@ binary in use; see [Verify the executable](#verify-the-executable).
 curl -fsSL https://mise.run | sh
 ```
 
-The script installs the executable to `~/.local/bin/mise`. That directory does
+The script needs `curl` or `wget`, `tar`, and `shasum` or `sha256sum`. It
+installs the executable to `~/.local/bin/mise`. That directory does
 not need to be on `PATH`: once you [activate mise](/shell-setup.html), mise
 adds its own directory. To choose another path (its parent directory must be
 writable by your user):
@@ -92,18 +94,18 @@ way, so check the file first if you set up activation before.
 
 The script reads these environment variables, not TOML settings:
 
-| Variable                               | Effect                                                                                                                                                          |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MISE_INSTALL_PATH`                    | Executable path. Defaults to `~/.local/bin/mise`.                                                                                                               |
-| `MISE_VERSION`                         | Release to install, such as `v2026.10.4`. Bypasses the release-age delay.                                                                                       |
-| `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE` | Skip releases newer than this: an integer with `s`, `m`, `h`, `d` or `w`, such as `7d`, or `0s` for none. Falls back to `MISE_MINIMUM_RELEASE_AGE`, then `24h`. |
-| `MISE_INSTALL_SKIP_IF_EXISTS`          | With `1`, skip the download when the executable at the install path is already the selected version.                                                            |
-| `MISE_INSTALL_MUSL`                    | With `1`, install the static musl build.                                                                                                                        |
-| `MISE_INSTALL_OS`, `MISE_INSTALL_ARCH` | Override the detected platform, such as `MISE_INSTALL_ARCH=x64` to install the Intel build on Apple silicon. Add `-musl` to the architecture for a musl build.  |
-| `MISE_INSTALL_EXT`                     | Archive format, `tar.zst` or `tar.gz`. Defaults to `tar.zst` when `zstd` is available.                                                                          |
-| `MISE_INSTALL_FROM_GITHUB`             | With `1`, download only from GitHub Releases, without trying mise.jdx.dev first.                                                                                |
-| `MISE_INSTALL_HELP`                    | With `0`, do not print the activation hint after installing.                                                                                                    |
-| `MISE_DEBUG`, `MISE_QUIET`             | With `1`, print debug output or only errors.                                                                                                                    |
+| Variable                               | Effect                                                                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MISE_INSTALL_PATH`                    | Executable path. Defaults to `~/.local/bin/mise`.                                                                                                                   |
+| `MISE_VERSION`                         | Release to install, such as `v2026.10.4`. Bypasses the release-age delay.                                                                                           |
+| `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE` | Skip releases newer than this: an integer with `s`, `m`, `h`, `d` or `w`, such as `7d`, or `0s` for none. Falls back to `MISE_MINIMUM_RELEASE_AGE`, then `24h`.     |
+| `MISE_INSTALL_SKIP_IF_EXISTS`          | With `1`, skip the download when the executable at the install path is already the selected version.                                                                |
+| `MISE_INSTALL_MUSL`                    | With `1`, install the static musl build.                                                                                                                            |
+| `MISE_INSTALL_OS`, `MISE_INSTALL_ARCH` | Override the detected platform, such as `MISE_INSTALL_ARCH=x64` to install the Intel build on Apple silicon. Add `-musl` to the architecture for a musl build.      |
+| `MISE_INSTALL_EXT`                     | Archive format, `tar.zst` or `tar.gz`. Defaults to `tar.zst` when `zstd` is installed and `tar` can read it (bsdtar, or GNU tar 1.31 or newer), otherwise `tar.gz`. |
+| `MISE_INSTALL_FROM_GITHUB`             | With `1`, download only from GitHub Releases, without trying mise.jdx.dev first.                                                                                    |
+| `MISE_INSTALL_HELP`                    | With `0`, do not print the activation hint after installing.                                                                                                        |
+| `MISE_DEBUG`, `MISE_QUIET`             | With `1`, print debug output or only errors.                                                                                                                        |
 
 #### Verify the install script {#verify-the-install-script}
 
@@ -386,13 +388,21 @@ Releases. It adds that directory to your user `Path` (no admin rights needed).
 Re-running it upgrades mise. In MSYS2 or Git Bash, run it through
 `powershell.exe -NoProfile -Command "irm https://mise.run/powershell | iex"`.
 
-| Variable                   | Effect                                                       |
-| -------------------------- | ------------------------------------------------------------ |
-| `MISE_VERSION`             | Install this release instead of the latest                   |
-| `MISE_INSTALL_PATH`        | Path of `mise.exe` (default `~\.local\bin\mise.exe`)         |
-| `MISE_INSTALL_MODIFY_PATH` | `0` leaves the user `Path` alone                             |
-| `MISE_INSTALL_SHIMS_PATH`  | `1` also adds the shims directory to the user `Path`         |
-| `MISE_INSTALL_FROM_GITHUB` | `1` downloads from GitHub Releases instead of `mise.jdx.dev` |
+Like the [install script](#mise-run), it selects the newest stable release
+published at least 24 hours before it runs unless you set `MISE_VERSION`. It
+reads these environment variables:
+
+| Variable                               | Effect                                                                                                               |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `MISE_VERSION`                         | Release to install, such as `2026.10.4`. Bypasses the release-age delay.                                             |
+| `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE` | Skip releases newer than this, such as `7d`, or `0s` for none. Falls back to `MISE_MINIMUM_RELEASE_AGE`, then `24h`. |
+| `MISE_INSTALL_PATH`                    | Path of `mise.exe`. Defaults to `~\.local\bin\mise.exe`.                                                             |
+| `MISE_INSTALL_ARCH`                    | `x64` or `arm64`, to override the detected architecture.                                                             |
+| `MISE_INSTALL_MODIFY_PATH`             | With `0`, leave the user `Path` alone.                                                                               |
+| `MISE_INSTALL_SHIMS_PATH`              | With `1`, also add the shims directory to the user `Path`.                                                           |
+| `MISE_INSTALL_FROM_GITHUB`             | With `1`, download only from GitHub Releases, without trying mise.jdx.dev first.                                     |
+| `MISE_INSTALL_HELP`                    | With `0`, do not print the activation hint after installing.                                                         |
+| `MISE_DEBUG`, `MISE_QUIET`             | With `1`, print extra output or only errors.                                                                         |
 
 ### winget {#windows-winget}
 

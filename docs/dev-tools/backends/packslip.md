@@ -226,7 +226,7 @@ for the details and limits.
 
 ## Tool options
 
-These [tool options](/dev-tools/#tool-options) apply to one entry in `[tools]`.
+These [tool options](/dev-tools/tool-options.html) apply to one entry in `[tools]`.
 The `packslip.exec`, `packslip.stampers`, and `skills.*` settings go under
 `[settings]` instead.
 

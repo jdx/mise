@@ -70,14 +70,15 @@ prefix:
 - `lib/mise/.disable-self-update` (the AUR `mise-bin` package uses this one)
 - `lib64/mise/.disable-self-update`
 
-## WinGet
+## WinGet {#winget}
 
-mise recognizes a WinGet install by its executable path
-(`...\Microsoft\WinGet\Packages\` or `...\Microsoft\WinGet\Links\` for a per-user install, `C:\Program Files\WinGet\Packages\` or `...\Links\` for a machine-scope one) and turns
-self-update off, since replacing a WinGet-managed binary stops WinGet from
-updating or removing the package. mise tells the user to run
-`winget upgrade jdx.mise` instead. `MISE_SELF_UPDATE_AVAILABLE=true` turns
-self-update back on.
+mise recognizes a WinGet install by its executable path and turns self-update
+off, since replacing a WinGet-managed binary stops WinGet from updating or
+removing the package. The path is `...\Microsoft\WinGet\Packages\` or
+`...\Microsoft\WinGet\Links\` for a per-user install, and
+`C:\Program Files\WinGet\Packages\` or `...\Links\` for a machine-scope one.
+mise tells the user to run `winget upgrade jdx.mise` instead.
+`MISE_SELF_UPDATE_AVAILABLE=true` turns self-update back on.
 
 ## Ship update instructions {#ship-update-instructions}
 

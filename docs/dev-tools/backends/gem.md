@@ -58,7 +58,7 @@ the gem's executables at Ruby's minor-version path (for example
 ## Tool options
 
 Set these on the tool's entry in `[tools]`. Options every backend accepts are
-described under [tool options](/dev-tools/#tool-options).
+described under [tool options](/dev-tools/tool-options.html).
 
 ### `install_env`
 
@@ -83,7 +83,11 @@ changing the machine's `gem sources`:
 Private registries take credentials as basic auth in the URL (`token@host` or
 `user:token@host`, depending on the registry). mise redacts them from output and
 install metadata. A source with credentials must use `https` unless it is on
-`localhost`.
+`localhost` or a loopback address, and the URL cannot carry a query string or a
+fragment.
+
+Without `source`, mise lists versions from the first entry of `gem sources`,
+or from rubygems.org when it cannot run `gem sources`.
 
 mise lists a source's versions from RubyGems' JSON API, or, for a registry
 without one such as GitHub Packages, from the compact index Bundler installs

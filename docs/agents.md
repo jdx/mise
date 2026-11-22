@@ -16,10 +16,10 @@ forget to do it. Shims resolve a tool from the directory the command runs in, so
 a tool that the current directory's config does not select fails with
 `No version is set for shim`.
 
-mise has no agent-specific mode. The pieces it already has are enough:
-`mise hook-env` is what `mise activate` runs before each
-prompt, and it works without a prompt. Running it before each command gives the
-agent the same `PATH` and variables that an activated interactive shell has.
+mise has no separate activation for agents. The pieces it already has are
+enough: `mise hook-env` is what `mise activate` runs before each prompt, and it
+works without a prompt. Running it before each command gives the agent the same
+`PATH` and variables that an activated interactive shell has.
 
 ## Claude Code {#claude-code}
 
@@ -112,6 +112,16 @@ resolves tools from the worktree's own config.
 
 Installed tools live in mise's data directory, not in the worktree, so a new
 worktree does not reinstall them.
+
+## What mise changes under an agent {#agent-detection}
+
+mise recognizes a coding agent from the environment variables the agent sets,
+such as `CLAUDECODE` or `CODEX_SANDBOX`, or the vendor-neutral `AI_AGENT`. That
+does not change which tools or variables a command gets, only what mise prints:
+
+- Progress is printed as appended lines, as in CI, instead of bars that redraw.
+- Output is not truncated to the terminal width.
+- Hints and the new-version notice are not shown.
 
 ## Related
 

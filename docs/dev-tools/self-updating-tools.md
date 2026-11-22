@@ -1,13 +1,15 @@
 ---
-description: How a tool that updates itself, such as a coding agent, checks for and installs updates through mise and switches running sessions to the new version.
+description: "Update a self-updating tool, such as a coding agent, through mise and move its running sessions to the new version."
 socialDescription: Let mise update your tool, and move running sessions onto the new version.
 ---
 
 # Self-updating tools
 
-This page is for authors of tools that update themselves, such as coding
-agents, editors, and long-running CLIs. When mise installed your tool, update
-it through mise instead of your own updater.
+If you write a tool that updates itself, such as a coding agent, an editor, or
+a long-running CLI, have it update through mise instead of its own updater
+whenever mise installed it. The tool detects the mise install, asks mise
+whether an update is available, has mise install it, and restarts running
+sessions on the new version.
 
 A built-in updater doesn't know about mise's install directory. It either
 writes the new version over the files in `installs/<tool>/<version>/`, so the
@@ -66,7 +68,9 @@ doesn't list the tool. `--global` checks the request in
 the user's global config even inside a project that sets its own version, which
 is the request `mise upgrade --global` moves. Show your own "update available"
 notice from this answer rather than from your release server, so it agrees with
-what mise will install.
+what mise installs. A release that the user's `minimum_release_age` still holds
+back is not reported; do not install it another way, because that delay is the
+user's security policy.
 
 ## Install the update
 
@@ -112,12 +116,3 @@ processes the new session starts (MCP servers, hooks, subagents) get the new
 
 Guard against loops: if the version you land on is the one you left, don't
 switch again.
-
-## Summary
-
-- Don't write into mise's install directories, and don't install a second copy
-  of the tool.
-- Check with `mise outdated --global <tool> --json`, and update with
-  `mise upgrade --global <tool>`.
-- Don't bypass `minimum_release_age`: it is the user's security policy.
-- Switch sessions with `mise x -- <tool> <resume arguments>` at a safe point.

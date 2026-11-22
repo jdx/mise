@@ -234,7 +234,8 @@ echo "$NODE_ENV"
 # production
 ```
 
-This works with either, because `node` runs through its shim:
+A mise tool sees the variable either way. Activation exports it into the
+shell, and a shim loads the environment before it runs the tool:
 
 ```sh
 mise set NODE_ENV=production
@@ -403,13 +404,11 @@ and plugin-provided shims skip them too. Version-qualified shims stay, so
 mise is out of that command's path and no longer loads config each time it
 runs.
 
-::: warning
 Excluding `python3` means `python3 -m venv` silently builds a virtualenv from
 the system interpreter. Use the version-qualified command, such as
 `python3.12 -m venv`, to get the mise-managed version. The setting affects only
 shims: under `mise activate` without `--shims`, a tool's whole `bin` directory
 joins `PATH`, so excluded names are still found there.
-:::
 
 ::: warning
 Do not install shells such as `bash` or `zsh` with mise. Nearly every script
@@ -469,7 +468,7 @@ names its commands with `lazy_bins`:
 ```
 
 Running one of a lazy tool's commands installs it, plus any configured tools it
-[depends](/dev-tools/#tool-dependencies) on that are missing, and then runs the
+[depends](/dev-tools/tool-options.html#tool-dependencies) on that are missing, and then runs the
 command. Nothing else is installed. This works even when
 `not_found_auto_install` is off. A lazy declaration never overrides a
 higher-precedence config that selects the same tool without `lazy`.
@@ -550,7 +549,7 @@ env = { FOO_HOME = "{{ [xdg_data_home, 'foo'] | join_path }}" }
 In `args` and `env` values, `argv` is the list of arguments the user typed after the
 command name. It does not include the wrapper's own `command` or `args`, which still
 come first; the user's arguments are forwarded unchanged. `argv[0]` on an empty list
-is not an error, it just compares unequal. For example, to run `rails test` with
+is not an error; it compares unequal. For example, to run `rails test` with
 the `test` secrets profile and everything else with `development`:
 
 ```toml [mise.toml]
@@ -573,8 +572,8 @@ env = { RUST_LOG = "{{ 'debug' if '--verbose' in argv else 'info' }}" }
 ```
 
 A literal <span v-pre>`{{`</span> or <span v-pre>`{%`</span> in a value, such as Docker's
-<span v-pre>`{{.Names}}`</span> format string, is now
-parsed as a template. Wrap it in a raw block:
+<span v-pre>`{{.Names}}`</span> format string, is parsed as a template. Wrap it
+in a raw block:
 
 ```toml [mise.toml]
 [wrappers.docker]

@@ -11,9 +11,9 @@ move each `ubi:` tool to the [github](/dev-tools/backends/github.html),
 [http](/dev-tools/backends/http.html) backend.
 
 ::: warning Deprecated
-Since 2026.4.0, mise prints a deprecation warning, once per run, when it lists
-versions for or installs a `ubi:` tool. The ubi backend will be removed in mise
-2027.1.0; migrate before you upgrade to that release.
+mise prints a deprecation warning, once per run, when it lists versions for or
+installs a `ubi:` tool. The ubi backend will be removed in mise 2027.1.0;
+migrate before you upgrade to that release.
 :::
 
 ## Migrate a tool {#usage}

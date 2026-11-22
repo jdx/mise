@@ -58,7 +58,7 @@ caddy = { copr = "@caddy/caddy" }
 `copr` takes the project as `owner/project`, or `@group/project` for a group,
 with or without a `copr:` prefix. The entry's name only identifies it, so a more
 local config can replace an entry of the same name. Names may contain letters,
-digits, `_`, `-`, and `.`.
+digits, `_`, `-`, and `.`, and cannot start with `.`.
 
 mise enables a COPR the way `dnf copr enable` does: it downloads the repo file
 COPR publishes for this release and writes it unchanged to
@@ -133,7 +133,8 @@ opt in:
 system_packages.ostree = "layer"
 ```
 
-With `layer`:
+With `layer`, the manager is available when `rpm-ostree` is on `PATH`, whether
+or not `dnf` is installed:
 
 - `apply` installs all missing packages in one `rpm-ostree install
   --idempotent --allow-inactive` transaction (each call builds a new
@@ -143,7 +144,11 @@ With `layer`:
   `pending reboot`, so the next run does not request them again.
 - Version pins are skipped with a warning, since pinning a layered package works
   against base-image updates.
-- `state = "absent"` runs `rpm-ostree uninstall`.
+- [Package groups](#package-groups) are an error, because `rpm-ostree` cannot
+  layer a dnf group.
+- `state = "absent"` runs `rpm-ostree uninstall` for packages that were
+  requested as layered. A package that is part of the base image is an error;
+  mise does not override the base.
 - `upgrade` fails with a hint to run `rpm-ostree upgrade`: layered packages only
   update together with the base image, so mise cannot upgrade them one by one.
 
@@ -155,5 +160,6 @@ With `layer`:
 
 ## Remove packages
 
-Outside layered ostree hosts, mise does not remove dnf packages. Deleting an entry leaves the package
-installed; run `dnf remove` yourself.
+Outside [Fedora Atomic hosts](#fedora-atomic-hosts) that layer packages, mise
+does not remove dnf packages. Deleting an entry leaves the package installed;
+run `dnf remove` yourself.

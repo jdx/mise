@@ -30,8 +30,8 @@ It has no release yet, so install it from the repository:
 cargo install --git https://github.com/jdx/mr-boxington-cache
 ```
 
-The `mise-cache` 0.1 releases from the same repository, published when it was
-named `jdx/mise-cache`, expect `mise-cache-*` request headers instead of the
+Do not use the `mise-cache` 0.1 releases, from crates.io or the repository's
+`v0.1` tags. They expect `mise-cache-*` request headers instead of the
 `mbx-cache-*` headers that mise sends, so they reject mise's requests.
 
 ## Configure mise
@@ -156,13 +156,14 @@ Every reader of a namespace can read everything in its entries. An uploaded
 entry contains:
 
 - The action description that mise hashes into the cache key. It holds the
-  task's name, `run` entries, arguments, shell, output patterns, directory,
-  source hash, resolved tool versions, operating system, and architecture. It
-  lists the cache keys of cached dependencies and the text of each
-  `cache.command_inputs` command, with hashes of the command's output. It also
-  holds the values of the task's own `env` entries, of every variable named in
-  `cache.env` or `task_config.global_env`, and of every mise variable the task
-  can see, from `[vars]` and the task's `vars`.
+  task's name, `run` entries, shell, output patterns, directory, source hash,
+  resolved tool versions, operating system, and architecture. It lists the
+  cache keys of cached dependencies and the text of each `cache.command_inputs`
+  command, with hashes of the command's output. Arguments and variable values
+  appear only as BLAKE3 digests: the description names the task's own `env`
+  entries, every variable in `cache.env` or `task_config.global_env`, and every
+  mise variable the task can see, from `[vars]` and the task's `vars`, and
+  shows whether each environment variable is set.
 - The task's captured stdout and stderr, after mise applies
   [redactions](/environments/secrets/#redaction).
 - Every declared output file.
@@ -170,12 +171,12 @@ entry contains:
 Source files are not uploaded; only a hash of them is.
 
 ::: danger Secrets in the action description
-mise writes the variable values and command input text in the action
-description verbatim. It does not apply `redact = true` or `redactions` to them.
-Do not put secrets in a cached task's `env`, in the `env` of a `{ task = ... }`
-run entry, in a variable named in `cache.env` or `task_config.global_env`, in
-`vars`, or in a command input. Provide credentials through the job's
-environment instead, and list them in
+mise writes `run` entries and command input text into the action description as
+they are, including the `args` and `env` of a `{ task = ... }` run entry. It
+does not apply `redact = true` or `redactions` to them, so do not put secrets
+there. The digests are not salted, so a reader of the namespace can confirm a
+guess at a short or predictable argument or variable value. Provide credentials
+through the job's environment instead, and list them in
 [`pass_through_env`](/tasks/caching.html#environment-variables-and-cache-keys)
 when the task runs in an environment sandbox.
 :::

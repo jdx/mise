@@ -23,7 +23,7 @@ retries = { backoff = "fixed", count = 1, delay = "1s" }
 # These tests construct, render, or traverse the entire CLI command graph. Keep
 # their regression coverage in-process, but still enforce a strict per-test ceiling.
 [[profile.ci.overrides]]
-filter = 'test(/cli::(command_effects|mcp|usage)::tests::/)'
+filter = 'test(/cli::((command_effects|mcp|usage)::tests|docs_commands)::/)'
 slow-timeout = { period = "500ms", terminate-after = 4 }
 
 # This binary-level integration test performs a network-backed, first-run

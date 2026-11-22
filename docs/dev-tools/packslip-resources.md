@@ -20,9 +20,9 @@ in an activated shell and in the environments that `mise exec`, `mise run`, and
 
 mise keeps these pages under `.mise-packslip/man` in the tool's installation and
 prepends that directory to an existing `MANPATH`. When `MANPATH` was unset, mise
-keeps the operating system's default manual-page locations. If you installed
-the tool with mise 2026.9.3 or earlier, reinstall it once
-(`mise install --force TOOL@VERSION`) so its man pages are set up.
+keeps the operating system's default manual-page locations. If an installation
+has no `.mise-packslip/man` directory although its release declares man pages,
+reinstall it once (`mise install --force TOOL@VERSION`).
 
 Man pages can come from the release archive, a separately signed release asset,
 or the source repository at the release commit. A file such as `tool.1` is
@@ -232,7 +232,7 @@ full selection rules for publishers.
 | A completion file already exists               | Inspect the existing file before replacing it with `--force`.                                                                                                                          |
 | Script prints but tab completion does not work | Check that mise is activated and the tool is active in this project. With manual setup, follow the instructions printed by `--install`. mise handles usage-derived completions itself. |
 | Completion generation fails                    | Check that the publisher's command produces nonempty output within the time and size limits. Report a failing generator to the publisher.                                              |
-| Man page not found                             | Check that the tool is active (`mise ls --current`) and that its release declares a man page. Reinstall a tool installed with mise 2026.9.3 or earlier.                                |
+| Man page not found                             | Check that the tool is active (`mise ls --current`) and that its release declares a man page. Reinstall the tool if its installation has no `.mise-packslip/man` directory.            |
 | No skills listed                               | Check `mise skills ls`, the active version, and whether its manifest declares skills. Check `skills.fetch`; an exec-only skill also needs `packslip.exec` during installation.         |
 | A skill link is skipped                        | Inspect the conflicting path; mise does not touch user-owned files and directories.                                                                                                    |
 | Links point to an old version                  | Run `mise skills sync`, or enable `skills.auto_sync` for future installs.                                                                                                              |

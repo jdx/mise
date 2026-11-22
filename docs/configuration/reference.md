@@ -1,5 +1,5 @@
 ---
-description: "Every key mise reads from mise.toml, with its type, description and where it goes, generated from the mise.toml schema."
+description: "Look up every key mise reads from mise.toml, with its type, description and where it goes, generated from the mise.toml schema."
 aside: false
 sidebar: false
 pageClass: config-reference-page

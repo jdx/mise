@@ -7,27 +7,27 @@
 //!
 //! ```toml
 //! [tools]
-//! mytool = { version = "1.0.0", backend = "s3", url = "s3://bucket/tools/mytool-{version}.tar.gz" }
+//! mytool = { version = "1.0.0", backend = "s3", url = "s3://bucket/tools/mytool-{{ version }}.tar.gz" }
 //!
 //! # With version discovery from manifest
 //! [tools.mytool]
 //! backend = "s3"
 //! version = "latest"
-//! url = "s3://bucket/tools/mytool-{version}.tar.gz"
+//! url = "s3://bucket/tools/mytool-{{ version }}.tar.gz"
 //! version_list_url = "s3://bucket/tools/versions.json"
 //!
 //! # With S3 listing-based discovery
 //! [tools.mytool]
 //! backend = "s3"
 //! version = "latest"
-//! url = "s3://bucket/tools/mytool-{version}.tar.gz"
+//! url = "s3://bucket/tools/mytool-{{ version }}.tar.gz"
 //! version_prefix = "tools/mytool-"
 //! version_regex = "mytool-([0-9.]+)"
 //!
 //! # With custom endpoint (MinIO, etc.)
 //! [tools.mytool]
 //! backend = "s3"
-//! url = "s3://bucket/tools/mytool-{version}.tar.gz"
+//! url = "s3://bucket/tools/mytool-{{ version }}.tar.gz"
 //! endpoint = "https://minio.internal:9000"
 //! region = "us-east-1"
 //! ```

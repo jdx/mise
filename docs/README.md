@@ -105,6 +105,19 @@ other block that is not a whole mise config, such as an excerpt or a registry
 file, and `<!-- schema: invalid -->` above an example of a mistake, which the
 schema must then reject.
 
+The `docs_show_commands_that_exist` unit test
+(`cargo test -p mise --bin mise docs_commands`) walks every `mise ...` command
+in a shell block, a block with no language or an inline code span through the
+usage spec and fails on a subcommand or flag mise does not have. A command is
+read where `mise` starts it, also behind a prompt, `sudo` or `env`; a `mise`
+that another program is handed as an argument is not. Give a block
+of output the `text` language. The test checks nothing on Windows, where it
+still reports a pass, so run it on Linux or macOS. It does not check values, so
+placeholders such as `<tool>` are fine. Text that starts with `mise` and is not
+a command to type, such as a message mise prints or the `mise <task>`
+shorthand, needs `<!-- cli: skip -->`: on its own line above a fenced block or
+a heading, or directly after the inline code with no space between.
+
 The `quoted_messages_are_in_the_source` unit test reads `docs/errors.md` and
 fails when a message it quotes is no longer in the Rust source: every code
 span in a heading, and every code span in the body that is not a single word,

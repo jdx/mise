@@ -264,22 +264,42 @@ function reset() {
   stroke-linejoin: round;
 }
 
+/* A titled block has a 40px title bar with room for the buttons, so they sit in it and stay
+   visible instead of covering the first line of code. */
 .mise-toml-editor.titled .mte-corner {
-  top: 48px;
+  top: 4px;
+  opacity: 1;
 }
 
-/* A code group's tab shows the title, so the block has no title bar to clear. */
+.mise-toml-editor.titled .mte-corner button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.mise-toml-editor.titled .mte-title {
+  padding-right: 88px;
+}
+
+/* A code group's tab shows the title, so the block has no title bar to hold them. */
 .vp-code-group .mise-toml-editor.titled .mte-corner {
   top: 8px;
+  opacity: 0;
+}
+
+.vp-code-group .mise-toml-editor.titled .mte-corner button {
+  border-color: var(--vp-code-copy-code-border-color, var(--vp-c-divider));
+  background: var(--vp-code-copy-code-bg, var(--vp-code-block-bg));
 }
 
 .mise-toml-editor.compact:hover .mte-corner,
-.mise-toml-editor .mte-corner:focus-within {
+.mise-toml-editor .mte-corner:focus-within,
+.vp-code-group .mise-toml-editor.compact:hover .mte-corner,
+.vp-code-group .mise-toml-editor .mte-corner:focus-within {
   opacity: 1;
 }
 
 /* Touch screens have no hover to reveal them, and a pointer cannot move away to uncover the
-   code, so the buttons get a row of their own between the title and the code. */
+   code, so a block without a title bar gives the buttons a row of their own above the code. */
 @media (hover: none) {
   .mise-toml-editor.compact {
     display: flex;
@@ -290,8 +310,7 @@ function reset() {
     order: 0;
   }
 
-  .mise-toml-editor.compact .mte-corner,
-  .mise-toml-editor.titled .mte-corner,
+  .mise-toml-editor.compact:not(.titled) .mte-corner,
   .vp-code-group .mise-toml-editor.titled .mte-corner {
     position: static;
     order: 1;

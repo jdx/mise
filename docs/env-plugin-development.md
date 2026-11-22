@@ -160,9 +160,9 @@ types.
 
 `os.getenv` and `cmd.exec` see the environment mise has built so far, including
 earlier directives and `_.path` entries. `cmd.exec` runs a shell, so pass option
-values in its `env` option instead of building a command string from them. To see the configured tools as well,
-the user adds `tools = true`, which runs the directive after the tools are on
-`PATH`:
+values in its `env` option instead of building a command string from them. To
+see the configured tools as well, the user adds `tools = true`, which runs the
+directive after the tools are on `PATH`:
 
 ```toml [mise.toml]
 [tools]

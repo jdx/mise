@@ -92,10 +92,10 @@ cargo build
 
 `mise run build` or its alias `mise run b` runs this file.
 
-The comment marker can be `#`, `//` (for JavaScript, TypeScript, or Go) or `::`
-(for batch files), and whitespace may follow it. The keyword can also be
-bracketed. `#MISE`, `# MISE`, `// MISE`, and `# [MISE]` all work, so a
-formatter that adds a space after `#` does not break the header. To disable a
+The comment marker can be `#`, `//` (for JavaScript, TypeScript, or Go), `--`
+(for Lua) or `::` (for batch files), and whitespace may follow it. The keyword
+can also be bracketed. `#MISE`, `# MISE`, `// MISE`, and `# [MISE]` all work,
+so a formatter that adds a space after `#` does not break the header. To disable a
 header line, change the keyword, for example to `# NOMISE`.
 
 Each `#MISE` line holds TOML. Headers accept the same

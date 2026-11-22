@@ -64,24 +64,33 @@ fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
 For each source, mise writes `/etc/apt/sources.list.d/mise-<name>.sources`
 with the signing key embedded in its `Signed-By` field, so apt trusts the key
 only for that repository and deleting the file removes both. Inline keys need
-apt 2.4 or newer (Ubuntu 22.04, Debian 12). A key mise wrote to
-`/etc/apt/keyrings/mise-<name>.gpg` in an earlier version is removed the next
-time the source is applied. When it adds or
-changes a source, mise runs `apt-get update` once before installing. Without
-`--yes`, mise asks before it adds or changes any source, as it does before
-installing packages. If apt
-could not fetch a source's lists, mise warns and runs `apt-get update` again on
-the next apply. Names may
-contain letters, digits, `_`, `-`, and `.`.
+apt 2.4 or newer (Ubuntu 22.04, Debian 12). Names may contain letters, digits,
+`_`, `-`, and `.`, and cannot start with `.`.
+
+When it adds or changes a source, mise runs `apt-get update` once before
+installing. Without `--yes`, mise asks before it adds or changes any source, as
+it does before installing packages. If apt could not fetch a source's lists,
+mise warns and runs `apt-get update` again on the next apply.
+
+When a tool's [system dependencies](/configuration/settings.html#system_deps)
+are installed automatically, mise adds declared sources only when it will not
+ask first. A prompted install uses the sources `mise bootstrap` already added.
+
+### PPAs
 
 A `ppa` entry takes the PPA as `owner/archive`, with or without the `ppa:`
-prefix. mise reads the PPA's signing key fingerprint from Launchpad and
-downloads that key from `keyserver.ubuntu.com`. Add `fingerprint` to pin the key
-and skip the Launchpad lookup. Without one, mise downloads the key again
-whenever the entry's source changes, such as when it points at another PPA. PPAs are built for Ubuntu releases, so mise adds
-them only on Ubuntu and on distributions that set `UBUNTU_CODENAME` in
-`/etc/os-release`, such as Linux Mint. On other releases it skips them, so the
-same config also works on Debian.
+prefix. mise derives the rest from the PPA, so the entry cannot also set `uris`,
+`suites`, `components`, `architectures`, or `key`. mise reads the PPA's signing
+key fingerprint from Launchpad and downloads that key from
+`keyserver.ubuntu.com`. Add `fingerprint` (a single one) to pin the key and skip
+the Launchpad lookup. Without one, mise downloads the key again whenever the
+entry's source changes, such as when it points at another PPA.
+
+PPAs are built for Ubuntu releases, so mise adds them only on Ubuntu and on
+distributions that set `UBUNTU_CODENAME` in `/etc/os-release`, such as Linux
+Mint. On other releases it skips them, so the same config also works on Debian.
+
+### Other repositories
 
 Any other repository needs `uris`, `key`, and `fingerprint`:
 
@@ -95,30 +104,33 @@ Any other repository needs `uris`, `key`, and `fingerprint`:
 | `fingerprint`   | The key's full fingerprint, or a list of them; spaces are ignored                                                       |
 
 mise keeps only the keys whose fingerprints you declared from what it
-downloads, and fails if one is missing. Once a matching key is in the source file, mise
-leaves it alone and does not download it again. If the key changes or no
-longer matches, the next apply replaces it.
+downloads, and fails if one is missing. Once a matching key is in the source
+file, mise leaves it alone and does not download it again. If the key changes or
+no longer matches, the next apply replaces it.
+
+To install a repository definition that mise should not generate, write it with
+[`[bootstrap.files]`](/bootstrap/files.html#files-before-packages) instead.
+
+### Packages installed from another source
 
 A declared source also replaces a package that was already installed from
 somewhere else. If an image ships Ubuntu's `git` and you declare the `git-core`
 PPA, `mise bootstrap` installs the PPA's `git`, and status shows the old one as
-`version mismatch` until it does. mise records in its state directory which
-packages it has seen installed from a declared source, so each package moves
-once per source. The record belongs to the user running mise, so running both
-`mise` and `sudo mise` can move a package one more time. A later upload to the same source is left to
-`mise bootstrap packages upgrade`, as for any `latest` package. A version pin or
-an architecture-qualified name opts a package out. A dry run on a machine that
-does not have the source yet cannot show the move, because apt has no package
-lists for the source until it is added.
+`version mismatch` until it does. A version pin or an architecture-qualified
+name opts a package out.
 
-When a tool's [system dependencies](/configuration/settings.html#system_deps)
-are installed automatically, mise adds declared sources only when it will not
-ask first. A prompted install uses the sources `mise bootstrap` already added.
+mise records in its state directory which packages it has seen installed from a
+declared source, so each package moves once per source. The record belongs to
+the user running mise, so running both `mise` and `sudo mise` can move a package
+one more time. A later upload to the same source is left to
+`mise bootstrap packages upgrade`, as for any `latest` package. A dry run on a
+machine that does not have the source yet cannot show the move, because apt has
+no package lists for the source until it is added.
 
-mise does not remove sources. Deleting an entry leaves its files in place;
-delete `/etc/apt/sources.list.d/mise-<name>.sources` yourself.
-To install a repository definition that mise should not generate, write it with
-[`[bootstrap.files]`](/bootstrap/files.html#files-before-packages) instead.
+### Remove a source
+
+mise does not remove sources. Deleting an entry leaves its file in place; delete
+`/etc/apt/sources.list.d/mise-<name>.sources` yourself.
 
 ## Version pins
 

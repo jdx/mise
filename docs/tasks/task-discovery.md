@@ -206,9 +206,10 @@ without `run`, `run_windows`, or `file` adds metadata and keeps the script as
 its command. Adding one of those fields replaces the script's command, subject
 to [file task config precedence](#file-task-config-precedence).
 
-Use a block to set the properties that `#MISE` header lines do not accept:
-`vars`, `timeout`, and the `deny_*` and `allow_*`
-[sandbox properties](/tasks/task-configuration.html#sandbox).
+The metadata a block sets can also go in the script's
+[`#MISE` header lines](/tasks/file-tasks.html#configure-with-mise-comments).
+Use a block for a script you cannot edit, or to keep a project's task settings
+together in `mise.toml`.
 
 ### Add metadata and dependencies
 

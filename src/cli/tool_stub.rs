@@ -452,14 +452,19 @@ impl ToolStub {
         // can live anywhere, so execution time is the only chance to find them.
         // absolute() rather than canonicalize() so a symlinked stub keeps its
         // invoked filename, which the tool name can be derived from.
-        let stub_path = std::path::absolute(&self.file).unwrap_or_else(|_| self.file.clone());
-        if let Err(err) = crate::config::tracking::Tracker::track_stub(&stub_path) {
-            crate::warn!("tracking tool stub: {err:#}");
-        }
+        track_stub_use(&self.file);
 
         let mut config = Config::get().await?;
 
         return execute_with_tool_request(&stub, &mut config, args, &self.file).await;
+    }
+}
+
+/// Tracks `file` as a stub that ran.
+fn track_stub_use(file: &Path) {
+    let stub_path = std::path::absolute(file).unwrap_or_else(|_| file.to_path_buf());
+    if let Err(err) = crate::config::tracking::Tracker::track_stub(&stub_path) {
+        crate::warn!("tracking tool stub: {err:#}");
     }
 }
 
@@ -482,6 +487,9 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
 
     // Check if we have a cached binary path
     if let Some(bin_path) = BinPathCache::load(&cache_key) {
+        // This path skips `ToolStub::run`, so it records the use itself, or an
+        // expired entry would let `mise prune` delete the tool it runs.
+        track_stub_use(potential_stub_path);
         let args = args[1..].to_vec();
         return crate::cli::exec::exec_program(
             bin_path,

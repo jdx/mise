@@ -90,7 +90,7 @@ warning tells you when that happened.
 ## Tool options
 
 Set these on the tool's entry in `[tools]`. Options every backend accepts are
-described under [tool options](/dev-tools/#tool-options).
+described under [tool options](/dev-tools/tool-options.html).
 
 ### `install_env`
 

@@ -96,7 +96,8 @@ Run `mise vars prompt` to be asked for each of these vars that has no answer
 yet; name vars to ask only for those (`mise vars prompt git_name`). Enter accepts
 the default. mise saves every answer, including an accepted default, in
 `$MISE_STATE_DIR/vars.toml`, so it is never asked again, never lands in your
-config or dotfiles history, and is available to every command that reads vars from then on.
+config or dotfiles history, and is available to every command that reads vars
+from then on.
 
 ```sh
 mise vars                       # list every var and where it comes from

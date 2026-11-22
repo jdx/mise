@@ -326,15 +326,21 @@ impl Set {
         // For local configs, check directives directly
         let env_entries = config.env_entries()?;
         for eva in filter {
-            // the last entry wins: `[[env]]` groups can set a key more than once, and mise
-            // uses the value of the last group that does
-            match env_entries.iter().rev().find_map(|ev| match ev {
-                EnvDirective::Val(k, v, _) if k == &eva.key => Some((v.clone(), Some(ev))),
-                EnvDirective::Age {
-                    key: k, value: v, ..
-                } if k == &eva.key => Some((v.clone(), Some(ev))),
-                _ => None,
-            }) {
+            // `[[env]]` groups can set a key more than once. mise applies the entries with
+            // `tools = true` after the others, so its value is the last of those, or the last
+            // entry when no group uses the option
+            let last = |tools: bool| {
+                env_entries.iter().rev().find_map(|ev| match ev {
+                    EnvDirective::Val(k, v, _)
+                    | EnvDirective::Age {
+                        key: k, value: v, ..
+                    } if k == &eva.key && ev.options().tools == tools => {
+                        Some((v.clone(), Some(ev)))
+                    }
+                    _ => None,
+                })
+            };
+            match last(true).or_else(|| last(false)) {
                 Some((value, directive)) => {
                     // this does not obey strict=false, since we want to fail if the decryption fails
                     let decrypted =

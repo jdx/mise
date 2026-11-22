@@ -23,7 +23,7 @@ ripgrep = "latest"   # the release the backend calls latest
 | Exact version                     | `"24.11.1"`                        | That release.                                                                                             |
 | Prefix                            | `"24"`, `"3.14"`                   | A release that starts with the prefix. If a release is named exactly the prefix, that release is chosen.  |
 | `latest`                          | `"latest"`                         | The release the tool's backend considers newest.                                                          |
-| Alias                             | `"lts"`, `"project-lts"`           | The request an alias stands for, such as Node.js `lts` (`24`) or a [tool alias](/dev-tools/aliases.html). |
+| Alias                             | `"lts"`, `"project-lts"`           | The request an alias stands for, such as Node.js `lts` (`26`) or a [tool alias](/dev-tools/aliases.html). |
 | `prefix:`                         | `"prefix:1.20"`                    | A release that starts with the prefix, even when a release has exactly that name.                         |
 | `ref:`, `tag:`, `branch:`, `rev:` | `"ref:main"`                       | A build from a version-control reference, on backends that build from source.                             |
 | `path:`                           | `"path:/opt/homebrew/opt/node@24"` | An existing directory, used as the installation.                                                          |
@@ -32,11 +32,12 @@ ripgrep = "latest"   # the release the backend calls latest
 
 A prefix matches at separators: `1.2` matches `1.2.3` and `1.2+build`, but not
 `1.20`. Prefixes and `latest` skip prereleases such as `1.0.0-rc1` unless you
-request one exactly or set the `prerelease` [tool option](/dev-tools/#tool-options).
+request one exactly or set the `prerelease` [tool option](/dev-tools/tool-options.html).
 
 The same requests work on the command line (`mise use node@24`,
 `mise exec go@prefix:1.20 -- go version`) and in `.tool-versions`. mise does not
-accept npm-style ranges such as `^24` or `>=20` outside `package.json`: it warns
+accept npm-style ranges such as `^24` or `>=20` outside
+[`package.json`](/lang/node.html#package-json): it warns
 and then treats the range as a literal version, which fails to install.
 
 `mise use node` without a version writes `latest`. `mise install node` and
@@ -74,7 +75,7 @@ config that names one [needs trust](/security.html#what-needs-trust), and
 
 `sub-<PARTIAL>:<REQUEST>` resolves `REQUEST`, subtracts `PARTIAL` from the
 matching components of the result, and resolves what remains as a prefix.
-`sub-2:lts` turns Node.js `24` into `22`, and `sub-0.1:latest` turns Python
+`sub-2:lts` turns Node.js `26` into `24`, and `sub-0.1:latest` turns Python
 `3.14.8` into a request for `3.13`. This is arithmetic on version numbers, not a
 request for the Nth previous release.
 
@@ -93,7 +94,7 @@ mise resolves a request in this order:
 
 1. If a [lockfile](/dev-tools/mise-lock.html) has an entry for the request, mise
    uses the locked version.
-2. Aliases expand, so `lts` becomes `24` for Node.js.
+2. Aliases expand, so `lts` becomes `26` for Node.js.
 3. If an installed version matches the request, mise uses it. A newly published
    release does not change your environment until you install or upgrade.
 4. Otherwise mise asks the tool's backend for its versions and picks a match.
@@ -146,8 +147,9 @@ Versions that are not valid semver, such as `nightly`, keep their source order
 ahead of the semantic versions and still match exactly. Build metadata does not
 affect precedence. For `latest`, a release the backend marks as latest, such as
 GitHub's Latest release, still wins unless it has no asset for this tool, which
-happens in repositories that release several products. Under `version_order = "published_at"` there is no such shortcut: the most
-recently published release wins.
+happens in repositories that release several products. Under
+`version_order = "published_at"` there is no such shortcut: the most recently
+published release wins.
 
 Registry entries set `version_order` for their tools, so a shorthand such as
 `ripgrep` may already use semver ordering. Set `version_order = "source"` to
@@ -321,13 +323,10 @@ A configuration-format major is different. A GoReleaser config's `version: 2`
 selects a schema that is tied to the CLI major, so mise reads it and selects the
 newest GoReleaser 2.x.
 
-::: tip Removed minimum-version fields
-mise no longer reads two floors as version requests: the `go X.Y` directive in
-`go.mod` and `cmake_minimum_required` in `CMakeLists.txt`. For Go, add a
-`toolchain goX.Y.Z` line to `go.mod`, or use `.go-version` or `mise.toml`. For
-CMake, use `mise.toml`.
-
-:::
+Two common floors are therefore not version requests: a two-part `go X.Y`
+directive in `go.mod` and `cmake_minimum_required` in `CMakeLists.txt`. For Go,
+add a `toolchain goX.Y.Z` line to `go.mod`, or use `.go-version` or `mise.toml`.
+For CMake, use `mise.toml`.
 
 In `package.json`, mise reads development runtime and package-manager
 declarations, not `engines` compatibility ranges. See the

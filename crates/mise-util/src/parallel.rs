@@ -17,13 +17,16 @@ where
     for item in input.into_iter().enumerate() {
         let semaphore = semaphore.clone();
         let permit = semaphore.acquire_owned().await?;
-        // The tasks run in the trusted scopes of the caller; see
-        // `untrusted_hosts::inherit_trusted_scope`.
-        jset.spawn(crate::untrusted_hosts::inherit_trusted_scope(async move {
+        // The tasks run in the trusted scopes of the caller, see
+        // `untrusted_hosts::inherit_trusted_scope`, and count into its
+        // `quiet_problems` scope. Boxed so that wrapping it does not copy a
+        // large future around the stack, which overflows it in debug builds.
+        let task = Box::pin(crate::untrusted_hosts::inherit_trusted_scope(async move {
             let _permit = permit;
             let res = f(item.1).await?;
             Ok((item.0, res))
         }));
+        jset.spawn(crate::quiet_problems::inherit(task));
     }
     while let Some(result) = jset.join_next().await {
         let err: eyre::Report = match result {

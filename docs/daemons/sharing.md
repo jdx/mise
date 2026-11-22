@@ -276,3 +276,12 @@ NATS providers require mise-managed, loopback-only configuration: they reject
 custom configuration files and TLS or certificate authentication. Use an
 ordinary NATS daemon for those setups. mise does not rewrite an existing NATS
 configuration or certificate mapping.
+
+## Next steps
+
+- [Ports, URLs, and worktrees](/daemons/worktrees.html): namespaces, and the
+  port and URL variables a reference exports.
+- [Data and cleanup](/daemons/data.html): where project and provider data
+  live, and what pruning removes.
+- [Set up a development stack](/daemons/development-stack.html): a shared
+  service in a worked example.

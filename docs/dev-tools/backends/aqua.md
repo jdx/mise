@@ -147,7 +147,7 @@ to verify provenance again during locked installs.
 
 Set these on the tool's entry in `[tools]`. Options every backend accepts, such
 as `install_env` and `depends`, are described under
-[tool options](/dev-tools/#tool-options).
+[tool options](/dev-tools/tool-options.html).
 
 ### `symlink_bins`
 
@@ -170,9 +170,8 @@ On Windows the entries in `.mise-bins` are copies. A program that finds its DLLs
 or data next to its own executable would look in `.mise-bins`, so `mise x`, and
 shims, which run through it, start the installed file instead. A shell that
 finds the copy on `PATH` by itself, as with `mise activate`, still runs the
-copy. Each copy records which file it came from when it is installed, so
-reinstall a tool installed by an older mise (`mise install --force`) to get
-this.
+copy. Each copy records which file it came from when it is installed, so if
+`mise x` still runs the copy, reinstall the tool with `mise install --force`.
 
 ### `vars`
 

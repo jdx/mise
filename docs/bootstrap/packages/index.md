@@ -71,7 +71,7 @@ prerequisites, package names, and the commands mise runs.
 | [`brew`](/bootstrap/packages/brew.html)                     | macOS on Apple Silicon, Linux x86_64 and arm64    | No; use a versioned formula such as `postgresql@17` | No                 | Import and prune                          |
 | [`brew-cask`](/bootstrap/packages/brew-cask.html)           | macOS; font casks on Linux                        | No                                                  | No                 | Prune casks mise installed                |
 | [`choco`](/bootstrap/packages/choco.html)                   | Windows with Chocolatey; run elevated             | Yes                                                 | No                 | No                                        |
-| [`dnf`](/bootstrap/packages/dnf.html)                       | Fedora, RHEL, and derivatives                     | Yes                                                 | No                 | No                                        |
+| [`dnf`](/bootstrap/packages/dnf.html)                       | Fedora, RHEL, and derivatives                     | Yes                                                 | Atomic hosts only  | No                                        |
 | [`flatpak`](/bootstrap/packages/flatpak.html)               | Linux with `flatpak`; system-wide installation    | No                                                  | No                 | No                                        |
 | [`flatpak-user`](/bootstrap/packages/flatpak.html)          | Linux with `flatpak`; per-user installation       | No                                                  | No                 | No                                        |
 | [`macos-app`](/bootstrap/packages/macos-app.html)           | macOS                                             | Required                                            | No                 | No                                        |
@@ -149,7 +149,7 @@ to change the order; the list names the only managers an unprefixed key may use.
 | `os`                        | All                                   | Install only on these operating systems; see [By operating system](#by-operating-system).                                                                                                                                          |
 | `env`                       | All                                   | Install only when one of these [config environments](/configuration/environments.html) is active; see [By config environment](#by-config-environment).                                                                             |
 | `names`                     | Unprefixed keys                       | Package name per manager, such as `{ apt = "libssl-dev" }`; see [Unprefixed packages](#unprefixed-packages).                                                                                                                       |
-| `state`                     | macports, pacman, scoop, snap, zypper | `"present"` (the default) or `"absent"`; see [Remove packages](#remove-a-package-declaratively).                                                                                                                                   |
+| `state`                     | Managers that can uninstall a package | `"present"` (the default) or `"absent"`; see [Remove packages](#remove-a-package-declaratively).                                                                                                                                   |
 | `adopt`                     | brew-cask, macos-app                  | Take over an identical app that is already installed instead of replacing it; see [brew-cask](/bootstrap/packages/brew-cask.html#adopt-an-existing-app) and [macos-app](/bootstrap/packages/macos-app.html#adopt-an-existing-app). |
 | `appdir`                    | brew-cask                             | Application directory for this cask; see [Application directory](/bootstrap/packages/brew-cask.html#overriding-the-application-directory).                                                                                         |
 | `url`, `sha256`, `artifact` | macos-app                             | The download to install; see [Declare a download](/bootstrap/packages/macos-app.html#declare-a-download).                                                                                                                          |
@@ -187,7 +187,7 @@ installs both sets of declarations.
 
 Use `os` to restrict an entry to an operating system, or to an OS and
 architecture pair. It takes one value or a list, with the same names as
-[OS-specific tools](/dev-tools/#os-specific-tools), such as `linux`, `macos`,
+[OS-specific tools](/dev-tools/tool-options.html#os-specific-tools), such as `linux`, `macos`,
 `windows`, `unix`, `linux/x64`, and `macos/arm64`:
 
 ```toml
@@ -240,7 +240,10 @@ manager with `--manager` is an error.
 
 ## Remove packages {#remove-a-package-declaratively}
 
-`macports`, `pacman`, `scoop`, `snap`, and `zypper` accept `state = "absent"`:
+`macports`, `pacman`, `scoop`, `snap`, and `zypper` remove a package declared
+with `state = "absent"`. So does `dnf` on a
+[Fedora Atomic host](/bootstrap/packages/dnf.html#fedora-atomic-hosts) that
+layers packages.
 
 ```toml
 [bootstrap.packages]
@@ -270,11 +273,11 @@ package plugin, and the entry is ignored. This keeps a config readable by mise
 versions that do not have that manager yet.
 
 If two active entries name the same package with different spellings and
-disagree on version or state, mise reports an error. WinGet IDs and Scoop app
-names are case-insensitive, and Scoop ignores the bucket prefix, so
-`scoop:Git` and `scoop:extras/git` are the same app. Spell the key the same way
-in every file so the normal override applies. Entries filtered out by `os` or
-`env` are not checked.
+disagree on version or state, mise reports an error. WinGet IDs, Chocolatey IDs,
+MacPorts port names, and Scoop app names are case-insensitive, and Scoop ignores
+the bucket prefix, so `scoop:Git` and `scoop:extras/git` are the same app. Spell
+the key the same way in every file so the normal override applies. Entries
+filtered out by `os` or `env` are not checked.
 
 ## Commands
 
@@ -294,7 +297,8 @@ mise bootstrap packages status --missing # exit 1 if anything is out of sync
 
 Status does not install anything or use sudo. A package can be
 `installed`, `missing`, `version mismatch`, `needs repair`, `absent`,
-`unexpectedly installed`, or `skipped` when its manager is unavailable.
+`unexpectedly installed`, `skipped` when its manager is unavailable, or `error`
+when its definition cannot be resolved.
 
 ### Apply {#apply-or-record-packages}
 

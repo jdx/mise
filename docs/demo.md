@@ -8,17 +8,16 @@ socialDescription: "Watch mise run one-off commands, install global tools, and s
 This recording runs one-off commands with `mise exec`, installs global tools
 with `mise use --global`, and switches Node.js versions between a global default
 and a project. It was recorded in March 2025 with Node.js 22 and 23; the
-transcript below uses current versions.
+transcript below uses current versions, so its versions and output differ from
+the video.
 
 <video style="max-width: 100%; height: auto;" controls="controls" src="./tapes/demo.mp4" />
 
 ## Guided transcript {#transcript}
 
-The commands follow the recording with current versions, so the versions and
-output you see differ from the video. To follow along,
-[install mise](/installing-mise.html) and open a Bash shell. The demo writes
-global defaults, so to keep them out of your normal global config, point mise
-at a temporary one first:
+To follow along, [install mise](/installing-mise.html) and open a Bash shell.
+The demo writes global defaults, so to keep them out of your normal global
+config, point mise at a temporary one first:
 
 ```sh
 export MISE_GLOBAL_CONFIG_FILE="$(mktemp -d)/config.toml"

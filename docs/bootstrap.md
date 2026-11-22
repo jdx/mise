@@ -61,12 +61,8 @@ mise edits your shell startup files.
 
 The same configuration also works in a project `mise.toml`, but a project file
 needs [`mise trust`](/cli/trust.html) before mise reads it. The global config
-does not. A project file with only `[tasks]` loads without trust, but its tasks
-can replace yours by name, so the `bootstrap` task runs only when it and every
-task it reaches (its `depends`, and tasks its `run` entries name) come from the
-global config or a trusted project. Other project tasks do not matter. If one of
-them is untrusted, trust the project, run `mise bootstrap` from another
-directory, or pass `--skip task`.
+does not. Tasks from an untrusted project can also stop the `bootstrap` task
+from running; see [The bootstrap task](#the-bootstrap-task).
 
 ## What you can declare {#what-goes-where}
 
@@ -163,10 +159,14 @@ The `post-packages` hook runs right after step 4, unless a package in
 step 17 instead, once those packages are installed. Step 19 runs even with
 `--skip tools`.
 
+### Reruns and failures
+
 The declarative parts compare the configuration with the machine and change only
 what differs. Hooks and the `bootstrap` task run every time, so make them safe
 to repeat. A run is a sequence, not a transaction: if a later step fails,
 earlier changes stay. Fix the reported failure and run `mise bootstrap` again.
+
+### History checkpoints
 
 Once at least one file is [tracked](/dotfiles/history.html), or history already
 exists, every run that changes something records checkpoints of your tracked
@@ -200,6 +200,8 @@ These flags change what the selected parts do:
 | Flag               | Effect                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--update`         | Fast-forward a [global config checkout](/bootstrap/from-repository.html), refresh package metadata, and update [declared repositories](/bootstrap/repos.html) |
+| `--upgrade`        | Also upgrade installed packages and tools, within package pins and tool version ranges, as `mise bootstrap packages upgrade` and `mise upgrade` do            |
+| `--self-update`    | Run `mise self-update` first, then run the bootstrap with the new version; if the update fails, nothing is applied                                            |
 | `--force-dotfiles` | Replace existing files that conflict with whole-file `[dotfiles]` entries instead of stopping                                                                 |
 | `--prune-dotfiles` | Remove files that dotfile groups deployed and no active entry deploys now, like `mise dot apply --prune`                                                      |
 | `--skip-dirty`     | Skip `[bootstrap.repos]` checkouts with local changes instead of failing                                                                                      |
@@ -208,11 +210,11 @@ These flags change what the selected parts do:
 | `--save-env`       | Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`, so later runs select them without `-E`                                                    |
 | `-y`, `--yes`      | Apply without confirmation prompts                                                                                                                            |
 
-The metadata refresh depends on the manager: apk adds `--update-cache`; apt runs
-`apt-get update`; dnf, nix, and AUR helpers add `--refresh`; pacman runs
-`pacman -Sy`; macports runs `port sync` before installing; zypper runs `zypper refresh`; scoop runs `scoop update`; and
-winget runs `winget source update`. Homebrew, Chocolatey, Flatpak, `macos-app`, and mas
-have no separate refresh.
+How `--update` refreshes package metadata depends on the package manager, and
+some managers have nothing to refresh; see
+[Apply packages](/bootstrap/packages/#apply-or-record-packages). `--upgrade`
+does not update mise itself, repositories, or container images, and does not
+restart services. `--self-update` is skipped by `--dry-run`.
 
 ## Preview and inspect {#previewing-changes}
 
@@ -228,7 +230,7 @@ as it does for `mise bootstrap plan` and `mise bootstrap status`. See
 
 `mise bootstrap plan` lists the changes to declarative resources in dependency
 order: accounts, packages (including packages from plugins), system files and
-directories, system and user services, firewall policy and rules, and Compose
+directories, system and user services, firewall policy and rules, Compose
 projects, and Git repositories (`create` to clone, `update` to pull). Commands
 in `[bootstrap.hooks]` are listed with the action `run` and a `hook_phase`,
 since a command cannot be diffed; they run on every bootstrap, so they do not
@@ -253,8 +255,8 @@ With `--detailed-exitcode`, the exit code reports what the plan found:
 A resource is `unknown` when mise cannot reach its declared state on its own,
 for example a package whose manager is unavailable on this platform or cannot
 install the requested version, or a repository with local changes, which
-bootstrap refuses to touch (`--skip-dirty` leaves it unchanged and moves on). mise reports it
-instead of skipping it, so you can resolve it by hand.
+bootstrap refuses to touch (`--skip-dirty` leaves it unchanged and moves on).
+mise reports it instead of skipping it, so you can resolve it by hand.
 
 ### Check state {#inspecting-state}
 
@@ -269,7 +271,8 @@ dependencies that installed tools need. `--missing` still lists everything and
 only changes the exit code, which suits CI. Each part also has its own `status`
 subcommand, such as `mise bootstrap packages status`, and
 [`mise dot status`](/cli/dotfiles/status.html) covers dotfiles and their
-history.
+history. The exception is `[bootstrap.settings]` plugin sections, which only
+[`mise bootstrap settings status`](/bootstrap/settings-plugins.html) checks.
 
 ### Follow-up items
 
@@ -325,8 +328,9 @@ Without a `description`, mise prints `$` and the first line of the command, cut
 to the width of the terminal, as it does for [tasks](/tasks/). With a `run`
 array, the description is printed once, before the first command. `--verbose`
 prints each full command, and so does `--dry-run`, which shows what a real run
-would execute. When a [remote host's](/bootstrap/remote.html) own config and a shared config
-both have a hook for the same phase, mise combines their commands and prints
+would execute. When a config file and a file it
+[includes](/configuration.html#include) both have a hook for the same phase,
+mise runs the included file's commands first, then the file's own, and prints
 them without the descriptions.
 
 The phases are `pre-packages`, `post-packages`, `pre-repos`, `post-repos`,
@@ -380,6 +384,14 @@ once. On machines that share a [setup repository](/bootstrap/setup.html),
 adoption runs it once the files are restored. A shared change that
 `mise dot pull` or the watcher restores does not run it; run `mise bootstrap` to
 apply the change and run the task. `--skip task` leaves it out.
+
+A project file with only `[tasks]` loads without trust, and its tasks can
+replace yours by name. mise therefore runs the `bootstrap` task only when it and
+every task it reaches (its `depends`, and tasks its `run` entries name) come
+from the global config or a trusted project. Other project tasks do not matter.
+Otherwise the run stops at this step with an error that names the untrusted
+file. Trust the project, run `mise bootstrap` from another directory, or pass
+`--skip task`.
 
 ## Templates
 

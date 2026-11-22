@@ -20,7 +20,8 @@ deleted. Versions that a running process was started from are kept, so a
 long-running program keeps its files.
 
 It also forgets tracked, trusted, and ignored config files that no longer
-exist. Pass `--tools` or `--configs` to do only one of the two. List the
+exist; without it, mise forgets a missing tracked file a week after its last
+use, and one unused for `prune.forget_unused_after`. Pass `--tools` or `--configs` to do only one of the two. List the
 versions it would delete with `mise ls --prunable`.
 
 Versions in the system installs directory (see `mise install --system`) are

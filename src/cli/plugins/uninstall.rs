@@ -18,9 +18,10 @@ use itertools::Itertools;
 /// Remove an installed plugin
 ///
 /// Installed tool versions are kept unless you pass `--purge`, which also
-/// removes a tool plugin's installs, downloads, and cache. `--purge` does not
-/// remove the tools of a backend plugin (`<plugin>:<tool>`); uninstall those
-/// first with `mise uninstall --all <plugin>:<tool>`.
+/// removes the plugin's installs, downloads, and cache. For a backend plugin,
+/// `--purge` removes those of every `<plugin>:<tool>` tool that is installed or
+/// configured. It skips a tool whose directory another tool also uses, with a
+/// warning.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
