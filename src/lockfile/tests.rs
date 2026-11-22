@@ -1005,6 +1005,44 @@ fn failed_request_binding_preserves_the_existing_binding() {
 }
 
 #[test]
+fn test_locked_backends_are_memoized_per_generation() {
+    let memo = Mutex::new(LockedBackends::default());
+    let finds = AtomicUsize::new(0);
+    let find = |backend: &str| {
+        finds.fetch_add(1, Ordering::Relaxed);
+        Some(backend.to_string())
+    };
+    let key = || ("node".to_string(), Some("22".to_string()));
+
+    for _ in 0..3 {
+        let found = memoized_locked_backend(&memo, 0, key(), || find("core:node"));
+        assert_eq!(found.as_deref(), Some("core:node"));
+    }
+    assert_eq!(finds.load(Ordering::Relaxed), 1);
+
+    // Another version is another answer.
+    let other = ("node".to_string(), None);
+    assert_eq!(
+        memoized_locked_backend(&memo, 0, other, || find("aqua:nodejs/node")).as_deref(),
+        Some("aqua:nodejs/node")
+    );
+    assert_eq!(finds.load(Ordering::Relaxed), 2);
+
+    // An invalidation drops every answer from before it.
+    let found = memoized_locked_backend(&memo, 1, key(), || find("aqua:nodejs/node"));
+    assert_eq!(found.as_deref(), Some("aqua:nodejs/node"));
+    assert_eq!(finds.load(Ordering::Relaxed), 3);
+
+    // A caller that started before that invalidation gets its own answer, but
+    // does not put it back.
+    let stale = memoized_locked_backend(&memo, 0, key(), || find("core:node"));
+    assert_eq!(stale.as_deref(), Some("core:node"));
+    let found = memoized_locked_backend(&memo, 1, key(), || find("core:node"));
+    assert_eq!(found.as_deref(), Some("aqua:nodejs/node"));
+    assert_eq!(finds.load(Ordering::Relaxed), 4);
+}
+
+#[test]
 fn test_legacy_lockfile_path_discovery_is_cached() {
     let temp_dir = tempfile::tempdir().unwrap();
     let cache_key = (
