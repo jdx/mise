@@ -824,10 +824,33 @@ pub fn open_regular_file<P: AsRef<Path>>(path: P) -> std::io::Result<File> {
 pub fn read_config_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
     trace!("cat {}", path.display_user());
+    let file = open_regular_file(path).wrap_err_with(|| read_failed(path))?;
+    read_config_body(path, file)
+}
+
+/// [`read_config_to_string`] for a file that may not exist: `None` when it
+/// does not. mise looks for several such files on every run, and builds no
+/// error for the missing ones: with `RUST_BACKTRACE` set, every error resolves
+/// a backtrace from the binary's symbols, which costs milliseconds.
+pub fn read_config_to_string_if_exists<P: AsRef<Path>>(path: P) -> Result<Option<String>> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    match open_regular_file(path) {
+        Ok(file) => read_config_body(path, file).map(Some),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).wrap_err_with(|| read_failed(path)),
+    }
+}
+
+fn read_failed(path: &Path) -> String {
+    format!("failed read_to_string: {}", path.display_user())
+}
+
+fn read_config_body(path: &Path, file: File) -> Result<String> {
     let mut body = String::new();
-    open_regular_file(path)
-        .and_then(|file| file.take(CONFIG_FILE_LIMIT + 1).read_to_string(&mut body))
-        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))?;
+    file.take(CONFIG_FILE_LIMIT + 1)
+        .read_to_string(&mut body)
+        .wrap_err_with(|| read_failed(path))?;
     if body.len() as u64 > CONFIG_FILE_LIMIT {
         return Err(config_file_too_large(path));
     }
