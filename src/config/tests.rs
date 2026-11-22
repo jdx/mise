@@ -1911,6 +1911,7 @@ async fn test_get_tool_opts_with_overrides_keeps_inline_opts_with_config_entry()
         vars: Default::default(),
         vars_results: OnceCell::new(),
         lockfile_discovery: Default::default(),
+        monorepo_lockfile_root: Default::default(),
     };
     config.tool_request_set.set(trs).ok();
     let config = Arc::new(config);
@@ -1992,6 +1993,7 @@ backend = "pipx:black"
         vars: Default::default(),
         vars_results: OnceCell::new(),
         lockfile_discovery: Default::default(),
+        monorepo_lockfile_root: Default::default(),
     };
     let legacy = crate::backend::get(&BackendArg::from("pipx:black")).unwrap();
     let preferred = crate::backend::get(&BackendArg::from("pypi:black")).unwrap();
@@ -2053,6 +2055,7 @@ async fn test_resolve_tool_opts_tracks_alias_config_and_inline_sources() -> Resu
         vars: Default::default(),
         vars_results: OnceCell::new(),
         lockfile_discovery: Default::default(),
+        monorepo_lockfile_root: Default::default(),
     };
     config.tool_request_set.set(trs).ok();
     let config = Arc::new(config);
@@ -2145,6 +2148,7 @@ async fn test_resolve_tool_opts_prefers_config_over_install_manifest_opts() -> R
         vars: Default::default(),
         vars_results: OnceCell::new(),
         lockfile_discovery: Default::default(),
+        monorepo_lockfile_root: Default::default(),
     };
     config.tool_request_set.set(trs).ok();
     let config = Arc::new(config);
@@ -2238,6 +2242,7 @@ async fn test_resolve_tool_opts_prefers_s3_listing_config_over_install_manifest_
         vars: Default::default(),
         vars_results: OnceCell::new(),
         lockfile_discovery: Default::default(),
+        monorepo_lockfile_root: Default::default(),
     };
     config.tool_request_set.set(trs).ok();
     let config = Arc::new(config);
@@ -2302,6 +2307,7 @@ async fn test_resolve_tool_opts_prefers_env_backend_override_over_alias_opts() -
             vars: Default::default(),
             vars_results: OnceCell::new(),
             lockfile_discovery: Default::default(),
+            monorepo_lockfile_root: Default::default(),
         };
         config.tool_request_set.set(ToolRequestSet::new()).ok();
         let config = Arc::new(config);
@@ -2391,6 +2397,7 @@ config_roots = ["apps/api", "apps/web"]
         vars: Default::default(),
         vars_results: OnceCell::new(),
         lockfile_discovery: Default::default(),
+        monorepo_lockfile_root: Default::default(),
     };
     let config = Arc::new(config);
 
@@ -2568,6 +2575,7 @@ fn test_get_repo_url_preserves_explicit_local_paths() {
         vars: Default::default(),
         vars_results: OnceCell::new(),
         lockfile_discovery: Default::default(),
+        monorepo_lockfile_root: Default::default(),
     };
 
     assert_eq!(

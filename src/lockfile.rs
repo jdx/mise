@@ -177,20 +177,46 @@ pub fn suppress_outdated_lockfile_warning(config: &Config) {
 }
 
 fn warn_outdated_lockfile(path: &Path, today: &LazyCell<jiff::civil::Date>, remedy: &str) {
-    if let Ok(lockfile) = Lockfile::read(path)
+    if let Ok(version) = lockfile_version_at(path)
         // A current-format lockfile can never be outdated, so don't read the
         // clock for it.
         && LOCKFILE_VERSION_DATES
             .iter()
-            .any(|&(bumped_version, _)| bumped_version > lockfile.lockfile_version())
-        && outdated_lockfile_version(lockfile.lockfile_version(), **today)
+            .any(|&(bumped_version, _)| bumped_version > version)
+        && outdated_lockfile_version(version, **today)
     {
         warn_once!(
-            "{} uses old lockfile format version {}; {remedy}",
-            display_path(path),
-            lockfile.lockfile_version()
+            "{} uses old lockfile format version {version}; {remedy}",
+            display_path(path)
         );
     }
+}
+
+/// The format version of the lockfile at `path`, as [`Lockfile::read`] reads
+/// it, without parsing its tools. TOML puts top-level keys before the first
+/// table header, so the text before that header is parsed alone. When it does
+/// not parse on its own (the cut fell inside a multi-line value) or does not
+/// set the version, the whole lockfile is read instead.
+fn lockfile_version_at(path: &Path) -> Result<u32> {
+    // `Lockfile::read` decides what a path that is not a file holds.
+    if path.is_file() {
+        let content = file::read_config_to_string(path)?;
+        let mut header = content.len();
+        let mut offset = 0;
+        for line in content.split_inclusive('\n') {
+            if line.trim_start().starts_with('[') {
+                header = offset;
+                break;
+            }
+            offset += line.len();
+        }
+        if let Ok(mut table) = toml::from_str::<toml::Table>(&content[..header])
+            && let Some(version) = table.remove("lockfile_version")
+        {
+            return Ok(version.try_into()?);
+        }
+    }
+    Ok(Lockfile::read(path)?.lockfile_version())
 }
 
 pub(crate) fn active_lockfile_paths_in_dir(root: &Path) -> Vec<PathBuf> {
@@ -5869,8 +5895,9 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
         .as_deref()
         .and_then(|root| legacy_lockfile_path_for_config(path, root));
 
-    let trusted = lockfile_is_trusted(config, &lockfile_path);
-    read_lockfile_at(lockfile_path, legacy_path, trusted)
+    read_lockfile_at(lockfile_path, legacy_path, |path| {
+        lockfile_is_trusted(config, path)
+    })
 }
 
 /// Read the lockfile at `path` uncached, merged with the legacy monorepo
@@ -5894,12 +5921,14 @@ pub fn read_lockfile_as_trusted(config: &Config, path: &Path) -> Result<Lockfile
 }
 
 /// Read the lockfile at `lockfile_path`, merged with a legacy monorepo
-/// lockfile. Unless `trusted`, it is reduced to what a lockfile may decide
-/// before its config is trusted ([`Lockfile::drop_what_needs_trust`]).
+/// lockfile. Unless `trusted` says so, it is reduced to what a lockfile may
+/// decide before its config is trusted ([`Lockfile::drop_what_needs_trust`]).
+/// `trusted` is only asked on a cache miss: it costs a scan of the config
+/// paths, and lookups ask for the same lockfile once per tool.
 fn read_lockfile_at(
     lockfile_path: PathBuf,
     legacy_path: Option<PathBuf>,
-    trusted: bool,
+    trusted: impl FnOnce(&Path) -> bool,
 ) -> Arc<Lockfile> {
     let cache_key: Vec<PathBuf> = std::iter::once(lockfile_path.clone())
         .chain(legacy_path.iter().cloned())
@@ -5929,7 +5958,7 @@ fn read_lockfile_at(
             display_path(legacy_path)
         );
     }
-    if !trusted {
+    if !trusted(&lockfile_path) {
         lockfile.drop_what_needs_trust(&lockfile_path);
     }
 
@@ -5978,11 +6007,13 @@ pub(crate) fn read_lockfile_for_tool_source(
 
     // A stub run from elsewhere reads the lockfile of a config that is not
     // loaded, so that config's trust decides.
-    let trusted = lockfile_is_trusted(config, &lockfile_path)
-        || !Settings::safe_mode()
-            && matches!(source, ToolSource::ToolStub(stub)
-            if tool_stub_config(stub)
-                .is_some_and(|(config_path, _)| crate::config::config_file::is_path_trusted(&config_path)));
+    let trusted = |path: &Path| {
+        lockfile_is_trusted(config, path)
+            || !Settings::safe_mode()
+                && matches!(source, ToolSource::ToolStub(stub)
+                if tool_stub_config(stub)
+                    .is_some_and(|(config_path, _)| crate::config::config_file::is_path_trusted(&config_path)))
+    };
     Ok(read_lockfile_at(lockfile_path, legacy_path, trusted)
         .as_ref()
         .clone())

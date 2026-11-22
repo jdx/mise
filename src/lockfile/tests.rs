@@ -168,6 +168,46 @@ fn test_outdated_lockfile_version_waits_six_months_after_newer_format() {
 }
 
 #[test]
+fn test_lockfile_version_at_matches_a_full_read() {
+    let temp = tempfile::tempdir().unwrap();
+    let cases = [
+        (
+            "set before the tools",
+            "lockfile_version = 2\n\n[[tools.node]]\nversion = \"20\"\n",
+        ),
+        (
+            "indented",
+            "  lockfile_version = 1\n[[tools.node]]\nversion = \"20\"\n",
+        ),
+        ("not set", "# comment\n[[tools.node]]\nversion = \"20\"\n"),
+        ("empty", ""),
+        ("without tables", "lockfile_version = 3\n"),
+        ("inside a table", "[settings]\nlockfile_version = 1\n"),
+        (
+            "cut inside a multi-line string",
+            "lockfile_version = 2\nnote = '''\n[x]\n'''\n",
+        ),
+        ("not TOML", "lockfile_version = \n["),
+    ];
+    for (name, content) in cases {
+        let path = temp.path().join(format!("{}.lock", name.replace(' ', "-")));
+        std::fs::write(&path, content).unwrap();
+        assert_eq!(
+            lockfile_version_at(&path).ok(),
+            Lockfile::read(&path).ok().map(|l| l.lockfile_version()),
+            "{name}"
+        );
+    }
+    let path = temp.path().join("set-before-the-tools.lock");
+    assert_eq!(lockfile_version_at(&path).unwrap(), 2);
+    // Not a file: whatever a full read decides, without reading it.
+    assert_eq!(
+        lockfile_version_at(temp.path()).unwrap(),
+        Lockfile::read(temp.path()).unwrap().lockfile_version()
+    );
+}
+
+#[test]
 fn test_url_contradicts_version_reports_a_different_release() {
     assert_eq!(
         url_contradicts_version(
@@ -3333,7 +3373,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
         .insert("node".to_string(), vec![basic_tool("20.0.0", "core:node")]);
     legacy.save(&legacy_path).unwrap();
 
-    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()), true);
+    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()), |_| true);
     assert_eq!(legacy_only.lockfile_version(), 0);
 
     let mut primary = Lockfile::default();
@@ -3354,7 +3394,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
     primary.save(&primary_path).unwrap();
     invalidate_caches();
 
-    let mixed = read_lockfile_at(primary_path, Some(legacy_path), true);
+    let mixed = read_lockfile_at(primary_path, Some(legacy_path), |_| true);
     assert_eq!(mixed.lockfile_version(), CURRENT_LOCKFILE_VERSION);
     assert!(mixed.uses_request_bindings());
     assert!(
