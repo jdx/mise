@@ -199,3 +199,28 @@ fn config_files_over_the_limit_are_refused() {
     assert!(err.contains("larger than 16 MiB"), "{err}");
     assert!(ensure_config_file_size(&large).is_err());
 }
+
+/// A missing file is `None`, and every other file reads as
+/// `read_config_to_string` reads it, limit included.
+#[test]
+fn read_config_to_string_if_exists_treats_missing_as_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    let missing = tmp.path().join("miserc.toml");
+    assert_eq!(read_config_to_string_if_exists(&missing).unwrap(), None);
+
+    std::fs::write(&missing, "env = []\n").unwrap();
+    assert_eq!(
+        read_config_to_string_if_exists(&missing)
+            .unwrap()
+            .as_deref(),
+        Some("env = []\n")
+    );
+
+    let large = tmp.path().join("large.toml");
+    File::create(&large)
+        .unwrap()
+        .set_len(CONFIG_FILE_LIMIT + 1)
+        .unwrap();
+    assert!(read_config_to_string_if_exists(&large).is_err());
+    assert!(read_config_to_string_if_exists(tmp.path()).is_err());
+}
