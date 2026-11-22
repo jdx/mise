@@ -105,7 +105,7 @@ Markdown documentation from the same spec.
 ### Comment syntax in file tasks {#file-task-headers}
 
 In a file task, `#USAGE` lines hold the usage spec and `#MISE` lines hold task
-properties as TOML. The comment marker can be `#`, `//`, or `::`, and
+properties as TOML. The comment marker can be `#`, `//`, `--`, or `::`, and
 whitespace may follow it. The keyword can also be bracketed: `#USAGE`,
 `# USAGE`, `// USAGE`, and `# [USAGE]` all work, so formatters that add a space
 do not break them. [File tasks](/tasks/file-tasks.html#configure-with-mise-comments)
@@ -133,6 +133,7 @@ describes `#MISE` lines.
 | `double_dash="required"`                           | Accept the argument's values only after `--`                                              |
 | `arg "<file>"`, `arg "<dir>"`                      | An argument named `file` or `path` completes file names; `dir` completes directories      |
 | `complete "user" run="mycli users"`                | Complete the `user` argument or flag from a command's output, one value per line          |
+| `cmd "staging" { … }`                              | A subcommand with its own arguments and flags; see [subcommands](#subcommands)            |
 
 Properties can also go in a block, one per line, as `choices` and `long_help`
 do in the next example. See the [usage spec](https://usage.jdx.dev/spec/) for
@@ -359,6 +360,47 @@ run = 'publish --api-key "${usage_api_key?}"'
 is set or the key is passed on the command line. `mise run publish --help`
 shows `[env: API_KEY]` next to the argument. File tasks use the same syntax in
 `#USAGE` lines.
+
+## Subcommands
+
+A `cmd` block gives a task a subcommand with its own arguments and flags. mise
+sets `usage_cmd`, or <span v-pre>`{{ usage.cmd }}`</span> in a template, to the
+name of the subcommand that was chosen:
+
+```mise-toml [mise.toml]
+[tasks.deploy]
+description = "Deploy the application"
+usage = '''
+flag "--dry-run" help="Print what would happen" global=#true
+cmd "staging" help="Deploy to staging" {
+  arg "<version>"
+}
+cmd "production" help="Deploy to production" {
+  alias "prod"
+  arg "<version>"
+  flag "--approve"
+}
+'''
+run = 'echo "cmd=$usage_cmd version=$usage_version approve=${usage_approve:-false}"'
+```
+
+```sh
+mise run deploy staging v1.0
+# cmd=staging version=v1.0 approve=false
+
+mise run deploy prod v2.0 --approve
+# cmd=production version=v2.0 approve=true
+```
+
+`usage_cmd` holds the subcommand's name even when it was chosen by an alias. A
+flag declared outside the `cmd` blocks needs `global=#true` to be accepted
+after the subcommand, as in `mise run deploy staging v1.0 --dry-run`. A flag
+declared inside a block belongs to that subcommand, so
+`mise run deploy staging v1.0 --approve` is an error.
+
+Subcommands are optional: `mise run deploy` still runs the task, with
+`usage_cmd` empty. Check for that case in the script when a subcommand is
+required. `mise run deploy --help` lists the subcommands.
 
 ## Share flags between tasks {#shared-flags}
 

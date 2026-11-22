@@ -25,10 +25,11 @@ Nix profile `PATH` setup, get no mise shims, and never need sudo.
 
 ## Prerequisites {#requirements-and-sources}
 
-The manager is available on Linux and macOS when `nix` is on `PATH`. Use Nix
-2.24 or newer with the `nix-command` and `flakes` features enabled in your Nix
-configuration. The profile must use the `nix profile` format; mise reports an
-error for a legacy `nix-env` profile and does not delete or migrate it.
+The manager is available on Linux and macOS when `nix` is on `PATH` or installed
+at `/nix/var/nix/profiles/default/bin/nix`. Use Nix 2.24 or newer with the
+`nix-command` and `flakes` features enabled in your Nix configuration. The
+profile must use the `nix profile` format; mise reports an error for a legacy
+`nix-env` profile and does not delete or migrate it.
 
 mise uses your existing Nix registries, substituters, and trusted keys. It does
 not install Nix, configure caches, or update flake lock files. Nix may build a

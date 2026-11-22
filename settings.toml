@@ -2116,11 +2116,11 @@ Versions without a vendor prefix, such as `java@21`, `java@lts` or
 Temurin), which keeps publishing quarterly updates for long-term-support
 releases.
 
-Earlier versions of mise defaulted to `openjdk`. jdk.java.net publishes OpenJDK
-builds only until the next feature release, so with that vendor `java@21` stays
-on 21.0.2. To keep the old behavior, set this to `openjdk`, or request
-`openjdk-21` explicitly. Temurin has no builds of Java 9, 10 or 12 through 15;
-request those with an `openjdk-` prefix.
+Set this to `openjdk` to install builds from jdk.java.net instead, or request
+`openjdk-21` explicitly. jdk.java.net publishes OpenJDK builds only until the
+next feature release, so with that vendor `java@21` stays on 21.0.2. Temurin
+has no builds of Java 9, 10 or 12 through 15; request those with an `openjdk-`
+prefix.
 
 Installed versions are not changed: a version such as `21.0.2` installed from
 OpenJDK keeps resolving to that OpenJDK build when the current vendor does not
@@ -2338,7 +2338,7 @@ Neither mode creates lockfiles; set [`lockfile = true`](#lockfile) or run
 [Complete lockfile generation](/dev-tools/mise-lock-reference.html#complete-lockfile-generation).
 
 ::: warning
-`merge` is deprecated. mise will start warning about it in 2027.4.0 and remove it in
+`merge` is deprecated. mise warns about it from 2027.4.0 and removes it in
 2027.10.0. Remove `lockfile_mode` to use the default `generate` mode.
 :::
 """

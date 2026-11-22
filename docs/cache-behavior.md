@@ -155,7 +155,8 @@ projects' task caches and the environment cache. See
 ## Pruning {#cache-auto-pruning}
 
 mise occasionally deletes cache files that have not been read within
-[`cache_prune_age`](/configuration/settings.html#cache_prune_age). This is
+[`cache_prune_age`](/configuration/settings.html#cache_prune_age), 30 days by
+default. This is
 separate from freshness: a version list can be refetched long before its file
 is old enough to prune.
 

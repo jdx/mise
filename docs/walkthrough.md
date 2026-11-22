@@ -51,6 +51,11 @@ node = "24"
 python = "3.14"
 ```
 
+If the directory has a `.tool-versions` and no `mise.toml`, `mise use` adds the
+tools to `.tool-versions` instead. To start a `mise.toml` there, create an empty
+one first with `touch mise.toml`; see
+[Which file mise writes to](/configuration.html#target-file-for-write-operations).
+
 Choose how precise each request is. A prefix such as `node@24` accepts any
 Node.js 24 release, so machines can resolve it differently. `mise use --pin`
 writes the exact version instead, and a [lockfile](#share-the-setup) records

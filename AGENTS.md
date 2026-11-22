@@ -138,7 +138,7 @@ The `mise` package has two targets. The library (`src/lib.rs`) is everything exc
 - Windows-specific tests in `e2e-win/`
 
 ### Build System
-- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-tls`, `mise-brew-relocation`, `mise-brew-metadata`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`, `mise-ui`, `mise-system-packages`, `mise-config`, `mise-system`, `mise-oci`, `mise-daemons`, `mise-lsp`)
+- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-tls`, `mise-brew-relocation`, `mise-brew-metadata`, `mise-bootstrap`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`, `mise-ui`, `mise-system-packages`, `mise-config`, `mise-system`, `mise-oci`, `mise-daemons`, `mise-dotenv`, `mise-lsp`)
 - Custom build script in `build.rs` for generating metadata
 - Multiple build profiles including `release` and `serious` (with LTO)
 - Cross-compilation support via `Cross.toml`
@@ -271,6 +271,8 @@ The configuration system supports multiple file formats and environment-specific
 Never type `[experimental]` into a schema description. The constants in `crates/mise-config/src/experimental.rs` are the list of config that needs `experimental = true`: label a key with `#[schemars(transform = crate::experimental::NAME.labels())]`, and name the same constant in the check that gates it (`Settings::ensure_experimental(mise_config::experimental::NAME.what)`, or `Settings::experimental_enabled(&mise_config::experimental::NAME)` where mise skips the config instead of failing). The tests in that file fail on a label with no check, a constant with no label, and an `ensure_experimental` call that names neither a constant nor an entry of `NOT_IN_THE_SCHEMA`.
 
 The `schema_matches_parser` unit test (`src/config/config_file/mise_toml/schema_conformance.rs`) validates every `toml` block in `docs/` and every mise config an e2e heredoc writes against both the schema and `MiseToml`'s parser, and fails when they disagree. Fix the schema rather than the corpus. Mark a config that mise refuses on purpose with `# schema: invalid` (e2e) or `<!-- schema: invalid -->` (docs) on the line above it, and an excerpt that is not a whole config with `schema: skip`. List deliberate differences in its `GAPS` with a reason.
+
+The `docs_show_commands_that_exist` test (`src/cli/docs_commands.rs`, run with `cargo test -p mise --bin mise docs_commands`) walks every `mise ...` command in a shell block, a block with no language or an inline code span in `docs/` and `README.md` through the usage spec, and fails on a subcommand or flag mise does not have. Fix the command; `docs/cli/` is generated, so fix those in the command's help and run `mise run render`. For text that starts with `mise` and is not a command to type, such as a message mise prints or the `mise <task>` shorthand, put `<!-- cli: skip -->` on its own line above the fenced block or heading, or directly after the inline code with no space between.
 
 ### Testing Strategy
 - E2E tests are organized by feature area (cli/, config/, backend/, etc.)

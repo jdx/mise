@@ -147,26 +147,29 @@ export function grouped<K extends Named>(
 // Guides for a key more specific than its section's. A key without one uses the guide of
 // the nearest key above it that has one, and then its section's.
 const keyGuides: Record<string, Guide> = {
-  "tools.<tool>": { text: "Tool options", link: "/dev-tools/#tool-options" },
+  "tools.<tool>": {
+    text: "Tool options",
+    link: "/dev-tools/tool-options.html",
+  },
   "tools.<tool>.version": {
     text: "Version requests",
     link: "/dev-tools/versions.html#request-syntax",
   },
   "tools.<tool>.os": {
     text: "OS-specific tools",
-    link: "/dev-tools/#os-specific-tools",
+    link: "/dev-tools/tool-options.html#os-specific-tools",
   },
   "tools.<tool>.depends": {
     text: "Tool dependencies",
-    link: "/dev-tools/#tool-dependencies",
+    link: "/dev-tools/tool-options.html#tool-dependencies",
   },
   "tools.<tool>.postinstall": {
     text: "Tool postinstall commands",
-    link: "/dev-tools/#tool-postinstall-commands",
+    link: "/dev-tools/tool-options.html#tool-postinstall-commands",
   },
   "tools.<tool>.install_env": {
     text: "Variables in tool options",
-    link: "/dev-tools/#templates-in-tool-configuration",
+    link: "/dev-tools/tool-options.html#templates-in-tool-configuration",
   },
   "tools.<tool>.auto_update": {
     text: "Automatic tool updates",

@@ -66,12 +66,12 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
             To set up monorepo support, add this to your root mise.toml:\n\
             {}\n\
             \n\
-            Then create task files in subdirectories that will be automatically discovered.\n\
+            mise then loads the tasks of each directory `config_roots` lists.\n\
             See {} for more information.",
-            style::eyellow("  monorepo_root = true"),
-            style::eunderline(
-                "https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support"
-            )
+            style::eyellow(
+                "  monorepo_root = true\n\n  [monorepo]\n  config_roots = [\"packages/*\"]"
+            ),
+            style::eunderline("https://mise.jdx.dev/tasks/monorepo.html")
         );
     }
 

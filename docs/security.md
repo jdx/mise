@@ -45,7 +45,9 @@ A `mise.toml` loads without trust when it has no template syntax
 
 - `min_version`
 - `[tools]` entries whose values are version strings or arrays of version
-  strings, with no options in the tool name (`"tool[opt=value]"`) and no
+  strings, with no options in the tool name (`"tool[opt=value]"`), no `spm:`
+  name that is the URL of a host other than github.com or gitlab.com, which
+  mise would send your forge token to, and no
   [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
   without an install
 - `[tasks]`, as long as no task lists `secrets`
@@ -104,8 +106,9 @@ trust.
 When a command needs a config that is not trusted:
 
 - In a terminal, mise asks
-  `mise config files in <dir> are not trusted. Trust them?` with Yes, No and
-  All, where All answers yes to every prompt in that command. No adds the
+  `mise config files in <dir> are not trusted. Trust them?`<!-- cli: skip -->
+  with Yes, No and All, where All answers yes to every prompt in that command.
+  No adds the
   directory to an ignore list, and mise skips that config without asking again
   until you run `mise trust` on it.
 - Without a terminal, such as in a script or an editor extension, mise cannot
@@ -124,13 +127,16 @@ current directory up. A config that needs no trust still shows as `untrusted`.
 
 Some commands trust the config they load without asking, because running them
 is already a decision to run the project's code. In normal mode outside CI,
-these are `mise run`, task shorthand such as `mise build`, `mise install`,
+these are `mise run`, the `mise <task>` shorthand, `mise install`,
 `mise exec`, `mise watch`, and `mise daemons start`, `restart` and `register`.
 They record trust for every non-global config they load, including configs in
 parent directories, as if you had run `mise trust`. A config on the ignore list
 stays ignored. Asking one of these commands for its own help, as in
 `mise run --help`, records nothing. Neither does a command mise starts on your
-behalf: the `mise x` a shim runs for a tool, or the `mise run` of a task hook.
+behalf: the `mise x` a shim runs for a tool, the `mise run` of a task hook or a
+[`watch_files`](/hooks.html#watch-files-hook) task, a task the
+[MCP server](/mcp.html) runs, or the run that `mise run --at` starts at another
+revision.
 
 mise also trusts a config file when it writes one, for example with
 [`mise use`](/cli/use.html) or [`mise set`](/cli/set.html). That trust covers
@@ -352,18 +358,19 @@ mise tool jq
 # Security: checksum (sha256), github_attestations
 ```
 
-| Backend or tool             | Checks                                                                                                                                       | Settings and options                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `aqua:`                     | Checksums, Cosign and Minisign signatures, SLSA provenance and GitHub artifact attestations, as the aqua registry declares them for the tool | [`aqua.cosign`](/configuration/settings.html#aqua.cosign), [`aqua.minisign`](/configuration/settings.html#aqua.minisign), [`aqua.slsa`](/configuration/settings.html#aqua.slsa), [`aqua.github_attestations`](/configuration/settings.html#aqua.github_attestations)                                                                                            |
-| `github:`                   | GitHub artifact attestations when a github.com release publishes them; SLSA provenance when the tool names its signer                        | [`github.github_attestations`](/configuration/settings.html#github.github_attestations), [`github.slsa`](/configuration/settings.html#github.slsa), and the [`github_attestations`](/dev-tools/backends/github.html#github-attestations) and [`slsa_signer_identity`](/dev-tools/backends/github.html#slsa-signer-identity-and-slsa-signer-issuer) tool options |
-| `packslip:`                 | A signed release manifest, artifact digests and a pinned signer; see [verification and policy](/dev-tools/packslip-verification.html)        | [Tool options](/dev-tools/backends/packslip.html#tool-options)                                                                                                                                                                                                                                                                                                  |
-| Node.js                     | Checksums from `SHASUMS256.txt` and its OpenPGP signature, which must be present except on unofficial-builds                                 | [`node.verify`](/configuration/settings.html#node.verify), [`node.gpg_verify`](/configuration/settings.html#node.gpg_verify)                                                                                                                                                                                                                                    |
-| `npm:`                      | Opt-in, embedded aube only: Sigstore provenance of the tool's own package, when it publishes one                                             | [`npm.provenance`](/configuration/settings.html#npm.provenance)                                                                                                                                                                                                                                                                                                 |
-| Swift on Linux              | OpenPGP signatures                                                                                                                           | [`swift.gpg_verify`](/configuration/settings.html#swift.gpg_verify)                                                                                                                                                                                                                                                                                             |
-| Zig                         | Minisign signatures, always                                                                                                                  | None                                                                                                                                                                                                                                                                                                                                                            |
-| Precompiled Ruby and Python | GitHub artifact attestations                                                                                                                 | [`ruby.github_attestations`](/configuration/settings.html#ruby.github_attestations), [`python.github_attestations`](/configuration/settings.html#python.github_attestations)                                                                                                                                                                                    |
+| Backend or tool             | Checks                                                                                                                                                                                                                            | Settings and options                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aqua:`                     | Checksums, Cosign and Minisign signatures, SLSA provenance and GitHub artifact attestations, as the aqua registry declares them for the tool                                                                                      | [`aqua.cosign`](/configuration/settings.html#aqua.cosign), [`aqua.minisign`](/configuration/settings.html#aqua.minisign), [`aqua.slsa`](/configuration/settings.html#aqua.slsa), [`aqua.github_attestations`](/configuration/settings.html#aqua.github_attestations)                                                                                            |
+| `github:`                   | GitHub artifact attestations when a github.com release publishes them; SLSA provenance when the tool names its signer                                                                                                             | [`github.github_attestations`](/configuration/settings.html#github.github_attestations), [`github.slsa`](/configuration/settings.html#github.slsa), and the [`github_attestations`](/dev-tools/backends/github.html#github-attestations) and [`slsa_signer_identity`](/dev-tools/backends/github.html#slsa-signer-identity-and-slsa-signer-issuer) tool options |
+| `packslip:`                 | A signed release manifest, artifact digests and a pinned signer; see [verification and policy](/dev-tools/packslip-verification.html)                                                                                             | [Tool options](/dev-tools/backends/packslip.html#tool-options)                                                                                                                                                                                                                                                                                                  |
+| Node.js                     | Checksums from `SHASUMS256.txt` and its OpenPGP signature, which must be present except on unofficial-builds                                                                                                                      | [`node.verify`](/configuration/settings.html#node.verify), [`node.gpg_verify`](/configuration/settings.html#node.gpg_verify)                                                                                                                                                                                                                                    |
+| `npm:`                      | Sigstore provenance of the tool's own package, when it publishes one; only with the embedded aube package manager, and not for an unlocked install from a downloaded archive ([details](/dev-tools/backends/npm.html#provenance)) | [`npm.provenance`](/configuration/settings.html#npm.provenance)                                                                                                                                                                                                                                                                                                 |
+| Go, Deno and Bun            | The SHA-256 checksum published with each release                                                                                                                                                                                  | [`go.skip_checksum`](/configuration/settings.html#go.skip_checksum), for Go                                                                                                                                                                                                                                                                                     |
+| Swift on Linux              | OpenPGP signatures                                                                                                                                                                                                                | [`swift.gpg_verify`](/configuration/settings.html#swift.gpg_verify)                                                                                                                                                                                                                                                                                             |
+| Zig                         | Minisign signatures, always                                                                                                                                                                                                       | None                                                                                                                                                                                                                                                                                                                                                            |
+| Precompiled Ruby and Python | GitHub artifact attestations                                                                                                                                                                                                      | [`ruby.github_attestations`](/configuration/settings.html#ruby.github_attestations), [`python.github_attestations`](/configuration/settings.html#python.github_attestations)                                                                                                                                                                                    |
 
-These checks are on by default, except the `npm:` one, which is opt-in. Setting the global
+These checks are on by default. Setting the global
 [`github_attestations`](/configuration/settings.html#github_attestations) or
 [`slsa`](/configuration/settings.html#slsa) setting to `false` turns that check
 off for the `aqua:` and `github:` backends. For precompiled Python and Ruby,
@@ -381,9 +388,10 @@ of checking again. Set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 or turn on [paranoid mode](/paranoid.html) to re-verify on every install.
 Neither re-checks a tool that is already installed. The `npm:` provenance check
-is not recorded in the lockfile, so with
-[`npm.provenance`](/configuration/settings.html#npm.provenance) on, mise
-verifies it on every install of the tool.
+is not reused from the lockfile: where the table above says it applies, it runs
+each time mise installs the tool. The lockfile records the repository the
+provenance names, and a later install of that version must show the same
+repository; see [npm provenance](/dev-tools/backends/npm.html#provenance).
 
 mise checks its own releases too: `mise self-update` verifies each release's
 signature before it replaces the binary. See
@@ -407,7 +415,7 @@ minimum_release_age = "7d" # raise the default 24h delay to 7 days
 accepts relative durations (`7d`, `6mo`, `1y`) and dates (`2024-06-01`,
 `2024-06-01T12:00:00Z`). Set `0s` to turn the delay off.
 
-### Which backends have a default
+### What each backend can hold back {#which-backends-have-a-default}
 
 Without a configured value, mise applies the 24-hour default to every backend.
 Use [`minimum_release_age_excludes`](/configuration/settings.html#minimum_release_age_excludes)
@@ -422,11 +430,13 @@ A backend can filter only versions it knows a release date for:
 
 Versions without a release date are not filtered. When mise installs one it
 warns that the cutoff could not be checked, so you know that version was not held
-back; switch to a backend that reports dates, or exclude the tool to silence it. Other backends can hold back
-the tool's own version, but not the dependencies its installer or compiler
-fetches. See the [npm](/dev-tools/backends/npm.html) and
-[PyPI](/dev-tools/backends/pypi.html) backend pages for how they pass the cutoff
-to their package managers.
+back. Switch to a backend that reports dates, or exclude the tool to silence the
+warning.
+
+Backends other than `npm:` and `pypi:` can hold back the tool's own version, but
+not the dependencies its installer or compiler fetches. See the
+[npm](/dev-tools/backends/npm.html) and [PyPI](/dev-tools/backends/pypi.html)
+backend pages for how they pass the cutoff to their package managers.
 
 ### What the cutoff applies to
 

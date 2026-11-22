@@ -84,7 +84,8 @@ mise uses the first method that applies:
 5. Otherwise mise runs `cargo install`.
 
 Set [`cargo.binstall_only = true`](/dev-tools/backends/cargo.html#cargo.binstall_only) to fail instead of
-building from source; options that need a source build then fail too. Set
+building from source; options that need a source build then fail too. A Git
+source is unaffected and still builds with `cargo install --git`. Set
 `cargo.binstall = false` to always build. A prebuilt binary ignores your Cargo
 build configuration, so turn binstall off when that configuration must apply.
 
@@ -98,13 +99,13 @@ it. mise's own installer never uses quickinstall.
 
 Set these on the tool's entry in `[tools]`, or inline, as in
 `'cargo:eza[locked=false]'`. Options every backend accepts are described under
-[tool options](/dev-tools/#tool-options).
+[tool options](/dev-tools/tool-options.html).
 
-mise records the `features`, `default-features`, `bin`, `crate` and `locked`
-values with each installed version. Changing one reinstalls that version instead
-of reusing a binary built with other options. Feature names are normalized, so
-reordering them or switching between a string and an array does not trigger a
-reinstall.
+mise records the `features`, `default-features`, `bin`, `rename_exe`, `crate`
+and `locked` values with each installed version. Changing one reinstalls that
+version instead of reusing a binary built with other options. Feature names are
+normalized, so reordering them or switching between a string and an array does
+not trigger a reinstall.
 
 | Option                     | Passed as               | Skips cargo-binstall |
 | -------------------------- | ----------------------- | -------------------- |
@@ -150,6 +151,10 @@ Install one executable from a crate that has several:
 "cargo:sqlx-cli" = { version = "latest", bin = "sqlx" }
 ```
 
+`bin` is the one option here that can differ by platform: set it under
+`platforms.<os>-<arch>`, as described in
+[inline or table syntax](/dev-tools/tool-options.html#table-format).
+
 ### `rename_exe`
 
 Rename the installed executable, for example to avoid a clash with another tool
@@ -162,6 +167,10 @@ crate = "wit-cli"
 bin = "wit"
 rename_exe = "wit-lsp"
 ```
+
+When a crate installs several executables, give a table of file name or glob to
+new name instead, as for the
+[github backend's `rename_exe`](/dev-tools/backends/github.html#rename-exe).
 
 ### `crate`
 

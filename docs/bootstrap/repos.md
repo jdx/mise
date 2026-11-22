@@ -69,7 +69,9 @@ Reading a var never prompts; an unanswered one uses its `default`. Run
 The optional `ref` is a branch, a tag, or a full commit SHA. An invalid entry
 is reported with a warning and skipped.
 
-`url` and `ref` can use vars and process environment variables (`env.NAME`) too, so one file can serve several branches. Values from a config's `[env]` table are not available, as in checkout paths:
+`url` and `ref` can use vars and process environment variables (`env.NAME`)
+too, so one file can serve several branches. Values from a config's `[env]`
+table are not available, as in checkout paths:
 
 ```toml
 [vars]
@@ -215,10 +217,13 @@ match a configured path, as written or expanded.
 
 ## Reference
 
-| Key   | Values                          | Default                         |
-| ----- | ------------------------------- | ------------------------------- |
-| `url` | Repository URL or path          | Required                        |
-| `ref` | Branch, tag, or full commit SHA | None; the checkout is not moved |
+| Key          | Values                                                                           | Default                         |
+| ------------ | -------------------------------------------------------------------------------- | ------------------------------- |
+| `url`        | Repository URL or path                                                           | Required                        |
+| `ref`        | Branch, tag, or full commit SHA                                                  | None; the checkout is not moved |
+| `filter`     | Partial clone filter, such as `"blob:none"`; see [Clone options](#clone-options) | None                            |
+| `depth`      | Number of commits for a shallow clone, at least `1`                              | None; full history              |
+| `submodules` | `true` clones submodules too                                                     | `false`                         |
 
 ## See also
 

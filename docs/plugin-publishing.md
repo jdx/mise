@@ -12,8 +12,8 @@ with `mise plugins install` or list it under `[plugins]` in `mise.toml`.
 The mise registry does not accept new tools backed by asdf or vfox plugins (see
 the [backend acceptance tiers](/contributing/registry.html#backend-acceptance-tiers)),
 so your repository URL is how people install your plugin. These steps apply to
-Lua tool, backend, environment and package manager plugins. For shell-script
-plugins, see [asdf plugins (legacy)](/asdf-legacy-plugins.html).
+Lua tool, backend, environment, package manager and settings plugins. For
+shell-script plugins, see [asdf plugins (legacy)](/asdf-legacy-plugins.html).
 
 ## Before you release {#publishing-checklist}
 

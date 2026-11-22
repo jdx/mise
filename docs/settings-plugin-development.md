@@ -35,7 +35,7 @@ plugin only for a section that names it, so declare one with a setting that is
 safe to change, and turn on
 [`experimental`](/configuration/settings.html#experimental):
 
-```toml
+```toml [mise.toml]
 [settings]
 experimental = true
 
@@ -64,7 +64,7 @@ hooks. The table accepts the same keys as
 [`[package-manager]`](/package-plugin-development.html#mise-plugin-toml) except
 `supports_version_pins`:
 
-```toml
+```toml [mise.plugin.toml]
 [bootstrap-settings]
 requires = ["hyprctl"]  # programs the hooks run
 os = ["linux"]          # platforms the plugin runs on

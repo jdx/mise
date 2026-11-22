@@ -18,6 +18,7 @@
 
 - [Overview](https://mise.jdx.dev/dev-tools/): mise installs tools such as Node.js, Python, and Go, and selects their versions for each project. Declare the versions a project uses in mise.toml, and mise puts them on PATH while you work in that…
 - [Version requests and version files](https://mise.jdx.dev/dev-tools/versions.html): A version request is the value you give a tool in mise.toml, such as "24" in node = "24". mise resolves each request to a concrete version when it runs; record the resolved versions in a lockfile when…
+- [Tool options](https://mise.jdx.dev/dev-tools/tool-options.html): A tool option is a key you set on one tool's entry in [tools], next to its version. Some options work with every tool, such as os, depends, and postinstall; the rest belong to the tool's backend, such…
 - [Registry](https://mise.jdx.dev/registry.html): The registry maps short tool names such as jq or aws-cli to the backends that install them, so mise use jq works without a full backend identifier.
 - [Backends](https://mise.jdx.dev/dev-tools/backends/): A backend is the source mise installs a tool from. It lists the tool's versions, downloads or builds the version you ask for, and tells mise where the executables are.
 - [aqua](https://mise.jdx.dev/dev-tools/backends/aqua.html): The aqua backend installs prebuilt release binaries using package recipes from the aqua registry, for example aqua:hashicorp/terraform.
@@ -44,13 +45,13 @@
 - [Shims](https://mise.jdx.dev/dev-tools/shims.html): A shim is a small executable named after a tool's command, such as node. When a program runs it, the shim asks mise which version the current directory selects, loads that project's environment, and…
 - [Tool aliases](https://mise.jdx.dev/dev-tools/aliases.html): Use [tool_alias] to point a tool name at a different backend or to give a version request a name. Put shared aliases in the project's mise.toml, so teammates get the alias along with the tool…
 - [Tool stubs](https://mise.jdx.dev/dev-tools/tool-stubs.html): A tool stub is an executable file that records how to get and run one tool. Commit it to a repository so that a command such as ./bin/py runs the intended version and passes its arguments along.
-- [Self-updating tools](https://mise.jdx.dev/dev-tools/self-updating-tools.html): This page is for authors of tools that update themselves, such as coding agents, editors, and long-running CLIs. When mise installed your tool, update it through mise instead of your own updater.
+- [Self-updating tools](https://mise.jdx.dev/dev-tools/self-updating-tools.html): If you write a tool that updates itself, such as a coding agent, an editor, or a long-running CLI, have it update through mise instead of its own updater whenever mise installed it.
 - [Lockfile (mise.lock)](https://mise.jdx.dev/dev-tools/mise-lock.html): mise.lock records the exact versions that the requests in mise.toml resolved to, with download URLs and checksums where the backend provides them.
 - [mise.lock reference](https://mise.jdx.dev/dev-tools/mise-lock-reference.html): mise.lock is a TOML file that mise lock and other lockfile-aware commands write. Generate entries with mise lock rather than writing them by hand.
 - [Git provider tokens](https://mise.jdx.dev/dev-tools/github-tokens.html): mise reads public GitHub release metadata through mise-versions, so most installs need no token. Set one when mise calls a forge's API itself: for private repositories, GitHub Enterprise, self-managed…
 - [System installs](https://mise.jdx.dev/dev-tools/system-installs.html): Use a system install when several user accounts, or a container image built as root, should share one copy of a tool.
 - [OCI images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build packages the tools a project's mise.toml declares into a container image with one OCI layer per tool, so changing one tool's version rebuilds only that tool's layer.
-- [Identity install layout (experimental)](https://mise.jdx.dev/dev-tools/install-layout.html): By default, mise installs a tool into installs/<tool>/<version>, the legacy layout. That path cannot say which backend produced the files, which platform build they are, or which install options were…
+- [Identity install layout (experimental)](https://mise.jdx.dev/dev-tools/install-layout.html): The identity install layout gives each tool installation its own directory, installs/<label>-<hash>/, named by the backend, version, platform, and install options that produced it.
 - [Migrating from asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html): mise reads .tool-versions files and can run asdf plugins, so you can move one project at a time while teammates keep using asdf.
 
 ## Languages
@@ -166,7 +167,8 @@
 - [mise.toml](https://mise.jdx.dev/configuration.html): A project's mise.toml declares the tools, environment variables, and tasks the project needs. mise combines it with your global config and with config files in parent directories.
 - [mise.toml reference](https://mise.jdx.dev/configuration/reference.html): Every key mise reads from a mise.toml: its type, what it does and where it goes, generated from schema/mise.json so it matches this version of mise.
 - [mise.toml reference (Markdown)](https://mise.jdx.dev/configuration/reference.md): Every key mise reads from a mise.toml: its type, what it does and where it goes, generated from schema/mise.json so it matches this version of mise.
-- [mise.toml playground](https://mise.jdx.dev/configuration/playground.html): Hover any key or value to see what it does, its type and the values it takes. Press Ctrl+Space for completions; mistakes are marked as you type. The mise.toml reference has every key.
+- [mise.toml playground](https://mise.jdx.dev/configuration/playground.html): Edit this mise.toml in your browser to try config keys before you add them to a project.
+- [Language server](https://mise.jdx.dev/lsp.html): mise lsp runs a Language Server Protocol server for mise config files. An editor that starts it gets diagnostics, completion, hover documentation, quick fixes, formatting, semantic tokens and…
 - [Config environments](https://mise.jdx.dev/configuration/environments.html): A config environment loads extra config files, such as mise.development.toml or mise.production.toml, on top of mise.toml.
 - [Settings](https://mise.jdx.dev/configuration/settings.html): Settings change how mise itself behaves, such as how many jobs run at once, how downloads are verified and how tasks print output. Set them with mise settings or under [settings] in a config file.
 - [Config variables](https://mise.jdx.dev/configuration/vars.html): Define shared values in [vars] and reference them with {{ vars.NAME }} in a Tera template. Use vars for values that mise needs to render config; use [env] for values that commands need as environment…
@@ -191,7 +193,7 @@
 - [Environment plugins](https://mise.jdx.dev/env-plugin-development.html): An environment plugin adds a directive to [env] whose Lua hooks return environment variables and PATH entries.
 - [Package manager plugins](https://mise.jdx.dev/package-plugin-development.html): A package manager plugin adds a manager to [bootstrap.packages] for packages that belong to another program, such as VS Code extensions, gh extensions or Helm plugins.
 - [Settings plugins](https://mise.jdx.dev/settings-plugin-development.html): A settings plugin applies the settings of one program or desktop, such as a Linux distro's appearance settings, from a [bootstrap.settings.<plugin>] section.
-- [Plugin Lua reference](https://mise.jdx.dev/plugin-lua-modules.html): mise runs every Lua plugin hook (tool, backend, environment and package plugins) in an embedded Lua 5.1 interpreter.
+- [Plugin Lua reference](https://mise.jdx.dev/plugin-lua-modules.html): mise runs every Lua plugin hook (tool, backend, environment, package manager and settings plugins) in an embedded Lua 5.1 interpreter.
 - [Publishing plugins](https://mise.jdx.dev/plugin-publishing.html): You publish a mise plugin by putting it where users can fetch it: a Git repository pinned by tag, or a signed packslip archive.
 - [asdf plugins (legacy)](https://mise.jdx.dev/asdf-legacy-plugins.html): asdf plugins are Git repositories of shell scripts (bin/list-all, bin/install and others) that follow the asdf plugin interface.
 
@@ -205,24 +207,24 @@
 ## Cookbook
 
 - [Cookbook overview](https://mise.jdx.dev/mise-cookbook/): Each recipe gives the config and commands for one kind of project or workflow. Start from the closest one and change its versions, paths and commands to match your project.
-- [Tips and tricks](https://mise.jdx.dev/tips-and-tricks.html): Short recipes for everyday mise use. Each one links to the full guide.
+- [Tips and tricks](https://mise.jdx.dev/tips-and-tricks.html): These short recipes cover everyday mise use: tracing where a tool or setting comes from, pinning a tool in a script, letting contributors run tasks without installing mise, showing the project in your…
 - [Bazel](https://mise.jdx.dev/mise-cookbook/bazel.html): Install the Bazel version declared in a project's .bazelversion file, so the version is not repeated in mise.toml.
 - [C++ and CMake](https://mise.jdx.dev/mise-cookbook/cpp.html): Pin CMake for a C++ project and run its configure, build and clean steps as tasks. A C or C++ compiler must already be installed, for example through your operating system's development tools;…
 - [Neovim](https://mise.jdx.dev/mise-cookbook/neovim.html): Highlight the scripts embedded in mise.toml and the metadata comments in file tasks with Treesitter, then add language-server features to embedded scripts with otter.nvim.
 - [Node.js](https://mise.jdx.dev/mise-cookbook/nodejs.html): Pin Node.js and your package manager for a project, and run its package scripts as mise tasks. For installing and selecting Node.js itself, see Node.js.
 - [Python](https://mise.jdx.dev/mise-cookbook/python.html): Set up a Python project with mise: a requirements.txt project with a virtualenv, a uv project, or scripts with inline dependencies. For installing Python and the virtualenv settings, see Python.
 - [Ruby on Rails](https://mise.jdx.dev/mise-cookbook/ruby.html): Pin Ruby for an existing Rails app from its .ruby-version file, and run the app's Bundler and Rails commands as tasks.
-- [Scaffolding tasks](https://mise.jdx.dev/mise-cookbook/presets.html): A scaffolding task is a file task in your global config that sets up a project with mise use and mise tasks add.
+- [Project scaffolding tasks](https://mise.jdx.dev/mise-cookbook/presets.html): A scaffolding task is a file task in your global config that sets up a project with mise use and mise tasks add.
 - [Terraform and OpenTofu](https://mise.jdx.dev/mise-cookbook/terraform.html): Pin Terraform or OpenTofu for a project and run init, validate, plan and apply as tasks. The recipe assumes a terraform/ directory that holds your configuration, with provider credentials already set…
 
 ## About
 
 - [About mise](https://mise.jdx.dev/about.html): mise is pronounced "meez". The name is short for mise-en-place, the French kitchen practice of setting out every ingredient and utensil before you start cooking.
-- [Releases](https://mise.jdx.dev/releases.html): mise ships several releases a week. To update, run mise self-update or use the package manager that installed mise; see Updating mise.
+- [Releases](https://mise.jdx.dev/releases.html): This page lists every mise release with its changes and the issues it resolved, and explains how version numbers work. mise ships several releases a week.
 - [Contact](https://mise.jdx.dev/contact.html): Report bugs in GitHub Issues and ask questions in GitHub Discussions, where answers stay searchable for other users.
 - [Demo](https://mise.jdx.dev/demo.html): This recording runs one-off commands with mise exec, installs global tools with mise use --global, and switches Node.js versions between a global default and a project.
 - [mise run: the song](https://mise.jdx.dev/mise-en-place.html): mise run is the mise theme song, and this is its music video. Captions are available from the player. You can also download the video in 1080p or 4K (HEVC), both at 120 fps, or download the MP3.
-- [External resources](https://mise.jdx.dev/external-resources.html): Older community posts about mise may use commands or options that have since changed; check the configuration and CLI reference when you adapt them.
+- [External resources](https://mise.jdx.dev/external-resources.html): This page lists community articles, podcasts, and videos about mise, and other tools from its author that work alongside it.
 
 ## Contributing
 

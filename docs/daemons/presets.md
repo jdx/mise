@@ -233,3 +233,14 @@ and `COCKROACH_URL`; `options.databases` lists the databases to create.
   port falls in one, set `port` or `ports` to another.
 - [Shared server providers](/daemons/sharing.html#shared-server-providers) are
   not available on Windows.
+
+## Next steps
+
+- [Ports, URLs, and worktrees](/daemons/worktrees.html): give each Git worktree
+  its own ports for a preset.
+- [Share daemons across projects](/daemons/sharing.html): run one PostgreSQL,
+  CockroachDB, or NATS server for every checkout.
+- [Data and cleanup](/daemons/data.html): find, move, and reset a preset's
+  data.
+- [Container daemons](/daemons/containers.html): run a server that has no
+  preset from an image.

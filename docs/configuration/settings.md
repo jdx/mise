@@ -59,11 +59,13 @@ sets it:
 1. A command-line flag, such as `--jobs` or `--yes` (see
    [global flags](/cli/#global-flags))
 2. The setting's environment variable, such as `MISE_JOBS`
-3. `[settings]` in project config, starting with the file nearest the current
+3. `[settings]` in a [global override file](/configuration.html#override-file),
+   `~/.config/mise/config.override.toml`
+4. `[settings]` in project config, starting with the file nearest the current
    directory; `mise.local.toml` wins over `mise.toml` in the same directory
-4. `[settings]` in the global config, `~/.config/mise/config.toml`
-5. `[settings]` in the system config, `/etc/mise/config.toml`
-6. The default
+5. `[settings]` in the global config, `~/.config/mise/config.toml`
+6. `[settings]` in the system config, `/etc/mise/config.toml`
+7. The default
 
 [`minimum_release_age_excludes`](/configuration/settings.html#minimum_release_age_excludes) is the
 exception: it combines the lists from every config file, and its environment
@@ -106,6 +108,7 @@ environment variable.
 Settings with the <Badge type="info" text="miserc" /> badge decide which config
 files mise loads, so mise reads them before any `mise.toml`: [`env`](/configuration/settings.html#env),
 [`auto_env`](/configuration/settings.html#auto_env), [`env_conf_d`](/configuration/settings.html#env_conf_d),
+[`env_sets`](/configuration/settings.html#env_sets),
 [`ceiling_paths`](/configuration/settings.html#ceiling_paths),
 [`ignored_config_paths`](/configuration/settings.html#ignored_config_paths),
 [`override_config_filenames`](/configuration/settings.html#override_config_filenames) and

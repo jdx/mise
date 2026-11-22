@@ -4,9 +4,10 @@ description: "Find community articles, podcasts, and videos about mise, and othe
 
 # External resources
 
-Older community posts about mise may use commands or options that have since
-changed; check the [configuration](/configuration.html) and
-[CLI reference](/cli/) when you adapt them.
+This page lists community articles, podcasts, and videos about mise, and other
+tools from its author that work alongside it. Older posts may use commands or
+options that have since changed; check the [configuration](/configuration.html)
+and [CLI reference](/cli/) when you adapt them.
 
 ## Articles and tutorials
 

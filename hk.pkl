@@ -140,7 +140,7 @@ fi
           effect = "write"
         }
     }
-    // docs/public/llms.txt is built from page descriptions and the sidebar, so
+    // docs/public/llms.txt is built from each page's lead paragraph and the sidebar, so
     // any docs edit can change it; CI fails when `mise run render` would.
     // Reads the committed docs/cli pages and cli_commands.ts, which the
     // render:usage and render:help tasks keep current.

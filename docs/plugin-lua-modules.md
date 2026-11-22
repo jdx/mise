@@ -4,8 +4,8 @@ description: "Look up the globals, metadata fields, hook files and Lua modules t
 
 # Plugin Lua reference
 
-mise runs every Lua plugin hook (tool, backend, environment and package
-plugins) in an embedded Lua 5.1 interpreter. It provides globals,
+mise runs every Lua plugin hook (tool, backend, environment, package manager
+and settings plugins) in an embedded Lua 5.1 interpreter. It provides globals,
 `metadata.lua` fields, hook files, and modules you load with `require`.
 
 ```lua
@@ -62,13 +62,14 @@ the host and can select the wrong download for the platform being locked.
 
 `RUNTIME.cacheDirPath` is a directory under mise's cache directory
 (`$MISE_CACHE_DIR/plugins/<plugin-name>`) that belongs to the plugin. mise
-creates it before running a hook (`RUNTIME.cacheDirPath` is `nil` if it can't), and every hook of the plugin sees the same
-path, so a backend plugin that serves many tools can keep a large download
-there once instead of fetching it again for each tool.
+creates it before running a hook (`RUNTIME.cacheDirPath` is `nil` if it can't),
+and every hook of the plugin sees the same path, so a backend plugin that
+serves many tools can keep a large download there once instead of fetching it
+again for each tool.
 
-Unlike `pluginDirPath`, it survives reinstalling the plugin. [`mise cache clear`](/cli/cache/clear.html)
-deletes it, so a plugin must cope with the directory being empty or missing at
-any time.
+Unlike `pluginDirPath`, it survives reinstalling the plugin.
+[`mise cache clear`](/cli/cache/clear.html) deletes it, so a plugin must cope
+with the directory being empty or missing at any time.
 
 ### Loading your own code
 
@@ -147,12 +148,12 @@ keep their top level to function definitions.
 
 mise decides a plugin's type from these files. A plugin with
 `hooks/backend_install.lua` is a backend plugin, whatever other hooks it has.
-One with both
-`hooks/settings_read.lua` and `hooks/settings_write.lua` is a settings plugin.
-One with both `hooks/package_install.lua` and `hooks/package_installed.lua` is a
-package manager plugin. Any other plugin with a `metadata.lua` is a tool or environment
-plugin. Package manager and settings plugins can also declare their capabilities in a
-`mise.plugin.toml` file. mise does not call upstream vfox's `PreUse` hook.
+One with both `hooks/settings_read.lua` and `hooks/settings_write.lua` is a
+settings plugin. One with both `hooks/package_install.lua` and
+`hooks/package_installed.lua` is a package manager plugin. Any other plugin
+with a `metadata.lua` is a tool or environment plugin. Package manager and
+settings plugins can also declare their capabilities in a `mise.plugin.toml`
+file. mise does not call upstream vfox's `PreUse` hook.
 
 ## Tool options in hooks {#tool-options}
 
@@ -187,14 +188,12 @@ receive the options of its `[env]` directive with their TOML types kept; see
 A Lua error stops the hook, and mise reports it as the failure of the operation
 that ran the hook, such as the install. Raise one with `error("message")`.
 
-`pcall` catches the errors that the `json`, `file`, `archiver`, `cmd`,
-`strings` and `semver` functions raise. It does not work with the `http`
-functions: a call to any of them inside `pcall`, directly or through a function
-you pass to `pcall`, fails with
-`attempt to yield across metamethod/C-call boundary`, even when the request
-would succeed. When a request may fail and you have a fallback, call
-`http.try_get`, `http.try_head` or `http.try_download_file`, which return the
-error instead of raising it.
+`pcall` catches the errors that module functions raise, including the `http`
+and `cmd` functions, which wait for a request or a command. `xpcall` cannot: an
+`http` or `cmd` call inside it fails with
+`attempt to yield across metamethod/C-call boundary`. When a request may fail
+and you have a fallback, `http.try_get`, `http.try_head` and
+`http.try_download_file` return the error instead of raising it.
 
 ```lua
 local json = require("json")
@@ -217,7 +216,9 @@ end
 
 `headers` is optional. Response header names are in lower case, such as
 `resp.headers["content-length"]`. `download_file` creates the directories above
-`path` if they are missing.
+`path` if they are missing. `get` and `try_get` hold the whole body in memory
+and fail when it is larger than 128 MiB, so fetch large files with
+`download_file`.
 
 ```lua
 local http = require("http")
@@ -250,7 +251,13 @@ plugin HTTP client reads only that environment variable, not an
 [`http_retries`](/configuration/settings.html#http_retries) value from a config
 file. Requests follow mise's [`url_replacements`](/url-replacements.html), and
 credentials from [`netrc`](/configuration/settings.html#netrc) are added for the
-destination host. A request to `api.github.com`, or to a GitHub Enterprise Cloud
+destination host. When a replacement sends the request to another origin, mise
+drops the headers you passed whose names mark them as credentials and keeps
+the others. It recognizes `Authorization`, `Cookie`, and names built from words such as
+`auth`, `api-key`, `token`, `secret`, `credential` and `session-id`, for example
+`X-Api-Key` and `X-Auth-Token`. A secret under another name, such as
+`X-Password`, is forwarded, so send secrets in a header mise recognizes. A
+request to `api.github.com`, or to a GitHub Enterprise Cloud
 `api.*.ghe.com` host, that has no `Authorization` header gets the
 [GitHub token](/dev-tools/github-tokens.html) mise resolves for `github.com`
 (even for a `ghe.com` host) and an `X-GitHub-Api-Version` header. For a GitHub
@@ -362,7 +369,9 @@ archiver.decompress("/path/to/node-v24.18.1-linux-x64.tar.gz", "/path/to/destina
 ```
 
 `strip_components = 1` keeps files that sit at the archive's root, as mise's
-own archive extraction does. Only `0` and `1` are accepted.
+own archive extraction does. It raises an error, and moves nothing into the
+destination, when an entry's name is already there or two entries would get
+the same name. Only `0` and `1` are accepted.
 
 ## `cmd` {#command-module}
 
@@ -618,7 +627,7 @@ name what else the result depends on:
 | `disable()`          | Don't cache this result; run the hook every time                                                                                                                                           |
 
 In other hooks both do nothing. The module is a mise addition, so load it with
-`pcall` in a plugin that also runs on the vfox CLI or on older mise releases:
+`pcall` in a plugin that also runs on the vfox CLI:
 
 ```lua
 local ok, cache = pcall(require, "mise.cache")

@@ -109,9 +109,10 @@ The base URL of the GitLab API. It defaults to `https://gitlab.com/api/v4`.
 The `gitlab` backend accepts the
 [github backend's tool options](/dev-tools/backends/github.html#tool-options)
 for selecting assets, choosing versions, extracting files and verifying
-downloads, with the differences listed above. The GitHub-only options
-`github_attestations`, `slsa_signer_identity` and `slsa_signer_issuer` have no
-effect here.
+downloads, with the differences listed above. It rejects the GitHub-only
+options `github_attestations`, `slsa_signer_identity` and `slsa_signer_issuer`:
+the install fails with ``option `github_attestations` is not used by the gitlab
+backend``.
 
 ## Settings
 

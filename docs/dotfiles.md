@@ -97,6 +97,12 @@ Declare each target and its source in the repository's `mise.toml`:
 "~/.config/nvim" = { source = "nvim" }   # a symlink, the default mode
 ```
 
+An entry has three parts. Its key is the _target_, the path where the file is
+used. Its _source_ is the file or directory the target comes from. Its _mode_
+is how mise creates the target from the source: `symlink` links to it, `copy`
+copies it, and `template` renders it. [Modes](/dotfiles/managed.html#modes)
+lists them all.
+
 Trust the file, preview, apply, and check the result:
 
 ```sh
@@ -109,8 +115,14 @@ mise dot status
 
 mise copies `git/config` to `~/.gitconfig` and links `~/.config/nvim` to the
 `nvim` directory, and `status` reports both as `applied`. Relative sources
-start from the directory of the config file that declares them. To change a
-file later, edit its source and run `mise dot apply` again.
+start from the directory of the config file that declares them.
+
+`mise dot apply` compares every target with its source and writes only the
+ones that differ, so running it again changes nothing. To change the copied
+file later, edit its source and apply again; the linked directory follows its
+source without another apply. When a link would replace a real file or
+directory, apply stops and lists the paths; see
+[Conflicts](/dotfiles/managed.html#conflicts).
 
 A repository's `mise.toml` is project config. mise reads its `[dotfiles]`
 only after you trust it, and only when it runs inside that directory, or
@@ -126,10 +138,10 @@ it:
 
 Only declared paths and their contents are managed. A `README.md` outside them
 stays in the repository, and a directory entry like the one above keeps it out
-with `exclude = ["*.md", ...]`. An entry's key is its _target_, so `"/README.md"` names a
-file at the filesystem root, not your repository's README. `mise dot apply` does not touch your repository's Git history;
-[dotfiles history](/dotfiles/history.html) is a separate store, shared only if
-you connect an origin.
+with `exclude`. An entry's key is its target, so `"/README.md"` names a file at
+the filesystem root, not your repository's README. `mise dot apply` does not
+touch your repository's Git history; [dotfiles history](/dotfiles/history.html)
+is a separate store, shared only if you connect an origin.
 
 For a GNU Stow layout, with one directory per application, use
 [groups](/dotfiles/groups.html). To start from files you already have,
@@ -199,6 +211,10 @@ See [`mise dotfiles`](/cli/dotfiles.html) for every subcommand and flag.
 - [Edit part of a file](/dotfiles/edits.html): blocks, lines, and merged keys.
 - [Dotfiles history](/dotfiles/history.html): save, compare, and roll back
   tracked files.
+- [Sync across machines](/dotfiles/sync.html): share tracked files through a
+  private Git repository.
+- [Encrypted files](/dotfiles/encryption.html): encrypt tracked files before
+  they are saved to Git.
 - [Dotfiles reference](/dotfiles/reference.html): every key, pattern rule, and
   status state.
 - [Dotfiles That Save Themselves](https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/)

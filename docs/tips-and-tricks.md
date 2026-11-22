@@ -5,7 +5,10 @@ socialDescription: "Apply short mise recipes for everyday commands, scripts, con
 
 # Tips and tricks
 
-Short recipes for everyday mise use. Each one links to the full guide.
+These short recipes cover everyday mise use: tracing where a tool or setting
+comes from, pinning a tool in a script, letting contributors run tasks without
+installing mise, showing the project in your shell prompt, and running Intel
+tools on Apple silicon. Each one links to the full guide.
 
 ## Everyday commands
 
@@ -80,11 +83,9 @@ recorded when you generated it. Regenerate the wrapper to move to a newer mise.
 
 [`mise generate task-stubs`](/cli/generate/task-stubs.html) writes a stub for
 every task mise loads except hidden tasks and tasks from your global config.
-Stubs that an older mise wrote for those stay in `bin/` until you delete them.
-On Windows the default `.cmd`
-launchers can alter arguments that contain `& ^ | " %`; generate with
-`--windows-launcher exe` on Windows when arguments must arrive unchanged. For
-the wrapper's version pinning and directories, see
+On Windows the default `.cmd` launchers can alter arguments that contain
+`& ^ | " %`; generate with `--windows-launcher exe` on Windows when arguments
+must arrive unchanged. For the wrapper's version pinning and directories, see
 [CI bootstrapping](/continuous-integration.html#bootstrapping).
 
 ## Configuration
@@ -121,79 +122,6 @@ This keeps `0.152.2`. mise installs Hugo's editions as separate tools (`hugo`,
 `hugo-extended` and `hugo-extended-withdeploy`), so use the one that matches the
 project's edition. `config_root` keeps the path relative to the config file
 when you run mise from a subdirectory.
-
-### Share tasks across repositories {#share-task-catalogs}
-
-[`task_config.includes`](/tasks/task-discovery.html#include-task-files-and-directories)
-chooses where tasks are loaded from: directories, `tasks.toml` files, or remote
-git repositories. Setting it replaces the default task directories, so list any
-default directory (such as `.mise/tasks`) you still use. Remote includes run
-code from that repository, so pin a tag or commit you trust:
-
-```toml [mise.toml]
-[task_config]
-includes = [
-  "mise-tasks",
-  "tasks.toml",
-  "git::https://github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0",
-]
-```
-
-An included `tasks.toml` holds tasks written as under `[tasks]`, without the
-`tasks.` prefix. See [remote git includes](/tasks/task-discovery.html#remote-git-includes)
-for the URL syntax and caching.
-
-### Reuse task settings with templates {#reuse-task-definitions-with-templates}
-
-A [task template](/tasks/templates.html) holds tools, environment variables and
-commands that several tasks share:
-
-```toml [mise.toml]
-[task_templates."node:test"]
-tools = { node = "24", pnpm = "latest" }
-run = "pnpm test"
-
-[tasks.test]
-extends = "node:test"
-
-[tasks."test:watch"]
-extends = "node:test"
-run = "pnpm test --watch"
-```
-
-Tasks inherit the template's fields and override the ones they set.
-
-### Redact secrets from task output {#redact-secrets-from-task-output}
-
-To mask values in task output, list their variables in the top-level
-`redactions` array, or mark one variable with `redact = true`, which also works
-in a task's `env`:
-
-```toml [mise.toml]
-redactions = ["API_KEY", "SECRETS_*"]
-
-[tasks.deploy]
-env = { TOKEN = { value = "{{ env.DEPLOY_TOKEN }}", redact = true } }
-run = "./deploy.sh"
-```
-
-mise prints `[redacted]` in place of matching values. Raw and interactive tasks
-bypass redaction, and the commands still receive the real values. See
-[redaction](/environments/secrets/#redaction) for what it covers.
-
-### Use prebuilt binaries for `cargo:` tools {#cargo-binstall}
-
-Install [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), and mise
-uses it for [`cargo:` tools](/dev-tools/backends/cargo.html), which downloads a
-prebuilt binary when the crate publishes one instead of compiling it:
-
-```sh
-mise use -g cargo-binstall
-```
-
-When no prebuilt binary exists, mise falls back to `cargo install`. The
-[`cargo.binstall`](/configuration/settings.html#cargo.binstall) setting turns
-this off.
 
 ## Shell prompt {#shell-prompt}
 

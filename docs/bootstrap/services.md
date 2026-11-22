@@ -53,17 +53,6 @@ mise creates a definition for your platform and starts the service:
 | macOS    | `~/Library/LaunchAgents/dev.mise.<name>.plist`                                           | `launchctl`        |
 | Windows  | Scheduled Task `mise\<name>`, with its definition under `$MISE_STATE_DIR/user-services/` | `schtasks`         |
 
-On Windows 11 24H2, Windows Server 2025, and later versions, mise's built-in
-services and its environment launcher replace a private Windows Terminal
-console with a windowless console.
-Console programs that the service starts inherit it. A terminal window can
-appear during startup until mise replaces the console. Startup work and system
-load determine when replacement happens. Windows Terminal can retain the
-disconnected tab if its profile is configured to keep terminated tabs open.
-A watcher started in a shared interactive console leaves that console alone.
-Classic Console Host windows are hidden directly. Older Windows versions retain
-the existing window-hiding behavior, which can leave Windows Terminal visible.
-
 mise runs `command` directly, not through a shell, so pipes, redirection, and
 globs do not work there; put such a command in a script or run `sh -c '...'`.
 A leading `~/` in the program path is expanded.
@@ -199,6 +188,17 @@ not be empty or contain `=`, and no name or value may contain a NUL character.
 This needs mise installed at a [permanent path](#durable-executable); without
 one, status reports the service as `unknown`. Without `environment`, the
 command runs directly.
+
+Task Scheduler starts a console program in a console of its own. mise hides
+that console for built-in services and for services that run through mise for
+`environment`, and the console programs they start inherit it instead of
+opening windows of their own. A classic Console Host window is hidden. On
+Windows 11 24H2, Windows Server 2025, and later, a Windows Terminal console is
+replaced with a windowless one: a terminal window can appear at startup until
+mise replaces it, and Windows Terminal keeps the disconnected tab if its
+profile keeps closed tabs open. On older Windows versions, a Windows Terminal
+window can stay visible. A watcher you start from an interactive shell shares
+that shell's console, and mise leaves it alone.
 
 ### Remove a user service {#remove-and-disable}
 

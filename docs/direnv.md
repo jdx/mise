@@ -12,9 +12,8 @@ direnv's hook.
 ::: warning Unsupported
 Running direnv and mise together is unsupported. Both change the environment
 when you enter a directory, and their shell hooks can disagree about which
-`PATH` entries to add, restore or remove. Compatibility issues are not
-considered mise bugs, and pull requests for direnv compatibility are not
-accepted.
+`PATH` entries to add, restore or remove. Compatibility issues between the two
+are not considered mise bugs.
 :::
 
 ## Do you need direnv? {#do-you-need-direnv}

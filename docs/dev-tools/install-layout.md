@@ -5,15 +5,17 @@ socialDescription: Name each installation by what it is, so variants of one vers
 
 # Identity install layout <Badge type="warning" text="experimental" />
 
-By default, mise installs a tool into `installs/<tool>/<version>`, the legacy
+The identity install layout gives each tool installation its own directory,
+`installs/<label>-<hash>/`, named by the backend, version, platform, and install
+options that produced it. The familiar `installs/<tool>/<version>` path stays,
+as a link to that directory. Turn it on so that shorthands for the same tool
+share one install and variants of one version can coexist.
+
+Without it, mise installs a tool into `installs/<tool>/<version>`, the legacy
 layout. That path cannot say which backend produced the files, which platform
 build they are, or which install options were used. So `age` and
 `aqua:FiloSottile/age` are two separate downloads, and two variants of one
 version overwrite each other.
-
-The identity layout gives each installation its own directory,
-`installs/<label>-<hash>/`, named by what was installed. The familiar
-`installs/<tool>/<version>` path stays, as a link to that directory.
 
 ::: warning Experimental
 The identity layout needs `experimental = true`. On Windows, that alone turns

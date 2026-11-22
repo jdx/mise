@@ -78,6 +78,12 @@ array; mise reads the first entry of an array. See the
 [Bun](/lang/bun.html#version-files) and [Deno](/lang/deno.html#version-files)
 pages for other runtimes.
 
+The `version` can also be an npm semver range such as `^26.4.0` or `>=24 <27`.
+mise then selects the newest installed version in the range, or the newest
+release in the range when none is installed. Ranges work the same way in
+[package-manager declarations](/lang/node.html#package-manager-versions-in-package-json)
+and in the Bun and Deno declarations.
+
 mise does not read `engines.node`, which describes the Node.js versions a
 package is compatible with, not the version to develop with. If a project only
 has an `engines` range, select a version explicitly:
@@ -201,7 +207,8 @@ To keep a CLI across Node.js versions, install it as its own tool with the
 
 mise downloads the official binary archive for your platform from
 [`node.mirror_url`](/lang/node.html#node.mirror_url) (`https://nodejs.org/dist/` by default),
-checks it against the release's `SHASUMS256.txt`, and verifies the OpenPGP
+checks it against the release's `SHASUMS256.txt`
+([`node.verify`](/lang/node.html#node.verify)), and verifies the OpenPGP
 signature on that file ([`node.gpg_verify`](/lang/node.html#node.gpg_verify)).
 A missing signature fails the install, except for musl builds from
 unofficial-builds, which publishes none. It then runs `node -v` and `npm -v`.
@@ -298,7 +305,7 @@ source build:
 node = { version = "26", install_env = { CFLAGS = "-O2" } }
 ```
 
-Other generic options are described in [tool options](/dev-tools/#tool-options).
+Other generic options are described in [tool options](/dev-tools/tool-options.html).
 
 ## Default packages file <Badge type="danger" text="deprecated" /> {#default-node-packages}
 
@@ -308,7 +315,7 @@ with `npm install --global` into each new Node.js version. mise warns about this
 file from 2026.11.0 and stops reading it in 2027.11.0. Install npm CLIs with
 the [npm backend](/dev-tools/backends/npm.html) instead, for example
 `"npm:typescript" = "latest"`, or use a
-[`postinstall`](/dev-tools/#tool-postinstall-commands) command for packages
+[`postinstall`](/dev-tools/tool-options.html#tool-postinstall-commands) command for packages
 every Node.js version needs.
 
 ## Settings

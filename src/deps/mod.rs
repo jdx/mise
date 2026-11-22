@@ -316,7 +316,7 @@ pub fn notify_if_stale(config: &Arc<Config>, effective_env: &BTreeMap<String, St
             .map(|(id, reason)| format!("{id} ({reason})"))
             .collect();
         let summary = providers.join(", ");
-        warn!("deps: {summary} — run `mise deps`");
+        warn!("deps: {summary}; run `mise deps`");
     }
 }
 

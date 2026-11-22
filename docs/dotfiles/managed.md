@@ -39,13 +39,15 @@ To check your work, preview with `mise dot apply --dry-run` (add `--verbose`
 to see content diffs) or [`mise dot diff`](/cli/dotfiles/diff.html), apply with
 `mise dot apply`, and confirm with
 [`mise dot status`](/cli/dotfiles/status.html). Apply skips targets that
-already match. `mise dot diff` reads the entries declared in your config, not
-only those you created with `mise dot add`. It prints the difference for each
-target that would change. When none would, it reports `files: all files are
-applied` for whole-file entries and `edits: all edits are applied` for
+already match. The [reference](/dotfiles/reference.html#entry-keys) lists
+every entry key.
+
+`mise dot diff` reads the entries declared in your config, not only those you
+created with `mise dot add`. It prints the difference for each target that
+would change. When none would, it reports `files: all files are applied` for
+whole-file entries and `edits: all edits are applied` for
 [edits](/dotfiles/edits.html); `track` entries are skipped, because
-[`mise dot history diff`](/cli/dotfiles/history/diff.html) covers them. The
-[reference](/dotfiles/reference.html#entry-keys) lists every entry key.
+[`mise dot history diff`](/cli/dotfiles/history/diff.html) covers them.
 
 ## Modes {#modes}
 
@@ -62,9 +64,10 @@ uses `dotfiles.default_mode`, which is `symlink` unless you change it.
 | `fnox`         | Write the file fnox stores for the target; takes no source.       | The file holds a secret that must stay out of your repository.        |
 
 `mode = "track"` and `mode = "track-local"` are not deployment modes: they
-save the history of a file where it is, without a source. See [Dotfiles history](/dotfiles/history.html).
-On Windows, `symlink` can fall back to copying and `symlink-each` copies
-unless [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
+save the history of a file where it is, without a source. See
+[Dotfiles history](/dotfiles/history.html). On Windows, `symlink` can fall
+back to copying and `symlink-each` copies unless
+[`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
 is on; see [Windows](#windows).
 
 To link a directory as a whole:
@@ -92,6 +95,106 @@ Applying a `copy` entry overwrites changes made directly to the target. Save
 them to the source first with `mise dot add`; see
 [Adopt files and capture edits](#capturing-changes).
 :::
+
+## Adopt files and capture edits {#capturing-changes}
+
+To start managing a file you already have, run
+[`mise dot add`](/cli/dotfiles/add.html):
+
+```sh
+mise dot add ~/.inputrc
+```
+
+mise moves the file to its source path under `dotfiles.root`
+(`~/.dotfiles/.inputrc`), adds an entry to your global config, and applies it.
+With the default `symlink` mode, `~/.inputrc` becomes a link to the moved
+file. When the source is on another filesystem, mise copies the file, keeping
+symlinks and permissions, instead of moving it.
+
+- `--mode copy` keeps a regular file at the target. `--mode` takes `symlink`,
+  `symlink-each`, `copy`, or `template`.
+- `--source <path>` uses that source instead of one under `dotfiles.root`. A
+  relative path starts from the current directory; the entry records it
+  relative to the config file's directory when it lies inside it, and as an
+  absolute path otherwise.
+- `--no-apply` copies the file to its source and writes the entry without
+  changing the original file, so you can review both first. It still writes
+  the source: when the source already exists with different contents, `add`
+  overwrites it with the live file, and asks first only in a terminal (`--force`
+  or `--yes` skip the prompt).
+- `--dry-run` prints the source and config changes without making them. It
+  prints a `cp` line for every target that exists, whether or not its contents
+  already match the source, so compare an existing source with the live file
+  yourself before you add.
+
+The entry goes to your global config, or to the file named by
+[`write_targets.dotfiles`](/configuration/settings.html#write_targets.dotfiles).
+Use `--local` to write the project config or `--path` to name another file.
+`add` leaves out a source it can infer and the default `symlink` mode, so the
+example writes `"~/.inputrc" = {}`. A mode you pass with `--mode` is always
+written.
+
+If you edit a copied target in place, run `mise dot add` on it again to save
+the change back to its source:
+
+```sh
+$EDITOR ~/.config/starship.toml
+mise dot add ~/.config/starship.toml
+```
+
+`mise dot add` refuses to capture a `template` target, because the rendered file
+would replace the template code in the source, and any `exec()` output with it;
+edit the source instead. `--force` overwrites the source anyway.
+
+`mise dot add --changed` updates the sources of every changed regular file
+managed in `copy` mode, including the files a copy-mode
+[group](/dotfiles/groups.html) discovers in its tree. Each file's config must
+be trusted. It skips other directory copies, symlinks, templates, and inline
+content.
+
+A target inside a [group](/dotfiles/groups.html#adding-files-to-a-group)'s
+tree is captured into that group's root instead, without a new entry.
+
+[`mise dot edit <target>`](/cli/dotfiles/edit.html) opens the target's source
+in your editor, and `--apply` applies the target when the editor exits. For a
+tracked or [permissions-only](#permissions) entry it opens the file itself,
+and for [inline `content`](#inline-content), an `absent` entry, or an edit
+without a source file it opens the config file that declares it. For a target
+that is not managed yet, it first adds it the way `mise dot add --no-apply`
+does, after asking (`--yes` skips the question).
+
+## Conflicts {#conflicts}
+
+A `symlink` or `symlink-each` entry never replaces a real file or directory
+where a link should go, or a directory where a file should go. Apply stops
+and lists the conflicting paths; `mise dot apply --force` replaces them. A
+real file needs `--force` even when its contents and permissions match the
+source. To keep the file's content instead, [adopt it](#capturing-changes)
+with `mise dot add`. An existing symlink that points elsewhere is repointed
+without `--force`.
+
+A `copy`, `template`, or inline `content` entry overwrites the target's
+content without `--force`, and replaces a symlink at the target with a file.
+A directory where a copied, templated, or inline file should go, or a file
+where a directory copy should go, is still a conflict and needs `--force`.
+
+When `apply` is about to overwrite a `template` or `copy` target that you
+edited since mise last wrote it, it warns first, so you can move the edit into
+the source. For a `copy` target, `--dry-run` and the confirmation list mark it
+too. A file mise has no record of, such as one that predates the entry, is not
+warned about. A directory `copy` outside a
+[dotfile group](/dotfiles/groups.html) has no per-file record, so its files
+are not checked. Check `mise dot diff` before you change which source a target
+uses.
+
+Without a terminal (a script, `ssh` without `-t`, an agent shell), `apply` cannot
+ask before replacing a `copy` target whose content differs from the source,
+unless the file is [tracked](/dotfiles/history.html), because `mise dot undo`
+cannot bring an untracked edit back. It stops with an error that names `--yes`;
+pass `--yes` to replace the content. Copies that already match the source, and
+tracked files, apply without asking.
+
+[Edit entries](/dotfiles/edits.html#conflicts) apply without `--force`.
 
 ## Create a file only if it is missing {#create-if-missing}
 
@@ -233,10 +336,11 @@ sets others:
 ```
 
 `content` takes the place of `source` and `mode`. It can be combined with
-`permissions` and [`create_if_missing`](#create-if-missing), but not with `source`, `mode`, `exclude`, `manifest`,
-`encrypt = true`, `remove_empty`, `dot_prefix`, `relative = true`, target
-`variants`, the track-only keys `include` and `allow_plaintext`, or the edit
-options `block`, `line`, `template`, and `comment`. The
+`permissions` and [`create_if_missing`](#create-if-missing), but not with
+`source`, `mode`, `exclude`, `manifest`, `encrypt = true`, `remove_empty`,
+`dot_prefix`, `relative = true`, target `variants`, the track-only keys
+`include` and `allow_plaintext`, or the edit options `block`, `line`,
+`template`, and `comment`. The
 [modes and keys table](/dotfiles/reference.html#modes-and-keys) compares all
 entry kinds.
 
@@ -381,11 +485,12 @@ directory is empty, it goes too, as [for templates](#remove-empty).
 
 An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
 `permissions`, `encrypt = true`, `remove_empty`, `create_if_missing`,
-`relative = true`, `dot_prefix`, or block and line edit keys; mise warns and ignores an entry
-that sets one. No other entry can place a file beneath an `absent` target, and
-an edit entry cannot change the file it removes. The target names exactly one
-path, so it cannot contain `*`, `?`, or `[`. To remove a file whose name
-contains those characters, declare `state = "absent"` under
+`relative = true`, `dot_prefix`, or block and line edit keys; mise warns and
+ignores an entry that sets one. No other entry can place a file beneath an
+`absent` target, and an edit entry cannot change the file it removes. The
+target names exactly one path, so it cannot contain `*`, `?`, or `[`. To
+remove a file whose name contains those characters, declare
+`state = "absent"` under
 [`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
 
 When the removed path is [tracked](/dotfiles/history.html), the removal is
@@ -515,9 +620,10 @@ variants = [
 ]
 ```
 
-Target variants work with `copy`, `symlink`, `symlink-each`, `template`, and
-[`absent`](#absent). Each variant selects machines by `os` (optionally with an
-architecture, such as `os = "macos/arm64"`), by `profile` (a
+Target variants work with every deployment mode and with
+[permissions-only](#permissions) entries, but not with inline `content`, whose
+variants can only select. Each variant selects machines by `os` (optionally
+with an architecture, such as `os = "macos/arm64"`), by `profile` (a
 [config environment](/configuration/environments.html) selected with `-E` or
 `MISE_ENV`), or with `default = true`. The most specific matching variant
 wins, a tie makes the entry invalid, and a machine that matches no variant and
@@ -637,102 +743,6 @@ repoints absolute links to the same source. Turning them off leaves relative
 links that already reach the source in place. Windows ignores the option,
 because directory links there are junctions, which cannot be relative.
 
-## Adopt files and capture edits {#capturing-changes}
-
-To start managing a file you already have, run
-[`mise dot add`](/cli/dotfiles/add.html):
-
-```sh
-mise dot add ~/.inputrc
-```
-
-mise moves the file to its source path under `dotfiles.root`
-(`~/.dotfiles/.inputrc`), adds an entry to your global config, and applies it.
-With the default `symlink` mode, `~/.inputrc` becomes a link to the moved
-file. When the source is on another filesystem, mise copies the file, keeping
-symlinks and permissions, instead of moving it.
-
-- `--mode copy` keeps a regular file at the target; `--mode` takes any mode.
-- `--source <path>` uses that source instead of one under `dotfiles.root`. A
-  relative path starts from the current directory; the entry records it
-  relative to the config file's directory when it lies inside it, and as an
-  absolute path otherwise.
-- `--no-apply` copies the file to its source and writes the entry without
-  changing the original file, so you can review both first. It still writes
-  the source: when the source already exists with different contents, `add`
-  overwrites it with the live file, and asks first only in a terminal (`--force`
-  or `--yes` skip the prompt). `--dry-run` prints a `cp` line for every target
-  that exists, whether or not its contents already match the source, so compare
-  an existing source with the live file yourself before you add.
-- `--dry-run` prints the source and config changes without making them.
-
-The entry goes to your global config, or to the file named by
-[`write_targets.dotfiles`](/configuration/settings.html#write_targets.dotfiles).
-Use `--local` to write the project config or `--path` to name another file.
-`add` leaves out a source it can infer and the default `symlink` mode, so the
-example writes `"~/.inputrc" = {}`. A mode you pass with `--mode` is always
-written.
-
-If you edit a copied target in place, run `mise dot add` on it again to save
-the change back to its source:
-
-```sh
-$EDITOR ~/.config/starship.toml
-mise dot add ~/.config/starship.toml
-```
-
-`mise dot add` refuses to capture a `template` target, because the rendered file
-would replace the template code in the source, and any `exec()` output with it;
-edit the source instead. `--force` overwrites the source anyway.
-
-`mise dot add --changed` updates the sources of every changed regular file
-managed in `copy` mode, including the files a copy-mode
-[group](/dotfiles/groups.html) discovers in its tree. Each file's config must
-be trusted. It skips other directory copies, symlinks, templates, and inline
-content.
-
-A target inside a [group](/dotfiles/groups.html#adding-files-to-a-group)'s
-tree is captured into that group's root instead, without a new entry.
-
-[`mise dot edit <target>`](/cli/dotfiles/edit.html) opens the target's source
-in your editor, and `--apply` applies the target when the editor exits. For a
-tracked or permissions-only entry it opens the file itself, and for inline
-`content`, an `absent` entry, or an edit without a source file it opens the
-config file that declares it. For a target that is not managed yet, it first
-adds it the way `mise dot add --no-apply` does, after asking (`--yes` skips
-the question).
-
-## Conflicts {#conflicts}
-
-A `symlink` or `symlink-each` entry never replaces a real file or directory
-where a link should go, or a directory where a file should go. Apply stops
-and lists the conflicting paths; `mise dot apply --force` replaces them. A
-real file needs `--force` even when its contents and permissions match the
-source. To keep the file's content instead, [adopt it](#capturing-changes)
-with `mise dot add`. An existing symlink that points elsewhere is repointed
-without `--force`.
-
-A `copy`, `template`, or inline `content` entry overwrites the target's
-content without `--force`, and replaces a symlink at the target with a file.
-A directory where a copied, templated, or inline file should go, or a file
-where a directory copy should go, is still a conflict and needs `--force`.
-When `apply` is about to overwrite a `template` or `copy` target that you edited
-since mise last wrote it, it warns first, so you can move the edit into the
-source. For a `copy` target, `--dry-run` and the confirmation list mark it too. A file
-mise has no record of, such as one that predates the entry, is not warned about.
-A directory `copy` outside a [dotfile group](/dotfiles/groups.html) has no
-per-file record, so its files are not checked.
-Check `mise dot diff` before you change which source a target uses.
-
-Without a terminal (a script, `ssh` without `-t`, an agent shell), `apply` cannot
-ask before replacing a `copy` target whose content differs from the source,
-unless the file is [tracked](/dotfiles/history.html), because `mise dot undo`
-cannot bring an untracked edit back. It stops with an error that names `--yes`;
-pass `--yes` to replace the content. Copies that already match the source, and
-tracked files, apply without asking.
-
-[Edit entries](/dotfiles/edits.html#conflicts) apply without `--force`.
-
 ## Unapply {#unapplying}
 
 Deleting an entry from your config leaves its file, block, or line in place.
@@ -778,12 +788,13 @@ the change.
 
 mise writes dotfiles as the user running it and never uses `sudo`. A target
 such as `/etc/hosts` works only when mise runs as root, for example in a
-container; otherwise apply fails with a permission error. To manage a whole
+container; otherwise apply fails with a permission error. To manage a
 root-owned file from a normal user, declare it under
 [`[bootstrap.files]`](/bootstrap/files.html) instead, which retries a change
-with root privileges when the filesystem refuses it. Block and line edits have
-no privileged equivalent, so editing a root-owned file such as `/etc/hosts`
-still requires running mise as root.
+with root privileges when the filesystem refuses it. It can write the whole
+file or keep [one block](/bootstrap/files.html#blocks) of it. A `[dotfiles]`
+block or line edit has no such retry, so on a root-owned file it still requires
+running mise as root.
 
 ## Manage the mise config itself {#self-managing-mise-config}
 
@@ -828,3 +839,14 @@ links needs `--force`. Turning the setting off again changes only what new
 files get: links already in place stay links, and `mise dot unapply` of a
 `symlink-each` entry that holds links needs `--force` unless the setting is
 on.
+
+## See also
+
+- [Groups](/dotfiles/groups.html) deploy a directory tree and choose its parts
+  per machine.
+- [Edit part of a file](/dotfiles/edits.html) covers blocks, lines, and merged
+  keys in files you do not own entirely.
+- [Dotfiles history](/dotfiles/history.html) saves versions of the files you
+  edit in place.
+- [Dotfiles reference](/dotfiles/reference.html) lists every entry key and
+  which keys each mode accepts.

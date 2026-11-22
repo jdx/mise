@@ -65,13 +65,13 @@ data. Each signal also needs an endpoint: the general
 
 | Variable                                                                | Purpose                                                                                                                                                |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                                           | The OTLP endpoint for both signals, for example `http://localhost:4318`.                                                                               |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`                                    | The traces endpoint. Takes priority over the general endpoint.                                                                                         |
-| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`                                      | The logs endpoint. Takes priority over the general endpoint.                                                                                           |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                           | The OTLP base URL for both signals, for example `http://localhost:4318`. mise appends `/v1/traces` or `/v1/logs` to it.                                |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`                                    | The full URL for traces, used as written, such as `http://localhost:4318/v1/traces`. Takes priority over the general endpoint.                         |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`                                      | The full URL for logs, used as written. Takes priority over the general endpoint.                                                                      |
 | `OTEL_EXPORTER_OTLP_HEADERS`                                            | Headers for export requests, as comma-separated `key=value` pairs, for example for authentication.                                                     |
 | `OTEL_EXPORTER_OTLP_TRACES_HEADERS`                                     | Headers for trace export. Take priority over the general headers.                                                                                      |
 | `OTEL_EXPORTER_OTLP_LOGS_HEADERS`                                       | Headers for log export. Take priority over the general headers.                                                                                        |
-| `OTEL_EXPORTER_OTLP_PROTOCOL`                                           | `http/protobuf` (the default) or `http/json`. gRPC is not supported.                                                                                   |
+| `OTEL_EXPORTER_OTLP_PROTOCOL`                                           | `http/protobuf` (the default) or `http/json`. gRPC is not supported: with `grpc` or any other value, mise uses `http/protobuf`.                        |
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`                                    | The protocol for trace export. Takes priority over the general protocol.                                                                               |
 | `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL`                                      | The protocol for log export. Takes priority over the general protocol.                                                                                 |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` (`..._TRACES_TIMEOUT`, `..._LOGS_TIMEOUT`) | The export request timeout in milliseconds. mise defaults to 3 seconds, so an unreachable collector delays the end of `mise run` by at most that long. |
@@ -90,11 +90,12 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=staging,team.name=platfo
 
 ## Trace structure
 
-Each `mise run` creates one trace. Its root span covers the whole run, setup
-spans cover the work before tasks start, and each task gets a span. Tasks whose
-config root differs from the project you ran in, such as another monorepo
-project or a parent directory's config, are grouped under a span for that
-config root:
+Each `mise run` creates one trace, unless it
+[joins the trace of its caller](#trace-propagation). Its root span covers the
+whole run, setup spans cover the work before tasks start, and each task gets a
+span. Tasks whose config root differs from the project you ran in, such as
+another monorepo project or a parent directory's config, are grouped under a
+span for that config root:
 
 ```text
 mise run //packages/frontend:lint …       ← root span
@@ -114,8 +115,10 @@ mise run //packages/frontend:lint …       ← root span
 The root span is named after the tasks you asked for, by their full resolved
 names. A task span uses the task's full name plus any arguments, such as
 `//:deploy prod`. A run that fetches [remote tasks](/tasks/toml-tasks.html#remote-tasks)
-also has a `fetch tasks` setup span. See [Monorepo tasks](/tasks/monorepo.html)
-for how mise names projects.
+also has a `fetch tasks` setup span. A group span is named after its config
+root's path relative to the project root, or after the directory's name when the
+config root is outside the project root. See
+[Monorepo tasks](/tasks/monorepo.html) for how mise names projects.
 
 The root span has the attribute `mise.span_type = "run"`, setup spans have
 `"setup"`, and group spans have `"monorepo_group"` plus `mise.config_root`, the
@@ -181,6 +184,11 @@ specification. A nested `mise run` joins the same trace, and an
 OpenTelemetry-instrumented program that a task runs, in any language, puts its
 spans under the task's span without other setup.
 
+mise reads the same variables from its own environment. When the process that
+starts `mise run`, such as an instrumented CI step, sets a valid `TRACEPARENT`,
+the run's root span becomes a child of that span instead of starting a new
+trace.
+
 ## Logs
 
 Log export is a separate opt-in (`otel.logs = true` or `MISE_OTEL_LOGS=1`)
@@ -201,13 +209,16 @@ exported for them to point at.
 
 ### What is exported
 
-mise exports output in every mode that reads it line by line: `prefix`,
-`keep-order`, `timed`, `replacing`, `interleave`, and `quiet`. Output in the
-`silent` mode, from [silenced](/tasks/task-configuration.html#silent) tasks, or
-under `--raw` is not exported.
+mise exports output in every [output style](/tasks/running-tasks.html#output)
+that reads it line by line: `prefix`, `keep-order`, `timed`, `replacing`,
+`summary`, and `interleave`. Output in the `silent` style, from a stream the
+task [silences](/tasks/task-configuration.html#silent), from a `raw` or
+`interactive` task, or under `--raw` is not exported. mise skips empty lines,
+and from a line that a progress bar rewrites with carriage returns it exports
+only the final text.
 
 ::: warning
-With log export on, `interleave` and `quiet` tasks get a pipe instead of the
+With log export on, tasks in the `interleave` style get a pipe instead of the
 terminal so mise can read every line. That can change buffering, colors,
 progress bars, prompts, and anything else that checks for a TTY. Run such a task
 with `--raw` to keep the terminal; its output is then not exported.

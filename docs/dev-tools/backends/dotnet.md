@@ -71,7 +71,7 @@ with `dotnet nuget add source`.
 
 Set these on the tool's entry in `[tools]`, or inline, as in
 `'dotnet:GitVersion.Tool[prerelease=true]'`. Options every backend accepts are
-described under [tool options](/dev-tools/#tool-options).
+described under [tool options](/dev-tools/tool-options.html).
 
 ### `install_env`
 

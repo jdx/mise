@@ -8,7 +8,13 @@ outline: [2, 3]
 A registry entry gives a widely used tool a short name, so `mise use ripgrep`
 works without a backend identifier. Most proposals for new entries are
 declined: check the [popularity bar](#popularity-bar) and the
-[backend tiers](#backend-acceptance-tiers) before you write one.
+[backend tiers](#backend-acceptance-tiers) before you propose one.
+
+mise does not accept external pull requests. To propose a tool, open a
+[Discussion](https://github.com/jdx/mise/discussions) with its popularity
+numbers and the backend that can install it. The entry format and tests on this
+page are the reference for the maintainer, and for agents that open pull
+requests for him.
 
 You do not need an entry to use a tool. `mise use github:owner/repo`,
 `mise use aqua:owner/repo` and `mise use cargo:name` install a tool without
@@ -19,6 +25,8 @@ These rules apply to new tools and new shorthands. A fix to an existing entry
 needs no popularity evidence.
 
 ## Quick start {#quick-start}
+
+A proposal needs steps 1 to 3. The rest is the maintainer's pull request.
 
 1. Check the tool against the [popularity bar](#popularity-bar).
 2. Pick a backend from the [acceptance tiers](#backend-acceptance-tiers):
@@ -56,8 +64,8 @@ the author's own projects. Personal, internal, niche and low-popularity tools,
 and forks, do not meet it. A working installer or a passing test is not
 enough. @jdx won't explain why a given tool wasn't accepted.
 
-Look up current numbers before you propose an entry, and put them in the pull
-request description:
+Look up current numbers before you propose an entry, and put them in the
+Discussion or the pull request description:
 
 ```md
 ## Popularity
@@ -182,7 +190,7 @@ other keys narrow or configure it:
 - `platforms`: where this backend applies. Use an OS (`linux`, `macos`,
   `windows`), an architecture (`x64`, `arm64`), or both (`linux-x64`,
   `macos-arm64`). Windows on arm64 also matches `x64` and `windows-x64`.
-- `options`: backend [tool options](/dev-tools/#tool-options), such as
+- `options`: backend [tool options](/dev-tools/tool-options.html), such as
   `allow_builds` for npm or `version_list_url` and per-platform `url` for http.
   `mise tool <name>` lists the options a shorthand applies.
 - `min_version` and `max_version`: the version range the backend serves; see
@@ -210,6 +218,7 @@ bin = "twg"
 checksum_url = "https://teamwork-graph.atlassian.com/cli/SHA256SUMS-v{{ version }}"
 url = 'https://teamwork-graph.atlassian.com/cli/twg-{{ os(macos="darwin") }}-{{ arch() }}-v{{ version }}'
 # Per-version manifest published alongside the binaries; .version tracks the latest stable release
+version_date_expr = '[[fromJSON(body).version, fromJSON(body).publishedAt]]'
 version_json_path = ".version"
 version_list_url = "https://teamwork-graph.atlassian.com/cli/manifest.json"
 
@@ -348,8 +357,9 @@ version_order = "semver"
 `tool@1.4.0` installs with `tool-*` and `tool@2.1.0` with `tool-v2-*`. Requests
 that are not routed by version, such as `latest`, use the first entry's options.
 Entries for one backend must not give a version different options, unless their
-`platforms` keep them apart. Older mise releases apply the first entry's options to every
-version, so add a range only for a change those releases already handle wrongly.
+`platforms` keep them apart. Older mise releases apply the first entry's
+options to every version, so add a range only for a change those releases
+already handle wrongly.
 
 ## Required attestations {#required-attestations}
 
@@ -372,8 +382,9 @@ From that version on, mise refuses to install or lock an asset, including
 `additional_asset_patterns` assets on `github:`, unless a GitHub attestation for
 it verifies. For an `aqua:` backend the attestation is checked where the recipe
 declares it, on the artifact or on its checksum file. Finding none fails as a
-possible downgrade instead of skipping verification, also when the shared mise-versions cache or a lockfile reported
-the missing attestation. Other provenance, such as SLSA, does not count.
+possible downgrade instead of skipping verification, also when the shared
+mise-versions cache or a lockfile reported the missing attestation. Other
+provenance, such as SLSA, does not count.
 Earlier versions, versions that are not semantic versions (`nightly`, `1.0`,
 `2024.01.15`), and users who turn off
 [`github_attestations`](/configuration/settings.html#github_attestations) or

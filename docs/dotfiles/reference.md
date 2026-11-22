@@ -1,41 +1,43 @@
 ---
-description: "Look up every [dotfiles] key, which keys each mode accepts, variant and pattern rules, status states, and the files history keeps."
-socialDescription: "Look up every [dotfiles] key, pattern rule, status state, and state file."
+description: "Look up every [dotfiles] and [history] key, the keys each mode accepts, pattern and variant rules, status states, and what history saves."
+socialDescription: "Look up every [dotfiles] and [history] key, pattern rule, status state, and state file."
 ---
 
 # Dotfiles reference
 
 Look up `[dotfiles]` entry keys, the keys each mode accepts, variant
 selectors, pattern syntax, status states, and the state that mise keeps for
-dotfiles and their history. The keys of `[dotfile_groups]` are in
-[Groups](/dotfiles/groups.html#group-keys), and the `[history]` table and
-history settings are in the
-[history configuration reference](/dotfiles/history.html#configuration-reference).
+dotfiles and their history. The second half is the history reference: what a
+checkpoint saves and leaves out, recovery, the watcher, and the
+[`[history]` table and history settings](#configuration-reference). The keys
+of `[dotfile_groups]` are in [Groups](/dotfiles/groups.html#group-keys). To
+save, compare, and restore versions day to day, start with
+[Dotfiles history](/dotfiles/history.html).
 
 ## Entry keys {#entry-keys}
 
 A whole-file entry is keyed by its target path, absolute or starting with
 `~/`. A string value is shorthand for `{ source = "<value>" }`.
 
-| Key                 | Type            | Meaning                                                                                                                                                                                                                   |
-| ------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`            | path            | The file or directory to deploy. Relative paths start at the declaring config file's directory. Defaults to the target's path under [`dotfiles.root`](/configuration/settings.html#dotfiles.root).                        |
-| `mode`              | string          | `symlink`, `symlink-each`, `copy`, `template`, `absent`, `track`, or `track-local`. Defaults to [`dotfiles.default_mode`](/configuration/settings.html#dotfiles.default_mode). See [Modes](/dotfiles/managed.html#modes). |
-| `content`           | string          | The whole file, written inline. See [Inline content](/dotfiles/managed.html#inline-content).                                                                                                                              |
-| `permissions`       | octal string    | Permissions for the target, such as `"0600"`. On its own, manages an existing path's permissions only. See [Permissions](/dotfiles/managed.html#permissions).                                                             |
-| `exclude`           | list of globs   | Paths to skip in a walked source directory or a tracked directory. See [Pattern syntax](#patterns).                                                                                                                       |
-| `manifest`          | `"git"`         | Deploy only files in the source repository's Git index. See [Deploy only files committed to Git](/dotfiles/managed.html#git-tracked-directories).                                                                         |
-| `dot_prefix`        | boolean         | Deploy source names `dot-<name>` as `.<name>`. See [Visible source names](/dotfiles/managed.html#dot-prefix).                                                                                                             |
-| `relative`          | boolean         | `symlink` and `symlink-each`: link by a relative path. Overrides [`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks).                                                                 |
-| `remove_empty`      | boolean         | Remove the target when the template renders empty. See [Remove the target when a template renders empty](/dotfiles/managed.html#remove-empty).                                                                            |
-| `create_if_missing` | boolean         | Write the target only when nothing exists there; an existing file is left untouched. See [Create a file only if it is missing](/dotfiles/managed.html#create-if-missing).                                                 |
-| `variants`          | list of tables  | Per-machine selection: a target per machine for deployed entries, separate contents for tracked ones. See [Variant selectors](#variant-selectors).                                                                        |
-| `depends`           | list of strings | Groups (by name) and whole-file entries (by target path) mise writes before it renders or reads this entry. See [Wait for other entries](/dotfiles/managed.html#depends). Not for edits or track modes.                   |
-| `enabled`           | boolean         | `false` turns off an entry inherited from another config file.                                                                                                                                                            |
-| `include`           | list of globs   | Track only: the files a tracked directory saves. See [Select files in a directory](/dotfiles/history.html#choose-which-files-a-directory-saves).                                                                          |
-| `autosave`          | boolean         | Track only: `false` saves the path only on `mise dot save <path>`. See [Save some files only on request](/dotfiles/history.html#save-on-request).                                                                         |
-| `encrypt`           | boolean         | Track only: encrypt contents before saving them to Git. See [Encrypted files](/dotfiles/encryption.html).                                                                                                                 |
-| `allow_plaintext`   | boolean         | Track only: save a credential-named file that you track directly in plaintext. See [Credential filtering](/dotfiles/history.html#credential-filtering-and-omissions).                                                     |
+| Key                 | Type            | Meaning                                                                                                                                                                                                                           |
+| ------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`            | path            | The file or directory to deploy. Relative paths start at the declaring config file's directory. Defaults to the target's path under [`dotfiles.root`](/configuration/settings.html#dotfiles.root).                                |
+| `mode`              | string          | `symlink`, `symlink-each`, `copy`, `template`, `absent`, `fnox`, `track`, or `track-local`. Defaults to [`dotfiles.default_mode`](/configuration/settings.html#dotfiles.default_mode). See [Modes](/dotfiles/managed.html#modes). |
+| `content`           | string          | The whole file, written inline. See [Inline content](/dotfiles/managed.html#inline-content).                                                                                                                                      |
+| `permissions`       | octal string    | Permissions for the target, such as `"0600"`. On its own, manages an existing path's permissions only. See [Permissions](/dotfiles/managed.html#permissions).                                                                     |
+| `exclude`           | list of globs   | Paths to skip in a walked source directory or a tracked directory. See [Pattern syntax](#patterns).                                                                                                                               |
+| `manifest`          | `"git"`         | Deploy only files in the source repository's Git index. See [Deploy only files committed to Git](/dotfiles/managed.html#git-tracked-directories).                                                                                 |
+| `dot_prefix`        | boolean         | Deploy source names `dot-<name>` as `.<name>`. See [Visible source names](/dotfiles/managed.html#dot-prefix).                                                                                                                     |
+| `relative`          | boolean         | `symlink` and `symlink-each`: link by a relative path. Overrides [`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks).                                                                         |
+| `remove_empty`      | boolean         | Remove the target when the template renders empty. See [Remove the target when a template renders empty](/dotfiles/managed.html#remove-empty).                                                                                    |
+| `create_if_missing` | boolean         | Write the target only when nothing exists there; an existing file is left untouched. See [Create a file only if it is missing](/dotfiles/managed.html#create-if-missing).                                                         |
+| `variants`          | list of tables  | Per-machine selection: a target per machine for deployed entries, separate contents for tracked ones. See [Variant selectors](#variant-selectors).                                                                                |
+| `depends`           | list of strings | Groups (by name) and whole-file entries (by target path) mise writes before it renders or reads this entry. See [Wait for other entries](/dotfiles/managed.html#depends). Not for edits or track modes.                           |
+| `enabled`           | boolean         | `false` turns off an entry inherited from another config file.                                                                                                                                                                    |
+| `include`           | list of globs   | Track only: the files a tracked directory saves. See [Select files in a directory](/dotfiles/history.html#choose-which-files-a-directory-saves).                                                                                  |
+| `autosave`          | boolean         | Track only: `false` saves the path only on `mise dot save <path>`. See [Save some files only on request](/dotfiles/history.html#save-on-request).                                                                                 |
+| `encrypt`           | boolean         | Track only: encrypt contents before saving them to Git. See [Encrypted files](/dotfiles/encryption.html).                                                                                                                         |
+| `allow_plaintext`   | boolean         | Track only: save a credential-named file that you track directly in plaintext. See [Credential filter](#credential-filtering-and-omissions).                                                                                      |
 
 A `[dotfiles]` entry takes no `group` key; declare a group's entries under
 [`[dotfile_groups.<name>.entries]`](/dotfiles/groups.html#group-entries).
@@ -59,19 +61,19 @@ An edit entry is keyed by the target path followed by `/<id>`, such as
 | `permissions` | octal string                                        | `merge` only: the mode of the target when apply creates it; an existing file keeps its mode. See [Set permissions when mise creates the file](/dotfiles/edits.html#merge-permissions).                                              |
 
 `block` and `source` are mutually exclusive, and neither combines with
-`line`. `position` applies only to `line`, and `format` and `permissions` only to `merge`. A `merge` entry without `source`
-reads the target's path under
-[`dotfiles.root`](/configuration/settings.html#dotfiles.root), and takes no
-`block`, `line`, `position`, or `comment`. Only a `merge` entry takes
-`permissions`. Edits are never encrypted.
+`line`. `position` applies only to `line`, and `format` and `permissions`
+only to `merge`. A `merge` entry without `source` reads the target's path
+under [`dotfiles.root`](/configuration/settings.html#dotfiles.root), and takes
+no `block`, `line`, `position`, or `comment`. Edits are never encrypted.
 
 ## Modes and keys {#modes-and-keys}
 
 The table shows which whole-file keys each kind of entry accepts. An entry
 with `content` is an inline-content entry, and one with only `permissions`
-(no `source`, `content`, or `mode`) is a permissions-only entry. Every whole-file entry also accepts `enabled`;
-block, line, and merge edits do not, and mise warns and ignores an edit that sets
-it.
+(no `source`, `content`, or `mode`) is a permissions-only entry. Every
+whole-file entry also accepts `enabled`; block, line, and merge edits do not,
+and mise warns and ignores an edit that sets it. Every kind except `track` and
+`track-local` accepts `depends`.
 
 | Entry            | Accepts                                                                                                                                                             | Accepted, no effect              |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
@@ -94,9 +96,9 @@ for `track-local`.
 
 mise warns about and ignores an entry that sets one of the
 [entry keys](#entry-keys) its kind does not accept; for a `track` entry,
-`mise dot paths` also lists it as invalid. A key that is not an entry key at
-all is ignored without a warning, except in configuration arriving from
-another machine, which a pull refuses to apply. `permissions` with a
+`mise dot paths` also lists it as invalid. A key that is not an entry or edit
+key at all is ignored with an `unknown key` warning, and a pull refuses to
+apply configuration from another machine that has one. `permissions` with a
 directory source, and `manifest` or `dot_prefix` with a file source, stop the
 command with an error. An entry that sets both `permissions` and `manifest` is
 ignored with a warning.
@@ -111,8 +113,8 @@ ignored with a warning.
   machine, the inherited entry stays active.
 - A tracking entry and a deployed entry for the same path are separate
   entries; see [Track files that mise also deploys](/dotfiles/history.html#ownership).
-- mise reads tracking entries, and the `[history]` table, only from system and
-  global config.
+- mise reads tracking entries only from system and global config, like the
+  [`[history]` table](#configuration-reference).
 - mise warns about and skips an entry with an unknown mode or edit operation,
   so a config written for a newer mise still loads.
 
@@ -231,6 +233,7 @@ names the commands that clear whatever needs attention.
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `applied`                                          | The target matches its entry.                                                                | Nothing.                                                              |
 | `applied (target absent; permissions not applied)` | A permissions-only target does not exist.                                                    | Nothing, or create the path.                                          |
+| `applied (a regular file, not a symlink)`          | On Windows, a `symlink` entry whose target is a regular file, such as a fallback copy.       | Nothing; see [Windows](/dotfiles/managed.html#windows).               |
 | `missing`                                          | The target or edit does not exist yet.                                                       | `mise dot apply`                                                      |
 | `differs (<reason>)`                               | The target exists but its content, link, or permissions differ, or it cannot be checked.     | `mise dot diff`, then `mise dot apply`, with `--force` for a conflict |
 | `source missing`                                   | The entry's source does not exist.                                                           | Create the source, or fix `source`.                                   |
@@ -256,8 +259,8 @@ any entry or edit is `missing`, `source missing`, `differs`, or
   modes, `content`, or `permissions`. `state` is `applied`, `missing`,
   `differs`, `source_missing`, or `tracked`.
 - `source` is a display path with `~` for your home directory, and `null` for
-  inline content, permissions-only, and `absent` entries. Use `origin.source`
-  for the absolute path.
+  inline content, permissions-only, `absent`, and `fnox` entries. Use
+  `origin.source` for the absolute path.
 - `origin` describes where the entry came from: the config file, its
   `config_root`, any config environment in the file name, and the resolved
   source path. These paths are strings when they are valid UTF-8; on Unix, a
@@ -279,15 +282,16 @@ mise keeps records under [`MISE_STATE_DIR`](/directories.html)
 (`~/.local/state/mise` by default). Keep them: they are how mise recognizes
 what it wrote.
 
-| Path                                           | Holds                                                                                                                                   |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `$MISE_STATE_DIR/dotfiles/`                    | The links each `symlink-each` entry created                                                                                             |
-| `$MISE_STATE_DIR/dotfiles/targets/`            | For each target, a digest of what mise last wrote there and the parent directories it created                                           |
-| `$MISE_STATE_DIR/dotfiles/groups/`             | What each [group](/dotfiles/groups.html) deployed, so its files can be found after the group stops deploying them                       |
-| `$MISE_STATE_DIR/history/repo.git`             | The history: a bare Git repository of checkpoints                                                                                       |
-| `$MISE_STATE_DIR/history/`                     | The checkpoint index, which mise can rebuild from Git, operation journals and recovery copies, `health.json`, and `watch-schedule.json` |
-| `~/.config/mise/config.local.toml`             | `[history.origin]`, written by `mise dot origin set`                                                                                    |
-| `~/.config/mise/conf.d/dotfiles-tracking.toml` | Tracking entries for files that another `[dotfiles]` entry already manages                                                              |
+| Path                                           | Holds                                                                                                                                                                                                                                    |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$MISE_STATE_DIR/dotfiles/`                    | The links each `symlink-each` entry created                                                                                                                                                                                              |
+| `$MISE_STATE_DIR/dotfiles/targets/`            | For each target, a digest of what mise last wrote there and the parent directories it created                                                                                                                                            |
+| `$MISE_STATE_DIR/dotfiles/groups/`             | What each [group](/dotfiles/groups.html) deployed, so its files can be found after the group stops deploying them                                                                                                                        |
+| `$MISE_STATE_DIR/history/repo.git`             | The history: a bare Git repository of checkpoints                                                                                                                                                                                        |
+| `$MISE_STATE_DIR/history/`                     | The checkpoint index, which mise can rebuild from Git, operation journals and recovery copies, `health.json`, `watch-schedule.json`, and `machine`, the name generated for [`machine` variants](/dotfiles/history.html#machine-variants) |
+| `$MISE_STATE_DIR/history-local/`               | The separate store for [local-only history](/dotfiles/history.html#local-only)                                                                                                                                                           |
+| `~/.config/mise/config.local.toml`             | `[history.origin]`, written by `mise dot origin set`                                                                                                                                                                                     |
+| `~/.config/mise/conf.d/dotfiles-tracking.toml` | Tracking entries for files that another `[dotfiles]` entry already manages                                                                                                                                                               |
 
 mise records a digest for every template target, so turning on
 `remove_empty` later still allows a safe removal. An apply that finds a target
@@ -312,15 +316,110 @@ mode, so a fresh machine recreates the directory as private rather than
 world-readable. Your home and mise config directories themselves are never
 recorded.
 
-A symlink is saved as a link. mise reports oversized files, special files,
-and unreadable paths that it cannot save, and keeps their previous saved
-versions while it saves other files, so check reported omissions before you
-rely on a checkpoint. Exclusions remove paths from future checkpoints. An
-encryption failure stops a save rather than storing plaintext.
+A symlink is saved as a link. If a parent directory is a symlink, track that
+link, and use the real directory path to track files beneath it. Your home
+directory and mise config directory can themselves be symlinks; mise maps them
+to the matching directories on each machine.
+
+mise reports oversized files, special files, and unreadable paths that it
+cannot save, and keeps their previous saved versions while it saves other
+files, so check reported omissions before you rely on a checkpoint. Exclusions
+remove paths from future checkpoints. An encryption failure stops a save
+rather than storing plaintext.
 
 Checkpoints restore file contents only. They do not restore installed
 packages or the running state of a service; use your system's backup tools
 for that, and run `mise bootstrap` to apply restored configuration.
+
+### Credential filter {#credential-filtering-and-omissions}
+
+Without encryption, built-in filename rules leave out `.netrc`, `*.age`,
+`*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
+`credentials*`, and `oauth*`. Under your mise config directory,
+`github_tokens.toml`, `hosts.yml`, and `age.txt` are left out too.
+
+The rules look at the file's own name, not its contents or the names of its
+parent directories. Both `id_ed25519` and `id_ed25519.pub` match `id_*`, and a
+shell function named `secrets.fish` matches `*secret*`. Names ending in
+`.example`, `.sample`, or `.template`, such as `secrets.sh.example`, are
+templates and are not left out. `mise dot save` and
+`mise dot track` report what they leave out, `mise dot status` shows omission
+counts, and `mise dot paths` lists each path and its reason. To save a
+credential, [encrypt it](/dotfiles/encryption.html). A populated
+[`include` list](/dotfiles/history.html#choose-which-files-a-directory-saves)
+selects credential-named files too.
+
+When you track a file directly and its name looks like a credential store,
+`mise dot track` asks whether to save it in plaintext. The default answer is
+no, and neither `--yes` nor a piped answer approves it. For a noninteractive
+command, including a script that pipes a file list into `mise dot track`, pass
+`--allow-plaintext`, but only after you check that the file is safe to put in
+Git history and on any connected origin:
+
+```sh
+mise dot track --allow-plaintext ~/commit-mossy-token.md
+```
+
+The choice is saved as `allow_plaintext = true` on that file's entry, so later
+saves and your other machines use the same policy without asking or warning
+again. `mise dot paths` still lists the file as plaintext. Use
+`mise dot track --encrypt` for a real credential. `--allow-plaintext` can
+approve a file before it exists; if that path later becomes a directory, the
+directory stays tracked and the usual filter applies to its contents.
+
+### Nested repositories {#nested-repositories}
+
+A directory with its own `.git` inside a tracked directory is a separate
+repository. mise skips its contents and reports its path when it tracks,
+saves, shows status, and lists paths. History records no files and no commit
+pointer for it.
+
+To save a nested repository's working files, track its root as its own entry:
+
+```sh
+mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
+```
+
+The repository's files then follow that entry's settings, and `.git` is always
+left out. An include pattern on the parent entry does not reach into a nested
+repository. You can also leave the repository to the tool that installs it, or
+remove its `.git` to treat the directory as ordinary files.
+
+Checkpoints record skipped repositories as omissions, and rollback leaves
+files under those paths alone even if `.git` has since been removed. When a
+shared history contains commit pointers, pull and adoption skip them instead
+of restoring unavailable Git objects or removing an existing checkout.
+
+### Capture warnings {#capture-warnings}
+
+Saves warn when an include list selects a credential-named file for plaintext
+storage. They also report when a changed include list leaves out files that an
+earlier checkpoint contained: those paths stop appearing in new checkpoints,
+and their earlier versions stay in Git history.
+
+An include pattern also selects matching files created later. With
+`include = ["**"]` on `~/.config/fish`, a `functions/secrets.fish` added later
+is saved in plaintext on the next capture, with a warning. Warnings do not
+block saving or sharing, so a background save can share the file with your
+origin before you see the warning. To encrypt everything selected beneath the
+directory, set `encrypt = true` on the entry before you save private files
+there, and see [remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history)
+for versions already saved.
+
+Where a warning appears depends on what saved the file:
+
+| Capture                    | Where to read the warning                                              |
+| -------------------------- | ---------------------------------------------------------------------- |
+| Explicit save or tracking  | In that command's output                                               |
+| Bootstrap                  | During the bootstrap command                                           |
+| Watcher or automatic apply | At the next `mise dot` command other than `watch`, or `mise bootstrap` |
+
+For example, after the watcher applies a narrower include list, `mise dot paths`
+prints the pending notice, naming the earlier checkpoint that holds the
+omitted paths, before it lists the current selection. A command shows each
+warning once, even when it fails. A warning from a background save, or from
+the protective checkpoint of an operation that then failed, waits for the next
+foreground command.
 
 ### Operation checkpoints {#operation-checkpoints}
 
@@ -342,6 +441,12 @@ checkpoints too.
 changed. Untracked files that an operation writes get temporary recovery
 copies only for finishing or recovering interrupted writes, and those copies
 are deleted afterwards, so untracked files have no undo.
+
+If [`mise dot capture`](/dotfiles/history.html#capturing-an-external-command)
+is killed, the next command that changes history recovers its pending
+operation record. The wrapped command's writes are not journaled one by one.
+If the wrapped command untracks a file, the after checkpoint leaves it out;
+its earlier checkpoint stays available, and recovery keeps it untracked.
 
 ## Recovery {#recovery-details}
 
@@ -455,6 +560,34 @@ running and `mise dot status` and `mise doctor` report it as outdated; run
 `mise bootstrap services apply` to restart it. The report clears if the
 executable comes back.
 
+### Description command {#describe-command}
+
+When [`history.describe_command`](/configuration/settings.html#history.describe_command)
+is set, the watcher runs it to
+[describe each checkpoint it saves](/dotfiles/history.html#descriptions-from-an-agent).
+The command receives one JSON object on stdin:
+
+| Field                          | Contents                                                    |
+| ------------------------------ | ----------------------------------------------------------- |
+| `uuid`                         | The checkpoint's UUID                                       |
+| `trigger`                      | What triggered the checkpoint                               |
+| `description`                  | The description mise computed                               |
+| `added`, `modified`, `removed` | The paths that changed                                      |
+| `diff`                         | A unified diff of changed unencrypted files, at most 64 KiB |
+| `diff_truncated`               | `true` when the diff was cut at that limit                  |
+
+Contents reach the command through stdin, never through shell interpolation.
+For variant files, the diff compares the variant saved in each checkpoint.
+This also applies to added and removed files inside a tracked variant
+directory.
+
+The command prints one line of at most 200 characters, which becomes the
+checkpoint's description, recorded with `description_source: command`. The
+checkpoint is saved before the command runs. If the command fails, prints
+nothing, or runs longer than 30 seconds, the checkpoint keeps its computed
+description. Commands run one at a time, once per checkpoint the watcher
+saves; filesystem events and retries do not trigger extra runs.
+
 ### `mise dot watch` output and exit codes {#watch-output}
 
 [`mise dot watch --json`](/cli/dotfiles/watch.html) prints one JSON object per
@@ -476,3 +609,40 @@ mise keeps all reachable Git history indefinitely; checkpoints never expire
 and are never compacted. Untracking a path does not erase its old commits, and
 encrypting its latest version does not erase earlier plaintext; see
 [Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history).
+To erase a path's saved versions, see
+[Erase a file from history](/dotfiles/history.html#purge).
+
+## History configuration {#configuration-reference}
+
+History reads two tables. `[history]` holds what history saves and where it
+goes, and mise reads it only from your global and system config, never from a
+project. `[settings.history]` holds the [settings](/configuration/settings.html)
+that control the watcher and sync, which you can also set with
+`mise settings` or environment variables.
+
+| Table                      | Keys                                                                                                                                              | Purpose                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[history]`                | `exclude`                                                                                                                                         | Globs that history never saves; see [Global exclude patterns](#global-exclude-patterns)                                                                                     |
+| `[history]`                | `git_email`                                                                                                                                       | Author and committer email for history commits; see [Identify commits by machine](/dotfiles/sync.html#identify-commits-by-machine)                                          |
+| `[history]`                | `machine`                                                                                                                                         | This machine's name for [`machine` variants](/dotfiles/history.html#machine-variants)                                                                                       |
+| `[history.reload]`         | `"<glob>" = "<command>"`                                                                                                                          | Commands to run after rollback, undo, pull, or apply writes matching files; see [Reload an application](/dotfiles/history.html#reload-an-application-after-restoring-files) |
+| `[history.encryption]`     | `recipients`                                                                                                                                      | Public keys that encrypted files are encrypted to; see [Encrypted files](/dotfiles/encryption.html)                                                                         |
+| `[history.origin]`         | `url`, `branch`                                                                                                                                   | The origin, written to `config.local.toml` by `mise dot origin set`; see [Sync across machines](/dotfiles/sync.html)                                                        |
+| `[settings.history]`       | `enabled`, `sync`, `sync_interval`, `fetch_interval`, `notify`, `lock_wait`, `allow_plaintext_history`, `allow_secret_values`, `describe_command` | When history records and how it syncs                                                                                                                                       |
+| `[settings.history.watch]` | `debounce`, `max_interval`, `reconcile`                                                                                                           | Watcher timing; see [Adaptive scheduling](#adaptive-scheduling) and [Scans and failures](#reconciliation-and-failures)                                                      |
+
+Write settings as TOML tables, for example:
+
+```toml
+[settings.history]
+sync = "manual"
+notify = false
+```
+
+`allow_plaintext_history`, `allow_secret_values`, and `describe_command` are
+read only from global or system config.
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="history" :level="3" />

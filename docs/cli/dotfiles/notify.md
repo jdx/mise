@@ -30,6 +30,6 @@ mise dot notify
 
 ## Related documentation
 
-- [Dotfiles history](/dotfiles/history.html).
+- [Conflict notifications](/dotfiles/sync.html#conflict-notifications).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

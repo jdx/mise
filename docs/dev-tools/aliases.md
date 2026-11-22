@@ -14,9 +14,9 @@ for `ripgrep`, are alternate names built into the [registry](/registry.html);
 you do not define them. For command shortcuts such as `alias ll='ls -la'`, see
 [Shell aliases](/shell-aliases.html).
 
-::: warning Renamed configuration key
-`[alias]` was renamed to `[tool_alias]`. The old key still works but is
-deprecated and prints a warning.
+::: warning Deprecated key
+`[alias]` is a deprecated name for `[tool_alias]`. mise still reads it and
+prints a warning.
 :::
 
 ## Backend aliases {#aliased-backends}

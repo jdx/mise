@@ -134,6 +134,9 @@ Inside a config root, a bare name such as `build` resolves the same way as
 switch to monorepo mode without renaming their dependencies. Prefer `:build` in
 new configuration so it is clear that the name is project-relative.
 
+On the command line, when the project has no task of that name, mise falls
+back to a task with the bare name outside the monorepo, such as a global task.
+
 ## Wildcards {#wildcard-patterns}
 
 Task paths accept `...` in the directory part and `*` or `**` in the task-name

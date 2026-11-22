@@ -139,6 +139,10 @@ mise WARN  Required environment variable 'DATABASE_URL' is not defined. It must 
 Help: Set DATABASE_URL to your PostgreSQL connection string
 ```
 
+A value that a `_.file` or `_.source` directive loads also passes the check,
+even when the directive is in the same config file, so `required` can declare a
+variable that an untracked `.env` supplies.
+
 `required` cannot be combined with `value` or `default`.
 
 To mask a value in task output, including one a caller supplies for a
@@ -172,7 +176,9 @@ lower-precedence config file, or in the environment mise started with.
 | `$VAR`            | The value of `VAR`                                               |
 | `${VAR}`          | The same; use it before letters or digits, as in `${VAR}_suffix` |
 | `${VAR:-default}` | `default` when `VAR` is unset or empty                           |
+| `${VAR-default}`  | `default` only when `VAR` is unset; an empty `VAR` stays empty   |
 | `${VAR:-}`        | An empty string when `VAR` is unset, without a warning           |
+| `$$`              | A literal `$`                                                    |
 
 Expansion runs after template rendering, so a value can mix both. A variable
 that is not defined and has no default stays as written, and mise prints a
@@ -234,7 +240,9 @@ Relative paths resolve against the project directory, even when the config file
 is in `.config/mise/` or `.mise/` (see
 [`config_root`](/configuration.html#config-root)). Paths can use templates,
 `$VAR` and `~`. Directives run in the order you write them, so `_.path` can use
-a variable that `_.source` set above it; `_.python.venv` always runs last.
+a variable that `_.source` set above it; `_.python.venv` always runs last. To
+use the same directive at two points in one file, write
+[`[[env]]`](#env-array).
 
 | Option     | `_.file` | `_.source` | `_.path` | Effect                                                                   |
 | ---------- | -------- | ---------- | -------- | ------------------------------------------------------------------------ |
@@ -280,9 +288,11 @@ unquoted parts next to each other are joined with their quotes removed, so
 `'it'\''s'` is `it's`. A quote with no partner later on its line, as in
 `O'Brien`, is kept as written. A partner in a trailing comment still counts, so
 write `NAME="O'Brien" # owner's name`. Single-quote a value that must keep its
-own quotes, such as JSON: `CONFIG='{"debug": true}'`. A dotenv value can
-reference variables assigned earlier in the same file, then variables from the
-environment mise started with. JSON, YAML and TOML values are read literally, so a `$` stays a `$`. Set `expand = true` to let a file of
+own quotes, such as JSON: `CONFIG='{"debug": true}'`.
+
+A dotenv value can reference variables assigned earlier in the same file, then
+variables from the environment mise started with. JSON, YAML and TOML values
+are read literally, so a `$` stays a `$`. Set `expand = true` to let a file of
 any format reference values loaded before it, from earlier files or earlier
 `[env]` entries:
 
@@ -437,6 +447,33 @@ _.my-env-plugin = { api_url = "https://api.example.com" }
 installed and mise has no source to install it from, mise warns and skips the
 directive. To write an environment plugin, see
 [Environment plugins](/env-plugin-development.html).
+
+## Repeat a key with `[[env]]` {#env-array}
+
+A TOML table holds each key once, so one `[env]` table cannot set a variable
+twice or use `_.source` at two different points. Write `[[env]]` to split a
+file's environment into groups. mise evaluates the groups from top to bottom as
+one list, so a later group can read what an earlier group set, and set it again:
+
+```toml [mise.toml]
+[[env]]
+_.source = "scripts/base.sh" # exports APP_HOST
+
+[[env]]
+APP_URL = "https://{{ env.APP_HOST }}"
+_.source = "scripts/urls.sh" # reads $APP_URL
+```
+
+A file uses `[env]` or `[[env]]`, not both. Only the top-level `env` has this
+form: `[vars]` and a task's `env` are single tables.
+
+`mise set` and `mise unset` edit a file that uses `[[env]]` by the same order.
+`mise set KEY=value` rewrites the last group that sets `KEY`, or adds `KEY` to
+the last group when none does. `mise unset KEY` removes `KEY` from every group.
+
+When an earlier group sets `KEY` with [`tools = true`](#lazy-eval) and a later
+group sets it without, `mise set` rewrites the later one and the earlier entry
+still wins, because mise resolves it after tools load.
 
 ## Variables that configure mise {#mise-variables}
 

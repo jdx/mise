@@ -225,10 +225,11 @@ registers the referenced daemon too, and pitchfork starts `events` before the
 API when the API is requested. `project` paths are relative to this project's
 root, so keep the sibling layout or use an absolute path.
 
-A reference shares the process, not its environment variables. `NATS_URL` above
-connects to the shared service's fixed port, because the preset's exports stay
-in the services project. Stop shared infrastructure from its own project, and
-only when no other consumer needs it.
+A reference shares the process, not the preset's connection variables: those
+stay in the services project, and the reference exports only the daemon's
+port, here as `EVENTS_PORT`. `NATS_URL` above is therefore set by hand, to the
+shared service's fixed port. Stop shared infrastructure from its own project,
+and only when no other consumer needs it.
 
 To share one PostgreSQL server across all your checkouts, with a separate
 database for each, use a

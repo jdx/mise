@@ -268,8 +268,9 @@ Global config differs from project config in a few ways:
 - [`global_config_file`](/configuration/settings.html#global_config_file)
   (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file. mise
   loads no `MISE_ENV` variants (such as `mise.ci.toml`) or `.local` files beside
-  it as global config (they can still load as project config when the file sits
-  in a directory a project walks up through), so point it at the variant file itself to use one. It also turns off the
+  it as global config, so point it at the variant file itself to use one. Those
+  files can still load as project config when the file sits in a directory a
+  project walks up through. The setting also turns off the
   [override files](#override-file). It does not hide
   `~/.config/mise/config.toml` from projects under your home directory, which
   still load it as a project config; add `~/.config/mise/config.toml` to
@@ -314,7 +315,7 @@ project and from your other global config.
 The override tier works for every section that global config accepts: `[env]`,
 `[vars]`, `[tools]`, `[tasks]`, `[settings]`, hooks, and the rest. Each section
 merges as described in [How each section merges](#merge-behavior-by-section);
-the override files are simply the highest-precedence files in that merge. The
+the override files are the highest-precedence files in that merge. The
 override file is global config, so it is [trusted](/cli/trust.html) by path and
 is subject to the same restrictions as other global config.
 
@@ -323,10 +324,10 @@ is subject to the same restrictions as other global config.
 mise reads these files from `~/.config/mise`
 ([`MISE_CONFIG_DIR`](/directories.html#config-mise)), lowest precedence first:
 
-| File                         | Loaded                                   |
-| ---------------------------- | ---------------------------------------- |
-| `config.override.toml`       | Always.                                  |
-| `config.<env>.override.toml` | When `<env>` is in `MISE_ENV` (or `-E`). |
+| File                         | Loaded                                                                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `config.override.toml`       | Always.                                                                                                                                  |
+| `config.<env>.override.toml` | When `<env>` is in `MISE_ENV` (or `-E`), or is an active [platform environment](/configuration/environments.html#platform-environments). |
 
 The environment-specific file beats the base override file. With several
 environments, such as `MISE_ENV=dev,test`, a later environment beats an earlier
@@ -351,9 +352,9 @@ its `config_files` list.
 
 The override file is never a default write target. `mise use`, `mise set`,
 `mise settings set`, `mise trust`, and the other commands in
-[Which file mise writes to](#target-file-for-write-operations) keep writing to
-the files they always did. To write to it, pass `--override`, which conflicts
-with `--global` and `--path`:
+[Which file mise writes to](#target-file-for-write-operations) write to the
+files described there. To write to it, pass `--override`, which conflicts with
+`--global` and `--path`:
 
 ```sh
 mise set --override AWS_PROFILE=personal   # config.override.toml
@@ -401,15 +402,16 @@ Other commands choose differently:
 - [`mise config get`](/cli/config/get.html) and
   [`mise config set`](/cli/config/set.html) use the highest-precedence loaded
   TOML file, which can be `mise.local.toml`. They skip the
-  [override files](#override-file) unless you pass `--override`. Use `--file` to choose another
-  project file.
+  [override files](#override-file) unless you pass `--override`. Use `--file`
+  to choose another project file.
 - [`mise tasks set`](/cli/tasks/set.html) and [`mise tasks rm`](/cli/tasks/rm.html)
   use the one loaded config file that defines the task, and stop when several
   do. Use `--env`, `--global` or `--path` to choose one.
 - [`mise unuse`](/cli/unuse.html) uses the first loaded config that declares a
-  requested tool, other than an [override file](#override-file). A version-qualified argument matches the configured request
-  literally: `node@20` matches `node = "20"`, not `node = "20.0.0"`. Use
-  `--path` to choose the file.
+  requested tool, other than an [override file](#override-file). A
+  version-qualified argument matches the configured request literally:
+  `node@20` matches `node = "20"`, not `node = "20.0.0"`. Use `--path` to
+  choose the file.
 
 ### Send global writes to separate files {#global-section-write-targets}
 
@@ -464,6 +466,7 @@ It accepts only these keys:
 [`env`](/configuration/settings.html#env),
 [`auto_env`](/configuration/settings.html#auto_env),
 [`env_conf_d`](/configuration/settings.html#env_conf_d),
+[`env_sets`](/configuration/settings.html#env_sets),
 [`ceiling_paths`](/configuration/settings.html#ceiling_paths),
 [`ignored_config_paths`](/configuration/settings.html#ignored_config_paths),
 [`override_config_filenames`](/configuration/settings.html#override_config_filenames),
@@ -573,39 +576,39 @@ _.source = "scripts/env.sh"
 
 ## Top-level keys {#top-level-keys}
 
-| Key                                 | Purpose                                                                 | Documentation                                                      |
-| ----------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `[tools]`                           | Tool versions and per-tool options                                      | [Dev tools](/dev-tools/), [tool options](/dev-tools/#tool-options) |
-| `[tool_config]`                     | Policy for the tools this config root declares                          | [`[tool_config]`](#tool-config)                                    |
-| `[tool_alias]`                      | Custom version names for a tool                                         | [Tool aliases](/dev-tools/aliases.html)                            |
-| `[plugins]`                         | Plugin repository URLs and local plugin paths                           | [`[plugins]`](#plugins)                                            |
-| `[env]`                             | Environment variables for commands and tasks                            | [Environment variables](/environments/)                            |
-| `[vars]`                            | Values for templates, not exported                                      | [Config variables](/configuration/vars.html)                       |
-| `redactions`                        | `env` or `vars` keys to hide in output                                  | [Redaction](/environments/secrets/#redaction)                      |
-| `[secrets.*]` (experimental)        | Sources for mise secrets; project config only                           | [fnox](/environments/secrets/fnox.html)                            |
-| `[tasks]`                           | Tasks                                                                   | [Tasks](/tasks/)                                                   |
-| `[task_config]`                     | Task includes, excludes, and defaults                                   | [Task configuration reference](/tasks/task-configuration.html)     |
-| `[task_templates]`                  | Shared task definitions for `extends`                                   | [Task templates](/tasks/templates.html)                            |
-| `[settings]`                        | mise's own behavior                                                     | [Settings](/configuration/settings.html)                           |
-| `[hooks]`                           | Commands run on `cd`, enter, leave, and install                         | [Hooks](/hooks.html)                                               |
-| `[[watch_files]]`                   | Commands run when files change                                          | [Hooks](/hooks.html)                                               |
-| `[shell_alias]`                     | Shell aliases defined while you are in the directory; needs activation  | [Shell aliases](/shell-aliases.html)                               |
-| `[wrappers]`                        | Commands that intercept a binary name                                   | [Command wrappers](/dev-tools/shims.html#command-wrappers)         |
-| `include`                           | Config files merged into this one                                       | [`include`](#include)                                              |
-| `min_version`                       | Oldest mise release that can use this file                              | [`min_version`](#minimum-mise-version)                             |
-| `monorepo_root`, `[monorepo]`       | `//path:task` addressing; trusting the root trusts the configs below it | [Monorepo tasks](/tasks/monorepo.html)                             |
-| `[doctor]`                          | Project checks for `mise doctor project`                                | [Project diagnostics](/configuration/project-diagnostics.html)     |
-| `[deps]` (experimental)             | Project dependency providers                                            | [Project dependencies](/dev-tools/deps.html)                       |
-| `[oci]` (experimental)              | Settings for `mise oci build`                                           | [OCI images](/dev-tools/mise-oci.html)                             |
-| `[daemons]` (experimental)          | Background processes and service presets                                | [Daemons](/daemons.html)                                           |
-| `[daemon_groups]` (experimental)    | Named sets of daemons                                                   | [Groups](/daemons.html#groups)                                     |
-| `[daemons_settings]` (experimental) | Namespace for daemon IDs and hostnames                                  | [Ports, URLs, and worktrees](/daemons/worktrees.html#namespaces)   |
-| `[daemon_providers]` (experimental) | Shared servers; global config only                                      | [Share daemons across projects](/daemons/sharing.html)             |
-| `[bootstrap]`                       | Machine setup: packages, repositories, services, and more               | [Bootstrap](/bootstrap.html)                                       |
-| `[dotfiles]`                        | Files mise manages in your home directory                               | [Dotfiles](/dotfiles.html)                                         |
-| `[dotfile_groups]`                  | Named directory trees of dotfiles                                       | [Groups](/dotfiles/groups.html)                                    |
-| `[history]`                         | What dotfiles history captures                                          | [History](/dotfiles/history.html)                                  |
-| `[_]`                               | Free-form data that mise ignores                                        | [`[_]`](#free-form-data)                                           |
+| Key                                 | Purpose                                                                 | Documentation                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `[tools]`                           | Tool versions and per-tool options                                      | [Dev tools](/dev-tools/), [tool options](/dev-tools/tool-options.html) |
+| `[tool_config]`                     | Policy for the tools this config root declares                          | [`[tool_config]`](#tool-config)                                        |
+| `[tool_alias]`                      | Custom version names for a tool                                         | [Tool aliases](/dev-tools/aliases.html)                                |
+| `[plugins]`                         | Plugin repository URLs and local plugin paths                           | [`[plugins]`](#plugins)                                                |
+| `[env]`                             | Environment variables for commands and tasks                            | [Environment variables](/environments/)                                |
+| `[vars]`                            | Values for templates, not exported                                      | [Config variables](/configuration/vars.html)                           |
+| `redactions`                        | `env` or `vars` keys to hide in output                                  | [Redaction](/environments/secrets/#redaction)                          |
+| `[secrets.*]` (experimental)        | Sources for mise secrets; project config only                           | [fnox](/environments/secrets/fnox.html)                                |
+| `[tasks]`                           | Tasks                                                                   | [Tasks](/tasks/)                                                       |
+| `[task_config]`                     | Task includes, excludes, and defaults                                   | [Task configuration reference](/tasks/task-configuration.html)         |
+| `[task_templates]`                  | Shared task definitions for `extends`                                   | [Task templates](/tasks/templates.html)                                |
+| `[settings]`                        | mise's own behavior                                                     | [Settings](/configuration/settings.html)                               |
+| `[hooks]`                           | Commands run on `cd`, enter, leave, and install                         | [Hooks](/hooks.html)                                                   |
+| `[[watch_files]]`                   | Commands run when files change                                          | [Hooks](/hooks.html)                                                   |
+| `[shell_alias]`                     | Shell aliases defined while you are in the directory; needs activation  | [Shell aliases](/shell-aliases.html)                                   |
+| `[wrappers]`                        | Commands that intercept a binary name                                   | [Command wrappers](/dev-tools/shims.html#command-wrappers)             |
+| `include`                           | Config files merged into this one                                       | [`include`](#include)                                                  |
+| `min_version`                       | Oldest mise release that can use this file                              | [`min_version`](#minimum-mise-version)                                 |
+| `monorepo_root`, `[monorepo]`       | `//path:task` addressing; trusting the root trusts the configs below it | [Monorepo tasks](/tasks/monorepo.html)                                 |
+| `[doctor]`                          | Project checks for `mise doctor project`                                | [Project diagnostics](/configuration/project-diagnostics.html)         |
+| `[deps]` (experimental)             | Project dependency providers                                            | [Project dependencies](/dev-tools/deps.html)                           |
+| `[oci]` (experimental)              | Settings for `mise oci build`                                           | [OCI images](/dev-tools/mise-oci.html)                                 |
+| `[daemons]` (experimental)          | Background processes and service presets                                | [Daemons](/daemons.html)                                               |
+| `[daemon_groups]` (experimental)    | Named sets of daemons                                                   | [Groups](/daemons.html#groups)                                         |
+| `[daemons_settings]` (experimental) | Namespace for daemon IDs and hostnames                                  | [Ports, URLs, and worktrees](/daemons/worktrees.html#namespaces)       |
+| `[daemon_providers]` (experimental) | Shared servers; global config only                                      | [Share daemons across projects](/daemons/sharing.html)                 |
+| `[bootstrap]`                       | Machine setup: packages, repositories, services, and more               | [Bootstrap](/bootstrap.html)                                           |
+| `[dotfiles]`                        | Files mise manages in your home directory                               | [Dotfiles](/dotfiles.html)                                             |
+| `[dotfile_groups]`                  | Named directory trees of dotfiles                                       | [Groups](/dotfiles/groups.html)                                        |
+| `[history]`                         | What dotfiles history captures                                          | [History](/dotfiles/history.html)                                      |
+| `[_]`                               | Free-form data that mise ignores                                        | [`[_]`](#free-form-data)                                               |
 
 Every key, with its type and description, is listed in the
 [mise.toml reference](/configuration/reference.html).

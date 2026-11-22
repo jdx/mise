@@ -11,8 +11,8 @@ installs their tools and gives them the project's environment, and
 readiness checks.
 
 Daemons belong to a project: you start them with `mise daemons start`, a task
-can start the ones it needs, and each worktree can have its own. To keep a program running on a
-machine from login, whatever project you are in, declare a
+can start the ones it needs, and each worktree can have its own. To keep a
+program running on a machine from login, whatever project you are in, declare a
 [user service](/bootstrap/services.html#user-services) in
 `[bootstrap.services]` instead.
 
@@ -21,21 +21,63 @@ Daemon support can change in any release. Enable it with `experimental = true`
 under `[settings]`.
 :::
 
+## Quick start
+
+Declare a daemon in the project's `mise.toml`. This one is a PostgreSQL
+database from a [service preset](/daemons/presets.html):
+
+```toml
+[settings]
+experimental = true
+
+[daemons]
+postgres = "18"
+```
+
+Start it from the project directory:
+
+```sh
+mise daemons start
+```
+
+mise installs PostgreSQL and pitchfork if they are missing, starts the
+database, and waits until it is ready. `mise daemons` lists the project's
+daemons and their status. The preset exports connection variables, including
+`DATABASE_URL`, to `mise env`, `mise exec`, and tasks, and keeps the database's
+data between runs.
+
+To have a task start the database when it needs it, add `daemons` to the task:
+
+```toml
+[tools]
+node = "24"
+
+[tasks.dev]
+daemons = "postgres"
+run = "npm run dev"
+```
+
+`mise run dev` starts PostgreSQL if it is not already running, waits until it
+is ready, and then runs your application's `dev` script.
+
+PostgreSQL keeps running when the task exits, and later runs reuse it. Run
+`mise daemons stop postgres` when you no longer need it, or
+[start and stop it with your shell](#automatic-start-and-stop).
+
 ## Requirements
 
-- `experimental = true` under `[settings]`, or `MISE_EXPERIMENTAL=1`. If you
-  use [start and stop with your shell](#automatic-start-and-stop), set it in
-  your global config.
-- pitchfork. `mise daemons start`, `restart`, and `register`, and `mise run`
-  for a task with `daemons`, install pitchfork when it is missing: the version
-  `[tools]` requests, otherwise the latest. The shell hook never installs
-  tools, so for automatic start and stop install it first, for example with
-  `mise use -g pitchfork`.
+- `experimental = true` under `[settings]`, or `MISE_EXPERIMENTAL=1`.
+- pitchfork 2.25.0 or later. `mise daemons start`, `restart`, and `register`,
+  and `mise run` for a task with `daemons`, install pitchfork when it is
+  missing: the version `[tools]` requests, otherwise the latest.
 - A project config file. `mise daemons` commands run inside a project.
 - [Safe mode](/security.html#safe-mode) off. Safe mode ignores project daemon
   declarations, and `mise daemons` refuses to run in it.
 
-mise requires pitchfork 2.25.0 or later. Some features need a newer release:
+[Start and stop with your shell](#automatic-start-and-stop) needs more than
+this; that section lists what.
+
+Some features need a newer pitchfork release:
 
 | Feature                                                                                                              | Minimum pitchfork |
 | -------------------------------------------------------------------------------------------------------------------- | ----------------- |
@@ -46,35 +88,6 @@ mise requires pitchfork 2.25.0 or later. Some features need a newer release:
 | Clean PostgreSQL shutdown on [Windows](/daemons/presets.html#windows)                                                | 2.29.0            |
 | <code v-pre>{{ env.NAME }}</code> and <code v-pre>{{ vars.NAME }}</code> in [`run`](#use-env-and-vars-in-run)        | 2.30.0            |
 | <code v-pre>{{ daemons.NAME.url }}</code> for a [project reference](/daemons/sharing.html#environment-and-lifecycle) | 2.36.0            |
-
-## Quick start
-
-This example gives a Node.js project a persistent PostgreSQL database. Add it
-to the project's `mise.toml`:
-
-```toml
-[settings]
-experimental = true
-
-[tools]
-node = "24"
-
-[daemons]
-postgres = "18"
-
-[tasks.dev]
-daemons = "postgres"
-run = "npm run dev"
-```
-
-Run `mise run dev`. mise installs the missing tools, starts PostgreSQL, waits
-until it is ready, and then runs your application's `dev` script. The preset
-exports connection variables, including `DATABASE_URL`, and keeps the
-database's data between runs.
-
-PostgreSQL keeps running when the task exits, and later runs reuse it. Run
-`mise daemons stop postgres` when you no longer need it, or
-[start and stop it with your shell](#automatic-start-and-stop).
 
 ## Declare a daemon
 
@@ -157,7 +170,7 @@ run = "exec echo {{ vars.greeting | quote }} {{ env.AUDIENCE | quote }}"
 | `preset`, `version`    | preset                          | A [service preset](/daemons/presets.html) and the version request for its tool.                                                                                                                                                                  |
 | `tool`                 | preset                          | Installs the server from a different tool than the preset's default.                                                                                                                                                                             |
 | `options`              | preset                          | [Preset options](/daemons/presets.html#preset-options), such as `options.database`.                                                                                                                                                              |
-| `port`                 | custom, task, container, preset | A fixed port, `"auto"`, or `{ auto = true, base = 3000 }`. `"auto"` alone works only on a preset; a custom or task daemon needs a `base`. See [Ports](/daemons/worktrees.html#ports).                                                            |
+| `port`                 | custom, task, container, preset | A fixed port, `"auto"`, or `{ auto = true, base = 3000 }`. `"auto"` alone works only on a preset; every other form needs a `base`. See [Ports](/daemons/worktrees.html#ports).                                                                   |
 | `ports`                | custom, task, preset, container | Overrides for a preset's [named ports](/daemons/worktrees.html#named-ports), a container's [published ports](/daemons/containers.html#several-ports), or a custom daemon's [named ports](/daemons/worktrees.html#named-ports-on-custom-daemons). |
 | `init`                 | custom, task, container, preset | [Setup commands](#setup-before-the-process-starts) that run before the process starts.                                                                                                                                                           |
 | `mise`                 | custom, task, container         | `false` runs the process and its setup without the project's tool environment.                                                                                                                                                                   |
@@ -344,8 +357,9 @@ mise hook-env --force --shell-pid $fish_pid -s fish | source   # Fish
 
 A forced hook, like `mise daemons start`, also reattaches a generated config
 that was detached with pitchfork. Nothing starts in safe mode or when hooks are
-disabled. If mise says that automatic start and stop requires updated shell
-activation, restart your shell.
+disabled. If mise prints
+`[daemons] auto lifecycle requires updated shell activation`, restart your
+shell.
 
 pitchfork daemons with their own `auto` setting share these shell sessions. See
 pitchfork's [shell hook guide](https://pitchfork.jdx.dev/guides/shell-hook).
@@ -422,10 +436,10 @@ filter to quote for cmd rather than a POSIX shell. A
 [task daemon](#daemons-that-run-a-task) without `init` needs no shell, so its
 `args` work unchanged; with `init`, write the setup steps as cmd commands.
 
-[Service presets](/daemons/presets.html#windows) and
-[shared server providers](/daemons/sharing.html#shared-server-providers) have
-their own Windows limits. Start and stop with your shell needs Bash, Zsh, or
-Fish.
+[Service presets](/daemons/presets.html#windows) have their own Windows
+limits, and [container daemons](/daemons/containers.html#limitations) and
+[shared server providers](/daemons/sharing.html#shared-server-providers) do not
+run on Windows. Start and stop with your shell needs Bash, Zsh, or Fish.
 
 ## Next steps
 

@@ -27,8 +27,8 @@ exclude = ["README.md"]
 
 mise walks the root and deploys each file at the same path under the target.
 A table that leaves `root` out deploys the directory named after the group, so
-`[dotfile_groups.zsh]` with no `root` also reads `~/.dotfiles/zsh`.
-A relative `root` always starts at
+`[dotfile_groups.zsh]` with no `root` also reads `~/.dotfiles/zsh`. A relative
+`root` always starts at
 [`dotfiles.root`](/configuration/settings.html#dotfiles.root), not at the
 directory of the config file that declares the group. Group names can contain
 letters, digits, `-`, `_`, and `.`. If a more local config file defines a
@@ -75,29 +75,30 @@ dot_prefix = true
 
 - An entry without `source` finds it under the root, at its path inside the
   group's target: `~/.config/kitty` in the `home` group reads
-  `~/.dotfiles/home/dot-config/kitty`.
-  With `mode = "template"`, a missing file falls back to the same path plus
-  `.tera`, so `"~/.config/git/config" = { mode = "template" }` renders
-  `home/dot-config/git/config.tera` and does not also deploy it with the suffix.
+  `~/.dotfiles/home/dot-config/kitty`. With `mode = "template"`, a missing
+  file falls back to the same path plus `.tera`, so
+  `"~/.config/git/config" = { mode = "template" }` renders
+  `home/dot-config/git/config.tera` and does not also deploy it with the
+  suffix.
 - A relative `source` starts at the root. When it lies inside the root, or
   inside the tree of another entry that walks a directory, that walk skips it,
   so `git/config.tmpl` is rendered to `~/.gitconfig` and not also linked to
   `~/git/config.tmpl`.
 - An entry without `mode` deploys like the group: a directory the group's way,
-  a file as one link, or as one copy in a `copy` group.
-  The exception is an entry that sets only `permissions`: it does not inherit
-  the group's `mode`, deploys nothing, and only adjusts the permissions of an
-  existing target (see [Permissions](/dotfiles/managed.html#permissions)). To
-  deploy a file and set its permissions, set `mode` too, for example
+  a file as one link, or as one copy in a `copy` group. The exception is an
+  entry that sets only `permissions`: it does not inherit the group's `mode`,
+  deploys nothing, and only adjusts the permissions of an existing target (see
+  [Permissions](/dotfiles/managed.html#permissions)). To deploy a file and set
+  its permissions, set `mode` too, for example
   `{ mode = "copy", permissions = "0600" }`.
 - An entry that walks a directory inherits the group's `dot_prefix` and
   `manifest`, and the group's `exclude` patterns that contain no `/`, unless
   it sets its own.
 - An entry, and each target its `variants` name, cannot be the group's target
-  or a directory that contains it. An entry beneath another
-  walking entry is cut out of that one too. An entry beneath a directory
-  linked as a whole would change a file in the root itself, so mise reports it
-  as a conflict before anything is written.
+  or a directory that contains it. An entry beneath another walking entry is
+  cut out of that one too. An entry beneath a directory linked as a whole
+  would change a file in the root itself, so mise reports it as a conflict
+  before anything is written.
 
 To put an entry in a group, declare it under `[dotfile_groups.<name>.entries]`;
 a `[dotfiles]` entry with a `group` key is invalid.
@@ -162,9 +163,9 @@ root = "common"
   root. A walking group does not also deploy a file that an edit reads or
   changes.
 - The file being edited can be outside the group's target; a `merge` there
-  needs a `source`. An edit takes the
-  keys it takes in `[dotfiles]`, and a key that only whole-file entries take,
-  such as `mode`, makes mise ignore the whole group with a warning.
+  needs a `source`. An edit takes the keys it takes in `[dotfiles]`, and a key
+  that only whole-file entries take, such as `mode`, makes mise ignore the
+  whole group with a warning.
 - Deselecting the group stops the edit but leaves what it wrote in the file.
   `mise dot unapply --group` removes only the group's deployed files, so to
   remove an edit's block or line, run `mise dot unapply <path>` while the group
@@ -184,6 +185,11 @@ dotfile_groups = ["home", "zsh"]
 A more local config file's list replaces the others. `[dotfiles]` entries
 apply on every machine, whichever groups it selects; the entries of a group,
 including its [edits](#group-edits), apply only while it is selected.
+
+Two selected groups cannot deploy the same target file, and one group cannot
+link a directory as a whole while another places files inside it. mise
+reports either case as a conflict naming both groups, before anything is
+written.
 
 ### Groups without a table {#groups-without-a-table}
 
@@ -218,11 +224,6 @@ A group without a table exists only while a list selects it, while a declared
 group also applies when no list is set. mise warns when the list names
 something that is neither declared nor a directory.
 
-Two selected groups cannot deploy the same target file, and one group cannot
-link a directory as a whole while another places files inside it. mise
-reports either case as a conflict naming both groups, before anything is
-written.
-
 ## Deselect and remove groups {#deselecting-and-removing-groups}
 
 Deselecting a group, or deleting its table, leaves its files in place, and
@@ -232,10 +233,11 @@ records what each group deployed in its
 orphaned when a selected group stops deploying it, for example after a new
 `exclude` pattern or after you delete a copied source file. A file that any
 active entry still deploys is never orphaned, even when the entry has moved to
-another group. A permissions-only entry deploys nothing, so it does not keep a file
-from being orphaned: dropping `mode` from an entry that deployed a file leaves
-that file orphaned, and `--prune` removes it. If mise cannot read a group, for example because its `root` is
-missing, it warns about the group instead of listing its files.
+another group. A permissions-only entry deploys nothing, so it does not keep a
+file from being orphaned: dropping `mode` from an entry that deployed a file
+leaves that file orphaned, and `--prune` removes it. If mise cannot read a
+group, for example because its `root` is missing, it warns about the group
+instead of listing its files.
 
 To remove orphaned files, or every file of one group:
 
@@ -264,8 +266,9 @@ inside `dotfiles.root`, even with `--force`, so they never delete source files.
 
 [`mise dot add`](/cli/dotfiles/add.html) captures a file inside a group's
 target into that group's root, without writing an entry. In a `dot_prefix`
-group, the source gets the `dot-` name. With the two groups above, which both
-deploy into `~`, name the group for a new file:
+group, the source gets the `dot-` name. With the `zsh` and `home` groups from
+[Define a group](#define-a-group), which both deploy into `~`, name the group
+for a new file:
 
 ```sh
 mise dot add --group home ~/.config/starship.toml   # -> ~/.dotfiles/home/dot-config/starship.toml
@@ -306,3 +309,12 @@ directory, such as `~/.config/kitty` to `~/.dotfiles/kitty/.config/kitty`,
 directory that links each file. A link into the group's root that does not
 point at the directory belonging there is refused, even with `--force`,
 because writing through it would change the files in the root.
+
+## See also
+
+- [Managed files](/dotfiles/managed.html) covers the modes, templates,
+  permissions, and conflict rules that group entries share with `[dotfiles]`.
+- [Edit part of a file](/dotfiles/edits.html) covers the block, line, and merge
+  edits a group can declare.
+- [Dotfiles reference](/dotfiles/reference.html) lists every entry key and
+  status state.

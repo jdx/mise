@@ -230,7 +230,7 @@ per-project override; use `ruby.ruby_build_opts` for a default across projects:
 ruby = { version = "4.0", install_env = { RUBY_CONFIGURE_OPTS = "--disable-install-doc" } }
 ```
 
-Other generic options are described in [tool options](/dev-tools/#tool-options).
+Other generic options are described in [tool options](/dev-tools/tool-options.html).
 
 ## Default gems file <Badge type="danger" text="deprecated" /> {#default-gems}
 
@@ -241,7 +241,7 @@ constraint (`bcat ~> 0.6.0`) or `--pre`, and `#` starts a comment. mise warns
 about this file from 2026.11.0 and stops reading it in 2027.11.0. Install Ruby
 CLIs with the [gem backend](/dev-tools/backends/gem.html) instead, for example
 `"gem:rubocop" = "latest"`, or use a
-[`postinstall`](/dev-tools/#tool-postinstall-commands) command for gems every
+[`postinstall`](/dev-tools/tool-options.html#tool-postinstall-commands) command for gems every
 Ruby version needs.
 
 ## Settings
