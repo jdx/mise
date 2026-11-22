@@ -61,9 +61,10 @@ Requests carry these headers:
 | `mbx-cache-namespace` | The namespace for the operation. Servers must not require it on `GET /v1/capabilities` and `GET /v1/status` |
 | `Authorization`       | `Bearer <token>` when the deployment uses bearer or OIDC tokens                                             |
 
-The mise client also sends `Accept` on every request. It names the media type
-of the object the request reads or writes: the action-result, client-metadata,
-or directory media type, or `application/octet-stream` for a file blob.
+The mise client also sends `Accept` on every request to the cache service. It
+names the media type of the object the request reads or writes: the
+action-result, client-metadata, or directory media type, or
+`application/octet-stream` for a file blob.
 
 The URL prefix `/v1` is the protocol's major version. Compatible additions are
 advertised as capabilities and do not need a new URL prefix. An incompatible
@@ -363,11 +364,18 @@ a digest header. Servers may honor `Range` and may return a negotiated
 bytes.
 
 A server that advertises delegated transfers may return
-`307 Temporary Redirect` to a short-lived HTTPS URL. The redirect must grant
-access only to the requested immutable object. Clients must not forward the
-cache service's `Authorization` header to the delegated host. The mise client
-does not follow redirects, so a server that mise reads from must return the
-blob's content itself.
+`307 Temporary Redirect` to a short-lived URL. The `Location` must be an
+absolute HTTPS URL, or an HTTP URL on a loopback development server. The
+redirect must grant access only to the requested immutable object, and the
+delegated host must answer a plain `GET` with the blob. Clients must not forward
+the cache service's `Authorization` header to the delegated host.
+
+The mise client follows a `307` from a blob read whether or not the server
+advertises `delegated_transfers`. It sends the delegated host a `GET` with none
+of the cache's headers (`Authorization`, `mbx-cache-protocol`,
+`mbx-cache-namespace`, `Accept`), and it follows one redirect per read: a
+redirect from the delegated host fails the read. Each retry of a read asks the
+cache service again, so it gets a fresh URL.
 
 Clients verify the complete uncompressed digest before they use downloaded
 content. A mismatch is a cache miss and produces a visible integrity warning.
@@ -519,15 +527,25 @@ contain sensitive values; see
 - `426 Upgrade Required` is a major-version mismatch.
 - `429 Too Many Requests` and `5xx` responses may be retried with bounded
   exponential backoff and jitter, honoring `Retry-After`.
+- A `3xx` response is valid only as the `307` of a
+  [blob read](#read-a-blob). The mise client fails any other request that gets
+  one, including a direct blob upload: it never sends a request body or the
+  cache's credentials to a redirect target.
+
+`Retry-After` is a number of seconds or an HTTP date. The mise client retries
+`408`, `429`, `5xx`, and network failures such as a timeout up to
+[`http_retries`](/configuration/settings.html#http_retries) times. Before each
+retry it waits for its own backoff or for `Retry-After`, whichever is longer.
+The `Retry-After` waits of one request add up to at most 30 seconds: a response
+that asks for more ends the retries, and the request fails.
+
+The network failures the mise client retries are timeouts, connection errors
+other than a failed DNS lookup, and interrupted response bodies. Its own backoff
+is about 200 ms, 1 s, 4 s, and then 15 s between attempts, each scaled by a
+random factor between 0.5 and 1.
 
 Version 1 does not define an error response body; clients act on the status
 code.
-
-The mise client retries timeouts, connection errors other than a failed DNS
-lookup, interrupted response bodies, and `408`, `429`, and `5xx` responses. It
-retries up to [`http_retries`](/configuration/settings.html#http_retries) times
-and waits about 200 ms, 1 s, 4 s, and then 15 s between attempts, each scaled by
-a random factor between 0.5 and 1. It does not read `Retry-After`.
 
 Cache unavailability, malformed objects, missing referenced objects, and
 integrity failures normally degrade to a cache miss so that local task execution

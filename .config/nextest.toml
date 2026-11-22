@@ -4,6 +4,13 @@ slow-timeout = { period = "250ms", terminate-after = 4 }
 status-level = "all"
 retries = { backoff = "exponential", count = 4, delay = "1s", max-delay = "10s" }
 
+# This test checks that the remote cache client waits as long as `Retry-After`
+# asks, and one second is the shortest wait that header can express, so the
+# test sleeps for the whole ordinary ceiling by design.
+[[profile.default.overrides]]
+filter = 'package(mise-cache-core) & test(tests::retries_wait_for_retry_after)'
+slow-timeout = { period = "1s", terminate-after = 3 }
+
 [profile.ci]
 inherits = "default"
 # Once every few runs the macOS runner stalls a single test process for 1-3s.

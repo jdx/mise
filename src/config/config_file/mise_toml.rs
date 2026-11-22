@@ -1,5 +1,5 @@
 use crate::system::BootstrapMerge;
-use eyre::{WrapErr, eyre};
+use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -15,7 +15,9 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
-use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
+use toml_edit::{
+    Array, DocumentMut, Entry, InlineTable, Item, Key, TableLike, Value, table, value,
+};
 
 use crate::args::BackendArg;
 use crate::backend::unalias_backend;
@@ -1107,28 +1109,70 @@ impl MiseToml {
     }
 
     pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
-        let mut doc = self.doc_mut()?;
-        let mut env_tbl = doc
-            .get_mut()
-            .unwrap()
-            .entry("env")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
-        let key_parts = key.split('.').collect_vec();
-        for (i, k) in key_parts.iter().enumerate() {
-            if i == key_parts.len() - 1 {
-                let value_decor = get_value_decor(env_tbl, k);
-                let k = get_key_with_decor(env_tbl, k);
-                let mut item = toml_edit::value(value);
-                set_value_decor(&mut item, &value_decor);
-                env_tbl.insert_formatted(&k, item);
-                break;
-            } else if !env_tbl.contains_key(k) {
-                env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
+        self.set_env_item(key, toml_edit::value(value))
+    }
+
+    /// Writes `item` as the value of `key` in this file's `env`.
+    ///
+    /// When `env` is a list of tables (`[[env]]`), mise reads the groups in file order and a
+    /// later one overrides an earlier one. So the group rewritten is the last one that sets
+    /// `key`, and a key no group sets goes into the last group: either way the new value is
+    /// the one that reading the groups in order ends with, as it is with a single `[env]`.
+    ///
+    /// Only file order is followed. An entry with `tools = true` is applied in a later pass and
+    /// still wins over the value written here, from an earlier group as it does from another
+    /// config file.
+    ///
+    /// A `.` in `key` descends into a nested table, unless a group has an entry named exactly
+    /// `key`. Fails, leaving the document as it was, when mise could not load the result.
+    fn set_env_item(&mut self, key: &str, item: Item) -> eyre::Result<()> {
+        let path = &self.path;
+        self.edit_doc(|doc| {
+            let mut groups = env_tables_mut(doc, path)?;
+            // an entry named exactly `key` is that variable, whatever dots its name has
+            if let Some(i) = groups.iter().rposition(|group| group.names(key)) {
+                groups.swap_remove(i).set_named(key, item);
+                return Ok(());
             }
-            env_tbl = env_tbl.get_mut(k).unwrap().as_table_mut().unwrap();
-        }
+            let mut group = match groups.iter().rposition(|group| group.sets(key)) {
+                Some(i) => groups.swap_remove(i),
+                None => match groups.pop() {
+                    Some(last) => last,
+                    None => bail!(
+                        "cannot set {key} in {}: `env` is an empty list, so there is no table to add it to",
+                        display_path(path)
+                    ),
+                },
+            };
+            group.set(key, item).map_err(|part| {
+                eyre!(
+                    "cannot set {key} in {}: `{part}` is not a table",
+                    display_path(path)
+                )
+            })?;
+            if key.contains('.') {
+                load_env(doc).wrap_err_with(|| {
+                    format!(
+                        "cannot set {key} in {}: mise could not load `env` with it set",
+                        display_path(path)
+                    )
+                })?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Runs `edit` on a copy of the document and keeps the copy only when `edit` succeeds, so
+    /// an edit that fails part way changes nothing.
+    fn edit_doc(
+        &self,
+        edit: impl FnOnce(&mut DocumentMut) -> eyre::Result<()>,
+    ) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        let mut edited = doc.clone();
+        edit(&mut edited)?;
+        *doc = edited;
         Ok(())
     }
 
@@ -1327,15 +1371,6 @@ impl MiseToml {
         value: &str,
         format: Option<AgeFormat>,
     ) -> eyre::Result<()> {
-        let mut doc = self.doc_mut()?;
-        let mut env_tbl = doc
-            .get_mut()
-            .unwrap()
-            .entry("env")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
-
         // Create the age inline table
         let mut outer_table = InlineTable::new();
 
@@ -1354,34 +1389,40 @@ impl MiseToml {
             }
         }
 
-        let key_parts = key.split('.').collect_vec();
-        for (i, k) in key_parts.iter().enumerate() {
-            if i == key_parts.len() - 1 {
-                let value_decor = get_value_decor(env_tbl, k);
-                let k = get_key_with_decor(env_tbl, k);
-                let mut item = toml_edit::Item::Value(Value::InlineTable(outer_table));
-                set_value_decor(&mut item, &value_decor);
-                env_tbl.insert_formatted(&k, item);
-                break;
-            } else if !env_tbl.contains_key(k) {
-                env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
-            }
-            env_tbl = env_tbl.get_mut(k).unwrap().as_table_mut().unwrap();
-        }
-        Ok(())
+        self.set_env_item(key, Item::Value(Value::InlineTable(outer_table)))
     }
 
+    /// Removes `key` from this file's `env`: from every group when `env` is a list of tables
+    /// (`[[env]]`), since an earlier group's value would otherwise take over.
+    ///
+    /// `key` is read the way [`Self::update_env`] reads it: when a group has an entry named
+    /// exactly `key`, those entries are what is removed, and an entry a `.` in `key` could also
+    /// descend to is left alone. Only otherwise does a `.` descend into a nested table.
+    ///
+    /// Taking a key out of a nested table can leave something mise refuses to load, such as a
+    /// variable with options and no value. That fails, leaving the document as it was.
     pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
-        let mut doc = self.doc_mut()?;
-        let env_tbl = doc
-            .get_mut()
-            .unwrap()
-            .entry("env")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
-        env_tbl.remove(key);
-        Ok(())
+        let path = &self.path;
+        self.edit_doc(|doc| {
+            let mut groups = env_tables_mut(doc, path)?;
+            let named = groups.iter().any(|group| group.names(key));
+            for group in &mut groups {
+                if named {
+                    group.remove_named(key);
+                } else {
+                    group.remove(key);
+                }
+            }
+            if !named && key.contains('.') {
+                load_env(doc).wrap_err_with(|| {
+                    format!(
+                        "cannot unset {key} in {}: mise could not load `env` without it",
+                        display_path(path)
+                    )
+                })?;
+            }
+            Ok(())
+        })
     }
 
     // Merge base OS env vars with env sections from this file,
@@ -2469,6 +2510,189 @@ fn resolve_plugin_source_path(config_path: &Path, source: String) -> eyre::Resul
     match path {
         Some(path) => Ok(path.absolutize()?.to_string_lossy().into_owned()),
         None => Ok(source),
+    }
+}
+
+/// One table of a config file's `env`, or a table nested in it.
+struct EnvTable<'a> {
+    table: &'a mut dyn TableLike,
+    /// Written as `{ .. }` rather than under a `[header]`.
+    inline: bool,
+}
+
+impl<'a> EnvTable<'a> {
+    fn of(item: &'a mut Item) -> Option<Self> {
+        let inline = !item.is_table();
+        let table = item.as_table_like_mut()?;
+        Some(Self { table, inline })
+    }
+
+    /// Whether this table has an entry named exactly `key`.
+    fn names(&self, key: &str) -> bool {
+        self.table.contains_key(key)
+    }
+
+    /// Whether this table has a value for `key`, where a `.` in `key` descends into a nested
+    /// table.
+    fn sets(&self, key: &str) -> bool {
+        fn sets(table: &dyn TableLike, key: &str) -> bool {
+            match key.split_once('.') {
+                None => table.contains_key(key),
+                Some((parent, rest)) => table
+                    .get(parent)
+                    .and_then(Item::as_table_like)
+                    .is_some_and(|nested| sets(nested, rest)),
+            }
+        }
+        sets(&*self.table, key)
+    }
+
+    /// Sets `key` to `item`, creating the tables a `.` in `key` descends into. Fails with the
+    /// part of `key` that holds a value where a table is needed.
+    fn set(&mut self, key: &str, item: Item) -> Result<(), String> {
+        let Some((parent, rest)) = key.split_once('.') else {
+            self.set_named(key, item);
+            return Ok(());
+        };
+        self.edit(|table| {
+            if !table.contains_key(parent) {
+                table.insert(parent, toml_edit::table());
+            }
+            match table.get_mut(parent).and_then(EnvTable::of) {
+                Some(mut nested) => nested.set(rest, item),
+                None => Err(parent.to_string()),
+            }
+        })
+    }
+
+    /// Sets the entry named exactly `key` to `item`.
+    fn set_named(&mut self, key: &str, mut item: Item) {
+        self.edit(|table| {
+            // the comment after a value lives in the value's decor, so carry it over
+            let value_decor = table
+                .get(key)
+                .and_then(Item::as_value)
+                .map(|v| v.decor().clone());
+            set_value_decor(&mut item, &value_decor);
+            match table.entry_format(&Key::from(key)) {
+                // an existing key stays as written, with the comment above it
+                Entry::Occupied(mut entry) => {
+                    entry.insert(item);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(item);
+                }
+            }
+        })
+    }
+
+    /// Removes the entry a `.` in `key` descends to, which is where [`Self::set`] writes it,
+    /// and a nested table the removal empties.
+    fn remove(&mut self, key: &str) {
+        let Some((parent, rest)) = key.split_once('.') else {
+            return self.remove_named(key);
+        };
+        self.edit(|table| {
+            if let Some(mut nested) = table.get_mut(parent).and_then(EnvTable::of) {
+                let had_entries = !nested.table.is_empty();
+                nested.remove(rest);
+                if had_entries && nested.table.is_empty() {
+                    table.remove(parent);
+                }
+            }
+        })
+    }
+
+    /// Removes the entry named exactly `key`.
+    fn remove_named(&mut self, key: &str) {
+        self.edit(|table| {
+            table.remove(key);
+        })
+    }
+
+    /// Runs `edit` on the table.
+    ///
+    /// An inline table keeps the whitespace before its `}` as the suffix of its last value. An
+    /// edit can change which value is last, so that suffix is taken off before the edit and put
+    /// on whichever value is last after it. Otherwise `{ A = "1" }` gains `B` as
+    /// `{ A = "1" , B = "2" }`.
+    fn edit<T>(&mut self, edit: impl FnOnce(&mut dyn TableLike) -> T) -> T {
+        if !self.inline {
+            return edit(self.table);
+        }
+        let closing = last_value_decor(self.table).and_then(|decor| {
+            let closing = decor.suffix().cloned()?;
+            decor.set_suffix("");
+            Some(closing)
+        });
+        let result = edit(self.table);
+        if let Some(closing) = closing
+            && let Some(decor) = last_value_decor(self.table)
+        {
+            decor.set_suffix(closing);
+        }
+        result
+    }
+}
+
+/// The decor of the last entry of `table`, when that entry is a value.
+/// Reads `doc`'s `env` the way loading the file does, so an edit can be checked before it is
+/// saved.
+fn load_env(doc: &DocumentMut) -> Result<EnvList, toml::de::Error> {
+    #[derive(Deserialize)]
+    struct EnvOnly {
+        #[serde(default, deserialize_with = "mise_config::env::deserialize_root_env")]
+        env: EnvList,
+    }
+    Ok(toml::from_str::<EnvOnly>(&doc.to_string())?.env)
+}
+
+fn last_value_decor(table: &mut dyn TableLike) -> Option<&mut toml_edit::Decor> {
+    let (_, last) = table.iter_mut().last()?;
+    Some(last.as_value_mut()?.decor_mut())
+}
+
+/// The tables that hold a config file's environment variables, in the order mise reads them.
+///
+/// `env` is either one table (`[env]`, or `env = { .. }`) or a list of them (`[[env]]`, or
+/// `env = [{ .. }, { .. }]`), and is created as an empty `[env]` when the file has none. Any
+/// other shape is one mise would not have loaded, and is reported instead of edited.
+fn env_tables_mut<'a>(doc: &'a mut DocumentMut, path: &Path) -> eyre::Result<Vec<EnvTable<'a>>> {
+    match doc.entry("env").or_insert_with(table) {
+        Item::Table(table) => Ok(vec![EnvTable {
+            table,
+            inline: false,
+        }]),
+        Item::Value(Value::InlineTable(table)) => Ok(vec![EnvTable {
+            table,
+            inline: true,
+        }]),
+        Item::ArrayOfTables(groups) => Ok(groups
+            .iter_mut()
+            .map(|table| EnvTable {
+                table,
+                inline: false,
+            })
+            .collect()),
+        Item::Value(Value::Array(groups)) => groups
+            .iter_mut()
+            .map(|group| match group {
+                Value::InlineTable(table) => Ok(EnvTable {
+                    table,
+                    inline: true,
+                }),
+                other => bail!(
+                    "cannot edit `env` in {}: expected a list of tables, found {}",
+                    display_path(path),
+                    other.type_name()
+                ),
+            })
+            .collect(),
+        other => bail!(
+            "cannot edit `env` in {}: expected a table or a list of tables, found {}",
+            display_path(path),
+            other.type_name()
+        ),
     }
 }
 
@@ -6204,6 +6428,399 @@ run = "cargo build"
             "comment after the value should survive: {dump}"
         );
         file::remove_file(&p).unwrap();
+    }
+
+    /// Writes `contents` to a config file named `name`, runs `edit` on it and returns what
+    /// `edit` returned along with the file as it would be saved.
+    async fn edit_env_file<T>(
+        name: &str,
+        contents: &str,
+        edit: impl FnOnce(&mut MiseToml) -> T,
+    ) -> (T, String) {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(name);
+        file::write(&p, contents).unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        let result = edit(&mut cf);
+        let dump = cf.dump().unwrap();
+        file::remove_file(&p).unwrap();
+        (result, dump)
+    }
+
+    const ENV_GROUPS: &str = indoc! {r#"
+        # first group
+        [[env]]
+        STAGE = "one" # stage one
+        ONLY_FIRST = "a"
+
+        # second group
+        [[env]]
+        # the stage that wins
+        STAGE = "two" # stage two
+        ONLY_SECOND = "b"
+
+        [tools]
+        node = "20"
+    "#};
+
+    #[tokio::test]
+    async fn test_update_env_groups_adds_new_key_to_last_group() {
+        let (result, dump) = edit_env_file(".env-groups-new.mise.toml", ENV_GROUPS, |cf| {
+            cf.update_env("NEW", "1")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                # first group
+                [[env]]
+                STAGE = "one" # stage one
+                ONLY_FIRST = "a"
+
+                # second group
+                [[env]]
+                # the stage that wins
+                STAGE = "two" # stage two
+                ONLY_SECOND = "b"
+                NEW = "1"
+
+                [tools]
+                node = "20"
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_groups_updates_last_group_that_sets_key() {
+        let (result, dump) = edit_env_file(".env-groups-update.mise.toml", ENV_GROUPS, |cf| {
+            // set in both groups: the second one is the one mise uses
+            cf.update_env("STAGE", "three")?;
+            // set in the first group only: updated where it is, not added to the last group
+            cf.update_env("ONLY_FIRST", "z")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                # first group
+                [[env]]
+                STAGE = "one" # stage one
+                ONLY_FIRST = "z"
+
+                # second group
+                [[env]]
+                # the stage that wins
+                STAGE = "three" # stage two
+                ONLY_SECOND = "b"
+
+                [tools]
+                node = "20"
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_age_groups() {
+        let (result, dump) = edit_env_file(".env-groups-age.mise.toml", ENV_GROUPS, |cf| {
+            cf.update_env_age("STAGE", "ciphertext", None)
+        })
+        .await;
+        result.unwrap();
+        assert!(
+            dump.contains(r#"STAGE = "one" # stage one"#),
+            "the first group should be left alone: {dump}"
+        );
+        assert!(
+            dump.contains(r#"STAGE = { age = "ciphertext" } # stage two"#),
+            "the second group should hold the encrypted value: {dump}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_env_groups_removes_key_from_every_group() {
+        let (result, dump) = edit_env_file(".env-groups-remove.mise.toml", ENV_GROUPS, |cf| {
+            cf.remove_env("STAGE")?;
+            cf.remove_env("NOT_SET")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                # first group
+                [[env]]
+                ONLY_FIRST = "a"
+
+                # second group
+                [[env]]
+                ONLY_SECOND = "b"
+
+                [tools]
+                node = "20"
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_env_nested_key() {
+        let contents = indoc! {r#"
+            [[env]]
+            _.path = "./bin"
+            _.file = ".env"
+            STAGE = "one"
+
+            [[env]]
+            "dotted.name" = "x"
+            KEEP = "y"
+
+            # set by `mise set _.path=./scripts`
+            [env._]
+            path = "./scripts"
+        "#};
+        let (result, dump) = edit_env_file(".env-remove-nested.mise.toml", contents, |cf| {
+            // removed from both groups; the second group's `_` table has nothing left
+            cf.remove_env("_.path")?;
+            // a key whose name holds a `.` is still removed
+            cf.remove_env("dotted.name")?;
+            // not a table, so there is nothing below it to remove
+            cf.remove_env("STAGE.nested")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                _.file = ".env"
+                STAGE = "one"
+
+                [[env]]
+                KEEP = "y"
+            "#}
+        );
+    }
+
+    /// A variable can be named with a `.`, next to a table the same dots would descend into.
+    const ENV_EXACT_NAME: &str = indoc! {r#"
+        [[env]]
+        "FOO.value" = "literal" # exact
+        FOO = { value = "keep", redact = true }
+
+        [[env]]
+        FOO = { value = "kept", redact = true }
+    "#};
+
+    #[tokio::test]
+    async fn test_remove_env_exact_name_wins_over_nested_key() {
+        let (result, dump) = edit_env_file(".env-remove-exact.mise.toml", ENV_EXACT_NAME, |cf| {
+            cf.remove_env("FOO.value")
+        })
+        .await;
+        result.unwrap();
+        // `value` inside `FOO` stays, in the group that had the exact name and the one without
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                FOO = { value = "keep", redact = true }
+
+                [[env]]
+                FOO = { value = "kept", redact = true }
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_exact_name_wins_over_nested_key() {
+        let (result, dump) = edit_env_file(".env-update-exact.mise.toml", ENV_EXACT_NAME, |cf| {
+            cf.update_env("FOO.value", "changed")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                "FOO.value" = "changed" # exact
+                FOO = { value = "keep", redact = true }
+
+                [[env]]
+                FOO = { value = "kept", redact = true }
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_env_nested_key_inline() {
+        let contents = "env = { _ = { path = \"./bin\", file = \".env\" }, A = \"1\" }\n";
+        let (result, dump) = edit_env_file(".env-remove-nested-inline.mise.toml", contents, |cf| {
+            cf.remove_env("_.file")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(dump, "env = { _ = { path = \"./bin\" }, A = \"1\" }\n");
+
+        let (result, dump) = edit_env_file(".env-remove-nested-inline.mise.toml", &dump, |cf| {
+            cf.remove_env("_.path")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(dump, "env = { A = \"1\" }\n");
+    }
+
+    #[tokio::test]
+    async fn test_update_env_nested_key_in_groups() {
+        let contents = indoc! {r#"
+            [[env]]
+            _.path = "./bin"
+
+            [[env]]
+            STAGE = "two"
+        "#};
+        let (result, dump) = edit_env_file(".env-groups-nested.mise.toml", contents, |cf| {
+            // `_.path` is set in the first group, `_.file` in none
+            cf.update_env("_.path", "./scripts")?;
+            cf.update_env("_.file", ".env")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                _.path = "./scripts"
+
+                [[env]]
+                STAGE = "two"
+
+                [env._]
+                file = ".env"
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_inline_table() {
+        let contents = "env = { STAGE = \"one\" }\n";
+        let (result, dump) = edit_env_file(".env-inline.mise.toml", contents, |cf| {
+            cf.update_env("STAGE", "two")?;
+            cf.update_env("NEW", "1")?;
+            cf.remove_env("NEW")?;
+            cf.update_env("OTHER", "2")?;
+            cf.update_env("_.file", ".env")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            "env = { STAGE = \"two\", OTHER = \"2\", _ = { file = \".env\" } }\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_inline_groups() {
+        let contents = "env = [{ STAGE = \"one\", A = \"a\" }, { STAGE = \"two\" }]\n";
+        let (result, dump) = edit_env_file(".env-inline-groups.mise.toml", contents, |cf| {
+            cf.update_env("STAGE", "three")?;
+            cf.update_env("NEW", "1")?;
+            cf.remove_env("A")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            "env = [{ STAGE = \"one\" }, { STAGE = \"three\", NEW = \"1\" }]\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_empty_list_is_an_error() {
+        let (result, dump) = edit_env_file(".env-empty-list.mise.toml", "env = []\n", |cf| {
+            cf.remove_env("STAGE")?;
+            cf.update_env("STAGE", "one")
+        })
+        .await;
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains(".env-empty-list.mise.toml") && err.contains("empty list"),
+            "the error should name the file and the problem: {err}"
+        );
+        assert_eq!(dump, "env = []\n");
+    }
+
+    #[tokio::test]
+    async fn test_update_env_through_a_value_is_an_error() {
+        let contents = "[[env]]\nSTAGE = \"one\"\n";
+        let (result, dump) = edit_env_file(".env-not-a-table.mise.toml", contents, |cf| {
+            cf.update_env("STAGE.nested", "x")
+        })
+        .await;
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains(".env-not-a-table.mise.toml") && err.contains("`STAGE` is not a table"),
+            "the error should name the file and the key: {err}"
+        );
+        assert_eq!(dump, contents);
+    }
+
+    /// Each `FOO` loads as written, and stops loading once `value` is taken out or put in.
+    const ENV_OPTIONS: &str = indoc! {r#"
+        [[env]]
+        FOO = { value = "one", tools = true }
+
+        [[env]]
+        BAR = { required = true }
+    "#};
+
+    #[tokio::test]
+    async fn test_remove_env_that_leaves_env_unloadable_is_an_error() {
+        let (result, dump) = edit_env_file(".env-unset-unloadable.mise.toml", ENV_OPTIONS, |cf| {
+            cf.remove_env("FOO.value")
+        })
+        .await;
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(
+            err.contains("cannot unset FOO.value in")
+                && err.contains(".env-unset-unloadable.mise.toml")
+                && err.contains("'FOO' has no value"),
+            "the error should name the key, the file and the problem: {err}"
+        );
+        assert_eq!(dump, ENV_OPTIONS);
+
+        // an option can go: what is left still loads
+        let (result, dump) = edit_env_file(".env-unset-unloadable.mise.toml", ENV_OPTIONS, |cf| {
+            cf.remove_env("FOO.tools")
+        })
+        .await;
+        result.unwrap();
+        assert_eq!(
+            dump,
+            indoc! {r#"
+                [[env]]
+                FOO = { value = "one" }
+
+                [[env]]
+                BAR = { required = true }
+            "#}
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_env_that_leaves_env_unloadable_is_an_error() {
+        let (result, dump) = edit_env_file(".env-set-unloadable.mise.toml", ENV_OPTIONS, |cf| {
+            cf.update_env("BAR.value", "x")
+        })
+        .await;
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(
+            err.contains("cannot set BAR.value in")
+                && err.contains(".env-set-unloadable.mise.toml")
+                && err.contains("cannot have both 'value' and 'required'"),
+            "the error should name the key, the file and the problem: {err}"
+        );
+        assert_eq!(dump, ENV_OPTIONS);
     }
 
     #[tokio::test]

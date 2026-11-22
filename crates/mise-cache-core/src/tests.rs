@@ -579,3 +579,374 @@ fn remote_urls_require_https_for_authenticated_requests() {
     validate_remote_url(&insecure, false).unwrap();
     assert!(validate_remote_url(&"ftp://localhost/cache".parse().unwrap(), false).is_err());
 }
+
+fn test_blob() -> (&'static [u8], CacheDigest) {
+    let bytes = b"delegated blob";
+    (bytes, CacheDigest::blake3(bytes))
+}
+
+fn blob_path(digest: &CacheDigest) -> String {
+    format!(
+        "/v1/blobs/{}/{}/{}",
+        digest.algorithm, digest.hash, digest.size
+    )
+}
+
+fn retrying_client(server: &mockito::ServerGuard, retries: i64) -> RemoteCacheClient {
+    RemoteCacheClient::new(RemoteCacheConfig {
+        base_url: server.url().parse().unwrap(),
+        namespace: "test".into(),
+        token: Some("test-token".into()),
+        token_file: None,
+        oidc_audience: None,
+        connect_timeout: Duration::from_secs(5),
+        read_timeout: Duration::from_secs(5),
+        download_timeout: Duration::from_secs(20),
+        retries,
+    })
+    .unwrap()
+}
+
+/// A delegated host that serves `bytes` only to a request without the cache's
+/// credentials and headers.
+async fn mock_delegated_blob(server: &mut mockito::ServerGuard, bytes: &[u8]) -> mockito::Mock {
+    server
+        .mock("GET", "/presigned")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "signature".into(),
+            "secret".into(),
+        ))
+        .match_header("authorization", mockito::Matcher::Missing)
+        .match_header(NAMESPACE_HEADER, mockito::Matcher::Missing)
+        .match_header(PROTOCOL_HEADER, mockito::Matcher::Missing)
+        .with_status(200)
+        .with_body(bytes)
+        .expect(1)
+        .create_async()
+        .await
+}
+
+#[tokio::test]
+async fn blob_reads_follow_a_307_without_the_cache_credentials() {
+    let (bytes, digest) = test_blob();
+    let mut cache = mockito::Server::new_async().await;
+    let mut delegated = mockito::Server::new_async().await;
+    let location = format!("{}/presigned?signature=secret", delegated.url());
+    let redirect = cache
+        .mock("GET", blob_path(&digest).as_str())
+        .match_header("authorization", "Bearer test-token")
+        .with_status(307)
+        .with_header("location", &location)
+        .expect(2)
+        .create_async()
+        .await;
+    let client = test_client(&cache);
+
+    let target = mock_delegated_blob(&mut delegated, bytes).await;
+    assert_eq!(
+        client.get_blob(&digest, BLOB_MEDIA_TYPE).await.unwrap(),
+        bytes
+    );
+    target.assert_async().await;
+    target.remove_async().await;
+
+    let target = mock_delegated_blob(&mut delegated, bytes).await;
+    let staging = tempfile::tempdir().unwrap();
+    let file = client.get_blob_file(&digest, staging.path()).await.unwrap();
+    assert_eq!(fs::read(file.path()).unwrap(), bytes);
+    target.assert_async().await;
+    redirect.assert_async().await;
+}
+
+#[tokio::test]
+async fn blob_reads_verify_the_digest_of_delegated_content() {
+    let (_, digest) = test_blob();
+    let mut cache = mockito::Server::new_async().await;
+    let mut delegated = mockito::Server::new_async().await;
+    cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(307)
+        .with_header(
+            "location",
+            &format!("{}/presigned?signature=secret", delegated.url()),
+        )
+        .create_async()
+        .await;
+    mock_delegated_blob(&mut delegated, b"other content").await;
+
+    let error = test_client(&cache)
+        .get_blob(&digest, BLOB_MEDIA_TYPE)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("failed digest verification"));
+}
+
+#[tokio::test]
+async fn blob_reads_follow_one_redirect_only() {
+    let (_, digest) = test_blob();
+    let mut cache = mockito::Server::new_async().await;
+    let mut delegated = mockito::Server::new_async().await;
+    cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(307)
+        .with_header(
+            "location",
+            &format!("{}/presigned?signature=secret", delegated.url()),
+        )
+        .create_async()
+        .await;
+    let second = delegated
+        .mock("GET", "/presigned")
+        .match_query(mockito::Matcher::Any)
+        .with_status(307)
+        .with_header("location", &format!("{}/elsewhere", delegated.url()))
+        .expect(1)
+        .create_async()
+        .await;
+    let elsewhere = delegated
+        .mock("GET", "/elsewhere")
+        .expect(0)
+        .create_async()
+        .await;
+
+    let error = test_client(&cache)
+        .get_blob(&digest, BLOB_MEDIA_TYPE)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unexpected status 307"), "{error}");
+    assert!(!error.contains("secret"), "{error}");
+    second.assert_async().await;
+    elsewhere.assert_async().await;
+}
+
+#[tokio::test]
+async fn delegated_errors_leave_out_the_signed_url() {
+    let (_, digest) = test_blob();
+    let mut cache = mockito::Server::new_async().await;
+    let mut delegated = mockito::Server::new_async().await;
+    cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(307)
+        .with_header(
+            "location",
+            &format!("{}/presigned?signature=secret", delegated.url()),
+        )
+        .create_async()
+        .await;
+    delegated
+        .mock("GET", "/presigned")
+        .match_query(mockito::Matcher::Any)
+        .with_status(403)
+        .create_async()
+        .await;
+
+    let error = test_client(&cache)
+        .get_blob(&digest, BLOB_MEDIA_TYPE)
+        .await
+        .unwrap_err();
+    let error = format!("{error:?} {error:#}");
+    assert!(error.contains("403"), "{error}");
+    assert!(!error.contains("secret"), "{error}");
+}
+
+#[tokio::test]
+async fn blob_reads_reject_redirects_they_cannot_follow_safely() {
+    let (_, digest) = test_blob();
+    for (location, expected) in [
+        (
+            Some("http://cache.example.com/presigned"),
+            "must use HTTPS except to loopback",
+        ),
+        (Some("ftp://127.0.0.1/presigned"), "must use HTTPS"),
+        (Some("/presigned"), "must name an absolute URL"),
+        (None, "has no Location header"),
+    ] {
+        let mut cache = mockito::Server::new_async().await;
+        let mut redirect = cache
+            .mock("GET", blob_path(&digest).as_str())
+            .with_status(307);
+        if let Some(location) = location {
+            redirect = redirect.with_header("location", location);
+        }
+        redirect.create_async().await;
+        let error = test_client(&cache)
+            .get_blob(&digest, BLOB_MEDIA_TYPE)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(expected), "{location:?}: {error}");
+    }
+}
+
+#[tokio::test]
+async fn redirects_other_than_a_blob_read_307_are_errors() {
+    let (bytes, digest) = test_blob();
+    let mut cache = mockito::Server::new_async().await;
+    let mut delegated = mockito::Server::new_async().await;
+    let location = format!("{}/presigned", delegated.url());
+    let mut targets = Vec::new();
+    for method in ["GET", "PUT"] {
+        targets.push(
+            delegated
+                .mock(method, mockito::Matcher::Any)
+                .expect(0)
+                .create_async()
+                .await,
+        );
+    }
+    let action = CacheDigest::blake3(b"action");
+    let action_path = format!(
+        "/v1/action-results/{}/{}/{}",
+        action.algorithm, action.hash, action.size
+    );
+    cache
+        .mock("PUT", blob_path(&digest).as_str())
+        .with_status(307)
+        .with_header("location", &location)
+        .create_async()
+        .await;
+    cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(302)
+        .with_header("location", &location)
+        .create_async()
+        .await;
+    cache
+        .mock("GET", action_path.as_str())
+        .with_status(307)
+        .with_header("location", &location)
+        .create_async()
+        .await;
+    let client = test_client(&cache);
+
+    let upload = BlobUpload {
+        digest: digest.clone(),
+        source: BlobSource::Bytes(bytes.to_vec()),
+    };
+    let error = client.put_blob(&upload).await.unwrap_err().to_string();
+    assert!(error.contains("unexpected status 307"), "{error}");
+    let error = client
+        .get_blob(&digest, BLOB_MEDIA_TYPE)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unexpected status 302"), "{error}");
+    let error = client
+        .get_action_result(&action)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unexpected status 307"), "{error}");
+    for target in targets {
+        target.assert_async().await;
+    }
+}
+
+#[test]
+fn retry_after_is_seconds_or_an_http_date() {
+    let now = UNIX_EPOCH + Duration::from_secs(784_111_777);
+    let parse = |value: &'static str| {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static(value));
+        parse_retry_after(&headers, now)
+    };
+    assert_eq!(parse("7"), Some(Duration::from_secs(7)));
+    assert_eq!(parse(" 120 "), Some(Duration::from_secs(120)));
+    // `now` is Sun, 06 Nov 1994 08:49:37 GMT.
+    assert_eq!(
+        parse("Sun, 06 Nov 1994 08:49:47 GMT"),
+        Some(Duration::from_secs(10))
+    );
+    assert_eq!(parse("Sun, 06 Nov 1994 08:49:27 GMT"), Some(Duration::ZERO));
+    assert_eq!(parse("soon"), None);
+    assert_eq!(parse("-1"), None);
+    assert_eq!(parse("1.5"), None);
+    assert_eq!(parse_retry_after(&HeaderMap::new(), now), None);
+}
+
+#[tokio::test]
+async fn retries_wait_for_retry_after() {
+    // One second is the shortest wait the header can ask for, so this test
+    // sleeps that long once; nextest gives it a longer limit for that. The
+    // test below covers 503 without waiting.
+    let (bytes, digest) = test_blob();
+    let mut cache = mockito::Server::new_async().await;
+    let busy = cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(429)
+        .with_header("retry-after", "1")
+        .expect(1)
+        .create_async()
+        .await;
+    let ready = cache
+        .mock("GET", blob_path(&digest).as_str())
+        .with_status(200)
+        .with_body(bytes)
+        .expect(1)
+        .create_async()
+        .await;
+
+    // The first backoff delay is at most 200ms, so a wait of a second is
+    // the header's.
+    let started_at = Instant::now();
+    let blob = retrying_client(&cache, 1)
+        .get_blob(&digest, BLOB_MEDIA_TYPE)
+        .await
+        .unwrap();
+    assert_eq!(blob, bytes);
+    assert!(started_at.elapsed() >= Duration::from_secs(1));
+    busy.assert_async().await;
+    ready.assert_async().await;
+}
+
+#[tokio::test]
+async fn a_retry_after_past_the_limit_ends_the_retries() {
+    let (_, digest) = test_blob();
+    for status in [429, 503] {
+        let mut cache = mockito::Server::new_async().await;
+        let busy = cache
+            .mock("GET", blob_path(&digest).as_str())
+            .with_status(status)
+            .with_header("retry-after", "31")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let started_at = Instant::now();
+        let error = retrying_client(&cache, 3)
+            .get_blob(&digest, BLOB_MEDIA_TYPE)
+            .await
+            .unwrap_err();
+        assert!(started_at.elapsed() < MAX_RETRY_AFTER);
+        assert!(error.to_string().contains(&status.to_string()), "{error}");
+        assert!(is_transient(&error));
+        busy.assert_async().await;
+    }
+}
+
+#[test]
+fn retry_after_waits_share_one_limit_per_request() {
+    let backoff = Duration::from_millis(200);
+    let seconds = Duration::from_secs;
+    let mut left = MAX_RETRY_AFTER;
+    assert_eq!(retry_delay(backoff, None, &mut left), Some(backoff));
+    assert_eq!(left, MAX_RETRY_AFTER);
+    // A shorter `Retry-After` does not shorten the backoff.
+    assert_eq!(
+        retry_delay(seconds(15), Some(seconds(1)), &mut left),
+        Some(seconds(15))
+    );
+    assert_eq!(
+        retry_delay(backoff, Some(seconds(20)), &mut left),
+        Some(seconds(20))
+    );
+    assert_eq!(left, seconds(9));
+    assert_eq!(retry_delay(backoff, Some(seconds(10)), &mut left), None);
+    assert_eq!(
+        retry_delay(backoff, Some(seconds(9)), &mut left),
+        Some(seconds(9))
+    );
+    assert_eq!(retry_delay(backoff, Some(seconds(1)), &mut left), None);
+    assert_eq!(retry_delay(backoff, None, &mut left), Some(backoff));
+}

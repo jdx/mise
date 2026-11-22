@@ -465,8 +465,12 @@ _.source = "scripts/urls.sh" # reads $APP_URL
 ```
 
 A file uses `[env]` or `[[env]]`, not both. Only the top-level `env` has this
-form: `[vars]` and a task's `env` are single tables. `mise set` and `mise unset`
-do not edit a file that uses `[[env]]`, so change it by hand.
+form: `[vars]` and a task's `env` are single tables.
+
+`mise set` and `mise unset` edit a file that uses `[[env]]` by the same order.
+`mise set KEY=value` rewrites the last group that sets `KEY`, or adds `KEY` to
+the last group when none does, so the new value is the one mise uses.
+`mise unset KEY` removes `KEY` from every group.
 
 ## Variables that configure mise {#mise-variables}
 

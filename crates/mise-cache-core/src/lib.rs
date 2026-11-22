@@ -5,10 +5,11 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use eyre::{Result, bail, eyre};
 use futures_util::TryStreamExt as _;
-use log::warn;
+use log::{debug, warn};
 use reqwest::StatusCode;
 use reqwest::header::{
     ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderValue, IF_NONE_MATCH,
+    LOCATION, RETRY_AFTER,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
