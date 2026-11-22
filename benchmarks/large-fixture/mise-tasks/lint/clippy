@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="lint with clippy"
+#USAGE flag "--fix" help="apply fixes"
+echo clippy

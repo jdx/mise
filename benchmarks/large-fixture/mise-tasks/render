@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="render"
+#MISE depends=["build:step1"]
+echo render

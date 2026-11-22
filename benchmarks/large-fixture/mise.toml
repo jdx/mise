@@ -1,0 +1,262 @@
+# A frozen copy of the tools mise's own repository pins, with its lockfile, so
+# the large benchmarks measure a project the size of a real one: 29 tools across
+# the aqua, github, packslip, npm and core backends, a lockfile covering every
+# platform, and 47 tasks. `setup.sh` fakes an install of every locked version.
+# Do not refresh it from the repository config: changing it moves every large
+# benchmark's baseline.
+
+[env]
+_.path = ["./target/debug", "./node_modules/.bin"]
+BENCH_FIXTURE = "large"
+CARGO_TERM_COLOR = "always"
+
+[tools]
+mr-boxington = { version = "latest", minimum_release_age = "0s" }
+tak = { version = "latest", minimum_release_age = "0s" }
+age = "latest"
+aube = { version = "latest", minimum_release_age = "0s" }
+cargo-binstall = "latest"
+cargo-deny = { version = "latest", lazy = true }
+communique = { version = "latest", minimum_release_age = "0s" }
+cargo-insta = "latest"
+"aqua:nextest-rs/nextest/cargo-nextest" = "latest"
+git-cliff = "latest"
+gh = "latest"
+hk = { version = "latest", minimum_release_age = "0s" }
+jactionlint = "latest"
+jouet = "v0.0.4"
+jq = "latest"
+lua-language-server = "latest"
+stylua = "latest"
+"npm:markdownlint-cli" = "latest"
+oxfmt = "0.74.0"
+"npm:ajv-cli" = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+taplo = "latest"
+tombi = "latest"
+usage = { version = "latest", minimum_release_age = "0s" }
+wait-for-gh-rate-limit = { version = "latest", minimum_release_age = "0s" }
+sops = "latest"
+node = "24"
+
+
+[tasks."build:step1"]
+description = "build step 1"
+run = "echo build 1"
+
+[tasks."build:step2"]
+description = "build step 2"
+depends = ["build:step1"]
+run = "echo build 2"
+
+[tasks."build:step3"]
+description = "build step 3"
+depends = ["build:step2"]
+sources = ["src/**/*.rs", "Cargo.toml"]
+outputs = ["target/out.txt"]
+run = "echo build 3"
+
+[tasks."build:step4"]
+description = "build step 4"
+depends = ["build:step3"]
+run = "echo build 4"
+
+[tasks."build:step5"]
+description = "build step 5"
+depends = ["build:step4"]
+env = { STEP = "5" }
+run = "echo build 5"
+
+[tasks."build:step6"]
+description = "build step 6"
+depends = ["build:step5"]
+run = "echo build 6"
+
+[tasks."build:step7"]
+description = "build step 7"
+depends = ["build:step6"]
+dir = "{{config_root}}/sub"
+run = "echo build 7"
+
+[tasks."build:step8"]
+description = "build step 8"
+depends = ["build:step7"]
+run = "echo build 8"
+
+[tasks."test:step1"]
+description = "test step 1"
+run = "echo test 1"
+
+[tasks."test:step2"]
+description = "test step 2"
+depends = ["test:step1"]
+run = "echo test 2"
+
+[tasks."test:step3"]
+description = "test step 3"
+depends = ["test:step2"]
+sources = ["src/**/*.rs", "Cargo.toml"]
+outputs = ["target/out.txt"]
+run = "echo test 3"
+
+[tasks."test:step4"]
+description = "test step 4"
+depends = ["test:step3"]
+run = "echo test 4"
+
+[tasks."test:step5"]
+description = "test step 5"
+depends = ["test:step4"]
+env = { STEP = "5" }
+run = "echo test 5"
+
+[tasks."test:step6"]
+description = "test step 6"
+depends = ["test:step5"]
+run = "echo test 6"
+
+[tasks."test:step7"]
+description = "test step 7"
+depends = ["test:step6"]
+dir = "{{config_root}}/sub"
+run = "echo test 7"
+
+[tasks."test:step8"]
+description = "test step 8"
+depends = ["test:step7"]
+run = "echo test 8"
+
+[tasks."lint:step1"]
+description = "lint step 1"
+run = "echo lint 1"
+
+[tasks."lint:step2"]
+description = "lint step 2"
+depends = ["lint:step1"]
+run = "echo lint 2"
+
+[tasks."lint:step3"]
+description = "lint step 3"
+depends = ["lint:step2"]
+sources = ["src/**/*.rs", "Cargo.toml"]
+outputs = ["target/out.txt"]
+run = "echo lint 3"
+
+[tasks."lint:step4"]
+description = "lint step 4"
+depends = ["lint:step3"]
+run = "echo lint 4"
+
+[tasks."lint:step5"]
+description = "lint step 5"
+depends = ["lint:step4"]
+env = { STEP = "5" }
+run = "echo lint 5"
+
+[tasks."lint:step6"]
+description = "lint step 6"
+depends = ["lint:step5"]
+run = "echo lint 6"
+
+[tasks."lint:step7"]
+description = "lint step 7"
+depends = ["lint:step6"]
+dir = "{{config_root}}/sub"
+run = "echo lint 7"
+
+[tasks."lint:step8"]
+description = "lint step 8"
+depends = ["lint:step7"]
+run = "echo lint 8"
+
+[tasks."docs:step1"]
+description = "docs step 1"
+run = "echo docs 1"
+
+[tasks."docs:step2"]
+description = "docs step 2"
+depends = ["docs:step1"]
+run = "echo docs 2"
+
+[tasks."docs:step3"]
+description = "docs step 3"
+depends = ["docs:step2"]
+sources = ["src/**/*.rs", "Cargo.toml"]
+outputs = ["target/out.txt"]
+run = "echo docs 3"
+
+[tasks."docs:step4"]
+description = "docs step 4"
+depends = ["docs:step3"]
+run = "echo docs 4"
+
+[tasks."docs:step5"]
+description = "docs step 5"
+depends = ["docs:step4"]
+env = { STEP = "5" }
+run = "echo docs 5"
+
+[tasks."docs:step6"]
+description = "docs step 6"
+depends = ["docs:step5"]
+run = "echo docs 6"
+
+[tasks."docs:step7"]
+description = "docs step 7"
+depends = ["docs:step6"]
+dir = "{{config_root}}/sub"
+run = "echo docs 7"
+
+[tasks."docs:step8"]
+description = "docs step 8"
+depends = ["docs:step7"]
+run = "echo docs 8"
+
+[tasks."release:step1"]
+description = "release step 1"
+run = "echo release 1"
+
+[tasks."release:step2"]
+description = "release step 2"
+depends = ["release:step1"]
+run = "echo release 2"
+
+[tasks."release:step3"]
+description = "release step 3"
+depends = ["release:step2"]
+sources = ["src/**/*.rs", "Cargo.toml"]
+outputs = ["target/out.txt"]
+run = "echo release 3"
+
+[tasks."release:step4"]
+description = "release step 4"
+depends = ["release:step3"]
+run = "echo release 4"
+
+[tasks."release:step5"]
+description = "release step 5"
+depends = ["release:step4"]
+env = { STEP = "5" }
+run = "echo release 5"
+
+[tasks."release:step6"]
+description = "release step 6"
+depends = ["release:step5"]
+run = "echo release 6"
+
+[tasks."release:step7"]
+description = "release step 7"
+depends = ["release:step6"]
+dir = "{{config_root}}/sub"
+run = "echo release 7"
+
+[tasks."release:step8"]
+description = "release step 8"
+depends = ["release:step7"]
+run = "echo release 8"
+
+[tasks.flamegraph]
+description = "a task with a tool of its own"
+tools = { "cargo:flamegraph" = "latest" }
+run = "echo flamegraph"
