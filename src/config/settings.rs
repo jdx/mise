@@ -1241,10 +1241,20 @@ impl SettingsExt for Settings {
 
     fn add_cli_matches(cli: SettingsPartial) {
         // Don't process mise-specific flags when running as a shim
-        if *crate::env::IS_RUNNING_AS_SHIM {
-            Self::reset(Some(SettingsPartial::empty()));
+        let cli = if *crate::env::IS_RUNNING_AS_SHIM {
+            SettingsPartial::empty()
+        } else {
+            cli
+        };
+        // Startup builds the settings once before it parses the flags, with no CLI layer. Flags
+        // that set nothing leave that build as it is: rebuilding would read the same files and
+        // environment for the same result, and drop the installed-tool state read since.
+        let mut current = CLI_SETTINGS.lock().unwrap();
+        if cli.is_empty() && current.is_none() && mise_settings::is_loaded() {
+            *current = Some(cli);
             return;
         }
+        drop(current);
         Self::reset(Some(cli));
     }
 
@@ -3444,6 +3454,25 @@ mod tests {
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert!(settings.offline());
+    }
+
+    /// Startup builds the settings before it parses the flags. Flags that set nothing keep that
+    /// build; flags that set something, or replace flags that did, rebuild it.
+    #[test]
+    fn test_add_cli_matches_rebuilds_only_for_flags_that_set_something() {
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let before = Settings::get();
+        Settings::add_cli_matches(SettingsPartial::empty());
+        assert!(std::sync::Arc::ptr_eq(&before, &Settings::get()));
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::add_cli_matches(partial);
+        assert!(Settings::get().offline());
+
+        Settings::add_cli_matches(SettingsPartial::empty());
+        assert!(!Settings::get().offline());
     }
 
     #[test]
