@@ -78,6 +78,7 @@ pub mod path;
 pub mod path_env;
 pub mod platform;
 pub mod progress;
+pub mod quiet_problems;
 pub mod rand;
 pub mod redactions;
 pub mod remote_source;

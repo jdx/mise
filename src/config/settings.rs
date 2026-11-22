@@ -1045,6 +1045,10 @@ pub trait SettingsExt: Sized {
 
     fn cache_prune_age_duration(&self) -> Option<Duration>;
 
+    /// How long a tracked config or tool stub may go unused before mise
+    /// forgets it, or `None` to keep it until the file is deleted.
+    fn prune_forget_unused_after_duration(&self) -> eyre::Result<Option<Duration>>;
+
     fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration>;
 
     fn tool_update_check_duration(&self) -> eyre::Result<Duration>;
@@ -1423,6 +1427,11 @@ impl SettingsExt for Settings {
         // Truncating to whole seconds would give a sub-second age that meaning
         // instead of the aggressive prune it asks for.
         if age.is_zero() { None } else { Some(age) }
+    }
+
+    fn prune_forget_unused_after_duration(&self) -> eyre::Result<Option<Duration>> {
+        let age = duration::parse_duration(&self.prune.forget_unused_after)?;
+        Ok((!age.is_zero()).then_some(age))
     }
 
     fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration> {

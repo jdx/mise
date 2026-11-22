@@ -2901,6 +2901,11 @@
               "items": {
                 "type": "string"
               }
+            },
+            "forget_unused_after": {
+              "default": "90d",
+              "description": "Forget a tracked config or tool stub that no mise command has loaded for this long.",
+              "type": "string"
             }
           }
         },
