@@ -3581,9 +3581,10 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
         cmd!("/bin/cp", "-cR", from, to).run()?;
     } else if cfg!(windows) {
         // robocopy exits 0-7 when the copy succeeded (1 means files were copied) and 8 or
-        // more on failure, so a nonzero exit is not an error by itself.
+        // more on failure, so a nonzero exit is not an error by itself. Only 0-7 is success.
         let output = cmd!("robocopy", from, to, "/MIR").unchecked().run()?;
-        if output.status.code().is_none_or(|code| code >= 8) {
+        // A negative code is a crash such as an access violation, not a copy result.
+        if !matches!(output.status.code(), Some(0..=7)) {
             eyre::bail!("robocopy failed with {}", output.status);
         }
     } else {
