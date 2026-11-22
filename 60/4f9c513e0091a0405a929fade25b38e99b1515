@@ -1,0 +1,1 @@
+{"v":1,"kind":"test","cmd":"mise run test:unit-ci","family":"mise run …","ms":421671,"exit":0,"host":"b15cc00d2a00","ci":true,"cpus":6,"os":"macos","ts":1795173738}
