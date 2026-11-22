@@ -212,35 +212,60 @@ fn read_parsed_lockfile_parses_again_only_once_the_file_changes() {
     use std::time::{Duration, SystemTime};
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mise.lock");
-    let cache = Mutex::new(ParsedLockfiles::new());
-    let write = |content: &str, modified: SystemTime| {
-        std::fs::write(&path, content).unwrap();
-        std::fs::File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_modified(modified)
-            .unwrap();
-    };
+    let cache = Mutex::new(ParsedLockfiles::default());
     let read = || {
-        read_parsed_lockfile_in(&cache, &path)
+        read_parsed_lockfile_in(&cache, &path, |path| Lockfile::read(path))
             .unwrap()
             .lockfile_version()
     };
     let first = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let second = first + Duration::from_secs(1);
 
-    write("lockfile_version = 2\n", first);
+    write_with_time(&path, "lockfile_version = 2\n", first);
     assert_eq!(read(), 2);
     // The same length and time: the earlier parse stands.
-    write("lockfile_version = 3\n", first);
+    write_with_time(&path, "lockfile_version = 3\n", first);
     assert_eq!(read(), 2);
     // A new time is a new file.
-    write("lockfile_version = 3\n", second);
+    write_with_time(&path, "lockfile_version = 3\n", second);
     assert_eq!(read(), 3);
     // So is a new length.
-    write("lockfile_version = 1\n# a longer file\n", second);
+    write_with_time(&path, "lockfile_version = 1\n# a longer file\n", second);
     assert_eq!(read(), 1);
+}
+
+#[test]
+fn read_parsed_lockfile_drops_a_parse_that_a_clear_overtook() {
+    use std::time::{Duration, SystemTime};
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    let cache = Mutex::new(ParsedLockfiles::default());
+    let time = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    write_with_time(&path, "lockfile_version = 2\n", time);
+
+    // The file changes, keeping its time and length, and the caches are
+    // cleared after the parse read it but before the parse stored it.
+    let overtaken = read_parsed_lockfile_in(&cache, &path, |path| {
+        let lockfile = Lockfile::read(path);
+        write_with_time(path, "lockfile_version = 3\n", time);
+        cache.lock().unwrap().clear();
+        lockfile
+    })
+    .unwrap();
+    assert_eq!(overtaken.lockfile_version(), 2);
+
+    let next = read_parsed_lockfile_in(&cache, &path, |path| Lockfile::read(path)).unwrap();
+    assert_eq!(next.lockfile_version(), 3);
+}
+
+fn write_with_time(path: &Path, content: &str, modified: std::time::SystemTime) {
+    std::fs::write(path, content).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
 }
 
 #[test]

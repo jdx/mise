@@ -128,33 +128,51 @@ fn clear_lockfile_caches() {
 /// symlinked lockfile is always read, since its target can change without the
 /// link's stamp changing.
 fn read_parsed_lockfile(path: &Path) -> Result<Lockfile> {
-    read_parsed_lockfile_in(&PARSED_LOCKFILE_CACHE, path)
+    read_parsed_lockfile_in(&PARSED_LOCKFILE_CACHE, path, |path| Lockfile::read(path))
 }
 
-type ParsedLockfiles = HashMap<PathBuf, (FileStamp, Arc<Lockfile>)>;
+/// Parsed lockfiles by path, with a count of the times the cache was cleared.
+/// A file is parsed outside the lock, so a parse that a clear overtook must not
+/// store its result: the file may have changed after it was read.
+#[derive(Default)]
+struct ParsedLockfiles {
+    clears: u64,
+    files: HashMap<PathBuf, (FileStamp, Arc<Lockfile>)>,
+}
 
-fn read_parsed_lockfile_in(cache: &Mutex<ParsedLockfiles>, path: &Path) -> Result<Lockfile> {
+impl ParsedLockfiles {
+    fn clear(&mut self) {
+        self.clears += 1;
+        self.files.clear();
+    }
+}
+
+fn read_parsed_lockfile_in(
+    cache: &Mutex<ParsedLockfiles>,
+    path: &Path,
+    parse: impl FnOnce(&Path) -> Result<Lockfile>,
+) -> Result<Lockfile> {
+    let (clears, cached) = {
+        let cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+        (cache.clears, cache.files.get(path).cloned())
+    };
     let stamp = fs::symlink_metadata(path)
         .ok()
         .filter(|meta| meta.is_file())
         .map(|meta| (meta.modified().ok(), meta.len()));
     let Some(stamp) = stamp else {
-        return Lockfile::read(path);
+        return parse(path);
     };
-    let cached = cache
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(path)
-        .filter(|(cached, _)| *cached == stamp)
-        .map(|(_, lockfile)| Arc::clone(lockfile));
-    if let Some(lockfile) = cached {
+    if let Some((_, lockfile)) = cached.filter(|(cached, _)| *cached == stamp) {
         return Ok(lockfile.as_ref().clone());
     }
-    let lockfile = Lockfile::read(path)?;
-    cache
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(path.to_path_buf(), (stamp, Arc::new(lockfile.clone())));
+    let lockfile = parse(path)?;
+    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.clears == clears {
+        cache
+            .files
+            .insert(path.to_path_buf(), (stamp, Arc::new(lockfile.clone())));
+    }
     Ok(lockfile)
 }
 
