@@ -229,7 +229,8 @@ The command runs with the tool's `bin` directory and any
 project's `[env]` values. An `[env]` value marked `tools = true` is included
 only when the tool has install dependencies, from its backend (an `npm:` tool
 depends on `node`) or from `depends`, and is resolved against those
-dependencies. When `[env]` cannot be resolved, the command runs without it.
+dependencies. When `[env]` or one of those values cannot be resolved, the
+command runs without it.
 Templates such as <code v-pre>{{ tools.ripgrep.path }}</code> are rendered
 first. It also receives:
 

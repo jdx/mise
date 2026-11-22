@@ -5,6 +5,11 @@
 //! subcommand has to be one mise has, and each flag one that command accepts.
 //! Values are not checked, so a placeholder such as `<tool>` is fine.
 //!
+//! A command is read where `mise` starts it: at the start of a line or after
+//! `;`, `|`, `&&` or `$(`, behind a prompt, assignments, the words in
+//! `PREFIXES`, or `env` or `sudo` with their options. A `mise` that another
+//! program is handed as an argument (`xargs mise ...`) is not read.
+//!
 //! A command that is wrong on purpose, or is not input to this mise (output,
 //! a message mise prints, the `mise <task>` shorthand), is skipped with
 //! `<!-- cli: skip -->`. On a line of its own, the marker skips the fenced
@@ -36,11 +41,18 @@ const SHELLS: &[&str] = &[
     "yaml",
 ];
 
-/// Words that come before the command they run. `env`, with its options, is
-/// one more.
+/// Words that come before the command they run.
 const PREFIXES: &[&str] = &[
-    "$", "❯", "%", "sudo", "exec", "eval", "command", "time", "RUN", "run:", "-", "if", "!",
-    "then", "do", "else", "&",
+    "$", "❯", "%", "exec", "eval", "command", "time", "RUN", "run:", "-", "if", "!", "then", "do",
+    "else", "&",
+];
+
+/// Programs that run the command that follows their own options.
+const WRAPPERS: &[&str] = &["env", "sudo"];
+
+/// The options of those programs whose value is the next word.
+const WRAPPER_VALUES: &[&str] = &[
+    "-u", "-g", "-C", "-P", "--unset", "--chdir", "--user", "--group",
 ];
 
 /// Lines mise prints, which help examples in `docs/cli/` show under the command
@@ -325,18 +337,24 @@ fn simple_commands(line: &str) -> Vec<Vec<Word>> {
         .commands
         .into_iter()
         .filter_map(|words| {
-            let mut env = false;
+            let mut wrapper = false;
+            let mut value = false;
             let start = words.iter().position(|w| {
                 let text = w.text.as_str();
+                // `env -u HOME mise ...`: the value of a wrapper's option
+                if std::mem::take(&mut value) {
+                    return false;
+                }
                 if w.quoted {
                     return true;
                 }
-                // `env -S mise ...`: the options of `env` come before the command too
-                if env && text.starts_with('-') {
+                // `env -S mise ...`: its options come before the command too
+                if wrapper && text.starts_with('-') {
+                    value = WRAPPER_VALUES.contains(&text);
                     return false;
                 }
-                env = text == "env" || text.ends_with("/env");
-                !(env || PREFIXES.contains(&text) || is_assignment(text))
+                wrapper = WRAPPERS.contains(&text.rsplit('/').next().unwrap_or(text));
+                !(wrapper || PREFIXES.contains(&text) || is_assignment(text))
             })?;
             let (name, rest) = words[start..].split_first()?;
             (name.text == "mise" && !rest.is_empty()).then(|| rest.to_vec())
@@ -694,6 +712,13 @@ mod tests {
             ["exec node@24 -- node"]
         );
         assert_eq!(shown("#!/bin/sh mise ls"), [] as [&str; 0]);
+        assert_eq!(
+            shown("env -u HOME --chdir \"$dir\" mise ls --json"),
+            ["ls --json"]
+        );
+        assert_eq!(shown("sudo -E -u deploy mise install"), ["install"]);
+        // an argument of another program is not a command
+        assert_eq!(shown("xargs mise install"), [] as [&str; 0]);
         // only the target of a redirection is left out
         assert_eq!(
             shown("mise ls >tools.txt --json 2> /dev/null --current"),
@@ -812,6 +837,10 @@ mod tests {
             (
                 "mise install >out.log --bogus",
                 "`mise install` has no flag --bogus",
+            ),
+            (
+                "env -u HOME mise not-a-command",
+                "mise has no command `not-a-command`",
             ),
             (
                 "env mise not-a-command",

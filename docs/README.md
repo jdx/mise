@@ -108,7 +108,9 @@ schema must then reject.
 The `docs_show_commands_that_exist` unit test
 (`cargo test -p mise --bin mise docs_commands`) walks every `mise ...` command
 in a shell block, a block with no language or an inline code span through the
-usage spec and fails on a subcommand or flag mise does not have. Give a block
+usage spec and fails on a subcommand or flag mise does not have. A command is
+read where `mise` starts it, also behind a prompt, `sudo` or `env`; a `mise`
+that another program is handed as an argument is not. Give a block
 of output the `text` language. The test checks nothing on Windows, where it
 still reports a pass, so run it on Linux or macOS. It does not check values, so
 placeholders such as `<tool>` are fine. Text that starts with `mise` and is not

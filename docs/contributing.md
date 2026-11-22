@@ -542,7 +542,9 @@ A unit test checks the commands the docs show:
 `cargo test -p mise --bin mise docs_commands` walks every `mise ...` command in
 a shell block, a block with no language or an inline code span in `docs/` and
 `README.md` through the usage spec, and fails on a subcommand or flag mise does
-not have. Give a block of output the `text` language. The test checks nothing
+not have. A command is read where `mise` starts it, also behind a prompt,
+`sudo` or `env`; a `mise` that another program is handed as an argument is
+not. Give a block of output the `text` language. The test checks nothing
 on Windows, where it still reports a pass, so run it on Linux or macOS. Text that starts
 with `mise` and is not a command to type, such as a message mise prints, needs
 a `<!-- cli: skip -->` comment: on its own line above a fenced block or a
