@@ -27,10 +27,18 @@ rm "$work/project/setup.sh"
 # Only mise sees the fixture's directories: a shim on PATH, such as the `jq`
 # below, would otherwise look for its tool in them. The ceiling keeps mise from
 # reading configs in the directories above the work directory, such as a
-# `~/.config/mise/config.toml` when the work directory is under HOME.
+# `~/.config/mise/config.toml` when the work directory is under HOME. Any other
+# directory or file a developer points mise at is cleared, so that the installs
+# below can only land in the work directory.
 m() {
-	HOME="$work/home" \
+	env -u MISE_CONFIG_FILE -u MISE_DOWNLOADS_DIR -u MISE_GLOBAL_CONFIG_FILE \
+		-u MISE_INSTALL_STORE_DIR -u MISE_PLUGINS_DIR -u MISE_SHARED_INSTALL_DIRS \
+		-u MISE_SHIMS_DIR -u MISE_SYSTEM_CONFIG_DIR -u MISE_SYSTEM_CONFIG_FILE \
+		-u MISE_SYSTEM_DATA_DIR -u MISE_SYSTEM_DIR -u MISE_SYSTEM_INSTALLS_DIR \
+		-u MISE_SYSTEM_PLUGINS_DIRS -u MISE_TMP_DIR -u MISE_ENV -u MISE_PROFILE \
+		HOME="$work/home" \
 		MISE_DATA_DIR="$work/data" \
+		MISE_INSTALLS_DIR="$work/data/installs" \
 		MISE_CONFIG_DIR="$work/config" \
 		MISE_STATE_DIR="$work/state" \
 		MISE_CACHE_DIR="$work/cache" \
@@ -56,6 +64,10 @@ m ls --json --current | while IFS= read -r line; do
 		name=${BASH_REMATCH[1]##*/}
 		name=${name##*:}
 	elif [[ $line =~ $path_re ]]; then
+		if [[ ${BASH_REMATCH[1]} != "$work"/* ]]; then
+			echo "setup.sh: refusing to write outside $work: ${BASH_REMATCH[1]}" >&2
+			exit 1
+		fi
 		mkdir -p "${BASH_REMATCH[1]}/bin"
 		ln -sf "$true_bin" "${BASH_REMATCH[1]}/bin/$name"
 	fi
