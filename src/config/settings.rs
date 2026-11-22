@@ -200,12 +200,14 @@ static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
 /// whenever such a file loads, the write path asks [`ignored_write_target`] and warns there.
 static IGNORED_WRITE_TARGETS: Lazy<Mutex<BTreeMap<&'static str, PathBuf>>> =
     Lazy::new(Default::default);
-/// Settings files that failed to parse, held until warnings can be printed.
+/// Warnings found while building the settings, such as a file that failed to parse or a key it may
+/// not set, held until warnings can be printed.
 ///
-/// A set rather than a list because settings are built more than once per run — `add_cli_matches`
-/// resets them so CLI flags take effect — and each build re-reports the same file. The messages
-/// name their file, which is what keeps two files failing the same way from collapsing into one.
-static PENDING_SETTINGS_FILE_ERRORS: Lazy<Mutex<BTreeSet<String>>> = Lazy::new(Default::default);
+/// A set rather than a list because settings can be built more than once per run — `add_cli_matches`
+/// rebuilds them when CLI flags set something — and each build re-reports the same problem. The
+/// messages name their file, which is what keeps two files failing the same way from collapsing
+/// into one.
+static PENDING_SETTINGS_WARNINGS: Lazy<Mutex<BTreeSet<String>>> = Lazy::new(Default::default);
 /// Whether warnings found while loading settings can be printed yet.
 ///
 /// `logger::init()` calls `Settings::try_get()` before installing the logger, so the first build
@@ -358,17 +360,19 @@ fn warn_deprecated_env_settings() {
     }
 }
 
-/// Report a settings file that could not be parsed.
+/// Report a problem found while building the settings, such as a file that could not be parsed.
 ///
-/// Queued rather than printed when the logger is not up yet. `warn_once!` cannot stand in for the
+/// Queued rather than printed when the logger is not up yet. Every warning from the build goes
+/// through here: when the CLI flags set nothing, the pre-logger build is the only one, so a `warn!`
+/// there would never be seen. `warn_once!` cannot stand in for the
 /// queue: it records the message as seen even when nothing was printed, so the pre-logger build
 /// would silence the one that comes after it.
 ///
 /// Readiness is read while the queue is held, and the flush sets it while holding the same lock, so
 /// a warning cannot be queued into a set that has just been drained.
-pub(crate) fn warn_settings_file_error(msg: String) {
+pub(crate) fn warn_while_loading_settings(msg: String) {
     {
-        let mut pending = PENDING_SETTINGS_FILE_ERRORS.lock().unwrap();
+        let mut pending = PENDING_SETTINGS_WARNINGS.lock().unwrap();
         if !WARNINGS_READY.load(Ordering::SeqCst) {
             pending.insert(msg);
             return;
@@ -411,7 +415,7 @@ fn should_warn_deprecated_value(value: &toml::Value) -> bool {
 }
 
 fn warn_deprecated(key: &'static str) {
-    // Same lock discipline as `warn_settings_file_error`: the readiness read and the insert have to
+    // Same lock discipline as `warn_while_loading_settings`: the readiness read and the insert have to
     // be one step against the flush, or a key queued just after the drain is never printed.
     {
         let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
@@ -543,7 +547,9 @@ fn validate_auto_update(key: &str, value: &mut AutoUpdate) {
     if let Some(interval) = value.interval()
         && let Err(err) = duration::parse_duration(interval)
     {
-        warn!("{key} must be true, false, or a duration such as \"6h\", got {interval:?}: {err}");
+        warn_while_loading_settings(format!(
+            "{key} must be true, false, or a duration such as \"6h\", got {interval:?}: {err}"
+        ));
         *value = AutoUpdate::Off;
     }
 }
@@ -632,10 +638,10 @@ fn strip_local_only_settings(settings: &mut toml::Table, path: &Path, is_global:
                     .entry(key)
                     .or_insert_with(|| path.to_path_buf());
             } else if !QuietIgnoredSettings::active() {
-                warn!(
+                warn_while_loading_settings(format!(
                     "{key} in non-global config {} is ignored for security reasons",
                     path.display()
-                );
+                ));
             }
         }
     }
@@ -655,11 +661,11 @@ pub(crate) fn ignored_write_target(key: &str) -> Option<PathBuf> {
 fn strip_env_only_settings(settings: &mut toml::Table, path: &Path) {
     for (key, meta) in SETTINGS_META.iter().filter(|(_, meta)| meta.env_only) {
         if remove_nested_toml_value(settings, key).is_some() && !QuietIgnoredSettings::active() {
-            warn!(
+            warn_while_loading_settings(format!(
                 "{key} in {} is ignored: mise reads it before config files load. Set {} instead.",
                 file::display_path(path),
                 meta.env.unwrap_or("the matching MISE_* variable")
-            );
+            ));
         }
     }
 }
@@ -911,7 +917,7 @@ fn resolve_dotfiles_root_path(settings: &mut toml::Table, path: &Path) {
     // A render error must not drop the file's other settings. The unrendered template is left in
     // place, so the dotfiles sources fail to resolve and name it.
     if let Err(err) = settings_path_resolver(path, config_root)("settings.dotfiles.root", root) {
-        warn!("{err}");
+        warn_while_loading_settings(format!("{err}"));
     }
 }
 
@@ -934,7 +940,7 @@ fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) {
             // Dropping the whole settings layer would silently send global writes to the
             // default file. The unrendered template is not an absolute path, so the write
             // fails in `configured_global_write_path` instead.
-            warn!("{err}");
+            warn_while_loading_settings(format!("{err}"));
         }
     }
 }
@@ -1245,10 +1251,20 @@ impl SettingsExt for Settings {
 
     fn add_cli_matches(cli: SettingsPartial) {
         // Don't process mise-specific flags when running as a shim
-        if *crate::env::IS_RUNNING_AS_SHIM {
-            Self::reset(Some(SettingsPartial::empty()));
+        let cli = if *crate::env::IS_RUNNING_AS_SHIM {
+            SettingsPartial::empty()
+        } else {
+            cli
+        };
+        // Startup builds the settings once before it parses the flags, with no CLI layer. Flags
+        // that set nothing leave that build as it is: rebuilding would read the same files and
+        // environment for the same result, and drop the installed-tool state read since.
+        let mut current = CLI_SETTINGS.lock().unwrap();
+        if cli.is_empty() && current.is_none() && mise_settings::is_loaded() {
+            *current = Some(cli);
             return;
         }
+        drop(current);
         Self::reset(Some(cli));
     }
 
@@ -1764,7 +1780,7 @@ impl SettingsInternal for Settings {
                     // Name the file. mise reads several settings files and two of them can fail
                     // with byte-identical parser text, which leaves the reports
                     // indistinguishable -- to the reader, and to the queue that collapses repeats.
-                    warn_settings_file_error(format!(
+                    warn_while_loading_settings(format!(
                         "Error loading settings file {}: {err}",
                         file::display_path(&path)
                     ));
@@ -1780,7 +1796,7 @@ impl SettingsInternal for Settings {
         // Readiness is set under both queue locks so a producer cannot read "not ready" and then
         // insert into a set this call has already taken.
         let (pending_files, pending) = {
-            let mut files = PENDING_SETTINGS_FILE_ERRORS.lock().unwrap();
+            let mut files = PENDING_SETTINGS_WARNINGS.lock().unwrap();
             let mut deprecated = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
             WARNINGS_READY.store(true, Ordering::SeqCst);
             (
@@ -3453,6 +3469,25 @@ mod tests {
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert!(settings.offline());
+    }
+
+    /// Startup builds the settings before it parses the flags. Flags that set nothing keep that
+    /// build; flags that set something, or replace flags that did, rebuild it.
+    #[test]
+    fn test_add_cli_matches_rebuilds_only_for_flags_that_set_something() {
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let before = Settings::get();
+        Settings::add_cli_matches(SettingsPartial::empty());
+        assert!(std::sync::Arc::ptr_eq(&before, &Settings::get()));
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::add_cli_matches(partial);
+        assert!(Settings::get().offline());
+
+        Settings::add_cli_matches(SettingsPartial::empty());
+        assert!(!Settings::get().offline());
     }
 
     #[test]
