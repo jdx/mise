@@ -19,7 +19,7 @@ work=$2
 fixture=$(cd "$(dirname "$0")" && pwd)
 
 rm -rf "$work"
-mkdir -p "$work/home"
+mkdir -p "$work/home" "$work/system/config" "$work/system/data"
 work=$(realpath "$work")
 cp -R "$fixture" "$work/project"
 rm "$work/project/setup.sh"
@@ -27,15 +27,19 @@ rm "$work/project/setup.sh"
 # Only mise sees the fixture's directories: a shim on PATH, such as the `jq`
 # below, would otherwise look for its tool in them. The ceiling keeps mise from
 # reading configs in the directories above the work directory, such as a
-# `~/.config/mise/config.toml` when the work directory is under HOME. Any other
-# directory or file a developer points mise at is cleared, so that the installs
-# below can only land in the work directory.
+# `~/.config/mise/config.toml` when the work directory is under HOME, and the
+# system directories are empty ones in the work directory rather than
+# `/etc/mise`. Any other directory, file or config file name a developer points
+# mise at is cleared, so that the installs below can only land in the work
+# directory.
 m() {
-	env -u MISE_CONFIG_FILE -u MISE_DOWNLOADS_DIR -u MISE_GLOBAL_CONFIG_FILE \
-		-u MISE_INSTALL_STORE_DIR -u MISE_PLUGINS_DIR -u MISE_SHARED_INSTALL_DIRS \
-		-u MISE_SHIMS_DIR -u MISE_SYSTEM_CONFIG_DIR -u MISE_SYSTEM_CONFIG_FILE \
-		-u MISE_SYSTEM_DATA_DIR -u MISE_SYSTEM_DIR -u MISE_SYSTEM_INSTALLS_DIR \
-		-u MISE_SYSTEM_PLUGINS_DIRS -u MISE_TMP_DIR -u MISE_ENV -u MISE_PROFILE \
+	env -u MISE_CONFIG_FILE -u MISE_DEFAULT_CONFIG_FILENAME \
+		-u MISE_DEFAULT_TOOL_VERSIONS_FILENAME -u MISE_DOWNLOADS_DIR \
+		-u MISE_GLOBAL_CONFIG_FILE -u MISE_INSTALL_STORE_DIR \
+		-u MISE_OVERRIDE_CONFIG_FILENAMES -u MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES \
+		-u MISE_PLUGINS_DIR -u MISE_SHARED_INSTALL_DIRS -u MISE_SHIMS_DIR \
+		-u MISE_SYSTEM_CONFIG_FILE -u MISE_SYSTEM_DIR -u MISE_SYSTEM_INSTALLS_DIR \
+		-u MISE_TMP_DIR -u MISE_ENV -u MISE_PROFILE \
 		HOME="$work/home" \
 		MISE_DATA_DIR="$work/data" \
 		MISE_INSTALLS_DIR="$work/data/installs" \
@@ -43,6 +47,9 @@ m() {
 		MISE_STATE_DIR="$work/state" \
 		MISE_CACHE_DIR="$work/cache" \
 		MISE_CEILING_PATHS="$work" \
+		MISE_SYSTEM_CONFIG_DIR="$work/system/config" \
+		MISE_SYSTEM_DATA_DIR="$work/system/data" \
+		MISE_SYSTEM_PLUGINS_DIRS="$work/system/data/plugins" \
 		MISE_OFFLINE=1 \
 		MISE_YES=1 \
 		"$mise" "$@"
