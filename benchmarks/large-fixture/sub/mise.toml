@@ -1,0 +1,7 @@
+# A nested config, as a monorepo package has: it overrides one tool and adds env.
+[tools]
+node = "24"
+jq = "latest"
+
+[env]
+SUB_PACKAGE = "1"

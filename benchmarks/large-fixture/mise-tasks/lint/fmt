@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="lint with fmt"
+#USAGE flag "--fix" help="apply fixes"
+echo fmt

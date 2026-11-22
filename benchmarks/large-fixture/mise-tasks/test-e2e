@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="test-e2e"
+#MISE depends=["build:step1"]
+echo test-e2e
