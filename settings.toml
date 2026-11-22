@@ -437,7 +437,8 @@ By default, mise looks for config files in the current directory and every
 parent up to the filesystem root. The search stops at a ceiling directory, which
 is not searched itself: with `MISE_CEILING_PATHS=/home/user`,
 `/home/user/projects/app/mise.toml` loads but `/home/user/mise.toml` does not.
-This matches Git's `GIT_CEILING_DIRECTORIES`.
+A ceiling that goes through a symlink also stops the search at the directory
+the link points to. This matches Git's `GIT_CEILING_DIRECTORIES`.
 
 `mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the
@@ -2931,6 +2932,23 @@ env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES"
 parse_env = "list_by_colon"
 rc = true
 type = "ListString"
+
+[packslip.compinit]
+default = true
+description = "Let zsh activation run `compinit -i` to register packslip completions when `compdef` is not defined yet."
+docs = """
+Packslip completions are registered with zsh's `compdef`. When `compdef` does
+not exist yet, `mise activate zsh` runs `compinit -i` itself so registration
+can proceed. A plugin manager that defers `compinit` (zinit, for example) then
+runs it a second time, and mise's run writes the default `~/.zcompdump`.
+
+Set this to `false` to skip registration while `compdef` is missing instead.
+Completions for packslip tools register once a later prompt finds `compdef`
+defined. A `compinit` that is already loaded but left `_comps` as a plain array
+is still repaired.
+"""
+env = "MISE_PACKSLIP_COMPINIT"
+type = "Bool"
 
 [packslip.exec]
 default = false

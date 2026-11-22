@@ -2818,6 +2818,11 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "compinit": {
+              "default": true,
+              "description": "Let zsh activation run `compinit -i` to register packslip completions when `compdef` is not defined yet.",
+              "type": "boolean"
+            },
             "exec": {
               "default": false,
               "description": "Let packslip tools run their own executable at install time to generate resources, such as an agent skill.",

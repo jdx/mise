@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::config::miserc;
-use crate::file::replace_path;
+use crate::file;
 use crate::shell::ShellType;
 use crate::{args::ToolArg, file::display_path};
 use eyre::Context;
@@ -84,24 +84,12 @@ pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().u
 
 /// The tri-state auto_env setting: MISE_AUTO_ENV env var > .miserc.toml > unset
 pub(crate) fn auto_env_setting() -> Option<bool> {
-    if var_is_true("MISE_AUTO_ENV") {
-        Some(true)
-    } else if var_is_false("MISE_AUTO_ENV") {
-        Some(false)
-    } else {
-        miserc::get_auto_env()
-    }
+    var_bool("MISE_AUTO_ENV").or_else(miserc::get_auto_env)
 }
 
 /// The tri-state env_conf_d setting: MISE_ENV_CONF_D env var > .miserc.toml > unset.
 pub(crate) fn env_conf_d_setting() -> Option<bool> {
-    if var_is_true("MISE_ENV_CONF_D") {
-        Some(true)
-    } else if var_is_false("MISE_ENV_CONF_D") {
-        Some(false)
-    } else {
-        miserc::get_env_conf_d()
-    }
+    var_bool("MISE_ENV_CONF_D").or_else(miserc::get_env_conf_d)
 }
 
 /// Keep dotted conf.d fragments unconditional through the deprecation window.
@@ -112,26 +100,26 @@ pub(crate) fn env_conf_d_default_for_version(v: &versions::Versioning) -> bool {
 /// Whether `conf.d` filenames carry environment suffixes, resolving the
 /// setting against the version-gated default.
 pub(crate) fn env_conf_d() -> bool {
-    env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::version::V))
+    env_conf_d_setting().unwrap_or_else(env_conf_d_default)
+}
+
+/// [`env_conf_d_default_for_version`] for this mise. Config discovery asks for every `conf.d`
+/// pattern of every directory it walks.
+pub(crate) fn env_conf_d_default() -> bool {
+    static DEFAULT: Lazy<bool> = Lazy::new(|| env_conf_d_default_for_version(&crate::version::V));
+    *DEFAULT
 }
 
 /// [`env_conf_d_setting`] for the global and system config directories, which
 /// ignores project `.miserc.toml` files: those load without trust and must not
 /// change which global fragments load, such as one that turns `paranoid` on.
 pub(crate) fn global_env_conf_d_setting() -> Option<bool> {
-    if var_is_true("MISE_ENV_CONF_D") {
-        Some(true)
-    } else if var_is_false("MISE_ENV_CONF_D") {
-        Some(false)
-    } else {
-        miserc::get_global_env_conf_d()
-    }
+    var_bool("MISE_ENV_CONF_D").or_else(miserc::get_global_env_conf_d)
 }
 
 /// [`env_conf_d`] for the global and system config directories.
 pub(crate) fn global_env_conf_d() -> bool {
-    global_env_conf_d_setting()
-        .unwrap_or_else(|| env_conf_d_default_for_version(&crate::version::V))
+    global_env_conf_d_setting().unwrap_or_else(env_conf_d_default)
 }
 
 /// Default for auto_env when the setting is unset: off until mise 2027.6.0
@@ -215,26 +203,23 @@ pub(crate) static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
         .map(|v| {
             split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
-                .map(replace_path)
+                .flat_map(|p| file::ceiling_path_forms(&p))
                 .collect()
         })
         .or_else(|| {
-            miserc::get_ceiling_paths()
-                .map(|paths| paths.iter().cloned().map(replace_path).collect())
+            miserc::get_ceiling_paths().map(|paths| {
+                paths
+                    .iter()
+                    .flat_map(|p| file::ceiling_path_forms(p))
+                    .collect()
+            })
         })
         .unwrap_or_default()
 });
 
 #[cfg(feature = "self_update")]
-pub(crate) static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
-    if var_is_true("MISE_SELF_UPDATE_AVAILABLE") {
-        Some(true)
-    } else if var_is_false("MISE_SELF_UPDATE_AVAILABLE") {
-        Some(false)
-    } else {
-        None
-    }
-});
+pub(crate) static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> =
+    Lazy::new(|| var_bool("MISE_SELF_UPDATE_AVAILABLE"));
 #[cfg(feature = "self_update")]
 pub(crate) static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
     let base = mise_install_base()?;

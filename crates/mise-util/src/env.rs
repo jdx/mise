@@ -118,14 +118,9 @@ pub static LOCAL_APPDATA: Lazy<PathBuf> =
 
 /// control display of "friendly" errors - defaults to release mode behavior unless overridden
 pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
-    if var_is_true("MISE_FRIENDLY_ERROR") {
-        true
-    } else if var_is_false("MISE_FRIENDLY_ERROR") {
-        false
-    } else {
-        // default behavior: friendly in release mode unless debug logging
-        !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug
-    }
+    // default behavior: friendly in release mode unless debug logging
+    var_bool("MISE_FRIENDLY_ERROR")
+        .unwrap_or_else(|| !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug)
 });
 
 pub static MISE_TOOL_STUB: Lazy<bool> =
@@ -761,24 +756,24 @@ fn var_u8(key: &str) -> u8 {
         .unwrap_or_default()
 }
 
-pub fn var_is_true(key: &str) -> bool {
-    match var(key) {
-        Ok(v) => {
-            let v = v.to_lowercase();
-            v == "y" || v == "yes" || v == "true" || v == "1" || v == "on"
-        }
-        Err(_) => false,
+/// A variable read as a switch: `Some(true)` for `y`, `yes`, `true`, `1` or `on`, `Some(false)`
+/// for `n`, `no`, `false`, `0` or `off` (in any case), and `None` when it is unset or anything
+/// else.
+pub fn var_bool(key: &str) -> Option<bool> {
+    let v = var(key).ok()?.to_lowercase();
+    match v.as_str() {
+        "y" | "yes" | "true" | "1" | "on" => Some(true),
+        "n" | "no" | "false" | "0" | "off" => Some(false),
+        _ => None,
     }
 }
 
+pub fn var_is_true(key: &str) -> bool {
+    var_bool(key) == Some(true)
+}
+
 pub fn var_is_false(key: &str) -> bool {
-    match var(key) {
-        Ok(v) => {
-            let v = v.to_lowercase();
-            v == "n" || v == "no" || v == "false" || v == "0" || v == "off"
-        }
-        Err(_) => false,
-    }
+    var_bool(key) == Some(false)
 }
 
 pub fn in_home_dir() -> bool {
@@ -1668,6 +1663,30 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn var_bool_reads_the_switch_spellings_and_nothing_else() {
+        let key = "__MISE_TEST_VAR_BOOL";
+        for (value, expected) in [
+            ("1", Some(true)),
+            ("Yes", Some(true)),
+            ("ON", Some(true)),
+            ("y", Some(true)),
+            ("0", Some(false)),
+            ("No", Some(false)),
+            ("OFF", Some(false)),
+            ("n", Some(false)),
+            ("", None),
+            ("maybe", None),
+        ] {
+            set_var(key, value);
+            assert_eq!(var_bool(key), expected, "{value:?}");
+            assert_eq!(var_is_true(key), expected == Some(true), "{value:?}");
+            assert_eq!(var_is_false(key), expected == Some(false), "{value:?}");
+        }
+        remove_var(key);
+        assert_eq!(var_bool(key), None);
+    }
 
     /// A Homebrew-like layout: `bin/mise` is the stable launcher, a link to the versioned file.
     #[cfg(unix)]
