@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::config::miserc;
-use crate::file::replace_path;
+use crate::file;
 use crate::shell::ShellType;
 use crate::{args::ToolArg, file::display_path};
 use eyre::Context;
@@ -215,12 +215,16 @@ pub(crate) static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
         .map(|v| {
             split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
-                .map(replace_path)
+                .flat_map(|p| file::ceiling_path_forms(&p))
                 .collect()
         })
         .or_else(|| {
-            miserc::get_ceiling_paths()
-                .map(|paths| paths.iter().cloned().map(replace_path).collect())
+            miserc::get_ceiling_paths().map(|paths| {
+                paths
+                    .iter()
+                    .flat_map(|p| file::ceiling_path_forms(p))
+                    .collect()
+            })
         })
         .unwrap_or_default()
 });

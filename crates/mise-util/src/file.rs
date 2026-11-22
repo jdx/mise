@@ -2044,6 +2044,16 @@ pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
+/// A ceiling path as given, with `~` expanded, and its target when it goes
+/// through a symlink. The directories `all_dirs` walks come from the current
+/// directory, which the kernel reports with symlinks resolved, so a ceiling
+/// written through a symlink would never match one of them.
+pub fn ceiling_path_forms(path: &Path) -> impl Iterator<Item = PathBuf> + use<> {
+    let path = replace_path(path);
+    let resolved = fs::canonicalize(&path).ok().filter(|p| *p != path);
+    std::iter::once(path).chain(resolved)
+}
+
 pub fn all_dirs<P: AsRef<Path>>(
     start_dir: P,
     ceiling_dirs: &HashSet<PathBuf>,

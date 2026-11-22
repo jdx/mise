@@ -67,4 +67,27 @@ assert_contains "mise env" "export CHILD=true"
 assert_contains "mise env" "export PARENT=true"
 echo "Test 5: Passed"
 
+# Test 6: Ceiling path written through a symlink. The current directory comes
+# back from the kernel with the link resolved, so the ceiling has to match the
+# directory it points at.
+echo "Test 6: With a ceiling path that goes through a symlink"
+ln -s "$TEST_ROOT/parent" "$TEST_ROOT/link"
+cd "$TEST_ROOT/link/child/grandchild"
+export MISE_CEILING_PATHS="$TEST_ROOT/link/child"
+assert_contains "mise env" "export GRANDCHILD=true"
+assert_not_contains "mise env" "export CHILD=true"
+assert_not_contains "mise env" "export PARENT=true"
+echo "Test 6: Passed"
+
+# Test 7: The same ceiling from a .miserc.toml
+echo "Test 7: With a ceiling path through a symlink in .miserc.toml"
+unset MISE_CEILING_PATHS
+cat <<EOF >"$TEST_ROOT/parent/child/grandchild/.miserc.toml"
+ceiling_paths = ["$TEST_ROOT/link/child"]
+EOF
+assert_contains "mise env" "export GRANDCHILD=true"
+assert_not_contains "mise env" "export CHILD=true"
+assert_not_contains "mise env" "export PARENT=true"
+echo "Test 7: Passed"
+
 echo "All tests passed!"

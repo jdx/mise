@@ -437,7 +437,8 @@ By default, mise looks for config files in the current directory and every
 parent up to the filesystem root. The search stops at a ceiling directory, which
 is not searched itself: with `MISE_CEILING_PATHS=/home/user`,
 `/home/user/projects/app/mise.toml` loads but `/home/user/mise.toml` does not.
-This matches Git's `GIT_CEILING_DIRECTORIES`.
+A ceiling that goes through a symlink also stops the search at the directory
+the link points to. This matches Git's `GIT_CEILING_DIRECTORIES`.
 
 `mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the

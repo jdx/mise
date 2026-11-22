@@ -688,7 +688,7 @@ fn env_ceiling_paths() -> BTreeSet<PathBuf> {
         .map(|v| {
             std::env::split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
-                .map(file::replace_path)
+                .flat_map(|p| file::ceiling_path_forms(&p))
                 .collect()
         })
         .unwrap_or_default()
