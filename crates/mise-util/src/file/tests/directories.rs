@@ -81,3 +81,19 @@ fn test_all_dirs_stops_at_a_ceiling_spelled_another_way() {
 
     assert_eq!(result, vec![start.clone(), real.join("sub")]);
 }
+
+#[cfg(windows)]
+#[test]
+fn test_all_dirs_stops_at_a_ceiling_from_a_verbatim_start() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let real = dunce::canonicalize(tmp.path()).unwrap().join("real");
+    std::fs::create_dir_all(real.join("sub")).unwrap();
+    // std's canonical form starts with `\\?\`; the ceiling's does not.
+    let start = std::fs::canonicalize(real.join("sub")).unwrap();
+    assert!(start.to_string_lossy().starts_with(r"\\?\"));
+    let ceiling_dirs: HashSet<PathBuf> = ceiling_path_forms(&real).collect();
+
+    let result = all_dirs(&start, &ceiling_dirs).unwrap();
+
+    assert_eq!(result, vec![start.clone()]);
+}

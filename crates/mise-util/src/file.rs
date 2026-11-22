@@ -2092,7 +2092,9 @@ pub fn all_dirs<P: AsRef<Path>>(
         .as_ref()
         .ancestors()
         .map_while(|p| {
-            if ceiling_dirs.contains(p) {
+            // A start directory std canonicalized on Windows begins with `\\?\`, which
+            // `ceiling_path_forms` leaves out.
+            if ceiling_dirs.contains(p) || ceiling_dirs.contains(dunce::simplified(p)) {
                 debug!(
                     "file::all_dirs Reached ceiling directory: {}",
                     display_path(p)
