@@ -17,6 +17,32 @@
 # checks for updates, and the second cannot run offline because it has to
 # resolve a tool.
 
+# Variables no measured command inherits: the forge tokens tak removes by
+# default, then the mise overrides that would point a run at the caller's own
+# config, installs or environment instead of the fixture's. setup.sh removes the
+# same ones before it prepares the large fixture.
+[env]
+deny = [
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "MISE_CONFIG_FILE",
+  "MISE_DOWNLOADS_DIR",
+  "MISE_GLOBAL_CONFIG_FILE",
+  "MISE_INSTALL_STORE_DIR",
+  "MISE_PLUGINS_DIR",
+  "MISE_SHARED_INSTALL_DIRS",
+  "MISE_SHIMS_DIR",
+  "MISE_SYSTEM_CONFIG_DIR",
+  "MISE_SYSTEM_CONFIG_FILE",
+  "MISE_SYSTEM_DATA_DIR",
+  "MISE_SYSTEM_DIR",
+  "MISE_SYSTEM_INSTALLS_DIR",
+  "MISE_SYSTEM_PLUGINS_DIRS",
+  "MISE_TMP_DIR",
+  "MISE_ENV",
+  "MISE_PROFILE",
+]
+
 # The fixed cost every invocation pays: process start, dynamic linking, and
 # building the clap command tree. Reading the others against this separates
 # "mise got slower to start" from "this command's path got slower".
