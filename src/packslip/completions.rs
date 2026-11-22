@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use usage_rs::complete::Shell;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::toolset::Toolset;
 
 /// Keep native paths intact while passing them through shell source as ASCII.
@@ -49,9 +49,18 @@ pub fn decode_spec_path(encoded: &str) -> eyre::Result<std::path::PathBuf> {
     Ok(path.into())
 }
 
+/// Drop a zsh registration that is still waiting for `compdef`.
+const DROP_PENDING_ZSH: &str = "if typeset -f __mise_pending_completions >/dev/null; then precmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\"); unfunction __mise_pending_completions; fi\n";
+
 pub(crate) fn clear(shell: &str) -> &'static str {
     match shell {
-        "bash" | "zsh" => {
+        "zsh" => {
+            concat!(
+                "if typeset -f __mise_pending_completions >/dev/null; then precmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\"); unfunction __mise_pending_completions; fi\n",
+                "if typeset -f __mise_clear_completions >/dev/null; then __mise_clear_completions; unset -f __mise_clear_completions; fi\n"
+            )
+        }
+        "bash" => {
             "if typeset -f __mise_clear_completions >/dev/null; then __mise_clear_completions; unset -f __mise_clear_completions; fi\n"
         }
         "fish" => {
@@ -120,7 +129,12 @@ pub fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
             }
         }
     }
-    registration(shell, completion_shell, &commands)
+    registration(
+        shell,
+        completion_shell,
+        &commands,
+        Settings::get().packslip.compinit,
+    )
 }
 
 fn safe_command(command: &str) -> bool {
@@ -133,15 +147,28 @@ fn safe_command(command: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || b"_-.+".contains(&c))
 }
 
-fn registration(shell_name: &str, shell: Shell, commands: &BTreeSet<String>) -> String {
+/// `compinit` is whether zsh may run `compinit -i` itself when `compdef` is
+/// missing. A shell whose plugin manager defers `compinit` turns it off, and
+/// registration is then skipped until `compdef` exists.
+fn registration(
+    shell_name: &str,
+    shell: Shell,
+    commands: &BTreeSet<String>,
+    compinit: bool,
+) -> String {
     let mut cleanup = String::new();
     // A shell restored from a snapshot can have `compdef` but a plain `_comps`
     // array; reset it and run compinit before the previous cleanup (which calls
     // `compdef`) and before registering.
     let mut output = String::new();
     if shell == Shell::Zsh {
+        if !commands.is_empty() {
+            output.push_str(DROP_PENDING_ZSH);
+        }
         output.push_str(if commands.is_empty() {
             "if typeset -f __mise_clear_completions >/dev/null && [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
+        } else if !compinit {
+            "__mise_pending_completions() {\n(( $+functions[compdef] )) || return 0\nprecmd_functions=(\"${(@)precmd_functions:#__mise_pending_completions}\")\nif [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         } else {
             "if ! typeset -f compdef >/dev/null || [[ $+_comps -eq 0 || ${(t)_comps} != association* ]]; then unset _comps; autoload -Uz compinit; compinit -i; fi\n"
         });
@@ -150,7 +177,12 @@ fn registration(shell_name: &str, shell: Shell, commands: &BTreeSet<String>) -> 
         output.push_str(clear(shell_name));
         return output;
     }
-    output.push_str(clear(shell_name));
+    // Inside the pending function the previous pending state is already gone.
+    output.push_str(clear(if shell == Shell::Zsh {
+        "bash"
+    } else {
+        shell_name
+    }));
     if shell == Shell::PowerShell {
         // PowerShell exposes registration but no public lookup. Preserve the
         // existing entry when its completion table is available; if a host
@@ -208,6 +240,11 @@ if ($__mise_completion_table_ready) {
             "function global:__mise_clear_completions {{\n{cleanup}}}\n"
         )),
         _ => output.push_str(&format!("__mise_clear_completions() {{\n{cleanup}}}\n")),
+    }
+    if shell == Shell::Zsh && !compinit {
+        // Registration is a function so a shell whose compinit runs later can
+        // finish it from a prompt hook: normal prompts emit nothing here.
+        output.push_str("unfunction __mise_pending_completions\n}\n__mise_pending_completions\nif typeset -f __mise_pending_completions >/dev/null; then precmd_functions+=(__mise_pending_completions); fi\n");
     }
     if shell == Shell::PowerShell {
         output.push_str("}\nRemove-Variable __mise_context, __mise_completion_table, __mise_completion_table_ready -ErrorAction Ignore\n");
