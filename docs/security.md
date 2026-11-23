@@ -96,6 +96,8 @@ Tasks that load without trust run nothing until you run one. Shell completion
 of their arguments leaves out the commands a
 [usage spec](/tasks/task-arguments.html) can name, `complete run=`,
 `complete delegate=`, `choices run=` and `mount`, until the project is trusted.
+It leaves out `choices env=` as well, which would offer the value of an
+environment variable the task names.
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
@@ -289,7 +291,8 @@ These are skipped without an error, so resolution commands keep working:
   `[tool_alias]`, keep `env` when a backend renders them later.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
-- The commands in a project task's usage spec that shell completion would run.
+- The commands in a project task's usage spec that shell completion would run,
+  and its `choices env=`, which completion would read from your environment.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token (unless global config names the same host),

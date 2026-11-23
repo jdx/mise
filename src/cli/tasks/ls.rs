@@ -534,6 +534,10 @@ impl TasksLs {
 /// `complete run=`, `complete delegate=` and `choices run=`, through every subcommand and
 /// clause. A task that loaded without trust is inert until `mise run`, and pressing Tab is not
 /// that. Names, help, flags and declared choices stay, so the task still completes.
+///
+/// `choices env=` goes with them. It runs nothing, but it offers the words of a variable of the
+/// user's environment as candidates, and an untrusted config does not get to read the
+/// environment.
 fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
     let executes = |c: &usage::SpecComplete| c.run.is_some() || c.delegate.is_some();
     cmd.mounts.clear();
@@ -544,15 +548,14 @@ fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
         for arg in args.iter_mut().chain(flag_args) {
             arg.complete.take_if(|complete| executes(complete));
             if let Some(choices) = &mut arg.choices
-                && choices.run.take().is_some()
+                && (choices.run.is_some() || choices.env().is_some())
             {
-                // Without the command the declared values are no longer the whole set, and
-                // usage rejects a `choices` that declares nothing at all.
+                choices.run = None;
+                choices.set_env(None);
+                // Without them the declared values are no longer the whole set, and usage
+                // rejects a `choices` that declares nothing at all.
                 choices.strict = false;
-                if choices.choices.is_empty()
-                    && choices.details.is_empty()
-                    && choices.env().is_none()
-                {
+                if choices.choices.is_empty() && choices.details.is_empty() {
                     arg.choices = None;
                 }
             }
@@ -689,8 +692,14 @@ cmd "task" {
     arg "<only-run>" {
         choices run="touch only-run"
     }
+    arg "<only-env>" {
+        choices env="SECRET"
+    }
     flag "--flag <value>" {
         choices "declared" run="touch choices"
+    }
+    flag "--env-flag <value>" {
+        choices "listed" env="SECRET"
     }
     cmd "sub" {
         mount run="touch sub-mount"
@@ -712,12 +721,16 @@ cmd "task" {
         for executed in ["mount", "run=", "delegate=", "touch"] {
             assert!(!kdl.contains(executed), "{executed} is left in:\n{kdl}");
         }
+        // nor anything that reads the user's environment
+        assert!(!kdl.contains("SECRET"), "env= is left in:\n{kdl}");
         for kept in [
             "type=dir",
             "declared",
             "--clause-flag",
             "<clause-arg>",
             "<only-run>",
+            "<only-env>",
+            "listed",
         ] {
             assert!(kdl.contains(kept), "{kept} is missing from:\n{kdl}");
         }
