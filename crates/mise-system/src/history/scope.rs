@@ -81,8 +81,16 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// it. Returns the entry's index, or an error when it could not be written
 /// to disk (the caller decides whether to proceed).
 pub(crate) fn record(entry: JournalEntry) -> Result<Option<u32>> {
+    Ok(record_all(vec![entry])?.map(|seqs| seqs.start))
+}
+
+/// [`record`] for several entries, persisted with one write. Persisting the
+/// pending record rewrites all of it and syncs it, so an entry per write
+/// costs the square of the journal's length. Returns the indices the entries
+/// were given, or nothing when no operation is open.
+pub(crate) fn record_all(entries: Vec<JournalEntry>) -> Result<Option<std::ops::Range<u32>>> {
     match started() {
-        Some(shared) => lock_unpoisoned(&shared).record(entry).map(Some),
+        Some(shared) => lock_unpoisoned(&shared).record_all(entries).map(Some),
         None => Ok(None),
     }
 }
@@ -733,39 +741,49 @@ impl Writer {
             .expect("an operation record always has an operation")
     }
 
-    fn record(&mut self, entry: JournalEntry) -> Result<u32> {
-        let seq = self.operation().journal.len() as u32;
-        self.operation_mut().journal.push(entry);
+    fn record_all(&mut self, entries: Vec<JournalEntry>) -> Result<std::ops::Range<u32>> {
+        let first = self.operation().journal.len() as u32;
+        if entries.is_empty() {
+            return Ok(first..first);
+        }
+        self.operation_mut().journal.extend(entries);
+        let seqs = first..self.operation().journal.len() as u32;
         self.write_pending()
             .map_err(|err| eyre::eyre!("could not persist the operation journal: {err:#}"))?;
-        if self.kind() == OperationKind::Bootstrap
-            && let Some((_, before)) = &self.before
-            && let JournalEntry::PathChanged { path, prior, .. } =
-                &self.operation().journal[seq as usize]
-        {
-            match self.store.protect_manual_preimage(
-                before,
-                &self.tracked,
-                path,
-                prior,
-                &self.operation().journal[..seq as usize],
-            ) {
-                Ok(Some(entry)) => {
-                    self.operation_mut().before = Some(entry.checkpoint.uuid.clone());
-                    self.before = Some((entry.id, entry.checkpoint.uuid));
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    warn!(
-                        "history: cannot preserve the operation's manual-file preimage: {err:#}; historical undo will be unavailable"
-                    );
-                    self.before = None;
-                    self.operation_mut().before = None;
+        let mut protected = false;
+        for seq in seqs.clone() {
+            if self.kind() == OperationKind::Bootstrap
+                && let Some((_, before)) = &self.before
+                && let JournalEntry::PathChanged { path, prior, .. } =
+                    &self.operation().journal[seq as usize]
+            {
+                protected = true;
+                match self.store.protect_manual_preimage(
+                    before,
+                    &self.tracked,
+                    path,
+                    prior,
+                    &self.operation().journal[..seq as usize],
+                ) {
+                    Ok(Some(entry)) => {
+                        self.operation_mut().before = Some(entry.checkpoint.uuid.clone());
+                        self.before = Some((entry.id, entry.checkpoint.uuid));
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        warn!(
+                            "history: cannot preserve the operation's manual-file preimage: {err:#}; historical undo will be unavailable"
+                        );
+                        self.before = None;
+                        self.operation_mut().before = None;
+                    }
                 }
             }
+        }
+        if protected {
             self.write_pending()?;
         }
-        Ok(seq)
+        Ok(seqs)
     }
 
     fn write_pending(&self) -> Result<()> {
@@ -1249,6 +1267,54 @@ fn outcome_trigger(kind: OperationKind) -> Trigger {
 mod tests {
     use super::*;
     use crate::history::shadow::HistoryRepo;
+
+    #[test]
+    fn a_batch_of_entries_is_persisted_with_one_write() -> Result<()> {
+        use super::super::journal::{Capture, PathSnapshot};
+
+        let temp = tempfile::tempdir()?;
+        let live = temp.path().join("live");
+        let mut writer = Writer::begin(
+            temp.path(),
+            OperationKind::Apply,
+            "apply",
+            TrackedSet::default(),
+            std::time::Duration::ZERO,
+            false,
+        )?;
+        let entries: Vec<_> = (0..50)
+            .map(|i| JournalEntry::PathChanged {
+                part: "files".into(),
+                item: format!("item {i}"),
+                path: live.join(i.to_string()),
+                prior: PathSnapshot::capture_with(
+                    temp.path(),
+                    &live.join(i.to_string()),
+                    Capture::Full,
+                ),
+            })
+            .collect();
+        let writes = || store::PENDING_WRITES.with(|writes| writes.get());
+        let before = writes();
+        assert_eq!(writer.record_all(entries)?, 0..50);
+        assert_eq!(writes() - before, 1);
+        assert_eq!(writer.record_all(vec![])?, 50..50);
+        assert_eq!(writes() - before, 1);
+        let seqs = writer.record_all(vec![JournalEntry::Note {
+            message: "after".into(),
+        }])?;
+        assert_eq!(seqs, 50..51);
+        let persisted = store::list_pending_in(temp.path())?;
+        let journal = &persisted[0]
+            .1
+            .checkpoint
+            .operation
+            .as_ref()
+            .unwrap()
+            .journal;
+        assert_eq!(journal.len(), 51);
+        Ok(())
+    }
 
     #[test]
     fn accepting_current_files_preserves_edits_and_other_pending_operations() -> Result<()> {
