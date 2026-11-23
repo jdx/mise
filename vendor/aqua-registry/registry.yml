@@ -12809,6 +12809,58 @@ packages:
           type: github_release
           asset: diffsitter-{{.Arch}}-{{.OS}}.sha256
           algorithm: sha256
+  - type: github_release
+    repo_owner: agavra
+    repo_name: tuicr
+    description: a code review TUI with vim keybindings
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.7.2")
+        asset: tuicr-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.21.0")
+        asset: tuicr-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: tuicr-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - name: agentgateway/agentgateway/agctl
     type: github_release
     repo_owner: agentgateway
@@ -20588,10 +20640,16 @@ packages:
         supported_envs:
           - darwin
           - windows/amd64
+      - version_constraint: semver("< 10.0.0")
+        asset: buildifier-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
       - version_constraint: "true"
         asset: buildifier-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
+        github_artifact_attestations:
+          signer_workflow: bazel-contrib/buildtools/.github/workflows/release.yml
   - name: bazel-contrib/buildtools/buildozer
     aliases:
       - name: bazelbuild/buildtools/buildozer
@@ -22002,7 +22060,7 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2026.10.1")
         asset: bw-{{.OS}}-{{.SemVer}}.{{.Format}}
         format: zip
         replacements:
@@ -22014,6 +22072,18 @@ packages:
           - goos: darwin
             goarch: arm64
             asset: bw-{{.OS}}-{{.Arch}}-{{.SemVer}}.{{.Format}}
+      - version_constraint: "true"
+        asset: bw-bit-{{.OS}}-{{.SemVer}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: bw-bit-{{.OS}}-{{.Arch}}-{{.SemVer}}.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: bw-bit-{{.OS}}-{{.Arch}}-{{.SemVer}}.{{.Format}}
   - type: github_release
     repo_owner: bitwarden
     repo_name: sdk-sm
@@ -32131,6 +32201,16 @@ packages:
     description: The command that searches the current directory or parent directories for a specific file and returns the closest path
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 2.0.0")
+        asset: closest_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: closest_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: closest_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -32141,6 +32221,8 @@ packages:
         supported_envs:
           - linux
           - darwin
+        github_artifact_attestations:
+          signer_workflow: corrupt952/closest/.github/workflows/release.yaml
   - type: github_release
     repo_owner: cortesi
     repo_name: modd
@@ -33669,13 +33751,25 @@ packages:
     repo_name: d2
     aliases:
       - name: terrastruct/d2
-    asset: d2-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
     description: D2 is a modern diagram scripting language that turns text to diagrams
-    replacements:
-      darwin: macos
-    files:
-      - name: d2
-        src: d2-{{.Version}}/bin/d2
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.8.2")
+        asset: d2-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        replacements:
+          darwin: macos
+        files:
+          - name: d2
+            src: d2-{{.Version}}/bin/d2
+      - version_constraint: "true"
+        asset: d2-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        replacements:
+          darwin: macos
+        files:
+          - name: d2
+            src: d2-{{.Version}}/bin/d2
+        github_artifact_attestations:
+          signer_workflow: d2lang/d2/.github/workflows/release-archives.yml
   - type: github_release
     repo_owner: dadav
     repo_name: helm-schema
@@ -44041,6 +44135,16 @@ packages:
     description: A maintained fork of zmwangx's command output timestamper
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.3.1")
+        asset: ets_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ets_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: ets_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -44051,6 +44155,8 @@ packages:
         supported_envs:
           - linux
           - darwin
+        github_artifact_attestations:
+          signer_workflow: gdubicki/ets/.github/workflows/release.yml
   - type: github_release
     repo_owner: gefyrahq
     repo_name: gefyra
@@ -59881,6 +59987,17 @@ packages:
     description: deck is a tool for creating deck using Markdown and Google Slides
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 1.24.3")
+        asset: deck_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: zip
       - version_constraint: "true"
         asset: deck_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -59892,6 +60009,8 @@ packages:
         overrides:
           - goos: darwin
             format: zip
+        github_artifact_attestations:
+          signer_workflow: k1LoW/deck/.github/workflows/release-build.yml
   - type: github_release
     repo_owner: k1LoW
     repo_name: gh-do
@@ -61756,6 +61875,25 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+    version_constraint: "false"
+    version_overrides:
+      # checksums.txt is signed from knative-v1.8.0, keyless, by Knative's release service account.
+      - version_constraint: semverWithVersion(">= 1.8.0", trimPrefix(Version, "knative-"))
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - signer@knative-releases.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com
+              - --signature
+              - https://github.com/knative/client/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/knative/client/releases/download/{{.Version}}/checksums.txt.pem
+      - version_constraint: "true"
   - type: github_release
     repo_owner: knative
     repo_name: func
@@ -61766,13 +61904,35 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
-    version_constraint: semverWithVersion(">= 1.7.0", trimPrefix(Version, "knative-")) or semver(">= 0.26.0")
-    # support linux/arm64
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
+    version_constraint: "false"
     version_overrides:
+      # checksums.txt is signed from knative-v1.8.0, keyless, by Knative's release service account.
+      - version_constraint: semverWithVersion(">= 1.8.0", trimPrefix(Version, "knative-"))
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - signer@knative-releases.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com
+              - --signature
+              - https://github.com/knative/func/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/knative/func/releases/download/{{.Version}}/checksums.txt.pem
+        # support linux/arm64
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semverWithVersion(">= 1.7.0", trimPrefix(Version, "knative-")) or semver(">= 0.26.0")
+        # support linux/arm64
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
       - version_constraint: semver(">= 0.23.1")
         # support darwin/arm64
         supported_envs:
@@ -62256,6 +62416,13 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_content
+    repo_owner: kolunmi
+    repo_name: ttyscheme
+    description: Collection of Color Schemes for the TTY
+    path: ttyscheme
+    supported_envs:
+      - linux
   - type: github_release
     repo_owner: konradsz
     repo_name: igrep
@@ -67668,6 +67835,27 @@ packages:
           - name: luau-ast
           - name: luau-compile
   - type: github_release
+    repo_owner: lukeed
+    repo_name: lane
+    description: Copy-on-write worktrees with memory that survives them
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: lane-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: lusingander
     repo_name: ddv
     description: Terminal DynamoDB Viewer
@@ -68712,6 +68900,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: masasuzu/clrnd/.github/workflows/release.yml
   - type: github_release
     repo_owner: mashiike
     repo_name: acrun
@@ -74583,6 +74773,21 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 0.2.91")
+        asset: act_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: act_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -74598,6 +74803,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: nektos/act/.github/workflows/release.yml
   - type: github_release
     repo_owner: nektro
     repo_name: zigmod
@@ -75298,6 +75505,21 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: semver("<= 0.27.2")
+        asset: sofka-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: sofka-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -75313,6 +75535,8 @@ packages:
         supported_envs:
           - linux
           - darwin
+        github_artifact_attestations:
+          signer_workflow: nklmilojevic/sofka/.github/workflows/release.yaml
   - type: github_release
     repo_owner: nmstate
     repo_name: nmstate
@@ -77156,7 +77380,7 @@ packages:
     version_overrides:
       - version_constraint: Version == "v0.0.6--context-conduit-saphire"
         no_asset: true
-      - version_constraint: semver("<= 0.0.13")
+      - version_constraint: semver("<= 0.0.12")
         asset: tunnel-client-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
         checksum:
@@ -77179,6 +77403,8 @@ packages:
             - https://github.com/openai/tunnel-client/.github/workflows/release.yml@refs/tags/{{.Version}}
             - --certificate-oidc-issuer
             - https://token.actions.githubusercontent.com
+        github_artifact_attestations:
+          signer_workflow: openai/tunnel-client/.github/workflows/release.yml
   - name: openbao/openbao/bao
     type: github_release
     repo_owner: openbao
@@ -100044,18 +100270,36 @@ packages:
     repo_owner: tcnksm
     repo_name: ghr
     description: Upload multiple artifacts to GitHub Release in parallel
-    rosetta2: true
-    supported_envs:
-      - darwin
-      - amd64
-    asset: ghr_{{.Version}}_{{.OS}}_amd64.{{.Format}}
-    files:
-      - name: ghr
-        src: ghr_{{.Version}}_{{.OS}}_amd64/ghr
-    format: zip
-    overrides:
-      - goos: linux
-        format: tar.gz
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.18.5")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        asset: ghr_{{.Version}}_{{.OS}}_amd64.{{.Format}}
+        files:
+          - name: ghr
+            src: ghr_{{.Version}}_{{.OS}}_amd64/ghr
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        asset: ghr_{{.Version}}_{{.OS}}_amd64.{{.Format}}
+        files:
+          - name: ghr
+            src: ghr_{{.Version}}_{{.OS}}_amd64/ghr
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+        github_artifact_attestations:
+          signer_workflow: tcnksm/ghr/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: tdewolff
     repo_name: minify
@@ -102111,6 +102355,18 @@ packages:
     version_overrides:
       - version_constraint: semver("< 3.20.0")
         no_asset: true
+      - version_constraint: semver("< 3.22.0")
+        asset: outskirts-{{.Version}}-macos-arm64.tar.gz
+        format: tar.gz
+        files:
+          - name: outskirts
+            src: outskirts-{{.Version}}-macos-arm64/outskirts
+        checksum:
+          type: github_release
+          asset: outskirts-{{.Version}}-macos-arm64.tar.gz.sha256
+          algorithm: sha256
+        supported_envs:
+          - darwin/arm64
       - version_constraint: "true"
         asset: outskirts-{{.Version}}-macos-arm64.tar.gz
         format: tar.gz
@@ -102123,6 +102379,8 @@ packages:
           algorithm: sha256
         supported_envs:
           - darwin/arm64
+        github_artifact_attestations:
+          signer_workflow: tiny-earth-moon/outskirts/.github/workflows/bottle.yml
   - type: github_release
     repo_owner: tinygo-org
     repo_name: tinygo
@@ -104741,6 +104999,35 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 1.25.16")
+        asset: kubefwd_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: kubefwd_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: kubefwd_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/txn2/kubefwd/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-github-workflow-repository
+              - txn2/kubefwd
+              - --certificate-github-workflow-ref
+              - refs/tags/{{.Version}}
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: kubefwd_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -104770,6 +105057,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: txn2/kubefwd/.github/workflows/release.yml
   - type: github_release
     repo_owner: typst
     repo_name: typst
@@ -105446,6 +105735,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: utkuozdemir/pv-migrate/.github/workflows/release.yml
   - type: github_release
     repo_owner: uutils
     repo_name: coreutils
@@ -109354,26 +109645,54 @@ packages:
   - type: github_release
     repo_owner: x-motemen
     repo_name: ghq
-    asset: ghq_{{.OS}}_{{.Arch}}.zip
     description: Remote repository management made easy
-    files:
-      - name: ghq
-        src: ghq_{{.OS}}_{{.Arch}}/ghq
-    version_constraint: semver(">= 1.3.0")
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.3.0")
+        asset: ghq_{{.OS}}_{{.Arch}}.zip
+        files:
+          - name: ghq
+            src: ghq_{{.OS}}_{{.Arch}}/ghq
         supported_envs:
           - amd64
           - darwin
         rosetta2: true
-    checksum:
-      type: github_release
-      asset: SHASUMS
-      file_format: regexp
-      algorithm: sha1
-      pattern:
-        checksum: ^(\b[A-Fa-f0-9]{40}\b)
-        file: "^\\b[A-Fa-f0-9]{40}\\b\\s+(\\S+)$"
+        checksum:
+          type: github_release
+          asset: SHASUMS
+          file_format: regexp
+          algorithm: sha1
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{40}\b)
+            file: "^\\b[A-Fa-f0-9]{40}\\b\\s+(\\S+)$"
+      - version_constraint: semver("< 1.11.1")
+        asset: ghq_{{.OS}}_{{.Arch}}.zip
+        files:
+          - name: ghq
+            src: ghq_{{.OS}}_{{.Arch}}/ghq
+        checksum:
+          type: github_release
+          asset: SHASUMS
+          file_format: regexp
+          algorithm: sha1
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{40}\b)
+            file: "^\\b[A-Fa-f0-9]{40}\\b\\s+(\\S+)$"
+      - version_constraint: "true"
+        asset: ghq_{{.OS}}_{{.Arch}}.zip
+        files:
+          - name: ghq
+            src: ghq_{{.OS}}_{{.Arch}}/ghq
+        checksum:
+          type: github_release
+          asset: SHASUMS
+          file_format: regexp
+          algorithm: sha1
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{40}\b)
+            file: "^\\b[A-Fa-f0-9]{40}\\b\\s+(\\S+)$"
+        github_artifact_attestations:
+          signer_workflow: x-motemen/ghq/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: x-motemen
     repo_name: gobump
@@ -111149,6 +111468,23 @@ packages:
               linux: unknown-linux-gnu
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 3.11.4")
+        asset: lean-ctx-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: lean-ctx-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -111166,6 +111502,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: yvgude/lean-ctx/.github/workflows/release.yml
   - type: github_release
     repo_owner: zaghaghi
     repo_name: openapi-tui
