@@ -5,8 +5,9 @@
 //! lists versions from.
 //!
 //! Forge tokens such as `GITHUB_TOKEN` or `MISE_GITHUB_ENTERPRISE_TOKEN` are not
-//! scoped to a host, so config loading records the hosts a project `api_url`
-//! names, and the token lookups skip them.
+//! scoped to a host, so config loading records the origins (scheme, host and
+//! port) a project `api_url` names, and the token lookups skip them. A forge's
+//! own public API over https keeps that forge's token.
 //!
 //! netrc is withheld the same way, by default: config loading records every host
 //! a project tool's URL options name (or every host at all, when one of them is
@@ -23,11 +24,12 @@ use std::future::Future;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Hosts a project `api_url` names, which get no forge token.
-static FORGE_TOKEN_DENIED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
-/// Hosts a global `api_url` names. The operator chose them, so they keep their
-/// token even when a project names the same host.
-static FORGE_TOKEN_ALLOWED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+/// Origins (scheme, host and port) a project `api_url` names, which get no forge
+/// token.
+static FORGE_TOKEN_DENIED: Mutex<Option<HashSet<url::Origin>>> = Mutex::new(None);
+/// Origins a global `api_url` names. The operator chose them, so they keep their
+/// token even when a project names the same origin.
+static FORGE_TOKEN_ALLOWED: Mutex<Option<HashSet<url::Origin>>> = Mutex::new(None);
 /// Hosts a project tool's URL options name, which get no netrc credentials
 /// outside [`with_trusted_tool_scope`].
 static NETRC_DENIED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
@@ -35,21 +37,55 @@ static NETRC_DENIED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// only at the request, so netrc is withheld from every host.
 static NETRC_DENIED_ANY_HOST: AtomicBool = AtomicBool::new(false);
 
-/// The public forges. A token sent there goes to the service it was issued for,
-/// so a project naming one of them is not a reason to withhold it.
-const PUBLIC_FORGE_HOSTS: [&str; 4] =
-    ["github.com", "api.github.com", "gitlab.com", "codeberg.org"];
+/// The forge whose token a lookup resolves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Forge {
+    GitHub,
+    GitLab,
+    Forgejo,
+}
+
+impl Forge {
+    /// The hosts of the forge's own public service. Its token sent there over
+    /// https goes to the service it was issued for, so a project naming one of
+    /// them is not a reason to withhold it.
+    fn public_hosts(self) -> &'static [&'static str] {
+        match self {
+            Forge::GitHub => &["github.com", "api.github.com"],
+            Forge::GitLab => &["gitlab.com"],
+            Forge::Forgejo => &["codeberg.org"],
+        }
+    }
+
+    /// Whether `origin` is this forge's own public API over https on the default
+    /// port.
+    fn is_own_public_origin(self, origin: &url::Origin) -> bool {
+        match origin {
+            url::Origin::Tuple(scheme, host, port) => {
+                scheme == "https"
+                    && *port == 443
+                    && self.public_hosts().contains(&host.to_string().as_str())
+            }
+            url::Origin::Opaque(_) => false,
+        }
+    }
+}
 
 fn host_of(url: &str) -> Option<String> {
     let url = url::Url::parse(url).ok()?;
     url.host_str().map(str::to_ascii_lowercase)
 }
 
-fn insert(set: &Mutex<Option<HashSet<String>>>, host: String) {
+fn origin_of(url: &str) -> Option<url::Origin> {
+    let origin = url::Url::parse(url).ok()?.origin();
+    origin.is_tuple().then_some(origin)
+}
+
+fn insert<T: std::hash::Hash + Eq>(set: &Mutex<Option<HashSet<T>>>, item: T) {
     set.lock()
         .unwrap()
         .get_or_insert_with(HashSet::new)
-        .insert(host);
+        .insert(item);
 }
 
 fn contains(set: &Mutex<Option<HashSet<String>>>, host: &str) -> bool {
@@ -59,25 +95,48 @@ fn contains(set: &Mutex<Option<HashSet<String>>>, host: &str) -> bool {
         .is_some_and(|hosts| hosts.contains(&host.to_ascii_lowercase()))
 }
 
-/// Records the host of an `api_url` that project config set in safe mode.
+/// Records the origin of an `api_url` that project config set in safe mode.
 pub fn deny_forge_token_for_url(api_url: &str) {
-    if let Some(host) = host_of(api_url)
-        && !PUBLIC_FORGE_HOSTS.contains(&host.as_str())
-    {
-        insert(&FORGE_TOKEN_DENIED, host);
+    if let Some(origin) = origin_of(api_url) {
+        insert(&FORGE_TOKEN_DENIED, origin);
     }
 }
 
-/// Records the host of an `api_url` that global or system config set.
+/// Records the origin of an `api_url` that global or system config set.
 pub fn allow_forge_token_for_url(api_url: &str) {
-    if let Some(host) = host_of(api_url) {
-        insert(&FORGE_TOKEN_ALLOWED, host);
+    if let Some(origin) = origin_of(api_url) {
+        insert(&FORGE_TOKEN_ALLOWED, origin);
     }
 }
 
-/// Whether forge tokens must not be sent to `host`.
-pub fn forge_token_denied(host: &str) -> bool {
-    contains(&FORGE_TOKEN_DENIED, host) && !contains(&FORGE_TOKEN_ALLOWED, host)
+/// Whether `forge`'s token must not be sent with a request for `url`: a project
+/// `api_url` named the request's origin, global config does not name it, and it
+/// is not `forge`'s own public API over https.
+pub fn forge_token_denied_at(forge: Forge, url: &url::Url) -> bool {
+    forge_token_denied_where(forge, |origin| *origin == url.origin())
+}
+
+/// [`forge_token_denied_at`] for a lookup that knows only the host, such as
+/// `mise token`: the token is withheld when any origin on `host` is denied.
+pub fn forge_token_denied(forge: Forge, host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    forge_token_denied_where(
+        forge,
+        |origin| matches!(origin, url::Origin::Tuple(_, h, _) if h.to_string() == host),
+    )
+}
+
+fn forge_token_denied_where(forge: Forge, matches: impl Fn(&url::Origin) -> bool) -> bool {
+    let denied = FORGE_TOKEN_DENIED.lock().unwrap();
+    let Some(denied) = denied.as_ref() else {
+        return false;
+    };
+    let allowed = FORGE_TOKEN_ALLOWED.lock().unwrap();
+    denied.iter().any(|origin| {
+        matches(origin)
+            && !allowed.as_ref().is_some_and(|a| a.contains(origin))
+            && !forge.is_own_public_origin(origin)
+    })
 }
 
 /// Records the host of a URL option (a template, possibly) of a tool that
@@ -149,9 +208,10 @@ pub fn netrc_denied(url: &url::Url) -> bool {
 
 #[cfg(test)]
 pub(crate) fn reset() {
-    for set in [&FORGE_TOKEN_DENIED, &FORGE_TOKEN_ALLOWED, &NETRC_DENIED] {
+    for set in [&FORGE_TOKEN_DENIED, &FORGE_TOKEN_ALLOWED] {
         *set.lock().unwrap() = None;
     }
+    *NETRC_DENIED.lock().unwrap() = None;
     NETRC_DENIED_ANY_HOST.store(false, Ordering::Relaxed);
 }
 
@@ -167,11 +227,123 @@ mod tests {
         deny_forge_token_for_url("https://api.github.com");
         deny_forge_token_for_url("https://ghe.corp.example/api/v3");
         allow_forge_token_for_url("https://ghe.corp.example/api/v3");
-        assert!(forge_token_denied("evil.example"));
-        assert!(!forge_token_denied("api.github.com"));
-        assert!(!forge_token_denied("ghe.corp.example"));
-        assert!(!forge_token_denied("other.example"));
+        assert!(forge_token_denied(Forge::GitHub, "evil.example"));
+        assert!(!forge_token_denied(Forge::GitHub, "api.github.com"));
+        assert!(!forge_token_denied(Forge::GitHub, "ghe.corp.example"));
+        assert!(!forge_token_denied(Forge::GitHub, "other.example"));
         reset();
+    }
+
+    #[test]
+    fn a_public_forge_keeps_only_its_own_token_over_https() {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        reset();
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        deny_forge_token_for_url("https://gitlab.com/api/v3");
+        deny_forge_token_for_url("https://codeberg.org/api/v4");
+        deny_forge_token_for_url("http://codeberg.org/api/v1");
+        deny_forge_token_for_url("https://api.github.com");
+
+        // another forge's token does not go to a public forge a project names
+        assert!(forge_token_denied_at(
+            Forge::GitHub,
+            &url("https://gitlab.com/api/v3/repos")
+        ));
+        assert!(forge_token_denied(Forge::GitHub, "gitlab.com"));
+        assert!(forge_token_denied_at(
+            Forge::GitLab,
+            &url("https://codeberg.org/api/v4/projects")
+        ));
+        // nor a forge's own token over plain http
+        assert!(forge_token_denied_at(
+            Forge::Forgejo,
+            &url("http://codeberg.org/api/v1/repos")
+        ));
+        // a forge's own public API over https keeps its token
+        assert!(!forge_token_denied_at(
+            Forge::Forgejo,
+            &url("https://codeberg.org/api/v1/repos")
+        ));
+        assert!(!forge_token_denied_at(
+            Forge::GitLab,
+            &url("https://gitlab.com/api/v4/projects")
+        ));
+        assert!(!forge_token_denied_at(
+            Forge::GitHub,
+            &url("https://api.github.com/repos")
+        ));
+        assert!(!forge_token_denied(Forge::GitHub, "api.github.com"));
+        reset();
+    }
+
+    #[test]
+    fn a_global_api_url_keeps_its_token_only_at_its_own_origin() {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        reset();
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        allow_forge_token_for_url("https://git.corp.example/api/v4");
+        deny_forge_token_for_url("http://git.corp.example:8406/api/v4");
+        deny_forge_token_for_url("https://git.corp.example/api/v4");
+
+        assert!(forge_token_denied_at(
+            Forge::GitLab,
+            &url("http://git.corp.example:8406/api/v4/projects")
+        ));
+        assert!(!forge_token_denied_at(
+            Forge::GitLab,
+            &url("https://git.corp.example/api/v4/projects")
+        ));
+        // a lookup by host alone withholds it while any origin there is denied
+        assert!(forge_token_denied(Forge::GitLab, "git.corp.example"));
+        reset();
+    }
+
+    #[test]
+    fn forge_headers_carry_no_token_to_a_project_chosen_forge_origin() {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        reset();
+        let tokens = |host: &str| {
+            Some(std::collections::HashMap::from([(
+                host.to_string(),
+                "operator-token".to_string(),
+            )]))
+        };
+        deny_forge_token_for_url("https://codeberg.org/api/v4");
+        deny_forge_token_for_url("http://codeberg.org/api/v1");
+
+        *crate::gitlab::test_support::TOKENS_FILE_OVERRIDE
+            .write()
+            .unwrap() = tokens("codeberg.org");
+        let gitlab = crate::gitlab::get_headers(
+            "https://codeberg.org/api/v4/projects/acme%2Ftool/releases",
+            "https://codeberg.org/api/v4",
+        )
+        .unwrap();
+        *crate::gitlab::test_support::TOKENS_FILE_OVERRIDE
+            .write()
+            .unwrap() = None;
+
+        *crate::forgejo::test_support::TOKENS_FILE_OVERRIDE
+            .write()
+            .unwrap() = tokens("codeberg.org");
+        let forgejo = crate::forgejo::get_headers(
+            "http://codeberg.org/api/v1/repos/acme/tool/releases",
+            "http://codeberg.org/api/v1",
+        )
+        .unwrap();
+        *crate::forgejo::test_support::TOKENS_FILE_OVERRIDE
+            .write()
+            .unwrap() = None;
+        reset();
+
+        assert!(
+            !gitlab.contains_key(reqwest::header::AUTHORIZATION),
+            "{gitlab:?}"
+        );
+        assert!(
+            !forgejo.contains_key(reqwest::header::AUTHORIZATION),
+            "{forgejo:?}"
+        );
     }
 
     #[test]

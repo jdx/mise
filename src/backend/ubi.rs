@@ -578,11 +578,17 @@ async fn install(
     builder = builder.forge(forge.clone());
     // An `api_url` that project config named in safe mode gets no token; see
     // `mise_util::untrusted_hosts`.
+    let untrusted_forge = match forge {
+        ForgeType::GitLab => mise_util::untrusted_hosts::Forge::GitLab,
+        ForgeType::Forgejo => mise_util::untrusted_hosts::Forge::Forgejo,
+        _ => mise_util::untrusted_hosts::Forge::GitHub,
+    };
     let token_denied = opts
         .api_url_override()
         .and_then(|api_url| url::Url::parse(api_url).ok())
-        .and_then(|url| url.host_str().map(str::to_string))
-        .is_some_and(|host| mise_util::untrusted_hosts::forge_token_denied(&host));
+        .is_some_and(|url| {
+            mise_util::untrusted_hosts::forge_token_denied_at(untrusted_forge, &url)
+        });
     if !token_denied {
         builder = set_token(builder, &forge);
     }

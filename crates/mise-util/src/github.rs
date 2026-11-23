@@ -2256,23 +2256,33 @@ pub fn token_source_for_token(host: &str, token: &str) -> Option<TokenSource> {
 /// 6. gh CLI token (from `hosts.yml`)
 /// 7. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
-    resolve_token_inner(host, true)
+    resolve_token_inner(host, true, None)
 }
 
 /// Git already runs its configured helpers; do not recursively invoke them.
 pub fn resolve_token_for_git(host: &str) -> Option<(String, TokenSource)> {
-    resolve_token_inner(host, false)
+    resolve_token_inner(host, false, None)
 }
 
-fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String, TokenSource)> {
+/// `url` is the request the token is for, when the caller has one; safe mode then
+/// withholds the token by that request's origin rather than by `host` alone.
+fn resolve_token_inner(
+    host: &str,
+    use_git_credentials: bool,
+    url: Option<&url::Url>,
+) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
     if is_github_release_asset_host(host) {
         return None;
     }
 
-    // A host that project config named in safe mode; see `untrusted_hosts`.
-    if crate::untrusted_hosts::forge_token_denied(host) {
+    // An origin that project config named in safe mode; see `untrusted_hosts`.
+    let forge = crate::untrusted_hosts::Forge::GitHub;
+    if match url {
+        Some(url) => crate::untrusted_hosts::forge_token_denied_at(forge, url),
+        None => crate::untrusted_hosts::forge_token_denied(forge, host),
+    } {
         return None;
     }
 
@@ -2364,7 +2374,7 @@ pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
         .as_ref()
         .and_then(|u| u.host_str())
         .unwrap_or("api.github.com");
-    resolve_token(host).map(|(t, _)| t)
+    resolve_token_inner(host, true, parsed.as_ref()).map(|(t, _)| t)
 }
 
 /// Headers for a GitHub request to `url`. `api_url` is the API base URL the
@@ -2378,7 +2388,7 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
 
     if may_send_token(&url, api_url) {
         let host = url.host_str().unwrap_or("github.com");
-        if let Some((token, source)) = resolve_token(host) {
+        if let Some((token, source)) = resolve_token_inner(host, true, Some(&url)) {
             remember_token_source(host, &token, source);
             headers.insert(
                 reqwest::header::AUTHORIZATION,
@@ -2561,7 +2571,7 @@ pub fn gh_token_in_keyring(host: &str) -> bool {
     // Hosts `resolve_token` never looks a token up for: a hint could not change the result.
     if !Settings::get().github.gh_cli_tokens
         || is_github_release_asset_host(host)
-        || crate::untrusted_hosts::forge_token_denied(host)
+        || crate::untrusted_hosts::forge_token_denied(crate::untrusted_hosts::Forge::GitHub, host)
     {
         return false;
     }

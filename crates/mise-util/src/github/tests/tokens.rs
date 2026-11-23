@@ -139,7 +139,7 @@ fn test_enterprise_token_is_not_sent_to_public_raw_content() {
         // `resolve_token` would allow git credential helpers to run, which
         // can block or prompt; the enterprise exclusion is unaffected by
         // skipping them.
-        if let Some((token, _)) = resolve_token_inner(host, false) {
+        if let Some((token, _)) = resolve_token_inner(host, false, None) {
             assert_ne!(
                 token, "ghes-secret",
                 "{host} must not receive MISE_GITHUB_ENTERPRISE_TOKEN"

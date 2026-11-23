@@ -226,7 +226,9 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
         return Ok(headers);
     }
 
-    if let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("codeberg.org")) {
+    if let Some((token, _source)) =
+        resolve_token_inner(url.host_str().unwrap_or("codeberg.org"), Some(&url))
+    {
         headers.insert(
             reqwest::header::AUTHORIZATION,
             tokens::bearer_header("Forgejo", &token)?,
@@ -289,8 +291,17 @@ pub mod test_support {
 /// 5. fj CLI token (from `keys.json`)
 /// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
-    // A host that project config named in safe mode; see `untrusted_hosts`.
-    if crate::untrusted_hosts::forge_token_denied(host) {
+    resolve_token_inner(host, None)
+}
+
+/// [`resolve_token`] for a request to `url`, when the caller has one.
+fn resolve_token_inner(host: &str, url: Option<&url::Url>) -> Option<(String, TokenSource)> {
+    // An origin that project config named in safe mode; see `untrusted_hosts`.
+    let forge = crate::untrusted_hosts::Forge::Forgejo;
+    if match url {
+        Some(url) => crate::untrusted_hosts::forge_token_denied_at(forge, url),
+        None => crate::untrusted_hosts::forge_token_denied(forge, host),
+    } {
         return None;
     }
     if crate::testing::in_tests()

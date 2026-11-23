@@ -292,8 +292,10 @@ These are skipped without an error, so resolution commands keep working:
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
 - Your credentials, for hosts project config chooses: a project `api_url` gets
-  no GitHub, GitLab or Forgejo token (unless global config names the same host),
-  and a tool that project config declares gets no `~/.netrc` credentials for
+  no GitHub, GitLab or Forgejo token, unless global config names the same
+  scheme, host and port, or it is that forge's own public API over https
+  (`github.com` and `api.github.com` for GitHub, `gitlab.com` for GitLab, `codeberg.org` for
+  Forgejo). A tool that project config declares gets no `~/.netrc` credentials for
   the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
   or `api_url` names. Tools from global and system config keep theirs. A
   project that points at a private forge or file server therefore cannot list
