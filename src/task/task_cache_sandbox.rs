@@ -119,7 +119,7 @@ fn key_for(task: &Task, cli: &SandboxConfig, bases: &KeyBases<'_>) -> Option<Cac
             Ok(inside) => inside,
             Err(_) => &path,
         };
-        let mut location = path.to_string_lossy().into_owned();
+        let mut location = key_text(path);
         if refused {
             location.push('/');
         }
@@ -351,6 +351,26 @@ fn output_dirs(
         dirs.insert(dir);
     }
     Ok(dirs.into_iter().collect())
+}
+
+/// `path` as text that no other path shares. A lossy conversion gives two names
+/// that are not valid UTF-8 the same text, while the sandbox is given the two
+/// paths. Bytes that are not UTF-8 are written as `\xNN`, and a `\` is doubled
+/// so that this text cannot be the name of another path.
+fn key_text(path: &Path) -> String {
+    let mut text = String::new();
+    for chunk in path.as_os_str().as_encoded_bytes().utf8_chunks() {
+        for c in chunk.valid().chars() {
+            if c == '\\' {
+                text.push(c);
+            }
+            text.push(c);
+        }
+        for byte in chunk.invalid() {
+            text.push_str(&format!("\\x{byte:02x}"));
+        }
+    }
+    text
 }
 
 /// `path` with the symlinks in the part of it that exists followed. The part
@@ -666,5 +686,23 @@ mod tests {
         assert_eq!(allowed("secret.txt/", &project), ["secret.txt/"]);
         assert_eq!(allowed("secret.txt/.", &project), ["secret.txt/"]);
         assert_eq!(allowed("lib/", &project), ["lib"]);
+
+        // Names that are not valid UTF-8 keep their bytes, so two links to two
+        // such files are two grants. A name that spells out those bytes is a
+        // third.
+        use std::os::unix::ffi::OsStrExt;
+        for (link, target) in [
+            ("fe", &b"data\xfe"[..]),
+            ("ff", b"data\xff"),
+            ("text", b"data\\xfe"),
+        ] {
+            let target = std::ffi::OsStr::from_bytes(target);
+            std::fs::write(project.join(target), "").unwrap();
+            std::os::unix::fs::symlink(target, project.join(link)).unwrap();
+        }
+        assert_eq!(allowed("fe", &project), ["data\\xfe"]);
+        assert_eq!(allowed("ff", &project), ["data\\xff"]);
+        assert_eq!(allowed("text", &project), ["data\\\\xfe"]);
+        assert_eq!(key_text(Path::new("src/é.txt")), "src/é.txt");
     }
 }
