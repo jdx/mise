@@ -419,10 +419,23 @@ impl AubeLock {
         })
     }
 
+    /// The sidecar text as it was read, which its digest in `mise.lock`
+    /// covers. Never hand this to aube: see [`Self::to_install_yaml`].
     pub(crate) fn to_yaml(&self) -> Result<String> {
         if !self.graph_text.is_empty() {
             return Ok(self.graph_text.clone());
         }
+        self.to_install_yaml()
+    }
+
+    /// The graph for aube to install: `graph` serialized again, never
+    /// `graph_text`. Every check on a graph reads `graph`, mise's own parse
+    /// of the text, while aube parses YAML by other rules (U+0085, U+2028 and
+    /// U+2029 end a line, and so a comment, in its YAML 1.1 parser; its fast
+    /// path splits lines on `\n` alone), so the original text can be a
+    /// different graph to aube. The serializer escapes those characters in
+    /// strings, so aube reads back the graph that was checked.
+    pub(crate) fn to_install_yaml(&self) -> Result<String> {
         let value = toml_to_yaml(toml::Value::Table(self.graph.clone()));
         Ok(yaml::to_string(&value)?)
     }

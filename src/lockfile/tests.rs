@@ -1131,6 +1131,56 @@ fn package_provenance_rejects_unknown_keys() {
 }
 
 #[test]
+fn aube_installs_the_graph_mise_checked_not_the_sidecar_text() {
+    // To mise's YAML 1.2 parser U+0085, U+2028 and U+2029 are ordinary
+    // characters, so the last line is one comment. aube's YAML 1.1 parser
+    // ends the comment there and reads a second document after it.
+    let yaml = r#"lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      cli:
+        specifier: 1.0.0
+        version: 1.0.0
+packages:
+  cli@1.0.0:
+    resolution: {integrity: sha512-root}
+    deprecated: "one\Ntwo\Lthree\Pfour\rfive"
+    "a\Nkey": true
+# end of graph
+---
+importers:
+  .:
+    dependencies:
+      cli:
+        specifier: 1.0.0
+        version: link:/payload
+"#;
+    assert!(AubeLock::from_yaml(yaml).is_err());
+    let (visible, hidden) = yaml.split_once("# end of graph").unwrap();
+    for separator in ["\u{85}", "\u{2028}", "\u{2029}"] {
+        let yaml = format!("{visible}# end of graph{}", hidden.replace('\n', separator));
+        let graph = AubeLock::from_yaml(&yaml).unwrap();
+        // The sidecar and its digest keep the text as it was read.
+        assert_eq!(graph.to_yaml().unwrap(), yaml);
+
+        let installed = graph.to_install_yaml().unwrap();
+        assert!(!installed.contains("link:"), "{installed}");
+        // Strings keep the characters aube reads as line breaks, escaped.
+        assert!(
+            !installed.contains(['\u{85}', '\u{2028}', '\u{2029}', '\r']),
+            "{installed}"
+        );
+        assert!(
+            installed.contains(r#""one\Ntwo\Lthree\Pfour\rfive""#),
+            "{installed}"
+        );
+        assert!(installed.contains(r#""a\Nkey""#), "{installed}");
+        assert_eq!(AubeLock::from_yaml(&installed).unwrap(), graph);
+    }
+}
+
+#[test]
 fn aube_graph_round_trips_through_mise_lock() {
     let yaml = r#"lockfileVersion: '9.0'
 settings:

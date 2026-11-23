@@ -2539,7 +2539,11 @@ impl NPMBackend {
         }
 
         if let Some(lock) = &tv.aube_lock {
-            crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
+            // aube installs the graph that was checked, not the sidecar text.
+            crate::file::write(
+                install_path.join("aube-lock.yaml"),
+                lock.load()?.to_install_yaml()?,
+            )?;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let mut install_options = aube::embed::InstallOptions::new(&install_path);
             install_options.frozen_mode = aube::embed::FrozenMode::Frozen;
