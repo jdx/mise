@@ -126,6 +126,24 @@ fn expand_with(
     expanded.into_iter().collect()
 }
 
+/// Get the env value from the system and global miserc files only. It
+/// selects the environment files of the global and system config directories,
+/// which need no trust, so a project `.miserc.toml`, read without trust, must
+/// not add to it or remove from it.
+pub(crate) fn get_global_env() -> Option<&'static Vec<String>> {
+    global()?.env.as_ref()
+}
+
+/// [`expand_env_sets`] with the sets of the system and global miserc files only.
+pub(crate) fn expand_global_env_sets(names: Vec<String>) -> Vec<String> {
+    expand_with(names, global().and_then(|global| global.env_sets.as_ref()))
+}
+
+/// Get the auto_env value from the system and global miserc files only.
+pub(crate) fn get_global_auto_env() -> Option<bool> {
+    global()?.auto_env
+}
+
 /// Get the auto_env value from miserc, if set.
 pub(crate) fn get_auto_env() -> Option<bool> {
     get().auto_env

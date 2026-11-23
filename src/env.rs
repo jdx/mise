@@ -171,6 +171,28 @@ pub(crate) static MISE_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
         .collect()
 });
 
+/// [`MISE_ENV_WITH_AUTO`] for the global and system config directories. It
+/// comes from `-E`, `MISE_ENV`, `MISE_AUTO_ENV` and the system and global
+/// miserc files only: a project `.miserc.toml` loads without trust, and the
+/// files of those directories need none and can set global-only settings such
+/// as `yes` and `paranoid`, so a project must not choose which of them load.
+pub(crate) static MISE_GLOBAL_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
+    let mise_env = global_environment(&ARGS.read().unwrap());
+    let enabled = var_bool("MISE_AUTO_ENV")
+        .or_else(miserc::get_global_auto_env)
+        .unwrap_or_else(|| auto_env_default_for_version(&crate::version::V));
+    let mut envs = vec![];
+    if enabled {
+        envs.extend(
+            platform_env_names()
+                .into_iter()
+                .filter(|name| !mise_env.contains(name)),
+        );
+    }
+    envs.extend(mise_env);
+    envs
+});
+
 pub(crate) static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     env_ignored_config_paths()
         .or_else(|| miserc::get_ignored_config_paths().map(|paths| paths.iter().cloned().collect()))
@@ -252,6 +274,15 @@ fn environment(args: &[String]) -> Vec<String> {
         .or_else(|| miserc::get_env().cloned())
         .unwrap_or_default();
     miserc::expand_env_sets(names)
+}
+
+/// [`environment`] without the environments and sets of project `.miserc.toml`
+/// files.
+fn global_environment(args: &[String]) -> Vec<String> {
+    let names = explicit_environment(args)
+        .or_else(|| miserc::get_global_env().cloned())
+        .unwrap_or_default();
+    miserc::expand_global_env_sets(names)
 }
 
 /// The environments named by `-E` or `MISE_ENV`, before set names expand.

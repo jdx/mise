@@ -83,8 +83,10 @@ idea:
   environments but cannot drop or reorder one that a global or system
   `miserc.toml` selects. The project's own environments come after the global
   ones and override them, so a global environment protects only settings that
-  project config cannot set, such as `paranoid`. The other keys a project file
-  can set change which project files load and how far up mise looks for them;
+  project config cannot set, such as `paranoid`. The environments a project
+  adds or turns on select only project files, never a global or system
+  `config.<env>.toml`. The other keys a project file can set change which
+  project files load and how far up mise looks for them;
   they cannot hide global or system config. A project's `ignored_config_paths`
   adds to the list it inherits and cannot remove an entry, so a project under
   an ignored path stays ignored. Its environment names may use only letters,

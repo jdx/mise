@@ -507,6 +507,13 @@ order, ahead of the project's own, so a project cannot turn off a baseline such 
 files. The `-E` flag and environment variables such as `MISE_ENV` and
 `MISE_ENV_CONF_D` override every `.miserc.toml` file.
 
+The environments a file found from the current directory adds or turns on,
+through `env`, `env_sets` or `auto_env`, select project files only. The files
+in `~/.config/mise` and `/etc/mise`, such as `config.ci.toml`, follow the
+global and system `miserc.toml` files, `-E`, `MISE_ENV` and `MISE_AUTO_ENV`:
+they need no trust and can set `yes` or `paranoid`, so a project cannot load
+or skip one.
+
 `ignored_config_paths` is the other exception. A file found from the current
 directory adds its entries to the list it inherits, from the global and system
 files and from the files in parent directories, and cannot remove one, so a
