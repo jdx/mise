@@ -3546,10 +3546,95 @@ fn github_relay_socket(url: &Url) -> Option<std::ffi::OsString> {
     }
 }
 
+/// Splits a `url_replacements` replacement into the scheme it starts with, if
+/// it has one, the authority (`user:password@host:port`) after that, and the
+/// rest. A replacement need not be a whole URL: `mirror.example.com/github`
+/// starts with its authority.
+fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
+    const AUTHORITY_END: [char; 4] = ['/', '\\', '?', '#'];
+    let (scheme, rest) = match replacement.split_once("//") {
+        Some((scheme, rest)) if !scheme.contains(AUTHORITY_END) && !scheme.contains('@') => {
+            (scheme.strip_suffix(':').filter(|s| !s.is_empty()), rest)
+        }
+        _ => (None, replacement),
+    };
+    let (authority, rest) = rest.split_at(rest.find(AUTHORITY_END).unwrap_or(rest.len()));
+    (scheme, authority, rest)
+}
+
+/// The front of a `url_replacements` replacement that carries credentials, up
+/// to the end of its authority: `https://user:password@mirror.example.com` of
+/// `https://user:password@mirror.example.com/github/`.
+fn replacement_credentials(replacement: &str) -> Option<&str> {
+    let (_, authority, rest) = split_replacement(replacement);
+    authority
+        .rsplit_once('@')
+        .is_some_and(|(userinfo, _)| !userinfo.is_empty())
+        .then(|| &replacement[..replacement.len() - rest.len()])
+}
+
+/// Credentials written into a `url_replacements` rule are for the server that
+/// rule names. A key matches anywhere in the URL text, though: in the path or
+/// query of a URL on another host, or in front of the rest of a longer host
+/// name, and the rewrite would send them there. So a rule that carries
+/// credentials applies only when `url`, its result, has them as its own
+/// userinfo and is on the scheme, host and port that `server` names. `server`
+/// is the rule's [`replacement_credentials`] with any regex captures expanded;
+/// a capture that brought more than a piece of the scheme or authority has
+/// moved the credentials somewhere else.
+fn credentials_in_place(server: &str, url: &Url) -> bool {
+    let (scheme, authority, rest) = split_replacement(server);
+    let scheme = scheme.unwrap_or(url.scheme());
+    rest.is_empty()
+        && Url::parse(&format!("{scheme}://{authority}/")).is_ok_and(|named| {
+            named.scheme() == url.scheme()
+                && named.username() == url.username()
+                && named.password() == url.password()
+                && named.host() == url.host()
+                && named.port_or_known_default() == url.port_or_known_default()
+        })
+}
+
+/// `url` without its userinfo.
+fn without_userinfo(url: &Url) -> Url {
+    let mut bare = url.clone();
+    // Clearing fails only for URLs that cannot have userinfo, which have none.
+    let _ = bare.set_password(None);
+    let _ = bare.set_username("");
+    bare
+}
+
+/// Gives `rewritten` the userinfo of `original` back when the rule kept the
+/// request on the same host and port and wrote no userinfo of its own. A login
+/// is for its own server, so a rewrite to another one goes without it.
+fn restore_same_host_userinfo(original: &Url, rewritten: &mut Url) {
+    let has_userinfo = |url: &Url| !url.username().is_empty() || url.password().is_some();
+    if !has_userinfo(original)
+        || has_userinfo(rewritten)
+        || rewritten.host() != original.host()
+        || rewritten.port() != original.port()
+    {
+        return;
+    }
+    // Both are on the same host, so both can hold userinfo.
+    let _ = rewritten.set_username(original.username());
+    let _ = rewritten.set_password(original.password());
+}
+
+/// Rewrites `url` with the first `url_replacements` rule that changes it.
+///
+/// Rules match the URL without its userinfo, so a capture cannot carry a
+/// login into the path of the rewritten URL, and a key such as
+/// `https://github.com/` matches a URL that has a login. The login stays only
+/// when the rewrite keeps the host ([`restore_same_host_userinfo`]); a rule
+/// that writes credentials of its own applies only where they end up as the
+/// userinfo of the server it names ([`credentials_in_place`]), and otherwise is
+/// skipped for this URL so later rules are tried.
 pub fn apply_url_replacements(url: &mut Url) {
     let settings = Settings::get();
     if let Some(replacements) = &settings.url_replacements {
-        let url_string = url.to_string();
+        let original = url.clone();
+        let url_string = without_userinfo(url).to_string();
 
         for (pattern, replacement) in replacements {
             if let Some(pattern_without_prefix) = pattern.strip_prefix("regex:") {
@@ -3558,13 +3643,21 @@ pub fn apply_url_replacements(url: &mut Url) {
                     let new_url_string = regex.replace(&url_string, replacement.as_str());
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string
-                        && let Ok(new_url) = new_url_string.parse()
+                        && let Ok(new_url) = new_url_string.parse::<Url>()
+                        && replacement_credentials(replacement).is_none_or(|server| {
+                            regex.captures(&url_string).is_some_and(|captures| {
+                                let mut expanded = String::new();
+                                captures.expand(server, &mut expanded);
+                                credentials_in_place(&expanded, &new_url)
+                            })
+                        })
                     {
                         *url = new_url;
+                        restore_same_host_userinfo(&original, url);
                         trace!(
                             "Replaced URL using regex '{}': {} -> {}",
                             pattern_without_prefix,
-                            redact_url_userinfo(&url_string),
+                            log_url(&original),
                             log_url(url)
                         );
                         return; // Apply only the first matching replacement
@@ -3581,13 +3674,16 @@ pub fn apply_url_replacements(url: &mut Url) {
                     let new_url_string = url_string.replace(pattern, replacement);
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string
-                        && let Ok(new_url) = new_url_string.parse()
+                        && let Ok(new_url) = new_url_string.parse::<Url>()
+                        && replacement_credentials(replacement)
+                            .is_none_or(|server| credentials_in_place(server, &new_url))
                     {
                         *url = new_url;
+                        restore_same_host_userinfo(&original, url);
                         trace!(
                             "Replaced URL using string replacement '{}': {} -> {}",
                             pattern,
-                            redact_url_userinfo(&url_string),
+                            log_url(&original),
                             log_url(url)
                         );
                         return; // Apply only the first matching replacement

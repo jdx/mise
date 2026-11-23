@@ -234,6 +234,150 @@ fn test_documentation_examples() {
     });
 }
 
+fn rewritten(replacements: &IndexMap<String, String>, url: &str) -> String {
+    with_test_settings(replacements.clone(), || {
+        let mut url = Url::parse(url).unwrap();
+        apply_url_replacements(&mut url);
+        url.to_string()
+    })
+}
+
+#[test]
+fn test_replacement_credentials_only_reach_the_replacement_host() {
+    // A rule skipped for one URL leaves that URL as it was.
+    let unchanged = |replacements: &IndexMap<String, String>, url: &str| {
+        assert_eq!(rewritten(replacements, url), url);
+    };
+
+    let mut plain = IndexMap::new();
+    plain.insert(
+        "https://github.com/".to_string(),
+        "https://user:secret@mirror.example.com/github/".to_string(),
+    );
+    assert_eq!(
+        rewritten(&plain, "https://github.com/owner/repo"),
+        "https://user:secret@mirror.example.com/github/owner/repo"
+    );
+    // The key in another host's query or path does not hand that host the login.
+    unchanged(&plain, "http://evil.example/?u=https://github.com/");
+    unchanged(&plain, "http://evil.example/x/https://github.com/tool");
+
+    // Nor does a key without a trailing slash, in front of a longer host name.
+    let mut prefix = IndexMap::new();
+    prefix.insert(
+        "https://github.com".to_string(),
+        "https://user:secret@mirror.example.com".to_string(),
+    );
+    assert_eq!(
+        rewritten(&prefix, "https://github.com/owner/repo"),
+        "https://user:secret@mirror.example.com/owner/repo"
+    );
+    unchanged(&prefix, "https://github.com.evil.example/owner/repo");
+    unchanged(&prefix, "https://evil.example/?u=https://github.com");
+
+    let mut bare = IndexMap::new();
+    bare.insert(
+        "github.com".to_string(),
+        "user:secret@mirror.example.com".to_string(),
+    );
+    assert_eq!(
+        rewritten(&bare, "https://github.com/owner/repo"),
+        "https://user:secret@mirror.example.com/owner/repo"
+    );
+    unchanged(&bare, "https://evil.example/github.com/owner/repo");
+
+    let mut regex = IndexMap::new();
+    regex.insert(
+        r"regex:https://([^./]+)\.cdn\.example/".to_string(),
+        "https://user:secret@$1.mirror.example.com/".to_string(),
+    );
+    assert_eq!(
+        rewritten(&regex, "https://eu.cdn.example/tool.tar.gz"),
+        "https://user:secret@eu.mirror.example.com/tool.tar.gz"
+    );
+    unchanged(&regex, "http://evil.example/?u=https://eu.cdn.example/");
+
+    // A capture in front of the credentials cannot move them out of place.
+    let mut leading_capture = IndexMap::new();
+    leading_capture.insert(
+        r"regex:^(.*)github\.com".to_string(),
+        "${1}user:secret@mirror.example.com".to_string(),
+    );
+    assert_eq!(
+        rewritten(&leading_capture, "https://github.com/owner/repo"),
+        "https://user:secret@mirror.example.com/owner/repo"
+    );
+    unchanged(&leading_capture, "http://evil.example/?github.com");
+
+    // A skipped rule does not stop a later one, and rules without credentials
+    // still match anywhere.
+    plain.insert("evil.example".to_string(), "other.example".to_string());
+    assert_eq!(
+        rewritten(&plain, "http://evil.example/?u=https://github.com/"),
+        "http://other.example/?u=https://github.com/"
+    );
+    let mut no_login = IndexMap::new();
+    no_login.insert(
+        "https://github.com/".to_string(),
+        "https://mirror.example.com/scope@1/".to_string(),
+    );
+    no_login.insert("@old/".to_string(), "@new/".to_string());
+    assert_eq!(
+        rewritten(&no_login, "https://proxy.example/?u=https://github.com/"),
+        "https://proxy.example/?u=https://mirror.example.com/scope@1/"
+    );
+    assert_eq!(
+        rewritten(&no_login, "https://registry.example/@old/package"),
+        "https://registry.example/@new/package"
+    );
+}
+
+#[test]
+fn test_rules_never_move_a_url_login_into_the_rewritten_url() {
+    // The documented subdomain-to-path rule: `[^./]+` would also match
+    // `ci:CDN-PASSWORD@eu` if the rule saw the login.
+    let mut subdomain = IndexMap::new();
+    subdomain.insert(
+        r"regex:^https://([^./]+)\.cdn\.example\.com/(.+)".to_string(),
+        "http://127.0.0.1:18921/$1/$2".to_string(),
+    );
+    assert_eq!(
+        rewritten(
+            &subdomain,
+            "https://ci:CDN-PASSWORD@eu.cdn.example.com/tool-1.0"
+        ),
+        "http://127.0.0.1:18921/eu/tool-1.0"
+    );
+
+    // A key with the scheme and host matches a URL with a login, and the login
+    // stays with its host.
+    let mut host = IndexMap::new();
+    host.insert(
+        "https://files.example.com/".to_string(),
+        "https://mirror.example.com/files/".to_string(),
+    );
+    assert_eq!(
+        rewritten(&host, "https://u:p@files.example.com/a"),
+        "https://mirror.example.com/files/a"
+    );
+    let mut path = IndexMap::new();
+    path.insert("/old/".to_string(), "/new/".to_string());
+    assert_eq!(
+        rewritten(&path, "https://u:p@files.example.com/old/a"),
+        "https://u:p@files.example.com/new/a"
+    );
+    // Another port on the same host is another server.
+    let mut port = IndexMap::new();
+    port.insert(
+        "files.example.com/".to_string(),
+        "files.example.com:8443/".to_string(),
+    );
+    assert_eq!(
+        rewritten(&port, "https://u:p@files.example.com/a"),
+        "https://files.example.com:8443/a"
+    );
+}
+
 #[test]
 fn test_no_settings_configured() {
     // Test the real apply_url_replacements function with no settings override
