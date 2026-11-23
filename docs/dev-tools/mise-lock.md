@@ -523,18 +523,18 @@ is not configured fails, as it does for `mise lock`.
 What a lock entry records depends on the backend. Inspect the generated entry
 for the tool and platform you care about.
 
-| Backend                                                                                            | What `mise.lock` records                                                                                  |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| aqua, github, gitlab, forgejo, http, s3                                                            | A URL per platform and a checksum where the release provides one or mise can compute it                   |
-| packslip                                                                                           | URL and checksum per platform, and the signer the project committed to; policy is checked at installation |
-| conda                                                                                              | URL and checksum per platform, and the package's dependencies                                             |
-| Core tools that download archives: Bun, Deno, Elixir, Erlang, Go, Java, Node.js, Python, Ruby, Zig | A URL per platform and a checksum where one is available                                                  |
-| core:swift                                                                                         | URL and checksum per platform and Linux distro; locked mode does not require the URL                      |
-| npm (embedded aube) and pypi (uv)                                                                  | The version, plus a [dependency graph](#dependency-graphs) in format version 2 and later                  |
-| cargo, dotnet, gem, go, spinel, core:dotnet, core:rust                                             | The top-level version only; the language's installer resolves dependencies and build inputs               |
-| vfox tool plugins                                                                                  | URLs that the plugin's hooks return, which locked mode requires                                           |
-| asdf and vfox backend plugins                                                                      | The version only; the plugin performs the installation                                                    |
-| spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                     |
+| Backend                                                                                            | What `mise.lock` records                                                                                    |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| aqua, github, gitlab, forgejo, http, s3                                                            | A URL per platform and a checksum where the release provides one or mise can compute it                     |
+| packslip                                                                                           | URL and checksum per platform, and the signer the project committed to; policy is checked at installation   |
+| conda                                                                                              | URL and checksum per platform, and the package's dependencies                                               |
+| Core tools that download archives: Bun, Deno, Elixir, Erlang, Go, Java, Node.js, Python, Ruby, Zig | A URL per platform and a checksum where one is available                                                    |
+| core:swift                                                                                         | URL and checksum per platform and Linux distro; locked mode does not require the URL                        |
+| npm (embedded aube) and pypi (uv)                                                                  | The version, plus a [dependency graph](#dependency-graphs) in format version 2 and later                    |
+| cargo, dotnet, gem, go, spinel, core:dotnet, core:rust                                             | The top-level version only; the language's installer resolves dependencies and build inputs                 |
+| vfox tool plugins                                                                                  | The URL the plugin's hooks return, which locked mode requires, and its checksum, which every install checks |
+| asdf and vfox backend plugins                                                                      | The version only; the plugin performs the installation                                                      |
+| spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                       |
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
 `npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# `mise install --locked` must reject a vfox download that does not match the
-# lockfile checksum, even when the plugin supplies no checksum of its own.
+# `mise install` must reject a vfox download that does not match the lockfile
+# checksum, with or without --locked, even when the plugin supplies no checksum
+# of its own.
 
 mkdir -p srv
 echo "hello" >srv/tool.tar.gz
@@ -49,8 +50,10 @@ touch mise.lock
 mise lock
 assert_succeed "mise install --locked"
 
-# A checksum that differs from the download fails the locked install.
+# A checksum that differs from the download fails the install.
 rm -rf "$MISE_DATA_DIR/installs/lockck"
 sed -E 's/checksum = "sha256:[0-9a-f]+"/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/' mise.lock >mise.lock.new
 mv mise.lock.new mise.lock
 assert_fail_contains "mise install --locked" "Checksum mismatch"
+# Without --locked the checksum recorded in the lockfile is checked too.
+assert_fail_contains "mise install" "Checksum mismatch"
