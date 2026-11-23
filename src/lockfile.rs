@@ -2043,6 +2043,18 @@ impl Lockfile {
                 }
             }
         } else {
+            if let Some(project) =
+                crate::config::config_file::config_root::linked_lockfile_project(path)
+                && leads_out_of(path, &project)
+                && !owner_vouches_for_lockfile(path)
+            {
+                bail!(
+                    "refusing to write lockfile {}: it is reached through a symlink inside {}, which leads out of that project, and a link out is only followed for global config, or for trusted config outside safe mode. Run `mise trust` in {} if the link is yours",
+                    display_path(path),
+                    display_path(&project),
+                    display_path(&project)
+                );
+            }
             path.to_path_buf()
         };
         let path = target.as_path();
@@ -3223,11 +3235,23 @@ fn may_write_through_symlink(link: &Path, target: &Path) -> bool {
     {
         return true;
     }
-    if is_global_lockfile(link) {
-        return true;
-    }
-    !Settings::safe_mode()
-        && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
+    owner_vouches_for_lockfile(link)
+}
+
+/// Whether the directory of `path` resolves to somewhere outside `project`, or cannot be
+/// resolved.
+fn leads_out_of(path: &Path, project: &Path) -> bool {
+    let dir = path.parent().and_then(|dir| fs::canonicalize(dir).ok());
+    let project = fs::canonicalize(project).ok();
+    !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
+}
+
+/// Whether the config that owns the lockfile at `path` vouches for writing it wherever its
+/// path leads: the global or system lockfile, or a trusted project's outside safe mode.
+fn owner_vouches_for_lockfile(path: &Path) -> bool {
+    is_global_lockfile(path)
+        || (!Settings::safe_mode()
+            && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, path)))
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)

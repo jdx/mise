@@ -82,6 +82,14 @@ pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
         .then_some(project)
 }
 
+/// [`linked_project`] for a lockfile, which sits beside the config that owns it: a link that the
+/// config would be reached through also leads to its lockfile.
+pub(crate) fn linked_lockfile_project(lockfile: &Path) -> Option<PathBuf> {
+    ["mise.toml", "config.toml"]
+        .into_iter()
+        .find_map(|name| linked_project(&lockfile.with_file_name(name)))
+}
+
 pub fn config_root(path: &Path) -> PathBuf {
     let path = path
         .absolutize()
@@ -301,6 +309,45 @@ mod tests {
         std::fs::create_dir_all(w.join("mise")).unwrap();
         symlink(other.join("mise.toml"), w.join("mise/config.toml")).unwrap();
         assert_eq!(linked_project(&w.join("mise/config.toml")), Some(w.clone()));
+    }
+
+    #[test]
+    fn a_lockfile_reached_through_a_link_in_a_project_belongs_to_it() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let other = root.join("other");
+        std::fs::create_dir_all(other.join("mise")).unwrap();
+
+        let plain = root.join("plain");
+        std::fs::create_dir_all(plain.join(".config/mise")).unwrap();
+        assert_eq!(linked_lockfile_project(&plain.join("mise.lock")), None);
+        assert_eq!(
+            linked_lockfile_project(&plain.join(".config/mise/mise.lock")),
+            None
+        );
+
+        // `.config` is the link
+        let dot_config = root.join("dot-config");
+        std::fs::create_dir_all(&dot_config).unwrap();
+        symlink(&other, dot_config.join(".config")).unwrap();
+        assert_eq!(
+            linked_lockfile_project(&dot_config.join(".config/mise.lock")),
+            Some(dot_config.clone())
+        );
+        assert_eq!(
+            linked_lockfile_project(&dot_config.join(".config/mise/mise.lock")),
+            Some(dot_config.clone())
+        );
+
+        // `.mise` is the link
+        let dot_mise = root.join("dot-mise");
+        std::fs::create_dir_all(&dot_mise).unwrap();
+        symlink(other.join("mise"), dot_mise.join(".mise")).unwrap();
+        assert_eq!(
+            linked_lockfile_project(&dot_mise.join(".mise/mise.lock")),
+            Some(dot_mise.clone())
+        );
     }
 
     /// A file task grouped in a subdirectory shares its project's root.
