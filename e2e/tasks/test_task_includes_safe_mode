@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+
+# Safe mode loads project config without trust, so the task files a project's
+# includes reach must stay inside the project. Read as a task file, a file of
+# the user's is quoted in the parse error, or listed as tasks when it happens to
+# parse, and stderr is often a job log the project's author can read.
+
+mkdir -p "$HOME/private"
+cat <<'EOF' >"$HOME/private/credentials.toml"
+[registry]
+token = "s3cr3t"
+EOF
+echo 'oauth_token = "t0k3n"' >"$HOME/private/hosts.toml"
+
+# control: outside safe mode the (trusted) config reads the file
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["~/private/credentials.toml"]
+EOF
+assert_fail_contains "mise tasks ls 2>&1" "s3cr3t"
+
+echo "=== named by path: ~, absolute, .., a directory and a glob ==="
+for include in "~/private/credentials.toml" "$HOME/private/credentials.toml" \
+  "../private/credentials.toml" "../private" "../private/cred*.toml"; do
+  cat <<EOF >mise.toml
+[task_config]
+includes = ["$include"]
+EOF
+  assert_contains "MISE_SAFE=1 mise tasks ls 2>&1" "resolves outside the project"
+  assert_not_contains "MISE_SAFE=1 mise tasks ls 2>&1" "s3cr3t"
+  assert_not_contains "MISE_SAFE=1 mise lock --dry-run 2>&1" "s3cr3t"
+done
+
+echo "=== a file that parses is not listed, also through a link ==="
+ln -s "$HOME/private/hosts.toml" linked.toml
+for include in "~/private/hosts.toml" "linked.toml"; do
+  cat <<EOF >mise.toml
+[task_config]
+includes = ["$include"]
+EOF
+  assert_contains "mise tasks ls --json" "t0k3n"
+  assert_not_contains "MISE_SAFE=1 mise tasks ls --json 2>&1" "t0k3n"
+done
+rm linked.toml
+
+echo "=== a link inside a task directory ==="
+echo '[tools]' >mise.toml
+mkdir -p mise-tasks
+ln -s "$HOME/private/hosts.toml" mise-tasks/hosts.toml
+ln -s "$HOME/private/credentials.toml" mise-tasks/creds.toml
+assert_not_contains "MISE_SAFE=1 mise tasks ls --json 2>&1" "t0k3n"
+assert_not_contains "MISE_SAFE=1 mise tasks ls --json 2>&1" "s3cr3t"
+assert_fail "MISE_SAFE=1 mise tasks info oauth_token"
+assert_not_contains_text "$(MISE_SAFE=1 mise tasks info oauth_token 2>&1 || true)" "t0k3n"
+# `mise prune` reads the task files of every tracked config for the tools they declare
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "s3cr3t"
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "t0k3n"
+rm -r mise-tasks
+
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["~/private/credentials.toml"]
+EOF
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "s3cr3t"
+
+echo "=== includes inside the project still load ==="
+mkdir -p ci/tasks
+cat <<'EOF' >ci/inside.toml
+[inside-file]
+run = "echo inside"
+EOF
+cat <<'EOF' >ci/tasks/inside.toml
+[inside-dir]
+run = "echo inside"
+EOF
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["ci/inside.toml", "ci/tasks"]
+EOF
+assert_contains "MISE_SAFE=1 mise tasks ls" "inside-file"
+assert_contains "MISE_SAFE=1 mise tasks ls" "inside-dir"
+assert_not_contains "MISE_SAFE=1 mise tasks ls 2>&1" "resolves outside the project"
+rm -r ci mise.toml
+
+echo "=== so do task files elsewhere in the checkout ==="
+mkdir -p repo/.git repo/ci repo/sub
+cat <<'EOF' >repo/ci/shared.toml
+[shared]
+run = "echo shared"
+tools = { dummy = "1.0.0" }
+EOF
+cat <<'EOF' >repo/sub/mise.toml
+[task_config]
+includes = ["../ci/shared.toml"]
+EOF
+assert_contains "MISE_SAFE=1 mise -C repo/sub tasks ls" "shared"
+
+echo "=== mise lock keeps the entries of a task file it skipped ==="
+mkdir -p outside
+cat <<'EOF' >outside/tasks.toml
+[outside]
+run = "echo outside"
+tools = { dummy = "1.0.0" }
+EOF
+cat <<'EOF' >repo/sub/mise.toml
+[task_config]
+includes = ["../../outside/tasks.toml"]
+EOF
+cat <<'EOF' >repo/sub/mise.lock
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+MISE_SAFE=1 mise -C repo/sub lock >/dev/null 2>&1 || true
+assert_contains "cat repo/sub/mise.lock" "1.0.0"
+rm -r repo outside
+
+echo "=== and task files a monorepo's projects share ==="
+mkdir -p shared packages/foo
+cat <<'EOF' >shared/common.toml
+[common-task]
+run = "echo common"
+EOF
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+cat <<'EOF' >packages/foo/mise.toml
+[task_config]
+includes = ["../../shared/common.toml", "../../../private/hosts.toml"]
+EOF
+assert_contains "MISE_SAFE=1 mise tasks ls --all" "//packages/foo:common-task"
+assert_not_contains "MISE_SAFE=1 mise tasks ls --all --json 2>&1" "t0k3n"
+assert_contains "MISE_SAFE=1 mise -C packages/foo tasks ls" "common-task"
+assert_not_contains "MISE_SAFE=1 mise -C packages/foo tasks ls --json 2>&1" "t0k3n"
+rm -r shared packages mise.toml
+
+echo "=== global config keeps its includes ==="
+mkdir -p "$MISE_TMP_DIR/tasks"
+cat <<'EOF' >"$MISE_TMP_DIR/tasks/global.toml"
+[from-global-include]
+run = "echo global"
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[task_config]
+includes = ["$MISE_TMP_DIR/tasks"]
+EOF
+assert_contains "MISE_SAFE=1 mise tasks ls" "from-global-include"

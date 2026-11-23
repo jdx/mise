@@ -7178,6 +7178,8 @@ struct LoadTaskIncludesOptions<'a> {
     require_trust: bool,
     rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
     excludes: &'a [PathBuf],
+    /// See [`safe_mode_task_include_bounds`].
+    bounds: Option<&'a [PathBuf]>,
 }
 
 /// Whether task discovery skips `path`: it is under `excludes` or the `task.disable_paths` setting.
@@ -7262,8 +7264,9 @@ async fn load_tasks_includes(
         require_trust,
         mut rendered_file_tasks,
         excludes,
+        bounds,
     } = options;
-    if is_task_path_excluded(root, excludes) {
+    if is_task_path_excluded(root, excludes) || skip_task_file_outside(root, bounds) {
         return Ok(vec![]);
     }
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
@@ -7294,6 +7297,7 @@ async fn load_tasks_includes(
                 true => !is_mise_config_file_in_task_include(root, p),
                 false => file::is_executable(p),
             })
+            .filter(|p| !skip_task_file_outside(p, bounds))
             .partition(|p| is_toml(p));
         let mut tasks = vec![];
         for path in toml_files {
@@ -7519,6 +7523,72 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     }
 }
 
+static SAFE_MODE_SKIPPED_TASK_FILE: AtomicBool = AtomicBool::new(false);
+
+/// Whether safe mode has kept this process from reading a task file outside its
+/// project (see [`skip_task_file_outside`]). The tasks of that file, and the tools
+/// they name, are then missing from what this process saw.
+pub fn safe_mode_skipped_task_file() -> bool {
+    SAFE_MODE_SKIPPED_TASK_FILE.load(Ordering::Relaxed)
+}
+
+/// The directories that, in safe mode, the task files reached through the task includes
+/// of the project config at `dir` must resolve inside: `dir`, the checkout holding it,
+/// and the monorepo it belongs to among `config_files`. A checkout that is the home
+/// directory or one above it does not count, since that holds the user's own files.
+/// `None` means there is no limit: outside safe mode, or for global config (`is_global`).
+fn safe_mode_task_include_bounds(
+    dir: &Path,
+    is_global: bool,
+    config_files: &ConfigMap,
+) -> Option<Vec<PathBuf>> {
+    if is_global || !Settings::safe_mode() {
+        return None;
+    }
+    let dir = file::desymlink_path(dir);
+    let mut bounds = vec![dir.clone()];
+    if let Some(checkout) = dir.ancestors().find(|d| d.join(".git").exists())
+        && !dirs::HOME.starts_with(checkout)
+    {
+        bounds.push(checkout.to_path_buf());
+    }
+    if let Some(root) = find_monorepo_root(config_files) {
+        let root = file::desymlink_path(&root);
+        if dir.starts_with(&root) {
+            bounds.push(root);
+        }
+    }
+    Some(bounds)
+}
+
+/// Whether safe mode keeps `path`, a task include or a file found below one, from being
+/// read because it resolves outside `bounds` (see [`safe_mode_task_include_bounds`]).
+/// Safe mode loads project config without trust, and an include can name any path:
+/// `~/.cargo/credentials.toml`, an absolute path, `../..`, or a link the checkout ships.
+/// Such a file is the user's, not the project's, and reading it as a task file would put
+/// its text into a parse error or a task listing. The comparison is on resolved paths,
+/// since `..` and a link both keep the project as a lexical prefix.
+fn skip_task_file_outside(path: &Path, bounds: Option<&[PathBuf]>) -> bool {
+    let Some(bounds) = bounds else {
+        return false;
+    };
+    // The global task directory holds global tasks even when no global config
+    // file exists to include it.
+    if is_global_task_include_path(path) {
+        return false;
+    }
+    let resolved = file::desymlink_path(path);
+    if bounds.iter().any(|bound| resolved.starts_with(bound)) {
+        return false;
+    }
+    SAFE_MODE_SKIPPED_TASK_FILE.store(true, Ordering::Relaxed);
+    warn_once!(
+        "ignoring task file {}: it resolves outside the project and safe mode (MISE_SAFE=1) is on; move it into the project to use it in safe mode",
+        display_path(path)
+    );
+    true
+}
+
 fn resolve_task_excludes(dir: &Path, patterns: &[String]) -> Vec<PathBuf> {
     patterns
         .iter()
@@ -7538,11 +7608,14 @@ fn resolve_task_excludes(dir: &Path, patterns: &[String]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The task include patterns of `dir`, the directory they resolve against, whether they
+/// are the defaults, and whether global config sits at `dir`.
 fn task_include_patterns_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
-) -> Result<(Vec<String>, PathBuf, bool)> {
+) -> Result<(Vec<String>, PathBuf, bool, bool)> {
     let configs = configs_at_root(dir, config_files);
+    let is_global = configs.iter().any(|cf| is_global_config(cf.get_path()));
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
             None
@@ -7557,7 +7630,7 @@ fn task_include_patterns_for_dir(
         .find_map(|cf| match cf.task_config_includes() {
             Ok(Some(includes)) => Some(Ok({
                 // Resolve relative paths from the config root, not the config file's directory
-                (includes, cf.config_root(), false)
+                (includes, cf.config_root(), false, is_global)
             })),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
@@ -7567,19 +7640,29 @@ fn task_include_patterns_for_dir(
             cascaded_task_config.and_then(|tc| {
                 tc.task_config
                     .includes
-                    .map(|includes| (includes, tc.includes_root, false))
+                    .map(|includes| (includes, tc.includes_root, false, is_global))
             })
         })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf(), true)
+            (default_task_includes(), dir.to_path_buf(), true, is_global)
         }))
 }
 
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
-    let (includes, resolve_dir, _) = task_include_patterns_for_dir(dir, config_files)?;
+    Ok(task_includes_and_bounds_for_dir(dir, config_files)?.0)
+}
 
-    Ok(includes
+/// [`task_includes_for_dir`], with the [`safe_mode_task_include_bounds`] that the files
+/// found below them must stay inside.
+fn task_includes_and_bounds_for_dir(
+    dir: &Path,
+    config_files: &ConfigMap,
+) -> Result<(Vec<PathBuf>, Option<Vec<PathBuf>>)> {
+    let (includes, resolve_dir, _, is_global) = task_include_patterns_for_dir(dir, config_files)?;
+    let bounds = safe_mode_task_include_bounds(&resolve_dir, is_global, config_files);
+
+    let includes = includes
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
@@ -7588,8 +7671,10 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
             }
             expand_task_include(&resolve_dir, &p)
         })
+        .filter(|p| !skip_task_file_outside(p, bounds.as_deref()))
         .unique()
-        .collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    Ok((includes, bounds))
 }
 
 pub fn task_excludes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
@@ -7626,7 +7711,9 @@ pub fn task_excludes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
 /// caller can create it. Explicit includes must contain an existing directory because a missing
 /// path cannot be distinguished from a task file.
 pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<PathBuf> {
-    let (includes, resolve_dir, uses_defaults) = task_include_patterns_for_dir(dir, config_files)?;
+    let (includes, resolve_dir, uses_defaults, is_global) =
+        task_include_patterns_for_dir(dir, config_files)?;
+    let bounds = safe_mode_task_include_bounds(&resolve_dir, is_global, config_files);
     let default_create_dir = if uses_defaults {
         includes
             .first()
@@ -7638,6 +7725,7 @@ pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) ->
         .iter()
         .filter(|include| !is_remote_task_include(include))
         .flat_map(|include| expand_task_include(&resolve_dir, include))
+        .filter(|path| !skip_task_file_outside(path, bounds.as_deref()))
         .find(|path| path.is_dir())
     {
         return Ok(path);
@@ -8167,6 +8255,7 @@ async fn load_task_sources_from_configs(
         })
         .unwrap_or_default();
     let excludes = resolve_task_excludes(&excludes_root, &excludes);
+    let local_bounds = safe_mode_task_include_bounds(&resolve_dir, is_global, &config.config_files);
 
     let mut inputs = cascaded_task_config
         .map(|tc| tc.inputs.clone())
@@ -8284,6 +8373,7 @@ async fn load_task_sources_from_configs(
                     require_trust,
                     rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
                     excludes: &excludes,
+                    bounds: local_bounds.as_deref(),
                 },
             )
             .await?;
@@ -9076,13 +9166,14 @@ fn included_task_definitions(
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Vec<(Task, PathBuf)> {
-    let includes = task_includes_for_dir(dir, config_files).unwrap_or_else(|err| {
-        tracked_warn!(
-            "error loading task includes of {}: {err:#}",
-            display_path(dir)
-        );
-        vec![]
-    });
+    let (includes, bounds) =
+        task_includes_and_bounds_for_dir(dir, config_files).unwrap_or_else(|err| {
+            tracked_warn!(
+                "error loading task includes of {}: {err:#}",
+                display_path(dir)
+            );
+            (vec![], None)
+        });
     let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_else(|err| {
         tracked_warn!(
             "error loading task excludes of {}: {err:#}",
@@ -9105,12 +9196,15 @@ fn included_task_definitions(
                     excludes.clone()
                 }
             };
+            let bounds =
+                safe_mode_task_include_bounds(&root, is_global_config(cf.get_path()), config_files);
             let own = own
                 .iter()
                 .filter(|p| !is_remote_task_include(p))
                 .flat_map(|p| expand_task_include(&root, p))
+                .filter(|p| !skip_task_file_outside(p, bounds.as_deref()))
                 .collect::<Vec<_>>();
-            groups.push((own, own_excludes));
+            groups.push((own, own_excludes, bounds));
         }
         Ok(None) => {}
         Err(err) => tracked_warn!(
@@ -9118,7 +9212,7 @@ fn included_task_definitions(
             display_path(cf.get_path())
         ),
     }
-    groups.insert(0, (includes, excludes));
+    groups.insert(0, (includes, excludes, bounds));
     let is_toml = |p: &Path| p.extension().is_some_and(|e| e == "toml");
     // An include is walked again under different excludes, which can let through a file the
     // first walk skipped, so it is the task files that are read once. A script's task is named
@@ -9127,7 +9221,7 @@ fn included_task_definitions(
     let mut walked = HashSet::new();
     let mut read = HashSet::new();
     let mut tasks = vec![];
-    for (includes, excludes) in groups {
+    for (includes, excludes, bounds) in groups {
         let all_excludes = Settings::get()
             .task
             .disable_paths
@@ -9164,13 +9258,21 @@ fn included_task_definitions(
                 continue;
             };
             for path in files {
+                if skip_task_file_outside(&path, bounds.as_deref()) {
+                    continue;
+                }
                 let include_key = (!is_toml(&path)).then(|| include.clone());
                 if !read.insert((path.clone(), include_key)) {
                     continue;
                 }
                 let loaded = if is_toml(&path) {
                     file::read_config_to_string(&path).and_then(|raw| {
-                        Ok(toml::from_str::<Tasks>(&raw)?
+                        Ok(toml::from_str::<Tasks>(&raw)
+                            .map_err(|err| {
+                                config_file::diagnostic::hide_linked_source_below(
+                                    err, &raw, &path, dir,
+                                )
+                            })?
                             .0
                             .into_iter()
                             .map(|(name, mut task)| {

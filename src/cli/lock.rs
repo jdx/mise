@@ -2564,6 +2564,14 @@ impl Lock {
         config_paths: &[PathBuf],
         effective_config_files: &ConfigMap,
     ) -> Option<ToolSelectors> {
+        // The tools of a task file safe mode did not read are unknown, so no entry is stale.
+        if crate::config::safe_mode_skipped_task_file() {
+            debug!(
+                "skipping stale-tool pruning for {}: safe mode skipped a task file outside the project",
+                display_path(target_lockfile_path)
+            );
+            return None;
+        }
         let (mut configured_tools, mut configured_backends) = self.configured_tool_selectors(tools);
         let config_path_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
