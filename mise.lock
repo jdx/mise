@@ -1083,62 +1083,62 @@ url = "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.6.0/stylua-w
 url_api = "https://api.github.com/repos/JohnnyMorganz/StyLua/releases/assets/628186216"
 
 [[tools.tak]]
-version = "0.0.15"
+version = "0.0.17"
 backend = "github:jdx/tak"
 specifiers = ["latest"]
 
 [tools.tak."platforms.linux-arm64"]
-checksum = "sha256:fe7b14ea8ee0b7d97c23b2258dea7a90f888e010c391eff1006339f4b4ac4305"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260527"
+checksum = "sha256:16a08907e4d84330507421c9f8a7c23b21690265ba5951608e547a24df91cb01"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704674"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-arm64-musl"]
-checksum = "sha256:0ffa0538fd55957036ab5577c0c8734022c501d62e80d376b11d099207489aeb"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260525"
+checksum = "sha256:9e96bc80cba40f30787e39e35230f83444fbd58ebc0371021c21b8dc7e1e5dcb"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704670"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64"]
-checksum = "sha256:dad3a6d09ac44aa2d278ac8bd871356b8b00abbc54b66f31b9a2fe75a7f927af"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260542"
+checksum = "sha256:6c6129f05e3b0c883e112ccce4fa74dff55ec1a252038897eced0f0d0f9fe944"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704710"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64-baseline"]
-checksum = "sha256:dad3a6d09ac44aa2d278ac8bd871356b8b00abbc54b66f31b9a2fe75a7f927af"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260542"
+checksum = "sha256:6c6129f05e3b0c883e112ccce4fa74dff55ec1a252038897eced0f0d0f9fe944"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704710"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64-musl"]
-checksum = "sha256:d829ab9b804cb030a03d9c01958a401201d0a67296baa2187410543204339b57"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260545"
+checksum = "sha256:76b1ce028a6f3971ff78035e5ac6de01cab246243faec0140d2cf265756b3bbf"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704724"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:d829ab9b804cb030a03d9c01958a401201d0a67296baa2187410543204339b57"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260545"
+checksum = "sha256:76b1ce028a6f3971ff78035e5ac6de01cab246243faec0140d2cf265756b3bbf"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704724"
 provenance = "github-attestations"
 
 [tools.tak."platforms.macos-arm64"]
-checksum = "sha256:d6efef5b1270fa3449d9720a5c89031b3f739d29f66ed1a04a785eaaf21b68fb"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260529"
+checksum = "sha256:71c090e276c2e754d225018c19a196babf2b930e117828032d06c40b0bf1fc23"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704678"
 provenance = "github-attestations"
 
 [tools.tak."platforms.windows-x64"]
-checksum = "sha256:abdd8daa9e1a1d6427eb8c4f9b3b09306af7b618219cc3f899adae0878c6c010"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260539"
+checksum = "sha256:b4dbe474b068c0c70df9c45bb7564b98007d425581d853efce0d8e9e4b6b7404"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704717"
 provenance = "github-attestations"
 
 [tools.tak."platforms.windows-x64-baseline"]
-checksum = "sha256:abdd8daa9e1a1d6427eb8c4f9b3b09306af7b618219cc3f899adae0878c6c010"
-url = "https://github.com/jdx/tak/releases/download/v0.0.15/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/628260539"
+checksum = "sha256:b4dbe474b068c0c70df9c45bb7564b98007d425581d853efce0d8e9e4b6b7404"
+url = "https://github.com/jdx/tak/releases/download/v0.0.17/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/782704717"
 provenance = "github-attestations"
 
 [[tools.taplo]]
