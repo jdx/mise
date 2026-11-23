@@ -1142,7 +1142,15 @@ pub enum RecoveryState {
     Finished,
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread has persisted a pending record.
+    pub(crate) static PENDING_WRITES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 pub(crate) fn write_pending_in(state_dir: &Path, pending: &Pending) -> Result<()> {
+    #[cfg(test)]
+    PENDING_WRITES.with(|writes| writes.set(writes.get() + 1));
     write_json(
         &pending_path_in(state_dir, &pending.checkpoint.uuid),
         pending,

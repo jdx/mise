@@ -546,7 +546,8 @@ pub(crate) fn begin_changes_with(
     if !super::scope::ensure_started()? {
         return Ok(vec![]);
     }
-    let mut pending = vec![];
+    let mut changes = vec![];
+    let mut entries = vec![];
     for (path, capture) in paths {
         let prior = PathSnapshot::capture_with(&super::local::root(), &path, capture);
         if let PathSnapshot::Unrecorded { reason, .. } = &prior {
@@ -566,34 +567,43 @@ pub(crate) fn begin_changes_with(
             PathSnapshot::Symlink { dest } => Some(dest.clone()),
             _ => None,
         };
-        if let Some(seq) = super::scope::record(JournalEntry::PathChanged {
+        entries.push(JournalEntry::PathChanged {
             part: part.to_string(),
             item: item.to_string(),
             path: path.clone(),
             prior,
-        })? {
-            pending.push(PendingChange {
-                seq,
-                path,
-                prior_missing,
-                prior_link,
-            });
-        }
+        });
+        changes.push((path, prior_missing, prior_link));
     }
-    Ok(pending)
+    // One write for the whole batch: the record is rewritten whole each time.
+    let Some(seqs) = super::scope::record_all(entries)? else {
+        return Ok(vec![]);
+    };
+    Ok(seqs
+        .zip(changes)
+        .map(|(seq, (path, prior_missing, prior_link))| PendingChange {
+            seq,
+            path,
+            prior_missing,
+            prior_link,
+        })
+        .collect())
 }
 
 /// Records the resulting state of each pending change.
 pub fn commit_changes(pending: Vec<PendingChange>) {
-    for change in pending {
-        // the mutation already happened; a missing `committed` is handled by
-        // inspecting the path later, so this is a warning
-        if let Err(err) = super::scope::record(JournalEntry::Committed {
+    // one write for the batch, as in `begin_changes_with`
+    let entries = pending
+        .into_iter()
+        .map(|change| JournalEntry::Committed {
             seq: change.seq,
             after: PathState::observe(&change.path),
-        }) {
-            warn!("history: {err:#}");
-        }
+        })
+        .collect();
+    // the mutation already happened; a missing `committed` is handled by
+    // inspecting the path later, so this is a warning
+    if let Err(err) = super::scope::record_all(entries) {
+        warn!("history: {err:#}");
     }
 }
 
