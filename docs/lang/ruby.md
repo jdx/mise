@@ -52,8 +52,9 @@ This changes your global config. Add `--local` to enable it in the project's
 
 mise then reads `.ruby-version` (a leading `ruby-` is ignored), a
 `ruby "4.0.7"` line in `Gemfile`, or Bundler's `ruby file: ".ruby-version"`,
-which is resolved next to the `Gemfile`. To write `.ruby-version` from the
-selected Ruby:
+which is resolved next to the `Gemfile`. That file has to be in the `Gemfile`'s
+directory or below it: mise does not follow a symlink that leads out of it. To
+write `.ruby-version` from the selected Ruby:
 
 ```sh
 mise exec -- ruby -e 'puts RUBY_VERSION' > .ruby-version
