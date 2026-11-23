@@ -243,6 +243,9 @@ impl Edit {
         } else {
             PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME)
         };
+        if !self.dry_run {
+            config_file::symlink_check_before_write(&path)?;
+        }
 
         if let Some(tool_versions) = &self.tool_versions {
             // Import from .tool-versions file
@@ -297,9 +300,6 @@ impl Edit {
         } else {
             InteractiveConfig::new(path.to_path_buf())
         };
-        if !self.dry_run {
-            config_file::symlink_check_before_write(&path)?;
-        }
 
         editor = editor
             .title(&title)
