@@ -244,6 +244,14 @@ impl Exec {
         {
             return self.run_with_command_wrapper(config, ts, wrapper_env).await;
         }
+        // A native shim gets what `which_shim` gives a shim that is mise itself: the tool that
+        // provides the command. The user typed the tool's name, not `mise exec`, so
+        // `run_with_context` leaves the config's other missing tools alone.
+        if self.tool.is_empty()
+            && let Some(command) = &self.command
+        {
+            super::shim::install_native_shim_command(&mut config, &mut ts, command).await?;
+        }
 
         self.run_with_context(
             config,
@@ -321,9 +329,12 @@ impl Exec {
             // prevent installing things in shims by checking for tty
             // also don't autoinstall if at least 1 tool is specified
             // in that case the user probably just wants that one tool
+            // a shim that is not mise itself runs `mise x -- <tool>` with only
+            // `__MISE_SHIM_PATH` set: the user typed the tool's name, not `mise exec`
             missing_args_only: !self.tool.is_empty()
                 || !Settings::get().exec_auto_install
-                || *env::__MISE_SHIM,
+                || *env::__MISE_SHIM
+                || env::MISE_SHIM_PATH.read().unwrap().is_some(),
             skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
             resolve_options,
             // Running a tool doesn't need the other missing lazy tools resolved after an install.

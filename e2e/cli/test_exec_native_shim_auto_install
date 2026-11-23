@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# A shim that is not mise itself (the Windows exe and file modes, the scripts reshim writes for an
+# asdf plugin's shims) runs `mise x -- <tool>` with __MISE_SHIM_PATH naming it. The user typed the
+# tool's name, not `mise exec`, so it installs what a shim that is mise itself installs: the
+# configured tool that provides the command, not every missing tool the config lists.
+mise install dummy@1.0.0
+shim="$MISE_DATA_DIR/shims/dummy"
+
+cat >"$HOME/other" <<'SH'
+#!/bin/sh
+echo other
+SH
+chmod +x "$HOME/other"
+cat >mise.toml <<TOML
+[tools]
+dummy = "2.0.0"
+"http:other" = { version = "1.0.0", url = "file://$HOME/other" }
+TOML
+
+# Completing installs nothing, and neither does a shim with not-found auto-install off.
+__MISE_SHIM_PATH="$shim" mise x -- dummy __complete_word__ >/dev/null 2>&1 || true
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+assert_fail "__MISE_SHIM_PATH='$shim' MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- dummy"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/http-other"
+
+# A plugin's shim names its target by path, which no configured tool provides.
+assert_contains "__MISE_SHIM_PATH='$shim' mise x -- '$HOME/other' 2>/dev/null" "other"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/http-other"
+
+# The command's own tool is installed, as by the symlink shim.
+assert_contains "__MISE_SHIM_PATH='$shim' mise x -- dummy 2>/dev/null" "This is Dummy 2.0.0!"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/http-other"
+
+# `mise exec` typed by the user still installs everything the config lists.
+assert_contains "mise x -- dummy 2>/dev/null" "This is Dummy 2.0.0!"
+assert_directory_exists "$MISE_DATA_DIR/installs/http-other/1.0.0"

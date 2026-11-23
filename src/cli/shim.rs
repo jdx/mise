@@ -238,6 +238,30 @@ pub(crate) async fn apply_native_shim_command_wrapper(
     )))
 }
 
+/// Install the tool that provides `mise x -- <name>` run by a native shim.
+///
+/// `which_shim` never runs for such a shim, and `mise x` on its own installs every missing tool
+/// the config lists. A config that only lists tools loads without trust, so this installs no
+/// more than `which_shim` does: the configured tool that provides the command, and nothing
+/// while completing.
+pub(crate) async fn install_native_shim_command(
+    config: &mut Arc<Config>,
+    ts: &mut Toolset,
+    command: &[String],
+) -> Result<()> {
+    if env::MISE_SHIM_PATH.read().unwrap().is_none() {
+        return Ok(());
+    }
+    let Some(program) = command.first() else {
+        return Ok(());
+    };
+    let shim_name = command_name_without_exe_suffix(program);
+    if is_offline_completion(shim_name, command) {
+        return Ok(());
+    }
+    install_missing_wrapper_command(config, ts, shim_name).await
+}
+
 /// The command wrapper configured for `shim_name`, with its command installed first when
 /// `install_command` is set and a tool provides it. None while that wrapper's own command is
 /// running, so the command finds the real tool instead of the wrapper again.
