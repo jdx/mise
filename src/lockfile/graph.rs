@@ -376,6 +376,28 @@ impl GraphRef<UvLock> {
             .flatten()
             .unwrap_or_else(|| self.identity())
     }
+
+    /// Whether `resolved` is this graph resolved again to the same packages:
+    /// both carry a release-age cutoff, and its value is all that differs.
+    ///
+    /// `mise lock --bump` resolves every graph again under a cutoff taken from
+    /// the time it runs. Writing that graph would change the sidecar and its
+    /// digest on every run, so the caller keeps this one instead. A graph that
+    /// gains or loses its cutoff is not the same: the setting changed, and the
+    /// lockfile records that once.
+    pub(crate) fn resolves_like(&self, resolved: &Self) -> bool {
+        let (Ok(locked), Ok(resolved)) = (self.load(), resolved.load()) else {
+            return false;
+        };
+        locked.project == resolved.project
+            && matches!(
+                (
+                    locked.identity_without_cutoff(),
+                    resolved.identity_without_cutoff(),
+                ),
+                (Ok(Some(locked)), Ok(Some(resolved))) if locked == resolved
+            )
+    }
 }
 
 /// The [`GraphRef::install_identity`] of a sidecar, remembered by the digest of
@@ -1212,6 +1234,53 @@ aube = {{ path = "graphs/npm", digest = "{}" }}
         assert_ne!(monday.identity(), tuesday.identity());
         // ... but the same dependencies are one installation.
         assert_eq!(monday.install_identity(), tuesday.install_identity());
+    }
+    #[test]
+    fn uv_graph_resolved_again_is_the_same_when_only_the_cutoff_moved() {
+        let locked = GraphRef::from(uv_with_cutoff(Some("2026-10-26T09:00:00Z")));
+        let again = GraphRef::from(uv_with_cutoff(Some("2026-10-27T17:30:00Z")));
+        assert_ne!(locked.identity(), again.identity());
+        assert!(locked.resolves_like(&again));
+
+        // Another package set is a new graph, whatever the cutoff.
+        let mut changed = uv_with_cutoff(Some("2026-10-27T17:30:00Z"));
+        changed
+            .graph
+            .insert("requires-python".into(), ">=3.10".into());
+        changed.graph_text.clear();
+        assert!(!locked.resolves_like(&GraphRef::from(changed)));
+
+        // So is another project, which holds the requirements the graph answers.
+        let mut requested = uv_with_cutoff(Some("2026-10-27T17:30:00Z"));
+        requested.project = toml::toml! { [project] name = "other" };
+        assert!(!locked.resolves_like(&GraphRef::from(requested)));
+
+        // Turning the release age on or off is recorded.
+        let plain = GraphRef::from(uv_with_cutoff(None));
+        assert!(!locked.resolves_like(&plain));
+        assert!(!plain.resolves_like(&locked));
+    }
+    #[test]
+    fn uv_graph_resolved_again_is_compared_with_the_sidecar_on_disk() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = sidecar_root(&temp.path().join("mise.lock")).join("pypi-fixture/1.0.0");
+        let graph = uv_with_cutoff(Some("2026-10-26T09:00:00Z"));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, text) in graph.files().unwrap() {
+            std::fs::write(dir.join(name), text).unwrap();
+        }
+        let sidecar = |digest: String| -> GraphRef<UvLock> {
+            GraphRef::Sidecar {
+                dir: dir.clone(),
+                base: temp.path().to_path_buf(),
+                digest,
+                cell: OnceLock::new(),
+            }
+        };
+        let again = GraphRef::from(uv_with_cutoff(Some("2026-10-27T17:30:00Z")));
+        assert!(sidecar(digest_text(&graph.graph_text)).resolves_like(&again));
+        // A sidecar that does not match its digest was edited: the new graph replaces it.
+        assert!(!sidecar(digest_text("edited")).resolves_like(&again));
     }
     #[test]
     fn uv_install_identity_keeps_graphs_without_a_cutoff_where_they_were() {
