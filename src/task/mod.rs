@@ -45,6 +45,7 @@ pub mod run_report;
 pub mod task_affected;
 pub mod task_cache;
 mod task_cache_audit;
+pub(crate) mod task_cache_sandbox;
 mod task_cache_store;
 pub(crate) mod task_confirm;
 pub mod task_context_builder;
@@ -6913,9 +6914,8 @@ echo "test"
             task.cache,
             Some(TaskCacheConfig {
                 enabled: true,
-                audit: false,
                 env: vec!["PROFILE".to_string()],
-                command_inputs: vec![],
+                ..Default::default()
             })
         );
         assert_eq!(task.rust_cache, Some(TaskRustCacheConfig::default()));

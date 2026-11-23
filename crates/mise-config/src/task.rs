@@ -593,6 +593,8 @@ pub struct TaskCacheConfig {
     pub enabled: bool,
     /// Report project files read or written outside the declared cache contract.
     pub audit: bool,
+    /// Run the task in a sandbox derived from its sources and outputs.
+    pub sandbox: bool,
     /// Ambient environment variables whose resolved values affect the cache key.
     pub env: Vec<String>,
     /// Commands whose stdout and stderr affect the cache key.

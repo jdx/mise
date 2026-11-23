@@ -887,9 +887,9 @@ directories without VCS ignores can add a lot of filesystem scanning.
 
 ### `cache` <Badge type="warning" text="experimental" />
 
-- **Type**: `{ enabled?: bool, audit?: bool, env?: string[], command_inputs?: string[] }`
+- **Type**: `{ enabled?: bool, audit?: bool, sandbox?: bool, env?: string[], command_inputs?: string[] }`
 - **Default**: [`task_config.cache`](#task_config.cache) if set, otherwise
-  `{ enabled = false, audit = false, env = [], command_inputs = [] }`
+  `{ enabled = false, audit = false, sandbox = false, env = [], command_inputs = [] }`
 
 Cache a successful run's outputs and logs, and restore them when the same
 inputs come back. See [Task caching](/tasks/caching.html) for requirements,
@@ -902,6 +902,9 @@ share results between machines.
 - `command_inputs`: commands whose output becomes part of the cache key.
 - `audit`: on Linux with `strace`, report project files the task read or wrote
   outside its declared sources and outputs.
+- `sandbox`: on Linux, run the task in a
+  [sandbox derived from its sources and outputs](/tasks/caching.html#cache-sandbox),
+  so that reads and writes outside them fail.
 
 ```mise-toml
 [tasks.build]
