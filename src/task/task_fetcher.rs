@@ -95,6 +95,8 @@ pub struct TaskFetcher {
     warn_unfetched: bool,
     /// See [`TaskFetcher::skipping_failures`].
     skip_failures: bool,
+    /// See [`TaskFetcher::skipping_untrusted`].
+    skip_untrusted: bool,
     /// With `no_cache`, share one download of each task file across the command; see
     /// [`RemoteTaskArtifactsGuard`].
     share_snapshots: bool,
@@ -109,6 +111,7 @@ impl TaskFetcher {
             warn_unfetched: false,
             share_snapshots: true,
             skip_failures: false,
+            skip_untrusted: false,
         }
     }
 
@@ -121,6 +124,7 @@ impl TaskFetcher {
             warn_unfetched: true,
             share_snapshots: true,
             skip_failures: false,
+            skip_untrusted: false,
         }
     }
 
@@ -140,6 +144,15 @@ impl TaskFetcher {
         self
     }
 
+    /// Leaves the remote file of a task whose config is not trusted ([`Task::is_trusted`])
+    /// unfetched, as safe mode does, so the task keeps its TOML metadata. For shell completion: a
+    /// Tab press in whatever directory the shell is in does not ask mise to contact, wait for and
+    /// cache every server a repository names.
+    pub fn skipping_untrusted(mut self) -> Self {
+        self.skip_untrusted = true;
+        self
+    }
+
     /// Skips the one-time warnings (an unfetched `git::` file, an unreadable file), for output a shell or another program reads, such as
     /// completion and usage specs.
     pub fn without_warning(mut self) -> Self {
@@ -155,7 +168,8 @@ impl TaskFetcher {
     }
 
     /// True for a task whose `file` is a remote source that has not been fetched: a gated
-    /// `git::` file, or any remote file of project config in safe mode.
+    /// `git::` file, a remote file of untrusted config during completion, or any remote file of
+    /// project config in safe mode.
     pub fn is_unfetched_remote_task(task: &Task) -> bool {
         task.file
             .as_ref()
@@ -221,6 +235,10 @@ impl TaskFetcher {
                 // fetching a URL is not something such a config gets to do, as for remote
                 // includes. The task keeps its TOML metadata, and safe mode refuses to run it.
                 if !t.global && Settings::safe_mode() {
+                    return Ok(());
+                }
+                // Nor does an untrusted config get to when nobody asked for its task, as on Tab.
+                if self.skip_untrusted && !t.is_trusted(config).await {
                     return Ok(());
                 }
                 if source.starts_with("git::") {

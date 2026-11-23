@@ -200,9 +200,11 @@ impl TasksLs {
         // always pass no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         let fetcher = TaskFetcher::for_inspection(false);
-        // Completion output goes to the shell, so only the human-facing modes warn.
+        // Completion output goes to the shell, so only the human-facing modes warn. Completion
+        // also runs on a Tab press, which fetches nothing an untrusted config names: those tasks
+        // complete from their TOML metadata, as in safe mode.
         let fetcher = if self.complete || self.usage {
-            fetcher.without_warning()
+            fetcher.without_warning().skipping_untrusted()
         } else {
             fetcher
         };
