@@ -22,7 +22,6 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use mise_util::yaml;
 use serde::{Deserialize, Serialize};
-use std::cell::LazyCell;
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -43,7 +42,7 @@ static ALL_LOCKFILES_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
 static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
-type LockfilesByPrecedence = HashMap<Vec<PathBuf>, Arc<Vec<Lockfile>>>;
+type LockfilesByPrecedence = HashMap<Vec<PathBuf>, Arc<Vec<Arc<Lockfile>>>>;
 /// The lockfiles [`read_all_lockfiles`] merges, highest precedence first,
 /// filled alongside its cache.
 static LOCKFILES_BY_PRECEDENCE_CACHE: Lazy<Mutex<LockfilesByPrecedence>> =
@@ -164,7 +163,7 @@ fn parse_lockfile_toml_in(
 /// [`Lockfile::read`], parsing a file again only once it has changed. A
 /// symlinked lockfile is always read, since its target can change without the
 /// link's stamp changing.
-fn read_parsed_lockfile(path: &Path) -> Result<Lockfile> {
+fn read_parsed_lockfile(path: &Path) -> Result<Arc<Lockfile>> {
     read_parsed_lockfile_in(&PARSED_LOCKFILE_CACHE, path, |path| Lockfile::read(path))
 }
 
@@ -188,7 +187,7 @@ fn read_parsed_lockfile_in(
     cache: &Mutex<ParsedLockfiles>,
     path: &Path,
     parse: impl FnOnce(&Path) -> Result<Lockfile>,
-) -> Result<Lockfile> {
+) -> Result<Arc<Lockfile>> {
     let (clears, cached) = {
         let cache = cache.lock().unwrap_or_else(|e| e.into_inner());
         (cache.clears, cache.files.get(path).cloned())
@@ -198,17 +197,17 @@ fn read_parsed_lockfile_in(
         .filter(|meta| meta.is_file())
         .map(|meta| (meta.modified().ok(), meta.len()));
     let Some(stamp) = stamp else {
-        return parse(path);
+        return parse(path).map(Arc::new);
     };
     if let Some((_, lockfile)) = cached.filter(|(cached, _)| *cached == stamp) {
-        return Ok(lockfile.as_ref().clone());
+        return Ok(lockfile);
     }
-    let lockfile = parse(path)?;
+    let lockfile = Arc::new(parse(path)?);
     let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
     if cache.clears == clears {
         cache
             .files
-            .insert(path.to_path_buf(), (stamp, Arc::new(lockfile.clone())));
+            .insert(path.to_path_buf(), (stamp, Arc::clone(&lockfile)));
     }
     Ok(lockfile)
 }
@@ -224,6 +223,27 @@ const LOCKFILE_VERSION_DATES: &[(u32, jiff::civil::Date)] = &[
     (3, jiff::civil::date(2026, 9, 27)),
     (4, jiff::civil::date(2026, 11, 3)),
 ];
+
+/// Whether `version` is outdated today, in local time. `utc_today` is the
+/// date in UTC, which costs nothing to get; `local_today` builds jiff's
+/// time-zone database, which costs more than every other lockfile lookup of a
+/// command. No time zone is a day from UTC, so the local date is only asked
+/// for when the day before and the day after `utc_today` disagree.
+fn outdated_lockfile_version_today(
+    version: u32,
+    utc_today: jiff::civil::Date,
+    local_today: impl FnOnce() -> jiff::civil::Date,
+) -> bool {
+    match (utc_today.yesterday(), utc_today.tomorrow()) {
+        (Ok(earliest), Ok(latest))
+            if outdated_lockfile_version(version, earliest)
+                == outdated_lockfile_version(version, latest) =>
+        {
+            outdated_lockfile_version(version, latest)
+        }
+        _ => outdated_lockfile_version(version, local_today()),
+    }
+}
 
 fn outdated_lockfile_version(version: u32, today: jiff::civil::Date) -> bool {
     LOCKFILE_VERSION_DATES
@@ -249,9 +269,6 @@ pub fn warn_outdated_lockfiles(config: &Config) {
         return;
     }
     let monorepo_root = config.monorepo_lockfile_root();
-    // Reading the clock builds jiff's time-zone database, so only do it once a
-    // lockfile turns out to be old.
-    let today: LazyCell<jiff::civil::Date> = LazyCell::new(|| jiff::Zoned::now().date());
     let mut targets = HashMap::new();
     let mut roots = HashSet::new();
     for (path, cf) in &config.config_files {
@@ -281,18 +298,14 @@ pub fn warn_outdated_lockfiles(config: &Config) {
                     "add a matching config and run `mise lock --upgrade`, or remove the lockfile if no longer needed"
                 }
             };
-            warn_outdated_lockfile(&candidate, &today, remedy);
+            warn_outdated_lockfile(&candidate, remedy);
         }
     }
     for candidate in &discovery.legacy_lockfiles {
         if !seen.insert(candidate.clone()) || !candidate.exists() {
             continue;
         }
-        warn_outdated_lockfile(
-            candidate,
-            &today,
-            "run `mise lock --upgrade` at the monorepo root",
-        );
+        warn_outdated_lockfile(candidate, "run `mise lock --upgrade` at the monorepo root");
     }
 }
 
@@ -307,14 +320,20 @@ pub fn suppress_outdated_lockfile_warning(config: &Config) {
         .store(true, Ordering::Relaxed);
 }
 
-fn warn_outdated_lockfile(path: &Path, today: &LazyCell<jiff::civil::Date>, remedy: &str) {
+fn warn_outdated_lockfile(path: &Path, remedy: &str) {
     if let Ok(version) = lockfile_version_at(path)
         // A current-format lockfile can never be outdated, so don't read the
         // clock for it.
         && LOCKFILE_VERSION_DATES
             .iter()
             .any(|&(bumped_version, _)| bumped_version > version)
-        && outdated_lockfile_version(version, **today)
+        && outdated_lockfile_version_today(
+            version,
+            jiff::Timestamp::now()
+                .to_zoned(jiff::tz::TimeZone::UTC)
+                .date(),
+            || jiff::Zoned::now().date(),
+        )
     {
         warn_once!(
             "{} uses old lockfile format version {version}; {remedy}",
@@ -3559,7 +3578,7 @@ fn live_tool_stub_paths(lockfile: &Lockfile, lockfile_path: &Path) -> Vec<PathBu
 }
 
 fn merge_legacy_lockfile_if_present(
-    lockfile: &mut Lockfile,
+    lockfile: &mut Arc<Lockfile>,
     lockfile_path: &Path,
     legacy_path: &Path,
     primary_exists: bool,
@@ -3568,12 +3587,15 @@ fn merge_legacy_lockfile_if_present(
         Ok(legacy) => {
             // Stub references are relative to their lockfile, so rebase them.
             let stubs = live_tool_stub_paths(&legacy, legacy_path);
+            // The parsed files are shared with the cache; only a lockfile
+            // that is changed here is copied.
             if primary_exists {
-                merge_lockfile_for_lookup(lockfile, legacy);
+                merge_lockfile_for_lookup(Arc::make_mut(lockfile), Arc::unwrap_or_clone(legacy));
             } else {
                 *lockfile = legacy;
-                lockfile.tool_stubs.clear();
+                Arc::make_mut(lockfile).tool_stubs.clear();
             }
+            let lockfile = Arc::make_mut(lockfile);
             for stub in stubs {
                 lockfile.add_tool_stub(lockfile_path, &stub)?;
             }
@@ -5698,7 +5720,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     let legacy_lockfiles = &discovery.legacy_lockfiles;
 
     let mut seen_roots: HashSet<PathBuf> = HashSet::new();
-    let mut all: Vec<Lockfile> = Vec::new();
+    let mut all: Vec<Arc<Lockfile>> = Vec::new();
     // Where each root's lockfiles start in `all`. Roots are read from the
     // outermost config in, while each root's own lockfiles go highest first.
     let mut root_starts: Vec<usize> = Vec::new();
@@ -5743,23 +5765,20 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         cache.insert(discovery.cache_key.clone(), Arc::new(by_precedence));
     }
 
-    let result = all.into_iter().fold(None, |acc: Option<Lockfile>, l| {
-        let Some(mut acc) = acc else {
-            return Some(l);
-        };
-        merge_lockfile_for_lookup(&mut acc, l);
-        Some(acc)
-    });
-
-    let result = result.unwrap_or_default();
-
-    let result = Arc::new(result);
+    // A lone lockfile is the merged view as it is; only merging copies.
+    let result = all
+        .into_iter()
+        .reduce(|mut acc, l| {
+            merge_lockfile_for_lookup(Arc::make_mut(&mut acc), Arc::unwrap_or_clone(l));
+            acc
+        })
+        .unwrap_or_default();
     cache.insert(discovery.cache_key.clone(), Arc::clone(&result));
     result
 }
 
 /// The lockfiles [`read_all_lockfiles`] merges, highest precedence first.
-fn read_lockfiles_by_precedence(config: &Config) -> Arc<Vec<Lockfile>> {
+fn read_lockfiles_by_precedence(config: &Config) -> Arc<Vec<Arc<Lockfile>>> {
     let key = |config: &Config| {
         config
             .lockfile_discovery(|| derive_lockfile_discovery(config))
@@ -5788,14 +5807,14 @@ fn read_lockfiles_by_precedence(config: &Config) -> Arc<Vec<Lockfile>> {
     cached(&key).unwrap_or_default()
 }
 
-fn push_existing_lockfile(config: &Config, lockfiles: &mut Vec<Lockfile>, path: &Path) {
+fn push_existing_lockfile(config: &Config, lockfiles: &mut Vec<Arc<Lockfile>>, path: &Path) {
     if !path.exists() {
         return;
     }
     match read_parsed_lockfile(path) {
         Ok(mut lockfile) => {
             if !lockfile_is_trusted(config, path) {
-                lockfile.drop_what_needs_trust(path);
+                Arc::make_mut(&mut lockfile).drop_what_needs_trust(path);
             }
             lockfiles.push(lockfile)
         }
@@ -6077,7 +6096,7 @@ fn read_lockfile_at(
 
     let primary_exists = lockfile_path.exists();
     let mut lockfile = read_parsed_lockfile(&lockfile_path)
-        .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
+        .unwrap_or_else(|err| Arc::new(handle_lockfile_read_error(err, &lockfile_path)));
     if let Some(legacy_path) = &legacy_path
         && let Err(err) = merge_legacy_lockfile_if_present(
             &mut lockfile,
@@ -6092,10 +6111,9 @@ fn read_lockfile_at(
         );
     }
     if !trusted(&lockfile_path) {
-        lockfile.drop_what_needs_trust(&lockfile_path);
+        Arc::make_mut(&mut lockfile).drop_what_needs_trust(&lockfile_path);
     }
 
-    let lockfile = Arc::new(lockfile);
     cache.insert(cache_key, Arc::clone(&lockfile));
     lockfile
 }
@@ -6128,7 +6146,6 @@ pub(crate) fn read_lockfile_for_tool_source(
     {
         warn_outdated_lockfile(
             &lockfile_path,
-            &LazyCell::new(|| jiff::Zoned::now().date()),
             "run `mise lock --upgrade` from its config directory",
         );
     }
@@ -6486,11 +6503,11 @@ fn reads_shared_monorepo_lockfile(config: &Config, source: &ToolSource) -> bool 
 /// The first lockfile, nearest config first, whose lookup decides the request.
 /// Lockfiles that are ambiguous on their own are skipped.
 fn nearest_lockfile_decision<T>(
-    lockfiles: &[Lockfile],
+    lockfiles: &[impl std::borrow::Borrow<Lockfile>],
     mut lookup: impl FnMut(&Lockfile) -> Result<Option<T>>,
 ) -> Result<Option<T>> {
     for lockfile in lockfiles {
-        match lookup(lockfile) {
+        match lookup(lockfile.borrow()) {
             Ok(Some(found)) => return Ok(Some(found)),
             Ok(None) => {}
             // A lockfile that is itself ambiguous decides nothing; a farther

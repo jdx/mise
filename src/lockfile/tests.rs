@@ -168,6 +168,44 @@ fn test_outdated_lockfile_version_waits_six_months_after_newer_format() {
 }
 
 #[test]
+fn outdated_lockfile_version_reads_local_time_only_around_a_deadline() {
+    use jiff::civil::date;
+
+    // Version 2 is outdated from 2027-03-28, local time.
+    let unread = || -> jiff::civil::Date { panic!("local time was read") };
+    assert!(!outdated_lockfile_version_today(
+        2,
+        date(2026, 11, 23),
+        unread
+    ));
+    assert!(!outdated_lockfile_version_today(
+        2,
+        date(2027, 3, 26),
+        unread
+    ));
+    assert!(outdated_lockfile_version_today(
+        2,
+        date(2027, 3, 29),
+        unread
+    ));
+    assert!(!outdated_lockfile_version_today(
+        4,
+        date(2028, 1, 1),
+        unread
+    ));
+
+    // The local date can be a day either side of the UTC one, and decides.
+    for utc in [date(2027, 3, 27), date(2027, 3, 28)] {
+        assert!(!outdated_lockfile_version_today(2, utc, || date(
+            2027, 3, 27
+        )));
+        assert!(outdated_lockfile_version_today(2, utc, || date(
+            2027, 3, 28
+        )));
+    }
+}
+
+#[test]
 fn test_lockfile_version_at_matches_a_full_read() {
     let temp = tempfile::tempdir().unwrap();
     let cases = [
@@ -364,6 +402,23 @@ fn read_parsed_lockfile_parses_again_only_once_the_file_changes() {
     // So is a new length.
     write_with_time(&path, "lockfile_version = 1\n# a longer file\n", second);
     assert_eq!(read(), 1);
+}
+
+#[test]
+fn read_parsed_lockfile_hands_out_one_parse_without_copying_it() {
+    use std::time::{Duration, SystemTime};
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    let cache = Mutex::new(ParsedLockfiles::default());
+    let read = || read_parsed_lockfile_in(&cache, &path, |path| Lockfile::read(path)).unwrap();
+    let time = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    write_with_time(&path, "lockfile_version = 2\n", time);
+
+    let mut first = read();
+    assert!(Arc::ptr_eq(&first, &read()));
+    // A reader that changes its lockfile changes a copy.
+    Arc::make_mut(&mut first).lockfile_version = 9;
+    assert_eq!(read().lockfile_version(), 2);
 }
 
 #[test]
