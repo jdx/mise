@@ -414,11 +414,12 @@ isolated test setup.
   with the command's stderr when it exits with a nonzero status.
 - Building shell commands from tool names, versions or options. Pass values in
   `cmd.exec`'s `env` option and quote them, as the complete example does.
-- Shelling out to `mv`, `mkdir` or `cp`. Use `file.move` instead of `mv`.
+- Shelling out to `mv`, `mkdir`, `rm` or `cp`. Use `file.move` instead of `mv`,
+  `file.mkdir` instead of `mkdir -p`, and `file.remove` instead of `rm`.
   `file.move`, `http.download_file` and `archiver.decompress` create the
   directories they write into, so most plugins never need `mkdir`. The file
-  module has no copy or mkdir function; if you shell out for those, quote every
-  path and remember that the command differs on Windows.
+  module has no copy function; if you shell out for that, quote every path and
+  remember that the command differs on Windows.
 - Joining paths with `..` and `"/"`. Use `file.join_path`.
 - Expecting a Lua table to cache data between commands. Each mise command
   starts a new Lua runtime; mise caches version lists and environments itself.
