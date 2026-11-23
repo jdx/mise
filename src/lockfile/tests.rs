@@ -914,6 +914,50 @@ fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
 }
 
 #[test]
+fn untrusted_lockfile_pins_a_download_without_vouching_for_it() {
+    let mut pinned = basic_tool("3.10.0", "aqua:mvdan/sh");
+    pinned.platforms.insert(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            url: Some("http://example.com/shfmt".to_string()),
+            provenance: Some(ProvenanceType::Minisign),
+            additional_artifacts: vec![ArtifactInfo {
+                checksum: Some("sha256:def".to_string()),
+                url: "http://example.com/shfmt-extra.tar.gz".to_string(),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert("shfmt".to_string(), vec![pinned]);
+
+    // As its trusted config reads it, the entry stands for a verified download.
+    let info = &lockfile.tools["shfmt"][0].platforms["linux-x64"];
+    assert!(info.has_vouched_checksum());
+    assert!(info.has_checksum_and_provenance());
+    assert!(info.additional_artifacts[0].has_vouched_checksum());
+    assert!(info.additional_artifacts[0].has_checksum_and_provenance());
+
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+
+    // Without trust it still pins the bytes, and says nothing of who checked them.
+    let info = &lockfile.tools["shfmt"][0].platforms["linux-x64"];
+    assert_eq!(info.checksum.as_deref(), Some("sha256:abc"));
+    assert!(info.is_pinned_without_url());
+    assert!(info.provenance.is_none());
+    assert!(!info.has_vouched_checksum());
+    assert!(!info.has_checksum_and_provenance());
+    let extra = &info.additional_artifacts[0];
+    assert_eq!(extra.checksum.as_deref(), Some("sha256:def"));
+    assert!(extra.provenance.is_none());
+    assert!(!extra.has_vouched_checksum());
+    assert!(!extra.has_checksum_and_provenance());
+}
+
+#[test]
 fn tool_stub_finds_nearest_base_config_lockfile_from_where_it_lives() {
     let temp = tempfile::tempdir().unwrap();
     // Stub paths are canonicalized without the Windows verbatim (`\\?\`) prefix.

@@ -309,8 +309,10 @@ impl NodePlugin {
         }
         ctx.pr.next_operation();
         let url = url.to_string();
+        // A checksum that lost its URL pins the bytes but does not say Node.js
+        // published them: its URL never matches, so SHASUMS256.txt and its
+        // signature are checked as they are without a lockfile.
         let needs_checksum = settings.node.verify
-            && !pinned_by_checksum
             && tv
                 .lock_platforms
                 .get(&platform_key)
@@ -320,6 +322,10 @@ impl NodePlugin {
                         || platform_info.install.as_deref() != lockfile_install
                 })
                 .unwrap_or(true);
+        if needs_checksum && pinned_by_checksum {
+            // The published checksum replaces the pin below, so compare the pin first.
+            self.verify_checksum(ctx, tv, local)?;
+        }
         let checksum = if needs_checksum {
             Some(self.get_checksum(ctx, tv, local, version).await?)
         } else {

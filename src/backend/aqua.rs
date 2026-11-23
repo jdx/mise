@@ -208,6 +208,20 @@ struct AquaVersion<'a> {
     release_tag: Option<&'a str>,
 }
 
+/// What the lockfile's checksum for this platform stood for before the install
+/// wrote to the entry.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LockedChecksum {
+    /// The lockfile had none; a checksum now in the entry is this install's.
+    Absent,
+    /// It came without its URL, as a lockfile that is not trusted keeps it: it
+    /// pins the bytes and replaces no check.
+    Pinned,
+    /// It stands for a download that was verified when the lockfile was written
+    /// ([`PlatformInfo::has_vouched_checksum`]).
+    Vouched,
+}
+
 struct ResolvedPackage {
     platform_key: String,
     existing_platform: Option<String>,
@@ -668,11 +682,15 @@ impl Backend for AquaBackend {
             .await?;
 
         // Snapshot before any mutation so verify() knows whether the lockfile
-        // originally contained a checksum (vs. one we just wrote from api_digest).
-        let lockfile_has_checksum = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(|p| p.checksum.is_some());
+        // originally contained a checksum (vs. one we just wrote from api_digest),
+        // and whether it stands for a verified download: the checksum a lockfile
+        // that is not trusted keeps has no URL until it is filled in below.
+        let locked_checksum = match tv.lock_platforms.get(&platform_key) {
+            Some(p) if p.has_vouched_checksum() => LockedChecksum::Vouched,
+            Some(p) if p.checksum.is_some() => LockedChecksum::Pinned,
+            _ => LockedChecksum::Absent,
+        };
+        let lockfile_has_checksum = locked_checksum != LockedChecksum::Absent;
 
         if validated_url.is_none() {
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
@@ -694,15 +712,8 @@ impl Backend for AquaBackend {
             v: &v,
             release_tag: release_tag.as_deref(),
         };
-        self.verify(
-            ctx,
-            &mut tv,
-            &pkg,
-            version,
-            &filename,
-            lockfile_has_checksum,
-        )
-        .await?;
+        self.verify(ctx, &mut tv, &pkg, version, &filename, locked_checksum)
+            .await?;
 
         // Advance to extraction operation if applicable
         if needs_extraction(format, &pkg.package_type()) {
@@ -3287,10 +3298,12 @@ impl AquaBackend {
         pkg: &AquaPackage,
         version: AquaVersion<'_>,
         filename: &str,
-        lockfile_has_checksum: bool,
+        locked_checksum: LockedChecksum,
     ) -> Result<()> {
         // Reuse checksum-backed provenance, SLSA included: the lockfile asserts it was
         // verified when it was written, so the signer is not needed to install from it.
+        // Only a checksum that still has its URL asserts that; one without it, as an
+        // untrusted lockfile keeps it, is compared below and every check still runs.
         // Still check that the recorded provenance type's setting is enabled —
         // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
         //
@@ -3315,10 +3328,12 @@ impl AquaBackend {
             && required
                 .as_ref()
                 .is_none_or(|required| recorded_provenance.as_ref() == Some(required));
-        let locked_provenance = required.clone().or(recorded_provenance.clone());
-        if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
+        let locked_provenance = required.or(recorded_provenance.clone());
+        let lockfile_has_checksum = locked_checksum != LockedChecksum::Absent;
+        let lockfile_vouches = locked_checksum == LockedChecksum::Vouched;
+        if lockfile_vouches && has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
-        } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
+        } else if !force_verify && locked_provenance.is_none() && lockfile_vouches {
             debug!(
                 "skipping provenance detection for {} \
                  (lockfile has checksum but no provenance)",
@@ -3328,7 +3343,7 @@ impl AquaBackend {
             // Verifying for real needs the expected signer; without one the locked SLSA
             // requirement would be dropped silently.
             Self::ensure_locked_slsa_signer(tv, recorded_provenance.as_ref(), pkg)?;
-            self.verify_provenance(ctx, tv, pkg, version, filename, required)
+            self.verify_provenance(ctx, tv, pkg, version, filename, locked_checksum)
                 .await?;
         }
 
@@ -3361,7 +3376,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         version: AquaVersion<'_>,
         filename: &str,
-        required: Option<ProvenanceType>,
+        locked_checksum: LockedChecksum,
     ) -> Result<()> {
         let AquaVersion { v, release_tag } = version;
         // Check if the lockfile expects provenance for this platform, then clear it
@@ -3373,7 +3388,9 @@ impl AquaBackend {
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
-        let expected = required.or(locked_provenance);
+        let expected = self
+            .registry_required_provenance(tv, pkg)
+            .or(locked_provenance);
         let expected_provenance = expected.as_ref();
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
@@ -3446,10 +3463,13 @@ impl AquaBackend {
             && checksum.enabled()
         {
             let platform_key = self.get_platform_key();
-            let needs_checksum = tv
-                .lock_platforms
-                .get(&platform_key)
-                .is_none_or(|pi| pi.checksum.is_none());
+            // A checksum the lockfile pins without vouching for it is held to the
+            // publisher's below, not taken in its place.
+            let needs_checksum = locked_checksum == LockedChecksum::Pinned
+                || tv
+                    .lock_platforms
+                    .get(&platform_key)
+                    .is_none_or(|pi| pi.checksum.is_none());
 
             let checksum_cosign = (!skip_cosign && Settings::get().aqua.cosign)
                 .then(|| Self::checksum_cosign_config(pkg).map(|(_, cosign)| cosign))

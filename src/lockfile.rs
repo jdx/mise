@@ -925,6 +925,11 @@ impl ArtifactInfo {
         self.checksum.is_some() && self.provenance.is_some()
     }
 
+    /// See [`PlatformInfo::has_vouched_checksum`].
+    pub(crate) fn has_vouched_checksum(&self) -> bool {
+        self.checksum.is_some() && !self.url.is_empty()
+    }
+
     fn merge_with(&self, other: &ArtifactInfo) -> ArtifactInfo {
         if self.url != other.url {
             return self.clone();
@@ -1130,6 +1135,15 @@ impl PlatformInfo {
     /// [`Lockfile::drop_what_needs_trust`]). Locked mode may resolve its URL
     /// from the backend, since the download is still checked against the
     /// checksum.
+    /// True when the checksum may stand in for verifying the download again:
+    /// the entry still has the URL it was recorded with. A checksum without
+    /// one ([`Self::is_pinned_without_url`]) pins the bytes, but a lockfile
+    /// that is not trusted does not get to say they were verified, so an
+    /// install checks them as it would with no lockfile.
+    pub(crate) fn has_vouched_checksum(&self) -> bool {
+        self.checksum.is_some() && self.url.is_some()
+    }
+
     pub(crate) fn is_pinned_without_url(&self) -> bool {
         self.url.is_none() && self.checksum.is_some()
     }
@@ -5928,12 +5942,14 @@ impl Lockfile {
                     info.url = None;
                     info.url_api = None;
                     info.conda_deps = None;
+                    info.provenance = None;
                     // Extra archives are matched to the backend's patterns by
                     // position, so each keeps its checksum. Without a URL the
                     // backend resolves the asset itself.
                     for artifact in &mut info.additional_artifacts {
                         artifact.url.clear();
                         artifact.url_api = None;
+                        artifact.provenance = None;
                     }
                 }
                 true
