@@ -368,6 +368,11 @@
               "description": "report project files read or written outside declared cache sources and outputs",
               "default": false
             },
+            "sandbox": {
+              "type": "boolean",
+              "description": "run the task in a sandbox that allows reading its sources and writing its outputs, and blocks the network and undeclared environment variables (enforced on Linux)",
+              "default": false
+            },
             "env": {
               "type": "array",
               "description": "ambient environment variable names whose values affect the cache key",

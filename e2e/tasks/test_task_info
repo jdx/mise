@@ -50,6 +50,7 @@ assert_json "mise tasks info lint --json" "$(
   "cache": {
     "enabled": false,
     "audit": false,
+    "sandbox": false,
     "env": [],
     "command_inputs": []
   },

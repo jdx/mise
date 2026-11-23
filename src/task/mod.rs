@@ -45,6 +45,7 @@ pub mod run_report;
 pub mod task_affected;
 pub mod task_cache;
 mod task_cache_audit;
+pub(crate) mod task_cache_sandbox;
 mod task_cache_store;
 pub(crate) mod task_confirm;
 pub mod task_context_builder;
@@ -645,8 +646,11 @@ fn scan_mise_header_entries(body: &str) -> Vec<MiseHeaderEntry> {
     // Whitespace is allowed around the dots (TOML's `dot-sep = ws %x2E ws`) but
     // not in place of them, which is what keeps usage directives out: a
     // `flag "--jobs" default="4"` reaches a quote before it can reach the `=`.
+    // Nothing has to follow the `=`: a key with no value is still config, and
+    // the TOML parser is what says so. Skipping `deny_net=` here ran the task
+    // without the restriction and without a message.
     let entry_regex = regex!(
-        r#"^\s*(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')(?:\s*\.\s*(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*'))*\s*=\s*[^\n]+$"#
+        r#"^\s*(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')(?:\s*\.\s*(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*'))*\s*=[^\n]*$"#
     );
     let mut entries: Vec<MiseHeaderEntry> = vec![];
     let mut open: Option<(MiseHeaderEntry, TomlOpenState)> = None;
@@ -729,9 +733,11 @@ const FILE_TASK_BODY_KEYS: &[&str] = &["run", "run_windows", "file", "usage"];
 
 /// Header keys whose value guards how a task runs. A bad one fails the task instead of being
 /// skipped, so a typo cannot drop a confirmation prompt, a sandbox restriction or a lock.
+/// `cache` is one of them because `cache.sandbox` is a sandbox restriction.
 const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "confirm",
     "lock",
+    "cache",
     "deny_all",
     "deny_read",
     "deny_write",
@@ -2788,8 +2794,11 @@ impl Task {
             self.outputs = other.outputs;
             self.raw_outputs = other.raw_outputs;
         }
-        if other.cache.is_some() {
-            self.cache = other.cache;
+        if let Some(mut cache) = other.cache {
+            // `cache.sandbox` is a sandbox field like the ones below: the
+            // overlay can ask for it, and cannot drop what the file asked for.
+            cache.sandbox |= self.cache.as_ref().is_some_and(|base| base.sandbox);
+            self.cache = Some(cache);
         }
         if other.rust_cache.is_some() {
             self.rust_cache = other.rust_cache;
@@ -4665,10 +4674,11 @@ mod tests {
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
 
+    use super::TaskCacheConfig;
     #[cfg(unix)]
     use super::TaskConfirm;
     #[cfg(unix)]
-    use super::{TaskCacheConfig, TaskOutput};
+    use super::TaskOutput;
     use super::{
         clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
         tera_template_has_usage_ref,
@@ -4924,6 +4934,51 @@ rust_cache = { unknown = true }
             Some(TaskWatchOptions {
                 no_vcs_ignore: false
             })
+        );
+    }
+
+    #[test]
+    fn test_merge_toml_overlay_keeps_cache_sandbox() {
+        let cache = |sandbox: bool, env: &[&str]| {
+            Some(TaskCacheConfig {
+                enabled: true,
+                sandbox,
+                env: env.iter().map(|name| name.to_string()).collect(),
+                ..Default::default()
+            })
+        };
+        let merged = |file: Option<TaskCacheConfig>, overlay: Option<TaskCacheConfig>| {
+            let mut file_task = Task {
+                cache: file,
+                ..Default::default()
+            };
+            file_task.merge_toml_overlay(Task {
+                cache: overlay,
+                ..Default::default()
+            });
+            file_task.cache
+        };
+
+        // The overlay replaces the rest of `cache`, and cannot drop the sandbox
+        // the file asked for.
+        assert_eq!(
+            merged(cache(true, &[]), cache(false, &["PROFILE"])),
+            cache(true, &["PROFILE"])
+        );
+        // It can ask for the sandbox itself.
+        assert_eq!(
+            merged(cache(false, &[]), cache(true, &[])),
+            cache(true, &[])
+        );
+        assert_eq!(merged(None, cache(true, &[])), cache(true, &[]));
+        // Without a `cache` of its own it changes nothing.
+        assert_eq!(
+            merged(cache(true, &["PROFILE"]), None),
+            cache(true, &["PROFILE"])
+        );
+        assert_eq!(
+            merged(cache(false, &[]), cache(false, &[])),
+            cache(false, &[])
         );
     }
 
@@ -6913,9 +6968,8 @@ echo "test"
             task.cache,
             Some(TaskCacheConfig {
                 enabled: true,
-                audit: false,
                 env: vec!["PROFILE".to_string()],
-                command_inputs: vec![],
+                ..Default::default()
             })
         );
         assert_eq!(task.rust_cache, Some(TaskRustCacheConfig::default()));
@@ -7062,6 +7116,10 @@ echo "test"
             ("confirm", "confirm=1"),
             ("deny-net", "deny_net=\"yes\""),
             ("lock", "lock=1"),
+            (
+                "cache",
+                "cache={enabled=true, sandbox=true, env=\"PROFILE\"}",
+            ),
         ] {
             let task_file = tasks_dir.join(name);
             fs::write(
@@ -7232,6 +7290,21 @@ echo hi
             entries[0].parse_toml().unwrap()["description"].as_str(),
             Some("abc \"\"\" def\nghi")
         );
+    }
+
+    #[test]
+    fn test_scan_mise_header_entries_keeps_a_key_with_no_value() {
+        // With or without a space after the `=`, the line is config that the
+        // TOML parser rejects. Skipping it would drop a `deny_net` silently.
+        for body in [
+            "#MISE deny_net=\n",
+            "#MISE deny_net= \n",
+            "#MISE cache.sandbox =\n",
+        ] {
+            let entries = super::scan_mise_header_entries(body);
+            assert_eq!(entries.len(), 1, "{body:?}");
+            assert!(entries[0].parse_toml().is_err(), "{body:?}");
+        }
     }
 
     #[test]

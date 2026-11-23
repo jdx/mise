@@ -26,8 +26,20 @@ pub struct SandboxConfig {
     pub deny_process: bool,
     /// Do not apply the normal writable-temp-directory exception.
     pub deny_temp_write: bool,
+    /// Do not let the command read the shared temp directory either. Internal
+    /// and Linux only: the sandbox derived from a task's cache declaration
+    /// gives the task a temp directory of its own, so files other processes
+    /// left in `/tmp` cannot reach a cached result.
+    pub deny_temp_read: bool,
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
+    /// Directories whose entries stay listable under `deny_read`, without
+    /// making the files in them readable. Internal: the sandbox derived from a
+    /// task's cache declaration allows single source files, and a tool that
+    /// walks the project to find them has to be able to list its directories.
+    /// Linux only; Landlock restricts neither the walk nor `stat`, so file
+    /// names are visible to a sandboxed command either way.
+    pub allow_list_dirs: Vec<PathBuf>,
     pub allow_net: Vec<String>,
     /// Unix sockets that stay reachable under `deny_unix`; implies it.
     pub allow_unix: Vec<PathBuf>,
@@ -310,6 +322,7 @@ impl SandboxConfig {
             || self.effective_deny_unix()
             || self.deny_process
             || self.deny_temp_write
+            || self.deny_temp_read
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()

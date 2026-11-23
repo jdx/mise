@@ -129,6 +129,10 @@ empty path, or a template that renders to nothing, allows no path but still
 blocks the other reads or writes. See the
 [task configuration reference](/tasks/task-configuration.html) for each property.
 
+A task with an artifact cache can have mise work out the allowed paths from its
+`sources` and `outputs` instead: see
+[Refuse undeclared inputs on Linux](/tasks/caching.html#cache-sandbox).
+
 The project usually holds the code you are sandboxing, and a checkout can ship
 `dist` as a symlink to `/`. So when an allowed path goes through a symlink in
 the current directory, the project root or the task's directory, and that link

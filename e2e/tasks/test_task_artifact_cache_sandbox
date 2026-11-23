@@ -1,0 +1,318 @@
+#!/usr/bin/env bash
+# `cache.sandbox` runs a cached task in a sandbox derived from its cache
+# declaration. The task can read what its cache key covers (its sources, its
+# config and the outputs of cached dependencies) and write where its outputs
+# go. Anything else is refused, so a file the key does not cover cannot change
+# a result that the key later restores.
+
+if [[ "$(uname)" != "Linux" ]]; then
+  echo "skipping: cache.sandbox is enforced with Landlock, which is Linux-only"
+  exit 0
+fi
+
+if ! mise exec --deny-read --deny-write -- true >/dev/null 2>&1; then
+  echo "skipping: this host cannot start a Landlock sandbox"
+  exit 0
+fi
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.lib]
+run = "cat lib/in.txt > lib-dist/out.txt"
+sources = ["lib/**"]
+outputs = ["lib-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.app]
+depends = ["lib"]
+run = '''
+cat lib-dist/out.txt src/app.txt > dist/app.txt
+printf '%s %s\n' "${HIDDEN_FROM_TASK:-unset}" "${DECLARED_FOR_TASK:-unset}" > dist/env.txt
+printf 'scratch\n' > "$TMPDIR/scratch.txt"
+cat "$TMPDIR/scratch.txt" > dist/tmp.txt
+ls src > dist/listing.txt
+'''
+sources = ["src/app.txt"]
+outputs = ["dist"]
+env = { DECLARED_FOR_TASK = "declared" }
+cache = { enabled = true, sandbox = true }
+
+[tasks.read_undeclared]
+run = "cat secret.txt > read-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["read-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.read_unlisted_source]
+run = "cat src/other.txt > unlisted-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["unlisted-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.write_undeclared]
+run = "cp src/app.txt stray.txt"
+sources = ["src/app.txt"]
+outputs = ["write-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.read_shared_tmp]
+run = "cat {{env.TMPDIR}}/shared.txt > tmp-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["tmp-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.uncached_dep]
+run = "mkdir -p plain-dist && cp src/app.txt plain-dist/out.txt"
+
+[tasks.read_uncached_dep]
+depends = ["uncached_dep"]
+run = "cat plain-dist/out.txt > consume-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["consume-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.declared_escape]
+run = "cat secret.txt > escape-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["escape-dist"]
+allow_read = ["secret.txt"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.outputs_beside_sources]
+run = "cp main.c main.o"
+sources = ["*.c"]
+outputs = ["*.o"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.linked_outputs]
+run = "printf 'overwritten\n' > linked-dist/app.txt"
+sources = ["src/app.txt"]
+outputs = ["linked-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.variant]
+run = 'printf "%s\n" "$VARIANT" > "variant-$VARIANT/out.txt"'
+sources = ["src/app.txt"]
+outputs = ['variant-{{ env.VARIANT | default(value="none") }}']
+cache = { enabled = true, sandbox = true, env = ["VARIANT"] }
+
+[tasks.read_variants]
+depends = [
+  { task = "variant", env = { VARIANT = "a" } },
+  { task = "variant", env = { VARIANT = "b" } },
+]
+run = "cat variant-a/out.txt variant-b/out.txt > variants-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["variants-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.two_entries]
+run = [
+  'printf "first\n" > "$TMPDIR/first.txt"',
+  'cat "$TMPDIR/first.txt" > entries-dist/out.txt',
+]
+sources = ["src/app.txt"]
+outputs = ["entries-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.nested_outputs]
+run = "cp src/app.txt stray.txt"
+sources = ["src/app.txt"]
+outputs = ["nest/a/x.txt", "nest/b/y.txt"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.run_script]
+run = '''
+#!/usr/bin/env bash
+cat src/app.txt > script-dist/out.txt
+'''
+sources = ["src/app.txt"]
+outputs = ["script-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.read_extra]
+run = "cat extra/in.txt > extra-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["extra-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.granted_output]
+run = "cp src/app.txt granted-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["granted-dist/**"]
+allow_write = ["granted-dist"]
+cache = { enabled = true, sandbox = true }
+EOF
+
+# A task whose shell is a program inside the project.
+cat <<EOF >>mise.toml
+
+[tasks.project_shell]
+run = "cat src/app.txt > shell-dist/out.txt"
+shell = "$PWD/tools/sh -c"
+sources = ["src/app.txt"]
+outputs = ["shell-dist"]
+cache = { enabled = true, sandbox = true }
+EOF
+
+mkdir -p lib src extra sub/extra tools
+printf 'extra\n' >extra/in.txt
+printf 'nested\n' >sub/extra/in.txt
+cp /bin/sh tools/sh
+printf 'lib\n' >lib/in.txt
+printf 'app\n' >src/app.txt
+printf 'other\n' >src/other.txt
+printf 'secret\n' >secret.txt
+printf 'int main(void) { return 0; }\n' >main.c
+printf 'shared\n' >"$TMPDIR/shared.txt"
+
+# Declared sources, a cached dependency's outputs and a private temp directory
+# all work, and mise creates the output directory before the task starts.
+HIDDEN_FROM_TASK=leaked mise run app
+assert "cat dist/app.txt" $'lib\napp'
+assert "cat dist/tmp.txt" "scratch"
+# Undeclared variables do not reach the task; the ones it sets in `env` do,
+# since their values are part of the key.
+assert "cat dist/env.txt" "unset declared"
+# Directories stay listable, so tools that walk the project still find files.
+assert "cat dist/listing.txt" $'app.txt\nother.txt'
+
+# The results restore like any other cached task's.
+rm -rf lib-dist dist
+assert_contains "mise run app 2>&1" "restored outputs from cache"
+assert "cat dist/app.txt" $'lib\napp'
+
+# A file outside the declared sources cannot be read, whether it sits beside
+# them or elsewhere in the project.
+assert_fail "mise run read_undeclared 2>&1" "Permission denied"
+assert_fail "mise run read_unlisted_source 2>&1" "Permission denied"
+
+# Writes outside the declared outputs are refused.
+assert_fail "mise run write_undeclared 2>&1" "Permission denied"
+assert "test ! -e stray.txt"
+
+# The shared temp directory is closed: another process's files there are not
+# an input the key knows about.
+assert_fail "mise run read_shared_tmp 2>&1" "Permission denied"
+
+# A dependency without a cache has no key, so its outputs are not readable
+# unless the task lists them in sources.
+assert_fail "mise run read_uncached_dep 2>&1" "Permission denied"
+
+# allow_read is the declared way out, and it enters the cache key.
+mise run declared_escape
+assert "cat escape-dist/out.txt" "secret"
+
+# Landlock cannot allow creating one file name, only a directory, so outputs
+# that share a directory with the sources are refused before the task runs.
+assert_fail "mise run outputs_beside_sources 2>&1" "also holds the task's sources"
+
+# allow_write is the way out, under any spelling of the directory. An empty
+# entry allows nothing, as it does for any other sandbox.
+ln -s . here
+mise run --allow-write=here outputs_beside_sources
+assert "test -f main.o"
+assert_fail "mise run --allow-write= outputs_beside_sources 2>&1" "also holds the task's sources"
+
+# A rule follows a link to what it leads to, so an output directory that is a
+# link to the sources is refused too, and the sources stay as they were.
+ln -s src linked-dist
+assert_fail "mise run linked_outputs 2>&1" "also holds the task's sources"
+assert "cat src/app.txt" "app"
+
+# A task that is a dependency twice, with an environment that gives each
+# instance its own outputs, has both sets readable.
+mise run read_variants
+assert "cat variants-dist/out.txt" $'a\nb'
+
+# The private temp directory lasts for the whole task, so a run entry finds
+# what an earlier one left there.
+mise run two_entries
+assert "cat entries-dist/out.txt" "first"
+
+# A run script that starts with a shebang is a file mise writes outside the
+# project. The task can read it, whether it runs directly or a shell is given it.
+mise run run_script
+assert "cat script-dist/out.txt" "app"
+rm -rf script-dist
+MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS=1 mise run --task-cache off run_script
+assert "cat script-dist/out.txt" "app"
+
+# The shell is not one of those files. One that lives in the project is an
+# input like any other, so it has to be allowed, which puts it in the key.
+assert_fail "mise run project_shell 2>&1" "Permission denied"
+mise run --allow-read=tools project_shell
+assert "cat shell-dist/out.txt" "app"
+
+# The sandbox follows the task's declaration, not the cache mode. The failed
+# run above left the file its shell redirect created, which would make the
+# task look fresh without the cache.
+rm -rf read-dist
+assert_fail "mise run --task-cache off read_undeclared 2>&1" "Permission denied"
+
+# A run that fails before it writes anything leaves no output directory behind.
+assert_fail "mise run write_undeclared 2>&1" "Permission denied"
+assert "test ! -e write-dist"
+# That covers a new parent directory that several outputs share.
+assert_fail "mise run nested_outputs 2>&1" "Permission denied"
+assert "test ! -e nest"
+
+# A path the command line allows beyond the derived set is an input the key
+# would otherwise miss, so such a run keeps its own entries.
+rm -rf lib-dist dist
+assert_not_contains "mise run --allow-read=/opt app 2>&1" "restored outputs from cache"
+rm -rf lib-dist dist
+assert_contains "mise run --allow-read=/opt app 2>&1" "restored outputs from cache"
+rm -rf lib-dist dist
+assert_contains "mise run app 2>&1" "restored outputs from cache"
+
+# The key records where an allowed path leads. A relative path on the command
+# line starts from the directory mise runs in, so the same words from another
+# directory allow something else and must not restore this entry.
+mise run --allow-read=extra read_extra
+assert "cat extra-dist/out.txt" "extra"
+rm -rf extra-dist
+assert_fail "cd sub && mise run --allow-read=extra read_extra 2>&1" "Permission denied"
+# Another spelling of the same directory does restore it.
+rm -rf extra-dist
+assert_contains "cd sub && mise run --allow-read=$PWD/extra/ read_extra 2>&1" "restored outputs from cache"
+assert "cat extra-dist/out.txt" "extra"
+# So does a spelling that goes up and back down, or through a link.
+rm -rf extra-dist
+assert_contains "cd sub && mise run --allow-read=../extra read_extra 2>&1" "restored outputs from cache"
+ln -s extra extra-link
+rm -rf extra-dist
+assert_contains "mise run --allow-read=extra-link read_extra 2>&1" "restored outputs from cache"
+
+# A trailing slash asks for a directory, so on a file it allows nothing. Such a
+# run must fail, not restore what the plain spelling stored.
+rm -rf read-dist
+mise run --allow-read=secret.txt read_undeclared
+assert "cat read-dist/out.txt" "secret"
+rm -rf read-dist
+assert_fail "mise run --allow-read=secret.txt/ read_undeclared 2>&1" "Permission denied"
+
+# mise creates an output directory that allow_write already covers. A rule for
+# a path that does not exist is dropped, so the grant alone would not do it.
+mise run granted_output
+assert "cat granted-dist/out.txt" "app"
+
+# A [tasks.<name>] table that adds to a file task can set cache again. That
+# does not drop the sandbox the file asked for.
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/overlaid
+#!/usr/bin/env bash
+#MISE sources=["src/app.txt"]
+#MISE outputs=["overlaid-dist"]
+#MISE cache={enabled=true, sandbox=true}
+cat secret.txt >overlaid-dist/out.txt
+EOF
+chmod +x mise-tasks/overlaid
+cat <<'EOF' >>mise.toml
+
+[tasks.overlaid]
+cache = { enabled = true }
+EOF
+assert_fail "mise run overlaid 2>&1" "Permission denied"

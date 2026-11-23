@@ -17,9 +17,11 @@ properties and values, except `run`, `run_windows` and `file`, since the script
 is the command, and `usage`, since arguments use `#USAGE` lines. mise warns
 about those four and ignores them. A header that sets a property to a value of
 the wrong type gets a warning and that property is ignored, so one broken
-script does not stop the other tasks loading. A bad `confirm`, `lock`,
+script does not stop the other tasks loading. A bad `confirm`, `lock`, `cache`,
 `deny_*` or `allow_unix` value is an error instead, so a typo cannot remove a
-confirmation prompt, a lock, or a sandbox restriction.
+confirmation prompt, a lock, or a sandbox restriction such as `cache.sandbox`.
+A header line that is not valid TOML, such as `#MISE deny_net=` with no value,
+is an error for every property.
 To share properties between tasks, use [task templates](/tasks/templates.html).
 
 ::: warning Experimental
@@ -887,9 +889,9 @@ directories without VCS ignores can add a lot of filesystem scanning.
 
 ### `cache` <Badge type="warning" text="experimental" />
 
-- **Type**: `{ enabled?: bool, audit?: bool, env?: string[], command_inputs?: string[] }`
+- **Type**: `{ enabled?: bool, audit?: bool, sandbox?: bool, env?: string[], command_inputs?: string[] }`
 - **Default**: [`task_config.cache`](#task_config.cache) if set, otherwise
-  `{ enabled = false, audit = false, env = [], command_inputs = [] }`
+  `{ enabled = false, audit = false, sandbox = false, env = [], command_inputs = [] }`
 
 Cache a successful run's outputs and logs, and restore them when the same
 inputs come back. See [Task caching](/tasks/caching.html) for requirements,
@@ -902,6 +904,9 @@ share results between machines.
 - `command_inputs`: commands whose output becomes part of the cache key.
 - `audit`: on Linux with `strace`, report project files the task read or wrote
   outside its declared sources and outputs.
+- `sandbox`: on Linux, run the task in a
+  [sandbox derived from its sources and outputs](/tasks/caching.html#cache-sandbox),
+  so that reads and writes outside them fail.
 
 ```mise-toml
 [tasks.build]

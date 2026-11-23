@@ -3,6 +3,7 @@ use crate::dirs;
 use crate::duration;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
+use crate::task::task_cache_sandbox::CacheSandboxKey;
 use crate::task::task_cache_store::{
     LocalTaskCacheStore, RemoteTaskCacheConfig, TASK_CACHE_STORE_VERSION, TaskCacheStore,
     compose_task_cache_stores,
@@ -105,6 +106,10 @@ struct CacheKeyMaterial<'a> {
     tools: Vec<String>,
     os: &'static str,
     arch: &'static str,
+    /// Present when the task ran in the sandbox `cache.sandbox` derives, so
+    /// its entries stay apart from those made outside it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sandbox: Option<CacheSandboxKey>,
 }
 
 #[derive(Debug, Serialize)]
@@ -248,6 +253,7 @@ pub(crate) struct TaskCacheContext<'a> {
     pub(crate) declared_env: &'a [(String, String)],
     pub(crate) dependency_keys: &'a [String],
     pub(crate) command_inputs: Vec<CommandInput>,
+    pub(crate) sandbox: Option<CacheSandboxKey>,
     pub(crate) explain: bool,
     pub(crate) mode: TaskCacheMode,
 }
@@ -306,6 +312,7 @@ impl TaskArtifactCacheBuilder {
             declared_env,
             dependency_keys,
             command_inputs,
+            sandbox,
             explain,
             mode,
         } = ctx;
@@ -372,6 +379,7 @@ impl TaskArtifactCacheBuilder {
             tools,
             os: std::env::consts::OS,
             arch: std::env::consts::ARCH,
+            sandbox,
         };
         let encoded = canonical_json(&serde_json::to_value(&material)?)?;
         let key = hash::hash_blake3_to_str(std::str::from_utf8(&encoded)?);
@@ -1442,7 +1450,11 @@ fn ensure_safe_relative(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Result<Vec<PathBuf>> {
+pub(crate) fn resolve_output_roots(
+    task: &Task,
+    root: &Path,
+    require_matches: bool,
+) -> Result<Vec<PathBuf>> {
     let mut resolved = BTreeSet::new();
     let patterns = task.outputs.patterns();
     let matcher = build_output_matcher(root, &patterns)?;
@@ -1874,11 +1886,12 @@ mod tests {
     #[test]
     fn config_deserializes_and_rejects_unknown_fields() {
         let config: TaskCacheConfig = toml::from_str(
-            "enabled = true\naudit = true\nenv = ['PROFILE']\ncommand_inputs = ['node --version']",
+            "enabled = true\naudit = true\nsandbox = true\nenv = ['PROFILE']\ncommand_inputs = ['node --version']",
         )
         .unwrap();
         assert!(config.enabled);
         assert!(config.audit);
+        assert!(config.sandbox);
         assert_eq!(config.env, ["PROFILE"]);
         assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());
