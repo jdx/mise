@@ -75,6 +75,11 @@ The only supported version is the most recent one.
 
 Send an email to security@<MISE_JDX_DOMAIN_IN_README>
 
+Filing a report doesn’t guarantee public credit. For security reports, identify
+the affected version, how the issue arises in normal use, what an attacker must
+control, and the impact. We may close speculative, duplicate, or bulk reports
+that don’t establish an impact on mise.
+
 If you want, you may encrypt the message with GPG:
 
 <details>
