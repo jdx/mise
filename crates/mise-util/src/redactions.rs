@@ -131,7 +131,7 @@ pub fn strip_url_credentials_in_value(value: &str) -> Cow<'_, str> {
 }
 
 /// [`strip_url_credentials`] for one command-line argument or tool name, where
-/// only `/`, `?` or `#` ends the authority.
+/// only `/`, `\`, `?` or `#` ends the authority.
 pub fn strip_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
     rewrite_userinfo(arg, false, Userinfo::Strip)
 }
@@ -295,10 +295,17 @@ fn rewrite_userinfo(text: &str, whitespace_ends_url: bool, mode: Userinfo) -> Co
         out.push_str(head);
         rest = tail;
         // The userinfo is everything before the authority's last `@`, so an
-        // unencoded `@` in a password is covered.
+        // unencoded `@` in a password is covered. A stripped URL names where a
+        // request goes, and the `url` crate, which sends it, ends the authority
+        // of an `http(s)` URL at a `\` too: `https://evil.example\@gitlab.com/`
+        // is evil.example. So stripping stops there, for every scheme, and
+        // keeps that host; redaction for a reader reaches as far as possible.
+        let backslash_ends_authority = matches!(mode, Userinfo::Strip);
         let end = tail
             .find(|c: char| {
-                matches!(c, '/' | '?' | '#') || (whitespace_ends_url && c.is_whitespace())
+                matches!(c, '/' | '?' | '#')
+                    || (backslash_ends_authority && c == '\\')
+                    || (whitespace_ends_url && c.is_whitespace())
             })
             .unwrap_or(tail.len());
         let Some(at) = tail[..end].rfind('@').filter(|&at| at > 0) else {
@@ -464,6 +471,53 @@ fn replace_spans(input: &str, mut spans: Vec<(usize, usize)>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stripped URL is used as a name (install directory, cache key), so it
+    /// must name the host the request goes to. The `url` crate, which sends the
+    /// request, ends the authority of an `http(s)` URL at a `\` as well.
+    #[test]
+    fn test_strip_url_credentials_keeps_the_host_the_url_parser_reads() {
+        let host = |url: &str| {
+            let url = url.trim_start_matches("cargo:").replace("git+", "");
+            let url = url::Url::parse(&url).unwrap();
+            (url.host_str().map(str::to_string), url.port())
+        };
+        for input in [
+            r"https://evil.example\@gitlab.com/api/v4",
+            r"https://evil.example\x@gitlab.com/api/v4",
+            r"https://u:p@evil.example\@gitlab.com/api/v4",
+            r"cargo:http://127.0.0.1:18611\@localhost:18610/acme/tool",
+            r"HTTPS://evil.example\@gitlab.com/",
+            r"git+https://evil.example\@gitlab.com/o/r",
+            // the parser drops tabs and newlines before it reads the scheme
+            "https\t://evil.example\\@gitlab.com/",
+            "ht\ntps://evil.example\\@gitlab.com/",
+        ] {
+            let named = host(input).0.unwrap();
+            assert!(named == "evil.example" || named == "127.0.0.1", "{input:?}");
+            for stripped in [
+                strip_url_credentials(input),
+                strip_url_credentials_in_arg(input),
+                strip_url_credentials_in_value(input),
+            ] {
+                assert_eq!(host(&stripped), host(input), "{input:?} -> {stripped:?}");
+            }
+        }
+        // The credentials in front of the real host still go.
+        assert_eq!(
+            strip_url_credentials_in_arg(r"https://u:p@evil.example\@gitlab.com/x"),
+            r"https://evil.example\@gitlab.com/x"
+        );
+        assert_eq!(
+            strip_url_credentials_in_arg("https://u:p@gitlab.com/x"),
+            "https://gitlab.com/x"
+        );
+        // Redaction for a reader hides more, never less.
+        assert_eq!(
+            redact_url_userinfo_in_arg(r"https://user:to\ken@host/x"),
+            "https://[redacted]@host/x"
+        );
+    }
 
     #[test]
     fn test_strip_url_credentials_in_value() {
