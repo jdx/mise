@@ -505,10 +505,9 @@ impl Toolset {
         // cache entry, which would leak the venv across directories.
         let mut uv_venv_inputs: Vec<(PathBuf, u64)> = Vec::new();
         if Settings::get().python.uv_venv_auto.should_source()
-            && let Some(uv_root) = uv::uv_root()
+            && let Some((uv_root, venv)) = uv::uv_project(config)
         {
             let lock = uv_root.join("uv.lock");
-            let venv = uv::uv_venv_path(config, &uv_root);
             let lock_mtime = get_file_mtime(&lock).unwrap_or(0);
             let venv_mtime = get_file_mtime(&venv).unwrap_or(0);
             uv_venv_inputs.push((lock, lock_mtime));

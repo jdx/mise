@@ -7,6 +7,7 @@ use crate::backend::{Backend, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::{is_ignored, is_project_dir_trusted, project_dir_trust_hint};
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
 use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
@@ -14,7 +15,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::platform::Platform;
-use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
+use crate::toolset::{ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
 use crate::{dirs, file, plugins, sysconfig, versions_host};
@@ -763,9 +764,58 @@ impl PythonPlugin {
                 "the python `virtualenv` tool option is deprecated. Use `_.python.venv` in the `[env]` section instead: https://mise.jdx.dev/lang/python.html#automatic-virtualenv-activation"
             );
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
-            if !virtualenv.is_absolute()
-                && let Some(project_root) = &config.project_root
-            {
+            if virtualenv.is_absolute() {
+                // Safe mode trusts no project config, so only an entry of global or system
+                // config (or a CLI argument) that sets the option itself may name the
+                // directory. A project's tool alias, or the project entry a runtime argument
+                // inherits its options from, can layer the option onto such a request.
+                let set_by_operator = tv
+                    .request
+                    .source()
+                    .path()
+                    .is_none_or(crate::config::is_global_config)
+                    && matches!(
+                        tv.request.option_source("virtualenv"),
+                        Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+                    );
+                if Settings::safe_mode() && !set_by_operator {
+                    debug!(
+                        "virtualenv {} not activated: safe mode ignores it outside global config",
+                        display_path(&virtualenv)
+                    );
+                    return Ok(None);
+                }
+            } else {
+                // A relative path is joined to the project around the working directory,
+                // which need not be the config that set the option (global config, or a
+                // parent directory's). A file that loads without trust, such as an empty
+                // .tool-versions, makes a directory that project, so the project itself has
+                // to be trusted before a directory in it goes first on PATH. Without a
+                // project the path would follow the working directory anywhere.
+                let Some(project_root) = &config.project_root else {
+                    debug!(
+                        "virtualenv {} not activated: no project to resolve it against",
+                        virtualenv.display()
+                    );
+                    return Ok(None);
+                };
+                if !is_project_dir_trusted(config, project_root) {
+                    if Settings::safe_mode() || is_ignored(project_root) {
+                        debug!(
+                            "virtualenv {} not activated: {} is not trusted",
+                            virtualenv.display(),
+                            display_path(project_root)
+                        );
+                    } else {
+                        warn_once!(
+                            "virtualenv {venv} not activated: {root} is not trusted, {hint} to activate it",
+                            venv = virtualenv.display(),
+                            root = display_path(project_root),
+                            hint = project_dir_trust_hint(project_root),
+                        );
+                    }
+                    return Ok(None);
+                }
                 virtualenv = project_root.join(virtualenv);
             }
             if !virtualenv.exists() {

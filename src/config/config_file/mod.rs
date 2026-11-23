@@ -651,6 +651,36 @@ pub fn is_path_trusted(path: &Path) -> bool {
     is_trusted(&config_trust_root(path)) || is_trusted(path)
 }
 
+/// Whether mise may put a directory that lives in the project at `dir` first on PATH, such as
+/// the `bin` of a virtualenv there. Its files then run in place of system commands, which is
+/// what `_.python.venv` and `_.path` in that project's own config need trust for.
+///
+/// True when a loaded config file rooted at `dir` is trusted, or, outside paranoid mode, when
+/// `dir` itself is (`mise trust <dir>`). Trust of a parent directory does not count: a clone
+/// below a trusted project is not that project. A project file linked to global config does
+/// not lend it global config's trust. Safe mode trusts no project, so this is false there.
+pub fn is_project_dir_trusted(config: &Config, dir: &Path) -> bool {
+    if Settings::safe_mode() {
+        return false;
+    }
+    let trusted_config_here = config.config_files.iter().any(|(path, cf)| {
+        cf.project_root().as_deref() == Some(dir)
+            && !config::is_project_link_to_global_config(path)
+            && is_path_trusted(path)
+    });
+    trusted_config_here || (!Settings::get().paranoid.config() && is_trusted(dir))
+}
+
+/// What to run so that [`is_project_dir_trusted`] accepts `dir`, for a warning that names it.
+pub fn project_dir_trust_hint(dir: &Path) -> String {
+    let dir = display_path(dir);
+    if Settings::get().paranoid.config() {
+        format!("trust a mise config file in {dir} with `mise trust <file>`")
+    } else {
+        format!("run `mise trust {dir}`")
+    }
+}
+
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
 
 /// Set while `mise trust` resolves the env to find files that need trust. Loading an untrusted
