@@ -315,8 +315,9 @@ run_test() {
   MISE_BIN_DIR="$(cd "$(dirname "$mise_bin")" && pwd)"
   # The release job runs the tarball binary from $HOME/mise/bin; listing that
   # directory twice would make PATH differ from what mise prints (it dedupes).
-  mise_home_bin="$HOME/mise/bin:"
-  [[ $MISE_BIN_DIR == "$HOME/mise/bin" ]] && mise_home_bin=""
+  home_bin_dir="$(cd "$HOME/mise/bin" 2>/dev/null && pwd)" || home_bin_dir="$HOME/mise/bin"
+  mise_home_bin="$home_bin_dir:"
+  [[ $MISE_BIN_DIR == "$home_bin_dir" ]] && mise_home_bin=""
 
   setup_isolated_env
   create_isolated_env
