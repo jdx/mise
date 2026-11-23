@@ -125,6 +125,11 @@ when its own version has not changed:
 mise lock --bump pypi:black
 ```
 
+With a [minimum release age](#minimum-release-age), uv writes the cutoff it
+resolved under into `uv.lock` (`exclude-newer`). When `--bump` selects the same
+packages again, mise keeps the graph with the cutoff it has, so `mise.lock` and
+the sidecar change only when a dependency does.
+
 You can also inspect or edit a sidecar with uv. For a tool locked to Black
 24.10.0 in the default sidecar layout:
 

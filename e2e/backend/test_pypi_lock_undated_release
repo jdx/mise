@@ -34,6 +34,18 @@ mise lock
 assert_contains "cat mise.lock" 'path = ".mise/locks/pipx-mise-exposed/1.0.0"'
 assert_contains "mise x --locked -- exposed-cli" 'exposed'
 
+# `--bump` resolves again under a later cutoff. It selects the packages that
+# are already locked, so the graph keeps its cutoff and the lockfile its digest.
+assert_contains "cat .mise/locks/pipx-mise-exposed/1.0.0/uv.lock" 'exclude-newer = '
+cp mise.lock first.lock
+cp .mise/locks/pipx-mise-exposed/1.0.0/uv.lock first-uv.lock
+mise lock --bump
+assert_succeed 'cmp first.lock mise.lock'
+assert_succeed 'cmp first-uv.lock .mise/locks/pipx-mise-exposed/1.0.0/uv.lock'
+mise lock --bump pipx:mise-exposed
+assert_succeed 'cmp first.lock mise.lock'
+assert_succeed 'cmp first-uv.lock .mise/locks/pipx-mise-exposed/1.0.0/uv.lock'
+
 # A pinned prerelease is exempt too, even though listings hide prereleases.
 config mise-prerelease 1.0.0rc1
 mise lock

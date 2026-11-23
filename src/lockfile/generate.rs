@@ -914,7 +914,7 @@ pub async fn populate_uv_locks(
             }
             continue;
         }
-        if let Some(lock) = lockfile
+        let locked = lockfile
             .tools_for(&ba.short)
             .and_then(|entries| {
                 entries.iter().find(|entry| {
@@ -923,7 +923,8 @@ pub async fn populate_uv_locks(
                         && entry.options == options
                 })
             })
-            .and_then(|entry| entry.uv.as_ref())
+            .and_then(|entry| entry.uv.clone());
+        if let Some(lock) = &locked
             && !force
         {
             let candidate = if lock.load().is_ok() {
@@ -976,6 +977,13 @@ pub async fn populate_uv_locks(
                 // here may only reflect this machine, not that the graph is stale.
                 continue;
             }
+        };
+        // A forced resolution runs under a cutoff taken from the current time.
+        // When it selects the packages that are already locked, the locked
+        // graph stays, so the lockfile changes only when the resolution does.
+        let graph = match locked {
+            Some(locked) if locked.resolves_like(&graph) => locked,
+            _ => graph,
         };
         lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
