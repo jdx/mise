@@ -381,13 +381,7 @@ impl Backend for UbiBackend {
             if extract_all && bin_dir.join(&bin_path).exists() {
                 bin_dir = bin_dir.join(&bin_path);
             }
-            file::ls(&bin_dir)?
-                .into_iter()
-                .find(|f| {
-                    !f.file_name()
-                        .is_some_and(|f| f.to_string_lossy().starts_with("."))
-                })
-                .unwrap()
+            first_visible_file(&bin_dir)?
         };
         if extract_all {
             self.verify_extract_all_checksum(ctx, &mut tv, &bin_dir, &full_binary_path)?;
@@ -637,6 +631,22 @@ fn dir_hash_blake3(dir: &Path) -> eyre::Result<String> {
         }
     }
     Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// The first file in `dir` whose name does not start with a dot.
+fn first_visible_file(dir: &Path) -> Result<std::path::PathBuf> {
+    file::ls(dir)?
+        .into_iter()
+        .find(|f| {
+            !f.file_name()
+                .is_some_and(|f| f.to_string_lossy().starts_with("."))
+        })
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "ubi installed no file into {} whose name does not start with a dot",
+                file::display_path(dir)
+            )
+        })
 }
 
 /// The name of an installed file, which its `mise.lock` checksum key ends with.
@@ -1063,6 +1073,21 @@ mod tests {
             prefix,
             true
         ));
+    }
+
+    #[test]
+    fn test_first_visible_file_fails_without_one() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(first_visible_file(dir.path()).is_err());
+        assert!(first_visible_file(&dir.path().join("bin")).is_err());
+        file::write(dir.path().join(".tool"), "").unwrap();
+        let err = first_visible_file(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("no file"), "{err}");
+        file::write(dir.path().join("tool"), "").unwrap();
+        assert_eq!(
+            first_visible_file(dir.path()).unwrap(),
+            dir.path().join("tool")
+        );
     }
 
     #[test]
