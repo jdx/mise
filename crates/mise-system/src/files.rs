@@ -1704,91 +1704,21 @@ pub(crate) fn merge_group_toml_entry(
 /// `main_checkout = true`: a source inside a linked Git worktree is linked at
 /// the same path in the repository's main checkout, so the link still works
 /// after the worktree is removed. None leaves any other source as it is.
-fn main_checkout_source(source: &Path) -> Result<Option<PathBuf>> {
+fn main_checkout_source(target_raw: &str, source: &Path) -> Option<PathBuf> {
     // a path that does not resolve stays as written, to be reported missing
-    let Some(resolved) = resolve_parent_dirs(source) else {
-        return Ok(None);
-    };
+    let resolved = resolve_parent_dirs(source)?;
     if !mise_util::git::in_linked_worktree(&resolved) {
-        // `..` can climb out of a worktree, but the path as written still
-        // runs through it, and so would the link
-        let climbs_out = resolved != source && resolves_through_worktree(source, None);
-        return Ok(climbs_out.then_some(resolved));
+        return None;
     }
-    let source = resolved;
-    let checkout = mise_util::git::checkout_of(&source);
+    let checkout = mise_util::git::checkout_of(&resolved);
     let (Some(main), Some(worktree)) = (checkout.repository, checkout.worktree) else {
-        bail!(
-            "main_checkout: {} is in a worktree of a bare repository, which has no main checkout to link to",
-            source.display_user()
+        warn!(
+            "[dotfiles].\"{target_raw}\": main_checkout: {} is in a worktree of a bare repository, which has no main checkout; linking it as written",
+            resolved.display_user()
         );
+        return None;
     };
-    let mapped = main.join(source.strip_prefix(&worktree)?);
-    // a link in the main checkout may lead anywhere except through a
-    // worktree, where it would break along with that worktree
-    if resolves_through_worktree(&mapped, Some(&main)) {
-        bail!(
-            "main_checkout: {} leads back into a linked Git worktree",
-            mapped.display_user()
-        );
-    }
-    Ok(Some(mapped))
-}
-
-/// Whether resolving `path` one component at a time, following each symlink
-/// on the way, enters a linked Git worktree. Every directory the path passes
-/// through counts, not only where it ends: a link that goes through a worktree
-/// to somewhere else, or into an independent repository nested in one, breaks
-/// when the worktree is removed all the same. A worktree that holds `main`
-/// does not count, since removing it would remove the main checkout too.
-fn resolves_through_worktree(path: &Path, main: Option<&Path>) -> bool {
-    use std::collections::VecDeque;
-    use std::path::Component;
-    // a symlink loop never resolves; the missing source is reported elsewhere
-    const MAX_LINKS: usize = 40;
-    let main = main.map(|main| main.canonicalize().unwrap_or_else(|_| main.to_path_buf()));
-    // owned, so a link target can be queued after its buffer is gone
-    let owned = |c: Component| PathBuf::from(c.as_os_str());
-    let mut pending: VecDeque<PathBuf> = path.components().map(owned).collect();
-    let mut current = PathBuf::new();
-    let mut links = 0;
-    while let Some(piece) = pending.pop_front() {
-        let Some(component) = piece.components().next() else {
-            continue;
-        };
-        match component {
-            // an absolute link target replaces the path walked so far
-            Component::Prefix(_) | Component::RootDir => {
-                current.push(component);
-                continue;
-            }
-            Component::CurDir => continue,
-            // `current` holds no symlinks, so `..` is its parent
-            Component::ParentDir => {
-                current.pop();
-                continue;
-            }
-            Component::Normal(name) => current.push(name),
-        }
-        if let Ok(target) = std::fs::read_link(&current) {
-            links += 1;
-            if links > MAX_LINKS {
-                return false;
-            }
-            current.pop();
-            for component in target.components().rev() {
-                pending.push_front(owned(component));
-            }
-            continue;
-        }
-        if current.join(".git").is_file()
-            && !main.as_ref().is_some_and(|main| main.starts_with(&current))
-            && mise_util::git::in_linked_worktree(&current)
-        {
-            return true;
-        }
-    }
-    false
+    Some(main.join(resolved.strip_prefix(&worktree).ok()?))
 }
 
 /// `source` with every `..` resolved the way the filesystem resolves it, so
@@ -2503,24 +2433,21 @@ fn merge_file_entry(
         depends,
     }) {
         // after expansion, so each match maps on its own
-        let req = if main_checkout == Some(true) {
-            match main_checkout_source(&req.source) {
-                Ok(Some(source)) => FileRequest {
-                    origin: ResourceOrigin {
-                        source: Some(source.clone()),
-                        ..req.origin
-                    },
-                    source,
-                    ..req
-                },
-                Ok(None) => req,
-                Err(err) => {
-                    record_invalid(&req.target_raw, &req.origin.config, err.to_string(), local);
-                    continue;
-                }
-            }
+        let mapped = if main_checkout == Some(true) {
+            main_checkout_source(&req.target_raw, &req.source)
         } else {
-            req
+            None
+        };
+        let req = match mapped {
+            Some(source) => FileRequest {
+                origin: ResourceOrigin {
+                    source: Some(source.clone()),
+                    ..req.origin
+                },
+                source,
+                ..req
+            },
+            None => req,
         };
         merged.insert((req.target.clone(), false), req);
     }

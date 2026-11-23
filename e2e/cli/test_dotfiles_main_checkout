@@ -60,38 +60,10 @@ TOML
 assert_fail_contains "cd '$wt/missing' && mise dot apply --yes 2>&1" "main/files/new"
 assert_fail "test -L ~/.new"
 
-# a link in the main checkout that leads back into a worktree is refused
-ln -s "$wt/files/value" "$main/files/back"
-mkdir -p "$wt/back"
-cat >"$wt/back/mise.toml" <<'TOML'
-[dotfiles]
-"~/.back" = { source = "../files/back", main_checkout = true }
-"~/.hop" = { source = "../files/hop", main_checkout = true }
-"~/.vendored" = { source = "../files/vendored", main_checkout = true }
-TOML
-# through a worktree to a file outside it, or into a repository nested in one
-mkdir -p "$root/persistent" "$wt/vendor"
+# a source that does not resolve stays missing rather than guessed at, even
+# when a lexical guess would name a file
+mkdir -p "$wt/gone" "$root/persistent"
 echo kept >"$root/persistent/value"
-ln -s "$root/persistent/value" "$wt/files/forward"
-ln -s "$wt/files/forward" "$main/files/hop"
-git init -q "$wt/vendor"
-echo vendored >"$wt/vendor/value"
-ln -s "$wt/vendor/value" "$main/files/vendored"
-assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/back leads back into a linked Git worktree"
-assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/hop leads back into a linked Git worktree"
-assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/vendored leads back into a linked Git worktree"
-
-# a source that climbs out of the worktree with .. is linked without it
-mkdir -p "$wt/escape"
-cat >"$wt/escape/mise.toml" <<'TOML'
-[dotfiles]
-"~/.escape" = { source = "../../persistent/value", main_checkout = true, relative = false }
-TOML
-assert_succeed "cd '$wt/escape' && mise dot apply --yes"
-assert "readlink ~/.escape" "$root/persistent/value"
-
-# a source that does not resolve stays missing rather than guessed at
-mkdir -p "$wt/gone"
 cat >"$wt/gone/mise.toml" <<'TOML'
 [dotfiles]
 "~/.gone" = { source = "missing/../../../persistent/value", main_checkout = true }
@@ -99,10 +71,13 @@ TOML
 assert_fail_contains "cd '$wt/gone' && mise dot apply --yes 2>&1" "sources do not exist"
 assert_fail "test -L ~/.gone"
 
-# a worktree of a bare repository has no main checkout
+# a worktree of a bare repository has no main checkout, so the source is
+# linked as written
 git clone -q --bare "$main" "$root/bare"
 git --git-dir="$root/bare" worktree add -q --detach "$root/bare-wt" HEAD
-assert_contains "cd '$root/bare-wt/nested' && mise dot apply --dry-run 2>&1" "has no main checkout to link to"
+rm -r ~/.stable ~/.tree ~/.plain ~/.glob ~/.alias
+assert_contains "cd '$root/bare-wt/nested' && mise dot apply --yes 2>&1" "has no main checkout; linking it as written"
+assert "readlink ~/.stable" "$root/bare-wt/nested/../files/value"
 
 # only symlink modes take the key
 mkdir -p "$root/copy"
