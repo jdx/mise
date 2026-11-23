@@ -7091,10 +7091,30 @@ fn should_retry_lockfile_persist(_err: &std::io::Error) -> bool {
 /// deserializing the value, which copies every key and string under it: for
 /// `[tools]` that is the whole lockfile. Anything else still goes through
 /// `try_into`, for the error it reports.
+///
+/// That deserialization also reads a TOML date as its text, so an unquoted
+/// `version = 2024-01-01` is the string `"2024-01-01"`. The table returned
+/// here keeps that.
 fn into_table(value: toml::Value) -> Result<toml::Table> {
     match value {
-        toml::Value::Table(table) => Ok(table),
+        toml::Value::Table(mut table) => {
+            table
+                .iter_mut()
+                .for_each(|(_, value)| dates_to_strings(value));
+            Ok(table)
+        }
         other => Ok(other.try_into()?),
+    }
+}
+
+fn dates_to_strings(value: &mut toml::Value) {
+    match value {
+        toml::Value::Datetime(date) => *value = toml::Value::String(date.to_string()),
+        toml::Value::Table(table) => table
+            .iter_mut()
+            .for_each(|(_, value)| dates_to_strings(value)),
+        toml::Value::Array(array) => array.iter_mut().for_each(dates_to_strings),
+        _ => {}
     }
 }
 
