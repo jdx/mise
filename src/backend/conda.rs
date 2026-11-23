@@ -16,6 +16,9 @@ use eyre::{Result, WrapErr};
 use http::Extensions;
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
+use rattler_conda_types::package::{
+    IndexJson, LinkJson, NoArchLinks, PackageFile, PathType, PathsJson, PythonEntryPoints,
+};
 use rattler_conda_types::{
     Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, PackageRecord, ParseStrictness,
     RepoDataRecord, Subdir as CondaPlatform, prefix::Prefix, prefix_record::PathsEntry,
@@ -27,12 +30,17 @@ use rattler_solve::{
 use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
 use reqwest_middleware::{ClientBuilder as MiddlewareClientBuilder, Middleware, Next};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use versions::Versioning;
+
+/// Where rattler links the files of a package whose path an earlier package already owns,
+/// as `__clobbers__/<package name>/<path>` (its `CLOBBERS_DIR_NAME`, which is not exported).
+const CLOBBERS_DIR: &str = "__clobbers__";
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -365,26 +373,143 @@ impl CondaBackend {
         Ok(())
     }
 
+    /// Reads the index and the paths of an extracted package, which say what rattler
+    /// links and where.
+    ///
+    /// rattler joins the paths onto the prefix as they are, and tells by their spelling
+    /// alone whether an earlier package owns a path or a directory above it. If one does,
+    /// the file is not linked through what is there, such as a symlink of that package,
+    /// but to `__clobbers__/<package name>/<path>`. That holds only while every path is
+    /// spelled one way and nothing else is in that directory, so a package is refused if
+    /// it names a path otherwise, ships `__clobbers__`, or has a name that leads out of
+    /// there or under which an earlier package has files there.
+    fn read_package_paths(
+        archive: &Path,
+        package_dir: &Path,
+        prefix: &Prefix,
+        python_info: Option<&PythonInfo>,
+    ) -> Result<(IndexJson, PathsJson)> {
+        let index_json = IndexJson::from_package_directory(package_dir)
+            .wrap_err_with(|| format!("failed to read the index of {}", archive.display()))?;
+        let paths_json = PathsJson::from_package_directory_with_deprecated_fallback(package_dir)
+            .wrap_err_with(|| format!("failed to read the paths of {}", archive.display()))?;
+        for entry in &paths_json.paths {
+            // where rattler links the entry (its `compute_paths`)
+            let path = match python_info {
+                Some(python_info) if index_json.noarch.is_python() => {
+                    python_info.get_python_noarch_target_path(&entry.relative_path)
+                }
+                _ => Cow::Borrowed(entry.relative_path.as_path()),
+            };
+            if !path.to_str().is_some_and(file::is_safe_relative_path)
+                || path.starts_with(CLOBBERS_DIR)
+            {
+                eyre::bail!(
+                    "refusing to install conda package {}: it has the unsafe path {}, which is not a plain path inside the environment",
+                    archive.display(),
+                    path.display()
+                );
+            }
+        }
+        let name = index_json.name.as_normalized();
+        let clobbers = prefix.path().join(CLOBBERS_DIR).join(name);
+        if !file::is_plain_file_name(name) || clobbers.symlink_metadata().is_ok() {
+            eyre::bail!(
+                "refusing to install conda package {}: it cannot be linked under the name {name:?}, which is not a plain file name or is already used by another package in the environment",
+                archive.display()
+            );
+        }
+        Ok((index_json, paths_json))
+    }
+
     /// Extract a package to a temp dir and link it into the prefix using rattler.
     ///
     /// This handles text and binary prefix replacement (replacing conda build
     /// placeholders with the actual install path), file permissions, and macOS
     /// code signing — all via rattler's link_package.
+    ///
+    /// rattler links a package's symlinks whatever their target and opens every
+    /// destination by name, so a link that leaves the prefix redirects what is written
+    /// after it. A link that stays inside its own package can still leave the prefix
+    /// through the links of the packages before it. The symlinks of a package are
+    /// therefore linked first and the whole prefix is checked before any of its files
+    /// are written, and no package is linked after a check fails.
     async fn install_package(
-        archive: &std::path::Path,
+        archive: &Path,
         prefix: &Prefix,
         driver: &InstallDriver,
         python_info: Option<PythonInfo>,
     ) -> Result<Vec<PathsEntry>> {
         let temp_dir = tempfile::tempdir()?;
-        Self::extract_package(archive, temp_dir.path()).await?;
+        let package_dir = temp_dir.path();
+        Self::extract_package(archive, package_dir).await?;
+        file::ensure_symlinks_stay_within(package_dir).wrap_err_with(|| {
+            format!(
+                "refusing to install conda package {}: it has a symlink that leads outside the package",
+                archive.display()
+            )
+        })?;
+        let (index_json, paths_json) =
+            Self::read_package_paths(archive, package_dir, prefix, python_info.as_ref())?;
+        let paths_version = paths_json.paths_version;
+        let (links, files): (Vec<_>, Vec<_>) = paths_json
+            .paths
+            .into_iter()
+            .partition(|entry| package_dir.join(&entry.relative_path).is_symlink());
+
+        let mut paths = Vec::new();
+        if !links.is_empty() {
+            // A symlink is linked as one whatever paths.json calls it. As a file that is
+            // to be copied, rattler would write what it points to, following a link that
+            // another entry has just put at the same destination.
+            let links = links
+                .into_iter()
+                .map(|mut entry| {
+                    entry.path_type = PathType::SoftLink;
+                    entry.no_link = false;
+                    entry.prefix_placeholder = None;
+                    entry
+                })
+                .collect();
+            let install_options = InstallOptions {
+                python_info: python_info.clone(),
+                index_json: Some(index_json.clone()),
+                paths_json: Some(PathsJson {
+                    paths: links,
+                    paths_version,
+                }),
+                // the entry points of a noarch python package are written with its files
+                link_json: Some(Some(LinkJson {
+                    noarch: NoArchLinks::Python(PythonEntryPoints {
+                        entry_points: vec![],
+                    }),
+                    package_metadata_version: 1,
+                })),
+                ..InstallOptions::default()
+            };
+            paths = link_package(package_dir, prefix, driver, install_options)
+                .await
+                .map_err(|e| eyre::eyre!("failed to link {}: {}", archive.display(), e))?;
+            file::ensure_symlinks_stay_within(prefix.path()).wrap_err_with(|| {
+                format!(
+                    "refusing to install conda package {}: together with the packages linked before it, it has a symlink that leads outside the environment",
+                    archive.display()
+                )
+            })?;
+        }
         let install_options = InstallOptions {
             python_info,
+            index_json: Some(index_json),
+            paths_json: Some(PathsJson {
+                paths: files,
+                paths_version,
+            }),
             ..InstallOptions::default()
         };
-        let paths = link_package(temp_dir.path(), prefix, driver, install_options)
+        let files = link_package(package_dir, prefix, driver, install_options)
             .await
             .map_err(|e| eyre::eyre!("failed to link {}: {}", archive.display(), e))?;
+        paths.extend(files);
         Ok(paths)
     }
 
@@ -1858,5 +1983,161 @@ mod tests {
 
         let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
         assert_eq!(deduped.len(), 2);
+    }
+
+    /// Writes a `.tar.bz2` conda package with the given files and symlinks (path, target).
+    /// A file whose name is not a plain relative path is only listed in paths.json.
+    #[cfg(unix)]
+    fn write_conda_package(
+        dir: &Path,
+        name: &str,
+        files: &[&str],
+        links: &[(&str, &str)],
+    ) -> std::path::PathBuf {
+        use rattler_conda_types::compression_level::CompressionLevel;
+
+        let root = dir.join("package");
+        file::remove_all(&root).unwrap();
+        let mut members = vec![];
+        let mut write = |path: &str, content: String| {
+            let member = root.join(path);
+            file::create_dir_all(member.parent().unwrap()).unwrap();
+            file::write(&member, content).unwrap();
+            members.push(member);
+        };
+        let entries: Vec<_> = links
+            .iter()
+            .map(|(path, _)| (*path, "softlink"))
+            .chain(files.iter().map(|path| (*path, "hardlink")))
+            .map(|(path, kind)| serde_json::json!({"_path": path, "path_type": kind}))
+            .collect();
+        write(
+            "info/index.json",
+            serde_json::json!({"name": name, "version": "1.0", "build": "0", "build_number": 0})
+                .to_string(),
+        );
+        write(
+            "info/paths.json",
+            serde_json::json!({"paths": entries, "paths_version": 1}).to_string(),
+        );
+        for path in files
+            .iter()
+            .filter(|path| file::is_safe_relative_path(path))
+        {
+            write(path, format!("{path} of {name}"));
+        }
+        for (path, target) in links {
+            let member = root.join(path);
+            file::create_dir_all(member.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(target, &member).unwrap();
+            members.push(member);
+        }
+
+        let archive = dir.join(format!("{name}-1.0-0.tar.bz2"));
+        rattler_package_streaming::write::write_tar_bz2_package(
+            std::fs::File::create(&archive).unwrap(),
+            &root,
+            &members,
+            CompressionLevel::Lowest,
+            None,
+            None,
+        )
+        .unwrap();
+        archive
+    }
+
+    /// Links the packages into a fresh prefix in the given order, as an install does.
+    #[cfg(unix)]
+    async fn link_packages(dir: &Path, archives: &[&Path]) -> eyre::Result<()> {
+        use rattler::install::InstallDriver;
+        use rattler_conda_types::prefix::Prefix;
+
+        let prefix = dir.join("prefix");
+        file::remove_all(&prefix)?;
+        let prefix = Prefix::create(prefix)?;
+        let driver = InstallDriver::default();
+        for archive in archives {
+            CondaBackend::install_package(archive, &prefix, &driver, None).await?;
+        }
+        Ok(())
+    }
+
+    /// rattler writes what a package names by name, through the links that are in the
+    /// prefix by then, so no link may lead out of the prefix when a file is written.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn install_package_keeps_packages_inside_the_prefix() {
+        const README: &[&str] = &["share/README"];
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        let prefix = dir.join("prefix");
+        let error = |result: eyre::Result<()>| format!("{:#}", result.unwrap_err());
+
+        // links that stay inside are linked, and so is a file that two packages have
+        let links = [("lib/libfoo.so", "libfoo.so.1"), ("doc", "share")];
+        let inside = write_conda_package(dir, "inside", README, &links);
+        let other = write_conda_package(dir, "other", &["share/README", "bin/tool"], &[]);
+        let (inside, other) = (inside.as_path(), other.as_path());
+        link_packages(dir, &[inside, other]).await.unwrap();
+        assert_eq!(
+            file::read_to_string(prefix.join("doc/README")).unwrap(),
+            "share/README of inside"
+        );
+        assert!(prefix.join("lib/libfoo.so").is_symlink());
+        assert!(prefix.join("bin/tool").exists());
+        assert!(prefix.join("__clobbers__/other/share/README").exists());
+
+        for target in ["../..", "/"] {
+            let outside = write_conda_package(dir, "outside", README, &[("lib/out", target)]);
+            let err = error(link_packages(dir, &[outside.as_path()]).await);
+            assert!(err.contains("points outside of"), "{err}");
+            assert!(prefix.join("lib").symlink_metadata().is_err());
+        }
+
+        // Each of these stays inside on its own: `d/y` is not in the first package, and
+        // in the second it is the prefix itself. The package that completes the way out
+        // is refused before any of its files are written.
+        let first = write_conda_package(dir, "first", &["bin/first"], &[("d/x", "y/../..")]);
+        let second = write_conda_package(dir, "second", &["bin/second"], &[("d/y", "..")]);
+        let (first, second) = (first.as_path(), second.as_path());
+        link_packages(dir, &[first]).await.unwrap();
+        link_packages(dir, &[second]).await.unwrap();
+        for (order, unwritten) in [([first, second], "second"), ([second, first], "first")] {
+            let err = error(link_packages(dir, &order).await);
+            assert!(err.contains("points outside of"), "{err}");
+            assert!(!prefix.join("bin").join(unwritten).exists());
+        }
+
+        // A file below a link of an earlier package is linked to
+        // `__clobbers__/<name>/<path>` instead of through the link, so no package may
+        // bring that directory, lead out of it with its name, or share the name.
+        let links = [("__clobbers__/other/share", "../../lib")];
+        let clobber = write_conda_package(dir, "clobber", README, &links);
+        let err = error(link_packages(dir, &[clobber.as_path()]).await);
+        assert!(err.contains("unsafe path"), "{err}");
+        assert!(prefix.join("__clobbers__").symlink_metadata().is_err());
+
+        // named `..`, the second package would have `d/s/link` and `t/victim` linked
+        // through the links `d/s` and `t` of the first, onto the file next to the prefix
+        file::write(dir.join("victim"), "untouched").unwrap();
+        let links = [("d/s", ".."), ("t", "link")];
+        let earlier = write_conda_package(dir, "earlier", README, &links);
+        let parent = write_conda_package(dir, "..", &["t/victim"], &[("d/s/link", "..")]);
+        let err = error(link_packages(dir, &[earlier.as_path(), parent.as_path()]).await);
+        assert!(err.contains("\"..\""), "{err}");
+        assert_eq!(
+            file::read_to_string(dir.join("victim")).unwrap(),
+            "untouched"
+        );
+        let err = error(link_packages(dir, &[inside, inside, inside]).await);
+        assert!(err.contains("\"inside\""), "{err}");
+
+        // the names in paths.json are joined onto the prefix as they are
+        for path in ["doc/../../out", "../out", "/out", "./share/README"] {
+            let named = write_conda_package(dir, "named", &[path], &[("doc", "share")]);
+            let err = error(link_packages(dir, &[named.as_path()]).await);
+            assert!(err.contains("unsafe path"), "{err}");
+            assert!(prefix.join("doc").symlink_metadata().is_err());
+        }
     }
 }
