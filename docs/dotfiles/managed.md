@@ -730,9 +730,11 @@ To keep a link usable after removing a linked Git worktree, use `symlink-main`:
 ```
 
 The source is a literal path from the root of the main checkout associated
-with the declaring config. It must exist there and cannot contain `..`,
-wildcards, or templates, or resolve through a symlink outside that checkout.
-It cannot point into a linked worktree nested inside the main checkout.
+with the declaring config. If the config is itself a symlink, mise uses the
+checkout containing the file it points to. The source must exist there and
+cannot contain `..`, wildcards, or templates, or resolve through a symlink
+outside that checkout. It cannot point into a linked worktree, even if an
+independent repository sits between the worktree and the source.
 A bare repository, a submodule configuration, or a directory without a
 recognized main checkout cannot use this mode. It is for whole-file entries
 in `[dotfiles]`, not directory tree groups or rendered templates. Ordinary

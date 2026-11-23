@@ -115,12 +115,18 @@ fn main_checkout_relative_source(source: Option<&str>) -> Result<&Path> {
     Ok(path)
 }
 
-fn resolve_main_checkout_source(base: &Path, source: Option<&str>) -> Result<PathBuf> {
+fn resolve_main_checkout_source(config: &Path, source: Option<&str>) -> Result<PathBuf> {
     let relative = main_checkout_relative_source(source)?;
-    let root = mise_util::git::stable_main_checkout_root(base).ok_or_else(|| {
+    // A deployed global config can be a symlink back into its repository.
+    // Only this explicit mode uses the real declaring file for lookup.
+    let root = config
+        .canonicalize()
+        .ok()
+        .and_then(|path| mise_util::git::stable_main_checkout_root(path.parent()?));
+    let root = root.ok_or_else(|| {
         eyre::eyre!(
             "mode = \"symlink-main\" found no main Git checkout for {}",
-            base.display()
+            config.display()
         )
     })?;
     let source = root.join(relative);
@@ -138,7 +144,7 @@ fn resolve_main_checkout_source(base: &Path, source: Option<&str>) -> Result<Pat
             source.display()
         );
     }
-    if mise_util::git::in_linked_worktree(&resolved) {
+    if mise_util::git::has_linked_worktree_ancestor(&resolved) {
         bail!(
             "main checkout source {} is inside a linked worktree",
             source.display()
@@ -2382,13 +2388,15 @@ fn merge_file_entry(
         return;
     }
     let source = match source {
-        source if symlink_main => match resolve_main_checkout_source(base, source.as_deref()) {
-            Ok(source) => source,
-            Err(err) => {
-                record_invalid(&target_raw, &origin.config, err.to_string(), local);
-                return;
+        source if symlink_main => {
+            match resolve_main_checkout_source(&origin.config, source.as_deref()) {
+                Ok(source) => source,
+                Err(err) => {
+                    record_invalid(&target_raw, &origin.config, err.to_string(), local);
+                    return;
+                }
             }
-        },
+        }
         Some(source) => {
             let source = file::replace_path(&source);
             if source.is_relative() {
@@ -2410,7 +2418,7 @@ fn merge_file_entry(
     };
     let mut origin = origin.clone();
     origin.source = Some(source.clone());
-    for req in expand_request(FileRequest {
+    let request = FileRequest {
         target_raw,
         target,
         source,
@@ -2432,8 +2440,15 @@ fn merge_file_entry(
         relative: relative_symlinks(mode, relative),
         group,
         depends,
-    }) {
-        merged.insert((req.target.clone(), false), req);
+    };
+    if symlink_main {
+        // Canonical paths can contain glob metacharacters even when the
+        // declared source did not. Do not reinterpret a validated source.
+        merged.insert((request.target.clone(), false), request);
+    } else {
+        for req in expand_request(request) {
+            merged.insert((req.target.clone(), false), req);
+        }
     }
 }
 

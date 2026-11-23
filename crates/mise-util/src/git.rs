@@ -1092,6 +1092,13 @@ pub fn in_linked_worktree(path: &Path) -> bool {
     false
 }
 
+/// Whether removing an enclosing linked worktree could remove this path,
+/// even if the path belongs to an independent repository inside it.
+pub fn has_linked_worktree_ancestor(path: &Path) -> bool {
+    path.ancestors()
+        .any(|dir| worktree_gitdir(&dir.join(".git")).is_some())
+}
+
 /// The private git dir of a linked worktree, or None when this `.git` file
 /// belongs to a submodule or a `--separate-git-dir` clone.
 ///
