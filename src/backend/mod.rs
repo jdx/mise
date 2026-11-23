@@ -889,6 +889,10 @@ fn backend_list_denial(
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+    // `asdf:` selects a backend and names no tool in it. The plugin types assert a name.
+    if ba.tool_name.trim().is_empty() {
+        return None;
+    }
     match ba.backend_type() {
         BackendType::Core => crate::plugins::core::get(&ba),
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),

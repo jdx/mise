@@ -478,6 +478,10 @@ impl BackendArg {
         // Ok(backend.clone())
         if let Some(backend) = backend::get(self) {
             Ok(backend)
+        } else if self.tool_name.trim().is_empty() {
+            bail!(
+                "'{self}' does not name a tool: write the tool after the backend, as in 'asdf:<tool>'"
+            );
         } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
             // Check if the plugin exists first
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
@@ -1430,6 +1434,31 @@ mod tests {
         // because that would require setting up actual plugins in the test environment.
         // The logic has been improved to check plugin existence first and provide
         // more specific error messages based on the plugin type.
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg_without_tool_name_has_no_backend() {
+        let _config = Config::get().await.unwrap();
+
+        // A backend prefix alone used to reach the assertion that a plugin has a name.
+        for s in [
+            "asdf:",
+            "core:asdf:",
+            "asdf: ",
+            "asdf:[a=b]",
+            "vfox:",
+            "aqua:",
+        ] {
+            let fa: BackendArg = s.into();
+            assert!(backend::arg_to_backend(fa.clone()).is_none(), "{s:?}");
+            let error_msg = fa.backend().unwrap_err().to_string();
+            assert!(
+                error_msg.contains("does not name a tool"),
+                "Expected error for {s:?} to mention the missing tool name, got: {error_msg}"
+            );
+        }
+        let fa: BackendArg = "asdf:tiny".into();
+        assert!(backend::arg_to_backend(fa).is_some());
     }
 
     #[tokio::test]
