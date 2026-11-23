@@ -886,6 +886,11 @@ impl BackendArg {
     /// tool on the replaced backend.
     pub(crate) fn superseded_locked_backend(&self, version: &str) -> Option<(String, String)> {
         let (current, registry) = self.superseded_backend(version)?;
+        // A `packageManager` checksum forces the backend that publishes the
+        // checksummed artifact, so locking records it again after every switch.
+        if recorded_by_checksum_backend(&self.short, Some(&current)) {
+            return None;
+        }
         let locked =
             lockfile::get_locked_backend_for_version(&Config::get_(), &self.short, Some(version))?;
         (locked == current).then_some((current, registry))

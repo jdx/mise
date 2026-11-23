@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# A `packageManager` checksum forces the backend that publishes the checksummed
+# artifact, and `mise lock` records it. The registry's backend for yarn is
+# different, but switching to it cannot stick, so mise must not suggest it.
+export MISE_LOCKFILE=1
+export MISE_MINIMUM_RELEASE_AGE=0
+detect_platform
+
+cat <<'TOML' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["yarn"]
+TOML
+cat <<'JSON' >package.json
+{ "packageManager": "yarn@4.18.1+sha256.a28ad591febb769f939c11f82f89bacad0b0fac0c884d3b78fa2aaaee970907e" }
+JSON
+
+mise lock --platform "$MISE_PLATFORM" 2>stderr
+assert_contains "cat mise.lock" 'backend = "http:yarn"'
+assert_not_contains "cat stderr" 'mise backends switch'
+assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
