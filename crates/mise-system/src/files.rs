@@ -1717,18 +1717,71 @@ fn main_checkout_source(source: &Path) -> Result<Option<PathBuf>> {
         );
     };
     let mapped = main.join(source.strip_prefix(&worktree)?);
-    // a link in the main checkout may lead anywhere except back into a
+    // a link in the main checkout may lead anywhere except through a
     // worktree, where it would break along with that worktree
-    if mapped
-        .canonicalize()
-        .is_ok_and(|real| mise_util::git::in_linked_worktree(&real))
-    {
+    if resolves_through_worktree(&mapped, &main) {
         bail!(
             "main_checkout: {} leads back into a linked Git worktree",
             mapped.display_user()
         );
     }
     Ok(Some(mapped))
+}
+
+/// Whether resolving `path` one component at a time, following each symlink
+/// on the way, enters a linked Git worktree. Every directory the path passes
+/// through counts, not only where it ends: a link that goes through a worktree
+/// to somewhere else, or into an independent repository nested in one, breaks
+/// when the worktree is removed all the same. A worktree that holds `main`
+/// does not count, since removing it would remove the main checkout too.
+fn resolves_through_worktree(path: &Path, main: &Path) -> bool {
+    use std::collections::VecDeque;
+    use std::path::Component;
+    // a symlink loop never resolves; the missing source is reported elsewhere
+    const MAX_LINKS: usize = 40;
+    let main = main.canonicalize().unwrap_or_else(|_| main.to_path_buf());
+    // owned, so a link target can be queued after its buffer is gone
+    let owned = |c: Component| PathBuf::from(c.as_os_str());
+    let mut pending: VecDeque<PathBuf> = path.components().map(owned).collect();
+    let mut current = PathBuf::new();
+    let mut links = 0;
+    while let Some(piece) = pending.pop_front() {
+        let Some(component) = piece.components().next() else {
+            continue;
+        };
+        match component {
+            // an absolute link target replaces the path walked so far
+            Component::Prefix(_) | Component::RootDir => {
+                current.push(component);
+                continue;
+            }
+            Component::CurDir => continue,
+            // `current` holds no symlinks, so `..` is its parent
+            Component::ParentDir => {
+                current.pop();
+                continue;
+            }
+            Component::Normal(name) => current.push(name),
+        }
+        if let Ok(target) = std::fs::read_link(&current) {
+            links += 1;
+            if links > MAX_LINKS {
+                return false;
+            }
+            current.pop();
+            for component in target.components().rev() {
+                pending.push_front(owned(component));
+            }
+            continue;
+        }
+        if current.join(".git").is_file()
+            && !main.starts_with(&current)
+            && mise_util::git::in_linked_worktree(&current)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// `source` with every `..` resolved the way the filesystem resolves it, so

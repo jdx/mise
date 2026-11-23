@@ -66,8 +66,20 @@ mkdir -p "$wt/back"
 cat >"$wt/back/mise.toml" <<'TOML'
 [dotfiles]
 "~/.back" = { source = "../files/back", main_checkout = true }
+"~/.hop" = { source = "../files/hop", main_checkout = true }
+"~/.vendored" = { source = "../files/vendored", main_checkout = true }
 TOML
-assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "leads back into a linked Git worktree"
+# through a worktree to a file outside it, or into a repository nested in one
+mkdir -p "$root/persistent" "$wt/vendor"
+echo kept >"$root/persistent/value"
+ln -s "$root/persistent/value" "$wt/files/forward"
+ln -s "$wt/files/forward" "$main/files/hop"
+git init -q "$wt/vendor"
+echo vendored >"$wt/vendor/value"
+ln -s "$wt/vendor/value" "$main/files/vendored"
+assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/back leads back into a linked Git worktree"
+assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/hop leads back into a linked Git worktree"
+assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/vendored leads back into a linked Git worktree"
 
 # a worktree of a bare repository has no main checkout
 git clone -q --bare "$main" "$root/bare"
