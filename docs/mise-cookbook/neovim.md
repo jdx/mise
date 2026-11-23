@@ -32,45 +32,61 @@ In your Neovim config, create an `after/queries/toml/injections.scm` file with t
 ```query
 ; extends
 
+; Multiline script with an `env` shebang
 (pair
   (bare_key) @key (#eq? @key "run")
-  (string) @injection.content @injection.language
+  [
+    (string) @injection.content @injection.language ; run = "..."
+    (array (string) @injection.content @injection.language) ; run = ["...", ...]
+  ]
 
   (#is-mise?)
-  (#match? @injection.language "^['\"]{3}\n*#!(/\\w+)+/env\\s+\\w+") ; multiline shebang using env
+  (#match? @injection.language "^['\"]{3}\\_s*#!(/[^/ \t\n]+)+/env\\s+\\w+") ; multiline shebang using env
   (#gsub! @injection.language "^.*#!/.*/env%s+([^%s]+).*" "%1") ; extract lang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
 )
 
+; Multiline script with a direct shebang
 (pair
   (bare_key) @key (#eq? @key "run")
-  (string) @injection.content @injection.language
+  [
+    (string) @injection.content @injection.language
+    (array (string) @injection.content @injection.language)
+  ]
 
   (#is-mise?)
-  (#match? @injection.language "^['\"]{3}\n*#!(/\\w+)+\s*\n") ; multiline shebang
-  (#gsub! @injection.language "^.*#!/.*/([^/%s]+).*" "%1") ; extract lang
+  (#match? @injection.language "^['\"]{3}\\_s*#!(/[^/ \t\n]+)+([ \t]+-[^\n]*)?[ \t]*\n") ; multiline shebang, optional flags
+  (#gsub! @injection.language "^.*#!/[^%s]+/([^%s]+).*" "%1") ; extract lang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
 )
 
+; Multiline script without a shebang
 (pair
   (bare_key) @key (#eq? @key "run")
-  (string) @injection.content
+  [
+    (string) @injection.content
+    (array (string) @injection.content)
+  ]
 
   (#is-mise?)
-  (#match? @injection.content "^['\"]{3}\n*.*") ; multiline
-  (#not-match? @injection.content "^['\"]{3}\n*#!") ; no shebang
+  (#match? @injection.content "^['\"]{3}") ; multiline
+  (#not-match? @injection.content "^['\"]{3}\\_s*#!") ; no shebang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
-  (#set! injection.language "bash") ; default to bash
+  (#set! injection.language "sh") ; mise's default inline shell
 )
 
+; Single-line command
 (pair
   (bare_key) @key (#eq? @key "run")
-  (string) @injection.content
+  [
+    (string) @injection.content
+    (array (string) @injection.content)
+  ]
 
   (#is-mise?)
   (#not-match? @injection.content "^['\"]{3}") ; not multiline
   (#offset! @injection.content 0 1 0 -1) ; rm quotes
-  (#set! injection.language "bash") ; default to bash
+  (#set! injection.language "sh") ; mise's default inline shell
 )
 ```
 
@@ -100,13 +116,18 @@ example with [`lazy.nvim`](https://github.com/folke/lazy.nvim):
 
 This recognizes mise-named files and grouped config files such as
 `.config/mise/config.toml`. Adjust the predicate if your project uses a custom
-config filename.
+config filename, for example one set with
+[`override_config_filenames`](/configuration/settings.html#override_config_filenames).
 
-The shebang queries handle a direct interpreter path and `/usr/bin/env <name>`.
+The queries handle a string `run` value and each string in a `run` array; the
+`{ task = "..." }` steps in an array are not scripts and are left alone. The
+shebang queries handle a direct interpreter path and `/usr/bin/env <name>`, and
+accept whitespace before the `#!` because mise trims it too.
 The extracted name must match an installed Treesitter language; wrappers such as
 `env -S uv run` and versioned names such as `python3` need a custom mapping or
-query. The Bash fallback controls highlighting only; mise's actual default shell
-is described in [TOML tasks](/tasks/toml-tasks.html#shell-shebang).
+query. The `sh` fallback controls highlighting only; it matches the default inline shell
+described in [TOML tasks](/tasks/toml-tasks.html#shell-shebang). Neovim
+highlights `sh` with the `bash` parser.
 
 ### `#MISE` and `#USAGE` comments in file tasks {#mise-and-usage-comments-in-file-tasks}
 
@@ -290,8 +311,8 @@ routes requests; it does not install the language servers. See
 
 - Run `:checkhealth vim.treesitter` to check parser availability.
 - Use `:InspectTree` to confirm the TOML `run` value or file-task comment matches
-  the query's node types. These queries cover string `run` values; task arrays and
-  `run_windows` need additional patterns.
+  the query's node types. These queries cover `run` values, as a string or an array of
+  strings; `run_windows` needs additional patterns.
 - If a predicate is unknown, load the Lua registration before opening the file,
   or remove `(#is-mise?)` to apply the query to all TOML files.
 - If highlighting works but LSP features do not, verify that the same language
