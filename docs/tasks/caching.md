@@ -440,9 +440,13 @@ task build: cache.sandbox cannot confine writes for output "*.o": ~/project also
 To allow more, list paths in the task's `allow_read` and `allow_write`, or pass
 `--allow-read` and `--allow-write`. Those paths become part of the key; the
 contents of the files do not, so add a file that changes the result to
-`sources` instead. Tools that mise did not install, such as a toolchain in
-`~/.cargo`, need an `allow_read` entry. A task that runs `mise` itself needs one
-for the `mise` binary and for everything that command reads.
+`sources` instead. The key holds the directory a path leads to, not the way it
+was written: `--allow-read=lib` is a different path from each directory you run
+mise in, and `lib`, `./lib/` and its absolute path are the same one.
+
+Tools that mise did not install, such as a toolchain in `~/.cargo` or a `shell`
+that lives in the project, need an `allow_read` entry. A task that runs `mise`
+itself needs one for the `mise` binary and for everything that command reads.
 
 The sandbox follows the task's declaration, so `--task-cache off` does not turn
 it off. The commands in `cache.command_inputs` run with the same read access,

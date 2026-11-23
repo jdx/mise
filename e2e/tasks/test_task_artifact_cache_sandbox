@@ -122,9 +122,38 @@ run = "cp src/app.txt stray.txt"
 sources = ["src/app.txt"]
 outputs = ["nest/a/x.txt", "nest/b/y.txt"]
 cache = { enabled = true, sandbox = true }
+
+[tasks.run_script]
+run = '''
+#!/usr/bin/env bash
+cat src/app.txt > script-dist/out.txt
+'''
+sources = ["src/app.txt"]
+outputs = ["script-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.read_extra]
+run = "cat extra/in.txt > extra-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["extra-dist"]
+cache = { enabled = true, sandbox = true }
 EOF
 
-mkdir -p lib src
+# A task whose shell is a program inside the project.
+cat <<EOF >>mise.toml
+
+[tasks.project_shell]
+run = "cat src/app.txt > shell-dist/out.txt"
+shell = "$PWD/tools/sh -c"
+sources = ["src/app.txt"]
+outputs = ["shell-dist"]
+cache = { enabled = true, sandbox = true }
+EOF
+
+mkdir -p lib src extra sub/extra tools
+printf 'extra\n' >extra/in.txt
+printf 'nested\n' >sub/extra/in.txt
+cp /bin/sh tools/sh
 printf 'lib\n' >lib/in.txt
 printf 'app\n' >src/app.txt
 printf 'other\n' >src/other.txt
@@ -196,6 +225,20 @@ assert "cat variants-dist/out.txt" $'a\nb'
 mise run two_entries
 assert "cat entries-dist/out.txt" "first"
 
+# A run script that starts with a shebang is a file mise writes outside the
+# project. The task can read it, whether it runs directly or a shell is given it.
+mise run run_script
+assert "cat script-dist/out.txt" "app"
+rm -rf script-dist
+MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS=1 mise run --task-cache off run_script
+assert "cat script-dist/out.txt" "app"
+
+# The shell is not one of those files. One that lives in the project is an
+# input like any other, so it has to be allowed, which puts it in the key.
+assert_fail "mise run project_shell 2>&1" "Permission denied"
+mise run --allow-read=tools project_shell
+assert "cat shell-dist/out.txt" "app"
+
 # The sandbox follows the task's declaration, not the cache mode. The failed
 # run above left the file its shell redirect created, which would make the
 # task look fresh without the cache.
@@ -217,3 +260,15 @@ rm -rf lib-dist dist
 assert_contains "mise run --allow-read=/opt app 2>&1" "restored outputs from cache"
 rm -rf lib-dist dist
 assert_contains "mise run app 2>&1" "restored outputs from cache"
+
+# The key records where an allowed path leads. A relative path on the command
+# line starts from the directory mise runs in, so the same words from another
+# directory allow something else and must not restore this entry.
+mise run --allow-read=extra read_extra
+assert "cat extra-dist/out.txt" "extra"
+rm -rf extra-dist
+assert_fail "cd sub && mise run --allow-read=extra read_extra 2>&1" "Permission denied"
+# Another spelling of the same directory does restore it.
+rm -rf extra-dist
+assert_contains "cd sub && mise run --allow-read=$PWD/extra/ read_extra 2>&1" "restored outputs from cache"
+assert "cat extra-dist/out.txt" "extra"

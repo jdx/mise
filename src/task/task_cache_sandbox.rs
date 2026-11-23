@@ -54,16 +54,72 @@ pub(crate) struct CacheSandboxKey {
 }
 
 /// The cache-key marker for a task that runs in the derived sandbox, with the
-/// extra paths the task and the command line allow, as they were written.
-pub(crate) fn key(task: &Task, cli: &SandboxConfig) -> Option<CacheSandboxKey> {
+/// extra paths the task and the command line allow.
+pub(crate) async fn key(
+    task: &Task,
+    config: &Arc<Config>,
+    cli: &SandboxConfig,
+) -> Result<Option<CacheSandboxKey>> {
+    if !enforced(task) {
+        return Ok(None);
+    }
+    let root = task_cwd(task, config).await?;
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let task_base = task.dir(config).await?.unwrap_or_else(|| cwd.clone());
+    Ok(key_for(
+        task,
+        cli,
+        &KeyBases {
+            root: &root,
+            task_base: &task_base,
+            cwd: &cwd,
+        },
+    ))
+}
+
+/// The directories that give the paths in a key their meaning.
+struct KeyBases<'a> {
+    /// The task's working directory, which its sources are relative to.
+    root: &'a Path,
+    /// What a relative path in the task's own `allow_read` and `allow_write`
+    /// starts from.
+    task_base: &'a Path,
+    /// What a relative path on the command line starts from.
+    cwd: &'a Path,
+}
+
+/// The key records where each allowed path leads, not how it was written:
+/// `--allow-read=lib` names a different directory from each directory mise is
+/// run in, and must not share an entry. A path under the task's working
+/// directory is recorded relative to it, like the sources, so that two
+/// checkouts of a project agree on the key.
+fn key_for(task: &Task, cli: &SandboxConfig, bases: &KeyBases<'_>) -> Option<CacheSandboxKey> {
     if !enforced(task) {
         return None;
     }
+    let location = |path: &PathBuf, base: &Path| -> Option<String> {
+        // An empty entry allows nothing.
+        if path.as_os_str().is_empty() {
+            return None;
+        }
+        // Joining an absolute path keeps it; collecting the components drops `.`.
+        let path: PathBuf = base.join(file::replace_path(path)).components().collect();
+        let path = match path.strip_prefix(bases.root) {
+            Ok(inside) if inside.as_os_str().is_empty() => Path::new("."),
+            Ok(inside) => inside,
+            Err(_) => &path,
+        };
+        Some(path.to_string_lossy().into_owned())
+    };
     let declared = |task_paths: &[PathBuf], cli_paths: &[PathBuf]| {
-        task_paths
+        let task_paths = task_paths
             .iter()
+            .filter_map(|path| location(path, bases.task_base));
+        let cli_paths = cli_paths
+            .iter()
+            .filter_map(|path| location(path, bases.cwd));
+        task_paths
             .chain(cli_paths)
-            .map(|path| path.to_string_lossy().into_owned())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>()
@@ -485,7 +541,12 @@ mod tests {
         let mut task = sandboxed_task(&["dist"]);
         task.allow_read = vec![PathBuf::from("vendor")];
 
-        let marker = key(&task, &cli);
+        let bases = KeyBases {
+            root: Path::new("/project"),
+            task_base: Path::new("/project"),
+            cwd: Path::new("/project"),
+        };
+        let marker = key_for(&task, &cli, &bases);
         if cfg!(target_os = "linux") {
             assert_eq!(
                 serde_json::to_value(marker.unwrap()).unwrap(),
@@ -496,6 +557,53 @@ mod tests {
         }
 
         task.cache.as_mut().unwrap().sandbox = false;
-        assert_eq!(key(&task, &cli), None);
+        assert_eq!(key_for(&task, &cli, &bases), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn key_records_where_an_allowed_path_leads() {
+        let allowed = |task_paths: &[&str], cli_paths: &[&str], cwd: &str| {
+            let mut task = sandboxed_task(&["dist"]);
+            task.allow_read = task_paths.iter().map(PathBuf::from).collect();
+            let cli = SandboxConfig {
+                allow_write: cli_paths.iter().map(PathBuf::from).collect(),
+                ..Default::default()
+            };
+            let bases = KeyBases {
+                root: Path::new("/project"),
+                task_base: Path::new("/project"),
+                cwd: Path::new(cwd),
+            };
+            let key = serde_json::to_value(key_for(&task, &cli, &bases).unwrap()).unwrap();
+            (key["allow_read"].clone(), key["allow_write"].clone())
+        };
+        let json = |paths: &[&str]| serde_json::json!(paths);
+        let none = serde_json::Value::Null;
+
+        // The same spelling from two directories is two different grants.
+        assert_eq!(
+            allowed(&[], &["lib"], "/project"),
+            (none.clone(), json(&["lib"]))
+        );
+        assert_eq!(
+            allowed(&[], &["lib"], "/project/src"),
+            (none.clone(), json(&["src/lib"]))
+        );
+        assert_eq!(
+            allowed(&[], &["lib"], "/elsewhere"),
+            (none.clone(), json(&["/elsewhere/lib"]))
+        );
+        // Two spellings of one directory are one grant, whoever wrote them.
+        assert_eq!(
+            allowed(&["./lib/", "/project/lib"], &["../lib/."], "/project"),
+            (json(&["lib"]), json(&["../lib"]))
+        );
+        assert_eq!(
+            allowed(&["."], &["/project"], "/elsewhere"),
+            (json(&["."]), json(&["."]))
+        );
+        // An empty entry allows nothing, so it is not a grant.
+        assert_eq!(allowed(&[""], &[""], "/project"), (none.clone(), none));
     }
 }

@@ -909,6 +909,7 @@ impl TaskExecutor {
                     let command_inputs = self
                         .resolve_cache_command_inputs(task, config, &env)
                         .await?;
+                    let sandbox = task_cache_sandbox::key(task, config, &self.sandbox).await?;
                     let cache = prepared
                         .finish(TaskCacheContext {
                             task,
@@ -918,7 +919,7 @@ impl TaskExecutor {
                             declared_env: &task_env,
                             dependency_keys: &dependency_state.cache_keys,
                             command_inputs,
-                            sandbox: task_cache_sandbox::key(task, &self.sandbox),
+                            sandbox,
                             explain: self.task_cache_explain || self.task_cache_explain_json,
                             mode: self.task_cache,
                         })
@@ -1902,6 +1903,7 @@ impl TaskExecutor {
                 &shell_args,
                 cmd_verbatim,
                 Some((script, args)),
+                None,
                 ctx,
             )
             .await
@@ -2162,7 +2164,9 @@ impl TaskExecutor {
     async fn exec(&self, file: &Path, args: &[String], ctx: TaskExecContext<'_>) -> Result<()> {
         if runs_without_a_shell(file) {
             let program = file.display().to_string();
-            return self.exec_program(&program, args, false, None, ctx).await;
+            return self
+                .exec_program(&program, args, false, None, Some(file), ctx)
+                .await;
         }
         // Resolved once, from the file the user wrote, and then used for both decisions below.
         let shell = file_task_shell(file, ctx.task)?;
@@ -2171,7 +2175,8 @@ impl TaskExecutor {
         let shim = ps1_shim(file, &shell)?;
         let script = shim.as_deref().unwrap_or(file);
         let (program, args) = self.get_file_program_and_args(script, &shell, args)?;
-        self.exec_program(&program, &args, false, None, ctx).await
+        self.exec_program(&program, &args, false, None, Some(script), ctx)
+            .await
     }
 
     async fn exec_with_text_file_busy_retry(
@@ -2210,6 +2215,9 @@ impl TaskExecutor {
         args: &[String],
         cmd_verbatim: bool,
         inline: Option<(&str, &[String])>,
+        // The file mise runs, when the task is one: a task file, or the copy
+        // of a `#!` run script. `program` is its interpreter when a shell runs it.
+        script_file: Option<&Path>,
         ctx: TaskExecContext<'_>,
     ) -> Result<()> {
         let TaskExecContext {
@@ -2270,10 +2278,12 @@ impl TaskExecutor {
         let _created_output_dirs = task_cache_sandbox::CreatedDirs::create(&output_dirs)?;
         // Under `cache.sandbox` the shared temp directory is closed and the task
         // writes to its own. A `#!` run script is a file mise wrote to the
-        // shared one, which the task has to read to start.
+        // shared one, which the task has to read to start, whether it runs
+        // directly or as the argument of a shell. Only that file is added: a
+        // shell outside the system directories needs `allow_read`, which puts
+        // it in the cache key.
         if let Some(dir) = sandbox_tmp {
-            let script = Path::new(&program);
-            if script.is_absolute() {
+            if let Some(script) = script_file {
                 sandbox
                     .allow_read
                     .push(dunce::canonicalize(script).unwrap_or_else(|_| script.to_path_buf()));
