@@ -90,6 +90,15 @@ TOML
 assert_succeed "cd '$wt/escape' && mise dot apply --yes"
 assert "readlink ~/.escape" "$root/persistent/value"
 
+# a source that does not resolve stays missing rather than guessed at
+mkdir -p "$wt/gone"
+cat >"$wt/gone/mise.toml" <<'TOML'
+[dotfiles]
+"~/.gone" = { source = "missing/../../../persistent/value", main_checkout = true }
+TOML
+assert_fail_contains "cd '$wt/gone' && mise dot apply --yes 2>&1" "sources do not exist"
+assert_fail "test -L ~/.gone"
+
 # a worktree of a bare repository has no main checkout
 git clone -q --bare "$main" "$root/bare"
 git --git-dir="$root/bare" worktree add -q --detach "$root/bare-wt" HEAD

@@ -1705,7 +1705,10 @@ pub(crate) fn merge_group_toml_entry(
 /// the same path in the repository's main checkout, so the link still works
 /// after the worktree is removed. None leaves any other source as it is.
 fn main_checkout_source(source: &Path) -> Result<Option<PathBuf>> {
-    let resolved = resolve_parent_dirs(source);
+    // a path that does not resolve stays as written, to be reported missing
+    let Some(resolved) = resolve_parent_dirs(source) else {
+        return Ok(None);
+    };
     if !mise_util::git::in_linked_worktree(&resolved) {
         // `..` can climb out of a worktree, but the path as written still
         // runs through it, and so would the link
@@ -1791,22 +1794,19 @@ fn resolves_through_worktree(path: &Path, main: Option<&Path>) -> bool {
 /// `source` with every `..` resolved the way the filesystem resolves it, so
 /// `../files/value` from a nested config maps by where it lands in the
 /// worktree, not by the directory it climbs out of. The components after the
-/// last `..` stay as written; a prefix that does not exist is normalized
-/// lexically.
-fn resolve_parent_dirs(source: &Path) -> PathBuf {
+/// last `..` stay as written. None when the part up to the last `..` does
+/// not exist: guessing where it leads could name a file the source does not.
+fn resolve_parent_dirs(source: &Path) -> Option<PathBuf> {
     let components = source.components().collect_vec();
     let Some(last) = components
         .iter()
         .rposition(|c| matches!(c, std::path::Component::ParentDir))
     else {
-        return source.to_path_buf();
+        return Some(source.to_path_buf());
     };
     let prefix: PathBuf = components[..=last].iter().collect();
     let rest: PathBuf = components[last + 1..].iter().collect();
-    match prefix.canonicalize() {
-        Ok(prefix) => prefix.join(rest),
-        Err(_) => lexical_normalize(source),
-    }
+    Some(prefix.canonicalize().ok()?.join(rest))
 }
 
 /// Resolve one declaration, merging explicit tracking policies into earlier layers.
