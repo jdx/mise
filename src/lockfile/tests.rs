@@ -329,20 +329,28 @@ fn parse_lockfile_toml_parses_again_when_its_cache_is_damaged() {
 
 #[test]
 fn parse_lockfile_toml_names_its_cache_by_the_content() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache_files = || std::fs::read_dir(temp.path()).unwrap().count();
+    let version = |content: &str| {
+        parse_lockfile_toml_under(temp.path(), content).unwrap()["lockfile_version"].as_integer()
+    };
     // Long enough to be cached, and differing by one byte.
     let padding = "# padding\n".repeat(PARSED_TOML_CACHE_MIN_LEN / 10 + 1);
     let first = format!("{padding}lockfile_version = 3\n");
     let second = format!("{padding}lockfile_version = 4\n");
-    for _ in 0..2 {
-        assert_eq!(
-            parse_lockfile_toml(&first).unwrap()["lockfile_version"].as_integer(),
-            Some(3)
-        );
-        assert_eq!(
-            parse_lockfile_toml(&second).unwrap()["lockfile_version"].as_integer(),
-            Some(4)
-        );
-    }
+
+    assert_eq!(version(&first), Some(3));
+    assert_eq!(cache_files(), 1);
+    assert_eq!(version(&second), Some(4));
+    assert_eq!(cache_files(), 2);
+    // Each reads its own entry back, and writes no other.
+    assert_eq!(version(&first), Some(3));
+    assert_eq!(version(&second), Some(4));
+    assert_eq!(cache_files(), 2);
+
+    // A short lockfile is parsed without an entry.
+    assert_eq!(version("lockfile_version = 5\n"), Some(5));
+    assert_eq!(cache_files(), 2);
 }
 
 #[test]

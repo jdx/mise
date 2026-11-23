@@ -133,11 +133,19 @@ const PARSED_TOML_CACHE_MIN_LEN: usize = 4096;
 /// edit can be answered from an older parse. Only text that parsed is kept, so
 /// a lockfile with a syntax error reports it on every read.
 fn parse_lockfile_toml(content: &str) -> Result<toml::Table, toml::de::Error> {
+    parse_lockfile_toml_under(&crate::dirs::CACHE.join("lockfiles"), content)
+}
+
+/// [`parse_lockfile_toml`] with its cache entries in `cache_dir`.
+fn parse_lockfile_toml_under(
+    cache_dir: &Path,
+    content: &str,
+) -> Result<toml::Table, toml::de::Error> {
     if content.len() < PARSED_TOML_CACHE_MIN_LEN {
         return toml::from_str(content);
     }
     let name = format!("{}.msgpack.z", blake3::hash(content.as_bytes()).to_hex());
-    parse_lockfile_toml_in(&crate::dirs::CACHE.join("lockfiles").join(name), content)
+    parse_lockfile_toml_in(&cache_dir.join(name), content)
 }
 
 fn parse_lockfile_toml_in(
