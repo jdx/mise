@@ -6378,6 +6378,9 @@ pub trait Backend: Debug + Send + Sync {
             // linked it. The catalog record stays, so a reinstall lands on the
             // same path.
             crate::install_layout::resolver::unlink_installation(&install_path);
+            // Removing a system copy beside the user's leaves the marker
+            // alone, so nothing else forgets that this path was installed.
+            install_state::forget_installed_checks();
             // The install is gone. The marker is shared by every install of this version, so
             // it must not outlive the removal if the download or cache cleanup below fails.
             if !keep_marker {

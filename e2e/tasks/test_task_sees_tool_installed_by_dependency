@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# A task that installs a tool is followed by one that uses it. The second
+# task's environment is built after the first one finished, so it has to
+# see the installation the first one made.
+
+cat <<'TOML' >mise.toml
+[settings]
+auto_install = false
+task.run_auto_install = false
+
+[tools]
+tiny = "3.1.0"
+
+[tasks.setup]
+run = "mise install tiny"
+
+[tasks.use-tiny]
+depends = ["setup"]
+run = "rtx-tiny"
+TOML
+
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/3.1.0'"
+assert_contains "mise run use-tiny 2>&1" "rtx-tiny: v3.1.0"

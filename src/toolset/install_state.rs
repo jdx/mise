@@ -1697,7 +1697,14 @@ pub(crate) fn lock_tool_version_with_notice(
 }
 
 pub fn clear_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
+    let cleared = remove_incomplete_marker(ba, v);
+    // After the removal, failed or not: a check made while the marker was
+    // still there must not be remembered past it.
     forget_installed_checks();
+    cleared
+}
+
+fn remove_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
     let tool_dir_name = marker_dir_name(ba);
     let marker = incomplete_marker(tool_dir_name, v);
     remove_marker(&marker)?;
@@ -1710,8 +1717,9 @@ pub fn clear_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
 
 /// Drops every incomplete marker of `ba`, for a purge that removes all its versions.
 pub(crate) fn clear_incomplete_markers(ba: &BackendArg) -> Result<()> {
+    let cleared = file::remove_all(incomplete_markers_dir(marker_dir_name(ba)));
     forget_installed_checks();
-    file::remove_all(incomplete_markers_dir(marker_dir_name(ba)))
+    cleared
 }
 
 fn remove_marker(path: &Path) -> Result<()> {
