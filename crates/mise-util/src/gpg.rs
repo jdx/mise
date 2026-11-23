@@ -2,7 +2,7 @@ use crate::file;
 use eyre::Result;
 use eyre::{bail, eyre};
 use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey, SignedPublicSubKey};
-use pgp::packet::Signature;
+use pgp::packet::{KeyFlags, Signature, SignatureType, SubpacketData};
 use pgp::ser::Serialize;
 use pgp::types::{Fingerprint, KeyDetails, KeyId, VerifyingKey};
 use std::cell::Cell;
@@ -74,7 +74,7 @@ fn is_armored(data: &[u8]) -> bool {
 /// buffering large files in memory.
 ///
 /// Verification succeeds if any signature validates against any of the trusted keys or their
-/// subkeys, mirroring `gpg --verify` against an imported keyring.
+/// subkeys that may sign data, mirroring `gpg --verify` against an imported keyring.
 fn verify_detached<R, F>(public_keys_asc: &str, signature: &[u8], open_data: F) -> Result<()>
 where
     R: Read,
@@ -131,7 +131,9 @@ struct TrustedKey<'a> {
     key_id: KeyId,
 }
 
-/// List every trusted key and subkey with its fingerprint and key id.
+/// List every trusted key and subkey that may sign data, with its fingerprint and key id.
+/// Encryption, authentication and certify-only keys are left out, as `gpg --verify` leaves them
+/// out.
 ///
 /// rPGP serializes and hashes a key each time it is asked for either identifier, so compute them
 /// here, once per key, rather than for every signature packet: the download host chooses how many
@@ -140,13 +142,16 @@ struct TrustedKey<'a> {
 fn trusted_keys(keys: &[SignedPublicKey]) -> Vec<TrustedKey<'_>> {
     let mut trusted = Vec::new();
     for key in keys {
-        trusted.push(TrustedKey {
-            key,
-            subkey: None,
-            fingerprint: key.fingerprint(),
-            key_id: key.legacy_key_id(),
-        });
-        for subkey in &key.public_subkeys {
+        let (fingerprint, key_id) = (key.fingerprint(), key.legacy_key_id());
+        if primary_may_sign(key, &fingerprint, &key_id) {
+            trusted.push(TrustedKey {
+                key,
+                subkey: None,
+                fingerprint,
+                key_id,
+            });
+        }
+        for subkey in signing_subkeys(key) {
             trusted.push(TrustedKey {
                 key,
                 subkey: Some(subkey),
@@ -156,6 +161,56 @@ fn trusted_keys(keys: &[SignedPublicKey]) -> Vec<TrustedKey<'_>> {
         }
     }
     trusted
+}
+
+/// Whether the primary key of `key` may sign data, rather than only certify its user IDs and
+/// subkeys.
+fn primary_may_sign(key: &SignedPublicKey, fingerprint: &Fingerprint, key_id: &KeyId) -> bool {
+    // user IDs also carry certifications by other people's keys, which say nothing about this one
+    let own = |sig: &&Signature| {
+        sig.issuer_fingerprint().contains(&fingerprint) || sig.issuer_key_id().contains(&key_id)
+    };
+    // a user ID speaks through its newest self-signature, unless that one revokes it
+    let user_ids = key.details.users.iter().filter_map(|user| {
+        user.signatures
+            .iter()
+            .filter(own)
+            .max_by_key(|sig| sig.created())
+            .filter(|sig| sig.typ() != Some(SignatureType::CertRevocation))
+    });
+    let direct = key.details.direct_signatures.iter().filter(own);
+    may_sign(direct.chain(user_ids))
+}
+
+/// The subkeys of `key` that may sign data, rather than only encrypt or authenticate.
+fn signing_subkeys(key: &SignedPublicKey) -> impl Iterator<Item = &SignedPublicSubKey> {
+    key.public_subkeys
+        .iter()
+        .filter(|subkey| may_sign(&subkey.signatures))
+}
+
+/// Whether a key may sign data according to its self-signatures. What a key is for is not part of
+/// the key but a key flags subpacket of its self-signatures, which `Signature::verify` does not
+/// look at. The newest one decides, as it does for `gpg --verify`, and the primary user ID if two
+/// are equally new. A key without any key flags predates them and is limited only by its
+/// algorithm.
+fn may_sign<'a>(self_signatures: impl IntoIterator<Item = &'a Signature>) -> bool {
+    self_signatures
+        .into_iter()
+        .filter_map(|sig| Some(((sig.created()?, sig.is_primary()), key_flags(sig)?)))
+        .max_by_key(|(newest, _)| *newest)
+        .is_none_or(|(_, flags)| flags.sign())
+}
+
+/// The key flags subpacket of `sig`, if it has one (`Signature::key_flags` does not tell an
+/// absent subpacket from an empty one).
+fn key_flags(sig: &Signature) -> Option<&KeyFlags> {
+    sig.config()?
+        .hashed_subpackets()
+        .find_map(|subpacket| match &subpacket.data {
+            SubpacketData::KeyFlags(flags) => Some(flags),
+            _ => None,
+        })
 }
 
 fn verify_against_keys<R, F>(
@@ -386,6 +441,7 @@ mod tests {
         reads.get()
     }
 
+    /// The key ids of the swift keys and subkeys, all of which may sign.
     fn swift_key_ids() -> Vec<KeyId> {
         parse_public_keys(include_str!("assets/gpg/swift.asc"))
             .unwrap()
@@ -462,6 +518,56 @@ mod tests {
                 None => (t.key.fingerprint(), t.key.legacy_key_id()),
             };
             assert_eq!((&t.fingerprint, &t.key_id), (&fingerprint, &key_id));
+        }
+    }
+
+    // A certificate made for these tests: a primary key that may only certify, a signing subkey
+    // and an authentication subkey, with a signature by each of the three keys (the two that may
+    // not sign made theirs before their key flags were changed). `gpg --verify` accepts only the
+    // one by the signing subkey and reports "No public key" for the other two.
+    fn verify_with_key_flags_keyring(signature: &str) -> Result<()> {
+        verify_detached(
+            include_str!("gpg_testdata/key_flags_keyring.asc"),
+            signature.as_bytes(),
+            || Ok(Cursor::new(b"signed content\n")),
+        )
+    }
+
+    #[test]
+    fn accepts_signature_by_signing_subkey() {
+        verify_with_key_flags_keyring(include_str!(
+            "gpg_testdata/key_flags_signed_by_signing_subkey.asc"
+        ))
+        .expect("signature by a signing subkey must verify");
+    }
+
+    #[test]
+    fn rejects_signature_by_key_that_may_not_sign() {
+        for signature in [
+            include_str!("gpg_testdata/key_flags_signed_by_primary.asc"),
+            include_str!("gpg_testdata/key_flags_signed_by_authentication_subkey.asc"),
+        ] {
+            let err = verify_with_key_flags_keyring(signature).unwrap_err();
+            assert!(err.to_string().contains("does not match"), "{err}");
+        }
+    }
+
+    #[test]
+    fn every_bundled_certificate_keeps_a_signing_key() {
+        // the keyrings are refreshed from upstream; no releaser may end up without a usable key
+        for keyring in [
+            include_str!("assets/gpg/node.asc"),
+            include_str!("assets/gpg/swift.asc"),
+        ] {
+            let keys = parse_public_keys(keyring).unwrap();
+            let trusted = trusted_keys(&keys);
+            for key in &keys {
+                assert!(
+                    trusted.iter().any(|t| std::ptr::eq(t.key, key)),
+                    "{:X} has no key that may sign",
+                    key.fingerprint()
+                );
+            }
         }
     }
 
