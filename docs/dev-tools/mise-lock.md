@@ -304,6 +304,11 @@ update never changes where a locked tool installs from. `mise install` and
 mise WARN  communique is locked to github:jdx/communique, but the registry now installs it from packslip:github.com/jdx/communique. Run `mise backends switch communique` to switch.
 ```
 
+This applies once the project is [trusted](/security.html#configuration-trust).
+Until then mise ignores a lock entry whose backend is not the one the registry
+selects, including one the registry still lists as a fallback, and warns that
+the entry needs trust.
+
 [`mise backends switch`](/cli/backends/switch.html) moves the lock entries to the
 registry's backend at the same versions, records the new backend's checksums and
 URLs, and reinstalls installed versions from it:

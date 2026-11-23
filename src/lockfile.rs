@@ -5852,7 +5852,12 @@ fn backend_names_no_tool(full: &str) -> bool {
 /// project is trusted its lock may confirm the backend the tool key or the
 /// registry selects, or that the user installed the tool with, but not
 /// replace it.
-fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
+///
+/// The registry selects one backend for a tool at `version`: the first that
+/// this platform and configuration allow. The others it lists are fallbacks,
+/// often a third-party asdf or vfox plugin, and moving a tool onto one of them
+/// is a choice of backend like any other.
+fn locked_backend_needs_trust(short: &str, full: &str, version: &str) -> bool {
     if crate::args::split_bracketed_opts(full).is_some() {
         return true;
     }
@@ -5864,7 +5869,8 @@ fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
         |full: &'static str| crate::args::split_bracketed_opts(full).map_or(full, |(full, _)| full);
     let registry = crate::registry::REGISTRY
         .get(short.as_ref())
-        .is_some_and(|tool| tool.backends.iter().any(|b| without_opts(b.full) == full));
+        .and_then(|tool| tool.backends_for_version(Some(version)).first().copied())
+        .is_some_and(|selected| without_opts(selected) == full);
     !registry && crate::toolset::install_state::get_tool_full(&short).as_deref() != Some(full)
 }
 
@@ -5883,7 +5889,7 @@ impl Lockfile {
         for (short, entries) in &mut self.tools {
             entries.retain_mut(|entry| {
                 if let Some(full) = &entry.backend
-                    && locked_backend_needs_trust(short, full)
+                    && locked_backend_needs_trust(short, full, &entry.version)
                 {
                     // The same file is read for each config and for the
                     // merged view, so warn once per entry.

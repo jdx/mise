@@ -734,38 +734,73 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
 #[test]
 fn untrusted_lockfile_may_confirm_a_backend_but_not_choose_one() {
     // the registry's backend for a shorthand, or the backend the tool key names
-    assert!(!locked_backend_needs_trust("shfmt", "aqua:mvdan/sh"));
-    assert!(!locked_backend_needs_trust("node", "core:node"));
+    assert!(!locked_backend_needs_trust(
+        "shfmt",
+        "aqua:mvdan/sh",
+        "3.10.0"
+    ));
+    assert!(!locked_backend_needs_trust("node", "core:node", "24.0.0"));
     assert!(!locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/tool"
+        "github:acme/tool",
+        "1.0.0"
     ));
     // inline options need trust in a tool key, so they do in a lock entry
     assert!(locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/tool[api_url=http://example.com/api/v3]"
+        "github:acme/tool[api_url=http://example.com/api/v3]",
+        "1.0.0"
     ));
     assert!(locked_backend_needs_trust(
         "shfmt",
-        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]"
+        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]",
+        "3.10.0"
     ));
     // a backend the registry never installs the tool from
     assert!(locked_backend_needs_trust(
         "shellcheck",
-        "cargo:https://example.com/shellcheck.git"
+        "cargo:https://example.com/shellcheck.git",
+        "0.10.0"
     ));
     assert!(locked_backend_needs_trust(
         "gron",
-        "ubi:http://example.com/gron.tar.gz"
+        "ubi:http://example.com/gron.tar.gz",
+        "0.7.1"
     ));
     assert!(locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/other"
+        "github:acme/other",
+        "1.0.0"
+    ));
+    // a backend the registry lists for the tool behind the one it selects
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "asdf:luizm/asdf-shfmt",
+        "3.10.0"
+    ));
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "go:mvdan.cc/sh/v3/cmd/shfmt",
+        "3.10.0"
     ));
     // names that designate no tool
-    assert!(locked_backend_needs_trust("shfmt", ""));
-    assert!(locked_backend_needs_trust("shfmt", "asdf:"));
-    assert!(locked_backend_needs_trust("", "core:node"));
+    assert!(locked_backend_needs_trust("shfmt", "", "3.10.0"));
+    assert!(locked_backend_needs_trust("shfmt", "asdf:", "3.10.0"));
+    assert!(locked_backend_needs_trust("", "core:node", "24.0.0"));
+}
+
+/// With backends split by version, the one that serves the locked version is
+/// the registry's; the one it selects for other versions is not.
+#[test]
+fn untrusted_lockfile_confirms_the_backend_for_its_version() {
+    let hk = crate::registry::REGISTRY.get("hk").unwrap();
+    let selected = |version: &str| hk.backends_for_version(Some(version))[0];
+    let (old, new) = (selected("1.57.0"), selected("1.58.1"));
+    assert_ne!(old, new);
+    assert!(!locked_backend_needs_trust("hk", old, "1.57.0"));
+    assert!(locked_backend_needs_trust("hk", new, "1.57.0"));
+    assert!(!locked_backend_needs_trust("hk", new, "1.58.1"));
+    assert!(locked_backend_needs_trust("hk", old, "1.58.1"));
 }
 
 #[test]
