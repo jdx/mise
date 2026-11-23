@@ -641,10 +641,14 @@ impl Backend for JavaPlugin {
                             Some(ctx.pr.as_ref()),
                         )
                         .await?;
-                        // Optionally verify checksum if present
-                        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
                     } else {
                         ctx.pr.set_message(format!("cached {filename}"));
+                    }
+                    // A file that was already there is checked too, and one that fails is not
+                    // kept: with always_keep_download the next attempt would find it here.
+                    if let Err(err) = self.verify_checksum(ctx, &mut tv, &tarball_path) {
+                        file::remove_file(&tarball_path)?;
+                        return Err(err);
                     }
 
                     // The lockfile already names the build, so the catalog is not consulted.
