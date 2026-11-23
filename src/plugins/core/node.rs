@@ -248,10 +248,9 @@ impl NodePlugin {
             return Ok(());
         }
         let patches = plugins::core::fetch_patch_contents(&sources).await?;
-        file::create_dir_all(&*env::MISE_TMP_DIR)?;
         for (source, patch) in sources.iter().zip(patches) {
             ctx.pr.set_message(format!("patch {source}"));
-            let patch_file = env::MISE_TMP_DIR.join(format!(
+            let patch_file = tv.download_path().join(format!(
                 "node-v{}-{}.patch",
                 opts.version,
                 hash::hash_to_str(source)
@@ -1212,7 +1211,10 @@ impl BuildOpts {
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
-            build_dir: env::MISE_TMP_DIR.join(format!("node-v{v}")),
+            // Next to the source tarball, in a directory only this user writes to.
+            // `MISE_TMP_DIR` defaults to a fixed name in the system temporary directory,
+            // where whoever created it first can swap the tree between build steps.
+            build_dir: tv.download_path().join(format!("node-v{v}")),
             configure_cmd: settings.node.configure_cmd(&install_path),
             make_cmd: settings.node.make_cmd(),
             make_install_cmd: settings.node.make_install_cmd(),

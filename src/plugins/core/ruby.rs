@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -231,7 +230,10 @@ impl RubyPlugin {
         pr: Option<&dyn SingleReport>,
         tmp_dir_name: &str,
     ) -> Result<PathBuf> {
-        let tmp = temp_dir().join(tmp_dir_name);
+        // Staged next to the install prefix, in mise's own cache directory. Under a fixed name
+        // in the system temporary directory another local user can create the directory first
+        // and replace the scripts that are then run from it.
+        let tmp = self.ba.cache_path().join(tmp_dir_name);
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let source = PluginSource::parse(repo);
