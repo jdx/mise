@@ -140,7 +140,7 @@ pub(crate) async fn install(
         && previous.version == tv.version
     {
         // Reinstalling the same release must retain its digest and signer pins.
-        tv.lock_platforms = previous.platforms;
+        tv.lock_platforms = previous.platforms.into();
     }
     tv.install_path = Some(payload.clone());
     let ctx = InstallContext {
@@ -164,7 +164,7 @@ pub(crate) async fn install(
     let state = Installed {
         source,
         version: tv.version,
-        platforms: tv.lock_platforms,
+        platforms: tv.lock_platforms.into_map(),
     };
     file::write(payload.join(STATE_FILE), serde_json::to_vec_pretty(&state)?)?;
     if let Err(error) = replace(&payload, path, &staging.path().join("previous"), || {
