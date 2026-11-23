@@ -1658,6 +1658,78 @@ fn test_glob_skips_patterns_under_missing_directories() -> Result<()> {
     Ok(())
 }
 
+/// `glob` starts at `dir` instead of handing `dir` to `glob::glob`, which looks
+/// up every component of it again. What it finds, and in which order, matches
+/// the glob crate.
+#[cfg(unix)]
+#[test]
+fn test_glob_finds_what_the_glob_crate_finds() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let confd = tmp.path().join(".mise/conf.d");
+    fs::create_dir_all(confd.join("node"))?;
+    fs::create_dir_all(confd.join(".hidden"))?;
+    for file in [
+        "b.toml",
+        "a.toml",
+        "a[1].toml",
+        "a.txt",
+        ".dot.toml",
+        "node/mise.toml",
+        ".hidden/mise.toml",
+    ] {
+        fs::write(confd.join(file), "")?;
+    }
+    std::os::unix::fs::symlink("missing", confd.join("c.toml"))?;
+    std::os::unix::fs::symlink("node", confd.join("linked"))?;
+
+    let escaped_dir = glob::Pattern::escape(&tmp.path().to_string_lossy());
+    for pattern in [
+        ".mise/conf.d/*",
+        ".mise/conf.d/*.toml",
+        ".mise/conf.d/*/mise.toml",
+        ".mise/conf.d/?.toml",
+        ".mise/conf.d/[ab].*",
+        ".mise/conf.d/a[[]1].toml",
+        ".mise/conf.d/a.toml/*",
+        ".mise/conf.d/node/mise.toml",
+        ".mise/conf.d/c.toml",
+        ".mise/conf.d/missing.toml",
+        ".mise/*/*/mise.toml",
+        ".mise/conf.d/*/",
+        "./.mise/conf.d/*.toml",
+        ".mise/**/mise.toml",
+    ] {
+        let expected = glob::glob(&format!("{escaped_dir}/{pattern}"))?
+            .flatten()
+            .collect_vec();
+        assert_eq!(glob(tmp.path(), pattern)?, expected, "{pattern}");
+    }
+    let names = [".dot.toml", "a.toml", "a[1].toml", "b.toml", "c.toml"];
+    assert_eq!(
+        glob(tmp.path(), ".mise/conf.d/*.toml")?,
+        names.map(|name| confd.join(name))
+    );
+    Ok(())
+}
+
+/// `dir` is used as a path, not spelled into a pattern, so a directory whose
+/// name is not UTF-8 is searched like any other.
+#[cfg(unix)]
+#[test]
+fn test_glob_searches_a_directory_whose_name_is_not_utf8() -> Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let tmp = TempDir::new()?;
+    let dir = tmp.path().join(std::ffi::OsStr::from_bytes(b"caf\xe9"));
+    let confd = dir.join(".mise/conf.d");
+    fs::create_dir_all(&confd)?;
+    fs::write(confd.join("tools.toml"), "")?;
+    assert_eq!(
+        glob(&dir, ".mise/conf.d/*.toml")?,
+        vec![confd.join("tools.toml")]
+    );
+    Ok(())
+}
+
 #[test]
 fn test_env_config_patterns_escape_glob_characters() -> Result<()> {
     let tmp = TempDir::new()?;

@@ -801,3 +801,31 @@ fn test_ensure_symlinks_stay_within_rebases_chained_absolute_links() {
 
     assert_eq!(fs::read_to_string(root.join("tool")).unwrap(), "tool");
 }
+
+/// Resolving a path also resolves its ancestors: they are the ancestors of the
+/// resolved path, which are canonical, not those of the path given, which may
+/// pass through a link. A walk up from a deep directory then resolves one path.
+#[cfg(unix)]
+#[test]
+fn canonicalize_cached_remembers_the_ancestors_of_a_resolved_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let target = root.join("target");
+    fs::create_dir_all(target.join("a/b")).unwrap();
+    let link = root.join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    assert_eq!(
+        canonicalize_cached(&link.join("a/b")),
+        Some(target.join("a/b"))
+    );
+    // Gone from disk, still answered: the first call remembered them.
+    fs::remove_dir_all(&target).unwrap();
+    assert_eq!(
+        canonicalize_cached(&target.join("a")),
+        Some(target.join("a"))
+    );
+    assert_eq!(canonicalize_cached(&target), Some(target.clone()));
+    // The link itself was never resolved on its own.
+    assert_eq!(canonicalize_cached(&link), None);
+}

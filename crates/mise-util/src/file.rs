@@ -2235,10 +2235,18 @@ pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
         return Some(path);
     }
     let canonicalized = path.canonicalize().ok()?;
-    CACHE
-        .lock()
-        .unwrap()
-        .insert(path.to_path_buf(), canonicalized.clone());
+    let mut cache = CACHE.lock().unwrap();
+    // No component of a resolved path is a symlink, so each of its ancestors is
+    // its own canonical form. Remembering them means a walk up from the cwd
+    // (config discovery asks about every ancestor) resolves one path, not one
+    // per level with a link lookup per component.
+    for ancestor in canonicalized.ancestors().skip(1) {
+        if cache.contains_key(ancestor) {
+            break;
+        }
+        cache.insert(ancestor.to_path_buf(), ancestor.to_path_buf());
+    }
+    cache.insert(path.to_path_buf(), canonicalized.clone());
     Some(canonicalized)
 }
 

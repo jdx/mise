@@ -2842,18 +2842,79 @@ pub(crate) fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     // only `pattern` is meant to match.
     let full_pattern = Path::new(&glob::Pattern::escape(&dir.to_string_lossy())).join(pattern);
     let full_pattern = full_pattern.to_string_lossy();
+    // Reject a malformed pattern, as `glob::glob` would, so callers can report
+    // it, also when its directory is missing.
+    glob::Pattern::new(full_pattern.as_ref())?;
     let paths = if glob_parent_exists(dir, pattern) {
-        glob::glob(full_pattern.as_ref())?
-            .filter_map(|p| p.ok())
-            .collect_vec()
+        glob_in_dir(dir, pattern)?
     } else {
-        // Still reject a malformed pattern, as `glob::glob` would, so callers
-        // can report it.
-        glob::Pattern::new(full_pattern.as_ref())?;
         vec![]
     };
     results.insert(key, paths.clone());
     Ok(paths)
+}
+
+/// Paths under the literal directory `dir` that match `pattern`, like
+/// `glob::glob(dir/pattern)` with `dir` escaped, in the same order (by name
+/// within each directory, hidden entries included).
+///
+/// `glob::glob` takes one absolute pattern and stats every component of `dir`
+/// again, twice, before it reaches `pattern`. Config discovery and the
+/// hook-env fast path glob in every ancestor of the cwd, whose depth a
+/// checkout decides, so that would cost the cube of the depth on every prompt.
+/// This starts at `dir`: one lookup per literal component and one listing per
+/// directory a wildcard is matched in. `**`, `..` and absolute patterns are
+/// left to `glob::glob`.
+pub(crate) fn glob_in_dir(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+    let crate_glob = || -> Result<Vec<PathBuf>> {
+        let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
+        Ok(
+            glob::glob(&Path::new(&escaped_dir).join(pattern).to_string_lossy())?
+                .flatten()
+                .collect(),
+        )
+    };
+    let mut current = vec![dir.to_path_buf()];
+    // `components` splits on the platform's separators, so a Windows pattern
+    // with backslashes walks the same way as one with slashes.
+    for component in Path::new(pattern).components() {
+        let component = match component {
+            Component::Normal(name) => name.to_string_lossy(),
+            Component::CurDir => continue,
+            _ => return crate_glob(),
+        };
+        let component = component.as_ref();
+        if component.contains("**") {
+            return crate_glob();
+        }
+        if component.contains(['*', '?', '[']) {
+            let matcher = glob::Pattern::new(component)?;
+            let mut next = vec![];
+            for base in &current {
+                let Ok(entries) = std::fs::read_dir(base) else {
+                    continue;
+                };
+                let mut names = entries
+                    .flatten()
+                    .map(|entry| entry.file_name())
+                    .filter(|name| matcher.matches(&name.to_string_lossy()))
+                    .collect_vec();
+                names.sort();
+                next.extend(names.into_iter().map(|name| base.join(name)));
+            }
+            current = next;
+        } else {
+            for base in &mut current {
+                base.push(component);
+            }
+            current.retain(|p| p.symlink_metadata().is_ok());
+        }
+    }
+    // A trailing separator matches directories only, as with `glob::glob`.
+    if pattern.ends_with(std::path::is_separator) {
+        current.retain(|p| p.is_dir());
+    }
+    Ok(current)
 }
 
 /// Whether the directory spelled out by `pattern` before its first wildcard
