@@ -2562,8 +2562,14 @@ impl Client {
             && !(options.netrc_replacement_only && url.host() == original_url.host())
         {
             let before = final_headers.get(AUTHORIZATION).cloned();
-            final_headers =
-                apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
+            // In safe mode a project tool gets netrc credentials only on a host that
+            // an operator's replacement rule sent the request to.
+            let netrc = if url.host() == original_url.host() {
+                netrc_headers(&url)
+            } else {
+                replacement_netrc_headers(&url)
+            };
+            final_headers = apply_netrc_credentials(final_headers, &original_url, &url, netrc);
             netrc_fallback_used = url.host() == original_url.host()
                 && final_headers.get(AUTHORIZATION) != before.as_ref();
         }
@@ -3514,12 +3520,24 @@ pub fn ensure_secure_url_replacement(
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
 pub fn netrc_headers(url: &Url) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    // A host that a project `version_list_url` named in safe mode; see
-    // `untrusted_hosts`.
+    // A request for a project tool in safe mode, or for a host a project URL
+    // option named; see `untrusted_hosts`.
     if crate::untrusted_hosts::netrc_denied(url) {
-        return headers;
+        return HeaderMap::new();
     }
+    netrc_credential_headers(url)
+}
+
+/// [`netrc_headers`] for a URL that a URL replacement moved to another host.
+fn replacement_netrc_headers(url: &Url) -> HeaderMap {
+    if crate::untrusted_hosts::netrc_denied_on_replacement_host(url) {
+        return HeaderMap::new();
+    }
+    netrc_credential_headers(url)
+}
+
+fn netrc_credential_headers(url: &Url) -> HeaderMap {
+    let mut headers = HeaderMap::new();
     if let Some(host) = url.host_str()
         && let Some((login, password)) = netrc::get_credentials(host)
     {

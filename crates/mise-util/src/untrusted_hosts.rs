@@ -9,15 +9,22 @@
 //! port) a project `api_url` names, and the token lookups skip them. A forge's
 //! own public API over https keeps that forge's token.
 //!
-//! netrc is withheld the same way, by default: config loading records every host
-//! a project tool's URL options name (or every host at all, when one of them is
-//! a template), and no request to such a host gets netrc credentials, a netrc
-//! `default` entry included, whichever code path makes it. The exception is the
-//! work done for a tool that global or system config declares, which runs inside
-//! [`with_trusted_tool_scope`]: the operator chose that tool and its hosts, so
-//! its requests keep their credentials even on a host a project also names. A
-//! path that misses the scope therefore loses credentials rather than leaking
-//! them.
+//! netrc is withheld by the scope a request is made in. The work done for a
+//! tool that project config declares runs inside [`with_tool_scope`] as
+//! explicitly untrusted and gets no netrc credentials on any host, a netrc
+//! `default` entry included: the hosts its options name are not all the hosts it
+//! reaches, since the servers it asks name more of them, as a release does in
+//! the link to its asset. The work done for a tool that global or system config
+//! declares runs inside [`with_trusted_tool_scope`]: the operator chose that tool
+//! and its hosts, so its requests keep their credentials even on a host a
+//! project also names.
+//!
+//! A request made in no tool's scope falls back to the hosts config loading
+//! records: every host a project tool's URL options name (or every host at all,
+//! when one of them is a template) gets no netrc credentials. One request of a
+//! project tool is left to those recorded hosts as well: the one an operator's
+//! URL replacement sent to another host. Project settings do not load in safe
+//! mode, so the operator chose that host, typically a mirror with a netrc login.
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -69,11 +76,6 @@ impl Forge {
             url::Origin::Opaque(_) => false,
         }
     }
-}
-
-fn host_of(url: &str) -> Option<String> {
-    let url = url::Url::parse(url).ok()?;
-    url.host_str().map(str::to_ascii_lowercase)
 }
 
 fn origin_of(url: &str) -> Option<url::Origin> {
@@ -141,16 +143,20 @@ fn forge_token_denied_where(forge: Forge, matches: impl Fn(&url::Origin) -> bool
 
 /// Records the host of a URL option (a template, possibly) of a tool that
 /// project config declares, in safe mode. A URL whose host is itself a template
-/// withholds netrc from every host.
+/// withholds netrc from every host. The template is looked for in the authority
+/// the URL parser reads, the one the request goes to, where a `{` in userinfo
+/// is percent-encoded.
 pub fn deny_netrc_for_url(url: &str) {
-    let authority = url
-        .split_once("://")
-        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default());
-    match (authority, host_of(url)) {
-        (Some(authority), Some(host)) if !authority.contains('{') => {
-            insert(&NETRC_DENIED, host);
-        }
-        _ => NETRC_DENIED_ANY_HOST.store(true, Ordering::Relaxed),
+    let host = url::Url::parse(url).ok().and_then(|url| {
+        let authority = url[..url::Position::BeforePath].to_ascii_lowercase();
+        let templated = authority.contains('{') || authority.contains("%7b");
+        url.host_str()
+            .filter(|_| !templated)
+            .map(str::to_ascii_lowercase)
+    });
+    match host {
+        Some(host) => insert(&NETRC_DENIED, host),
+        None => NETRC_DENIED_ANY_HOST.store(true, Ordering::Relaxed),
     }
 }
 
@@ -167,39 +173,64 @@ pub async fn with_trusted_tool_scope<T>(future: impl Future<Output = T>) -> T {
 /// Runs `future`, the work for one tool in safe mode, in that tool's scope:
 /// trusted for a tool from global or system config (netrc on hosts a project
 /// names, `env` in the templates its backend renders), and explicitly untrusted
-/// for a tool that project config declares, even when it is reached from a
-/// trusted tool's work, such as one tool's dependency pulling in another.
+/// for a tool that project config declares (no netrc on any host but one an
+/// operator's URL replacement moves a request to), even when it is reached from
+/// a trusted tool's work, such as one tool's dependency pulling in another.
 pub async fn with_tool_scope<T>(trusted: bool, future: impl Future<Output = T>) -> T {
     let tool = Box::pin(TRUSTED_TOOL.scope(trusted, future));
     crate::tera::with_templates_trusted(trusted, tool).await
 }
 
 /// Wraps `future`, about to be spawned as a task of its own (`tokio::spawn`, a
-/// `JoinSet`, [`crate::parallel::parallel`]), so that it runs in the trusted
-/// scopes of the task spawning it: task-locals do not pass to a spawned task, so
-/// without this the work a global tool spreads over tasks would lose its netrc
-/// credentials and its templates' `env`. A future spawned outside those scopes
-/// stays outside them.
+/// `JoinSet`, [`crate::parallel::parallel`]), so that it runs in the scopes of
+/// the task spawning it: task-locals do not pass to a spawned task, so without
+/// this the work a global tool spreads over tasks would lose its netrc
+/// credentials and its templates' `env`, and the work a project tool spreads
+/// over tasks would get netrc credentials back on hosts no project option
+/// names. A future spawned outside those scopes stays outside them.
 pub fn inherit_trusted_scope<F: Future>(future: F) -> impl Future<Output = F::Output> {
-    let tool = TRUSTED_TOOL.try_with(|trusted| *trusted).unwrap_or(false);
+    let tool = TRUSTED_TOOL.try_with(|trusted| *trusted).ok();
     let templates = crate::tera::in_trusted_templates();
     async move {
         match (tool, templates) {
-            (true, true) => with_tool_scope(true, future).await,
-            (true, false) => with_trusted_tool_scope(future).await,
-            (false, true) => crate::tera::with_trusted_templates(future).await,
-            (false, false) => future.await,
+            (Some(true), true) => with_tool_scope(true, future).await,
+            (Some(true), false) => with_trusted_tool_scope(future).await,
+            (Some(false), true) => {
+                let future = crate::tera::with_trusted_templates(future);
+                TRUSTED_TOOL.scope(false, future).await
+            }
+            (Some(false), false) => with_tool_scope(false, future).await,
+            (None, true) => crate::tera::with_trusted_templates(future).await,
+            (None, false) => future.await,
         }
     }
 }
 
-/// Whether netrc credentials must not be sent with a request for `url`: project
-/// config named its host, and the request is not made for a tool that global or
-/// system config declares.
+/// Whether netrc credentials must not be sent with a request for `url`. The
+/// work for a tool that global or system config declares keeps them. The work
+/// for a tool that project config declares gets none, whatever the host, since
+/// the servers it asks choose the hosts of its further requests. A request made
+/// in no tool's scope gets none on a host project config named.
 pub fn netrc_denied(url: &url::Url) -> bool {
+    match TRUSTED_TOOL.try_with(|trusted| *trusted) {
+        Ok(true) => false,
+        Ok(false) => true,
+        Err(_) => netrc_denied_for_host(url),
+    }
+}
+
+/// [`netrc_denied`] for a request that an operator's URL replacement sent to
+/// `url`, on another host than the one asked for. The operator chose that
+/// host, so the work for a project tool keeps its netrc credentials there,
+/// unless project config names the host itself.
+pub fn netrc_denied_on_replacement_host(url: &url::Url) -> bool {
     if TRUSTED_TOOL.try_with(|trusted| *trusted).unwrap_or(false) {
         return false;
     }
+    netrc_denied_for_host(url)
+}
+
+fn netrc_denied_for_host(url: &url::Url) -> bool {
     NETRC_DENIED_ANY_HOST.load(Ordering::Relaxed)
         || url
             .host_str()
@@ -418,6 +449,76 @@ mod tests {
         deny_netrc_for_url("https://{{ os() }}.evil.example/tool");
         assert!(netrc_denied(&url("https://linux.evil.example/tool")));
         assert!(netrc_denied(&url("https://mirror.example/x")));
+        reset();
+    }
+
+    #[test]
+    fn a_project_tool_gets_no_netrc_on_a_host_only_a_server_names() {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        reset();
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        deny_netrc_for_url("https://forge.example/api/v4");
+        // a release's asset link on a host no option of the tool names, asked
+        // for in the tool's scope and in a task that work spawns
+        let (unnamed, spawned) = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .build()
+            .unwrap()
+            .block_on(with_tool_scope(false, async {
+                let target = url("https://assets.example/tool-linux-x64");
+                let t = target.clone();
+                let spawned = tokio::spawn(inherit_trusted_scope(async move { netrc_denied(&t) }));
+                (netrc_denied(&target), spawned.await.unwrap())
+            }));
+        assert!(unnamed);
+        assert!(spawned);
+        // the host an operator's URL replacement sends a request to keeps the
+        // login, unless a project option names that host itself
+        let (mirror, named) = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(with_tool_scope(false, async {
+                (
+                    netrc_denied_on_replacement_host(&url("https://mirror.example/x")),
+                    netrc_denied_on_replacement_host(&url("https://forge.example/x")),
+                )
+            }));
+        assert!(!mirror);
+        assert!(named);
+        // a global tool's work keeps the login on any host
+        let trusted = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(with_trusted_tool_scope(async {
+                netrc_denied(&url("https://assets.example/tool-linux-x64"))
+            }));
+        assert!(!trusted);
+        reset();
+    }
+
+    #[test]
+    fn a_template_host_the_url_parser_reads_withholds_netrc_from_every_host() {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        for spelling in [
+            "https:///v{version}.attacker.example/tool",
+            "https:/{version}.attacker.example/x://y",
+            "https:{version}.attacker.example/tool?x=://unused/",
+            "https://{version}@attacker.example/tool",
+        ] {
+            reset();
+            deny_netrc_for_url(spelling);
+            assert!(
+                netrc_denied(&url("https://v1.attacker.example/tool")),
+                "{spelling}"
+            );
+            assert!(netrc_denied(&url("https://other.example/x")), "{spelling}");
+        }
+        // a literal host is recorded by itself
+        reset();
+        deny_netrc_for_url("https:///files.example/tool-{version}");
+        assert!(netrc_denied(&url("https://files.example/tool-1")));
+        assert!(!netrc_denied(&url("https://other.example/x")));
         reset();
     }
 }
