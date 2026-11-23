@@ -44,10 +44,11 @@ pub(super) fn install_bottle_config(keg: &Path) -> Result<Vec<PathBuf>> {
         return Ok(created);
     }
     let prefix = prefix::prefix();
+    let roots = super::pour::link_roots();
     let copied = ["etc", "var"].into_iter().try_for_each(|dir| {
         let src = bottle.join(dir);
         if src.is_dir() {
-            copy_tree(&src, &prefix.join(dir), true, &mut created)
+            copy_tree(&src, &prefix.join(dir), true, &mut created, &roots)
                 .wrap_err_with(|| format!("failed to install the bottle's {dir} files"))?;
         }
         Ok(())
@@ -70,18 +71,38 @@ pub(super) fn remove_created(created: &[PathBuf]) {
 /// Copy `src` into `dst`. With `keep_existing`, an existing different file is
 /// preserved and the new one is written to `<file>.default`. Every file or
 /// link it writes is appended to `created`.
+///
+/// `src` can come from a bottle, so nothing is written through a symlink
+/// below `dst` (`dst` itself may be one), and a link in `src` that would point
+/// outside every one of `roots` (the Homebrew prefix) from its new place is
+/// not installed.
 fn copy_tree(
     src: &Path,
     dst: &Path,
     keep_existing: bool,
     created: &mut Vec<PathBuf>,
+    roots: &[PathBuf],
 ) -> Result<()> {
-    for entry in WalkDir::new(src).sort_by_file_name() {
+    let mut walk = WalkDir::new(src).sort_by_file_name().into_iter();
+    while let Some(entry) = walk.next() {
         let entry = entry?;
         let rel = entry.path().strip_prefix(src)?;
         let mut dest = dst.join(rel);
         let ft = entry.file_type();
         if ft.is_dir() {
+            // `create_dir_all` accepts a link to a directory and everything
+            // below would land where it points. The link can be one this tree
+            // ships: it lands as `<name>.default` when `<name>` is taken. A
+            // directory is visited before its contents and is never replaced
+            // by a link, so every directory written to below `dst` is real.
+            if entry.depth() > 0 && dest.is_symlink() {
+                warn!(
+                    "brew: not installing {}: it is a symlink, and files are not copied through one",
+                    dest.display()
+                );
+                walk.skip_current_dir();
+                continue;
+            }
             fs::create_dir_all(&dest)?;
             continue;
         }
@@ -90,6 +111,16 @@ fn copy_tree(
         }
         if ft.is_symlink() {
             let link = fs::read_link(entry.path())?;
+            let lands = super::pour::resolve_symlinks(&dest.parent().unwrap().join(&link), None);
+            if !super::pour::lands_in(lands.as_deref(), roots) {
+                warn!(
+                    "brew: not installing {}: it is a symlink to {}, which points outside the \
+                     Homebrew prefix",
+                    dest.display(),
+                    link.display(),
+                );
+                continue;
+            }
             let mut existed = false;
             if let Ok(meta) = dest.symlink_metadata() {
                 if meta.is_symlink() && fs::read_link(&dest).ok().as_deref() == Some(&link) {
@@ -136,6 +167,10 @@ fn copy_tree(
             dest.set_file_name(name);
         }
         let existed = dest.symlink_metadata().is_ok();
+        if dest.is_symlink() {
+            // `fs::copy` writes to wherever the link points
+            fs::remove_file(&dest)?;
+        }
         fs::copy(entry.path(), &dest)?;
         if !existed {
             created.push(dest);
@@ -253,7 +288,13 @@ impl Context<'_> {
             if !flag(step, "recursive") {
                 bail!("{} is a directory", source.display());
             }
-            copy_tree(&source, &destination, false, &mut Vec::new())
+            copy_tree(
+                &source,
+                &destination,
+                false,
+                &mut Vec::new(),
+                &super::pour::link_roots(),
+            )
         } else {
             fs::copy(&source, &destination)?;
             Ok(())
@@ -672,11 +713,98 @@ mod tests {
         fs::create_dir_all(&dst)?;
         symlink("new", src.join("l"))?;
         symlink("old", dst.join("l"))?;
-        copy_tree(&src, &dst, true, &mut Vec::new())?;
+        copy_tree(
+            &src,
+            &dst,
+            true,
+            &mut Vec::new(),
+            &[tmp.path().canonicalize()?],
+        )?;
         assert_eq!(fs::read_link(dst.join("l"))?, Path::new("old"));
         assert_eq!(fs::read_link(dst.join("l.default"))?, Path::new("new"));
-        copy_tree(&src, &dst, false, &mut Vec::new())?;
+        copy_tree(
+            &src,
+            &dst,
+            false,
+            &mut Vec::new(),
+            &[tmp.path().canonicalize()?],
+        )?;
         assert_eq!(fs::read_link(dst.join("l"))?, Path::new("new"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_does_not_write_through_destination_symlinks() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        let src = root.join("src");
+        let dst = prefix.join("etc");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside)?;
+        fs::write(outside.join("kept"), "kept")?;
+
+        // a link the tree ships lands as `d.default`, the name of a directory
+        // it ships as well
+        fs::create_dir_all(src.join("d.default"))?;
+        fs::create_dir_all(dst.join("d"))?;
+        symlink(&outside, src.join("d"))?;
+        fs::write(src.join("d.default/f"), "f")?;
+        // a link left where a `.default` file goes
+        fs::write(src.join("a"), "new")?;
+        fs::write(dst.join("a"), "edited")?;
+        symlink(outside.join("kept"), dst.join("a.default"))?;
+
+        let mut created = Vec::new();
+        copy_tree(&src, &dst, true, &mut created, &[prefix.clone()])?;
+        assert!(!outside.join("f").exists());
+        assert_eq!(fs::read_to_string(outside.join("kept"))?, "kept");
+        assert!(!dst.join("a.default").is_symlink());
+        assert_eq!(fs::read_to_string(dst.join("a.default"))?, "new");
+
+        // the same without `keep_existing`
+        symlink(&outside, dst.join("sub"))?;
+        symlink(outside.join("kept"), dst.join("b"))?;
+        fs::create_dir_all(src.join("sub"))?;
+        fs::write(src.join("sub/g"), "g")?;
+        fs::write(src.join("b"), "b")?;
+        copy_tree(&src, &dst, false, &mut Vec::new(), &[prefix])?;
+        assert!(!outside.join("f").exists());
+        assert!(!outside.join("g").exists());
+        assert_eq!(fs::read_to_string(outside.join("kept"))?, "kept");
+        assert_eq!(fs::read_to_string(dst.join("b"))?, "b");
+        Ok(())
+    }
+
+    /// a link that stays in the keg can leave the prefix once it is copied
+    /// into etc; links between prefix directories still install
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_installs_only_links_that_stay_in_the_prefix() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        let src = root.join("src");
+        let dst = prefix.join("etc");
+        fs::create_dir_all(src.join("openssl"))?;
+        fs::create_dir_all(&dst)?;
+        symlink("../ca-certificates/cert.pem", src.join("openssl/cert.pem"))?;
+        symlink("../Cellar/foo/1.0/share/foo", src.join("foo"))?;
+        symlink("../../outside", src.join("up"))?;
+        symlink(root.join("outside"), src.join("abs"))?;
+        let mut created = Vec::new();
+        copy_tree(&src, &dst, true, &mut created, &[prefix])?;
+        assert_eq!(
+            fs::read_link(dst.join("openssl/cert.pem"))?,
+            Path::new("../ca-certificates/cert.pem")
+        );
+        assert!(dst.join("foo").is_symlink());
+        assert!(dst.join("up").symlink_metadata().is_err());
+        assert!(dst.join("abs").symlink_metadata().is_err());
+        assert_eq!(created.len(), 2);
         Ok(())
     }
 
@@ -701,7 +829,13 @@ mod tests {
         fs::write(src.join("sub/b"), "b")?;
         fs::write(dst.join("a.cnf"), "edited")?;
         fs::write(dst.join("same"), "x")?;
-        copy_tree(&src, &dst, true, &mut Vec::new())?;
+        copy_tree(
+            &src,
+            &dst,
+            true,
+            &mut Vec::new(),
+            &[tmp.path().canonicalize()?],
+        )?;
         assert_eq!(fs::read_to_string(dst.join("a.cnf"))?, "edited");
         assert_eq!(fs::read_to_string(dst.join("a.cnf.default"))?, "new");
         assert!(!dst.join("same.default").exists());

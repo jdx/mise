@@ -241,12 +241,17 @@ For each formula, dependencies first, mise downloads the bottle from ghcr.io
 and checks its sha256 against Homebrew's API, unpacks it into the Cellar,
 rewrites Homebrew's placeholder paths, re-signs changed binaries on macOS,
 writes a Homebrew-compatible receipt, and links the keg into the prefix.
-Keg-only formulae get only the `opt` link. mise never runs `brew`.
+Keg-only formulae get only the `opt` link. mise never runs `brew`. A bottle may
+contain symlinks within its keg and into the prefix, such as
+`../../../opt/<dependency>/lib`; mise refuses to install a bottle with a symlink
+that points outside the prefix.
 
 Like `brew install`, mise copies the `etc` and `var` files a bottle ships into
 the prefix. A file you already have there is never overwritten: the bottle's
-copy is written beside it as `<file>.default`. It then runs the formula's
-declarative `post_install_steps` from the Homebrew API, which is how
+copy is written beside it as `<file>.default`. mise does not copy files through
+a symlink below `etc` or `var`, and does not install a symlink from there that
+would point outside the prefix; it skips each with a warning. It then runs the
+formula's declarative `post_install_steps` from the Homebrew API, which is how
 `ca-certificates` builds `etc/ca-certificates/cert.pem` and `openssl@4` links
 its `cert.pem` to it. mise implements the generic step types (`symlink`,
 `copy`, `move`, `remove`, `mkdir_p`, `touch`, `write`, `set_permissions` and
