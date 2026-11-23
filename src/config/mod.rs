@@ -4669,10 +4669,12 @@ static SAFE_MODE_PROJECT_TOOLS: std::sync::Mutex<BTreeSet<String>> =
 /// Whether, in safe mode, project config declares or aliases `ba`, so that its
 /// options (and the hosts they name) come from config nobody reviewed. A tool
 /// that a project and global config both declare counts, since the project's
-/// entry takes precedence.
+/// entry takes precedence. So does one a project declares by the backend that a
+/// global `[tool_alias]` resolves `ba` to, whether or not that alias carries
+/// options: the project's entry supplies options to the alias either way.
 pub(crate) fn is_safe_mode_project_tool(ba: &BackendArg) -> bool {
     let tools = SAFE_MODE_PROJECT_TOOLS.lock().unwrap();
-    tools.contains(&ba.short) || tools.contains(&ba.full())
+    tools.contains(&ba.short) || tools.contains(&ba.full_without_opts())
 }
 
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {

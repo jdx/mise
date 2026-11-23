@@ -1,7 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::VersionOrder;
 use crate::backend::{ABackend, unalias_backend};
-use crate::config::Config;
+use crate::config::{Config, Settings, SettingsExt};
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
@@ -982,6 +982,9 @@ impl BackendArg {
         if let Some(alias_opts) = alias_opts {
             opts.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
         }
+        // The layers that follow are a tool's entry in config, which in safe mode
+        // can be a project's.
+        let beneath = Settings::safe_mode().then(|| opts.effective().opts.clone());
         if let Some(config_opts) = config_opts {
             opts.apply_overrides(&config_opts, ToolOptionSource::Config);
         }
@@ -990,6 +993,18 @@ impl BackendArg {
         }
         if let Some(user_opts) = self.explicit_opts() {
             opts.apply_overrides(user_opts, ToolOptionSource::InlineBackendArg);
+        }
+        // Options are layered per key, so a project's entry that sets a URL would
+        // keep the `headers` a global `[tool_alias]` has for the URLs beside them,
+        // and send the operator's credentials to a host the project chose. Once
+        // the entry of a project's tool changes any option, the credentials from
+        // beneath it are withheld. They are told apart by value, not by source:
+        // the entry's layers are effective options, which repeat the alias's.
+        if let Some(beneath) = beneath
+            && opts.effective().opts != beneath
+            && config::is_safe_mode_project_tool(self)
+        {
+            opts.withhold_credentials_from(&beneath);
         }
         opts
     }
