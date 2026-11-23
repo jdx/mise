@@ -337,18 +337,7 @@ impl PythonPlugin {
                     .lines()
                     .filter(|v| v.contains(&platform))
                     .filter(|v| filter_freethreaded(v, &flavor))
-                    .flat_map(|v| {
-                        // cpython-3.9.5+20210525 or cpython-3.9.5rc3+20210525
-                        regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
-                            .captures(v)
-                            .map(|caps| {
-                                (
-                                    caps[1].to_string(),
-                                    caps[2].to_string(),
-                                    caps[0].to_string(),
-                                )
-                            })
-                    })
+                    .flat_map(parse_python_precompiled_line)
                     // multiple dates can have the same version, so sort by date and remove duplicates by unique
                     .sorted_by_cached_key(|(v, date, name)| rank(v, date, name))
                     .unique_by(|(v, _, _)| v.to_string())
@@ -1453,6 +1442,22 @@ fn python_precompiled_filename_from_url<'a>(url: &'a str, version: &str) -> Opti
         .then_some(filename)
 }
 
+/// Parse one line of the python-build-standalone index into `(version, release, filename)`.
+///
+/// mise-versions chose the line, and the whole of it becomes the last segment of the download
+/// URL, so it must not get to choose anything but an asset name. A `/` or `\` in it would reach
+/// another path on github.com (`/../`), and a `?` or `#` would cut the path short, so only the
+/// characters python-build-standalone names its assets with are accepted.
+fn parse_python_precompiled_line(line: &str) -> Option<(String, String, String)> {
+    // cpython-3.9.5+20210525-… or cpython-3.9.5rc3+20210525-…
+    let caps = regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+)-[A-Za-z0-9_.+-]+$").captures(line)?;
+    Some((
+        caps[1].to_string(),
+        caps[2].to_string(),
+        caps[0].to_string(),
+    ))
+}
+
 fn select_python_precompiled(
     manifest: &str,
     version: &str,
@@ -1464,17 +1469,7 @@ fn select_python_precompiled(
     let candidates = manifest
         .lines()
         .filter(|line| line.contains(platform))
-        .flat_map(|line| {
-            regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
-                .captures(line)
-                .map(|captures| {
-                    (
-                        captures[1].to_string(),
-                        captures[2].to_string(),
-                        captures[0].to_string(),
-                    )
-                })
-        })
+        .flat_map(parse_python_precompiled_line)
         .filter(|(candidate, _, _)| candidate == version)
         .collect_vec();
     let select = |filename: Option<&str>| {
@@ -2080,6 +2075,47 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
             ),
             None
         );
+    }
+
+    #[test]
+    fn parses_python_precompiled_line() {
+        let platform = "x86_64-unknown-linux-gnu";
+        let filename =
+            "cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz";
+        assert_eq!(
+            parse_python_precompiled_line(filename),
+            Some((
+                "3.12.13".to_string(),
+                "20260728".to_string(),
+                filename.to_string()
+            ))
+        );
+        for filename in [
+            "cpython-3.14.0rc3+20260728-aarch64-apple-darwin-install_only.tar.gz",
+            "cpython-3.13.5+20260728-x86_64-unknown-linux-gnu-freethreaded+pgo+lto-full.tar.zst",
+            "cpython-3.12.13+20260728-x86_64-pc-windows-msvc-shared-install_only.tar.gz",
+        ] {
+            assert!(
+                parse_python_precompiled_line(filename).is_some(),
+                "{filename}"
+            );
+        }
+        // The line ends up in the download URL, so it must not name anything but a file
+        for suffix in [
+            "/../../../../../../evil/payload/releases/download/v1/python.tar.gz",
+            r"\..\..\..\..\..\..\evil\payload\releases\download\v1\python.tar.gz",
+            "/%2e%2e/%2e%2e/20250101/cpython-3.12.12+20250101-x86_64-unknown-linux-gnu.tar.gz",
+            "?x=.tar.gz",
+            "#.tar.gz",
+        ] {
+            let line = format!("{filename}{suffix}");
+            assert_eq!(parse_python_precompiled_line(&line), None, "{line}");
+            assert_eq!(
+                select_python_precompiled(&line, "3.12.13", platform, None, None),
+                None,
+                "{line}"
+            );
+        }
     }
 
     #[test]
