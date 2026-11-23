@@ -487,12 +487,13 @@ pub(super) fn prepare_bottle(
         },
     )
     .wrap_err_with(|| format!("failed to extract bottle for {name}"))?;
-    if !prepared.staged_keg.exists() {
-        bail!(
-            "unexpected bottle layout for {name}: missing {name}/{} in archive",
-            prepared.pkg_version
-        );
-    }
+    check_unpacked_keg(
+        prepared.staging.path(),
+        &prepared.staged_keg,
+        &prepared.keg,
+        name,
+        &prepared.pkg_version,
+    )?;
 
     // ":any_skip_relocation" skips binary linkage relocation, but Homebrew
     // still replaces placeholders in text files. On Linux, bottles built by
@@ -514,6 +515,121 @@ pub(super) fn prepare_bottle(
 
     write_receipt(rf, tag, &prepared.staged_keg, &report, closure, true)?;
     Ok(prepared)
+}
+
+/// Check what a bottle unpacked before anything reads or writes it. The keg
+/// must be real directories `<name>/<pkg_version>` below `staging`: a
+/// symlinked rack or keg would send relocation, the receipt and the move into
+/// the Cellar somewhere else. And no symlink in the keg may point outside the
+/// Homebrew prefix once the keg sits at `keg`, so writing through the keg's
+/// links (by brew, a formula, or mise's own linking) stays in the prefix.
+/// Links inside the keg and into the prefix (`../../../opt/<dep>/lib`) pass.
+fn check_unpacked_keg(
+    staging: &Path,
+    staged_keg: &Path,
+    keg: &Path,
+    name: &str,
+    pkg_version: &str,
+) -> Result<()> {
+    if !unpacked_as_directory(staging, staged_keg) {
+        bail!(
+            "unexpected bottle layout for {name}: missing directory {name}/{pkg_version} in archive"
+        );
+    }
+    let rack = keg.parent().unwrap();
+    let rack = rack.canonicalize().unwrap_or_else(|_| rack.to_path_buf());
+    let final_keg = rack.join(pkg_version);
+    let roots = link_roots();
+    for entry in walkdir::WalkDir::new(staged_keg).follow_links(false) {
+        let entry = entry?;
+        if !entry.file_type().is_symlink() {
+            continue;
+        }
+        let rel = entry.path().strip_prefix(staged_keg)?;
+        let target = std::fs::read_link(entry.path())?;
+        let link_dir = final_keg.join(rel);
+        let link_dir = link_dir.parent().unwrap_or(&final_keg);
+        let lands = resolve_symlinks(&link_dir.join(&target), Some((&final_keg, staged_keg)));
+        if !lands_in(lands.as_deref(), &roots) {
+            bail!(
+                "refusing to install the bottle for {name}: {name}/{pkg_version}/{} is a symlink \
+                 to {}, which points outside the Homebrew prefix {}. Remove {name} from \
+                 [bootstrap.packages], or install it with brew itself",
+                rel.display(),
+                target.display(),
+                prefix::prefix().display()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Did the archive create `keg` below `staging` as real directories all the
+/// way down? `exists()` is also true of a symlink to a directory elsewhere.
+fn unpacked_as_directory(staging: &Path, keg: &Path) -> bool {
+    keg.ancestors()
+        .take_while(|dir| *dir != staging)
+        .all(|dir| dir.symlink_metadata().is_ok_and(|m| m.is_dir()))
+}
+
+/// Where a symlink may point: the real Homebrew prefix, and the real Cellar
+/// for a Cellar that is itself a link to another disk.
+pub(super) fn link_roots() -> Vec<PathBuf> {
+    [prefix::prefix(), prefix::cellar()]
+        .into_iter()
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .collect()
+}
+
+/// Is a path from `resolve_symlinks` below one of `roots`? A loop is not.
+pub(super) fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
+    resolved.is_some_and(|p| roots.iter().any(|root| p.starts_with(root)))
+}
+
+/// Resolve the symlinks in the absolute `path` the way the kernel does,
+/// reading each component from the filesystem. With `keg` = (final, staged),
+/// components below the final keg path are read from the staged copy, which
+/// is where that keg is before it moves into the Cellar. A missing component
+/// is taken as written, as are the ones after it. None for a symlink loop.
+pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Option<PathBuf> {
+    use std::path::Component;
+    const MAX_LINK_HOPS: usize = 40;
+    fn pending(path: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+        path.components()
+            .rev()
+            .map(|c| PathBuf::from(c.as_os_str()))
+    }
+    let mut todo: Vec<PathBuf> = pending(path).collect();
+    let mut resolved = PathBuf::from("/");
+    let mut hops = 0;
+    while let Some(part) = todo.pop() {
+        match part.components().next() {
+            Some(Component::RootDir | Component::Prefix(_)) => resolved = PathBuf::from("/"),
+            Some(Component::ParentDir) => {
+                resolved.pop();
+            }
+            Some(Component::Normal(name)) => {
+                resolved.push(name);
+                let on_disk = match keg {
+                    Some((final_keg, staged_keg)) => match resolved.strip_prefix(final_keg) {
+                        Ok(rel) => staged_keg.join(rel),
+                        Err(_) => resolved.clone(),
+                    },
+                    None => resolved.clone(),
+                };
+                if let Ok(target) = std::fs::read_link(&on_disk) {
+                    hops += 1;
+                    if hops > MAX_LINK_HOPS {
+                        return None;
+                    }
+                    resolved.pop();
+                    todo.extend(pending(&target));
+                }
+            }
+            Some(Component::CurDir) | None => {}
+        }
+    }
+    Some(resolved)
 }
 
 /// Commit a prepared bottle into the Cellar and update shared prefix links.
@@ -576,7 +692,12 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
 /// own. This mirrors brew's own `parsed_homebrew_version >= "5.1.15"` check —
 /// brew's version format is dotted numerics, not an arbitrary tool version.
 fn bottled_by_homebrew_at_least(keg: &Path, min: (u64, u64, u64)) -> bool {
-    let Ok(receipt) = mise_util::file::read_to_string(keg.join("INSTALL_RECEIPT.json")) else {
+    // only a regular file: a shipped link can name a device or a fifo
+    let receipt = keg.join("INSTALL_RECEIPT.json");
+    if !receipt.symlink_metadata().is_ok_and(|m| m.is_file()) {
+        return false;
+    }
+    let Ok(receipt) = mise_util::file::read_to_string(receipt) else {
         return false;
     };
     let Ok(json) = serde_json::from_str::<serde_json::Value>(&receipt) else {
@@ -678,11 +799,18 @@ pub(super) fn write_receipt(
         "arch": if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" },
         "built_on": {},
     });
-    mise_util::file::write(
-        keg.join("INSTALL_RECEIPT.json"),
+    write_keg_file(
+        &keg.join("INSTALL_RECEIPT.json"),
         serde_json::to_string(&receipt)?,
-    )?;
-    Ok(())
+    )
+}
+
+/// Write one of mise's own files into a keg. The keg's contents come from a
+/// bottle, which can ship an entry of the same name (brew's receipt, always)
+/// as a symlink, so replace that entry instead of writing through it.
+fn write_keg_file(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
+    mise_util::file::remove_all(path)?;
+    mise_util::file::write(path, contents)
 }
 
 /// relative symlink target from `link` to `dest`
@@ -861,7 +989,7 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
     let prefix_path = prefix::prefix();
     let keg = keg_path(name, pkg_version);
     if keg_only {
-        mise_util::file::write(keg.join(KEG_ONLY_MARKER), "")?;
+        write_keg_file(&keg.join(KEG_ONLY_MARKER), "")?;
     }
     // <prefix>/opt/<name> -> ../Cellar/<name>/<version> (always, even keg-only)
     let opt_link = prefix_path.join("opt").join(name);
@@ -1113,6 +1241,154 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let path = tmp.path().canonicalize()?;
         Ok((tmp, path))
+    }
+
+    /// unpack a bottle for foo 1.0 holding a file and the given symlinks
+    /// into a fresh staging dir of the prefix, then check it
+    fn check_bottle_links(prefix: &Path, links: &[(&str, &str)]) -> Result<()> {
+        let rack = prefix.join("Cellar/foo");
+        mise_util::file::create_dir_all(&rack)?;
+        let staging = tempfile::Builder::new()
+            .prefix(".mise-extract-1.0-")
+            .tempdir_in(&rack)?;
+        let staged_keg = staging.path().join("foo/1.0");
+        mise_util::file::create_dir_all(staged_keg.join("lib"))?;
+        mise_util::file::write(staged_keg.join("lib/libfoo.1.dylib"), "1.0")?;
+        for (link, target) in links {
+            let link = staged_keg.join(link);
+            mise_util::file::create_dir_all(link.parent().unwrap())?;
+            symlink(target, &link)?;
+        }
+        check_unpacked_keg(staging.path(), &staged_keg, &rack.join("1.0"), "foo", "1.0")
+    }
+
+    /// a bottle can ship INSTALL_RECEIPT.json, or the keg-only marker, as a
+    /// symlink; mise replaces the link and leaves its target alone
+    #[test]
+    fn test_keg_files_replace_symlinks_from_the_bottle() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let outside = prefix.join("outside");
+        mise_util::file::write(&outside, "untouched")?;
+        let keg = write_lib_keg(&prefix, "foo", "1.0")?;
+        let receipt = keg.join("INSTALL_RECEIPT.json");
+        let marker = keg.join(KEG_ONLY_MARKER);
+        symlink(&outside, &receipt)?;
+        symlink(&outside, &marker)?;
+
+        write_keg_file(&receipt, "{}")?;
+        link_keg("foo", "1.0", true)?;
+
+        assert_eq!(mise_util::file::read_to_string(&outside)?, "untouched");
+        assert!(receipt.symlink_metadata()?.is_file());
+        assert_eq!(mise_util::file::read_to_string(&receipt)?, "{}");
+        assert!(marker.symlink_metadata()?.is_file());
+
+        // a link to nothing must not create its target either
+        let missing = prefix.join("missing");
+        mise_util::file::remove_all(&receipt)?;
+        symlink(&missing, &receipt)?;
+        write_keg_file(&receipt, "{}")?;
+        assert!(missing.symlink_metadata().is_err());
+        assert!(receipt.symlink_metadata()?.is_file());
+        Ok(())
+    }
+
+    /// a shipped receipt that is a symlink is not read for the brew version
+    #[test]
+    fn test_bottled_by_reads_only_a_regular_receipt() -> Result<()> {
+        let (_tmp, root) = canonical_tempdir()?;
+        let real = root.join("real.json");
+        mise_util::file::write(&real, r#"{"homebrew_version":"5.2.0"}"#)?;
+        let keg = root.join("keg");
+        mise_util::file::create_dir_all(&keg)?;
+        symlink(&real, keg.join("INSTALL_RECEIPT.json"))?;
+        assert!(!bottled_by_homebrew_at_least(&keg, (5, 1, 15)));
+        mise_util::file::remove_all(keg.join("INSTALL_RECEIPT.json"))?;
+        mise_util::file::copy(&real, keg.join("INSTALL_RECEIPT.json"))?;
+        assert!(bottled_by_homebrew_at_least(&keg, (5, 1, 15)));
+        Ok(())
+    }
+
+    /// a bottle can ship <name> or <name>/<pkg_version> as a symlink
+    #[test]
+    fn test_staged_keg_must_be_unpacked_as_directory() -> Result<()> {
+        let (_tmp, root) = canonical_tempdir()?;
+        let outside = root.join("outside");
+        mise_util::file::create_dir_all(outside.join("1.0"))?;
+
+        let staging = root.join("real");
+        mise_util::file::create_dir_all(staging.join("foo/1.0"))?;
+        assert!(unpacked_as_directory(&staging, &staging.join("foo/1.0")));
+        assert!(!unpacked_as_directory(&staging, &staging.join("foo/2.0")));
+
+        let staging = root.join("linked-keg");
+        mise_util::file::create_dir_all(staging.join("foo"))?;
+        symlink(outside.join("1.0"), staging.join("foo/1.0"))?;
+        assert!(!unpacked_as_directory(&staging, &staging.join("foo/1.0")));
+
+        let staging = root.join("linked-rack");
+        mise_util::file::create_dir_all(&staging)?;
+        symlink(&outside, staging.join("foo"))?;
+        assert!(!unpacked_as_directory(&staging, &staging.join("foo/1.0")));
+        Ok(())
+    }
+
+    /// links inside the keg and into the prefix are what real bottles ship
+    #[test]
+    fn test_bottle_links_inside_the_prefix_are_accepted() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, root) = canonical_tempdir()?;
+        let prefix = root.join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        mise_util::file::create_dir_all(prefix.join("opt"))?;
+        symlink("../Cellar/dep/2.0", prefix.join("opt/dep"))?;
+        let opt_abs = prefix.join("opt/dep/lib/libdep.dylib");
+        check_bottle_links(
+            &prefix,
+            &[
+                ("lib/libfoo.dylib", "libfoo.1.dylib"),
+                ("lib/libdep.dylib", "../../../../opt/dep/lib/libdep.dylib"),
+                ("share/foo", "../lib"),
+                ("libexec/missing", "not-there-yet"),
+                ("bin/dep", opt_abs.to_str().unwrap()),
+                ("INSTALL_RECEIPT.json", "lib/libfoo.1.dylib"),
+            ],
+        )
+    }
+
+    /// a link that leaves the prefix is refused before mise reads or
+    /// writes the keg, however the path to the outside is spelled
+    #[test]
+    fn test_bottle_links_leaving_the_prefix_are_refused() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, root) = canonical_tempdir()?;
+        let prefix = root.join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let outside = root.join("outside");
+        mise_util::file::create_dir_all(&outside)?;
+        // an existing link of the prefix that leads out
+        mise_util::file::create_dir_all(prefix.join("opt"))?;
+        symlink(&outside, prefix.join("opt/away"))?;
+        let outside_abs = outside.join("victim");
+        let cases: &[&[(&str, &str)]] = &[
+            &[("INSTALL_RECEIPT.json", outside_abs.to_str().unwrap())],
+            &[("INSTALL_RECEIPT.json", "../../../../outside/victim")],
+            &[("lib/up", "../../../../../outside")],
+            // lexically keg/../outside, but `b` is the prefix itself
+            &[("b", "../../.."), ("a", "b/../outside/victim")],
+            &[("etc/x", "../../../../opt/away/victim")],
+            &[("loop", "loop")],
+        ];
+        for links in cases {
+            let err = check_bottle_links(&prefix, links).unwrap_err().to_string();
+            assert!(
+                err.contains("points outside the Homebrew prefix"),
+                "{links:?}: {err}"
+            );
+        }
+        Ok(())
     }
 
     /// the unversioned dylib alias resolves through a relative symlink chain
