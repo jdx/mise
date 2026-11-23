@@ -649,6 +649,58 @@ fn forward_rules_keep_only_listed_headers_on_listed_https_hosts() {
     assert!(!real.contains_key("x-other-token"));
 }
 
+/// The steps `send_once_inner` takes for a request to `api.example.com` that is sent
+/// to `sent_to` and then redirected to the host a forward rule names.
+fn redirected_headers(headers: &HeaderMap, sent_to: &str) -> HeaderMap {
+    let original = Url::parse("https://api.example.com/release").unwrap();
+    let mut url = Url::parse(sent_to).unwrap();
+    let (headers, forward_rules) = split_forward_rules(headers);
+    let mut final_headers = headers.clone();
+    clear_cross_host_credentials(&mut final_headers, &original, &mut url);
+    let redirect_rules = forward_rules.scoped_to(&final_headers);
+    let mut final_headers =
+        apply_netrc_credentials(final_headers, &original, &url, basic_netrc_headers());
+    redirect_rules.retain_for(
+        &mut final_headers,
+        &url,
+        &Url::parse("https://cdn.example.com/blob").unwrap(),
+    );
+    final_headers
+}
+
+#[test]
+fn forward_rules_do_not_pass_to_netrc_credentials_of_a_replacement_host() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_static("Bearer origin-token"),
+    );
+    let (rule_name, rule_value) =
+        forward_rule_header(&AUTHORIZATION, &["cdn.example.com".to_string()]).unwrap();
+    headers.insert(rule_name, rule_value);
+
+    // The rule was written for the origin's token, which the replacement dropped, so
+    // the mirror's netrc login stays on the mirror.
+    let redirected = redirected_headers(&headers, "https://mirror.internal/release");
+    assert!(!redirected.contains_key(AUTHORIZATION), "{redirected:?}");
+}
+
+#[test]
+fn forward_rules_still_carry_a_header_the_request_kept() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_static("Bearer origin-token"),
+    );
+    let (rule_name, rule_value) =
+        forward_rule_header(&AUTHORIZATION, &["cdn.example.com".to_string()]).unwrap();
+    headers.insert(rule_name, rule_value);
+
+    // Without a replacement the token is still there, so the rule still carries it.
+    let redirected = redirected_headers(&headers, "https://api.example.com/release");
+    assert_eq!(redirected[AUTHORIZATION], "Bearer origin-token");
+}
+
 #[test]
 fn with_host_auth_layers_configured_headers_over_automatic_ones() {
     let url = Url::parse("https://example.com/file").unwrap();

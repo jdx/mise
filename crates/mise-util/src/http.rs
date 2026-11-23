@@ -2543,6 +2543,11 @@ impl Client {
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
         clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
+        // A redirect follows only the rules whose header survived host scoping, so a
+        // netrc login added below for a replacement host never inherits a rule written
+        // for the original host's header. Retries re-attach the full rules because they
+        // start again from the original URL.
+        let redirect_rules = forward_rules.scoped_to(&final_headers);
         // Refuse the downgrade for credentials that survive host scoping: a same-host
         // rewrite keeps the original Authorization, and userinfo written into the rule
         // itself is sent as-is. This runs before netrc because netrc credentials are
@@ -2566,7 +2571,7 @@ impl Client {
         let request_timeout = self.request_timeout();
         let timeout = matches!(self.kind, ClientKind::Fetch).then_some(request_timeout);
         let resp = match self
-            .send_scoped(&method, &url, &final_headers, &forward_rules, timeout)
+            .send_scoped(&method, &url, &final_headers, &redirect_rules, timeout)
             .await
         {
             Ok(resp) => resp,
@@ -3336,6 +3341,19 @@ impl ForwardRules {
 
     fn applies_to(&self, headers: &HeaderMap) -> bool {
         self.0.keys().any(|name| headers.contains_key(name))
+    }
+
+    /// The rules whose header is still in `headers`. A rule speaks for the value the
+    /// caller set, so once that value is gone a header of the same name added later,
+    /// such as a netrc login for a replacement host, stays on the host it was added for.
+    fn scoped_to(&self, headers: &HeaderMap) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|(name, _)| headers.contains_key(*name))
+                .map(|(name, hosts)| (name.clone(), hosts.clone()))
+                .collect(),
+        )
     }
 
     /// Cross-origin hop to `next`: drop every credential header that is not allowed to
