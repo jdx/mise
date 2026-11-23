@@ -268,14 +268,77 @@ impl CondaBackend {
             .to_string()
     }
 
-    /// Strip .conda or .tar.bz2 extension to get the basename key
+    /// The channel subdir a package URL points into: the URL without its file name.
+    fn channel_subdir(url: &str) -> &str {
+        url.rsplit_once('/').map_or(url, |(dir, _)| dir)
+    }
+
+    /// The channel a package URL points into: the URL without its subdir and file name.
+    /// A tool solves against one channel, so its own package and all its dependencies,
+    /// whether platform-specific or noarch, share this.
+    fn channel_root(url: &str) -> &str {
+        let subdir = Self::channel_subdir(url);
+        subdir.rsplit_once('/').map_or(subdir, |(root, _)| root)
+    }
+
+    /// Hash of the channel subdir a package URL points into.
+    ///
+    /// A conda file name (`<name>-<version>-<build>`) identifies a package only within
+    /// one channel subdir, while tools from different channels share the lockfile's
+    /// `conda-packages` section and the archive store. Both are qualified with this, so
+    /// that one channel's package cannot replace the package another channel has under
+    /// the same name. A channel's owner chooses its URL, so the tag is 128 bits of a
+    /// sha256: too long to search for a URL whose tag equals another channel's.
+    fn channel_tag(url: &str) -> String {
+        hash::hash_sha256_to_str(Self::channel_subdir(url))[..32].to_string()
+    }
+
+    /// Directory of the shared archive store that holds the archive downloaded from `url`.
+    fn archive_dir(url: &str) -> PathBuf {
+        Self::conda_data_dir().join(Self::channel_tag(url))
+    }
+
+    /// Key of a package in the lockfile's shared `conda-packages` section: the file name
+    /// without its .conda or .tar.bz2 extension, then `@` and the [`Self::channel_tag`].
     fn record_basename(record: &RepoDataRecord) -> String {
         let filename = Self::url_filename(&record.url);
-        filename
+        let basename = filename
             .strip_suffix(".conda")
             .or_else(|| filename.strip_suffix(".tar.bz2"))
-            .unwrap_or(&filename)
-            .to_string()
+            .unwrap_or(&filename);
+        format!("{basename}@{}", Self::channel_tag(record.url.as_str()))
+    }
+
+    /// Checks that the `[conda-packages]` entry `key` may be installed as a dependency of
+    /// the tool package at `main_url`: it comes from the tool's channel, and a key that
+    /// names a channel names the one its URL points into. A key without a channel was
+    /// written before keys named one, and is accepted only from the tool's channel.
+    pub(crate) fn check_locked_dependency(
+        key: &str,
+        package: &CondaPackageInfo,
+        main_url: &str,
+    ) -> Result<()> {
+        let main_channel = Self::channel_root(main_url);
+        if Self::channel_root(&package.url) != main_channel {
+            eyre::bail!(
+                "refusing the conda package {key} in mise.lock: its url {} is not in the channel {main_channel} of the tool, which all its dependencies come from. Run `mise lock` to resolve the tool again",
+                package.url
+            );
+        }
+        match key.rsplit_once('@') {
+            Some((_, tag)) => {
+                if tag != Self::channel_tag(&package.url) {
+                    eyre::bail!(
+                        "refusing the conda package {key} in mise.lock: its key names another channel than its url {}. Run `mise lock` to resolve the tool again",
+                        package.url
+                    );
+                }
+            }
+            None => {
+                remove_by!("2027.11.0", "conda-package-keys-without-channel");
+            }
+        }
+        Ok(())
     }
 
     /// Format sha256 as "sha256:<hex>" if present
@@ -309,7 +372,9 @@ impl CondaBackend {
             return Ok(());
         }
 
-        file::create_dir_all(Self::conda_data_dir())?;
+        if let Some(dir) = dest.parent() {
+            file::create_dir_all(dir)?;
+        }
         let temp = Self::temp_download_path(dest);
         HTTP.download_file_pinned(url, &temp, checksum, None)
             .await?;
@@ -347,7 +412,7 @@ impl CondaBackend {
     async fn download_record(record: RepoDataRecord) -> Result<PathBuf> {
         let url_str = record.url.to_string();
         let filename = Self::url_filename(&record.url);
-        let dest = Self::conda_data_dir().join(&filename);
+        let dest = Self::archive_dir(&url_str).join(&filename);
         let checksum = Self::format_sha256(&record);
 
         Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
@@ -359,7 +424,7 @@ impl CondaBackend {
         (url_str, checksum): (String, Option<String>),
     ) -> Result<PathBuf> {
         let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
-        let dest = Self::conda_data_dir().join(&filename);
+        let dest = Self::archive_dir(&url_str).join(&filename);
 
         Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
         Ok(dest)
@@ -686,6 +751,7 @@ impl CondaBackend {
         let mut downloads: Vec<(String, Option<String>)> = vec![];
         for basename in &dep_basenames {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
+                Self::check_locked_dependency(basename, pkg_info, &main_url)?;
                 downloads.push((pkg_info.url.clone(), pkg_info.checksum.clone()));
             } else {
                 return Err(eyre::eyre!(
@@ -2060,6 +2126,85 @@ mod tests {
             CondaBackend::install_package(archive, &prefix, &driver, None).await?;
         }
         Ok(())
+    }
+
+    /// Tools from different channels share the lockfile's `conda-packages` section, so a
+    /// file name that two channels have must not be one key: the entry written last
+    /// would be what both tools install.
+    #[test]
+    fn record_basename_tells_channels_apart() {
+        let key = |dir: &str| {
+            let url = format!("{dir}/zlib-1.3.1-hb9d3cd8_2.conda");
+            CondaBackend::record_basename(&make_record("zlib", "1.3.1", "hb9d3cd8_2", &url))
+        };
+        let team = key("https://conda.example.com/team/linux-64");
+        assert_eq!(team, key("https://conda.example.com/team/linux-64"));
+        assert_ne!(team, key("https://conda.example.com/other/linux-64"));
+        assert_ne!(team, key("https://conda.example.com/team/noarch"));
+        assert_ne!(team, key("https://conda.anaconda.org/conda-forge/linux-64"));
+        let (basename, tag) = team.split_once('@').unwrap();
+        assert_eq!(basename, "zlib-1.3.1-hb9d3cd8_2");
+        assert_eq!(tag.len(), 32);
+    }
+
+    /// An archive in the store is reused when it matches its checksum, and a package
+    /// may have none, so two channels must not write the same path.
+    #[test]
+    fn archive_dir_tells_channels_apart() {
+        let dir = CondaBackend::archive_dir;
+        let store = CondaBackend::conda_data_dir();
+        let team = dir("https://conda.example.com/team/linux-64/zlib-1.3.1-h_2.conda");
+        assert_eq!(team.parent(), Some(store.as_path()));
+        assert_eq!(
+            team,
+            dir("https://conda.example.com/team/linux-64/xz-5.2.6-h_0.conda")
+        );
+        assert_ne!(
+            team,
+            dir("https://conda.example.com/other/linux-64/zlib-1.3.1-h_2.conda")
+        );
+    }
+
+    /// A locked install reads the python version out of the `conda_deps` key.
+    #[test]
+    fn python_info_is_read_from_a_key_that_names_its_channel() {
+        let url = "https://conda.example.com/team/linux-64/python-3.12.3-hab00c5b_0_cpython.conda";
+        let record = make_record("python", "3.12.3", "hab00c5b_0_cpython", url);
+        let key = CondaBackend::record_basename(&record);
+        assert!(key.contains('@'));
+        let platform = rattler_conda_types::Subdir::Linux64;
+        let info = CondaBackend::python_info_from_basenames(&[key], platform).unwrap();
+        assert_eq!(info.short_version, (3, 12));
+    }
+
+    /// A locked dependency comes from the tool's own channel, whatever its key, and a
+    /// key that names a channel names the one its url points into.
+    #[test]
+    fn locked_dependencies_come_from_the_tool_channel() {
+        let main = "https://conda.anaconda.org/conda-forge/linux-64/tool-1.0-h_0.conda";
+        let package = |url: &str| super::CondaPackageInfo {
+            url: url.to_string(),
+            checksum: None,
+        };
+        let check = |key: &str, url: &str| {
+            CondaBackend::check_locked_dependency(key, &package(url), main)
+                .map_err(|e| e.to_string())
+        };
+        let forge = "https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.1-h_2.conda";
+        let forge_noarch = "https://conda.anaconda.org/conda-forge/noarch/tzdata-2024a-h_0.conda";
+        let evil = "https://conda.example.com/evil/linux-64/zlib-1.3.1-h_2.conda";
+        let key =
+            |url: &str| CondaBackend::record_basename(&make_record("zlib", "1.3.1", "h_2", url));
+
+        check(&key(forge), forge).unwrap();
+        check(&key(forge_noarch), forge_noarch).unwrap();
+        check("zlib-1.3.1-h_2", forge).unwrap();
+        let err = check("zlib-1.3.1-h_2", evil).unwrap_err();
+        assert!(err.contains("not in the channel"), "{err}");
+        let err = check(&key(evil), evil).unwrap_err();
+        assert!(err.contains("not in the channel"), "{err}");
+        let err = check(&key(forge_noarch), forge).unwrap_err();
+        assert!(err.contains("names another channel"), "{err}");
     }
 
     /// rattler writes what a package names by name, through the links that are in the

@@ -404,6 +404,25 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
+/// A conda entry is reused only while every `[conda-packages]` entry it names is in the
+/// lockfile and may be installed with it; otherwise the tool is resolved again, which
+/// rewrites its dependencies under keys that name their channel.
+fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo) -> bool {
+    let Some(deps) = &info.conda_deps else {
+        return true;
+    };
+    let Some(main_url) = info.url.as_deref() else {
+        return false;
+    };
+    deps.iter().all(|key| {
+        previous
+            .get_conda_package(platform, key)
+            .is_some_and(|package| {
+                CondaBackend::check_locked_dependency(key, package, main_url).is_ok()
+            })
+    })
+}
+
 /// How the target platforms were chosen. Platforms the user named are replaced
 /// individually and warn when a tool has no build for one of them.
 pub enum PlatformSelection {
@@ -551,9 +570,9 @@ pub async fn generate(
         }
         // Complete cached artifacts need neither I/O nor a spawned task. Keep them
         // in the same ordered result stream so all downgrade checks still run.
-        let reusable = previous_info
-            .as_ref()
-            .filter(|info| can_reuse(info, &tv.version));
+        let reusable = previous_info.as_ref().filter(|info| {
+            can_reuse(info, &tv.version) && conda_deps_reusable(previous, &platform.to_key(), info)
+        });
         if actual.is_none()
             && let Some(info) = reusable
         {
@@ -1638,6 +1657,34 @@ mod tests {
             });
         assert!(can_reuse(&info, "2.1.17"));
         assert!(!can_reuse(&info, "2.2.2"));
+    }
+
+    /// A conda entry whose dependency is missing or comes from another channel is
+    /// resolved again rather than reused.
+    #[test]
+    fn conda_entry_with_a_dependency_from_another_channel_is_not_reusable() {
+        let forge = "https://conda.anaconda.org/conda-forge/linux-64";
+        let info = PlatformInfo {
+            url: Some(format!("{forge}/tool-1.0-h_0.conda")),
+            checksum: Some("sha256:old".into()),
+            conda_deps: Some(vec!["zlib-1.3.1-h_2".into()]),
+            ..Default::default()
+        };
+        let lockfile = |url: &str| {
+            let mut lockfile = Lockfile::default();
+            let package = crate::lockfile::CondaPackageInfo {
+                url: url.to_string(),
+                checksum: Some("sha256:old".into()),
+            };
+            lockfile.set_conda_package("linux-x64", "zlib-1.3.1-h_2", package);
+            lockfile
+        };
+        let platform = "linux-x64";
+        let same = lockfile(&format!("{forge}/zlib-1.3.1-h_2.conda"));
+        assert!(conda_deps_reusable(&same, platform, &info));
+        let other = lockfile("https://conda.example.com/evil/linux-64/zlib-1.3.1-h_2.conda");
+        assert!(!conda_deps_reusable(&other, platform, &info));
+        assert!(!conda_deps_reusable(&Lockfile::default(), platform, &info));
     }
 
     #[tokio::test]

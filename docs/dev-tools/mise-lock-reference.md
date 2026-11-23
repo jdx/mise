@@ -65,12 +65,20 @@ binds to `24.21.0`. Platform metadata sits under a quoted key such as
 
 The top level can contain:
 
-| Key                           | Meaning                                                                                                                            |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `lockfile_version`            | The [format version](#format-versions); absent in version 0 files                                                                  |
-| `tool-stubs`                  | [Tool stubs](/dev-tools/tool-stubs.html#locked-tool-stub) whose entries the lockfile holds, as paths relative to the lockfile      |
-| `[conda-packages.<platform>]` | Conda dependency packages, keyed by file name, each with `url` and `checksum`; platform entries refer to them through `conda_deps` |
-| `[[tools.<name>]]`            | One locked version of a tool                                                                                                       |
+| Key                           | Meaning                                                                                                                           |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `lockfile_version`            | The [format version](#format-versions); absent in version 0 files                                                                 |
+| `tool-stubs`                  | [Tool stubs](/dev-tools/tool-stubs.html#locked-tool-stub) whose entries the lockfile holds, as paths relative to the lockfile     |
+| `[conda-packages.<platform>]` | Conda dependency packages, keyed per channel, each with `url` and `checksum`; platform entries refer to them through `conda_deps` |
+| `[[tools.<name>]]`            | One locked version of a tool                                                                                                      |
+
+A `[conda-packages]` key is the package's file name without its extension, then
+`@` and a hash of the channel subdir that serves it, as in
+`zlib-1.3.1-hb9d3cd8_2@<hash>`: a file name is unique only within one channel, and
+tools from different channels share this section. A key with the file name alone
+is read only for a package in the tool's own channel. mise refuses an entry whose
+url is in another channel than the tool's, or whose key names another channel
+than its url, and `mise lock` resolves such a tool again.
 
 ## Format versions
 
@@ -130,7 +138,7 @@ to another backend; see
 | `provenance`           | The verification mise used: `slsa`, `cosign`, `minisign` or `github-attestations`; SLSA can carry its file URL as `{ slsa = { url = "…" } }`                                                              |
 | `install`              | `"source"` when the entry describes a source build (Node.js, Erlang)                                                                                                                                      |
 | `additional_artifacts` | Further release assets extracted into the same installation, from [`additional_asset_patterns`](/dev-tools/backends/github.html#additional-asset-patterns), each with its own `url` and `checksum`        |
-| `conda_deps`           | File names of the tool's dependency packages in `[conda-packages]`                                                                                                                                        |
+| `conda_deps`           | Keys of the tool's dependency packages in `[conda-packages]`                                                                                                                                              |
 | `signer`               | packslip: the signer the project committed to, as `scheme:identity`                                                                                                                                       |
 | `attested_by`          | packslip: `"repackager"` when a repackager signed the packslip instead of the vendor                                                                                                                      |
 | `repository_ids`       | packslip, version 3: the forge's repository ID from the signing certificate, such as `{ repository = "922514152" }`; see [renamed repositories](/dev-tools/backends/packslip.html#renamed-repositories)   |
