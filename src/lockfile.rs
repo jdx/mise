@@ -124,6 +124,43 @@ fn clear_lockfile_caches() {
     }
 }
 
+/// A shorter lockfile parses faster than a cache file is opened and read.
+const PARSED_TOML_CACHE_MIN_LEN: usize = 4096;
+
+/// The table a lockfile's `content` parses to. Parsing is most of what reading
+/// a lockfile that covers every platform costs, and every command reads it, so
+/// the table is kept in the cache directory, in a file named by a hash of
+/// `content`: a lockfile that changed in any way names another file, so no
+/// edit can be answered from an older parse. Only text that parsed is kept, so
+/// a lockfile with a syntax error reports it on every read.
+fn parse_lockfile_toml(content: &str) -> Result<toml::Table, toml::de::Error> {
+    if content.len() < PARSED_TOML_CACHE_MIN_LEN {
+        return toml::from_str(content);
+    }
+    let name = format!("{}.msgpack.z", blake3::hash(content.as_bytes()).to_hex());
+    parse_lockfile_toml_in(&crate::dirs::CACHE.join("lockfiles").join(name), content)
+}
+
+fn parse_lockfile_toml_in(
+    cache_file: &Path,
+    content: &str,
+) -> Result<toml::Table, toml::de::Error> {
+    let cache = crate::cache::CacheManagerBuilder::new(cache_file).build::<toml::Table>();
+    if cache.has_fresh_value() {
+        match cache.get_cached() {
+            Ok(table) => return Ok(table),
+            Err(err) => debug!("failed to read {}: {err:#}", display_path(cache_file)),
+        }
+    }
+    let table = toml::from_str(content)?;
+    // A cache directory that cannot be written is not worth a warning on
+    // every prompt.
+    if let Err(err) = cache.write(&table) {
+        debug!("failed to write {}: {err:#}", display_path(cache_file));
+    }
+    Ok(table)
+}
+
 /// [`Lockfile::read`], parsing a file again only once it has changed. A
 /// symlinked lockfile is always read, since its target can change without the
 /// link's stamp changing.
@@ -1771,7 +1808,7 @@ impl Lockfile {
         let content = file::read_config_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
         // Named by the link, not its target: the link decides whether to quote.
-        let mut table: toml::Table = toml::from_str(&content).map_err(|err| {
+        let mut table = parse_lockfile_toml(&content).map_err(|err| {
             crate::config::config_file::diagnostic::hide_linked_source(err, &content, link)
         })?;
         if table.is_empty() {
