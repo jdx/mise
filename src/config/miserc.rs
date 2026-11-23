@@ -481,8 +481,9 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
             let mut settings = toml::from_str::<MisercSettings>(&content)
                 .map_err(|e| toml_parse_error(&e, &content, &path))?;
             resolve_ignored_config_paths(&mut settings, config_root);
-            drop_names_leaving_the_directory(&mut settings, &path);
-            if is_global_miserc_dir(config_root) {
+            let global = is_global_miserc_dir(config_root);
+            drop_names_leaving_the_directory(&mut settings, &path, global);
+            if global {
                 merge_settings(&mut merged, settings);
                 global_env = merged.env.clone().unwrap_or_default();
                 global_sets = merged
@@ -544,17 +545,34 @@ fn keep_inherited_ignored_config_paths(
 /// each directory. A project `.miserc.toml` is read without trust, so a value that
 /// would lead out of the directory must not become a path: `mise lock` deletes
 /// the lockfiles it migrates and rewrites the ones it finds.
-fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) {
+///
+/// The names also become the `mise_env` template variable of every config,
+/// including global config and projects trusted earlier, so a name from a
+/// project file is limited to letters, digits, `_`, `-` and `.`, starting with
+/// a letter or digit: it cannot carry shell or template syntax into a trusted
+/// command built from `{{ mise_env }}`.
+fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path, global: bool) {
+    let invalid_env_name = |name: &str| {
+        if name.contains(['/', '\\']) {
+            Some("a name cannot contain a path separator")
+        } else if !global && !is_plain_env_name(name) {
+            Some(
+                "a name in a project .miserc.toml may use only letters, digits, `_`, `-` and `.`, starting with a letter or digit; select it with -E or MISE_ENV instead",
+            )
+        } else {
+            None
+        }
+    };
     if let Some(envs) = settings.env.as_mut() {
         envs.retain(|name| {
-            let valid = !name.contains(['/', '\\']);
-            if !valid {
-                warn_while_loading_settings(format!(
-                    "{}: ignoring environment {name:?}: a name cannot contain a path separator",
-                    file::display_path(path)
-                ));
-            }
-            valid
+            let Some(reason) = invalid_env_name(name) else {
+                return true;
+            };
+            warn_while_loading_settings(format!(
+                "{}: ignoring environment {name:?}: {reason}",
+                file::display_path(path)
+            ));
+            false
         });
     }
     for members in settings
@@ -563,14 +581,14 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) 
         .flat_map(|sets| sets.values_mut())
     {
         members.retain(|name| {
-            let valid = !name.contains(['/', '\\']);
-            if !valid {
-                warn_while_loading_settings(format!(
-                    "{}: ignoring environment {name:?} in env_sets: a name cannot contain a path separator",
-                    file::display_path(path)
-                ));
-            }
-            valid
+            let Some(reason) = invalid_env_name(name) else {
+                return true;
+            };
+            warn_while_loading_settings(format!(
+                "{}: ignoring environment {name:?} in env_sets: {reason}",
+                file::display_path(path)
+            ));
+            false
         });
     }
     for filenames in [
@@ -594,6 +612,14 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) 
             valid
         });
     }
+}
+
+/// Whether `name` is a letter or digit followed by letters, digits, `_`, `-`
+/// and `.`, which no shell or template treats as syntax.
+fn is_plain_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
 fn resolve_ignored_config_paths(settings: &mut MisercSettings, config_root: &Path) {
@@ -866,7 +892,7 @@ ceiling_paths = ["/home/user"]
             ..Default::default()
         };
 
-        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"));
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
 
         assert_eq!(
             settings.env,
@@ -887,10 +913,47 @@ ceiling_paths = ["/home/user"]
     }
 
     #[test]
+    fn test_project_env_names_are_plain() {
+        let names = [
+            "staging",
+            "ci.local",
+            "linux-x64",
+            "my_env",
+            "staging$(id)",
+            "a b",
+            "x;y",
+            "`id`",
+            "{{ x }}",
+            "-E",
+            ".hidden",
+            "",
+        ];
+        let toml = format!(
+            "env = {names:?}\n[env_sets]\nteam = {names:?}",
+            names = names.to_vec()
+        );
+        let plain = ["staging", "ci.local", "linux-x64", "my_env"];
+
+        let mut settings: MisercSettings = toml::from_str(&toml).unwrap();
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
+        assert_eq!(settings.env.unwrap(), plain);
+        assert_eq!(settings.env_sets.unwrap()["team"], plain);
+
+        // the user's own global file keeps any name without a path separator
+        let mut settings: MisercSettings = toml::from_str(&toml).unwrap();
+        drop_names_leaving_the_directory(
+            &mut settings,
+            Path::new("/home/user/.config/mise/miserc.toml"),
+            true,
+        );
+        assert_eq!(settings.env.unwrap(), names);
+    }
+
+    #[test]
     fn test_drop_env_set_members_leaving_the_directory() {
         let mut settings: MisercSettings =
             toml::from_str("[env_sets]\nteam = [\"ssh\", \"x/../../other\", \"a\\\\b\"]").unwrap();
-        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"));
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
         assert_eq!(settings.env_sets.unwrap()["team"], ["ssh"]);
     }
 

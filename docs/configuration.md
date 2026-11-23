@@ -514,6 +514,12 @@ checkout under an ignored path cannot un-ignore itself with
 `ignored_config_paths = []`. The global and system files still replace each
 other's list, and `MISE_IGNORED_CONFIG_PATHS` replaces them all.
 
+Environment names in a file found from the current directory, in `env` and in
+`env_sets`, may use only letters, digits, `_`, `-` and `.`, and start with a
+letter or digit. mise ignores any other name with a warning, since the names
+reach every config's templates as `mise_env`. Select such an environment with
+`-E`, `MISE_ENV` or `~/.config/mise/miserc.toml`.
+
 ### Personal and machine-wide choices
 
 Use `.miserc.local.toml` for a choice that belongs to your checkout rather than
