@@ -99,7 +99,10 @@ fn remove(_lua: &Lua, (path, options): (String, Option<Table>)) -> mlua::Result<
         Some(options) => options.get::<Option<bool>>("recursive")?.unwrap_or(false),
         None => false,
     };
-    let path = Path::new(&path);
+    // A trailing separator makes the OS resolve a symlink to its target, which
+    // would delete through the link. `components` drops it and keeps a root.
+    let path: PathBuf = Path::new(&path).components().collect();
+    let path = path.as_path();
     let meta = std::fs::symlink_metadata(path).into_lua_err()?;
     if meta.is_symlink() {
         // A Windows symlink to a directory is removed with remove_dir.
@@ -460,6 +463,30 @@ mod tests {
         mod_file(&lua).unwrap();
 
         // Even with recursive = true, only the link goes.
+        lua.load(mlua::chunk! {
+            require("file").remove($link_str, { recursive = true })
+        })
+        .exec()
+        .unwrap();
+
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.join("keep.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_remove_ignores_a_trailing_separator_on_a_symlink() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let target = temp_dir.path().join("target");
+        let link = temp_dir.path().join("link");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("keep.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        // "link/" names the link's target to the OS, so it must not be used as is.
+        let link_str = format!("{}/", link.display());
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+
         lua.load(mlua::chunk! {
             require("file").remove($link_str, { recursive = true })
         })
