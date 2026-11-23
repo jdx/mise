@@ -4,7 +4,9 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
-use crate::backend::static_helpers::{ensure_safe_relative_bin_dir, try_with_v_prefix};
+use crate::backend::static_helpers::{
+    ensure_safe_relative_bin_dir, ensure_safe_relative_bin_path, try_with_v_prefix,
+};
 use crate::config::{Config, Settings};
 use crate::env::{
     GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,
@@ -84,6 +86,18 @@ impl<'a> UbiOptions<'a> {
 
     fn rename_exe(&self) -> Option<&'a str> {
         self.values.str("rename_exe")
+    }
+
+    /// `exe` and `rename_exe` are joined onto the install directory, and ubi
+    /// writes the executable to the result.
+    fn ensure_safe_exe_paths(&self) -> Result<()> {
+        if let Some(exe) = self.exe() {
+            ensure_safe_relative_bin_path("exe", exe)?;
+        }
+        if let Some(rename_exe) = self.rename_exe() {
+            ensure_safe_relative_bin_path("rename_exe", rename_exe)?;
+        }
+        Ok(())
     }
 
     fn matching(&self) -> Option<&'a str> {
@@ -337,6 +351,7 @@ impl Backend for UbiBackend {
         let opts = UbiOptions::new(&raw_opts);
         let bin_path = opts.bin_path().unwrap_or_else(|| "bin".to_string());
         ensure_safe_relative_bin_dir("bin_path", &bin_path)?;
+        opts.ensure_safe_exe_paths()?;
         let extract_all = opts.extract_all();
         let bin_dir = tv.install_path();
 
@@ -1088,6 +1103,29 @@ mod tests {
             first_visible_file(dir.path()).unwrap(),
             dir.path().join("tool")
         );
+    }
+
+    #[test]
+    fn test_exe_paths_stay_in_the_install_dir() {
+        let opts = |key: &str, value: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert(key.to_string(), toml::Value::String(value.to_string()));
+            opts
+        };
+        for key in ["exe", "rename_exe"] {
+            for value in ["../../../.bashrc", "/home/user/.bashrc", "bin/../../tool"] {
+                let err = UbiOptions::new(&opts(key, value))
+                    .ensure_safe_exe_paths()
+                    .unwrap_err();
+                assert!(err.to_string().starts_with(key), "{err}");
+            }
+            for value in ["tool", "bin/tool"] {
+                UbiOptions::new(&opts(key, value))
+                    .ensure_safe_exe_paths()
+                    .unwrap();
+            }
+        }
     }
 
     #[test]
