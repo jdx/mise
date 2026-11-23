@@ -5323,6 +5323,14 @@ impl ResolvedTaskInputs {
         self.global_inputs.is_none() && self.input_groups.is_empty()
     }
 
+    /// Whether any declared entry is a template, so rendering needs a task's context.
+    fn has_templates(&self) -> bool {
+        self.global_inputs
+            .iter()
+            .chain(self.input_groups.values())
+            .any(|(entries, _)| entries.iter().any(|entry| contains_template_syntax(entry)))
+    }
+
     fn overlay(&mut self, overlay: Self) {
         if overlay.global_inputs.is_some() {
             self.global_inputs = overlay.global_inputs;
@@ -5433,7 +5441,16 @@ async fn apply_task_config_inputs(
     }
     Settings::get().ensure_experimental(mise_config::experimental::TASK_INPUT_GROUPS.what)?;
 
-    let tera_ctx = task.tera_ctx(config).await?;
+    // Only the entries a config declares are rendered here, never the task's own
+    // `sources`. The task's context resolves its `vars`, and `vars._.source` runs a
+    // script, so like `Task::render` this builds it only when there is a template to
+    // render: a task from a tasks-only config nobody trusted stays inert until it is
+    // run, and naming a group in its `sources` does not change that.
+    let tera_ctx = if task_inputs.has_templates() {
+        task.tera_ctx(config).await?
+    } else {
+        tera::Context::new()
+    };
     let global_inputs = match &task_inputs.global_inputs {
         Some((entries, root)) => Some((
             render_task_input_entries(entries, root, &tera_ctx)?,
