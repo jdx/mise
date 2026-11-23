@@ -14,6 +14,9 @@ const REUSE_BUFFER_SECS: i64 = 300;
 const CLIPBOARD_TIMEOUT: Duration = Duration::from_secs(2);
 const ENCLAVE_NAME: &str = "the Secure Enclave helper";
 const STORE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Most decoded bytes an OAuth endpoint's JSON reply may hold. Real replies are
+/// a few hundred bytes.
+const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -303,6 +306,24 @@ async fn token_async(req: TokenRequest) -> Result<String> {
     Ok(access_token)
 }
 
+/// Send a request to an OAuth endpoint and parse its JSON reply. A refresh runs
+/// from `mise hook-env` with the token cache locked, so the whole exchange is
+/// bounded by `http_timeout` (the client's own read timeout restarts whenever a
+/// byte arrives) and the decoded body is limited before it is parsed.
+async fn send_json<T: serde::de::DeserializeOwned>(req: reqwest::RequestBuilder) -> Result<T> {
+    let resp = req
+        .timeout(crate::network::http_timeout(&Settings::get()))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(
+        crate::http::buffer_body_with_limit(resp, MAX_RESPONSE_BYTES)
+            .await?
+            .json()
+            .await?,
+    )
+}
+
 async fn create_device_code() -> Result<DeviceCodeResponse> {
     let settings = Settings::get();
     let url = format!(
@@ -315,16 +336,14 @@ async fn create_device_code() -> Result<DeviceCodeResponse> {
     if !scopes.is_empty() {
         form.push(("scope", scopes));
     }
-    Ok(crate::http::HTTP
-        .reqwest()?
-        .post(url)
-        .header("Accept", "application/json")
-        .form(&form)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<DeviceCodeResponse>()
-        .await?)
+    send_json(
+        crate::http::HTTP
+            .reqwest()?
+            .post(url)
+            .header("Accept", "application/json")
+            .form(&form),
+    )
+    .await
 }
 
 async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse> {
@@ -344,25 +363,16 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
         }
         tokio::time::sleep(Duration::from_secs(interval)).await;
 
-        let response = match client
+        let request = client
             .post(&url)
             .header("Accept", "application/json")
             .form(&[
                 ("client_id", client_id),
                 ("device_code", device.device_code.as_str()),
                 ("grant_type", GRANT_DEVICE_CODE),
-            ])
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            Ok(resp) => match resp.json::<TokenResponse>().await {
-                Ok(body) => body,
-                Err(err) => {
-                    debug!("transient error polling GitHub OAuth token: {err:#}");
-                    continue;
-                }
-            },
+            ]);
+        let response = match send_json::<TokenResponse>(request).await {
+            Ok(body) => body,
             Err(err) => {
                 debug!("transient error polling GitHub OAuth token: {err:#}");
                 continue;
@@ -404,20 +414,18 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
         "{}/oauth/access_token",
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
-    let response = crate::http::HTTP
-        .reqwest()?
-        .post(url)
-        .header("Accept", "application/json")
-        .form(&[
-            ("client_id", settings.github.oauth_client_id.trim()),
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-        ])
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<TokenResponse>()
-        .await?;
+    let response: TokenResponse = send_json(
+        crate::http::HTTP
+            .reqwest()?
+            .post(url)
+            .header("Accept", "application/json")
+            .form(&[
+                ("client_id", settings.github.oauth_client_id.trim()),
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh_token),
+            ]),
+    )
+    .await?;
 
     if let Some(code) = response.error.as_deref() {
         let description = response
@@ -1348,6 +1356,113 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let cache = read_cache().unwrap();
         let cached = cache.tokens.get(&cache_key).unwrap();
         assert!(cached.expires_at <= chrono::Utc::now());
+    }
+
+    #[tokio::test]
+    async fn refresh_reply_is_bounded_in_size() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                // JSON allows leading whitespace, so without a limit this parses.
+                // No Content-Length, so the limit has to hold while reading.
+                let body = format!(
+                    r#"{}{{"access_token":"ghu-new","expires_in":28800}}"#,
+                    " ".repeat(MAX_RESPONSE_BYTES)
+                );
+                let head = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n";
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(body.as_bytes()).await;
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard =
+            OAuthEnvGuard::new(format!("http://127.0.0.1:{port}/login"), cache_path.clone());
+
+        let cache_key = cache_key("api.github.com", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2020-01-01T00:00:00Z"
+refresh_token = "ghr-refresh"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let err = refresh_cached_token(&cache_key, None).await.unwrap_err();
+
+        assert!(err.to_string().contains("is larger than"), "{err:#}");
+        let cache = read_cache().unwrap();
+        assert_eq!(
+            cache.tokens.get(&cache_key).unwrap().access_token,
+            "ghu-stale"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_reply_is_bounded_by_http_timeout() {
+        use confique::Layer;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let head = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n";
+                let _ = sock.write_all(head.as_bytes()).await;
+                // A byte every 10ms keeps restarting the client's idle read timeout.
+                while sock.write_all(b" ").await.is_ok() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard =
+            OAuthEnvGuard::new(format!("http://127.0.0.1:{port}/login"), cache_path.clone());
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.http_timeout = Some("200ms".to_string());
+        crate::testing::reset_settings(Some(settings));
+
+        let cache_key = cache_key("api.github.com", "Iv1.mock", "");
+        std::fs::write(
+            &cache_path,
+            format!(
+                r#"[tokens.{cache_key}]
+access_token = "ghu-stale"
+expires_at = "2020-01-01T00:00:00Z"
+refresh_token = "ghr-refresh"
+refresh_expires_at = "2099-01-01T00:00:00Z"
+"#
+            ),
+        )
+        .unwrap();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            refresh_cached_token(&cache_key, None),
+        )
+        .await
+        .expect("http_timeout did not end the refresh");
+
+        assert!(result.is_err());
+        // The cache lock was released, and the cached token is untouched.
+        let cache = read_cache().unwrap();
+        assert_eq!(
+            cache.tokens.get(&cache_key).unwrap().access_token,
+            "ghu-stale"
+        );
     }
 
     #[test]
