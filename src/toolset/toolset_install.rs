@@ -963,8 +963,11 @@ impl Toolset {
             &tv,
             &backend.get_platform_key_for(&tv),
         )?;
-        tv.ba()
-            .warn_if_locked_backend_superseded(&tv.version, tv.request.lockfile_owner_source());
+        tv.ba().warn_if_locked_backend_superseded(
+            &tv.version,
+            tv.request.lockfile_owner_source(),
+            tv.request.options().opts.contains_key("checksum"),
+        );
         let install_dir = opts.install_dir.clone().or_else(|| {
             opts.scoped_install_dirs
                 .then(|| scope_installs_dir(tr))

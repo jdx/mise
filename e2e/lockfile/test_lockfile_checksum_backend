@@ -19,3 +19,9 @@ mise lock --platform "$MISE_PLATFORM" 2>stderr
 assert_contains "cat mise.lock" 'backend = "http:yarn"'
 assert_not_contains "cat stderr" 'mise backends switch'
 assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
+
+echo "=== without the checksum the lock entry can be switched ==="
+cat <<'JSON' >package.json
+{ "packageManager": "yarn@4.18.1" }
+JSON
+assert_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch yarn'

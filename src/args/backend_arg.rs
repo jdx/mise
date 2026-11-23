@@ -884,11 +884,17 @@ impl BackendArg {
 
     /// [`Self::superseded_backend`], when it is a lock entry that keeps the
     /// tool on the replaced backend.
-    pub(crate) fn superseded_locked_backend(&self, version: &str) -> Option<(String, String)> {
+    pub(crate) fn superseded_locked_backend(
+        &self,
+        version: &str,
+        checksum_forced: bool,
+    ) -> Option<(String, String)> {
         let (current, registry) = self.superseded_backend(version)?;
         // A `packageManager` checksum forces the backend that publishes the
         // checksummed artifact, so locking records it again after every switch.
-        if recorded_by_checksum_backend(&self.short, Some(&current)) {
+        // Once the checksum is gone nothing forces the backend, and the lock
+        // entry is one the user can move off.
+        if checksum_forced && recorded_by_checksum_backend(&self.short, Some(&current)) {
             return None;
         }
         let locked =
@@ -900,8 +906,13 @@ impl BackendArg {
     /// replaced, and how to adopt the new one. `source` is where the tool is
     /// configured: `mise backends switch` only reads the global config's
     /// lockfile with `--global`.
-    pub fn warn_if_locked_backend_superseded(&self, version: &str, source: &ToolSource) {
-        if let Some((locked, registry)) = self.superseded_locked_backend(version) {
+    pub fn warn_if_locked_backend_superseded(
+        &self,
+        version: &str,
+        source: &ToolSource,
+        checksum_forced: bool,
+    ) {
+        if let Some((locked, registry)) = self.superseded_locked_backend(version, checksum_forced) {
             let global = source.path().is_some_and(config::is_global_config);
             warn_once!(
                 "{short} is locked to {locked}, but the registry now installs it from {registry}. \

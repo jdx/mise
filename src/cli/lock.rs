@@ -1126,6 +1126,7 @@ impl Lock {
                 tv.ba().warn_if_locked_backend_superseded(
                     &tv.version,
                     tv.request.lockfile_owner_source(),
+                    tv.request.options().opts.contains_key("checksum"),
                 );
             }
             let configured_selectors = self.configured_tool_selectors_for_target(
