@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# The cached executable of a tool stub belongs to that stub alone. Stubs of two
+# projects are run by the same relative path and, unpacked from an archive, can
+# carry the same mtime.
+
+mkdir -p one/bin two/bin
+
+cat >one/bin/dummy <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "1.0.0"
+EOF
+cat >two/bin/dummy <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "2.0.0"
+EOF
+chmod +x one/bin/dummy two/bin/dummy
+touch -d '2001-01-01' one/bin/dummy two/bin/dummy
+
+cd one || exit 1
+assert_contains "bin/dummy" "This is Dummy 1.0.0!"
+assert_contains "bin/dummy" "This is Dummy 1.0.0!" # short-circuit works
+cd ../two || exit 1
+assert_contains "bin/dummy" "This is Dummy 2.0.0!"
+
+# a stub rewritten in place is resolved again, whatever its mtime
+cd ../one || exit 1
+cat >bin/dummy <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "2.0.0"
+EOF
+touch -d '2001-01-01' bin/dummy
+assert_contains "bin/dummy" "This is Dummy 2.0.0!"
+
+# a piped stub cannot be read twice, so it is never mistaken for another one
+assert_contains "printf 'tool = \"dummy\"\nbin = \"dummy\"\nversion = \"1.0.0\"\n' | mise tool-stub /dev/stdin" "This is Dummy 1.0.0!"
+assert_contains "printf 'tool = \"dummy\"\nbin = \"dummy\"\nversion = \"2.0.0\"\n' | mise tool-stub /dev/stdin" "This is Dummy 2.0.0!"

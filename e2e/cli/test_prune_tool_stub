@@ -44,9 +44,6 @@ cat >bin/dummy <<'EOF'
 tool = "dummy"
 version = "1"
 EOF
-# the stub bin cache key is based on mtime with second resolution, so make
-# sure the rewritten stub is not mistaken for the old one
-touch -d '2001-01-01' bin/dummy
 assert_contains "bin/dummy" "This is Dummy 1.0.0!"
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
 

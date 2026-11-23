@@ -4,30 +4,36 @@ use std::path::{Path, PathBuf};
 use crate::config::Config;
 use crate::dirs;
 use crate::file;
-use crate::hash;
 use crate::toolset::{InstallOptions, ToolSource};
 use color_eyre::eyre::{Result, bail};
 use eyre::ensure;
+use sha2::{Digest, Sha256};
 
 pub(crate) use crate::tool_stub::ToolStubFile;
 
 // Cache just stores the binary path as a raw string
-// The mtime is already encoded in the cache key, so no need to store it
+// The stub's path and content are encoded in the cache key, so no need to store them
 
 struct BinPathCache;
 
 impl BinPathCache {
-    fn cache_key(stub_path: &Path) -> Result<String> {
-        let path_str = stub_path.to_string_lossy();
-        let mtime = stub_path.metadata()?.modified()?;
-        let mtime_str = format!(
-            "{:?}",
-            mtime
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()
-        );
-        Ok(hash::hash_to_str(&format!("{path_str}:{mtime_str}")))
+    /// Identifies a stub by where it is and what it says.
+    ///
+    /// The path is made absolute because a stub is usually run as `./bin/tool`, which the
+    /// stubs of other projects share. The content is hashed instead of the mtime because
+    /// archives and checkouts choose the mtime, so unrelated stubs, or the old and new
+    /// version of one stub, can share it. Only a regular file has a key: a pipe or
+    /// `/dev/stdin` is consumed by the first read, so it cannot be read again to find it.
+    fn cache_key(stub_path: &Path) -> Result<Option<String>> {
+        if !stub_path.is_file() {
+            return Ok(None);
+        }
+        let path = std::path::absolute(stub_path)?;
+        let mut hasher = Sha256::new();
+        hasher.update(path.as_os_str().as_encoded_bytes());
+        hasher.update([0]);
+        hasher.update(file::read(stub_path)?);
+        Ok(Some(hex::encode(hasher.finalize())))
     }
 
     fn cache_file_path(cache_key: &str) -> PathBuf {
@@ -226,11 +232,11 @@ async fn find_cached_or_resolve_bin_path(
     stub: &ToolStubFile,
     stub_path: &Path,
 ) -> Result<Result<PathBuf, BinPathError>> {
-    // Generate cache key from file path and mtime
+    // Generate cache key from file path and content
     let cache_key = BinPathCache::cache_key(stub_path)?;
 
     // Try to load from cache first
-    if let Some(bin_path) = BinPathCache::load(&cache_key) {
+    if let Some(bin_path) = cache_key.as_deref().and_then(BinPathCache::load) {
         return Ok(Ok(bin_path));
     }
 
@@ -244,7 +250,9 @@ async fn find_cached_or_resolve_bin_path(
 
     if let Some(bin_path) = bin_path {
         // Cache the result
-        if let Err(e) = BinPathCache::save(&bin_path, &cache_key) {
+        if let Some(cache_key) = &cache_key
+            && let Err(e) = BinPathCache::save(&bin_path, cache_key)
+        {
             // Don't fail if caching fails, just log it
             crate::warn!("Failed to cache binary path: {e}");
         }
@@ -482,8 +490,10 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
         return Ok(());
     }
 
-    // Generate cache key from file path and mtime
-    let cache_key = BinPathCache::cache_key(potential_stub_path)?;
+    // Generate cache key from file path and content
+    let Some(cache_key) = BinPathCache::cache_key(potential_stub_path)? else {
+        return Ok(());
+    };
 
     // Check if we have a cached binary path
     if let Some(bin_path) = BinPathCache::load(&cache_key) {
@@ -505,4 +515,55 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
 
     // No cache hit, return Ok(()) to continue with normal processing
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_stub(path: &Path, version: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, format!("tool = \"dummy\"\nversion = \"{version}\"\n")).unwrap();
+        // what `git archive` or a copy leaves behind
+        let mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+    }
+
+    #[test]
+    fn cache_key_tells_apart_stubs_with_the_same_mtime() {
+        let tmp = tempfile::tempdir().unwrap();
+        let acme = tmp.path().join("acme/bin/scan");
+        let other = tmp.path().join("other/bin/scan");
+        write_stub(&acme, "2.0.0");
+        write_stub(&other, "1.0.0");
+        let acme_key = BinPathCache::cache_key(&acme).unwrap().unwrap();
+        assert_ne!(
+            Some(&acme_key),
+            BinPathCache::cache_key(&other).unwrap().as_ref()
+        );
+
+        // the same stub in another project is another stub: it has its own mise.lock
+        write_stub(&other, "2.0.0");
+        assert_ne!(
+            Some(&acme_key),
+            BinPathCache::cache_key(&other).unwrap().as_ref()
+        );
+
+        // replaced in place without a newer mtime
+        write_stub(&acme, "1.0.0");
+        assert_ne!(
+            Some(&acme_key),
+            BinPathCache::cache_key(&acme).unwrap().as_ref()
+        );
+        write_stub(&acme, "2.0.0");
+        assert_eq!(Some(acme_key), BinPathCache::cache_key(&acme).unwrap());
+
+        // a directory, or a pipe that cannot be read twice, has no entry
+        assert_eq!(None, BinPathCache::cache_key(tmp.path()).unwrap());
+    }
 }
