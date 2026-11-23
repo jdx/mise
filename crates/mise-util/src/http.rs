@@ -3018,13 +3018,15 @@ pub async fn read_bounded_error_body(resp: Response, deadline: Duration) -> Stri
 }
 
 /// The GitHub token a raw.githubusercontent.com request should be retried
-/// without: the one it carried when the answer was a 404.
+/// without: the one it carried when the answer was a 404. Any scheme, unlike
+/// `is_github_raw_content_url`, whose https rule keeps a token off cleartext:
+/// dropping a token can never leak one.
 fn raw_content_token_to_drop<'a>(
     url: &Url,
     status: StatusCode,
     headers: &'a HeaderMap,
 ) -> Option<&'a str> {
-    if status != StatusCode::NOT_FOUND || !crate::github::is_github_raw_content_url(url) {
+    if status != StatusCode::NOT_FOUND || url.host_str() != Some("raw.githubusercontent.com") {
         return None;
     }
     headers

@@ -167,16 +167,39 @@ async fn read_loader_cache(ldconfig: &str) -> Option<BTreeSet<String>> {
 
 /// The directories the loader searches by default, checked before the
 /// loader cache is read. Debian and Ubuntu keep libraries in a directory
-/// named for the architecture's multiarch triplet.
+/// named for the architecture's multiarch tuple.
 #[cfg(target_os = "linux")]
 fn default_library_dirs() -> Vec<PathBuf> {
-    let triplet = format!("{}-linux-gnu", std::env::consts::ARCH);
     let mut dirs: Vec<PathBuf> = ["/lib", "/lib64", "/usr/lib", "/usr/lib64"]
         .map(PathBuf::from)
         .into();
-    dirs.push(PathBuf::from("/lib").join(&triplet));
-    dirs.push(PathBuf::from("/usr/lib").join(&triplet));
+    for tuple in multiarch_tuples(std::env::consts::ARCH, cfg!(target_endian = "little")) {
+        dirs.push(PathBuf::from("/lib").join(tuple));
+        dirs.push(PathBuf::from("/usr/lib").join(tuple));
+    }
     dirs
+}
+
+/// Debian's multiarch tuples for a Rust architecture. They are not
+/// `<arch>-linux-gnu` throughout: 32-bit ARM names its float ABI, x86 is
+/// `i386`, and 64-bit POWER names its byte order, which `ARCH` leaves out.
+/// Both ARM ABIs are listed, since a directory that is not there costs
+/// nothing.
+#[cfg(target_os = "linux")]
+fn multiarch_tuples(arch: &str, little_endian: bool) -> &'static [&'static str] {
+    match arch {
+        "x86_64" => &["x86_64-linux-gnu"],
+        "x86" => &["i386-linux-gnu"],
+        "aarch64" => &["aarch64-linux-gnu"],
+        "arm" => &["arm-linux-gnueabihf", "arm-linux-gnueabi"],
+        "riscv64" => &["riscv64-linux-gnu"],
+        "powerpc64" if little_endian => &["powerpc64le-linux-gnu"],
+        "powerpc64" => &["powerpc64-linux-gnu"],
+        "s390x" => &["s390x-linux-gnu"],
+        "loongarch64" => &["loongarch64-linux-gnu"],
+        "mips64" if little_endian => &["mips64el-linux-gnuabi64"],
+        _ => &[],
+    }
 }
 
 /// The names `ldconfig -p` resolves to an existing file of this
@@ -485,10 +508,29 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn the_multiarch_directories_are_searched() {
+        assert_eq!(multiarch_tuples("x86_64", true), ["x86_64-linux-gnu"]);
+        assert_eq!(multiarch_tuples("x86", true), ["i386-linux-gnu"]);
+        assert_eq!(multiarch_tuples("aarch64", true), ["aarch64-linux-gnu"]);
+        assert_eq!(
+            multiarch_tuples("arm", true),
+            ["arm-linux-gnueabihf", "arm-linux-gnueabi"]
+        );
+        assert_eq!(
+            multiarch_tuples("powerpc64", true),
+            ["powerpc64le-linux-gnu"]
+        );
+        assert_eq!(
+            multiarch_tuples("powerpc64", false),
+            ["powerpc64-linux-gnu"]
+        );
+        assert!(multiarch_tuples("wasm32", true).is_empty());
+
+        // This host's own tuple is searched under both /lib and /usr/lib.
         let dirs = default_library_dirs();
-        let triplet = format!("{}-linux-gnu", std::env::consts::ARCH);
-        assert!(dirs.contains(&PathBuf::from("/usr/lib").join(&triplet)));
-        assert!(dirs.contains(&PathBuf::from("/lib").join(&triplet)));
+        for tuple in multiarch_tuples(std::env::consts::ARCH, cfg!(target_endian = "little")) {
+            assert!(dirs.contains(&PathBuf::from("/usr/lib").join(tuple)));
+            assert!(dirs.contains(&PathBuf::from("/lib").join(tuple)));
+        }
     }
 
     #[cfg(unix)]

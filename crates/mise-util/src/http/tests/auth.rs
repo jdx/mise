@@ -686,9 +686,9 @@ fn a_raw_content_404_with_a_token_is_retried_without_it() {
         raw_content_token_to_drop(&api, StatusCode::NOT_FOUND, &with_token),
         None
     );
-    let http = Url::parse("http://raw.githubusercontent.com/o/r/abc/SKILL.md").unwrap();
+    let other = Url::parse("https://example.com/o/r/abc/SKILL.md").unwrap();
     assert_eq!(
-        raw_content_token_to_drop(&http, StatusCode::NOT_FOUND, &with_token),
+        raw_content_token_to_drop(&other, StatusCode::NOT_FOUND, &with_token),
         None
     );
 
@@ -702,5 +702,98 @@ fn a_raw_content_404_with_a_token_is_retried_without_it() {
         rejected_raw_token_warning(None).contains("configured GitHub token"),
         "{}",
         rejected_raw_token_warning(None)
+    );
+}
+
+const NOT_FOUND_RESPONSE: &str =
+    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+const SKILL_RESPONSE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 6\r\nConnection: close\r\n\r\nskill\n";
+
+/// A client that sends raw.githubusercontent.com to the local test server.
+/// The server speaks plain HTTP, which is why the retry matches the host
+/// whatever the scheme.
+fn raw_content_client(port: u16) -> Client {
+    let timeout = Duration::from_secs(3);
+    Client {
+        reqwest: Ok(Client::_new()
+            .no_proxy()
+            .resolve(
+                "raw.githubusercontent.com",
+                std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+            )
+            .read_timeout(timeout)
+            .connect_timeout(timeout)
+            .build()
+            .unwrap()),
+        manual_redirects: Default::default(),
+        undecoded: Default::default(),
+        undecoded_manual_redirects: Default::default(),
+        timeout,
+        read_timeout: Some(timeout),
+        downgrade: Downgrade::Refuse,
+        kind: ClientKind::Http,
+    }
+}
+
+async fn get_raw_content_with_token(
+    responses: Vec<&'static str>,
+) -> (
+    Result<String>,
+    usize,
+    std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) {
+    let (port, count, requests) = spawn_recording_server(responses).await;
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghp-stale"));
+    let result = raw_content_client(port)
+        .get_text_request(format!(
+            "http://raw.githubusercontent.com:{port}/o/r/abc/SKILL.md"
+        ))
+        .headers(&headers)
+        .send()
+        .await;
+    (
+        result,
+        count.load(std::sync::atomic::Ordering::SeqCst),
+        requests,
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_raw_content_404_is_fetched_again_without_the_token() {
+    let (result, count, requests) =
+        get_raw_content_with_token(vec![NOT_FOUND_RESPONSE, SKILL_RESPONSE, SKILL_RESPONSE]).await;
+
+    assert_eq!(result.unwrap(), "skill\n");
+    assert_eq!(count, 2);
+    let requests = requests.lock().unwrap();
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer ghp-stale"),
+        "{}",
+        requests[0]
+    );
+    assert!(
+        !requests[1].to_ascii_lowercase().contains("authorization:"),
+        "{}",
+        requests[1]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_raw_content_404_without_the_token_is_still_a_404() {
+    let (result, count, requests) = get_raw_content_with_token(vec![NOT_FOUND_RESPONSE; 6]).await;
+
+    let err = result.unwrap_err();
+    assert!(format!("{err:#}").contains("404"), "{err:#}");
+    // One request with the token and one without; neither the outer retry
+    // loop nor the retry itself sends the token, or anything, again.
+    assert_eq!(count, 2);
+    let requests = requests.lock().unwrap();
+    assert!(
+        !requests[1].to_ascii_lowercase().contains("authorization:"),
+        "{}",
+        requests[1]
     );
 }
