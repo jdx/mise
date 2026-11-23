@@ -767,7 +767,10 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // to trust their active config in normal mode. Persist the decision here
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
+    // Global config is trusted without a record; its root is the home directory,
+    // so a record would trust a project in `~` and clear an ignore for it.
     if implicitly_trusts_active_config()
+        && !config::is_global_config(path)
         && !ci_info::is_ci()
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
@@ -1242,9 +1245,11 @@ pub fn trust(path: &Path) -> Result<()> {
 
 /// Records trust for the root of a config file mise has just written for the user, as
 /// `mise use` and `mise set` do. Safe mode loads config without a trust decision, so a write
-/// there has none to record and leaves trust as it was.
+/// there has none to record and leaves trust as it was. Global config is trusted without a
+/// record, and its trust root is the home directory: a record for it would trust a project
+/// in `~`, and clear a decision to ignore that project.
 pub fn trust_after_write(path: &Path) -> Result<()> {
-    if Settings::safe_mode() {
+    if Settings::safe_mode() || config::is_global_config_write(path) {
         return Ok(());
     }
     trust(&config_trust_root(path))
@@ -1262,7 +1267,7 @@ pub fn trust_after_write(path: &Path) -> Result<()> {
 ///
 /// Global config is trusted without a record, so writing it decides nothing about a project.
 pub fn trust_check_before_write(path: &Path) -> Result<()> {
-    if Settings::safe_mode() || config::is_global_config(path) {
+    if Settings::safe_mode() || config::is_global_config_write(path) {
         return Ok(());
     }
     let config_root = config_trust_root(path);

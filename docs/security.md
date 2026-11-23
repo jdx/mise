@@ -143,7 +143,10 @@ mise also trusts a config file when it writes one, for example with
 the file's whole config root, so if another config file there is not trusted
 yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
 first, the way it does when that file loads. In safe mode a write records no
-trust.
+trust, and neither does a write to global or system config, which is trusted
+without a record: writing `~/.config/mise/config.toml` does not trust a
+`mise.toml` in your home directory, and does not undo `mise trust --ignore` for
+it.
 
 ### CI and `--yes`
 

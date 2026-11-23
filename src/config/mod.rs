@@ -3667,6 +3667,25 @@ pub fn is_global_config(path: &Path) -> bool {
         || is_system_config(path)
 }
 
+/// [`is_global_config`] for a file a write may be about to create.
+///
+/// Discovery lists the global config files that exist, so the `config.toml` that a first
+/// `mise use -g` creates is not among them. A file directly in the global or system config
+/// directory, or in its `conf.d`, is global config by where it is; a file deeper below it is
+/// a project like any other.
+pub fn is_global_config_write(path: &Path) -> bool {
+    if is_global_config(path) || env::MISE_GLOBAL_CONFIG_FILE.as_deref() == Some(path) {
+        return true;
+    }
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .flat_map(|dir| [dir.to_path_buf(), dir.join("conf.d")])
+        .any(|dir| file::same_file(parent, &dir))
+}
+
 /// Whether `path` is one of the global override files, which outrank all project config.
 /// See [`override_config_files`].
 ///
