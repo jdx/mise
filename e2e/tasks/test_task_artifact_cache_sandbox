@@ -85,6 +85,43 @@ run = "cp main.c main.o"
 sources = ["*.c"]
 outputs = ["*.o"]
 cache = { enabled = true, sandbox = true }
+
+[tasks.linked_outputs]
+run = "printf 'overwritten\n' > linked-dist/app.txt"
+sources = ["src/app.txt"]
+outputs = ["linked-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.variant]
+run = 'printf "%s\n" "$VARIANT" > "variant-$VARIANT/out.txt"'
+sources = ["src/app.txt"]
+outputs = ['variant-{{ env.VARIANT | default(value="none") }}']
+cache = { enabled = true, sandbox = true, env = ["VARIANT"] }
+
+[tasks.read_variants]
+depends = [
+  { task = "variant", env = { VARIANT = "a" } },
+  { task = "variant", env = { VARIANT = "b" } },
+]
+run = "cat variant-a/out.txt variant-b/out.txt > variants-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["variants-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.two_entries]
+run = [
+  'printf "first\n" > "$TMPDIR/first.txt"',
+  'cat "$TMPDIR/first.txt" > entries-dist/out.txt',
+]
+sources = ["src/app.txt"]
+outputs = ["entries-dist"]
+cache = { enabled = true, sandbox = true }
+
+[tasks.nested_outputs]
+run = "cp src/app.txt stray.txt"
+sources = ["src/app.txt"]
+outputs = ["nest/a/x.txt", "nest/b/y.txt"]
+cache = { enabled = true, sandbox = true }
 EOF
 
 mkdir -p lib src
@@ -136,6 +173,29 @@ assert "cat escape-dist/out.txt" "secret"
 # that share a directory with the sources are refused before the task runs.
 assert_fail "mise run outputs_beside_sources 2>&1" "also holds the task's sources"
 
+# allow_write is the way out, under any spelling of the directory. An empty
+# entry allows nothing, as it does for any other sandbox.
+ln -s . here
+mise run --allow-write=here outputs_beside_sources
+assert "test -f main.o"
+assert_fail "mise run --allow-write= outputs_beside_sources 2>&1" "also holds the task's sources"
+
+# A rule follows a link to what it leads to, so an output directory that is a
+# link to the sources is refused too, and the sources stay as they were.
+ln -s src linked-dist
+assert_fail "mise run linked_outputs 2>&1" "also holds the task's sources"
+assert "cat src/app.txt" "app"
+
+# A task that is a dependency twice, with an environment that gives each
+# instance its own outputs, has both sets readable.
+mise run read_variants
+assert "cat variants-dist/out.txt" $'a\nb'
+
+# The private temp directory lasts for the whole task, so a run entry finds
+# what an earlier one left there.
+mise run two_entries
+assert "cat entries-dist/out.txt" "first"
+
 # The sandbox follows the task's declaration, not the cache mode. The failed
 # run above left the file its shell redirect created, which would make the
 # task look fresh without the cache.
@@ -145,6 +205,9 @@ assert_fail "mise run --task-cache off read_undeclared 2>&1" "Permission denied"
 # A run that fails before it writes anything leaves no output directory behind.
 assert_fail "mise run write_undeclared 2>&1" "Permission denied"
 assert "test ! -e write-dist"
+# That covers a new parent directory that several outputs share.
+assert_fail "mise run nested_outputs 2>&1" "Permission denied"
+assert "test ! -e nest"
 
 # A path the command line allows beyond the derived set is an input the key
 # would otherwise miss, so such a run keeps its own entries.

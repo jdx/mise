@@ -103,6 +103,9 @@ struct TaskExecContext<'a> {
     secrets: Option<&'a SpawnSecrets>,
     /// Runs under its locked parent's terminal, so it never takes the runtime lock.
     covered: Cover,
+    /// The private temp directory of a task that runs under `cache.sandbox`,
+    /// shared by all of its run entries.
+    sandbox_tmp: Option<&'a Path>,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -696,15 +699,6 @@ impl TaskExecutor {
             // Filled in by `resolve_paths` below.
             symlinked_allow_paths: vec![],
         };
-        let mut output_dirs = Vec::new();
-        if derived && sandbox_use != SandboxUse::EnvOnly {
-            let paths =
-                task_cache_sandbox::derive(task, config, &sandbox.allow_write, sandbox_use).await?;
-            sandbox.allow_read.extend(paths.read);
-            sandbox.allow_write.extend(paths.write.iter().cloned());
-            sandbox.allow_list_dirs = paths.list;
-            output_dirs = paths.write;
-        }
         // The task's directory, its config root and the project root hold what
         // the task may have written, so a symlink there must not lead an
         // allowed path out of them.
@@ -716,7 +710,25 @@ impl TaskExecutor {
         .into_iter()
         .flatten()
         .collect();
+        // Resolve what the task and the command line allow before deriving the
+        // rest: `derive` has to compare an output directory with the path a
+        // rule is bound to, however that path was written.
         sandbox.resolve_paths(&project_roots)?;
+        let mut output_dirs = Vec::new();
+        if derived && sandbox_use != SandboxUse::EnvOnly {
+            let paths =
+                task_cache_sandbox::derive(task, config, &sandbox.allow_write, sandbox_use).await?;
+            sandbox.allow_read.extend(paths.read);
+            sandbox.allow_write.extend(paths.write.iter().cloned());
+            sandbox.allow_list_dirs = paths.list;
+            output_dirs = paths.write;
+            // Resolving the derived paths records their replaced spellings
+            // afresh, so keep the ones from the first pass.
+            let mut symlinked = std::mem::take(&mut sandbox.symlinked_allow_paths);
+            sandbox.resolve_paths(&project_roots)?;
+            symlinked.append(&mut sandbox.symlinked_allow_paths);
+            sandbox.symlinked_allow_paths = symlinked;
+        }
         Ok((sandbox, output_dirs))
     }
 
@@ -1235,6 +1247,12 @@ impl TaskExecutor {
             task_env.push((task_lock::LOCKS_ENV.to_string(), locks));
             Some(held)
         };
+        // Under `cache.sandbox` the shared temp directory is closed, so the task
+        // gets one of its own. It lasts for the whole task, so that a later run
+        // entry finds what an earlier one left there, and is removed after it.
+        let sandbox_tmp = task_cache_sandbox::enforced(task)
+            .then(tempfile::tempdir)
+            .transpose()?;
         let exec_ctx = TaskExecContext {
             task,
             env: &env,
@@ -1246,6 +1264,7 @@ impl TaskExecutor {
             otel_span_cx: otel_span_cx.as_ref(),
             secrets: spawn_secrets.as_ref(),
             covered,
+            sandbox_tmp: sandbox_tmp.as_ref().map(tempfile::TempDir::path),
         };
 
         let timer = std::time::Instant::now();
@@ -2204,6 +2223,7 @@ impl TaskExecutor {
             otel_span_cx,
             secrets,
             covered: _,
+            sandbox_tmp,
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -2248,22 +2268,18 @@ impl TaskExecutor {
             .build_sandbox_and_output_dirs(task, &config, SandboxUse::Run)
             .await?;
         let _created_output_dirs = task_cache_sandbox::CreatedDirs::create(&output_dirs)?;
-        // Under `cache.sandbox` the shared temp directory is closed, so the task
-        // gets one of its own, removed when the command ends. A `#!` run script
-        // is a file mise wrote there, which the task has to read to start.
-        let sandbox_tmp = if task_cache_sandbox::enforced(task) {
+        // Under `cache.sandbox` the shared temp directory is closed and the task
+        // writes to its own. A `#!` run script is a file mise wrote to the
+        // shared one, which the task has to read to start.
+        if let Some(dir) = sandbox_tmp {
             let script = Path::new(&program);
             if script.is_absolute() {
                 sandbox
                     .allow_read
                     .push(dunce::canonicalize(script).unwrap_or_else(|_| script.to_path_buf()));
             }
-            let dir = tempfile::tempdir()?;
-            sandbox.allow_write.push(dunce::canonicalize(dir.path())?);
-            Some(dir)
-        } else {
-            None
-        };
+            sandbox.allow_write.push(dunce::canonicalize(dir)?);
+        }
         if let Some(secrets) = secrets
             && sandbox.effective_deny_read()
         {
@@ -2287,11 +2303,8 @@ impl TaskExecutor {
             // cannot undo this because the runner sets `env` afterwards.
             mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
             strip_inherited_report_file(env, &mut filtered);
-            if let Some(dir) = &sandbox_tmp {
-                filtered.insert(
-                    "TMPDIR".to_string(),
-                    dir.path().to_string_lossy().into_owned(),
-                );
+            if let Some(dir) = sandbox_tmp {
+                filtered.insert("TMPDIR".to_string(), dir.to_string_lossy().into_owned());
             }
             sandbox_env = filtered;
             &sandbox_env

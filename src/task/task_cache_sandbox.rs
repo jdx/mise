@@ -120,27 +120,30 @@ pub(crate) struct CacheSandboxPaths {
 /// task starts. Dropping this removes the ones the task left empty, so a
 /// failed run does not leave outputs behind that look fresh.
 #[derive(Debug, Default)]
-pub(crate) struct CreatedDirs(Vec<PathBuf>);
+pub(crate) struct CreatedDirs(BTreeSet<PathBuf>);
 
 impl CreatedDirs {
     pub(crate) fn create(dirs: &[PathBuf]) -> Result<Self> {
-        let mut created = Vec::new();
+        // Filled as it goes, so a failure part-way removes what was created.
+        let mut created = Self::default();
         for dir in dirs {
-            // Deepest first, which is the order they can be removed in.
-            created.extend(
+            created.0.extend(
                 dir.ancestors()
                     .take_while(|ancestor| !ancestor.exists())
                     .map(Path::to_path_buf),
             );
             file::create_dir_all(dir)?;
         }
-        Ok(Self(created))
+        Ok(created)
     }
 }
 
 impl Drop for CreatedDirs {
     fn drop(&mut self) {
-        for dir in &self.0 {
+        // A directory sorts before everything beneath it, so the reverse order
+        // reaches each one after its children, including a new parent that
+        // several outputs share.
+        for dir in self.0.iter().rev() {
             // Fails on a directory that holds something, which is the point.
             let _ = std::fs::remove_dir(dir);
         }
@@ -149,7 +152,8 @@ impl Drop for CreatedDirs {
 
 /// Derive the allowed paths for `task` from its sources, outputs and cached
 /// dependencies. `allowed_write` holds the directories the task or the command
-/// line already made writable.
+/// line already made writable, resolved the way the sandbox resolves them
+/// ([`SandboxConfig::resolve_paths`]).
 pub(crate) async fn derive(
     task: &Task,
     config: &Arc<Config>,
@@ -199,23 +203,54 @@ pub(crate) async fn derive(
 /// maps to a directory: the part of a glob before its first wildcard, or the
 /// parent of a plain path. A plain path whose parent also holds the task's
 /// inputs is taken to be a directory itself, as in `outputs = ["dist"]`.
+///
+/// A rule is bound to what a path resolves to, not to how it is written, so
+/// the checks here compare resolved paths: an output directory that is a link
+/// to the sources (`dist -> src`) would otherwise make the sources writable.
 fn output_dirs(
     task: &Task,
     root: &Path,
     inputs: &[&Path],
     allowed_write: &[PathBuf],
 ) -> Result<Vec<PathBuf>> {
-    let holds_inputs = |dir: &Path| inputs.iter().any(|input| input.starts_with(dir));
-    let cwd = std::env::current_dir().unwrap_or_default();
+    // An input that is a link counts under both names: the task reads the
+    // file it leads to, and could replace the link where it sits.
+    let inputs: BTreeSet<PathBuf> = inputs
+        .iter()
+        .flat_map(|input| [input.to_path_buf(), resolve_existing(input)])
+        .collect();
+    let allowed_write: Vec<PathBuf> = allowed_write
+        .iter()
+        .map(|allowed| resolve_existing(allowed))
+        .collect();
+    let holds_inputs = |dir: &Path| {
+        let dir = resolve_existing(dir);
+        inputs.iter().any(|input| input.starts_with(&dir))
+    };
     let already_writable = |dir: &Path| {
-        allowed_write
-            .iter()
-            .any(|allowed| dir.starts_with(cwd.join(allowed)))
+        let dir = resolve_existing(dir);
+        allowed_write.iter().any(|allowed| dir.starts_with(allowed))
+    };
+    let describe = |dir: &Path| {
+        let resolved = resolve_existing(dir);
+        if resolved == dir {
+            display_path(dir)
+        } else {
+            format!(
+                "{} (which resolves to {})",
+                display_path(dir),
+                display_path(&resolved)
+            )
+        }
     };
     let mut dirs = BTreeSet::new();
     for output in output_glob_patterns(&task.outputs.patterns()) {
         let dir = if is_glob_pattern(&output) {
-            root.join(literal_dir(&output))
+            // `*.o` has no literal part: joining nothing would add a trailing `/`.
+            match literal_dir(&output) {
+                literal if literal.as_os_str().is_empty() => root.to_path_buf(),
+                literal => root.join(literal),
+            }
         } else {
             let path = root.join(&output);
             let parent = path.parent().unwrap_or(root).to_path_buf();
@@ -240,12 +275,27 @@ fn output_dirs(
                 "task {}: cache.sandbox cannot confine writes for output {output:?}: {} also holds the task's sources. \
                  Put the outputs in a directory of their own, or list that directory in allow_write.",
                 task.name,
-                display_path(&dir)
+                describe(&dir)
             );
         }
         dirs.insert(dir);
     }
     Ok(dirs.into_iter().collect())
+}
+
+/// `path` with the symlinks in the part of it that exists followed. The part
+/// that does not exist yet is kept as written: mise creates it as plain
+/// directories.
+fn resolve_existing(path: &Path) -> PathBuf {
+    for ancestor in path.ancestors() {
+        if let Ok(resolved) = dunce::canonicalize(ancestor) {
+            return match path.strip_prefix(ancestor) {
+                Ok(rest) if !rest.as_os_str().is_empty() => resolved.join(rest),
+                _ => resolved,
+            };
+        }
+    }
+    path.to_path_buf()
 }
 
 /// The directory part of a glob that comes before its first wildcard:
@@ -266,12 +316,16 @@ fn literal_dir(pattern: &str) -> PathBuf {
 /// its own dependencies in turn, so everything those tasks produced is keyed.
 /// A dependency without a cache has no key: list what the task needs from it
 /// in `sources` instead.
+///
+/// One task can be a dependency several times, with arguments or environment
+/// that give each instance outputs of its own, so an instance is told apart
+/// the way the task graph does it, not by name alone.
 async fn dependency_outputs(task: &Task, config: &Arc<Config>) -> Result<Vec<PathBuf>> {
     let mut outputs = Vec::new();
-    let mut seen = HashSet::from([task.name.clone()]);
+    let mut seen = HashSet::from([task.clone()]);
     let mut queue = task.resolve_depends(config, &[]).await?.depends;
     while let Some(dep) = queue.pop() {
-        if !seen.insert(dep.name.clone()) {
+        if !seen.insert(dep.clone()) {
             continue;
         }
         if dep.cache.as_ref().is_some_and(|cache| cache.enabled) && !dep.outputs.is_auto() {
@@ -355,6 +409,71 @@ mod tests {
             output_dirs(&sandboxed_task(&["*.o"]), root, &inputs, &allowed).unwrap(),
             Vec::<PathBuf>::new()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_dirs_compare_what_the_paths_resolve_to() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(tmp.path()).unwrap();
+        std::fs::create_dir(root.join("src")).unwrap();
+        std::fs::write(root.join("src/main.c"), "").unwrap();
+        std::os::unix::fs::symlink("src", root.join("linked")).unwrap();
+        std::os::unix::fs::symlink(&root, root.join("project")).unwrap();
+        let source = root.join("src/main.c");
+        let inputs = [source.as_path()];
+
+        // An output directory that is a link to the sources would make them
+        // writable, whether it is named as a path or as a glob.
+        for outputs in [["linked"], ["linked/**"]] {
+            let err = output_dirs(&sandboxed_task(&outputs), &root, &inputs, &[]).unwrap_err();
+            assert!(
+                err.to_string().contains("also holds the task's sources"),
+                "{outputs:?}: {err}"
+            );
+        }
+        // The same directory reached through a link is still a directory of its own.
+        let linked_root = root.join("project");
+        assert_eq!(
+            output_dirs(&sandboxed_task(&["dist"]), &linked_root, &inputs, &[]).unwrap(),
+            [linked_root.join("dist")]
+        );
+
+        // An allowed directory matches under any spelling of it.
+        let allowed = [root.clone()];
+        assert_eq!(
+            output_dirs(&sandboxed_task(&["*.o"]), &linked_root, &inputs, &allowed).unwrap(),
+            Vec::<PathBuf>::new()
+        );
+        let allowed = [linked_root];
+        assert_eq!(
+            output_dirs(&sandboxed_task(&["*.o"]), &root, &inputs, &allowed).unwrap(),
+            Vec::<PathBuf>::new()
+        );
+    }
+
+    #[test]
+    fn created_dirs_remove_a_new_parent_that_outputs_share() {
+        let tmp = tempfile::tempdir().unwrap();
+        let existing = tmp.path().join("kept");
+        std::fs::create_dir(&existing).unwrap();
+        let dirs = [
+            tmp.path().join("nest/a"),
+            tmp.path().join("nest/b/c"),
+            existing.clone(),
+            tmp.path().join("used/deep"),
+        ];
+
+        let created = CreatedDirs::create(&dirs).unwrap();
+        assert!(dirs.iter().all(|dir| dir.is_dir()));
+        std::fs::write(tmp.path().join("used/deep/out.txt"), "").unwrap();
+        drop(created);
+
+        // Everything mise created and the task left empty is gone, a shared
+        // parent included; what holds a file or was there before stays.
+        assert!(!tmp.path().join("nest").exists());
+        assert!(existing.is_dir());
+        assert!(tmp.path().join("used/deep/out.txt").is_file());
     }
 
     #[test]

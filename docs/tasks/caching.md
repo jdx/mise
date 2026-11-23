@@ -423,14 +423,15 @@ cache = { enabled = true, sandbox = true }
 
 Everything else fails with an error such as `Permission denied`. A dependency
 without an artifact cache has no key, so list the files the task reads from it
-in `sources`.
+in `sources`. All of a task's `run` entries share one temporary directory.
 
 mise creates each output directory before the task starts, and removes it again
 when the task leaves it empty. The directory of an output pattern is the part
 before its first wildcard. The directory of a plain path is its parent, or the
 path itself when its parent holds sources. Landlock allows writes to a
 directory, not to one file name, so outputs must not share a directory with
-sources or with the config file. Such a task fails before it starts:
+sources or with the config file. A symlink counts as the directory it leads
+to. Such a task fails before it starts:
 
 ```text
 task build: cache.sandbox cannot confine writes for output "*.o": ~/project also holds the task's sources. Put the outputs in a directory of their own, or list that directory in allow_write.
