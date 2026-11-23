@@ -309,6 +309,8 @@ These are skipped without an error, so resolution commands keep working:
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.
+- Remote `task_config.includes` entries (`git::…`, `oci::…` or `zip::…`) in
+  project config, which mise does not fetch. The tasks they hold are not listed.
 - Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
   dependency providers. Providers in global and system config still run.
 - Project daemon declarations. Daemons also do not start or stop when you change

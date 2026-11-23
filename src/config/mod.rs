@@ -8141,6 +8141,14 @@ async fn load_task_sources_from_configs(
                 configs.len(),
             )
         });
+    // Safe mode loads untrusted project config without a trust prompt, and
+    // fetching a URL is not something such a config gets to do, as for a remote
+    // `include` and a remote task file. Only a list that a global config set is
+    // fetched there: one that cascades from an ancestor is a project's.
+    let skip_remote_includes = Settings::safe_mode()
+        && !configs
+            .get(include_config_precedence)
+            .is_some_and(|cf| is_global_config(cf.get_path()));
     let (excludes, excludes_root) = configs
         .iter()
         .find_map(|cf| match cf.task_config_excludes() {
@@ -8221,6 +8229,10 @@ async fn load_task_sources_from_configs(
             warn_once!(
                 "skipping remote task include `{include}`: this command reads only local files, so it does not see the tasks it defines"
             );
+            continue;
+        }
+        if skip_remote_includes && is_remote_task_include(include) {
+            debug!("ignoring task include `{include}`: safe mode (MISE_SAFE=1)");
             continue;
         }
         // A remote include is experimental. Without it, skip just that include so
