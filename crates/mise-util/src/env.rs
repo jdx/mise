@@ -127,6 +127,9 @@ pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
+/// Whether mise is running in CI. Decided once per process: the answer comes
+/// from about fifty variables, and several checks per command ask for it.
+pub static IS_CI: Lazy<bool> = Lazy::new(ci_info::is_ci);
 
 pub static MISE_NO_ENV: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_ENV"));
 

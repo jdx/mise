@@ -116,7 +116,6 @@ chrono = { version = "0.4", default-features = false, features = [
   "std",
   "clock",
 ] }
-ci_info = "0.14"
 usage_rs = { package = "usage-rs", version = "7.0", features = [
   "completions",
   "config",

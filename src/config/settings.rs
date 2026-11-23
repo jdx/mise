@@ -2084,7 +2084,7 @@ fn load() -> Result<Arc<Settings>> {
     } else if *env::CLICOLOR == Some(false) {
         console::set_colors_enabled(false);
         console::set_colors_enabled_stderr(false);
-    } else if ci_info::is_ci() && !mise_util::testing::in_tests() {
+    } else if *mise_util::env::IS_CI && !mise_util::testing::in_tests() {
         console::set_colors_enabled_stderr(true);
     }
     if settings.ci {
