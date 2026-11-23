@@ -7201,7 +7201,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 if let Some(platforms_table) = t.remove("platforms") {
                     let platforms_table = into_table(platforms_table)?;
                     for (platform, platform_info) in platforms_table {
-                        platforms.insert(platform, platform_info.try_into()?);
+                        platforms.insert(platform, PlatformInfo::try_from(platform_info)?);
                     }
                 }
                 // Handle inline table format: "platforms.linux-x64" = { ... }
@@ -7213,7 +7213,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 for key in platform_keys {
                     if let Some(platform_info) = t.remove(&key) {
                         let platform_name = key.strip_prefix("platforms.").unwrap().to_string();
-                        platforms.insert(platform_name, platform_info.try_into()?);
+                        platforms.insert(platform_name, PlatformInfo::try_from(platform_info)?);
                     }
                 }
                 let mut options = BTreeMap::new();

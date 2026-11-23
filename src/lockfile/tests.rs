@@ -354,6 +354,43 @@ fn parse_lockfile_toml_names_its_cache_by_the_content() {
 }
 
 #[test]
+fn a_tool_reads_both_spellings_of_its_platform_entries() {
+    let tool: toml::Value = toml::from_str(
+        r#"
+version = "1.0.0"
+"platforms.macos-arm64" = { checksum = "sha256:bbb", url = "https://example.com/b" }
+
+[platforms.linux-x64]
+checksum = "sha256:aaa"
+url = "https://example.com/a"
+"#,
+    )
+    .unwrap();
+    let tool = LockfileTool::try_from(tool).unwrap();
+    let linux = &tool.platforms["linux-x64"];
+    assert_eq!(linux.checksum.as_deref(), Some("sha256:aaa"));
+    assert_eq!(linux.url.as_deref(), Some("https://example.com/a"));
+    let macos = &tool.platforms["macos-arm64"];
+    assert_eq!(macos.checksum.as_deref(), Some("sha256:bbb"));
+    assert_eq!(macos.url.as_deref(), Some("https://example.com/b"));
+}
+
+#[test]
+fn a_tool_names_what_is_wrong_with_a_platform_entry() {
+    for entry in [
+        "[platforms.linux-x64]\ninstall = \"sideways\"",
+        "\"platforms.linux-x64\" = { install = \"sideways\" }",
+    ] {
+        let tool: toml::Value = toml::from_str(&format!("version = \"1.0.0\"\n{entry}\n")).unwrap();
+        let err = LockfileTool::try_from(tool).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            r#"unrecognized install "sideways" in lockfile"#
+        );
+    }
+}
+
+#[test]
 fn read_takes_an_unquoted_date_as_its_text() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mise.lock");
