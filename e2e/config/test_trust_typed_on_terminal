@@ -3,7 +3,7 @@
 # A mise command typed on a terminal in an untrusted project trusts it without
 # the "Trust them?" prompt and says so. Anything that does not look like a person
 # typing it there keeps the prompt: stdout captured by a command substitution,
-# paranoid mode, an ignored directory.
+# paranoid mode, an ignored directory, the shell's command-not-found handler.
 
 require_cmd script
 
@@ -63,6 +63,14 @@ assert_not_contains_text "$output" "TYPED_TRUST_TEST"
 assert_untrusted
 forget_trust
 ok "[trust] an ignored directory is not trusted"
+
+# The shell's command-not-found handler runs mise on the terminal after a
+# mistyped command; nobody typed a mise command.
+output="$(on_pty 'mise hook-not-found -s bash -- nosuchbin')" || true
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+ok "[trust] the command-not-found handler does not trust the project"
 
 # Without a terminal nothing is trusted either.
 assert_fail "MISE_YES=0 mise env </dev/null" "not trusted"

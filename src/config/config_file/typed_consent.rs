@@ -26,8 +26,10 @@ pub(super) struct Signals {
     pub(super) paranoid_config: bool,
     /// mise runs as a shim, or as the `mise x` a shim starts.
     pub(super) shim: bool,
-    /// mise is answering shell completion or generating usage.
-    pub(super) completion: bool,
+    /// The shell ran mise for its own integration, not because the user typed a mise command:
+    /// TAB completion and the usage spec it reads, or the command-not-found handler after a
+    /// mistyped command.
+    pub(super) run_by_shell: bool,
     /// The config file and its trust root belong to the user running mise.
     pub(super) owned_by_user: bool,
 }
@@ -43,17 +45,22 @@ pub(super) fn consents(signals: Signals) -> bool {
         && signals.stderr_tty
         && !signals.paranoid_config
         && !signals.shim
-        && !signals.completion
+        && !signals.run_by_shell
         && signals.owned_by_user
 }
 
-/// The commands that answer shell completion or print the spec it reads. TAB is not consent.
-const COMPLETION_COMMANDS: &[&str] = &[
+/// The commands a shell integration runs without the user typing a mise command: those that
+/// answer TAB completion or print the spec it reads, and `hook-not-found`, which the shell's
+/// command-not-found handler runs with the terminal on all three descriptors when the user
+/// mistypes any command. Neither TAB nor a typo is consent. `hook-env`, which the prompt hook
+/// runs, is not listed because `trust_check` never asks for it and so never reaches this.
+const SHELL_RUN_COMMANDS: &[&str] = &[
     "__complete_word__",
     "__usage_complete_word",
     "complete",
     "completion",
     "completions",
+    "hook-not-found",
     "usage",
 ];
 
@@ -74,7 +81,7 @@ fn read_signals(path: &Path, config_root: &Path) -> Signals {
         // A shim's arguments belong to its tool, and a shim that is not mise itself runs
         // `mise x` with `__MISE_SHIM_PATH` naming itself: the user typed the tool's name.
         shim: *env::IS_RUNNING_AS_SHIM || env::MISE_SHIM_PATH.read().unwrap().is_some(),
-        completion: env::__USAGE.is_some() || COMPLETION_COMMANDS.contains(&command.as_str()),
+        run_by_shell: env::__USAGE.is_some() || SHELL_RUN_COMMANDS.contains(&command.as_str()),
         owned_by_user: owned_by_user(path) && owned_by_user(config_root),
     }
 }
@@ -128,7 +135,7 @@ mod tests {
         stderr_tty: true,
         paranoid_config: false,
         shim: false,
-        completion: false,
+        run_by_shell: false,
         owned_by_user: true,
     };
 
@@ -176,9 +183,9 @@ mod tests {
                 },
             ),
             (
-                "completion",
+                "completion or the command-not-found handler",
                 Signals {
-                    completion: true,
+                    run_by_shell: true,
                     ..CONSENTING
                 },
             ),
