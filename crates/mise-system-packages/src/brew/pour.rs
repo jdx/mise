@@ -488,6 +488,7 @@ pub(super) fn prepare_bottle(
         },
     )
     .wrap_err_with(|| format!("failed to extract bottle for {name}"))?;
+    check_unpacked_size(prepared.staging.path(), tarball, name)?;
     check_unpacked_keg(
         prepared.staging.path(),
         &prepared.staged_keg,
@@ -516,6 +517,42 @@ pub(super) fn prepare_bottle(
 
     write_receipt(rf, tag, &prepared.staged_keg, &report, closure, true)?;
     Ok(prepared)
+}
+
+/// Hold what a bottle unpacked to the `extract_max_ratio` limit at its full
+/// size. A sparse file in the tarball unpacks with holes, so it takes little
+/// disk until relocation and codesigning read and rewrite it; its length is
+/// what those steps write. Each regular file counts once, however many hard
+/// links it has.
+fn check_unpacked_size(staging: &Path, tarball: &Path, name: &str) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let limit = mise_util::file::extract_limit(tarball)?;
+    let mut seen = HashSet::new();
+    let mut total: u64 = 0;
+    for entry in walkdir::WalkDir::new(staging).follow_links(false) {
+        let entry = entry?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let meta = entry.metadata()?;
+        if !seen.insert((meta.dev(), meta.ino())) {
+            continue;
+        }
+        total = total.saturating_add(meta.len());
+        if total > limit {
+            return Err(eyre::Report::new(mise_util::file::extract_limit_error(
+                limit,
+            )))
+            .wrap_err_with(|| {
+                format!(
+                    "refusing to install the bottle for {name}: its files are larger than \
+                         its tarball allows. Raise extract_max_ratio if the bottle is genuine, \
+                         or install {name} with brew itself"
+                )
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Check what a bottle unpacked before anything reads or writes it. The keg
@@ -1309,6 +1346,29 @@ mod tests {
         mise_util::file::remove_all(keg.join("INSTALL_RECEIPT.json"))?;
         mise_util::file::copy(&real, keg.join("INSTALL_RECEIPT.json"))?;
         assert!(bottled_by_homebrew_at_least(&keg, (5, 1, 15)));
+        Ok(())
+    }
+
+    /// sparse files count at their full size against the unpack limit, and a
+    /// hard-linked file counts once
+    #[test]
+    fn test_unpacked_size_counts_sparse_files_at_full_size() -> Result<()> {
+        let (_tmp, root) = canonical_tempdir()?;
+        let tarball = root.join("bottle.tar.gz");
+        mise_util::file::write(&tarball, "x")?;
+        let limit = mise_util::file::extract_limit(&tarball)?;
+        let staging = root.join("staging");
+        let keg = staging.join("foo").join("1.0").join("bin");
+        mise_util::file::create_dir_all(&keg)?;
+        let file = std::fs::File::create(keg.join("big"))?;
+        file.set_len(limit)?;
+        std::fs::hard_link(keg.join("big"), keg.join("big-link"))?;
+        check_unpacked_size(&staging, &tarball, "foo")?;
+        file.set_len(limit + 1)?;
+        let err = check_unpacked_size(&staging, &tarball, "foo").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("foo"), "{msg}");
+        assert!(msg.contains("extract_max_ratio"), "{msg}");
         Ok(())
     }
 

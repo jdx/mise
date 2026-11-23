@@ -1051,7 +1051,8 @@ A small download can be built to unpack to far more data than the disk holds:
 1 GiB of zeroes is under 1 KiB of bzip2. When mise unpacks a tool's archive or
 compressed file, it stops, and the install fails, once the output is larger
 than 256 MiB and more than this many times the size of the download. Tool
-archives rarely unpack to more than 10 times their size.
+archives rarely unpack to more than 10 times their size. A Homebrew bottle's
+files count at their full length, including the holes of a sparse file.
 
 Raise it for a tool that legitimately unpacks to more, such as an archive of
 mostly empty disk images. `0` means no limit.
