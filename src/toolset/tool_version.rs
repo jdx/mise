@@ -879,8 +879,6 @@ impl ToolVersion {
     }
 
     pub(crate) fn aube_install_identity(&self) -> Option<String> {
-        use sha2::{Digest, Sha256};
-
         let lock = self.aube_lock.as_ref()?;
         let graph_identity = lock.identity();
         let options: BTreeMap<_, _> = self
@@ -890,10 +888,9 @@ impl ToolVersion {
             .into_iter()
             .collect();
         let options = toml::to_string(&options).ok()?;
-        Some(hex::encode(Sha256::digest(
-            format!("{graph_identity}\n{options}").as_bytes(),
-        )))
+        Some(aube_identity_of(&format!("{graph_identity}\n{options}")))
     }
+
     pub(crate) fn runtime_pathname(&self) -> Option<String> {
         let pathname = match &self.request {
             ToolRequest::Version { version, .. } if version != &self.version => version.clone(),
@@ -1562,6 +1559,23 @@ pub async fn resolve_sub_base(
     tool_request::version_sub(&v, sub)
 }
 
+/// The hex SHA-256 of `input`. Comparing, hashing and locating a tool
+/// version each ask for its aube identity, hundreds of times a command for a
+/// handful of distinct inputs, so each is hashed once.
+fn aube_identity_of(input: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    static IDENTITIES: std::sync::Mutex<BTreeMap<String, String>> =
+        std::sync::Mutex::new(BTreeMap::new());
+    let mut identities = IDENTITIES.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(identity) = identities.get(input) {
+        return identity.clone();
+    }
+    let identity = hex::encode(Sha256::digest(input.as_bytes()));
+    identities.insert(input.to_string(), identity.clone());
+    identity
+}
+
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}@{}", self.ba().full(), self.display_version())
@@ -2022,6 +2036,18 @@ mod tests {
         let tuesday = tv_locked_at("2026-10-27T17:30:00Z", "14d");
         assert_eq!(monday.tv_pathname(), tuesday.tv_pathname());
         assert_eq!(monday, tuesday);
+    }
+
+    #[test]
+    fn aube_identity_of_is_the_sha256_of_its_input_each_time() {
+        // printf 'graph\nregistry = "a"\n' | sha256sum
+        let input = "graph\nregistry = \"a\"\n";
+        let expected = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(input.as_bytes()));
+        assert_eq!(expected.len(), 64);
+        // The second answer comes from the remembered one.
+        assert_eq!(aube_identity_of(input), expected);
+        assert_eq!(aube_identity_of(input), expected);
+        assert_ne!(aube_identity_of("graph\nregistry = \"b\"\n"), expected);
     }
 
     #[test]

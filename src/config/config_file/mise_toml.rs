@@ -1780,6 +1780,11 @@ const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
 /// that placeholder text, so every other `{{ }}` expression that reads `version` is swapped for
 /// a marker here and put back verbatim afterwards, to be rendered once the version is known.
 fn shield_version_expressions(input: &str) -> (String, Vec<String>) {
+    // Most option values hold no expression, and the first use of the regex
+    // compiles it, which costs more than everything else a command does here.
+    if !input.contains("{{") {
+        return (input.to_string(), vec![]);
+    }
     let mut deferred = vec![];
     let shielded = VERSION_EXPRESSION.replace_all(input, |caps: &regex::Captures| {
         let expr = &caps[0];
@@ -4269,6 +4274,16 @@ mod tests {
                 "https://example.com/{{ version }}/{{ version | replace(from='--4--foobar', to='') }}.tgz"
             )
         );
+    }
+
+    #[test]
+    fn test_shield_leaves_text_without_an_expression_alone() {
+        for input in ["", "1.2.3", "version", "{ version | upper }", "}}version{"] {
+            assert_eq!(
+                shield_version_expressions(input),
+                (input.to_string(), vec![])
+            );
+        }
     }
 
     #[test]
