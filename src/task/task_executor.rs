@@ -3083,6 +3083,10 @@ impl TaskExecutor {
         let task_tool_args_env = crate::shims::task_tool_args_env(&tools)?;
         let ts_build_start = std::time::Instant::now();
 
+        // A task that ran before this one may have installed or removed a
+        // tool, in a process of its own that cannot tell this one.
+        crate::toolset::install_state::forget_installed_checks();
+
         // Remote tasks need tools from the full config hierarchy rather than a
         // config file rooted at their downloaded source.
         let task_cf = if task.is_remote() {

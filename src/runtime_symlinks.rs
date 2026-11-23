@@ -39,7 +39,7 @@ pub(crate) async fn rebuild_for_backends(
             .into_iter()
             .map(move |installs_dir| (backend.clone(), installs_dir))
     });
-    run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
+    let rebuilt = run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
         let shared = !is_own_installs_dir(backend.ba(), &installs_dir);
         let global = if shared {
             system.as_ref()
@@ -53,7 +53,10 @@ pub(crate) async fn rebuild_for_backends(
                 installs_dir.display()
             )
         })
-    })
+    });
+    // A link may now stand where a directory was, or the other way around.
+    crate::toolset::install_state::forget_installed_checks();
+    rebuilt
 }
 
 /// The tools global and system config select, resolved against what is
