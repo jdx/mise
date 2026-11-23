@@ -615,10 +615,15 @@ impl TaskExecutor {
         config: &Arc<Config>,
         sandbox_use: SandboxUse,
     ) -> Result<SandboxConfig> {
-        Ok(self
-            .build_sandbox_and_output_dirs(task, config, sandbox_use)
-            .await?
-            .0)
+        // Boxed, like the other calls of it and of `task_cache_sandbox::key`:
+        // every caller would otherwise hold this future in its own frame, and
+        // a `run` entry that names tasks loads them from inside those frames,
+        // which in a debug build is close to the size of a worker's stack.
+        Ok(
+            Box::pin(self.build_sandbox_and_output_dirs(task, config, sandbox_use))
+                .await?
+                .0,
+        )
     }
 
     /// The task's sandbox, and the output directories `cache.sandbox` makes
@@ -909,7 +914,8 @@ impl TaskExecutor {
                     let command_inputs = self
                         .resolve_cache_command_inputs(task, config, &env)
                         .await?;
-                    let sandbox = task_cache_sandbox::key(task, config, &self.sandbox).await?;
+                    let sandbox =
+                        Box::pin(task_cache_sandbox::key(task, config, &self.sandbox)).await?;
                     let cache = prepared
                         .finish(TaskCacheContext {
                             task,
@@ -2272,9 +2278,8 @@ impl TaskExecutor {
                 );
             }
         }
-        let (mut sandbox, output_dirs) = self
-            .build_sandbox_and_output_dirs(task, &config, SandboxUse::Run)
-            .await?;
+        let (mut sandbox, output_dirs) =
+            Box::pin(self.build_sandbox_and_output_dirs(task, &config, SandboxUse::Run)).await?;
         let _created_output_dirs = task_cache_sandbox::CreatedDirs::create(&output_dirs)?;
         // Under `cache.sandbox` the shared temp directory is closed and the task
         // writes to its own. A `#!` run script is a file mise wrote to the

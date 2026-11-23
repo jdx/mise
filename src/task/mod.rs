@@ -4674,10 +4674,11 @@ mod tests {
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
 
+    use super::TaskCacheConfig;
     #[cfg(unix)]
     use super::TaskConfirm;
     #[cfg(unix)]
-    use super::{TaskCacheConfig, TaskOutput};
+    use super::TaskOutput;
     use super::{
         clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
         tera_template_has_usage_ref,
