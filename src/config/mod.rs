@@ -5891,6 +5891,28 @@ async fn inferred_workspace_tasks(
                 run: vec![RunEntry::Script(inferred.command.clone())],
                 ..Default::default()
             };
+            // What a provider imports is text from manifests and directory names, which no
+            // trust decision covers. Only config is a template. A task's command, aliases,
+            // sources, outputs and dependencies are all rendered (some again when it runs),
+            // with `exec()` available, so an import that holds template syntax there cannot
+            // be used as it is written.
+            let suggestions = &inferred.suggestions;
+            if std::iter::once(&inferred.command)
+                .chain(&task.aliases)
+                .chain(&suggestions.inputs)
+                .chain(suggestions.outputs.iter().flatten())
+                .chain(suggestions.depends.iter().flatten())
+                .any(|text| contains_template_syntax(text))
+            {
+                warn!(
+                    "Inferred task {} in {} has template syntax in its name, path, inputs, \
+                     outputs or dependencies, and imported text is not rendered. Task will not \
+                     be available.",
+                    task.name,
+                    display_path(&task.config_source)
+                );
+                continue;
+            }
             inferred.suggestions.apply_before_defaults(&mut task);
             if let Err(err) = resolve_task_template(&mut task, task_definitions) {
                 warn!(
@@ -5901,6 +5923,11 @@ async fn inferred_workspace_tasks(
                 continue;
             }
             inferred.suggestions.apply_after_defaults(&mut task);
+            // The description is the script itself and is only displayed, so it stays out of
+            // `render` and is shown as written, e.g. `docker inspect -f '{{.Id}}' web`. A
+            // description that a root task default supplied is config and still renders.
+            let description =
+                (!inferred.description.is_empty()).then(|| std::mem::take(&mut task.description));
             // `render` leaves a broken `dir` template raw, but an inferred task is not
             // user-authored, so drop it instead of failing later.
             let rendered = match task.render(config, &project_root).await {
@@ -5914,6 +5941,9 @@ async fn inferred_workspace_tasks(
                     display_path(&task.config_source)
                 );
                 continue;
+            }
+            if let Some(description) = description {
+                task.description = description;
             }
             tasks.push(task);
         }

@@ -317,6 +317,13 @@ or `npm-shrinkwrap.json`), and falls back to npm. The package manager must be on
 `PATH`, for example through `[tools]`. [`mise tasks info`](/cli/tasks/info.html)
 shows the package's `package.json` as the task's source.
 
+What mise imports is text, not configuration, so it is never rendered as a
+[template](/templates.html). A script's body is shown as the task's description
+exactly as written. A script is skipped with a warning when its name, its
+package's path, or the `turbo.json` patterns and dependencies that apply to it
+contain template syntax (<span v-pre>`{{`, `{%` or `{#`</span>), because mise
+renders a task's command, aliases, sources, outputs and dependencies.
+
 An explicit mise task at the package's monorepo path replaces the imported
 script. Both names then run the explicit task.
 
