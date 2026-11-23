@@ -1130,11 +1130,6 @@ impl PlatformInfo {
         self.checksum.is_some() && self.provenance.is_some()
     }
 
-    /// True for an entry that pins the artifact by checksum alone, which is
-    /// what a lockfile that is not trusted keeps (see
-    /// [`Lockfile::drop_what_needs_trust`]). Locked mode may resolve its URL
-    /// from the backend, since the download is still checked against the
-    /// checksum.
     /// True when the checksum may stand in for verifying the download again:
     /// the entry still has the URL it was recorded with. A checksum without
     /// one ([`Self::is_pinned_without_url`]) pins the bytes, but a lockfile
@@ -1144,6 +1139,11 @@ impl PlatformInfo {
         self.checksum.is_some() && self.url.is_some()
     }
 
+    /// True for an entry that pins the artifact by checksum alone, which is
+    /// what a lockfile that is not trusted keeps (see
+    /// [`Lockfile::drop_what_needs_trust`]). Locked mode may resolve its URL
+    /// from the backend, since the download is still checked against the
+    /// checksum.
     pub(crate) fn is_pinned_without_url(&self) -> bool {
         self.url.is_none() && self.checksum.is_some()
     }
