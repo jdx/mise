@@ -541,7 +541,8 @@ impl Backend for VfoxBackend {
         }
 
         // Reuse non-SLSA lockfile provenance, but re-verify SLSA so the configured
-        // signer is checked even when a checksum is available.
+        // signer is checked even when a checksum is available. Paranoid mode and
+        // locked_verify_provenance re-verify every attestation.
         let platform_key = self.get_platform_key();
         let has_lockfile_provenance = tv
             .lock_platforms
@@ -552,7 +553,8 @@ impl Backend for VfoxBackend {
             .get(&platform_key)
             .and_then(|pi| pi.provenance.as_ref())
             .is_some_and(ProvenanceType::is_slsa);
-        vfox.skip_verification = has_lockfile_provenance && !locked_slsa;
+        vfox.skip_verification =
+            has_lockfile_provenance && !locked_slsa && !Settings::get().force_provenance_verify();
         // The download must be the artifact the lockfile pinned, with or without
         // --locked.
         vfox.locked_checksum = tv
@@ -586,6 +588,7 @@ impl Backend for VfoxBackend {
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
             pi.provenance = Some(provenance);
         } else if let Some(ref expected) = expected_provenance
+            && vfox.skip_verification
             && result.checksum_verified
             && !expected.is_slsa()
         {
