@@ -730,9 +730,11 @@ const FILE_TASK_BODY_KEYS: &[&str] = &["run", "run_windows", "file", "usage"];
 
 /// Header keys whose value guards how a task runs. A bad one fails the task instead of being
 /// skipped, so a typo cannot drop a confirmation prompt, a sandbox restriction or a lock.
+/// `cache` is one of them because `cache.sandbox` is a sandbox restriction.
 const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "confirm",
     "lock",
+    "cache",
     "deny_all",
     "deny_read",
     "deny_write",
@@ -7062,6 +7064,10 @@ echo "test"
             ("confirm", "confirm=1"),
             ("deny-net", "deny_net=\"yes\""),
             ("lock", "lock=1"),
+            (
+                "cache",
+                "cache={enabled=true, sandbox=true, env=\"PROFILE\"}",
+            ),
         ] {
             let task_file = tasks_dir.join(name);
             fs::write(

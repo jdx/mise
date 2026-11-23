@@ -17,9 +17,9 @@ properties and values, except `run`, `run_windows` and `file`, since the script
 is the command, and `usage`, since arguments use `#USAGE` lines. mise warns
 about those four and ignores them. A header that sets a property to a value of
 the wrong type gets a warning and that property is ignored, so one broken
-script does not stop the other tasks loading. A bad `confirm`, `lock`,
+script does not stop the other tasks loading. A bad `confirm`, `lock`, `cache`,
 `deny_*` or `allow_unix` value is an error instead, so a typo cannot remove a
-confirmation prompt, a lock, or a sandbox restriction.
+confirmation prompt, a lock, or a sandbox restriction such as `cache.sandbox`.
 To share properties between tasks, use [task templates](/tasks/templates.html).
 
 ::: warning Experimental
