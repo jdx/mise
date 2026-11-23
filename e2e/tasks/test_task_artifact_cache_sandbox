@@ -272,3 +272,17 @@ assert_fail "cd sub && mise run --allow-read=extra read_extra 2>&1" "Permission 
 rm -rf extra-dist
 assert_contains "cd sub && mise run --allow-read=$PWD/extra/ read_extra 2>&1" "restored outputs from cache"
 assert "cat extra-dist/out.txt" "extra"
+# So does a spelling that goes up and back down, or through a link.
+rm -rf extra-dist
+assert_contains "cd sub && mise run --allow-read=../extra read_extra 2>&1" "restored outputs from cache"
+ln -s extra extra-link
+rm -rf extra-dist
+assert_contains "mise run --allow-read=extra-link read_extra 2>&1" "restored outputs from cache"
+
+# A trailing slash asks for a directory, so on a file it allows nothing. Such a
+# run must fail, not restore what the plain spelling stored.
+rm -rf read-dist
+mise run --allow-read=secret.txt read_undeclared
+assert "cat read-dist/out.txt" "secret"
+rm -rf read-dist
+assert_fail "mise run --allow-read=secret.txt/ read_undeclared 2>&1" "Permission denied"

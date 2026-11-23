@@ -442,7 +442,8 @@ To allow more, list paths in the task's `allow_read` and `allow_write`, or pass
 contents of the files do not, so add a file that changes the result to
 `sources` instead. The key holds the directory a path leads to, not the way it
 was written: `--allow-read=lib` is a different path from each directory you run
-mise in, and `lib`, `./lib/` and its absolute path are the same one.
+mise in, and `lib`, `./lib/`, a link to it and its absolute path are the same
+one. A path that ends in `/` names a directory, so on a file it allows nothing.
 
 Tools that mise did not install, such as a toolchain in `~/.cargo` or a `shell`
 that lives in the project, need an `allow_read` entry. A task that runs `mise`

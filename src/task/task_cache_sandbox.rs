@@ -97,19 +97,33 @@ fn key_for(task: &Task, cli: &SandboxConfig, bases: &KeyBases<'_>) -> Option<Cac
     if !enforced(task) {
         return None;
     }
+    let root = resolve_existing(bases.root);
     let location = |path: &PathBuf, base: &Path| -> Option<String> {
         // An empty entry allows nothing.
         if path.as_os_str().is_empty() {
             return None;
         }
+        let path = file::replace_path(path);
+        let written = path.as_os_str().as_encoded_bytes();
+        let wants_dir = written.ends_with(b"/") || written.ends_with(b"/.");
         // Joining an absolute path keeps it; collecting the components drops `.`.
-        let path: PathBuf = base.join(file::replace_path(path)).components().collect();
-        let path = match path.strip_prefix(bases.root) {
+        // Following the links is what the sandbox does with the path, and it
+        // makes `../lib` from a subdirectory the same grant as `lib`.
+        let path = resolve_existing(&base.join(&path).components().collect::<PathBuf>());
+        // A trailing separator asks for a directory. On a file the sandbox
+        // allows nothing for it (`SandboxConfig::resolve_paths`), so it must
+        // not share an entry with the spelling that does allow the file.
+        let refused = wants_dir && path.exists() && !path.is_dir();
+        let path = match path.strip_prefix(&root) {
             Ok(inside) if inside.as_os_str().is_empty() => Path::new("."),
             Ok(inside) => inside,
             Err(_) => &path,
         };
-        Some(path.to_string_lossy().into_owned())
+        let mut location = path.to_string_lossy().into_owned();
+        if refused {
+            location.push('/');
+        }
+        Some(location)
     };
     let declared = |task_paths: &[PathBuf], cli_paths: &[PathBuf]| {
         let task_paths = task_paths
@@ -605,5 +619,43 @@ mod tests {
         );
         // An empty entry allows nothing, so it is not a grant.
         assert_eq!(allowed(&[""], &[""], "/project"), (none.clone(), none));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn key_follows_what_exists_and_keeps_a_refused_directory_spelling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(project.join("lib")).unwrap();
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(project.join("secret.txt"), "").unwrap();
+        std::os::unix::fs::symlink("lib", project.join("link")).unwrap();
+
+        let allowed = |path: &str, cwd: &Path| {
+            let task = sandboxed_task(&["dist"]);
+            let cli = SandboxConfig {
+                allow_read: vec![PathBuf::from(path)],
+                ..Default::default()
+            };
+            let bases = KeyBases {
+                root: &project,
+                task_base: &project,
+                cwd,
+            };
+            key_for(&task, &cli, &bases).unwrap().allow_read
+        };
+
+        // A path that goes up and back down, or through a link, is the
+        // directory it reaches.
+        assert_eq!(allowed("lib", &project), ["lib"]);
+        assert_eq!(allowed("../lib", &project.join("src")), ["lib"]);
+        assert_eq!(allowed("link/", &project), ["lib"]);
+
+        // A trailing separator on a file allows nothing, so it is not the grant
+        // that the plain spelling is. On a directory it changes nothing.
+        assert_eq!(allowed("secret.txt", &project), ["secret.txt"]);
+        assert_eq!(allowed("secret.txt/", &project), ["secret.txt/"]);
+        assert_eq!(allowed("secret.txt/.", &project), ["secret.txt/"]);
+        assert_eq!(allowed("lib/", &project), ["lib"]);
     }
 }
