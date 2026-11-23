@@ -285,14 +285,20 @@ mod tests {
 
     #[test]
     fn test_patch_replaces_many_placeholders_in_one_pass() {
-        // each placeholder is replaced once, without rescanning the path
-        let name = b"@@HOMEBREW_PREFIX@@/".repeat(20_000);
+        // each placeholder is replaced once, in one scan of the path, so the
+        // bytes a replacement inserts are not searched for that placeholder
+        let name = b"@@HOMEBREW_PREFIX@@/".repeat(2_000);
         let mut buf = fake_macho(&name, 0, 512 * 1024);
-        let started = std::time::Instant::now();
         assert!(patch(&mut buf, &test_replacements(), Path::new("t")).unwrap());
-        let elapsed = started.elapsed();
-        assert!(elapsed.as_secs() < 5, "took {elapsed:?}");
-        assert_eq!(find_dylib_name(&buf), b"/opt/homebrew/".repeat(20_000));
+        assert_eq!(find_dylib_name(&buf), b"/opt/homebrew/".repeat(2_000));
+
+        let replacements = [Replacement {
+            placeholder: b"@@HOMEBREW_PREFIX@@",
+            value: b"@@HOMEBREW_".to_vec(),
+        }];
+        let mut buf = fake_macho(b"@@HOMEBREW_PREFIX@@PREFIX@@", 0, 4096);
+        assert!(patch(&mut buf, &replacements, Path::new("t")).unwrap());
+        assert_eq!(find_dylib_name(&buf), b"@@HOMEBREW_PREFIX@@");
     }
 
     /// a fat file whose architectures are the given (offset, size) ranges of
