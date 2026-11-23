@@ -1703,20 +1703,53 @@ pub(crate) fn merge_group_toml_entry(
 
 /// `main_checkout = true`: a source inside a linked Git worktree is linked at
 /// the same path in the repository's main checkout, so the link still works
-/// after the worktree is removed. Any other source is linked as it is.
-fn main_checkout_source(source: PathBuf) -> Result<PathBuf> {
-    // `../files/value` from a nested config must map by where it lands in
-    // the worktree, not by the directory it climbs out of
-    let source = lexical_normalize(&source);
+/// after the worktree is removed. None leaves any other source as it is.
+fn main_checkout_source(source: &Path) -> Result<Option<PathBuf>> {
+    let source = resolve_parent_dirs(source);
     if !mise_util::git::in_linked_worktree(&source) {
-        return Ok(source);
+        return Ok(None);
     }
-    mise_util::git::main_checkout_equivalent(&source).ok_or_else(|| {
-        eyre::eyre!(
-            "main_checkout: {} is in a linked Git worktree with no main checkout path to link to (a bare repository's worktree, or a path that leads through a symlink)",
-            source.display()
-        )
-    })
+    let checkout = mise_util::git::checkout_of(&source);
+    let (Some(main), Some(worktree)) = (checkout.repository, checkout.worktree) else {
+        bail!(
+            "main_checkout: {} is in a worktree of a bare repository, which has no main checkout to link to",
+            source.display_user()
+        );
+    };
+    let mapped = main.join(source.strip_prefix(&worktree)?);
+    // a link in the main checkout may lead anywhere except back into a
+    // worktree, where it would break along with that worktree
+    if mapped
+        .canonicalize()
+        .is_ok_and(|real| mise_util::git::in_linked_worktree(&real))
+    {
+        bail!(
+            "main_checkout: {} leads back into a linked Git worktree",
+            mapped.display_user()
+        );
+    }
+    Ok(Some(mapped))
+}
+
+/// `source` with every `..` resolved the way the filesystem resolves it, so
+/// `../files/value` from a nested config maps by where it lands in the
+/// worktree, not by the directory it climbs out of. The components after the
+/// last `..` stay as written; a prefix that does not exist is normalized
+/// lexically.
+fn resolve_parent_dirs(source: &Path) -> PathBuf {
+    let components = source.components().collect_vec();
+    let Some(last) = components
+        .iter()
+        .rposition(|c| matches!(c, std::path::Component::ParentDir))
+    else {
+        return source.to_path_buf();
+    };
+    let prefix: PathBuf = components[..=last].iter().collect();
+    let rest: PathBuf = components[last + 1..].iter().collect();
+    match prefix.canonicalize() {
+        Ok(prefix) => prefix.join(rest),
+        Err(_) => lexical_normalize(source),
+    }
 }
 
 /// Resolve one declaration, merging explicit tracking policies into earlier layers.
@@ -2387,17 +2420,6 @@ fn merge_file_entry(
             }
         },
     };
-    let source = if main_checkout == Some(true) {
-        match main_checkout_source(source) {
-            Ok(source) => source,
-            Err(err) => {
-                record_invalid(&target_raw, &origin.config, err.to_string(), local);
-                return;
-            }
-        }
-    } else {
-        source
-    };
     let mut origin = origin.clone();
     origin.source = Some(source.clone());
     for req in expand_request(FileRequest {
@@ -2423,6 +2445,26 @@ fn merge_file_entry(
         group,
         depends,
     }) {
+        // after expansion, so each match maps on its own
+        let req = if main_checkout == Some(true) {
+            match main_checkout_source(&req.source) {
+                Ok(Some(source)) => FileRequest {
+                    origin: ResourceOrigin {
+                        source: Some(source.clone()),
+                        ..req.origin
+                    },
+                    source,
+                    ..req
+                },
+                Ok(None) => req,
+                Err(err) => {
+                    record_invalid(&req.target_raw, &req.origin.config, err.to_string(), local);
+                    continue;
+                }
+            }
+        } else {
+            req
+        };
         merged.insert((req.target.clone(), false), req);
     }
 }

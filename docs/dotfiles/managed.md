@@ -758,16 +758,17 @@ checkout instead:
 Applied from `~/src/project-wt`, a linked worktree of `~/src/project`, this
 links `~/.config/mise/config.toml` to `~/src/project/mise.global.toml`. The
 source resolves as usual, so a relative path still starts at the declaring
-config's directory, and mise then swaps the worktree for the main checkout. A
-source outside a linked worktree, such as one applied from the main checkout
-itself, is linked as it is.
+config's directory and a wildcard matches files in the worktree, and mise then
+swaps the worktree for the main checkout in each path. A source outside a
+linked worktree, such as one applied from the main checkout itself, is linked
+as it is.
 
 The link shows the main checkout's copy, not the worktree's, so the source
 must exist there: a file added on the worktree's branch can be linked once it
 is in the main checkout. mise reads the worktree's Git metadata from disk and
 runs no Git command. A worktree of a bare repository has no main checkout, and
-a main checkout path that leads through a symlink is not followed; mise reports
-either one and skips the entry.
+a symlink in the main checkout that leads back into a worktree would break with
+it; mise reports either one and skips the entry.
 
 ## Unapply {#unapplying}
 
