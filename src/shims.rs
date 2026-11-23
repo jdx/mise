@@ -2248,7 +2248,9 @@ pub async fn err_no_version_set(
             return Err(eyre!(msg));
         }
         if is_active_command_wrapper(bin_name) {
-            return Err(eyre!(reentered_wrapper_message(config, bin_name)));
+            return Err(eyre!(
+                reentered_wrapper_message(config, &ts, bin_name).await
+            ));
         }
         bail!(
             "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
@@ -2293,7 +2295,7 @@ pub async fn err_no_version_set(
 /// While a wrapper runs, its own shim skips it (`ACTIVE_WRAPPERS_ENV`), so the command has to come
 /// from a tool or from further down PATH. When neither has it, "not a valid shim" blames an
 /// uninstalled tool, but the shim is the wrapper's and is still wanted (#16017).
-fn reentered_wrapper_message(config: &Config, bin_name: &str) -> String {
+async fn reentered_wrapper_message(config: &Arc<Config>, ts: &Toolset, bin_name: &str) -> String {
     let wrapper = load_command_wrappers(&config.config_files, std::iter::empty())
         .ok()
         .and_then(|wrappers| {
@@ -2315,21 +2317,52 @@ fn reentered_wrapper_message(config: &Config, bin_name: &str) -> String {
         }
         None => format!("the command wrapper for {bin_name} ran {bin_name} again"),
     };
+    // Only installed versions reach `tvs`, and a configured version that may provide the command
+    // keeps the shim from falling back to PATH, so name it rather than deny it exists.
+    let missing = ts
+        .list_missing_versions(config)
+        .await
+        .into_iter()
+        .filter(|tv| {
+            tv.ba().matches_bin_name(bin_name)
+                || crate::registry::REGISTRY
+                    .get(&tv.ba().short)
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        })
+        .map(|tv| format!("{}@{}", tv.ba(), tv.version))
+        .collect_vec();
+    if !missing.is_empty() {
+        msg.push_str(&format!(
+            ", but {} is not installed.\nInstall it with: mise install",
+            missing.join(", ")
+        ));
+        return msg;
+    }
     msg.push_str(&format!(
         ", but no configured tool provides {bin_name} and there is no other {bin_name} on PATH."
     ));
-    let disable_tools = Settings::get().disable_tools();
-    let disabled = crate::registry::REGISTRY
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    let filtered = crate::registry::REGISTRY
         .values()
         .unique_by(|rt| rt.short)
         .filter(|rt| rt.short == bin_name || rt.provides_bin(bin_name))
-        .filter(|rt| disable_tools.contains(rt.short))
-        .map(|rt| rt.short)
+        .map(|rt| rt.short.to_string())
+        .filter(|short| {
+            !crate::registry::tool_enabled(enable_tools.as_ref(), &disable_tools, short)
+        })
         .collect_vec();
-    if !disabled.is_empty() {
+    if !filtered.is_empty() {
+        // enable_tools is authoritative when set, so it is the list that left the tool out.
+        let reason = if enable_tools.is_some() {
+            "is not in enable_tools"
+        } else {
+            "is in disable_tools"
+        };
         msg.push_str(&format!(
-            "\n{} is in disable_tools, so mise does not install it.",
-            disabled.join(", ")
+            "\n{} {reason}, so mise does not install it.",
+            filtered.join(", ")
         ));
     }
     let name = wrapper.as_ref().map_or(bin_name, |(name, _)| name.as_str());
