@@ -3,6 +3,8 @@
 mise installs and runs developer tools, which carries risk. This page lists the major areas of mise, the security
 measures in place for each, and what remains to be done. To report a vulnerability, see
 [Reporting a vulnerability](#reporting-a-vulnerability).
+For what mise trusts and what its controls protect, see the
+[threat model](https://mise.jdx.dev/security.html#threat-model).
 
 Please open a ticket or send me an email if you have thoughts on how mise can be made more secure.
 
