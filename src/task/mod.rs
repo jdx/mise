@@ -826,17 +826,27 @@ fn header_decl(mut info: toml::Table, path: &Path) -> Result<TaskDecl> {
 /// checked whole; script files are checked through their `#MISE` headers (the
 /// only part parsed and rendered at load).
 pub(crate) fn file_declares_secrets(path: &Path, body: &str) -> bool {
-    fn table_declares(v: &toml::Value) -> bool {
-        v.as_table().is_some_and(|t| t.contains_key("secrets"))
+    use toml::de::DeValue;
+    fn as_table<'a, 'i>(v: &'a DeValue<'i>) -> Option<&'a toml::de::DeTable<'i>> {
+        match v {
+            DeValue::Table(t) => Some(t),
+            _ => None,
+        }
+    }
+    fn table_declares(v: &DeValue<'_>) -> bool {
+        as_table(v).is_some_and(|t| t.keys().any(|k| k.get_ref() == "secrets"))
     }
     let body = file::strip_utf8_bom(body);
     if path.extension().is_some_and(|e| e == "toml") {
-        let Ok(toml::Value::Table(root)) = toml::from_str::<toml::Value>(body) else {
+        // the document as the parser reads it, like `file_has_decoded_template`
+        let Ok(root) = toml::de::DeTable::parse(body) else {
             return false;
         };
         // a task file is `[name] ...` tables; also accept a top-level `[tasks.name]` shape
-        root.values().any(|v| {
-            table_declares(v) || v.as_table().is_some_and(|t| t.values().any(table_declares))
+        root.get_ref().values().any(|v| {
+            let v = v.get_ref();
+            table_declares(v)
+                || as_table(v).is_some_and(|t| t.values().any(|v| table_declares(v.get_ref())))
         })
     } else {
         header_declares_secrets(body)
@@ -852,16 +862,19 @@ pub(crate) fn header_declares_secrets(body: &str) -> bool {
 }
 
 pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
-    use crate::config::config_file::mise_toml::toml_value_has_template;
     // Must see exactly what the loader sees. `Task::from_path_unrendered_with_cf` strips a
     // byte-order mark before scanning headers, so leaving one here would let a `#MISE` on line 1
     // hide an escaped template from this check and then render it anyway -- the caller runs the
     // two back to back on the same file.
     let body = file::strip_utf8_bom(body);
     if path.extension().is_some_and(|e| e == "toml") {
-        // Unparseable TOML won't load as a task file (it errors before any
-        // render), so it doesn't need trust on this account.
-        toml::from_str::<toml::Value>(body).is_ok_and(|v| toml_value_has_template(&v))
+        // The document as the parser reads it: `load_task_file` deserializes the same text into
+        // `Tasks`, which keeps entries `toml::Value` drops or fails on. A document the parser
+        // rejects does not load as a task file (it errors before any render), so it does not
+        // need trust on this account.
+        toml::de::DeTable::parse(body).is_ok_and(|doc| {
+            crate::config::config_file::mise_toml::toml_document_has_template(doc.get_ref())
+        })
     } else {
         header_has_decoded_template(body)
     }
@@ -5048,6 +5061,37 @@ rust_cache = { unknown = true }
             script,
             "\u{feff}#MISE description=\"a plain task\"\necho hi\n"
         ));
+    }
+
+    #[test]
+    fn task_file_gates_read_every_entry_the_loader_keeps() {
+        use super::{file_declares_secrets, file_has_decoded_template};
+        let toml = Path::new("build.toml");
+        let template = "description = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n";
+        // The loader reads each of these as tasks and renders the template, whatever
+        // `toml::Value` makes of the document: a date, or an error.
+        for hidden in [
+            "\"$__toml_private_datetime\" = \"1979-05-27\"\n",
+            "\"$__toml_private_datetime\" = \"none\"\n",
+            "\"\\u0024__toml_private_datetime\" = \"1979-05-27\"\n",
+            "hi.run = [{ task = \"build\", x = 9223372036854775808 }]\n",
+        ] {
+            let body = format!("{hidden}\n[build]\nrun = \"cargo build\"\n{template}");
+            assert!(file_has_decoded_template(toml, &body), "{body}");
+            let body = format!("{hidden}\n[build]\nrun = \"cargo build\"\nsecrets = [\"A\"]\n");
+            assert!(file_declares_secrets(toml, &body), "{body}");
+        }
+        // the marker as the first key of a nested table
+        let body = format!(
+            "[build]\nrun = \"cargo build\"\n[build.env]\n\"$__toml_private_datetime\" = \"1979-05-27\"\nX = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
+        );
+        assert!(file_has_decoded_template(toml, &body), "{body}");
+        // a real date is still no template, and a file the parser rejects does not load
+        assert!(!file_has_decoded_template(
+            toml,
+            "[build]\nrun = \"cargo build\"\nwhen = 1979-05-27\n"
+        ));
+        assert!(!file_has_decoded_template(toml, "[build\n"));
     }
 
     #[test]

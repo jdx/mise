@@ -3137,33 +3137,44 @@ fn is_safe_config_body(body: &str) -> bool {
     if contains_template_syntax(body) {
         return false;
     }
-    let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) else {
+    use toml::de::DeValue;
+    // The document as the parser reads it, before any serde type sees it: `MiseToml` is
+    // deserialized from the same text, and `toml::Value` would hide entries it keeps (see
+    // `toml_document_has_template`).
+    let Ok(table) = toml::de::DeTable::parse(body) else {
         // let the normal trust + parse flow handle invalid TOML
         return false;
     };
+    let table = table.get_ref();
     // The raw-body check above misses escaped delimiters that TOML decodes,
     // e.g. `"{{ exec(...) }}"` becomes `{{ exec(...) }}`
     // after parsing and would still render via Tera. Re-check every decoded
     // string (keys and values, at any depth) so no exec()-capable template
     // can slip through into tool versions or task fields.
-    if toml_table_has_template(&table) {
+    if toml_document_has_template(table) {
         return false;
     }
-    table.iter().all(|(key, value)| match key.as_str() {
+    fn as_table<'a, 'i>(v: &'a DeValue<'i>) -> Option<&'a toml::de::DeTable<'i>> {
+        match v {
+            DeValue::Table(t) => Some(t),
+            _ => None,
+        }
+    }
+    table.iter().all(|(key, value)| match key.get_ref().as_ref() {
         "min_version" => true,
         // a task that lists secrets is only inert once the file is trusted
-        "tasks" => !value.as_table().is_some_and(|tasks| {
-            tasks
-                .values()
-                .any(|t| t.as_table().is_some_and(|t| t.contains_key("secrets")))
+        "tasks" => !as_table(value.get_ref()).is_some_and(|tasks| {
+            tasks.values().any(|t| {
+                as_table(t.get_ref()).is_some_and(|t| t.keys().any(|k| k.get_ref() == "secrets"))
+            })
         }),
-        "tools" => value.as_table().is_some_and(|tools| {
+        "tools" => as_table(value.get_ref()).is_some_and(|tools| {
             tools.iter().all(|(tool, version)| {
-                !tool_key_requires_trust(tool)
-                    && match version {
-                        toml::Value::String(v) => !version_requires_trust(v),
-                        toml::Value::Array(versions) => versions.iter().all(
-                            |v| matches!(v, toml::Value::String(v) if !version_requires_trust(v)),
+                !tool_key_requires_trust(tool.get_ref())
+                    && match version.get_ref() {
+                        DeValue::String(v) => !version_requires_trust(v),
+                        DeValue::Array(versions) => versions.iter().all(
+                            |v| matches!(v.get_ref(), DeValue::String(v) if !version_requires_trust(v)),
                         ),
                         _ => false,
                     }
@@ -3171,6 +3182,28 @@ fn is_safe_config_body(body: &str) -> bool {
         }),
         _ => false,
     })
+}
+
+/// Whether any decoded string (table key or value, at any depth) of a TOML document contains
+/// Tera template syntax.
+///
+/// A trust gate reads the document this way, as the parser produced it, because the loaders
+/// deserialize the same text into their own types and keep every entry, while `toml::Value`
+/// does not: a table whose first key is `$__toml_private_datetime` becomes a date and its other
+/// entries are dropped, and an integer beyond `i64` fails the whole document.
+pub(crate) fn toml_document_has_template(table: &toml::de::DeTable<'_>) -> bool {
+    fn value_has_template(value: &toml::de::DeValue<'_>) -> bool {
+        use toml::de::DeValue;
+        match value {
+            DeValue::String(s) => contains_template_syntax(s),
+            DeValue::Array(arr) => arr.iter().any(|v| value_has_template(v.get_ref())),
+            DeValue::Table(t) => toml_document_has_template(t),
+            _ => false,
+        }
+    }
+    table
+        .iter()
+        .any(|(k, v)| contains_template_syntax(k.get_ref()) || value_has_template(v.get_ref()))
 }
 
 /// Whether any decoded string (table key or value, at any depth) contains
@@ -5537,6 +5570,22 @@ run = "cargo build"
         }
         // invalid toml falls back to the normal trust + parse flow
         assert!(!is_safe_config_body("[tools"));
+        // `MiseToml` keeps entries that `toml::Value` turns into a date or fails on
+        let template = "description = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n";
+        for hidden in [
+            "[tasks]\n\"$__toml_private_datetime\" = \"1979-05-27\"\n",
+            "[tasks]\n\"$__toml_private_datetime\" = \"none\"\n",
+            "[tasks]\nhi.run = [{ task = \"build\", x = 9223372036854775808 }]\n",
+        ] {
+            let body = format!("{hidden}[tasks.build]\nrun = \"cargo build\"\n{template}");
+            assert!(!is_safe_config_body(&body), "should require trust: {body}");
+            let body = format!("{hidden}[tasks.build]\nrun = \"cargo build\"\nsecrets = [\"A\"]\n");
+            assert!(!is_safe_config_body(&body), "should require trust: {body}");
+        }
+        let body = format!(
+            "[tasks.build]\n\"$__toml_private_datetime\" = \"1979-05-27\"\nrun = \"cargo build\"\n{template}"
+        );
+        assert!(!is_safe_config_body(&body), "should require trust: {body}");
     }
 
     #[tokio::test]
