@@ -1074,7 +1074,13 @@ fn build(
     // local daemon of the same name look ambiguous and strip its exports.
     let mut exports = IndexMap::new();
     // The URL a daemon declares stands in when the proxy serves no hostname.
-    let declared = urls::declared_url(name, &table);
+    // It is rendered only then: a hostname wins, and a template that only
+    // pitchfork can render must not warn for a daemon the proxy serves.
+    let declared = if host.is_none() {
+        urls::declared_url(name, &table)
+    } else {
+        None
+    };
     if !imported
         && (claim.is_some() || host.is_some() || declared.is_some())
         && let Some(base) = env_var_base(name)
@@ -1514,7 +1520,11 @@ fn reference_exports(
     // The hostname goes unrouted when another daemon claimed it, and the URL
     // the daemon declares serves instead.
     let host = daemon.host.as_ref().filter(|_| !host_withdrawn);
-    let declared = urls::declared_url(&daemon.name, &daemon.table);
+    let declared = if host.is_none() {
+        urls::declared_url(&daemon.name, &daemon.table)
+    } else {
+        None
+    };
     if daemon.port.is_none() && host.is_none() && declared.is_none() {
         return exports;
     }
@@ -3233,7 +3243,13 @@ mod tests {
              [daemons.cache]\nrun = 'c'\nport = { auto = true, base = 6380 }\nproxy = false\n\
              url = 'redis://127.0.0.1:{{ ports[0] }}/0'\n\
              [daemons.queue]\nrun = 'q'\nport = { expect = [5672] }\nproxy = false\n\
-             url = 'amqp://{{ name }}:{{ port }}'\n",
+             url = 'amqp://{{ name }}:{{ port }}'\n\
+             [daemons.pair]\nrun = 'p'\nport = [4900, 4901]\nproxy = false\n\
+             url = 'http://127.0.0.1:{{ ports[1] }}/{{ port }}'\n",
+        );
+        assert_eq!(
+            set.daemons["pair"].exports["PAIR_URL"],
+            "http://127.0.0.1:4901/4900"
         );
         assert_eq!(set.daemons["api"].exports["API_PORT"], "4800");
         assert_eq!(
@@ -3268,6 +3284,15 @@ mod tests {
         // The proxy's hostname wins when it serves the daemon, as in pitchfork.
         let set = load_body(
             "[daemons.api]\nrun = 'a'\nport = 4800\nurl = 'http://127.0.0.1:{{ port }}'\n",
+        );
+        assert_eq!(
+            set.daemons["api"].exports["API_URL"],
+            "https://api.shop.localhost"
+        );
+        // A template only pitchfork can render is never rendered for a daemon
+        // the proxy serves, so it cannot warn there.
+        let set = load_body(
+            "[daemons.api]\nrun = 'a'\nport = 4800\nurl = 'http://{{ namespace }}:{{ port }}'\n",
         );
         assert_eq!(
             set.daemons["api"].exports["API_URL"],

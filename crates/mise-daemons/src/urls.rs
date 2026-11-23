@@ -554,18 +554,20 @@ pub fn withdraw(table: &mut toml::Table) {
     table.remove("proxy_tls");
 }
 
-/// The ports a daemon table is configured for: an integer, or the `expect`
-/// list of pitchfork's structured `port`. `mise` writes the second form for a
-/// daemon whose port it resolved.
+/// The ports a daemon table is configured for: an integer, a list of them, or
+/// the `expect` list of pitchfork's structured `port`. `mise` writes the last
+/// form for a daemon whose port it resolved.
 fn configured_ports(table: &toml::Table) -> Vec<u16> {
     let as_port =
         |value: &toml::Value| value.as_integer().and_then(|port| u16::try_from(port).ok());
+    let as_ports = |ports: &[toml::Value]| ports.iter().filter_map(as_port).collect();
     match table.get("port") {
         Some(toml::Value::Table(port)) => port
             .get("expect")
             .and_then(toml::Value::as_array)
-            .map(|ports| ports.iter().filter_map(as_port).collect())
+            .map(|ports| as_ports(ports))
             .unwrap_or_default(),
+        Some(toml::Value::Array(ports)) => as_ports(ports),
         Some(port) => as_port(port).into_iter().collect(),
         None => Vec::new(),
     }

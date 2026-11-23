@@ -421,6 +421,24 @@ client expects.
 `proxy = true` gives a preset a hostname, using the daemon's name as the label.
 The preset still exports no `<NAME>_URL`.
 
+`proxy_tls` sets what the proxy does with TLS. The default, `"terminate"`,
+serves HTTPS at the proxy and forwards plain HTTP to the daemon. Use
+`"passthrough"` when the daemon serves TLS itself and the connection should
+reach it unbroken:
+
+```toml
+[daemons.api]
+run = "exec npm run dev:https"
+port = 3000
+proxy_tls = "passthrough"
+```
+
+`proxy_tls` applies only to a daemon the proxy routes: setting it with
+`proxy = false`, or on a daemon without a `port`, is an error.
+
+Both keys need pitchfork 2.26.0 or later. An older supervisor starts the
+daemons but does not serve their hostnames.
+
 ### Declare a URL
 
 A daemon the proxy does not serve has no hostname, so nothing says what address
@@ -439,35 +457,17 @@ REDIS_ENDPOINT = "{{ env.CACHE_URL }}"
 ```
 
 mise exports `CACHE_URL` as `redis://127.0.0.1:6380/0`, and pitchfork gives the
-same address as `{{ daemons.cache.url }}` in its own templates. A daemon the
+same address as <code v-pre>{{ daemons.cache.url }}</code> in its own templates. A daemon the
 proxy does serve keeps its hostname: `url` applies only when there is none,
 because `proxy = false` is set, a hostname collision withdrew it, or the daemon
 has no `port`. A `project` reference to a daemon with a `url` exports it as
 `<NAME>_URL`, named after the reference.
 
-`{{ port }}` is the port the daemon is configured for. A port that `auto`
+<code v-pre>{{ port }}</code> is the port the daemon is configured for. A port that `auto`
 resolves is the resolved one. mise renders only `port`, `ports` and `name`; a
 `url` that reads another variable, such as `namespace`, works in pitchfork's
 templates but exports no `<NAME>_URL`, and mise warns. `url` needs pitchfork
 2.36.0 or later.
-
-`proxy_tls` sets what the proxy does with TLS. The default, `"terminate"`,
-serves HTTPS at the proxy and forwards plain HTTP to the daemon. Use
-`"passthrough"` when the daemon serves TLS itself and the connection should
-reach it unbroken:
-
-```toml
-[daemons.api]
-run = "exec npm run dev:https"
-port = 3000
-proxy_tls = "passthrough"
-```
-
-`proxy_tls` applies only to a daemon the proxy routes: setting it with
-`proxy = false`, or on a daemon without a `port`, is an error.
-
-Both keys need pitchfork 2.26.0 or later. An older supervisor starts the
-daemons but does not serve their hostnames.
 
 ### Choose hostname labels
 
