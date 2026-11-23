@@ -10,6 +10,8 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct PathEnv {
+    /// The command-wrapper directory, when mise adds it. It leads the PATH, ahead of `pre`.
+    wrappers: Vec<PathBuf>,
     pre: Vec<PathBuf>,
     mise: Vec<PathBuf>,
     marked: Vec<PathBuf>,
@@ -26,6 +28,7 @@ impl Default for PathEnv {
 impl PathEnv {
     pub fn new() -> Self {
         Self {
+            wrappers: Vec::new(),
             pre: Vec::new(),
             mise: Vec::new(),
             marked: Vec::new(),
@@ -34,9 +37,23 @@ impl PathEnv {
         }
     }
 
+    /// Add a directory mise manages. It goes behind the inherited entries that precede the
+    /// mise shims directory, which the user put ahead of mise on purpose.
+    ///
+    /// The command-wrapper directory is the exception and leads the whole PATH. A wrapper
+    /// replaces a command by name, so it has to win over a directory holding the real one
+    /// wherever that directory sits, such as a `~/.cargo/bin` listed before the shims.
+    /// `mise x -- cargo` already looks wrappers up first; this keeps a `cargo` that a child
+    /// shell or build tool looks up on the same answer.
     pub fn add(&mut self, path: PathBuf) {
         for part in split_paths(&path) {
-            self.mise.push(part);
+            // Exact match: mise adds this directory by this very path, and `add` runs for
+            // every tool directory, so it must not touch the filesystem.
+            if part == *dirs::COMMAND_WRAPPERS {
+                self.wrappers.push(part);
+            } else {
+                self.mise.push(part);
+            }
         }
     }
 
@@ -53,8 +70,9 @@ impl PathEnv {
     /// user-owned duplicates there are preserved exactly as written.
     pub fn to_vec(&self) -> Vec<PathBuf> {
         let mut seen = HashSet::new();
-        self.pre
+        self.wrappers
             .iter()
+            .chain(self.pre.iter())
             .chain(self.mise.iter())
             .chain(self.post.iter())
             .filter(|p| seen.insert(*p))
@@ -72,7 +90,12 @@ impl PathEnv {
     /// [`Self::to_vec`]. An entry that was already on the PATH keeps its place
     /// in the result, so a directory mise moved forward is still reported.
     pub fn managed_entries(&self) -> Vec<PathBuf> {
-        let managed: HashSet<&PathBuf> = self.mise.iter().chain(self.marked.iter()).collect();
+        let managed: HashSet<&PathBuf> = self
+            .wrappers
+            .iter()
+            .chain(self.mise.iter())
+            .chain(self.marked.iter())
+            .collect();
         self.to_vec()
             .into_iter()
             .filter(|p| managed.contains(p))

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# A directory that holds the real command can sit ahead of the mise shims directory on the
+# inherited PATH, as rustup's ~/.cargo/bin does when a startup file lists it first. mise keeps
+# such a directory ahead of the tools it adds. The wrapper must still win there: for the command
+# mise starts, and for one a child process looks up on the PATH mise gives it.
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/mbx" <<'EOF'
+#!/usr/bin/env bash
+printf 'mbx:%s\n' "$MBX_CARGO_SHIM_MODE"
+exec cargo "$@"
+EOF
+cat >"$fake_bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+echo system-cargo
+EOF
+chmod +x "$fake_bin/mbx" "$fake_bin/cargo"
+
+cat >mise.toml <<'EOF'
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+
+[tasks.which-cargo]
+run = "command -v cargo"
+
+[tasks.check]
+run = "cargo check"
+EOF
+
+mise reshim
+wrapper="$MISE_DATA_DIR/command-wrappers/bin/cargo"
+export PATH="$fake_bin:$MISE_DATA_DIR/shims:$PATH"
+
+# The command mise starts itself.
+assert "mise x -- cargo check" "mbx:1
+system-cargo"
+
+# A command looked up by a child of `mise x`.
+assert "mise x -- sh -c 'command -v cargo'" "$wrapper"
+assert "mise x -- sh -c 'cargo check'" "mbx:1
+system-cargo"
+
+# The PATH `mise env` prints.
+assert "mise env -s bash | grep '^export PATH=' | cut -d= -f2- | tr -d \"'\" | cut -d: -f1" "$MISE_DATA_DIR/command-wrappers/bin"
+assert "bash -c 'eval \"\$(mise env -s bash)\" && cargo check'" "mbx:1
+system-cargo"
+
+# A task's script.
+assert "mise run -q which-cargo" "$wrapper"
+assert "mise run -q check" "mbx:1
+system-cargo"
+
+# A directory ahead of the shims directory still comes before the tools mise adds.
+mise install dummy@1.0.0
+cat >>mise.toml <<'EOF'
+
+[tools]
+dummy = "1.0.0"
+EOF
+cat >"$fake_bin/dummy" <<'EOF'
+#!/usr/bin/env bash
+echo inherited-dummy
+EOF
+chmod +x "$fake_bin/dummy"
+assert "mise x -- sh -c dummy" "inherited-dummy"
+
+# Without a wrapper configured, the wrapper directory is not put on PATH.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+mise reshim
+assert_not_contains "mise env -s bash" "command-wrappers"
+assert "mise x -- sh -c 'cargo check'" "system-cargo"

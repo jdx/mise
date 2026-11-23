@@ -506,7 +506,10 @@ terraform = "tofu"
 
 Run `mise reshim` after adding or removing a wrapper. Wrappers work with both
 `mise activate` and `mise activate --shims` and take precedence over an
-executable with the same name. If the configured tool that provides the
+executable with the same name. The wrapper directory is the first entry of the
+`PATH` that `mise exec`, tasks and `mise env` set, ahead of directories you list
+before mise's shims, such as `~/.cargo/bin`, so a script or build tool started
+there also gets the wrapper. If the configured tool that provides the
 wrapper's command is missing, the wrapper installs it first, as that command's
 own shim would, subject to `not_found_auto_install` unless the tool is lazy.
 

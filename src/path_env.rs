@@ -37,6 +37,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_command_wrapper_dir_leads_entries_ahead_of_the_shims() {
+        let _config = Config::get().await.unwrap();
+        let shims_dir = dirs::shims();
+        let shims = shims_dir.to_str().unwrap();
+        let wrappers = dirs::COMMAND_WRAPPERS.to_str().unwrap();
+        // `~/.cargo/bin` listed ahead of the shims keeps its lead over the tools mise adds, but
+        // not over the wrapper directory, or `[wrappers.cargo]` would never be reached.
+        let mut path_env =
+            PathEnv::from_iter(["/home/me/.cargo/bin", shims, "/usr/bin"].map(PathBuf::from));
+        path_env.add(wrappers.into());
+        path_env.add("/tools/node/bin".into());
+        assert_eq!(
+            path_env.to_string(),
+            format!("{wrappers}:/home/me/.cargo/bin:/tools/node/bin:{shims}:/usr/bin")
+        );
+        assert_eq!(
+            path_env.managed_entries(),
+            [wrappers, "/tools/node/bin"].map(PathBuf::from)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_command_wrapper_dir_is_not_moved_unless_added() {
+        let _config = Config::get().await.unwrap();
+        let shims_dir = dirs::shims();
+        let shims = shims_dir.to_str().unwrap();
+        let wrappers = dirs::COMMAND_WRAPPERS.to_str().unwrap();
+        // No wrapper is configured here, so the inherited copy stays where the user has it.
+        let mut path_env =
+            PathEnv::from_iter(["/home/me/bin", shims, wrappers, "/usr/bin"].map(PathBuf::from));
+        path_env.add("/tools/node/bin".into());
+        assert_eq!(
+            path_env.to_string(),
+            format!("/home/me/bin:/tools/node/bin:{shims}:{wrappers}:/usr/bin")
+        );
+    }
+
+    #[tokio::test]
     async fn test_path_env_no_mise() {
         let _config = Config::get().await.unwrap();
         let mut path_env = PathEnv::from_iter(
