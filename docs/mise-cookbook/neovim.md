@@ -55,7 +55,7 @@ In your Neovim config, create an `after/queries/toml/injections.scm` file with t
   ]
 
   (#is-mise?)
-  (#match? @injection.language "^['\"]{3}\\_s*#!(/[^/ \t\n]+)+\\s*\n") ; multiline shebang
+  (#match? @injection.language "^['\"]{3}\\_s*#!(/[^/ \t\n]+)+([ \t]+-[^\n]*)?[ \t]*\n") ; multiline shebang, optional flags
   (#gsub! @injection.language "^.*#!/[^%s]+/([^%s]+).*" "%1") ; extract lang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
 )
