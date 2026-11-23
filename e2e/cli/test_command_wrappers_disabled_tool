@@ -9,14 +9,14 @@ cat >"$fake_bin/wrap-claude" <<'EOF'
 exec claude "$@"
 EOF
 chmod +x "$fake_bin/wrap-claude"
-# Only the fixtures, mise and the commands this test runs, so a claude installed on the host cannot answer.
+# Only the fixtures and links to the commands this test runs, mise included, so a claude
+# installed on the host cannot answer.
 tools_bin="$HOME/tools-bin"
 mkdir -p "$tools_bin"
-for cmd in bash cat chmod env mkdir; do
+for cmd in bash cat chmod env mise mkdir; do
   ln -s "$(command -v "$cmd")" "$tools_bin/$cmd"
 done
-mise_dir="$(dirname "$(command -v mise)")"
-export PATH="$fake_bin:$mise_dir:$tools_bin"
+export PATH="$fake_bin:$tools_bin"
 
 cat >mise.toml <<'EOF'
 [settings]
