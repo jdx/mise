@@ -41,11 +41,23 @@ impl ToolProvider for MiseToolProvider {
 }
 
 /// Version provider that fetches latest versions from backends
-struct MiseVersionProvider;
+struct MiseVersionProvider {
+    /// The file being edited. The editor reads it itself, not through the config loader, so
+    /// its `[tools]` keys arrive here without a trust check.
+    path: PathBuf,
+}
 
 #[async_trait]
 impl VersionProvider for MiseVersionProvider {
     async fn latest_version(&self, tool: &str) -> Option<String> {
+        // A key with inline options (`tool[api_url=...]`) can point the backend at another
+        // host, which then gets the user's forge token. The config loader applies such a key
+        // only from a trusted config, and so does the editor: without trust it looks nothing
+        // up and the version is typed in by hand.
+        if config_file::tool_key_requires_trust(tool) && !config_file::is_path_trusted(&self.path) {
+            return None;
+        }
+
         // Create BackendArg from tool name
         let ba = Arc::new(BackendArg::from(tool));
 
@@ -305,7 +317,9 @@ impl Edit {
             .title(&title)
             .dry_run(self.dry_run)
             .with_tool_provider(Box::new(MiseToolProvider))
-            .with_version_provider(Box::new(MiseVersionProvider))
+            .with_version_provider(Box::new(MiseVersionProvider {
+                path: env::current_dir().unwrap_or_default().join(path),
+            }))
             .with_backend_provider(Box::new(MiseBackendProvider));
 
         // Auto-detect tools and add them
