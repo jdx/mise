@@ -270,6 +270,20 @@ impl Plugin {
         Ok(ctx)
     }
 
+    /// Fails unless the plugin ships `hooks/<hook>.lua`. A backend hook is only
+    /// called on a plugin used as `<plugin>:<tool>`, and a tool plugin used that
+    /// way has none, so this turns a Lua `require` failure into an error that
+    /// names the plugin and the hook.
+    pub(crate) fn ensure_backend_hook(&self, hook: &str) -> Result<()> {
+        if !self.load()?.hooks.contains(hook) {
+            error!(
+                "vfox plugin {} has no hooks/{hook}.lua, so it is not a backend plugin and cannot be used as {}:<tool>",
+                self.name, self.name
+            );
+        }
+        Ok(())
+    }
+
     pub(crate) async fn exec_async(&self, chunk: impl AsChunk) -> Result<()> {
         self.load()?;
         let chunk = self.lua.load(chunk);
@@ -493,6 +507,23 @@ mod tests {
             .to_string();
         assert!(err.contains("not found"), "{err}");
         assert!(!err.contains("./hooks"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_tool_plugin_used_as_a_backend_runs_no_backend_hook() {
+        let embedded = embedded_plugins::get_embedded_plugin("oci").unwrap();
+        let plugin = Plugin::from_embedded("oci", embedded).unwrap();
+        let ctx = crate::hooks::backend_exec_env::BackendExecEnvContext {
+            tool: "demo".to_string(),
+            version: "1.0.0".to_string(),
+            install_path: PathBuf::from("/nonexistent"),
+            options: Default::default(),
+        };
+        let err = plugin.backend_exec_env(ctx).await.unwrap_err().to_string();
+        assert!(
+            err.contains("vfox plugin oci has no hooks/backend_exec_env.lua"),
+            "{err}"
+        );
     }
 
     #[tokio::test]

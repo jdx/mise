@@ -23,7 +23,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
+use crate::toolset::{ToolOptions, ToolRequest, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 type AliasCaches = HashMap<String, Arc<CacheManager<BTreeMap<String, String>>>>;
@@ -635,6 +635,11 @@ impl Backend for VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<Vec<PathBuf>> {
+        // `system` names a tool mise did not install, yet it always counts as
+        // installed, so there is no install for a plugin hook to describe.
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return Ok(vec![]);
+        }
         let path = self
             ._exec_env(config, tv)
             .await?
@@ -656,6 +661,9 @@ impl Backend for VfoxBackend {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<EnvMap> {
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return Ok(EnvMap::new());
+        }
         Ok(self
             ._exec_env(config, tv)
             .await?
