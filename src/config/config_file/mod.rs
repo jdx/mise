@@ -977,7 +977,7 @@ fn is_trusted_without_config_paths(
     } else if mise_util::testing::in_tests() || ci_info::is_ci() {
         // in tests/CI we trust everything
         return true;
-    } else if !trust_path(path).exists() {
+    } else if !has_trust_record(path) {
         // No direct trust record. A config inside a linked git worktree
         // shares trust with the equivalent path in the repo's main checkout.
         // Not applicable in paranoid mode (excluded above), where trust is
@@ -1009,8 +1009,7 @@ pub fn add_ignored(path: PathBuf) -> Result<()> {
 }
 pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
     let path = path.canonicalize()?;
-    let ignore_path = ignore_path(&path);
-    if ignore_path.exists() {
+    for ignore_path in records_for(&dirs::IGNORED_CONFIGS, &path) {
         file::remove_file(&ignore_path)?;
     }
     IS_IGNORED.lock().unwrap().remove(&path);
@@ -1224,9 +1223,10 @@ pub(crate) fn is_ignored(path: &Path) -> bool {
 pub fn trust(path: &Path) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
-    if !hashed_path.exists() {
+    let canonicalized_path = path.canonicalize()?;
+    if !record_points_at(&hashed_path, &canonicalized_path) {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
+        file::make_symlink_or_file(&canonicalized_path, &hashed_path)?;
     }
     // The hash is only read for content-bound trust. Record it for an env file too, which is
     // bound to its content when only the `env_files` category is on. A trust root that is a
@@ -1329,28 +1329,99 @@ pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()>
 
 pub fn untrust(path: &Path) -> eyre::Result<()> {
     rm_ignored(path.to_path_buf())?;
-    let hashed_path = trust_path(path);
-    if hashed_path.exists() {
-        file::remove_file(&hashed_path)?;
+    // The current name also covers sidecars left without a record, such as the monorepo marker
+    // of a root trusted through `trusted_config_paths`.
+    let current = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(path));
+    let mut records = records_for(&dirs::TRUSTED_CONFIGS, path);
+    if !records.contains(&current) {
+        records.push(current);
     }
-    let hash_path = with_appended_extension(&hashed_path, "hash");
-    if hash_path.exists() {
-        file::remove_file(&hash_path)?;
-    }
-    let monorepo_path = with_appended_extension(&hashed_path, "monorepo");
-    if monorepo_path.exists() {
-        file::remove_file(&monorepo_path)?;
+    let identity = record_identity(path);
+    for hashed_path in records {
+        if record_points_at(&hashed_path, &identity) {
+            file::remove_file(&hashed_path)?;
+        }
+        for ext in ["hash", "monorepo"] {
+            let sidecar = with_appended_extension(&hashed_path, ext);
+            if sidecar.exists() {
+                file::remove_file(&sidecar)?;
+            }
+        }
     }
     Ok(())
 }
 
-/// generates a path like ~/.mise/trusted-configs/dir-file-3e8b8c44c3.toml
+/// The trust record for `path`, e.g. `~/.local/state/mise/trusted-configs/dir-file-<sha256>`.
 fn trust_path(path: &Path) -> PathBuf {
-    dirs::TRUSTED_CONFIGS.join(hashed_path_filename(path))
+    record_path(&dirs::TRUSTED_CONFIGS, path)
 }
 
 fn ignore_path(path: &Path) -> PathBuf {
-    dirs::IGNORED_CONFIGS.join(hashed_path_filename(path))
+    record_path(&dirs::IGNORED_CONFIGS, path)
+}
+
+/// Whether `path` has a trust record of its own: one whose stored target is `path`. A record
+/// name is derived from the path, so a file of that name proves nothing until its target is
+/// compared.
+fn has_trust_record(path: &Path) -> bool {
+    record_points_at(&trust_path(path), &record_identity(path))
+}
+
+/// The file in `dir` that holds the record for `path`: the current name, or an older name whose
+/// record points at `path`. `.hash` and `.monorepo` sidecars sit beside the record it returns.
+fn record_path(dir: &Path, path: &Path) -> PathBuf {
+    let identity = record_identity(path);
+    let current = dir.join(hashed_path_filename(path));
+    if current.symlink_metadata().is_err()
+        && let Some(legacy) = legacy_records(dir, &identity).into_iter().next()
+    {
+        return legacy;
+    }
+    current
+}
+
+/// Every record in `dir` that points at `path`, under its current name and under the older
+/// names.
+fn records_for(dir: &Path, path: &Path) -> Vec<PathBuf> {
+    let identity = record_identity(path);
+    let current = dir.join(hashed_path_filename(path));
+    let mut records = vec![];
+    if record_points_at(&current, &identity) {
+        records.push(current);
+    }
+    records.extend(legacy_records(dir, &identity));
+    records
+}
+
+remove_by!("2027.11.0", "legacy-trust-record-names");
+
+/// Records under the names that mise 2026.11.13 and earlier used, which hash the path with
+/// `Hash`. That hash skips separators, so different paths can share a name, and a record found
+/// under one counts only when it points at `identity`.
+fn legacy_records(dir: &Path, identity: &Path) -> Vec<PathBuf> {
+    let hash = hash_to_str(&identity);
+    [hash_to_str(&hash), prefixed_record_name(identity, hash)]
+        .into_iter()
+        .map(|name| dir.join(name))
+        .filter(|record| record_points_at(record, identity))
+        .collect()
+}
+
+/// Whether the record file `record` stores `identity` as its target.
+fn record_points_at(record: &Path, identity: &Path) -> bool {
+    file::resolve_symlink(record)
+        .ok()
+        .flatten()
+        .is_some_and(|target| target == identity)
+}
+
+/// The path a record is named for and points at.
+fn record_identity(path: &Path) -> PathBuf {
+    // canonicalize needs access to every ancestor, which a sandbox can deny (e.g. Codex
+    // "workspace write" on Windows), so fall back to the absolute path instead of panicking.
+    path.canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Appends an extension to a path without replacing existing dots in the filename.
@@ -1367,35 +1438,21 @@ pub fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
     PathBuf::from(os_string)
 }
 
-/// creates the filename portion of trust/ignore files, e.g.:
+/// The file name of the trust and ignore records for `path`: the parent and file names, for
+/// people reading the directory, then the SHA-256 of the whole path's bytes, which tells apart
+/// paths that the readable part does not.
 fn hashed_path_filename(path: &Path) -> String {
-    // canonicalize needs access to every ancestor, which a sandbox can deny (e.g. Codex
-    // "workspace write" on Windows), so fall back to the absolute path instead of panicking.
-    let canonicalized_path = path
-        .canonicalize()
-        .or_else(|_| std::path::absolute(path))
-        .unwrap_or_else(|_| path.to_path_buf());
-    let hash = hash_to_str(&canonicalized_path);
-    let trunc_str = |s: &OsStr| {
-        let mut s = s.to_string_lossy().to_string();
-        s = s.chars().take(20).collect();
-        s
-    };
-    let trust_path = dirs::TRUSTED_CONFIGS.join(hash_to_str(&hash));
-    if trust_path.exists() {
-        return trust_path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-    }
-    let parent = canonicalized_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_default()
-        .file_name()
-        .map(trunc_str);
-    let filename = canonicalized_path.file_name().map(trunc_str);
+    use sha2::Digest;
+    let identity = record_identity(path);
+    let digest = sha2::Sha256::digest(identity.as_os_str().as_encoded_bytes());
+    let hash = digest.iter().map(|b| format!("{b:02x}")).collect();
+    prefixed_record_name(&identity, hash)
+}
+
+fn prefixed_record_name(identity: &Path, hash: String) -> String {
+    let trunc_str = |s: &OsStr| s.to_string_lossy().chars().take(20).collect::<String>();
+    let parent = identity.parent().and_then(|p| p.file_name()).map(trunc_str);
+    let filename = identity.file_name().map(trunc_str);
     [parent, filename, Some(hash)]
         .into_iter()
         .flatten()
@@ -1404,6 +1461,9 @@ fn hashed_path_filename(path: &Path) -> String {
 }
 
 fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
+    if !has_trust_record(path) {
+        return Ok(false);
+    }
     let trust_path = trust_path(path);
     let trust_hash_path = with_appended_extension(&trust_path, "hash");
     if !trust_hash_path.exists() {
@@ -2265,5 +2325,70 @@ mod hashed_path_filename_tests {
             hashed_path_filename(&relative),
             hashed_path_filename(&absolute)
         );
+    }
+
+    /// Two env files whose paths differ only in where the separators are.
+    fn files_that_differ_in_separators() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("platform/deploy/staging/api/.env");
+        let b = tmp.path().join("plat/formdeploys/taging/api/.env");
+        for path in [&a, &b] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "A=1\n").unwrap();
+        }
+        // `Path`'s `Hash` skips separators, so these share the name older versions gave a record.
+        let legacy_name = |p: &Path| {
+            let identity = record_identity(p);
+            prefixed_record_name(&identity, hash_to_str(&identity))
+        };
+        assert_eq!(legacy_name(&a), legacy_name(&b));
+        (tmp, a, b)
+    }
+
+    #[test]
+    fn a_record_of_another_path_is_not_trust() {
+        let (_tmp, a, b) = files_that_differ_in_separators();
+        assert_ne!(hashed_path_filename(&a), hashed_path_filename(&b));
+        trust(&a).unwrap();
+        assert!(has_trust_record(&a));
+        assert!(!has_trust_record(&b));
+        untrust(&a).unwrap();
+        assert!(!has_trust_record(&a));
+    }
+
+    #[test]
+    fn a_record_under_the_old_name_counts_only_for_its_target() {
+        let (_tmp, a, b) = files_that_differ_in_separators();
+        let identity = record_identity(&a);
+        let legacy =
+            dirs::TRUSTED_CONFIGS.join(prefixed_record_name(&identity, hash_to_str(&identity)));
+        file::create_dir_all(&*dirs::TRUSTED_CONFIGS).unwrap();
+        file::make_symlink_or_file(&identity, &legacy).unwrap();
+        assert!(has_trust_record(&a));
+        assert!(!has_trust_record(&b));
+        // Re-trusting the other path leaves the old record alone and writes its own.
+        trust(&b).unwrap();
+        assert!(has_trust_record(&a));
+        assert!(has_trust_record(&b));
+        untrust(&a).unwrap();
+        assert!(!legacy.exists());
+        assert!(!has_trust_record(&a));
+        assert!(has_trust_record(&b));
+        untrust(&b).unwrap();
+    }
+
+    #[test]
+    fn trusting_a_path_keeps_the_ignore_of_another() {
+        let (_tmp, a, b) = files_that_differ_in_separators();
+        let identity = record_identity(&b);
+        let legacy =
+            dirs::IGNORED_CONFIGS.join(prefixed_record_name(&identity, hash_to_str(&identity)));
+        file::create_dir_all(&*dirs::IGNORED_CONFIGS).unwrap();
+        file::make_symlink_or_file(&identity, &legacy).unwrap();
+        trust(&a).unwrap();
+        assert_eq!(file::resolve_symlink(&legacy).unwrap(), Some(identity));
+        rm_ignored(b.clone()).unwrap();
+        assert!(!legacy.exists());
+        untrust(&a).unwrap();
     }
 }
