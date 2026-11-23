@@ -10,6 +10,7 @@ use crate::task::TaskArtifactCache;
 use crate::task::task_cache::{
     CommandInput, TaskCacheContext, TaskCacheMissReason, TaskCacheRestore,
 };
+use crate::task::task_cache_sandbox::{self, SandboxUse};
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_helpers::task_gets_keep_order_slot;
 use crate::task::task_list::split_task_spec;
@@ -102,6 +103,9 @@ struct TaskExecContext<'a> {
     secrets: Option<&'a SpawnSecrets>,
     /// Runs under its locked parent's terminal, so it never takes the runtime lock.
     covered: Cover,
+    /// The private temp directory of a task that runs under `cache.sandbox`,
+    /// shared by all of its run entries.
+    sandbox_tmp: Option<&'a Path>,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -609,18 +613,48 @@ impl TaskExecutor {
         &self,
         task: &Task,
         config: &Arc<Config>,
+        sandbox_use: SandboxUse,
     ) -> Result<SandboxConfig> {
+        // Boxed, like the other calls of it and of `task_cache_sandbox::key`:
+        // every caller would otherwise hold this future in its own frame, and
+        // a `run` entry that names tasks loads them from inside those frames,
+        // which in a debug build is close to the size of a worker's stack.
+        Ok(
+            Box::pin(self.build_sandbox_and_output_dirs(task, config, sandbox_use))
+                .await?
+                .0,
+        )
+    }
+
+    /// The task's sandbox, and the output directories `cache.sandbox` makes
+    /// writable, which the caller creates before it starts the task.
+    async fn build_sandbox_and_output_dirs(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+        sandbox_use: SandboxUse,
+    ) -> Result<(SandboxConfig, Vec<PathBuf>)> {
         let task_base = task.dir(config).await?;
         let resolve_task_path =
             |p: &PathBuf| -> PathBuf { resolve_task_sandbox_path(p, task_base.as_deref()) };
+        // `cache.sandbox` denies everything the task's cache key does not
+        // cover; the paths it allows are added below.
+        let derived = task_cache_sandbox::enforced(task);
+        if task_cache_sandbox::requested(task) && !derived {
+            warn_once!(
+                "cache.sandbox is only enforced on Linux; cached tasks run outside the sandbox here"
+            );
+        }
         let mut sandbox = SandboxConfig {
-            deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
-            deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
-            deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
-            deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            deny_read: derived || task.deny_all || task.deny_read || self.sandbox.deny_read,
+            deny_write: derived || task.deny_all || task.deny_write || self.sandbox.deny_write,
+            deny_net: derived || task.deny_all || task.deny_net || self.sandbox.deny_net,
+            deny_env: derived || task.deny_all || task.deny_env || self.sandbox.deny_env,
             deny_unix: task.deny_unix || self.sandbox.deny_unix,
             deny_process: false,
-            deny_temp_write: false,
+            // The task gets a temp directory of its own instead; see `exec_program`.
+            deny_temp_write: derived,
+            deny_temp_read: derived,
             allow_read: task
                 .allow_read
                 .iter()
@@ -633,6 +667,7 @@ impl TaskExecutor {
                 .map(&resolve_task_path)
                 .chain(self.sandbox.allow_write.iter().cloned())
                 .collect(),
+            allow_list_dirs: vec![],
             allow_net: task
                 .allow_net
                 .iter()
@@ -664,6 +699,7 @@ impl TaskExecutor {
                 .flat_map(|cache| &cache.env)
                 .chain(self.sandbox.cache_env.iter())
                 .cloned()
+                .chain(task_cache_sandbox::declared_env_keys(task))
                 .collect(),
             // Filled in by `resolve_paths` below.
             symlinked_allow_paths: vec![],
@@ -679,8 +715,26 @@ impl TaskExecutor {
         .into_iter()
         .flatten()
         .collect();
+        // Resolve what the task and the command line allow before deriving the
+        // rest: `derive` has to compare an output directory with the path a
+        // rule is bound to, however that path was written.
         sandbox.resolve_paths(&project_roots)?;
-        Ok(sandbox)
+        let mut output_dirs = Vec::new();
+        if derived && sandbox_use != SandboxUse::EnvOnly {
+            let paths =
+                task_cache_sandbox::derive(task, config, &sandbox.allow_write, sandbox_use).await?;
+            sandbox.allow_read.extend(paths.read);
+            sandbox.allow_write.extend(paths.write.iter().cloned());
+            sandbox.allow_list_dirs = paths.list;
+            output_dirs = paths.write;
+            // Resolving the derived paths records their replaced spellings
+            // afresh, so keep the ones from the first pass.
+            let mut symlinked = std::mem::take(&mut sandbox.symlinked_allow_paths);
+            sandbox.resolve_paths(&project_roots)?;
+            symlinked.append(&mut sandbox.symlinked_allow_paths);
+            sandbox.symlinked_allow_paths = symlinked;
+        }
+        Ok((sandbox, output_dirs))
     }
 
     pub(crate) fn task_timings(&self, task: Option<&Task>) -> bool {
@@ -860,6 +914,8 @@ impl TaskExecutor {
                     let command_inputs = self
                         .resolve_cache_command_inputs(task, config, &env)
                         .await?;
+                    let sandbox =
+                        Box::pin(task_cache_sandbox::key(task, config, &self.sandbox)).await?;
                     let cache = prepared
                         .finish(TaskCacheContext {
                             task,
@@ -869,6 +925,7 @@ impl TaskExecutor {
                             declared_env: &task_env,
                             dependency_keys: &dependency_state.cache_keys,
                             command_inputs,
+                            sandbox,
                             explain: self.task_cache_explain || self.task_cache_explain_json,
                             mode: self.task_cache,
                         })
@@ -1043,7 +1100,9 @@ impl TaskExecutor {
             None
         } else {
             let task_env_keys: BTreeSet<String> = task_env.iter().map(|(k, _)| k.clone()).collect();
-            let sandbox = self.build_sandbox_for_task(task, config).await?;
+            let sandbox = self
+                .build_sandbox_for_task(task, config, SandboxUse::EnvOnly)
+                .await?;
             let terminal = TaskTerminal {
                 executor: self,
                 task,
@@ -1195,6 +1254,12 @@ impl TaskExecutor {
             task_env.push((task_lock::LOCKS_ENV.to_string(), locks));
             Some(held)
         };
+        // Under `cache.sandbox` the shared temp directory is closed, so the task
+        // gets one of its own. It lasts for the whole task, so that a later run
+        // entry finds what an earlier one left there, and is removed after it.
+        let sandbox_tmp = task_cache_sandbox::enforced(task)
+            .then(tempfile::tempdir)
+            .transpose()?;
         let exec_ctx = TaskExecContext {
             task,
             env: &env,
@@ -1206,6 +1271,7 @@ impl TaskExecutor {
             otel_span_cx: otel_span_cx.as_ref(),
             secrets: spawn_secrets.as_ref(),
             covered,
+            sandbox_tmp: sandbox_tmp.as_ref().map(tempfile::TempDir::path),
         };
 
         let timer = std::time::Instant::now();
@@ -1843,6 +1909,7 @@ impl TaskExecutor {
                 &shell_args,
                 cmd_verbatim,
                 Some((script, args)),
+                None,
                 ctx,
             )
             .await
@@ -1989,7 +2056,9 @@ impl TaskExecutor {
             return Ok(Vec::new());
         }
         let root = task_cwd(task, config).await?;
-        let sandbox = self.build_sandbox_for_task(task, config).await?;
+        let sandbox = self
+            .build_sandbox_for_task(task, config, SandboxUse::Probe)
+            .await?;
         let filtered_env = if sandbox.is_active() {
             let mut filtered = sandbox.filter_env(resolved_env);
             // filter_env reads allowed names back from mise's own process
@@ -2101,7 +2170,9 @@ impl TaskExecutor {
     async fn exec(&self, file: &Path, args: &[String], ctx: TaskExecContext<'_>) -> Result<()> {
         if runs_without_a_shell(file) {
             let program = file.display().to_string();
-            return self.exec_program(&program, args, false, None, ctx).await;
+            return self
+                .exec_program(&program, args, false, None, Some(file), ctx)
+                .await;
         }
         // Resolved once, from the file the user wrote, and then used for both decisions below.
         let shell = file_task_shell(file, ctx.task)?;
@@ -2110,7 +2181,8 @@ impl TaskExecutor {
         let shim = ps1_shim(file, &shell)?;
         let script = shim.as_deref().unwrap_or(file);
         let (program, args) = self.get_file_program_and_args(script, &shell, args)?;
-        self.exec_program(&program, &args, false, None, ctx).await
+        self.exec_program(&program, &args, false, None, Some(script), ctx)
+            .await
     }
 
     async fn exec_with_text_file_busy_retry(
@@ -2149,6 +2221,9 @@ impl TaskExecutor {
         args: &[String],
         cmd_verbatim: bool,
         inline: Option<(&str, &[String])>,
+        // The file mise runs, when the task is one: a task file, or the copy
+        // of a `#!` run script. `program` is its interpreter when a shell runs it.
+        script_file: Option<&Path>,
         ctx: TaskExecContext<'_>,
     ) -> Result<()> {
         let TaskExecContext {
@@ -2162,6 +2237,7 @@ impl TaskExecutor {
             otel_span_cx,
             secrets,
             covered: _,
+            sandbox_tmp,
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -2202,7 +2278,23 @@ impl TaskExecutor {
                 );
             }
         }
-        let mut sandbox = self.build_sandbox_for_task(task, &config).await?;
+        let (mut sandbox, output_dirs) =
+            Box::pin(self.build_sandbox_and_output_dirs(task, &config, SandboxUse::Run)).await?;
+        let _created_output_dirs = task_cache_sandbox::CreatedDirs::create(&output_dirs)?;
+        // Under `cache.sandbox` the shared temp directory is closed and the task
+        // writes to its own. A `#!` run script is a file mise wrote to the
+        // shared one, which the task has to read to start, whether it runs
+        // directly or as the argument of a shell. Only that file is added: a
+        // shell outside the system directories needs `allow_read`, which puts
+        // it in the cache key.
+        if let Some(dir) = sandbox_tmp {
+            if let Some(script) = script_file {
+                sandbox
+                    .allow_read
+                    .push(dunce::canonicalize(script).unwrap_or_else(|_| script.to_path_buf()));
+            }
+            sandbox.allow_write.push(dunce::canonicalize(dir)?);
+        }
         if let Some(secrets) = secrets
             && sandbox.effective_deny_read()
         {
@@ -2226,6 +2318,9 @@ impl TaskExecutor {
             // cannot undo this because the runner sets `env` afterwards.
             mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
             strip_inherited_report_file(env, &mut filtered);
+            if let Some(dir) = sandbox_tmp {
+                filtered.insert("TMPDIR".to_string(), dir.to_string_lossy().into_owned());
+            }
             sandbox_env = filtered;
             &sandbox_env
         } else {
@@ -2726,7 +2821,9 @@ impl TaskExecutor {
             eyre::bail!("task {} skip_if must not be empty", task.name);
         }
         let root = task_cwd(task, config).await?;
-        let sandbox = self.build_sandbox_for_task(task, config).await?;
+        let sandbox = self
+            .build_sandbox_for_task(task, config, SandboxUse::Probe)
+            .await?;
         let filtered_env = if sandbox.is_active() {
             let mut filtered = sandbox.filter_env(env);
             // The same strip as for cache command inputs: filter_env reads allowed names back
@@ -2889,7 +2986,9 @@ impl TaskExecutor {
             });
             if !grant.is_empty() && !self.dry_run {
                 // the sandbox and a plainly declared env var decide before anything runs
-                let sandbox = self.build_sandbox_for_task(task, config).await?;
+                let sandbox = self
+                    .build_sandbox_for_task(task, config, SandboxUse::EnvOnly)
+                    .await?;
                 let declared = env_view.declared_keys(task);
                 found.extend(crate::secrets::sandbox_and_collision_problems(
                     task, &grant, &sandbox, &declared,
@@ -3082,6 +3181,10 @@ impl TaskExecutor {
         tools.extend(task.tool_args()?);
         let task_tool_args_env = crate::shims::task_tool_args_env(&tools)?;
         let ts_build_start = std::time::Instant::now();
+
+        // A task that ran before this one may have installed or removed a
+        // tool, in a process of its own that cannot tell this one.
+        crate::toolset::install_state::forget_installed_checks();
 
         // Remote tasks need tools from the full config hierarchy rather than a
         // config file rooted at their downloaded source.

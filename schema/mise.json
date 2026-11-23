@@ -3909,6 +3909,11 @@
               "description": "report project files read or written outside declared cache sources and outputs",
               "default": false
             },
+            "sandbox": {
+              "type": "boolean",
+              "description": "run eligible tasks in a sandbox that allows reading their sources and writing their outputs, and blocks the network and undeclared environment variables (enforced on Linux)",
+              "default": false
+            },
             "env": {
               "type": "array",
               "description": "ambient environment variable names whose values affect eligible task cache keys",
@@ -4365,6 +4370,11 @@
             "audit": {
               "type": "boolean",
               "description": "report project files read or written outside declared cache sources and outputs",
+              "default": false
+            },
+            "sandbox": {
+              "type": "boolean",
+              "description": "run the task in a sandbox that allows reading its sources and writing its outputs, and blocks the network and undeclared environment variables (enforced on Linux)",
               "default": false
             },
             "env": {
@@ -11346,6 +11356,10 @@
               },
               "proxy_idle_timeout": {
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later."
               }
             },
             "required": ["run"],
@@ -11472,6 +11486,10 @@
               },
               "proxy_idle_timeout": {
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later."
               }
             },
             "required": ["task"],
@@ -11731,6 +11749,10 @@
               },
               "proxy_idle_timeout": {
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later."
               }
             },
             "required": ["image"],

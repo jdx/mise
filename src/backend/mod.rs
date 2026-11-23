@@ -4373,11 +4373,11 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> bool {
-        let check_path = |install_path: &Path, check_symlink: bool| {
+        let check_path_on_disk = |install_path: &Path, check_symlink: bool, state_key: &str| {
             let is_installed = install_path.exists();
             let is_active_postinstall = is_active_postinstall_install(tv, install_path);
             let is_not_incomplete =
-                !install_state::is_incomplete(tv.ba(), &tv.state_key()) || is_active_postinstall;
+                !install_state::is_incomplete(tv.ba(), state_key) || is_active_postinstall;
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
             let is_healthy = is_installed && self.is_install_path_healthy(install_path);
             // An identity-layout installation is complete once its receipt is there;
@@ -4408,6 +4408,23 @@ pub trait Backend: Debug + Send + Sync {
                 trace!("{}", msg);
             }
             installed
+        };
+        let check_path = |install_path: &Path, check_symlink: bool| {
+            // A postinstall hook's own mise sees its unfinished installation
+            // as installed, and only while the hook runs.
+            let state_key = tv.state_key();
+            if std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some() {
+                return check_path_on_disk(install_path, check_symlink, &state_key);
+            }
+            install_state::installed_check(
+                (
+                    install_path.to_path_buf(),
+                    tv.request.ba().clone(),
+                    state_key.clone(),
+                    check_symlink,
+                ),
+                || check_path_on_disk(install_path, check_symlink, &state_key),
+            )
         };
         match tv.request {
             ToolRequest::System { .. } => true,
@@ -6361,6 +6378,9 @@ pub trait Backend: Debug + Send + Sync {
             // linked it. The catalog record stays, so a reinstall lands on the
             // same path.
             crate::install_layout::resolver::unlink_installation(&install_path);
+            // Removing a system copy beside the user's leaves the marker
+            // alone, so nothing else forgets that this path was installed.
+            install_state::forget_installed_checks();
             // The install is gone. The marker is shared by every install of this version, so
             // it must not outlive the removal if the download or cache cleanup below fails.
             if !keep_marker {

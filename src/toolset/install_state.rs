@@ -110,6 +110,75 @@ static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(N
 /// Per-tool results loaded without a full installs scan. `None` records a
 /// known-absent tool so repeated lookups of uninstalled tools stay cheap.
 /// Superseded by INSTALL_STATE_TOOLS once a full scan has run.
+/// What one check of an install path depends on: the path, the tool, the
+/// version's state key (which names its incomplete marker) and whether a
+/// runtime symlink counts.
+pub(crate) type InstalledCheck = (PathBuf, Arc<BackendArg>, String, bool);
+
+/// Whether each install path checked so far holds a complete installation.
+/// Building an environment asks this of every tool several times, and each
+/// answer costs a handful of file checks.
+static INSTALLED_CHECKS: InstalledChecks = InstalledChecks::new();
+
+struct InstalledChecks(Mutex<InstalledAnswers>);
+
+struct InstalledAnswers {
+    /// How many times the answers were forgotten.
+    forgotten: u64,
+    answers: Option<HashMap<InstalledCheck, bool>>,
+}
+
+impl InstalledChecks {
+    const fn new() -> Self {
+        Self(Mutex::new(InstalledAnswers {
+            forgotten: 0,
+            answers: None,
+        }))
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, InstalledAnswers> {
+        self.0.lock().expect("INSTALLED_CHECKS lock failed")
+    }
+
+    fn check(&self, key: InstalledCheck, check: impl FnOnce() -> bool) -> bool {
+        let forgotten = {
+            let remembered = self.lock();
+            if let Some(installed) = remembered.answers.as_ref().and_then(|a| a.get(&key)) {
+                return *installed;
+            }
+            remembered.forgotten
+        };
+        let installed = check();
+        let mut remembered = self.lock();
+        // A change that landed while `check` ran forgot the answers, and this
+        // one may predate it.
+        if remembered.forgotten == forgotten {
+            remembered
+                .answers
+                .get_or_insert_default()
+                .insert(key, installed);
+        }
+        installed
+    }
+
+    fn forget(&self) {
+        let mut remembered = self.lock();
+        remembered.forgotten += 1;
+        remembered.answers = None;
+    }
+}
+
+/// The remembered answer for `key`, or the one `check` gives.
+pub(crate) fn installed_check(key: InstalledCheck, check: impl FnOnce() -> bool) -> bool {
+    INSTALLED_CHECKS.check(key, check)
+}
+
+/// Forgets every remembered install check. Anything that installs, removes or
+/// marks a version calls this, so the next check reads the disk again.
+pub(crate) fn forget_installed_checks() {
+    INSTALLED_CHECKS.forget();
+}
+
 static INSTALL_STATE_TOOL_MEMO: Mutex<Option<HashMap<String, Option<InstallStateTool>>>> =
     Mutex::new(None);
 /// Memoized read of the consolidated root manifest, for per-tool lookups.
@@ -1534,6 +1603,7 @@ pub(crate) fn mark_incomplete(ba: &BackendArg, v: &str) -> Result<()> {
     // one ending in `nul`. Unwrapped it was a bare `The system cannot find the
     // path specified. (os error 3)` naming neither the file nor the operation.
     file::create(&path)?;
+    forget_installed_checks();
     Ok(())
 }
 
@@ -1628,6 +1698,14 @@ pub(crate) fn lock_tool_version_with_notice(
 }
 
 pub fn clear_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
+    let cleared = remove_incomplete_marker(ba, v);
+    // After the removal, failed or not: a check made while the marker was
+    // still there must not be remembered past it.
+    forget_installed_checks();
+    cleared
+}
+
+fn remove_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
     let tool_dir_name = marker_dir_name(ba);
     let marker = incomplete_marker(tool_dir_name, v);
     remove_marker(&marker)?;
@@ -1640,7 +1718,9 @@ pub fn clear_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
 
 /// Drops every incomplete marker of `ba`, for a purge that removes all its versions.
 pub(crate) fn clear_incomplete_markers(ba: &BackendArg) -> Result<()> {
-    file::remove_all(incomplete_markers_dir(marker_dir_name(ba)))
+    let cleared = file::remove_all(incomplete_markers_dir(marker_dir_name(ba)));
+    forget_installed_checks();
+    cleared
 }
 
 fn remove_marker(path: &Path) -> Result<()> {
@@ -1723,6 +1803,7 @@ pub(crate) fn reset() {
         .expect("SHARED_MANIFEST_MEMO lock failed") = None;
     clear_tool_memo();
     super::tool_version::reset_install_path_cache();
+    forget_installed_checks();
 }
 
 pub fn reset_tools() {
@@ -1741,6 +1822,7 @@ pub fn reset_tools() {
         .expect("SHARED_MANIFEST_MEMO lock failed") = None;
     clear_tool_memo();
     super::tool_version::reset_install_path_cache();
+    forget_installed_checks();
 }
 
 #[cfg(test)]
@@ -1758,6 +1840,60 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
     use versions::Versioning;
+
+    fn installed_check_key(path: &str) -> super::InstalledCheck {
+        (
+            path.into(),
+            std::sync::Arc::new(BackendArg::from("tiny")),
+            "1.0.0".to_string(),
+            true,
+        )
+    }
+
+    #[test]
+    fn an_install_check_is_made_once_until_it_is_forgotten() {
+        let checks = super::InstalledChecks::new();
+        let made = std::cell::Cell::new(0);
+        let check = |installed| {
+            checks.check(installed_check_key("/installs/tiny/1.0.0"), || {
+                made.set(made.get() + 1);
+                installed
+            })
+        };
+
+        assert!(check(true));
+        // The remembered answer, not the new one.
+        assert!(check(false));
+        assert_eq!(made.get(), 1);
+
+        checks.forget();
+        assert!(!check(false));
+        assert_eq!(made.get(), 2);
+    }
+
+    #[test]
+    fn an_install_check_is_remembered_per_path_and_symlink_rule() {
+        let checks = super::InstalledChecks::new();
+        let mut through_links = installed_check_key("/installs/tiny/1.0.0");
+        through_links.3 = false;
+
+        assert!(checks.check(installed_check_key("/installs/tiny/1.0.0"), || true));
+        assert!(!checks.check(installed_check_key("/installs/tiny/1"), || false));
+        assert!(!checks.check(through_links, || false));
+    }
+
+    #[test]
+    fn an_install_check_overtaken_by_a_change_is_not_remembered() {
+        let checks = super::InstalledChecks::new();
+        let key = || installed_check_key("/installs/tiny/1.0.0");
+
+        // The version is removed while the check that found it is running.
+        assert!(checks.check(key(), || {
+            checks.forget();
+            true
+        }));
+        assert!(!checks.check(key(), || false));
+    }
 
     #[test]
     fn sort_versions_orders_build_metadata_numerically() {

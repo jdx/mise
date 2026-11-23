@@ -121,6 +121,7 @@ fn sample(form: &str, key: &str) -> toml::Value {
         (_, "runtime_args") => "v = ['--init']",
         (_, "task") => "v = 'serve'",
         (_, "tool") => "v = 'github:example/server'",
+        (_, "url") => "v = 'redis://127.0.0.1:{{ port }}/0'",
         (_, "version") => "v = '8'",
         (_, "volumes") => "v = ['cache:/cache']",
         _ => panic!("add a sample value for the daemon key {key:?}"),

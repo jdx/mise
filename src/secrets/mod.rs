@@ -324,7 +324,7 @@ fn task_level_problems(
     grant: &SecretGrant,
 ) -> Vec<Problem> {
     let task_sandbox = crate::sandbox::SandboxConfig {
-        deny_env: task.deny_all || task.deny_env,
+        deny_env: task.deny_all || task.deny_env || crate::task::task_cache_sandbox::enforced(task),
         allow_env: task.allow_env.clone(),
         pass_through_env: task.pass_through_env.clone(),
         cache_env: task

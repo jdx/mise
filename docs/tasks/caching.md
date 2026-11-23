@@ -277,6 +277,8 @@ When the task runs instead of restoring, mise prints the reason after
 - The resolved tool versions.
 - The cache keys of cached dependencies.
 - The operating system and architecture.
+- For a task that runs in the [derived sandbox](#cache-sandbox), a marker and
+  the paths its `allow_read` and `allow_write` add.
 
 Other environment variables, whether inherited from your shell or set in
 `[env]`, are part of the key only when you list them in `cache.env`. A source
@@ -394,7 +396,72 @@ only when the task changes no files that later work depends on.
 When you are unsure, run with `--task-cache off` while you investigate, add the
 missing inputs, and run with `--force` once before you trust new entries. On
 Linux, an [audit](#find-undeclared-inputs-on-linux) can show many undeclared
-reads and writes, but it cannot prove that a task is deterministic.
+reads and writes, and a [derived sandbox](#cache-sandbox) can refuse them, but
+neither can prove that a task is deterministic.
+
+### Refuse undeclared inputs on Linux {#cache-sandbox}
+
+Set `cache.sandbox = true` to run the task in a [sandbox](/sandboxing.html)
+that mise derives from the cache declaration. A read the key does not cover
+then fails the task instead of ending up in a stored result:
+
+```mise-toml
+[tasks.compile]
+run = "cc -o build/app src/main.c"
+sources = ["src/**"]
+outputs = ["build"]
+cache = { enabled = true, sandbox = true }
+```
+
+| Access      | What the task gets                                                                                                                                                                              |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read        | Files that `sources` matches, the config files that define the task, the outputs of its cached dependencies, and the sandbox's [implicit paths](/sandboxing.html#implicit-access) except `/tmp` |
+| List        | File names in the task directory and the directory that source patterns are matched from, but not the contents of files outside `sources`                                                       |
+| Write       | The directories that hold its outputs, and a private temporary directory that mise passes as `TMPDIR` and removes afterwards                                                                    |
+| Environment | The [essential variables](/sandboxing.html#environment-variables), the task's own `env` entries, and the variables in `cache.env`, `task_config.global_env` and `pass_through_env`              |
+| Network     | None                                                                                                                                                                                            |
+
+Everything else fails with an error such as `Permission denied`. A dependency
+without an artifact cache has no key, so list the files the task reads from it
+in `sources`. All of a task's `run` entries share one temporary directory.
+
+mise creates each output directory before the task starts, including one that
+`allow_write` already covers, and removes it again when the task leaves it
+empty. The directory of an output pattern is the part
+before its first wildcard. The directory of a plain path is its parent, or the
+path itself when its parent holds sources. Landlock allows writes to a
+directory, not to one file name, so outputs must not share a directory with
+sources or with the config file. A symlink counts as the directory it leads
+to. Such a task fails before it starts:
+
+```text
+task build: cache.sandbox cannot confine writes for output "*.o": ~/project also holds the task's sources. Put the outputs in a directory of their own, or list that directory in allow_write.
+```
+
+To allow more, list paths in the task's `allow_read` and `allow_write`, or pass
+`--allow-read` and `--allow-write`. Those paths become part of the key; the
+contents of the files do not, so add a file that changes the result to
+`sources` instead. The key holds the directory a path leads to, not the way it
+was written: `--allow-read=lib` is a different path from each directory you run
+mise in, and `lib`, `./lib/`, a link to it and its absolute path are the same
+one. A path that ends in `/` names a directory, so on a file it allows nothing.
+
+Tools that mise did not install, such as a toolchain in `~/.cargo` or a `shell`
+that lives in the project, need an `allow_read` entry. A task that runs `mise`
+itself needs one for the `mise` binary and for everything that command reads.
+
+The sandbox follows the task's declaration, so `--task-cache off` does not turn
+it off. The commands in `cache.command_inputs` run with the same read access,
+and without the output directories or the temporary directory. Entries made in
+the sandbox have keys of their own, so a result stored without it is never
+restored for a task that asks for it. A `[tasks.<name>]` block that sets
+`cache` for a file task replaces the `cache` in the script's `#MISE` header,
+except that a `sandbox` the header turned on stays on.
+
+The sandbox narrows what a task can reach; it does not make the task
+deterministic. The clock, randomness, `/dev`, the tools mise installed, and
+system paths stay available. On macOS and Windows, mise warns and runs the task
+without the sandbox.
 
 ## Per-run cache access
 

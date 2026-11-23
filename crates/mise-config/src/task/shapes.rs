@@ -261,6 +261,9 @@ pub struct TaskCacheDecl {
     /// report project files read or written outside declared cache sources and outputs
     #[schemars(extend("default" = false))]
     pub audit: Option<bool>,
+    /// run the task in a sandbox that allows reading its sources and writing its outputs, and blocks the network and undeclared environment variables (enforced on Linux)
+    #[schemars(extend("default" = false))]
+    pub sandbox: Option<bool>,
     /// ambient environment variable names whose values affect the cache key
     pub env: Option<Vec<String>>,
     /// commands whose stdout and stderr affect the cache key
@@ -281,6 +284,9 @@ pub struct TaskConfigCacheDecl {
     /// report project files read or written outside declared cache sources and outputs
     #[schemars(extend("default" = false))]
     pub audit: Option<bool>,
+    /// run eligible tasks in a sandbox that allows reading their sources and writing their outputs, and blocks the network and undeclared environment variables (enforced on Linux)
+    #[schemars(extend("default" = false))]
+    pub sandbox: Option<bool>,
     /// ambient environment variable names whose values affect eligible task cache keys
     pub env: Option<Vec<String>>,
     /// commands whose stdout and stderr affect eligible task cache keys

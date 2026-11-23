@@ -74,6 +74,18 @@ fn add_path_rule(
     }
 }
 
+/// Let `allow_list_dirs` be listed: the names in those directories, and
+/// nothing of the files' contents.
+fn add_list_rules(
+    mut ruleset: landlock::RulesetCreated,
+    config: &SandboxConfig,
+) -> Result<landlock::RulesetCreated> {
+    for path in &config.allow_list_dirs {
+        ruleset = add_path_rule(ruleset, path, AccessFs::ReadDir.into())?;
+    }
+    Ok(ruleset)
+}
+
 /// The access rights a configuration restricts.
 ///
 /// Only handle the access types we're actually restricting.
@@ -219,15 +231,17 @@ pub(super) fn apply_landlock(
         for path in SYSTEM_READ_FILES {
             ruleset = add_read_rule(ruleset, path, read_access)?;
         }
-        ruleset = add_read_rule(
-            ruleset,
-            "/tmp",
-            if config.deny_temp_write {
-                read_access
-            } else {
-                full_access
-            },
-        )?;
+        if !config.deny_temp_read {
+            ruleset = add_read_rule(
+                ruleset,
+                "/tmp",
+                if config.deny_temp_write {
+                    read_access
+                } else {
+                    full_access
+                },
+            )?;
+        }
         ruleset = add_read_rule(ruleset, "/dev", full_access)?;
         for installs_dir in [*crate::dirs::INSTALLS, *crate::dirs::INSTALL_STORE] {
             if installs_dir.exists() {
@@ -241,6 +255,7 @@ pub(super) fn apply_landlock(
         for path in &config.allow_write {
             ruleset = add_path_rule(ruleset, path, full_access)?;
         }
+        ruleset = add_list_rules(ruleset, config)?;
     } else if deny_read {
         // Only reads restricted — only handle read access so writes are unaffected
         for path in SYSTEM_READ_PATHS {
@@ -250,7 +265,9 @@ pub(super) fn apply_landlock(
             ruleset = add_read_rule(ruleset, path, read_access)?;
         }
         // /tmp and /dev need read access (not in SYSTEM_READ_PATHS, handled separately)
-        ruleset = add_read_rule(ruleset, "/tmp", read_access)?;
+        if !config.deny_temp_read {
+            ruleset = add_read_rule(ruleset, "/tmp", read_access)?;
+        }
         ruleset = add_read_rule(ruleset, "/dev", read_access)?;
         for installs_dir in [*crate::dirs::INSTALLS, *crate::dirs::INSTALL_STORE] {
             if installs_dir.exists() {
@@ -265,6 +282,7 @@ pub(super) fn apply_landlock(
         for path in &config.allow_write {
             ruleset = add_path_rule(ruleset, path, read_access)?;
         }
+        ruleset = add_list_rules(ruleset, config)?;
     } else if deny_write {
         // Only writes restricted — allow read everywhere, deny write except allowed paths
         ruleset = add_read_rule(ruleset, "/", read_access)?;
