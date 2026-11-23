@@ -137,6 +137,13 @@ run = "cat extra/in.txt > extra-dist/out.txt"
 sources = ["src/app.txt"]
 outputs = ["extra-dist"]
 cache = { enabled = true, sandbox = true }
+
+[tasks.granted_output]
+run = "cp src/app.txt granted-dist/out.txt"
+sources = ["src/app.txt"]
+outputs = ["granted-dist/**"]
+allow_write = ["granted-dist"]
+cache = { enabled = true, sandbox = true }
 EOF
 
 # A task whose shell is a program inside the project.
@@ -286,3 +293,26 @@ mise run --allow-read=secret.txt read_undeclared
 assert "cat read-dist/out.txt" "secret"
 rm -rf read-dist
 assert_fail "mise run --allow-read=secret.txt/ read_undeclared 2>&1" "Permission denied"
+
+# mise creates an output directory that allow_write already covers. A rule for
+# a path that does not exist is dropped, so the grant alone would not do it.
+mise run granted_output
+assert "cat granted-dist/out.txt" "app"
+
+# A [tasks.<name>] table that adds to a file task can set cache again. That
+# does not drop the sandbox the file asked for.
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/overlaid
+#!/usr/bin/env bash
+#MISE sources=["src/app.txt"]
+#MISE outputs=["overlaid-dist"]
+#MISE cache={enabled=true, sandbox=true}
+cat secret.txt >overlaid-dist/out.txt
+EOF
+chmod +x mise-tasks/overlaid
+cat <<'EOF' >>mise.toml
+
+[tasks.overlaid]
+cache = { enabled = true }
+EOF
+assert_fail "mise run overlaid 2>&1" "Permission denied"

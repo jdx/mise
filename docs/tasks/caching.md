@@ -425,8 +425,9 @@ Everything else fails with an error such as `Permission denied`. A dependency
 without an artifact cache has no key, so list the files the task reads from it
 in `sources`. All of a task's `run` entries share one temporary directory.
 
-mise creates each output directory before the task starts, and removes it again
-when the task leaves it empty. The directory of an output pattern is the part
+mise creates each output directory before the task starts, including one that
+`allow_write` already covers, and removes it again when the task leaves it
+empty. The directory of an output pattern is the part
 before its first wildcard. The directory of a plain path is its parent, or the
 path itself when its parent holds sources. Landlock allows writes to a
 directory, not to one file name, so outputs must not share a directory with
@@ -453,7 +454,9 @@ The sandbox follows the task's declaration, so `--task-cache off` does not turn
 it off. The commands in `cache.command_inputs` run with the same read access,
 and without the output directories or the temporary directory. Entries made in
 the sandbox have keys of their own, so a result stored without it is never
-restored for a task that asks for it.
+restored for a task that asks for it. A `[tasks.<name>]` block that sets
+`cache` for a file task replaces the `cache` in the script's `#MISE` header,
+except that a `sandbox` the header turned on stays on.
 
 The sandbox narrows what a task can reach; it does not make the task
 deterministic. The clock, randomness, `/dev`, the tools mise installed, and

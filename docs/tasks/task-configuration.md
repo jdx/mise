@@ -20,6 +20,8 @@ the wrong type gets a warning and that property is ignored, so one broken
 script does not stop the other tasks loading. A bad `confirm`, `lock`, `cache`,
 `deny_*` or `allow_unix` value is an error instead, so a typo cannot remove a
 confirmation prompt, a lock, or a sandbox restriction such as `cache.sandbox`.
+A header line that is not valid TOML, such as `#MISE deny_net=` with no value,
+is an error for every property.
 To share properties between tasks, use [task templates](/tasks/templates.html).
 
 ::: warning Experimental

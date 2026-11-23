@@ -337,10 +337,10 @@ fn output_dirs(
                 path
             }
         };
-        if already_writable(&dir) {
-            continue;
-        }
-        if holds_inputs(&dir) {
+        // A directory that an explicit grant covers is still created: Landlock
+        // drops a rule for a path that does not exist, so the grant alone would
+        // leave the task unable to make it.
+        if !already_writable(&dir) && holds_inputs(&dir) {
             bail!(
                 "task {}: cache.sandbox cannot confine writes for output {output:?}: {} also holds the task's sources. \
                  Put the outputs in a directory of their own, or list that directory in allow_write.",
@@ -473,11 +473,16 @@ mod tests {
             [PathBuf::from("/project/src/gen")]
         );
 
-        // An explicit allow_write is the declared way out.
+        // An explicit allow_write is the declared way out. The directory is
+        // still returned, so that one that does not exist yet gets created.
         let allowed = [PathBuf::from("/project")];
         assert_eq!(
             output_dirs(&sandboxed_task(&["*.o"]), root, &inputs, &allowed).unwrap(),
-            Vec::<PathBuf>::new()
+            [PathBuf::from("/project")]
+        );
+        assert_eq!(
+            output_dirs(&sandboxed_task(&["dist/**"]), root, &inputs, &allowed).unwrap(),
+            [PathBuf::from("/project/dist")]
         );
     }
 
@@ -513,12 +518,12 @@ mod tests {
         let allowed = [root.clone()];
         assert_eq!(
             output_dirs(&sandboxed_task(&["*.o"]), &linked_root, &inputs, &allowed).unwrap(),
-            Vec::<PathBuf>::new()
+            std::slice::from_ref(&linked_root)
         );
         let allowed = [linked_root];
         assert_eq!(
             output_dirs(&sandboxed_task(&["*.o"]), &root, &inputs, &allowed).unwrap(),
-            Vec::<PathBuf>::new()
+            std::slice::from_ref(&root)
         );
     }
 
@@ -650,6 +655,10 @@ mod tests {
         assert_eq!(allowed("lib", &project), ["lib"]);
         assert_eq!(allowed("../lib", &project.join("src")), ["lib"]);
         assert_eq!(allowed("link/", &project), ["lib"]);
+        // A link that now leads elsewhere is another grant.
+        std::fs::remove_file(project.join("link")).unwrap();
+        std::os::unix::fs::symlink("src", project.join("link")).unwrap();
+        assert_eq!(allowed("link", &project), ["src"]);
 
         // A trailing separator on a file allows nothing, so it is not the grant
         // that the plain spelling is. On a directory it changes nothing.

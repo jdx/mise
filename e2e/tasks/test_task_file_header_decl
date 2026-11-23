@@ -52,3 +52,13 @@ echo "ran guarded_cache"
 EOF
 chmod +x mise-tasks/guarded_cache
 assert_fail "mise run guarded_cache" "failed to parse cache field in task header"
+rm mise-tasks/guarded_cache
+
+# A key with no value is an error as well, not a line mise skips.
+cat <<'EOF' >mise-tasks/empty_value
+#!/usr/bin/env bash
+#MISE deny_net=
+echo "ran empty_value"
+EOF
+chmod +x mise-tasks/empty_value
+assert_fail "mise run empty_value" "failed to parse task header TOML"
