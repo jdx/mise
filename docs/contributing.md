@@ -16,7 +16,7 @@ config, and what happened. Reports found by reading the source or by having an
 agent search the code will be closed.
 
 For security issues, including ones you find by reviewing the source, follow
-[Reporting a vulnerability](/security.html#reporting-a-vulnerability) instead.
+[Reporting a vulnerability](https://mise.jdx.dev/security.html#reporting-a-vulnerability) instead.
 
 Using AI to help write a Discussion, Issue, or reply is fine. Review it before
 you post it, and end it with a disclosure line in this form:
