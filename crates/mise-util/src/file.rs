@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -3140,6 +3140,206 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Roughly what sevenz-rust2 allocates for each byte of a 7z header: it holds
+/// the whole header in memory and sizes its tables of entries by the header's
+/// length.
+const SEVENZ_HEADER_MEMORY_RATIO: u64 = 100;
+
+/// Fails when reading the header of the 7z file `archive` could take more
+/// memory than [`extract_limit`] lets the archive unpack to. A 7z header may be
+/// stored packed, and sevenz-rust2 unpacks it into memory, up to the size the
+/// archive declares for it, before it yields the first entry, so those bytes
+/// never pass through a [`LimitedReader`]. A header that is not packed needs no
+/// check: it is part of the download.
+fn ensure_7z_header_within_limit(archive: &Path) -> Result<()> {
+    const SIGNATURE_HEADER_LEN: u64 = 32;
+    const ENCODED_HEADER: u8 = 0x17;
+
+    let limit = extract_limit(archive)?;
+    if limit == u64::MAX {
+        return Ok(());
+    }
+    let mut file = File::open(archive)?;
+    let len = file.metadata()?.len();
+    if len < SIGNATURE_HEADER_LEN {
+        return Ok(()); // not a 7z archive, which sevenz-rust2 reports
+    }
+    // Signature, version and a CRC, then the start header: the offset (from
+    // here), length and CRC of the header.
+    let mut start = [0; SIGNATURE_HEADER_LEN as usize];
+    file.read_exact(&mut start)?;
+    if start[8..].iter().all(|b| *b == 0) {
+        // sevenz-rust2 would search the end of the file for something that
+        // looks like a header and unpack that.
+        bail!("7z archive has no start header");
+    }
+    let offset = u64::from_le_bytes(start[12..20].try_into().unwrap());
+    let size = u64::from_le_bytes(start[20..28].try_into().unwrap());
+    let pos = SIGNATURE_HEADER_LEN.saturating_add(offset);
+    if size == 0 || pos.saturating_add(size) > len {
+        return Ok(()); // no header inside the file, which sevenz-rust2 reports
+    }
+    let mut id = [0];
+    file.seek(SeekFrom::Start(pos))?;
+    file.read_exact(&mut id)?;
+    if id[0] != ENCODED_HEADER {
+        return Ok(());
+    }
+    // All that a packed header leaves in the file is where its packed bytes
+    // are and how to unpack them.
+    let mut streams_info = Vec::new();
+    file.take(size - 1).read_to_end(&mut streams_info)?;
+    let Some(unpacked) = sevenz_packed_header_unpack_size(&streams_info) else {
+        bail!("7z archive has a malformed packed header");
+    };
+    let max = limit / SEVENZ_HEADER_MEMORY_RATIO;
+    if unpacked > max {
+        bail!(
+            "7z header unpacks to {unpacked} bytes, over the {max} that the extract_max_ratio setting allows"
+        );
+    }
+    Ok(())
+}
+
+/// The most bytes that `streams_info`, which is what a packed 7z header leaves
+/// in place of itself, says a coder of its first folder produces. That folder
+/// is the one sevenz-rust2 unpacks to get the header. `None` if the streams
+/// info is malformed; this reads what sevenz-rust2 reads, in the same order,
+/// and rejects nothing that it accepts.
+fn sevenz_packed_header_unpack_size(streams_info: &[u8]) -> Option<u64> {
+    const END: u8 = 0x00;
+    const PACK_INFO: u8 = 0x06;
+    const UNPACK_INFO: u8 = 0x07;
+    const SIZE: u8 = 0x09;
+    const CRC: u8 = 0x0a;
+    const FOLDER: u8 = 0x0b;
+    const CODERS_UNPACK_SIZE: u8 = 0x0c;
+    // sevenz-rust2, like 7-Zip, accepts this many coders and this many input
+    // streams in a folder.
+    const MAX_FOLDER_STREAMS: u64 = 64;
+
+    struct Reader<'a>(&'a [u8]);
+    impl Reader<'_> {
+        fn skip(&mut self, n: u64) -> Option<()> {
+            self.0 = self.0.get(usize::try_from(n).ok()?..)?;
+            Some(())
+        }
+        fn byte(&mut self) -> Option<u8> {
+            let (byte, rest) = self.0.split_first()?;
+            self.0 = rest;
+            Some(*byte)
+        }
+        /// A 7z number: as many bytes follow the first, least significant
+        /// first, as it has leading one bits, and its other bits are the most
+        /// significant ones.
+        fn number(&mut self) -> Option<u64> {
+            let first = u64::from(self.byte()?);
+            let mut value = 0;
+            for i in 0..8 {
+                let mask = 0x80 >> i;
+                if first & mask == 0 {
+                    return Some(value | ((first & (mask - 1)) << (8 * i)));
+                }
+                value |= u64::from(self.byte()?) << (8 * i);
+            }
+            Some(value)
+        }
+    }
+
+    let mut r = Reader(streams_info);
+    let mut id = r.byte()?;
+    if id == PACK_INFO {
+        r.number()?; // where the packed streams start
+        let streams = r.number()?;
+        id = r.byte()?;
+        if id == SIZE {
+            for _ in 0..streams {
+                r.number()?;
+            }
+            id = r.byte()?;
+        }
+        if id == CRC {
+            // Every stream has a CRC, or a bit for each stream says whether it has.
+            let mut crcs = streams;
+            if r.byte()? == 0 {
+                crcs = 0;
+                let mut bits = 0;
+                for i in 0..streams {
+                    if i % 8 == 0 {
+                        bits = r.byte()?;
+                    }
+                    crcs += u64::from((bits >> (7 - i % 8)) & 1);
+                }
+            }
+            r.skip(crcs.checked_mul(4)?)?;
+            id = r.byte()?;
+        }
+        if id != END {
+            return None;
+        }
+        id = r.byte()?;
+    }
+    if id != UNPACK_INFO || r.byte()? != FOLDER {
+        return None;
+    }
+    let folders = r.number()?;
+    if r.byte()? != 0 {
+        return None; // folders stored outside the header
+    }
+    let mut first_folder_coders = None;
+    for _ in 0..folders {
+        let coders = r.number()?;
+        if coders == 0 || coders > MAX_FOLDER_STREAMS {
+            return None;
+        }
+        let mut in_streams = 0u64;
+        for _ in 0..coders {
+            let flags = r.byte()?;
+            r.skip((flags & 0x0f).into())?; // the method's id
+            if flags & 0x10 == 0 {
+                in_streams += 1;
+            } else {
+                in_streams = in_streams.checked_add(r.number()?)?;
+                if r.number()? != 1 {
+                    return None; // a coder has one output stream
+                }
+            }
+            if in_streams > MAX_FOLDER_STREAMS {
+                return None;
+            }
+            if flags & 0x20 != 0 {
+                let properties = r.number()?;
+                r.skip(properties)?;
+            }
+            if flags & 0x80 != 0 {
+                return None; // alternative methods
+            }
+        }
+        // All coders but the last feed another one, through a bind pair of two
+        // stream indexes. The input streams that are left are packed streams,
+        // and are listed when there are several.
+        let bind_pairs = coders - 1;
+        for _ in 0..bind_pairs * 2 {
+            r.number()?;
+        }
+        let packed_streams = in_streams.checked_sub(bind_pairs).filter(|n| *n > 0)?;
+        if packed_streams > 1 {
+            for _ in 0..packed_streams {
+                r.number()?;
+            }
+        }
+        first_folder_coders.get_or_insert(coders);
+    }
+    if r.byte()? != CODERS_UNPACK_SIZE {
+        return None;
+    }
+    let mut unpack_size = 0;
+    for _ in 0..first_folder_coders? {
+        unpack_size = unpack_size.max(r.number()?);
+    }
+    Some(unpack_size)
+}
+
 pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
@@ -3164,6 +3364,7 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
         dest
     };
     run_blocking(|| {
+        ensure_7z_header_within_limit(archive)?;
         let limit = extract_limit(archive)?;
         let mut remaining = limit;
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
@@ -3829,6 +4030,7 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 /// Adapted from inspect_tar_contents for 7z archives, and like it stops at the
 /// second distinct top-level entry.
 pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    ensure_7z_header_within_limit(archive)?;
     let sevenz = sevenz_rust2::Archive::open(archive)?;
     let mut top_level_components = std::collections::HashMap::new();
 
