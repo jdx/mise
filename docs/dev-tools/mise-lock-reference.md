@@ -80,6 +80,13 @@ is read only for a package in the tool's own channel. mise refuses an entry whos
 url is in another channel than the tool's, or whose key names another channel
 than its url, and `mise lock` resolves such a tool again.
 
+A package's `checksum` is the sha256 its channel declares, or its md5 when the
+channel lists no sha256. mise compares every download against it. With
+`--locked`, a dependency missing from this section is refused, and so is one
+without a checksum when [`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)
+is on. `mise lock` resolves a tool again when one of its dependencies has no
+checksum.
+
 ## Format versions
 
 | `lockfile_version` | Adds                                                                                 |

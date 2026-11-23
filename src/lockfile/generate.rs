@@ -405,8 +405,9 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
 }
 
 /// A conda entry is reused only while every `[conda-packages]` entry it names is in the
-/// lockfile and may be installed with it; otherwise the tool is resolved again, which
-/// rewrites its dependencies under keys that name their channel.
+/// lockfile, has a checksum and may be installed with it; otherwise the tool is resolved
+/// again, which rewrites its dependencies under keys that name their channel, with the
+/// checksums their channel declares.
 fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo) -> bool {
     let Some(deps) = &info.conda_deps else {
         return true;
@@ -418,7 +419,8 @@ fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo)
         previous
             .get_conda_package(platform, key)
             .is_some_and(|package| {
-                CondaBackend::check_locked_dependency(key, package, main_url).is_ok()
+                package.checksum.is_some()
+                    && CondaBackend::check_locked_dependency(key, package, main_url).is_ok()
             })
     })
 }
@@ -1670,18 +1672,21 @@ mod tests {
             conda_deps: Some(vec!["zlib-1.3.1-h_2".into()]),
             ..Default::default()
         };
-        let lockfile = |url: &str| {
+        let lockfile_with = |url: &str, checksum: Option<&str>| {
             let mut lockfile = Lockfile::default();
             let package = crate::lockfile::CondaPackageInfo {
                 url: url.to_string(),
-                checksum: Some("sha256:old".into()),
+                checksum: checksum.map(str::to_string),
             };
             lockfile.set_conda_package("linux-x64", "zlib-1.3.1-h_2", package);
             lockfile
         };
+        let lockfile = |url: &str| lockfile_with(url, Some("sha256:old"));
         let platform = "linux-x64";
         let same = lockfile(&format!("{forge}/zlib-1.3.1-h_2.conda"));
         assert!(conda_deps_reusable(&same, platform, &info));
+        let unverified = lockfile_with(&format!("{forge}/zlib-1.3.1-h_2.conda"), None);
+        assert!(!conda_deps_reusable(&unverified, platform, &info));
         let other = lockfile("https://conda.example.com/evil/linux-64/zlib-1.3.1-h_2.conda");
         assert!(!conda_deps_reusable(&other, platform, &info));
         assert!(!conda_deps_reusable(&Lockfile::default(), platform, &info));

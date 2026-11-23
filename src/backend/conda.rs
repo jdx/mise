@@ -341,13 +341,22 @@ impl CondaBackend {
         Ok(())
     }
 
-    /// Format sha256 as "sha256:<hex>" if present
-    fn format_sha256(record: &RepoDataRecord) -> Option<String> {
-        record
-            .package_record
+    /// The checksum the channel declares for `record`, as "<algorithm>:<hex>":
+    /// its sha256, or its md5 when the channel lists no sha256. Downloads and
+    /// lockfile entries are verified against it, so a package with either is
+    /// never installed unverified.
+    fn format_checksum(record: &RepoDataRecord) -> Option<String> {
+        let package = &record.package_record;
+        package
             .sha256
             .as_ref()
             .map(|h| format!("sha256:{}", hex::encode(h)))
+            .or_else(|| {
+                package
+                    .md5
+                    .as_ref()
+                    .map(|h| format!("md5:{}", hex::encode(h)))
+            })
     }
 
     /// Verify a file against an expected "<algorithm>:<hex>" checksum.
@@ -422,7 +431,7 @@ impl CondaBackend {
         let url_str = record.url.to_string();
         let filename = Self::url_filename(&record.url);
         let dest = Self::archive_dir(&url_str).join(&filename);
-        let checksum = Self::format_sha256(&record);
+        let checksum = Self::format_checksum(&record);
 
         Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
         Ok(dest)
@@ -710,7 +719,7 @@ impl CondaBackend {
             .entry(platform_key.to_string())
             .or_default();
         platform_info.url = Some(main_record.url.to_string());
-        platform_info.checksum = Self::format_sha256(&main_record);
+        platform_info.checksum = Self::format_checksum(&main_record);
         platform_info.conda_deps = Some(dep_basenames.clone());
 
         // Store dep package info in tv.conda_packages for lockfile update
@@ -720,7 +729,7 @@ impl CondaBackend {
                 (platform_key.to_string(), basename),
                 CondaPackageInfo {
                     url: record.url.to_string(),
-                    checksum: Self::format_sha256(record),
+                    checksum: Self::format_checksum(record),
                 },
             );
         }
@@ -1276,7 +1285,7 @@ impl CondaBackend {
                 basename,
                 CondaPackageInfo {
                     url: record.url.to_string(),
-                    checksum: Self::format_sha256(record),
+                    checksum: Self::format_checksum(record),
                 },
             );
         }
@@ -1484,7 +1493,7 @@ impl Backend for CondaBackend {
         })?;
         Ok(PlatformInfo {
             url: Some(main.url.to_string()),
-            checksum: Self::format_sha256(&main),
+            checksum: Self::format_checksum(&main),
             size: None,
             url_api: None,
             conda_deps: Some(dep_basenames),
@@ -2287,6 +2296,23 @@ mod tests {
         assert!(err.contains("not in the channel"), "{err}");
         let err = check(&key(forge_noarch), forge).unwrap_err();
         assert!(err.contains("names another channel"), "{err}");
+    }
+
+    #[test]
+    fn format_checksum_falls_back_to_md5() {
+        let url = "https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.1-h_2.conda";
+        let mut record = make_record("zlib", "1.3.1", "h_2", url);
+        assert_eq!(CondaBackend::format_checksum(&record), None);
+
+        record.package_record.md5 = Some(Default::default());
+        assert_eq!(
+            CondaBackend::format_checksum(&record).as_deref(),
+            Some("md5:00000000000000000000000000000000")
+        );
+
+        record.package_record.sha256 = Some(Default::default());
+        let checksum = CondaBackend::format_checksum(&record).unwrap();
+        assert_eq!(checksum, format!("sha256:{}", "0".repeat(64)));
     }
 
     #[test]
