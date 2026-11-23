@@ -23,8 +23,10 @@ use log::debug;
 
 use eyre::Result;
 
-const PLACEHOLDER_PREFIX: &str = "@@HOMEBREW_PREFIX@@";
-const PLACEHOLDER_CELLAR: &str = "@@HOMEBREW_CELLAR@@";
+use super::{Replacement, memmem, replace_text};
+
+const PLACEHOLDER_PREFIX: &[u8] = b"@@HOMEBREW_PREFIX@@";
+const PLACEHOLDER_CELLAR: &[u8] = b"@@HOMEBREW_CELLAR@@";
 
 const EHDR_SIZE: usize = 64;
 const PHDR_SIZE: usize = 56;
@@ -144,7 +146,9 @@ fn vaddr_to_offset(phdrs: &[Phdr], vaddr: u64) -> Option<usize> {
     usize::try_from(p.p_offset.checked_add(vaddr - p.p_vaddr)?).ok()
 }
 
-fn read_cstr(content: &[u8], off: usize) -> Result<String> {
+/// ELF strings are byte strings, not necessarily UTF-8. They stay bytes, so a
+/// string's length is the size of its slot in the file.
+fn read_cstr(content: &[u8], off: usize) -> Result<Vec<u8>> {
     let bytes = content
         .get(off..)
         .ok_or_else(|| eyre::eyre!("string offset out of bounds"))?;
@@ -152,40 +156,53 @@ fn read_cstr(content: &[u8], off: usize) -> Result<String> {
         .iter()
         .position(|&b| b == 0)
         .ok_or_else(|| eyre::eyre!("unterminated string in ELF"))?;
-    Ok(String::from_utf8_lossy(&bytes[..end]).to_string())
+    Ok(bytes[..end].to_vec())
 }
 
-fn replace_placeholders(s: &str, opts: &LinkageOpts) -> String {
-    s.replace(PLACEHOLDER_CELLAR, &opts.cellar)
-        .replace(PLACEHOLDER_PREFIX, &opts.prefix)
+fn replace_placeholders(s: &[u8], opts: &LinkageOpts) -> Vec<u8> {
+    replace_text(
+        s,
+        &[
+            Replacement {
+                placeholder: PLACEHOLDER_CELLAR,
+                value: opts.cellar.as_bytes().to_vec(),
+            },
+            Replacement {
+                placeholder: PLACEHOLDER_PREFIX,
+                value: opts.prefix.as_bytes().to_vec(),
+            },
+        ],
+    )
 }
 
 /// brew's rpath rewrite (extend/os/linux/keg_relocate.rb#change_rpath!):
 /// substitute the placeholder per component, rewrite versioned gcc lib dirs
 /// to `current`, drop components outside the prefix (and not $ORIGIN-based),
 /// and make sure `<prefix>/lib` is present.
-fn new_rpath(old: &str, opts: &LinkageOpts) -> String {
-    let lib_path = format!("{}/lib", opts.prefix);
-    let mut components: Vec<String> = old
-        .split(':')
+fn new_rpath(old: &[u8], opts: &LinkageOpts) -> Vec<u8> {
+    const GCC_LIB: &[u8] = b"/lib/gcc/";
+    let lib_path = format!("{}/lib", opts.prefix).into_bytes();
+    let mut components: Vec<Vec<u8>> = old
+        .split(|&b| b == b':')
         .map(|c| replace_placeholders(c, opts))
-        .map(|c| {
+        .map(|mut c| {
             if opts.gcc_current
-                && let Some(pos) = c.rfind("/lib/gcc/")
-                && !c[pos + 9..].is_empty()
-                && c[pos + 9..].bytes().all(|b| b.is_ascii_digit())
+                && let Some(pos) = c.windows(GCC_LIB.len()).rposition(|w| w == GCC_LIB)
+                && let version = &c[pos + GCC_LIB.len()..]
+                && !version.is_empty()
+                && version.iter().all(u8::is_ascii_digit)
             {
-                format!("{}current", &c[..pos + 9])
-            } else {
-                c
+                c.truncate(pos + GCC_LIB.len());
+                c.extend_from_slice(b"current");
             }
+            c
         })
-        .filter(|c| c.starts_with(&opts.prefix) || c.starts_with("$ORIGIN"))
+        .filter(|c| c.starts_with(opts.prefix.as_bytes()) || c.starts_with(b"$ORIGIN"))
         .collect();
     if !components.contains(&lib_path) {
         components.push(lib_path);
     }
-    components.join(":")
+    components.join(&b':')
 }
 
 fn round_up(v: u64, align: u64) -> u64 {
@@ -214,7 +231,9 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
     // brew sets the interpreter to <prefix>/lib/ld.so (which
     // prefix::setup_linux_runtime points at a real loader)
     let new_interp = match &old_interp {
-        Some(s) if s.contains(PLACEHOLDER_PREFIX) => Some(format!("{}/lib/ld.so", opts.prefix)),
+        Some(s) if memmem(s, PLACEHOLDER_PREFIX).is_some() => {
+            Some(format!("{}/lib/ld.so", opts.prefix))
+        }
         _ => None,
     };
 
@@ -271,7 +290,10 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         None => None,
     };
     let new_rpath_str = match &old_rpath {
-        Some(s) if s.contains(PLACEHOLDER_PREFIX) || s.contains(PLACEHOLDER_CELLAR) => {
+        Some(s)
+            if memmem(s, PLACEHOLDER_PREFIX).is_some()
+                || memmem(s, PLACEHOLDER_CELLAR).is_some() =>
+        {
             Some(new_rpath(s, opts))
         }
         _ => None,
@@ -317,7 +339,7 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         && let (Some(old), Some(new)) = (&old_rpath, &new_rpath_str)
         && let Some(start) = rpath_off
     {
-        content[start..start + new.len()].copy_from_slice(new.as_bytes());
+        content[start..start + new.len()].copy_from_slice(new);
         for b in &mut content[start + new.len()..start + old.len()] {
             *b = 0;
         }
@@ -452,7 +474,7 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         content[start..start + old_strsz].copy_from_slice(&dynstr);
         let new = new_rpath_str.as_ref().unwrap();
         let rp_start = start + rpath_off_in_dynstr;
-        content[rp_start..rp_start + new.len()].copy_from_slice(new.as_bytes());
+        content[rp_start..rp_start + new.len()].copy_from_slice(new);
         content[rp_start + new.len()] = 0;
     }
 

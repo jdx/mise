@@ -71,6 +71,14 @@ pub(crate) fn synthetic_elf(interp: &str, rpath: &str) -> Vec<u8> {
 }
 
 pub(crate) fn read_linkage(content: &[u8]) -> (String, String) {
+    let (interp, rpath) = read_linkage_bytes(content);
+    (
+        String::from_utf8(interp).unwrap(),
+        String::from_utf8(rpath).unwrap(),
+    )
+}
+
+fn read_linkage_bytes(content: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let phdrs = read_phdrs(content).unwrap();
     let interp = phdrs.iter().find(|p| p.p_type == PT_INTERP).unwrap();
     let interp_str = read_cstr(content, interp.p_offset as usize).unwrap();
@@ -239,6 +247,42 @@ fn test_patch_rejects_header_fields_that_overflow() {
     }
 }
 
+/// `synthetic_elf` whose rpath is `rpath` followed by 100 bytes of 0xff, and
+/// the offset of those bytes
+fn elf_with_non_utf8_rpath(rpath: &str) -> (Vec<u8>, usize) {
+    let tail = "a".repeat(100);
+    let mut elf = synthetic_elf("/lib64/ld-linux-x86-64.so.2", &format!("{rpath}{tail}"));
+    let at = elf
+        .windows(tail.len())
+        .position(|w| w == tail.as_bytes())
+        .unwrap();
+    elf[at..at + tail.len()].fill(0xff);
+    (elf, at)
+}
+
+#[test]
+fn test_patch_rewrites_a_non_utf8_rpath_within_its_slot() {
+    // the 0xff component is dropped, so the new rpath fits in place
+    let (mut elf, at) = elf_with_non_utf8_rpath("@@HOMEBREW_PREFIX@@/lib:");
+    let after = elf[at + 100..].to_vec();
+    assert!(patch(&mut elf, &short_prefix_opts(), Path::new("test")).unwrap());
+    assert_eq!(elf[at + 100..], after[..], "bytes after the rpath are kept");
+    let (interp, rpath) = read_linkage(&elf);
+    assert_eq!(interp, "/lib64/ld-linux-x86-64.so.2");
+    assert_eq!(rpath, "/hb/lib");
+}
+
+#[test]
+fn test_patch_keeps_non_utf8_rpath_bytes() {
+    // the $ORIGIN component is kept byte for byte in the moved rpath
+    let (mut elf, _) = elf_with_non_utf8_rpath("@@HOMEBREW_PREFIX@@/lib:$ORIGIN/");
+    assert!(patch(&mut elf, &test_opts(), Path::new("test")).unwrap());
+    let mut want = format!("\0{PREFIX}/lib:$ORIGIN/").into_bytes();
+    want.extend([0xff; 100]);
+    want.push(0);
+    assert!(elf.windows(want.len()).any(|w| w == want));
+}
+
 #[test]
 fn test_patch_shrinking_stays_in_place() {
     // a short prefix shrinks both strings: nothing moves
@@ -281,15 +325,15 @@ fn test_new_rpath_rules() {
     // foreign components dropped, gcc versioned dir rewritten, lib appended
     assert_eq!(
         new_rpath(
-            "@@HOMEBREW_PREFIX@@/opt/gcc/lib/gcc/15:/usr/lib:$ORIGIN/../lib",
+            b"@@HOMEBREW_PREFIX@@/opt/gcc/lib/gcc/15:/usr/lib:$ORIGIN/../lib",
             &opts
         ),
-        format!("{PREFIX}/opt/gcc/lib/gcc/current:$ORIGIN/../lib:{PREFIX}/lib")
+        format!("{PREFIX}/opt/gcc/lib/gcc/current:$ORIGIN/../lib:{PREFIX}/lib").into_bytes()
     );
     // lib not duplicated
     assert_eq!(
-        new_rpath("@@HOMEBREW_PREFIX@@/lib", &opts),
-        format!("{PREFIX}/lib")
+        new_rpath(b"@@HOMEBREW_PREFIX@@/lib", &opts),
+        format!("{PREFIX}/lib").into_bytes()
     );
 }
 
