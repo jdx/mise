@@ -396,10 +396,11 @@ end
 cmd.exec("make install", { cwd = src_dir, env = { PREFIX = install_path } })
 ```
 
-The command is shell code, not an argument list. mise runs it with the shell
-set by [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
-or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args),
-in the [hook environment](#hook-environment). Quote any value you interpolate
+The command is shell code, not an argument list. mise runs it with `sh -c` on
+Unix and `cmd /C` on Windows, whatever the
+[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
+and [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+settings say, in the [hook environment](#hook-environment). Quote any value you interpolate
 for that shell: a tool option pasted into the command can run commands you did
 not intend.
 

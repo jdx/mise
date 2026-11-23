@@ -116,7 +116,7 @@ impl VfoxPlugin {
         env: &IndexMap<String, String>,
         config_root: Option<&Path>,
     ) -> Result<Option<MiseEnvResponse>> {
-        let (vfox, _) = self.vfox()?;
+        let (vfox, _) = self.vfox();
         let result = vfox
             .mise_env(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
             .await?;
@@ -138,7 +138,7 @@ impl VfoxPlugin {
         env: &IndexMap<String, String>,
         config_root: Option<&Path>,
     ) -> Result<Option<Vec<String>>> {
-        let (vfox, _) = self.vfox()?;
+        let (vfox, _) = self.vfox();
         let mut out = vec![];
         let results = vfox
             .mise_path(&self.name, opts, env, config_root.and_then(|p| p.to_str()))
@@ -149,7 +149,7 @@ impl VfoxPlugin {
         Ok(Some(out))
     }
 
-    pub(crate) fn vfox(&self) -> Result<(Vfox, mpsc::Receiver<String>)> {
+    pub(crate) fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
         let settings = Settings::get();
         let env_type = if settings.os() == "linux" {
             settings
@@ -165,7 +165,6 @@ impl VfoxPlugin {
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
-        vfox.default_inline_shell = Some(settings.default_inline_shell()?);
         // `raw` is the documented opt-in for connecting stdio to children. Without
         // it, hook children get `/dev/null` on stdin: installs run in parallel, so
         // an inherited stdin would be shared by racing siblings. (#13254)
@@ -199,21 +198,21 @@ impl VfoxPlugin {
         vfox.set_url_rewriter(crate::http::apply_url_replacements);
         vfox.set_http_headers_resolver(crate::http::netrc_headers);
         let rx = vfox.log_subscribe();
-        Ok((vfox, rx))
+        (vfox, rx)
     }
 
     pub(crate) async fn backend_search_tools(
         &self,
         query: String,
     ) -> Result<Option<Vec<vfox::BackendTool>>> {
-        let (vfox, _log_rx) = self.vfox()?;
+        let (vfox, _log_rx) = self.vfox();
         vfox.backend_search_tools(&self.name, query)
             .await
             .map_err(Into::into)
     }
 
     pub(crate) async fn backend_list_tools(&self) -> Result<Option<Vec<vfox::BackendTool>>> {
-        let (vfox, _log_rx) = self.vfox()?;
+        let (vfox, _log_rx) = self.vfox();
         vfox.backend_list_tools(&self.name)
             .await
             .map_err(Into::into)

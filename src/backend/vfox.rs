@@ -325,7 +325,7 @@ impl Backend for VfoxBackend {
         if self.is_backend_plugin() || !self.plugin_has_hook("mise_install_satisfied") {
             return Ok(false);
         }
-        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        let (mut vfox, _log_rx) = self.plugin.vfox();
         let pr = Arc::clone(&ctx.pr);
         vfox.set_log_handler(move |line| pr.set_message(line));
         let (cmd_env, tool_options) = self.install_cmd_env(ctx, tv).await?;
@@ -426,7 +426,7 @@ impl Backend for VfoxBackend {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
-                let (mut vfox, _log_rx) = this.plugin.vfox()?;
+                let (mut vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
                 if let Ok(dep_env) = this.dependency_env(config).await {
                     vfox.cmd_env = Some(dep_env.into_iter().collect());
@@ -500,7 +500,7 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<ToolVersion> {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
-        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        let (mut vfox, _log_rx) = self.plugin.vfox();
         let pr = Arc::clone(&ctx.pr);
         vfox.set_log_handler(move |line| pr.set_message(normalize_install_log(&line)));
         let pr = Arc::clone(&ctx.pr);
@@ -678,7 +678,7 @@ impl Backend for VfoxBackend {
             return Ok(());
         }
 
-        let (mut vfox, log_rx) = self.plugin.vfox()?;
+        let (mut vfox, log_rx) = self.plugin.vfox();
         Self::forward_plugin_logs(log_rx);
         vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
         if self.is_backend_plugin() {
@@ -708,14 +708,14 @@ impl Backend for VfoxBackend {
         if let Some(snapshot) = self.plugin_metadata_snapshot()? {
             return Ok(snapshot.legacy_filenames);
         }
-        let (vfox, _log_rx) = self.plugin.vfox()?;
+        let (vfox, _log_rx) = self.plugin.vfox();
 
         let metadata = vfox.metadata(&self.pathname).await?;
         Ok(metadata.legacy_filenames)
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
-        let (vfox, _log_rx) = self.plugin.vfox()?;
+        let (vfox, _log_rx) = self.plugin.vfox();
         let response = vfox.parse_legacy_file(&self.pathname, path).await?;
         if let Some(version) = response.version {
             return Ok(version.split_whitespace().map(|s| s.to_string()).collect());
@@ -733,7 +733,7 @@ impl Backend for VfoxBackend {
 
         let (os, arch) = Self::to_vfox_platform(target);
 
-        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        let (mut vfox, _log_rx) = self.plugin.vfox();
         vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
         let options = self
             .tool_options_for_tv(&config, tv)
@@ -763,7 +763,7 @@ impl Backend for VfoxBackend {
 
         let (os, arch) = Self::to_vfox_platform(target);
 
-        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        let (mut vfox, _log_rx) = self.plugin.vfox();
         vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
         let options = self
             .tool_options_for_tv(&config, tv)
@@ -836,7 +836,7 @@ impl VfoxBackend {
             .get_or_try_init_async(async || {
                 timeout::run_with_timeout_async(
                     || async {
-                        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+                        let (mut vfox, _log_rx) = self.plugin.vfox();
                         self.ensure_plugin_installed(config).await?;
                         if let Ok(dep_env) = self.dependency_env(config).await {
                             vfox.cmd_env = Some(dep_env.into_iter().collect());
@@ -1048,7 +1048,7 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<vfox::MiseInstallSatisfiedResult> {
-        let (mut vfox, log_rx) = self.plugin.vfox()?;
+        let (mut vfox, log_rx) = self.plugin.vfox();
         Self::forward_plugin_logs(log_rx);
         vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
         let options = self
@@ -1194,7 +1194,7 @@ impl VfoxBackend {
                     }
                 }
                 self.ensure_plugin_installed(config).await?;
-                let (mut vfox, _log_rx) = self.plugin.vfox()?;
+                let (mut vfox, _log_rx) = self.plugin.vfox();
                 vfox.cmd_env = Some(match cmd_env {
                     Some(cmd_env) => cmd_env,
                     None => self.cmd_env_for_tv(config, tv).await,
