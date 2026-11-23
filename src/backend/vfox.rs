@@ -1239,13 +1239,21 @@ impl VfoxBackend {
                         if let Some(val) = acc.get(key) {
                             let mut paths = env::split_paths(val).collect::<Vec<PathBuf>>();
                             paths.push(PathBuf::from(&env_key.value));
-                            acc.insert(
-                                env_key.key.clone(),
-                                env::join_paths(paths)
-                                    .unwrap()
-                                    .to_string_lossy()
-                                    .to_string(),
-                            );
+                            // A value that holds the separator, such as a
+                            // directory named `web:app`, cannot be one entry
+                            // of the list, so it is left out.
+                            match env::join_paths(paths) {
+                                Ok(joined) => {
+                                    acc.insert(
+                                        env_key.key.clone(),
+                                        joined.to_string_lossy().to_string(),
+                                    );
+                                }
+                                Err(err) => warn!(
+                                    "ignoring {key} entry {:?} from {tv}: {err}; rename the directory so it has no path separator",
+                                    env_key.value
+                                ),
+                            }
                         } else {
                             acc.insert(key.clone(), env_key.value.clone());
                         }
