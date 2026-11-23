@@ -228,9 +228,6 @@ fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
 /// A tool's own manifest, without credentials. A file that holds them is
 /// rewritten without them (best effort).
 fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
-    if !path.exists() {
-        return None;
-    }
     match file::read_to_string(path) {
         std::result::Result::Ok(body) if body.trim().is_empty() => None,
         std::result::Result::Ok(body) => match toml::from_str::<ManifestTool>(&body) {
@@ -358,15 +355,17 @@ fn load_plugins() -> MutexResult<InstallStatePlugins> {
 /// `tool_dir_name` keys the incomplete markers. Install writes them under the
 /// tool's short name, which a manifest can map to a differently named dir.
 fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
-    if !dir.exists() {
-        return Ok(vec![]);
-    }
+    let entries = match dir.read_dir() {
+        std::result::Result::Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(err) => return Err(err.into()),
+    };
     // One pass, deciding from the entry's own file type so a plain version
     // directory costs no syscalls beyond the incomplete-marker check. Only links
     // are resolved: a runtime symlink (`latest` -> `./1.2.3`) names another
     // version, and on Windows those are files, which are never kept anyway.
     let mut versions = vec![];
-    for entry in dir.read_dir()? {
+    for entry in entries {
         let entry = entry?;
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             continue;
