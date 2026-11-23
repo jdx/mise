@@ -13,7 +13,7 @@ local http = require("http")
 ```
 
 These are mise's implementations; a module with the same name in upstream vfox
-can behave differently. Prefer the `http`, `file` and `archiver` modules to
+can behave differently. Prefer the `http`, `file`, `checksum` and `archiver` modules to
 shelling out: `cmd.exec` runs shell code, so quoting and the programs it needs
 differ by platform.
 
@@ -169,19 +169,20 @@ receive the options of its `[env]` directive with their TOML types kept; see
 
 ## Module index
 
-| Module                         | Functions                                                                     |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| [`http`](#http-module)         | `get`, `head`, `download_file`, `try_get`, `try_head`, `try_download_file`    |
-| [`json`](#json-module)         | `encode`, `decode`                                                            |
-| [`file`](#file-module)         | `read`, `exists`, `stat`, `list`, `glob`, `join_path`, `move`, `symlink`      |
-| [`archiver`](#archiver-module) | `decompress`                                                                  |
-| [`cmd`](#command-module)       | `exec`, `stream`                                                              |
-| [`strings`](#strings-module)   | `split`, `join`, `trim`, `trim_space`, `has_prefix`, `has_suffix`, `contains` |
-| [`semver`](#semver-module)     | `compare`, `parse`, `sort`, `sort_by`                                         |
-| [`html`](#html-module)         | `parse`                                                                       |
-| [`env`](#environment-module)   | `setenv`                                                                      |
-| [`mise.cache`](#cache-module)  | `watch_files`, `disable`                                                      |
-| [`log`](#log-module)           | `trace`, `debug`, `info`, `warn`, `error`                                     |
+| Module                         | Functions                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| [`http`](#http-module)         | `get`, `head`, `download_file`, `try_get`, `try_head`, `try_download_file`                  |
+| [`json`](#json-module)         | `encode`, `decode`                                                                          |
+| [`file`](#file-module)         | `read`, `exists`, `stat`, `list`, `glob`, `join_path`, `move`, `symlink`, `mkdir`, `remove` |
+| [`checksum`](#checksum-module) | `digest`, `verify`                                                                          |
+| [`archiver`](#archiver-module) | `decompress`                                                                                |
+| [`cmd`](#command-module)       | `exec`, `stream`                                                                            |
+| [`strings`](#strings-module)   | `split`, `join`, `trim`, `trim_space`, `has_prefix`, `has_suffix`, `contains`               |
+| [`semver`](#semver-module)     | `compare`, `parse`, `sort`, `sort_by`                                                       |
+| [`html`](#html-module)         | `parse`                                                                                     |
+| [`env`](#environment-module)   | `setenv`                                                                                    |
+| [`mise.cache`](#cache-module)  | `watch_files`, `disable`                                                                    |
+| [`log`](#log-module)           | `trace`, `debug`, `info`, `warn`, `error`                                                   |
 
 ## Errors
 
@@ -270,9 +271,8 @@ rejects the request.
 `download_file` does not verify what it downloads. In a tool plugin, return
 `sha256` or `sha512` from `PreInstall` instead of downloading, and mise
 downloads, verifies and extracts the file. A backend plugin that downloads in
-`BackendInstall` must check the digest itself. The Lua modules have no hash
-function, so run the platform's checksum tool through `cmd.exec`, such as
-`sha256sum` on Linux or `shasum -a 256` on macOS.
+`BackendInstall` must check the digest itself with
+[`checksum.verify`](#checksum-module).
 
 ## `json` {#json-module}
 
@@ -306,16 +306,18 @@ An empty Lua table encodes as `{}`, not `[]`.
 
 ## `file` {#file-module}
 
-| Function                 | Returns                                                        | On failure                                   |
-| ------------------------ | -------------------------------------------------------------- | -------------------------------------------- |
-| `file.join_path(...)`    | the non-empty arguments joined with the host's separator       | Does not fail                                |
-| `file.read(path)`        | the file's contents as text                                    | Raises when the file is missing or not UTF-8 |
-| `file.exists(path)`      | `true` or `false`                                              | Raises when the path cannot be checked       |
-| `file.stat(path)`        | a table described below, or `nil` when the path is missing     | Raises on other errors                       |
-| `file.list(dir)`         | full paths of the directory's immediate entries, sorted        | Raises when the directory is missing         |
-| `file.glob(pattern)`     | paths matching the pattern, sorted                             | Raises on an invalid pattern                 |
-| `file.move(from, to)`    | nothing; moves a file or directory and creates parents of `to` | Raises                                       |
-| `file.symlink(src, dst)` | nothing; creates the link `dst` pointing at `src`              | Raises                                       |
+| Function                       | Returns                                                                        | On failure                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `file.join_path(...)`          | the non-empty arguments joined with the host's separator                       | Does not fail                                                               |
+| `file.read(path)`              | the file's contents as text                                                    | Raises when the file is missing or not UTF-8                                |
+| `file.exists(path)`            | `true` or `false`                                                              | Raises when the path cannot be checked                                      |
+| `file.stat(path)`              | a table described below, or `nil` when the path is missing                     | Raises on other errors                                                      |
+| `file.list(dir)`               | full paths of the directory's immediate entries, sorted                        | Raises when the directory is missing                                        |
+| `file.glob(pattern)`           | paths matching the pattern, sorted                                             | Raises on an invalid pattern                                                |
+| `file.move(from, to)`          | nothing; moves a file or directory and creates parents of `to`                 | Raises                                                                      |
+| `file.symlink(src, dst)`       | nothing; creates the link `dst` pointing at `src`                              | Raises                                                                      |
+| `file.mkdir(path)`             | nothing; creates `path` and any missing parent directories                     | Raises, such as when `path` is a file                                       |
+| `file.remove(path[, options])` | nothing; deletes a file or symlink, or a directory with `{ recursive = true }` | Raises when `path` is missing, or is a directory and `recursive` is not set |
 
 A relative path resolves against the directory mise runs in, not against the
 plugin or install directory. Build paths from the absolute paths in `ctx`:
@@ -339,6 +341,11 @@ end
 `file.move` renames the path, so the source and destination must be on the
 same file system.
 
+`file.mkdir` succeeds when the directory already exists. `file.remove` deletes
+a symlink itself and never follows it, so `file.remove(link, { recursive = true })`
+leaves the link's target alone. `recursive = true` deletes a directory and
+everything in it, so build `path` from `ctx` paths such as `ctx.install_path`.
+
 `file.join_path` does not normalize separators, resolve `..`, expand `~`, or
 make an untrusted path safe. Pass relative segments after the base directory.
 In environment plugins, use `ctx.config_root` as the base for paths that come
@@ -348,6 +355,37 @@ from the project.
 `is_file`, `is_dir`, `is_symlink`, and the Unix timestamps `modified`,
 `accessed` and `created` when the system provides them. `mode` is an octal
 permission string such as `"644"` on Unix and `nil` elsewhere.
+
+## `checksum` {#checksum-module}
+
+| Function                             | Returns                            | On failure                                                            |
+| ------------------------------------ | ---------------------------------- | --------------------------------------------------------------------- |
+| `checksum.digest(path[, algorithm])` | the file's digest as lowercase hex | Raises when the file cannot be read or the algorithm is not supported |
+| `checksum.verify(path, expected)`    | `true`                             | Raises on a mismatch, a malformed `expected`, or an unreadable file   |
+
+`algorithm` is `sha256` (the default), `sha512`, `sha1` or `md5`. `expected` is
+`"<algorithm>:<hex digest>"`, such as `"sha256:b94d27b9…"`; the algorithm and
+the digest are not case-sensitive, because published checksum files differ on
+it. A mismatch error shows the expected and the actual digest.
+
+These functions hash the bytes of a file you name. They do not look for a
+checksum file, parse one, or download anything: fetch the published digest
+yourself, with `http`, and pass it to `verify`.
+
+```lua
+local checksum = require("checksum")
+local file = require("file")
+local http = require("http")
+
+local archive = file.join_path(ctx.download_path, "tool-1.2.3.tar.gz")
+http.download_file({ url = "https://example.com/tool-1.2.3.tar.gz" }, archive)
+
+local sums = http.get({ url = "https://example.com/tool-1.2.3.tar.gz.sha256" })
+local expected = sums.body:match("^(%x+)")
+checksum.verify(archive, "sha256:" .. expected) -- raises on a mismatch
+
+local digest = checksum.digest(archive, "sha512") -- for example, to record it
+```
 
 ## `archiver` {#archiver-module}
 

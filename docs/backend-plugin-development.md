@@ -100,13 +100,6 @@ function M.find_checksum(body, filename)
     error("no SHA-256 for " .. filename)
 end
 
--- The Lua modules have no hash function, so ask the system for one.
-function M.sha256(path)
-    local cmd = require("cmd")
-    local command = RUNTIME.osType == "darwin" and 'shasum -a 256 "$FILE"' or 'sha256sum "$FILE"'
-    return cmd.exec(command, { env = { FILE = path } }):match("^(%x+)")
-end
-
 return M
 ```
 
@@ -130,6 +123,7 @@ end
 
 ```lua [hooks/backend_install.lua]
 local archiver = require("archiver")
+local checksum = require("checksum")
 local file = require("file")
 local http = require("http")
 local acme = require("acme")
@@ -146,9 +140,7 @@ function PLUGIN:BackendInstall(ctx)
     local expected = acme.find_checksum(sums.body, filename)
 
     http.download_file({ url = dir .. filename }, archive)
-    if acme.sha256(archive) ~= expected then
-        error("checksum mismatch for " .. filename)
-    end
+    checksum.verify(archive, "sha256:" .. expected) -- raises on a mismatch
 
     archiver.decompress(archive, ctx.install_path, { strip_components = 1 })
     return {}
