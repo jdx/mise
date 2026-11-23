@@ -1705,10 +1705,14 @@ pub(crate) fn merge_group_toml_entry(
 /// the same path in the repository's main checkout, so the link still works
 /// after the worktree is removed. None leaves any other source as it is.
 fn main_checkout_source(source: &Path) -> Result<Option<PathBuf>> {
-    let source = resolve_parent_dirs(source);
-    if !mise_util::git::in_linked_worktree(&source) {
-        return Ok(None);
+    let resolved = resolve_parent_dirs(source);
+    if !mise_util::git::in_linked_worktree(&resolved) {
+        // `..` can climb out of a worktree, but the path as written still
+        // runs through it, and so would the link
+        let climbs_out = resolved != source && resolves_through_worktree(source, None);
+        return Ok(climbs_out.then_some(resolved));
     }
+    let source = resolved;
     let checkout = mise_util::git::checkout_of(&source);
     let (Some(main), Some(worktree)) = (checkout.repository, checkout.worktree) else {
         bail!(
@@ -1719,7 +1723,7 @@ fn main_checkout_source(source: &Path) -> Result<Option<PathBuf>> {
     let mapped = main.join(source.strip_prefix(&worktree)?);
     // a link in the main checkout may lead anywhere except through a
     // worktree, where it would break along with that worktree
-    if resolves_through_worktree(&mapped, &main) {
+    if resolves_through_worktree(&mapped, Some(&main)) {
         bail!(
             "main_checkout: {} leads back into a linked Git worktree",
             mapped.display_user()
@@ -1734,12 +1738,12 @@ fn main_checkout_source(source: &Path) -> Result<Option<PathBuf>> {
 /// to somewhere else, or into an independent repository nested in one, breaks
 /// when the worktree is removed all the same. A worktree that holds `main`
 /// does not count, since removing it would remove the main checkout too.
-fn resolves_through_worktree(path: &Path, main: &Path) -> bool {
+fn resolves_through_worktree(path: &Path, main: Option<&Path>) -> bool {
     use std::collections::VecDeque;
     use std::path::Component;
     // a symlink loop never resolves; the missing source is reported elsewhere
     const MAX_LINKS: usize = 40;
-    let main = main.canonicalize().unwrap_or_else(|_| main.to_path_buf());
+    let main = main.map(|main| main.canonicalize().unwrap_or_else(|_| main.to_path_buf()));
     // owned, so a link target can be queued after its buffer is gone
     let owned = |c: Component| PathBuf::from(c.as_os_str());
     let mut pending: VecDeque<PathBuf> = path.components().map(owned).collect();
@@ -1775,7 +1779,7 @@ fn resolves_through_worktree(path: &Path, main: &Path) -> bool {
             continue;
         }
         if current.join(".git").is_file()
-            && !main.starts_with(&current)
+            && !main.as_ref().is_some_and(|main| main.starts_with(&current))
             && mise_util::git::in_linked_worktree(&current)
         {
             return true;

@@ -81,6 +81,15 @@ assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/back lea
 assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/hop leads back into a linked Git worktree"
 assert_contains "cd '$wt/back' && mise dot apply --dry-run 2>&1" "files/vendored leads back into a linked Git worktree"
 
+# a source that climbs out of the worktree with .. is linked without it
+mkdir -p "$wt/escape"
+cat >"$wt/escape/mise.toml" <<'TOML'
+[dotfiles]
+"~/.escape" = { source = "../../persistent/value", main_checkout = true, relative = false }
+TOML
+assert_succeed "cd '$wt/escape' && mise dot apply --yes"
+assert "readlink ~/.escape" "$root/persistent/value"
+
 # a worktree of a bare repository has no main checkout
 git clone -q --bare "$main" "$root/bare"
 git --git-dir="$root/bare" worktree add -q --detach "$root/bare-wt" HEAD
