@@ -153,7 +153,7 @@ stays in the config's directory, or the project is trusted and safe mode is off.
 Otherwise the write fails and names the link and its target. A link into mise's
 state directory, or a dangling link that leads out of the directory, is never
 followed. A global config file that links into a dotfiles checkout is written
-through as before.
+through.
 
 ### CI and `--yes`
 
