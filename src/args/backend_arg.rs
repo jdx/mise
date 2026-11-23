@@ -1019,6 +1019,9 @@ impl BackendArg {
     }
 
     fn env_backend_override(&self) -> Option<String> {
+        if !crate::env::backend_override_vars_set() {
+            return None;
+        }
         backend_override_env_keys(&self.short)
             .iter()
             .find_map(|key| env::var(key).ok())
@@ -1586,20 +1589,18 @@ mod tests {
         ));
     }
 
-    /// The names are cached, not the values: a variable set or removed after
-    /// the first lookup still takes effect.
+    /// The names are cached, not the values: a variable mise sets or removes
+    /// after the first lookup still takes effect.
     #[test]
     fn env_backend_override_reads_the_variable_each_time() {
         let ba = BackendArg::from("pypi:env-override-reread");
         assert_eq!(ba.env_backend_override(), None);
-        unsafe { std::env::set_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD", "pipx:legacy") };
+        crate::env::set_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD", "pipx:legacy");
         assert_eq!(ba.env_backend_override().as_deref(), Some("pipx:legacy"));
-        unsafe { std::env::set_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD", "pypi:current") };
+        crate::env::set_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD", "pypi:current");
         assert_eq!(ba.env_backend_override().as_deref(), Some("pypi:current"));
-        unsafe {
-            std::env::remove_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD");
-            std::env::remove_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD");
-        }
+        crate::env::remove_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD");
+        crate::env::remove_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD");
         assert_eq!(ba.env_backend_override(), None);
     }
 }
