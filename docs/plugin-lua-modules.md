@@ -108,8 +108,16 @@ directory, not in the directory you ran mise from, and without `GIT_DIR`,
 `GIT_WORK_TREE` and the other variables that point git at a repository. A
 project mise happens to run in can be untrusted, and a `git ls-remote` there
 would follow that repository's git config. Pass the `cwd` option of `cmd.exec`
-or `cmd.stream` to run a command in a directory of your choice. Environment
-hooks such as `EnvKeys` still run commands in the current directory.
+or `cmd.stream` to run a command in a directory of your choice.
+
+Environment hooks such as `EnvKeys` run commands in the current directory only
+when you have trusted it, with `mise trust <dir>` or by trusting a config file
+there; a trusted config in a parent directory does not count. Elsewhere, and
+always in [safe mode](/security.html#safe-mode), their commands run in your home
+directory, the hook sees no `PWD`, and `MISE_PROJECT_ROOT` is removed unless it
+names a trusted directory. A hook that finds a project from the current
+directory, such as a `Pipfile` whose virtualenv it activates, therefore finds
+none until you trust that directory.
 
 ## metadata.lua {#metadata}
 

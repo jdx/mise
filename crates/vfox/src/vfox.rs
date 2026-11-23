@@ -83,6 +83,11 @@ pub struct Vfox {
     /// their result. A caller that caches the result uses it to tell when the
     /// result no longer applies.
     pub hook_dependencies: Option<HookDependencyRecorder>,
+    /// Start the commands of every hook, environment hooks such as `EnvKeys`
+    /// included, outside mise's working directory; see
+    /// [`Plugin::detach_cmds_from_cwd`]. mise sets it when the user has not
+    /// trusted that directory, so a hook cannot find the project there.
+    pub detach_cmds: bool,
     /// Shell command used by Lua `cmd.exec()`, `cmd.stream()` and `os.execute()`.
     /// `None` uses `sh -c` on Unix and `cmd /C` on Windows. mise leaves it unset so
     /// a plugin gets the same shell whatever the user's task shell is.
@@ -312,6 +317,9 @@ impl Vfox {
         if let Some(recorder) = &self.hook_dependencies {
             plugin.set_hook_dependencies(recorder.clone());
         }
+        if self.detach_cmds {
+            plugin.detach_cmds_from_cwd()?;
+        }
         self.set_github_token(&plugin)?;
         Ok(plugin)
     }
@@ -448,6 +456,7 @@ impl Default for Vfox {
             locked_checksum: None,
             cmd_env: None,
             hook_dependencies: None,
+            detach_cmds: false,
             default_inline_shell: None,
             raw_stdio: false,
             terminal_lock: None,

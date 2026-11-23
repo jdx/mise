@@ -34,6 +34,7 @@ impl Vfox {
             locked_checksum: None,
             cmd_env: None,
             hook_dependencies: None,
+            detach_cmds: false,
             default_inline_shell: None,
             raw_stdio: false,
             terminal_lock: None,

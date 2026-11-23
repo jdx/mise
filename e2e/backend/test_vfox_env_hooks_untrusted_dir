@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+# The pipenv and poetry plugins look for a project in the current directory
+# and put its virtualenv on PATH, running pipenv or poetry through a shell to
+# find it. In a directory the user has not trusted, their environment hooks
+# get no PWD and their commands start in the home directory.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+# Stand-ins for an installed pipenv and poetry, which answer with the
+# project's own .venv the way the real ones do.
+PIPENV="$MISE_DATA_DIR/installs/pipenv/2024.4.1/wrapper_bin/pipenv"
+POETRY="$MISE_DATA_DIR/installs/poetry/1.8.0/bin/poetry"
+mkdir -p "$(dirname "$PIPENV")" "$(dirname "$POETRY")"
+cat >"$PIPENV" <<'SH'
+#!/bin/sh
+[ "$1" = "--venv" ] && echo "$(dirname "$PIPENV_PIPFILE")/.venv"
+SH
+cat >"$POETRY" <<'SH'
+#!/bin/sh
+[ "$*" = "env info --path" ] && echo "$PWD/.venv"
+SH
+# poetry's hook runs "mise which python3", and a mise started from a hook
+# runs the same hook again; answer that call here so it cannot recurse
+PYTHON="$MISE_DATA_DIR/installs/python/3.12.0/bin/python3"
+mkdir -p "$(dirname "$PYTHON")" "$HOME/stub-bin"
+printf '#!/bin/sh\n' >"$PYTHON"
+cat >"$HOME/stub-bin/mise" <<SH
+#!/bin/sh
+[ "\$*" = "which python3" ] && echo "$PYTHON" && exit 0
+exec "$(command -v mise)" "\$@"
+SH
+chmod +x "$PIPENV" "$POETRY" "$PYTHON" "$HOME/stub-bin/mise"
+export PATH="$HOME/stub-bin:$PATH"
+
+# what an injected command would create, wherever it ran
+pwned_files="find '$HOME/..' -name 'pwned-*'"
+
+make_repo() { # $1 = directory, $2 = the file that makes it a project
+  mkdir -p "$1/.venv/bin"
+  touch "$1/.venv/bin/python" "$1/$2"
+}
+
+# pipenv: the repository pins a plain version, which loads without trust
+make_repo pipenv-repo Pipfile
+echo "pipenv 2024.4.1" >pipenv-repo/.tool-versions
+assert_contains "cd pipenv-repo && mise env" "/pipenv/2024.4.1/wrapper_bin"
+assert_not_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv"
+assert_not_contains "cd pipenv-repo && mise hook-env -s bash" "/pipenv-repo/.venv"
+assert_not_contains "cd pipenv-repo && MISE_SAFE=1 mise env" "/pipenv-repo/.venv"
+
+# a directory name the hook puts in a shell command runs nothing
+# shellcheck disable=SC2016
+evil_dir='pipenv-$(touch pwned-pipenv)'
+make_repo "$evil_dir" Pipfile
+echo "pipenv 2024.4.1" >"$evil_dir/.tool-versions"
+assert_not_contains "cd '$evil_dir' && mise env" "/.venv"
+assert_empty "$pwned_files"
+
+# poetry: the user's own config names the project in the current directory
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+poetry ={ version = "1.8.0", pyproject = "pyproject.toml" }
+TOML
+make_repo poetry-repo pyproject.toml
+assert_contains "cd poetry-repo && mise env" "POETRY_HOME="
+assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
+assert_not_contains "MISE_PROJECT_ROOT=$PWD/poetry-repo mise env" "/poetry-repo/.venv"
+
+# a trusted config in a parent directory does not vouch for a project below it
+printf '[env]\nFOO = "bar"\n' >mise.toml
+mise trust
+assert_contains "cd pipenv-repo && mise env" "FOO=bar"
+assert_not_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv"
+assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
+
+# once trusted, the virtualenv is activated as before, except in safe mode
+mise trust pipenv-repo
+mise trust poetry-repo
+assert_contains "cd pipenv-repo && mise env" "VIRTUAL_ENV=$PWD/pipenv-repo/.venv"
+assert_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv/bin"
+assert_contains "cd poetry-repo && mise env" "VIRTUAL_ENV=$PWD/poetry-repo/.venv"
+assert_contains "MISE_PROJECT_ROOT=$PWD/poetry-repo mise env" "/poetry-repo/.venv/bin"
+assert_not_contains "cd pipenv-repo && MISE_SAFE=1 mise env" "/pipenv-repo/.venv"
+# the project is the directory mise runs in, which --cd moves and PWD does not
+mkdir -p other
+mise trust other
+assert_not_contains "cd pipenv-repo && mise --cd ../other env" "/pipenv-repo/.venv"
+
+# and no longer once the trust is withdrawn
+mise trust --untrust pipenv-repo
+mise trust --untrust poetry-repo
+assert_not_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv"
+assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
+
+# safe mode passes no options from an untrusted mise.toml to the hook
+rm "$MISE_CONFIG_DIR/config.toml"
+mkdir -p safe-repo "safe-repo/';touch pwned-poetry;'"
+touch "safe-repo/';touch pwned-poetry;'/pyproject.toml"
+cat >safe-repo/mise.toml <<'TOML'
+[tools]
+poetry = { version = "1.8.0", pyproject = "./';touch pwned-poetry;'/pyproject.toml" }
+TOML
+assert_contains "cd safe-repo && MISE_SAFE=1 mise env" "POETRY_HOME="
+assert_empty "$pwned_files"

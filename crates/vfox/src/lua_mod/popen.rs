@@ -13,7 +13,7 @@ use mlua::{AnyUserData, Function, Table, UserData, UserDataMethods, Variadic};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 
-use super::cmd::{cmd_shell, command_from_shell, detached_cwd, remove_git_context_env};
+use super::cmd::{cmd_shell, command_from_shell, detached_cwd, start_in};
 
 /// Replace `io.popen` so it starts children in the detached directory when the
 /// hook has one, and behaves as stock `io.popen` otherwise.
@@ -49,8 +49,7 @@ fn popen(lua: &Lua, command: &str, mode: Option<&str>, cwd: &str) -> LuaResult<L
         }
     };
     let mut cmd = command_from_shell(&cmd_shell(lua)?, command)?;
-    cmd.current_dir(cwd);
-    remove_git_context_env(&mut cmd);
+    start_in(&mut cmd, cwd);
     if write {
         cmd.stdin(Stdio::piped());
     } else {

@@ -64,7 +64,7 @@ const GIT_CONTEXT_ENV: &[&str] = &[
     "GIT_NAMESPACE",
 ];
 
-pub(super) fn remove_git_context_env(cmd: &mut Command) {
+fn remove_git_context_env(cmd: &mut Command) {
     for key in GIT_CONTEXT_ENV {
         cmd.env_remove(key);
     }
@@ -75,10 +75,17 @@ pub(super) fn remove_git_context_env(cmd: &mut Command) {
 /// applied and before the hook's own `cwd` and `env` options, which still win.
 fn apply_detached_cwd(lua: &Lua, cmd: &mut Command) -> LuaResult<()> {
     if let Some(cwd) = detached_cwd(lua)? {
-        cmd.current_dir(cwd);
-        remove_git_context_env(cmd);
+        start_in(cmd, &cwd);
     }
     Ok(())
+}
+
+/// Start `cmd` in `cwd`, with a `PWD` naming it rather than the directory mise
+/// was started in, and without the variables that select a repository.
+pub(super) fn start_in(cmd: &mut Command, cwd: &str) {
+    cmd.current_dir(cwd);
+    cmd.env("PWD", cwd);
+    remove_git_context_env(cmd);
 }
 
 /// Parse the shared `(command)` / `(command, options)` signature.

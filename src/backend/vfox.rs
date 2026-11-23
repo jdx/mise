@@ -235,6 +235,63 @@ fn is_tool_option_env_key(key: &str) -> bool {
     }
 }
 
+/// Whether the user has trusted `dir`, by `mise trust` on it or on a project
+/// config file rooted there. Global config does not vouch for a directory, and
+/// safe mode trusts none.
+fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
+    use crate::config::config_file::{is_path_trusted, is_trusted};
+    !Settings::safe_mode()
+        && (is_trusted(dir)
+            || config.config_files.values().any(|cf| {
+                cf.config_root() == dir
+                    && !crate::config::is_global_config(cf.get_path())
+                    && is_path_trusted(cf.get_path())
+            }))
+}
+
+/// Removes the variables naming a project directory the user has not trusted
+/// from an environment hook's env: `PWD` unless it is the trusted working
+/// directory `trusted_cwd`, and `MISE_PROJECT_ROOT`, which a shell hook leaves
+/// behind.
+fn withhold_untrusted_dirs(
+    config: &Config,
+    env: &mut indexmap::IndexMap<String, String>,
+    trusted_cwd: Option<&Path>,
+) {
+    let same_dir = |a: &Path, b: &Path| match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    let pwd_ok = match (env.get("PWD"), trusted_cwd) {
+        (Some(pwd), Some(cwd)) => same_dir(Path::new(pwd), cwd),
+        _ => false,
+    };
+    if !pwd_ok {
+        remove_env_var(env, "PWD");
+    }
+    if env
+        .get("MISE_PROJECT_ROOT")
+        .is_some_and(|root| !dir_is_trusted(config, Path::new(root)))
+    {
+        remove_env_var(env, "MISE_PROJECT_ROOT");
+    }
+}
+
+/// Whether safe mode keeps this request's tool options from the plugin's
+/// environment hooks: they come from project config, which safe mode does not
+/// trust.
+fn safe_mode_withholds_options(request: &crate::toolset::ToolRequest) -> bool {
+    use crate::toolset::ToolSource;
+    Settings::safe_mode()
+        && match request.source() {
+            ToolSource::MiseToml(path)
+            | ToolSource::MiseTomlDaemon(path)
+            | ToolSource::ToolVersions(path)
+            | ToolSource::IdiomaticVersionFile(path) => !crate::config::is_global_config(path),
+            _ => false,
+        }
+}
+
 fn restore_config_tool_option_env(
     env: &mut indexmap::IndexMap<String, String>,
     config_env: &indexmap::IndexMap<String, String>,
@@ -892,13 +949,22 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> indexmap::IndexMap<String, String> {
+        let options = self.tool_options_for_tv(config, tv).await;
+        self.cmd_env_with_options(config, &options).await
+    }
+
+    async fn cmd_env_with_options(
+        &self,
+        config: &Arc<Config>,
+        options: &ToolOptions,
+    ) -> indexmap::IndexMap<String, String> {
         let mut cmd_env = self
             .dependency_env(config)
             .await
             .unwrap_or_default()
             .into_iter()
             .collect();
-        add_tool_option_env(&mut cmd_env, &self.tool_options_for_tv(config, tv).await);
+        add_tool_option_env(&mut cmd_env, options);
         if let Ok(config_env) = config.env().await {
             restore_config_tool_option_env(&mut cmd_env, &config_env);
         }
@@ -1120,12 +1186,30 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        let opts = self.tool_options_for_tv(config, tv).await;
+        let opts = if safe_mode_withholds_options(&tv.request) {
+            ToolOptions::default()
+        } else {
+            self.tool_options_for_tv(config, tv).await
+        };
+        // A hook that looks in the current directory, for a Pipfile say, and
+        // puts what it finds on PATH would run a program an untrusted project
+        // chose. In such a directory the hook gets no PWD and its commands
+        // start in the home directory.
+        let trusted_cwd = dirs::CWD
+            .as_deref()
+            .filter(|cwd| dir_is_trusted(config, cwd));
+        let cwd_trusted = trusted_cwd.is_some();
+        let hook_env = async || {
+            let mut cmd_env = self.cmd_env_with_options(config, &opts).await;
+            withhold_untrusted_dirs(config, &mut cmd_env, trusted_cwd);
+            cmd_env
+        };
         let install_path = tv.install_path();
         let opts_hash = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
+            cwd_trusted.hash(&mut hasher);
             install_path.hash(&mut hasher);
             // Refs such as `ref:a/b` and `ref:a-b` share an install path, but
             // a hook can read the raw version.
@@ -1179,7 +1263,7 @@ impl VfoxBackend {
                             if cached.env_reads.is_empty() {
                                 return Ok(cached.env);
                             }
-                            let current = self.cmd_env_for_tv(config, tv).await;
+                            let current = hook_env().await;
                             if env_reads_match(&cached.env_reads, &current) {
                                 return Ok(cached.env);
                             }
@@ -1197,8 +1281,9 @@ impl VfoxBackend {
                 let (mut vfox, _log_rx) = self.plugin.vfox();
                 vfox.cmd_env = Some(match cmd_env {
                     Some(cmd_env) => cmd_env,
-                    None => self.cmd_env_for_tv(config, tv).await,
+                    None => hook_env().await,
                 });
+                vfox.detach_cmds = !cwd_trusted;
                 let recorder = vfox::HookDependencyRecorder::default();
                 vfox.hook_dependencies = Some(recorder.clone());
 

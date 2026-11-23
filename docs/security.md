@@ -291,6 +291,10 @@ These are skipped without an error, so resolution commands keep working:
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
+- The options of a vfox tool that project config declares, in the plugin's
+  environment hooks, and the current directory: those hooks run their commands
+  in your home directory, so the `pipenv` and `poetry` plugins activate no
+  virtualenv. See [the hook environment](/plugin-lua-modules.html#hook-environment).
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
   and a tool that project config declares gets no `~/.netrc` credentials for
