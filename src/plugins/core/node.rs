@@ -426,7 +426,12 @@ impl NodePlugin {
         let shasums_url = self.shasums_url(v, tarball_name)?;
         let sig_url = format!("{shasums_url}.sig");
         if let Err(e) = HTTP
-            .download_file(sig_url, &sig_file, Some(ctx.pr.as_ref()))
+            .download_file_limited(
+                sig_url,
+                &sig_file,
+                gpg::MAX_SIGNATURE_BYTES,
+                Some(ctx.pr.as_ref()),
+            )
             .await
         {
             if matches!(http::error_code(&e), Some(404)) {
@@ -1070,8 +1075,19 @@ impl NodePlugin {
         if verified.get(&key) == Some(&digest) {
             return Ok(());
         }
-        let result = match HTTP.get_bytes(format!("{shasums_url}.sig")).await {
-            Ok(signature) => gpg::verify_node(shasums.as_bytes(), signature.as_ref()),
+        let sig_dir = tempfile::tempdir()?;
+        let sig_file = sig_dir.path().join("SHASUMS256.txt.sig");
+        let result = match HTTP
+            .download_file_limited(
+                format!("{shasums_url}.sig"),
+                &sig_file,
+                gpg::MAX_SIGNATURE_BYTES,
+                None,
+            )
+            .await
+        {
+            Ok(()) => file::read(&sig_file)
+                .and_then(|signature| gpg::verify_node(shasums.as_bytes(), &signature)),
             Err(e) if matches!(http::error_code(&e), Some(404)) => missing_signature(shasums_url),
             Err(e) => Err(e),
         };

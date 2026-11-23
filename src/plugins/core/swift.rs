@@ -138,8 +138,13 @@ impl SwiftPlugin {
         // This path only runs on Linux, where swift.org publishes a detached signature for every
         // release tarball. A missing .sig is therefore unexpected, so surface the download error
         // rather than silently skipping verification (Node does the same).
-        HTTP.download_file(format!("{url}.sig"), &sig_path, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_limited(
+            format!("{url}.sig"),
+            &sig_path,
+            gpg::MAX_SIGNATURE_BYTES,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         let signature = file::read(&sig_path)?;
         gpg::verify_swift(tarball_path, &signature)?;
         Ok(())

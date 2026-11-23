@@ -192,8 +192,21 @@ fn parse_public_keys(asc: &str) -> Result<Vec<SignedPublicKey>> {
     Ok(keys)
 }
 
+/// The largest detached signature file mise parses. A release signature is a few packets of
+/// well under 1 KiB each (node's `SHASUMS256.txt.sig` for v20.11.0 is 566 bytes). The file comes
+/// from the download host, a parsed packet can take 70 times its size in memory (rPGP reserves
+/// room for 32 subpackets per area), and armor parsing time grows with the square of the size,
+/// so the size is checked before any parsing.
+pub const MAX_SIGNATURE_BYTES: u64 = 256 * 1024;
+
 /// Parse detached signatures, accepting both ASCII-armored and binary encodings.
 fn parse_signatures(signature: &[u8]) -> Result<Vec<DetachedSignature>> {
+    if signature.len() as u64 > MAX_SIGNATURE_BYTES {
+        bail!(
+            "signature file is {} bytes, larger than the {MAX_SIGNATURE_BYTES} bytes a release signature can need",
+            signature.len()
+        );
+    }
     let mut signatures = Vec::new();
     if is_armored(signature) {
         let (iter, _headers) = DetachedSignature::from_armor_many(signature)
@@ -294,6 +307,14 @@ mod tests {
     fn rejects_when_no_signature() {
         let err = verify_node(b"data", b"").unwrap_err();
         assert!(err.to_string().contains("no signature"), "{err}");
+    }
+
+    #[test]
+    fn rejects_an_oversized_signature_file_before_parsing() {
+        // valid packets: a parser that ran would stop at the attempt limit instead
+        let count = MAX_SIGNATURE_BYTES as usize / NODE_SIG.len() + 1;
+        let err = verify_node(NODE_SHASUMS, &NODE_SIG.repeat(count)).unwrap_err();
+        assert!(err.to_string().contains("larger than"), "{err}");
     }
 
     #[test]
