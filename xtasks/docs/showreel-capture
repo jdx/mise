@@ -75,7 +75,7 @@ reference="$root/docs/.vitepress/theme/showreel/test/captures"
 # signed SHASUMS256.asc lists it: checked without gpg when asked for. Every
 # other version, including the default (the newest release), is checked
 # against its own SHASUMS256.asc, signed by the release key (SECURITY.md,
-# "Release gpg key"; this is its fingerprint).
+# "Release GPG key"; this is its fingerprint).
 pin_version=2026.9.15
 pin_sha256=ef349bbbcf3526865c551dc3dc317d354d63b26553855014db51caf7a063c7d2
 release_fpr=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
@@ -192,7 +192,7 @@ expected_sha() {
 	command -v gpg >/dev/null || die "mise $version is not the pin ($pin_version): checking its SHASUMS256.asc needs gpg"
 	local g="$work/gnupg" status
 	mkdir -p "$g" && chmod 700 "$g"
-	sed -n '/^## Release gpg key/,$p' "$root/SECURITY.md" |
+	sed -n '/^## Release GPG key/,$p' "$root/SECURITY.md" |
 		sed -n '/-----BEGIN PGP PUBLIC KEY BLOCK-----/,/-----END PGP PUBLIC KEY BLOCK-----/p' >"$g/key.asc"
 	# gpg may complain that it has no agent; the key is imported all the same
 	gpg --homedir "$g" --batch --no-autostart --quiet --import "$g/key.asc" 2>/dev/null || true
