@@ -311,6 +311,7 @@ impl Plugin {
             // These must be available before loading embedded lib files
             lua_mod::archiver(&self.lua)?;
             lua_mod::cache(&self.lua)?;
+            lua_mod::checksum(&self.lua)?;
             lua_mod::cmd(&self.lua)?;
             lua_mod::file(&self.lua)?;
             lua_mod::html(&self.lua)?;

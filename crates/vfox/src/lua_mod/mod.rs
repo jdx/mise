@@ -1,5 +1,6 @@
 mod archiver;
 mod cache;
+mod checksum;
 mod cmd;
 mod env;
 mod file;
@@ -14,6 +15,7 @@ mod strings;
 
 pub(crate) use archiver::mod_archiver as archiver;
 pub(crate) use cache::mod_cache as cache;
+pub(crate) use checksum::mod_checksum as checksum;
 pub(crate) use cmd::mod_cmd as cmd;
 pub(crate) use env::mod_env as env;
 pub(crate) use file::mod_file as file;

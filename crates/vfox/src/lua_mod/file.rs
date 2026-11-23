@@ -54,6 +54,8 @@ pub(crate) fn mod_file(lua: &Lua) -> Result<()> {
             ("list", lua.create_function(list)?),
             ("glob", lua.create_function(glob)?),
             ("move", lua.create_function(move_path)?),
+            ("mkdir", lua.create_function(mkdir)?),
+            ("remove", lua.create_function(remove)?),
         ])?,
     )?)
 }
@@ -81,6 +83,43 @@ fn glob(_lua: &Lua, pattern: String) -> mlua::Result<Vec<String>> {
 
 fn move_path(_lua: &Lua, (source, destination): (String, String)) -> mlua::Result<()> {
     xx::file::mv(source, destination).into_lua_err()
+}
+
+/// Create `path` and any missing parents; an existing directory is not an error.
+fn mkdir(_lua: &Lua, path: String) -> mlua::Result<()> {
+    std::fs::create_dir_all(path).into_lua_err()
+}
+
+/// Remove a file or symlink, or a directory tree when `{ recursive = true }`.
+///
+/// A symlink is removed itself and never followed, so a link to a directory
+/// leaves its target alone.
+fn remove(_lua: &Lua, (path, options): (String, Option<Table>)) -> mlua::Result<()> {
+    let recursive = match options {
+        Some(options) => options.get::<Option<bool>>("recursive")?.unwrap_or(false),
+        None => false,
+    };
+    // A trailing separator makes the OS resolve a symlink to its target, which
+    // would delete through the link. `components` drops it and keeps a root.
+    let path: PathBuf = Path::new(&path).components().collect();
+    let path = path.as_path();
+    let meta = std::fs::symlink_metadata(path).into_lua_err()?;
+    if meta.is_symlink() {
+        // A Windows symlink to a directory is removed with remove_dir.
+        return std::fs::remove_file(path)
+            .or_else(|_| std::fs::remove_dir(path))
+            .into_lua_err();
+    }
+    if meta.is_dir() {
+        if !recursive {
+            return Err(mlua::Error::external(format!(
+                "{} is a directory: pass {{ recursive = true }} to remove it",
+                path.display()
+            )));
+        }
+        return std::fs::remove_dir_all(path).into_lua_err();
+    }
+    std::fs::remove_file(path).into_lua_err()
 }
 
 async fn read(_lua: &Lua, input: MultiValue) -> mlua::Result<String> {
@@ -340,5 +379,121 @@ mod tests {
             "c"
         );
         assert!(!nested_dir.exists());
+    }
+
+    #[test]
+    fn test_mkdir_creates_parents_and_accepts_an_existing_directory() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let nested = temp_dir.path().join("a").join("b").join("c");
+        let nested_str = nested.to_string_lossy().to_string();
+        let file_path = temp_dir.path().join("plain.txt");
+        let file_path_str = file_path.to_string_lossy().to_string();
+        fs::write(&file_path, "x").unwrap();
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+
+        lua.load(mlua::chunk! {
+            local file = require("file")
+            file.mkdir($nested_str)
+            file.mkdir($nested_str) -- already there
+            local ok = pcall(file.mkdir, $file_path_str)
+            assert(not ok, "mkdir over a file must raise")
+        })
+        .exec()
+        .unwrap();
+
+        assert!(nested.is_dir());
+    }
+
+    #[test]
+    fn test_remove_deletes_files_and_requires_recursive_for_directories() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("gone.txt");
+        let dir_path = temp_dir.path().join("tree");
+        fs::write(&file_path, "x").unwrap();
+        fs::create_dir_all(dir_path.join("inner")).unwrap();
+        fs::write(dir_path.join("inner").join("f.txt"), "x").unwrap();
+        let missing_str = temp_dir
+            .path()
+            .join("missing")
+            .to_string_lossy()
+            .to_string();
+        let file_path_str = file_path.to_string_lossy().to_string();
+        let dir_path_str = dir_path.to_string_lossy().to_string();
+        let dir_path_str_again = dir_path_str.clone();
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+
+        lua.load(mlua::chunk! {
+            local file = require("file")
+            file.remove($file_path_str)
+
+            local ok, err = pcall(file.remove, $dir_path_str)
+            assert(not ok and tostring(err):find("recursive", 1, true), "a directory needs recursive = true")
+            ok = pcall(file.remove, $dir_path_str, { recursive = false })
+            assert(not ok, "recursive = false behaves like the default")
+
+            ok = pcall(file.remove, $missing_str)
+            assert(not ok, "a missing path raises")
+        })
+        .exec()
+        .unwrap();
+        assert!(!file_path.exists());
+        assert!(dir_path.join("inner").join("f.txt").exists());
+
+        lua.load(mlua::chunk! {
+            require("file").remove($dir_path_str_again, { recursive = true })
+        })
+        .exec()
+        .unwrap();
+        assert!(!dir_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_remove_deletes_a_symlink_without_following_it() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let target = temp_dir.path().join("target");
+        let link = temp_dir.path().join("link");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("keep.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let link_str = link.to_string_lossy().to_string();
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+
+        // Even with recursive = true, only the link goes.
+        lua.load(mlua::chunk! {
+            require("file").remove($link_str, { recursive = true })
+        })
+        .exec()
+        .unwrap();
+
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.join("keep.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_remove_ignores_a_trailing_separator_on_a_symlink() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let target = temp_dir.path().join("target");
+        let link = temp_dir.path().join("link");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("keep.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        // "link/" names the link's target to the OS, so it must not be used as is.
+        let link_str = format!("{}/", link.display());
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+
+        lua.load(mlua::chunk! {
+            require("file").remove($link_str, { recursive = true })
+        })
+        .exec()
+        .unwrap();
+
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.join("keep.txt").exists());
     }
 }
