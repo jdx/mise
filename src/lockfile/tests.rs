@@ -208,6 +208,38 @@ fn test_lockfile_version_at_matches_a_full_read() {
 }
 
 #[test]
+fn read_takes_an_unquoted_date_as_its_text() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    std::fs::write(
+        &path,
+        r#"
+[[tools.dated]]
+version = 2024-01-01
+backend = "github:jdx/dated"
+options = { since = 2024-02-03, tags = [2024-04-05] }
+
+[tools.dated.platforms.linux-x64]
+checksum = "sha256:abc"
+url = 2024-03-04
+"#,
+    )
+    .unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    let tool = &lockfile.tools()["dated"][0];
+    assert_eq!(tool.version, "2024-01-01");
+    // Only string options are kept, and a date is one.
+    assert_eq!(
+        tool.options,
+        BTreeMap::from([("since".to_string(), "2024-02-03".to_string())])
+    );
+    assert_eq!(
+        tool.platforms["linux-x64"].url.as_deref(),
+        Some("2024-03-04")
+    );
+}
+
+#[test]
 fn read_parsed_lockfile_parses_again_only_once_the_file_changes() {
     use std::time::{Duration, SystemTime};
     let temp = tempfile::tempdir().unwrap();

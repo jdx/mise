@@ -1115,14 +1115,47 @@ pub fn remember_mirrored_asset_api_url(url: &str) {
 /// forges, GitHub Enterprise, repository contents) name no asset ID GitHub
 /// could be asked about.
 pub fn remember_locked_asset_api_url(url: &str) {
-    let is_asset = url::Url::parse(url).is_ok_and(|parsed| {
-        let segments: Vec<_> = parsed.path_segments().into_iter().flatten().collect();
-        parsed.host_str() == Some("api.github.com")
-            && matches!(segments[..], ["repos", _, _, "releases", "assets", _])
-    });
+    // A lockfile is read on every command and holds one of these per tool and
+    // platform, nearly all in the form GitHub writes them, so that form is
+    // recognized without parsing the URL.
+    let is_asset = is_plain_asset_api_url(url)
+        || url::Url::parse(url).is_ok_and(|parsed| {
+            let segments: Vec<_> = parsed.path_segments().into_iter().flatten().collect();
+            parsed.host_str() == Some("api.github.com")
+                && matches!(segments[..], ["repos", _, _, "releases", "assets", _])
+        });
     if is_asset {
         remember_mirrored_asset_api_url(url);
     }
+}
+
+/// Whether `url` is exactly `https://api.github.com/repos/OWNER/REPO/releases/assets/ID`
+/// with nothing a URL parser would have to interpret: every URL this accepts,
+/// the parse in `remember_locked_asset_api_url` accepts too.
+fn is_plain_asset_api_url(url: &str) -> bool {
+    let plain = |segment: &str| {
+        !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    };
+    let Some(rest) = url.strip_prefix("https://api.github.com/repos/") else {
+        return false;
+    };
+    let mut segments = rest.split('/');
+    let (Some(owner), Some(repo), Some("releases"), Some("assets"), Some(id), None) = (
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+    ) else {
+        return false;
+    };
+    plain(owner) && plain(repo) && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
 }
 
 pub fn is_mirrored_asset_api_url(url: &str) -> bool {
@@ -1746,6 +1779,27 @@ mod tests {
         ] {
             remember_locked_asset_api_url(other);
             assert!(!is_mirrored_asset_api_url(other), "{other}");
+            assert!(!is_plain_asset_api_url(other), "{other}");
+        }
+        assert!(is_plain_asset_api_url(asset));
+        // Forms the URL parser has to read: an asset, but not a plain one.
+        for odd in [
+            "HTTPS://API.GITHUB.COM/repos/jdx/locked/releases/assets/2",
+            "https://api.github.com:443/repos/jdx/locked/releases/assets/3",
+            "https://api.github.com/repos/jdx/locked/releases/assets/4?x=1",
+        ] {
+            assert!(!is_plain_asset_api_url(odd), "{odd}");
+            remember_locked_asset_api_url(odd);
+            assert!(is_mirrored_asset_api_url(odd), "{odd}");
+        }
+        // Not plain, and not an asset either.
+        for other in [
+            "https://api.github.com/repos/jdx/../releases/assets/5",
+            "https://api.github.com/repos/jdx/locked/releases/assets/",
+            "https://api.github.com/repos/jdx/locked/releases/assets/6/extra",
+            "https://api.github.com.example.com/repos/jdx/locked/releases/assets/7",
+        ] {
+            assert!(!is_plain_asset_api_url(other), "{other}");
         }
     }
 
