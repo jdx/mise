@@ -85,6 +85,11 @@ in these ways:
   `mise.local.toml` beside it, the task files beside it, or a local
   [`aqua.registries`](/dev-tools/backends/aqua.html) file it names. Run
   `mise trust <file>` for each of those.
+- Trusting `mise.toml` does not trust a script one of its tasks names with
+  [`file`](/tasks/toml-tasks.html) either. The task still runs when you run it,
+  but shell completion leaves out the commands in the script's `#USAGE` spec,
+  such as `complete run=` and `mount`, until you run `mise trust <script>`, and
+  again after every edit.
 - `mise run`, `mise install`, `mise exec`, `mise watch` and the `mise daemons`
   start, restart and register commands do not trust the config they load.
 - CI does not make config trusted, and `--yes`, `MISE_YES=1` and `CI` do not

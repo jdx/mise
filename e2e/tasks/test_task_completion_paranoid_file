@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# With the paranoid config category, a trusted project config does not vouch
+# for the script a task names with "file": completion leaves out the commands in
+# its #USAGE spec until the script is trusted itself, bound to its content.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+ran="$PWD/ran"
+mkdir -p "$ran" scripts
+
+cat <<'TOML' >mise.toml
+[tasks.build]
+file = "scripts/build.sh"
+TOML
+
+write_script() {
+  cat <<SH >"scripts/$1.sh"
+#!/usr/bin/env bash
+#USAGE arg "<target>"
+#USAGE complete "target" run="touch $ran/$1; echo $2"
+echo "ran \$usage_target"
+SH
+  chmod +x "scripts/$1.sh"
+}
+write_script build from-build
+
+press_tab() {
+  mise __complete_word__ --shell fish --line "$1"
+}
+
+export MISE_PARANOID=config
+mise trust mise.toml
+assert_not_contains "mise tasks --usage" "touch"
+assert_not_contains_text "$(press_tab 'mise run build ')" 'from-build'
+assert_empty "ls $ran"
+
+# What needs no command still completes, and the task still runs when asked to.
+assert_contains "mise tasks --usage" "<target>"
+assert_contains "mise run build x" "ran x"
+
+mise trust scripts/build.sh
+assert_contains "mise tasks --usage" "touch $ran/build"
+assert_contains_text "$(press_tab 'mise run build ')" 'from-build'
+rm "$ran/build"
+
+# Trust is bound to the content of the script.
+write_script build edited
+assert_not_contains "mise tasks --usage" "touch $ran/build"
+assert_not_contains_text "$(press_tab 'mise run build ')" 'edited'
+assert_empty "ls $ran"
+
+# Outside paranoid mode the trusted config vouches for it.
+unset MISE_PARANOID
+mise trust mise.toml
+assert_contains_text "$(press_tab 'mise run build ')" 'edited'

@@ -319,7 +319,7 @@ impl TasksLs {
             // Completion runs the commands a spec names (`complete run=`, `mount`, ...) while
             // it parses the typed words. For a task nobody trusted, that is code from the
             // repository running before `mise run` was ever entered.
-            if !task.is_trusted(config) {
+            if !task.is_trusted(config).await {
                 remove_spec_commands(&mut task_spec.cmd);
             }
             // Absorb words the caller forwards to the task beyond what it declares, so

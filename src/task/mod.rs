@@ -1250,7 +1250,14 @@ impl Task {
     /// one of the root's own config files, which is what lets the root's task includes load
     /// without a check of their own. Safe mode keeps project config inert, trusted or not.
     /// The `global` field is not consulted because a task definition can set it.
-    pub fn is_trusted(&self, config: &Config) -> bool {
+    ///
+    /// The script a TOML task names with `file` is one of those files: its `#USAGE` lines are
+    /// the task's usage spec. See [`Self::file_is_trusted`].
+    pub async fn is_trusted(&self, config: &Arc<Config>) -> bool {
+        self.sources_are_trusted(config) && self.file_is_trusted(config).await
+    }
+
+    fn sources_are_trusted(&self, config: &Config) -> bool {
         use crate::config::config_file::{is_path_trusted, is_trusted};
         let safe_mode = config::Settings::safe_mode();
         let trusted = |path: &Path| {
@@ -1271,6 +1278,34 @@ impl Task {
         };
         (trusted(&self.config_source) || root_trusted())
             && self.additional_config_sources.iter().all(|p| trusted(p))
+    }
+
+    /// Whether the script a TOML task names with `file = "..."` is covered by the trust of the
+    /// config that names it, or else trusted itself.
+    ///
+    /// The paranoid `config` category binds a project config's trust to its own content, which
+    /// does not cover a script on disk that changes without it, so there the script needs
+    /// trust of its own, as a script found in a task directory does before it loads. Global
+    /// config is trusted by path, and so are the scripts it names. A remote file is not a path
+    /// `mise trust` can name, so it stays with the config that names it.
+    async fn file_is_trusted(&self, config: &Arc<Config>) -> bool {
+        let is_global = |path: &Path| {
+            config::is_global_config(path) || config::is_global_task_include_path(path)
+        };
+        if self.file_from_discovery
+            || self.remote_file_source.is_some()
+            || task_fetcher::TaskFetcher::is_unfetched_remote_task(self)
+            || !config::Settings::get().paranoid.config()
+            || self.config_sources().into_iter().all(is_global)
+        {
+            return true;
+        }
+        // The path the usage spec is read from. A template that does not render names no file.
+        match self.file_path(config).await {
+            Ok(Some(file)) => is_global(&file) || config::config_file::is_path_trusted(&file),
+            Ok(None) => true,
+            Err(_) => false,
+        }
     }
 
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
