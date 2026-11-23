@@ -105,7 +105,11 @@ trust.
 
 When a command needs a config that is not trusted:
 
-- In a terminal, mise asks
+- A command you type in a terminal trusts the config's directory without
+  asking, records it as `mise trust` would, and says
+  ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
+  See [Typed in a terminal](#typed-in-a-terminal) for what counts.
+- Otherwise, when stdin and stderr are a terminal, mise asks
   `mise config files in <dir> are not trusted. Trust them?`<!-- cli: skip -->
   with Yes, No and All, where All answers yes to every prompt in that command.
   No adds the
@@ -144,6 +148,28 @@ the file's whole config root, so if another config file there is not trusted
 yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
 first, the way it does when that file loads. In safe mode a write records no
 trust.
+
+### Typed in a terminal
+
+Outside the commands that imply trust, typing any other mise command, such as `mise ls`
+or `mise env`, in an untrusted project trusts that project without the prompt
+when all of these hold:
+
+- stdin, stdout and stderr are all a terminal. A command whose output is
+  captured, such as `$(mise env)` in a prompt or `eval "$(mise env)"` in a
+  shell startup file, still asks.
+- Paranoid mode's `config` category is off.
+- mise is not running as a shim, as the `mise x` a shim runs, or for shell
+  completion.
+- On Unix systems such as Linux and macOS, you own the config file and its directory, and the
+  target of either when it is a symlink. A `mise.toml` another account left in a
+  shared directory still asks. Windows does not check ownership.
+
+mise trusts the config's directory as `mise trust` would and prints
+``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
+once per directory, which `--quiet` hides. A directory on the ignore list or
+under `ignored_config_paths` stays ignored, and shell activation still skips
+untrusted config. Only paranoid mode turns this off.
 
 ### CI and `--yes`
 

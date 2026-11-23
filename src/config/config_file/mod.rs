@@ -49,6 +49,7 @@ pub mod idiomatic_version;
 pub(crate) mod min_version;
 pub mod mise_toml;
 pub(crate) mod tool_versions;
+mod typed_consent;
 mod unknown_key;
 
 #[derive(Debug, PartialEq)]
@@ -798,6 +799,9 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         Err(UntrustedConfig(path.into()))?
     }
     if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+        if typed_consent::trust_typed_command(path, &config_root)? {
+            return Ok(());
+        }
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid.config())
         {

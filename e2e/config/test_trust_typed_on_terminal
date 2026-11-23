@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+# A mise command typed on a terminal in an untrusted project trusts it without
+# the "Trust them?" prompt and says so. Anything that does not look like a person
+# typing it there keeps the prompt: stdout captured by a command substitution,
+# paranoid mode, an ignored directory.
+
+require_cmd script
+
+# script(1) gives mise a pty on stdin, stdout and stderr. macOS's script(1) also
+# wants a terminal on its own stdin, which the harness does not have.
+if ! script -qec true /dev/null >/dev/null 2>&1; then
+  echo "skipping: script(1) cannot allocate a pty here" >&2
+  exit 0
+fi
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >mise.toml
+[env]
+TYPED_TRUST_TEST = "1"
+EOF
+
+notice="because you ran a mise command there"
+
+# Runs $1 on a pty and answers "No" if the trust prompt appears, so a run that
+# would prompt finishes instead of waiting for a key.
+on_pty() {
+  printf 'n' | timeout 10 script -qec "MISE_YES=0 $1" /dev/null 2>&1
+}
+
+assert_untrusted() {
+  assert_contains "mise trust --show" "$(basename "$PWD"): untrusted"
+}
+
+# Forgets the answers the cases below gave, so each case starts untrusted.
+forget_trust() {
+  rm -rf "$MISE_STATE_DIR/trusted-configs" "$MISE_STATE_DIR/ignored-configs"
+}
+
+# stdout captured: stdin and stderr are the terminal, but nobody typed this here.
+output="$(on_pty 'mise env | cat')" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+ok "[trust] a command whose stdout is captured still asks"
+
+# Paranoid mode keeps the prompt.
+output="$(on_pty 'MISE_PARANOID=1 mise env')" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+ok "[trust] paranoid mode still asks"
+
+# An ignored directory stays ignored.
+mise trust --ignore
+output="$(on_pty 'mise env')" || true
+assert_not_contains_text "$output" "$notice"
+assert_not_contains_text "$output" "TYPED_TRUST_TEST"
+assert_untrusted
+forget_trust
+ok "[trust] an ignored directory is not trusted"
+
+# Without a terminal nothing is trusted either.
+assert_fail "MISE_YES=0 mise env </dev/null" "not trusted"
+assert_untrusted
+
+# Typed on a terminal: trusted, with a notice, and the config applies.
+output="$(on_pty 'mise env')"
+assert_contains_text "$output" "$notice"
+assert_contains_text "$output" "mise untrust"
+assert_contains_text "$output" "TYPED_TRUST_TEST"
+assert_not_contains_text "$output" "Trust them?"
+assert_contains "mise trust --show" "$(basename "$PWD"): trusted"
+ok "[trust] a command typed on a terminal trusts the project"
