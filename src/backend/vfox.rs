@@ -18,6 +18,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::env_diff::EnvMap;
+use crate::errors::Error::PluginNotInstalled;
 use crate::hash::{hash_sha256_to_str, hash_to_str};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -479,6 +480,12 @@ impl Backend for VfoxBackend {
         if !self.is_backend_plugin() || !could_be_alias(version) {
             return Ok(None);
         }
+        // Versions are resolved for every tool a config names, trusted or not,
+        // and on every prompt, so a plugin is not installed just to ask it for
+        // its aliases: `mise install` installs it and resolves again.
+        if !self.plugin.is_installed() {
+            return Ok(None);
+        }
         let config = Config::get().await?;
         // `v1.2.3` may be a literal release, so an installed version resolves as
         // written when the lookup fails. Anything else could be an alias name, and
@@ -845,7 +852,6 @@ impl VfoxBackend {
                 timeout::run_with_timeout_async(
                     || async {
                         let (mut vfox, _log_rx) = self.plugin.vfox();
-                        self.ensure_plugin_installed(config).await?;
                         if let Ok(dep_env) = self.dependency_env(config).await {
                             vfox.cmd_env = Some(dep_env.into_iter().collect());
                         }
@@ -1201,7 +1207,16 @@ impl VfoxBackend {
                         }
                     }
                 }
-                self.ensure_plugin_installed(config).await?;
+                // The environment is looked up for every installed tool a
+                // config names, trusted or not, and on every prompt, so a
+                // missing plugin is reported here, not installed: `mise install`
+                // and `mise plugins install` install it.
+                if !self.plugin.is_installed() {
+                    bail!(
+                        "{}, so {tv} has no environment; run `mise install` to install it",
+                        PluginNotInstalled(self.plugin.name().to_string())
+                    );
+                }
                 let (mut vfox, _log_rx) = self.plugin.vfox();
                 vfox.cmd_env = Some(match cmd_env {
                     Some(cmd_env) => cmd_env,

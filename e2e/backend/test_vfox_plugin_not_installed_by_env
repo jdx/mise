@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# hook-env resolves the version of every tool a config names and asks each
+# installed one for its environment, on every prompt and before the config is
+# trusted. It never installs the vfox plugin behind a tool: `mise install` does.
+
+PLUGIN_SRC="$PWD/lazy-backend"
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/lazy"
+mkdir -p "$PLUGIN_SRC/hooks"
+cat >"$PLUGIN_SRC/metadata.lua" <<'LUA'
+PLUGIN = { name = "lazy", version = "0.1.0" }
+LUA
+cat >"$PLUGIN_SRC/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return {
+    versions = { "1.0.0", "2.0.0" },
+    aliases = { recommended = "2.0.0" },
+  }
+end
+LUA
+cat >"$PLUGIN_SRC/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+LUA
+cat >"$PLUGIN_SRC/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+  return { env_vars = { { key = "LAZY_TOOL_VERSION", value = ctx.version } } }
+end
+LUA
+
+lazy_tool_config() { # $1 = version
+  cat >mise.toml <<TOML
+[plugins]
+"vfox-backend:lazy" = "$PLUGIN_SRC"
+
+[tools]
+"lazy:tool" = "$1"
+TOML
+}
+
+plugin_not_installed() {
+  mise hook-env -s bash >/dev/null 2>&1
+  assert_fail "test -e '$PLUGIN_DIR' -o -L '$PLUGIN_DIR'"
+}
+
+# `system` always counts as installed
+lazy_tool_config system
+plugin_not_installed
+
+# a name that could be one of the plugin's aliases
+lazy_tool_config recommended
+plugin_not_installed
+
+# a version whose install directory exists is asked for its environment
+mkdir -p "$MISE_DATA_DIR/installs/lazy-tool/1.0.0/bin"
+lazy_tool_config 1.0.0
+plugin_not_installed
+assert_contains "mise hook-env -s bash 2>&1" "[lazy] plugin not installed"
+rm -rf "$MISE_DATA_DIR/installs/lazy-tool"
+
+# `mise install` installs the plugin, and then the alias resolves
+lazy_tool_config recommended
+mise install
+assert_succeed "test -L '$PLUGIN_DIR' -o -d '$PLUGIN_DIR'"
+assert_contains "mise ls lazy:tool" "2.0.0"
+assert_contains "mise env -s bash" "LAZY_TOOL_VERSION=2.0.0"
