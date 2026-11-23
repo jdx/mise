@@ -612,16 +612,19 @@ impl BackendArg {
     /// entry separately by `get_backend_alias_opts`, so they survive either way.
     /// Legacy spellings are normalised, so `mytool = "nodejs"` finds `node`.
     fn aliased_registry_short(&self) -> Option<String> {
-        if self.has_explicit_backend_identifier()
-            || self.has_env_backend_override()
-            || !config::is_loaded()
-        {
+        if self.has_explicit_backend_identifier() || !config::is_loaded() {
             return None;
         }
         let full = Config::get_()
             .all_aliases
             .get(unalias_backend(&self.short).as_ref())
             .and_then(|a| a.backend.clone())?;
+        // An override replaces the alias. It is checked after the alias is
+        // found because most tools have none, and this runs many times per
+        // tool: reading the environment costs more than the lookup above.
+        if self.has_env_backend_override() {
+            return None;
+        }
         let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
         if name.contains(':') {
             return None;
