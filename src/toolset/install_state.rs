@@ -228,7 +228,9 @@ fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
 /// A tool's own manifest, without credentials. A file that holds them is
 /// rewritten without them (best effort).
 fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
-    match file::read_to_string(path) {
+    // Most tool directories have no manifest. The plain read fails cheaply
+    // for those, where `file::read_to_string` would build a report to drop.
+    match std::fs::read_to_string(path) {
         std::result::Result::Ok(body) if body.trim().is_empty() => None,
         std::result::Result::Ok(body) => match toml::from_str::<ManifestTool>(&body) {
             std::result::Result::Ok(m) if m.has_credentials() => {
