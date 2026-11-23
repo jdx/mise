@@ -165,6 +165,12 @@ pub(crate) fn credential_command_process(
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("MISE_CREDENTIAL_HOST", host)
         .env("MISE_CREDENTIAL_PROVIDER", provider);
+    // The command is the user's own, but the directory mise runs in may be a
+    // project they have not trusted, and programs load code and config from
+    // their working directory (`python3 -m`, git, `cmd` looking up `gh`). Run
+    // it from the home directory, as `git credential fill` is run below. This
+    // comes before `direct_command`, which copies the directory and environment.
+    crate::git::detach_git_command(&mut command);
     // The helper's $0/$1 belong to sh, not to a directly executed program.
     if let Some(direct) = crate::inline_command::direct_command(
         &command,
@@ -602,6 +608,35 @@ logins:
             invocations, 2,
             "1 spawn per host: 1 for host-a, 1 for host-b"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_credential_command_runs_outside_the_current_directory() {
+        let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+        let home = crate::env::HOME.canonicalize().unwrap();
+        // `pwd` is a shell builtin, so this runs through the shell.
+        let pwd = get_credential_command_token("test-cwd", "pwd -P", "cwd.example.com")
+            .expect("pwd prints the directory");
+        assert_ne!(std::path::PathBuf::from(&pwd), cwd);
+        assert_eq!(std::path::PathBuf::from(&pwd), home);
+        // `env` is run without the shell, which must keep the directory.
+        for cmd in ["pwd -P", "env"] {
+            let command = credential_command_process("test-cwd", cmd, "example.com").unwrap();
+            assert_eq!(
+                command
+                    .get_current_dir()
+                    .map(|dir| dir.canonicalize().unwrap()),
+                Some(home.clone()),
+                "{cmd} would run in the directory mise was called in"
+            );
+            assert!(
+                !command
+                    .get_envs()
+                    .any(|(key, value)| key == "GIT_DIR" && value.is_some()),
+                "{cmd} would inherit $GIT_DIR"
+            );
+        }
     }
 
     #[test]

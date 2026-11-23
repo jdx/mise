@@ -178,10 +178,12 @@ mise runs the command with your default inline shell
 or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
 on Windows) and uses its output, trimmed of surrounding whitespace, as the
 token. The command receives `MISE_CREDENTIAL_HOST` (the hostname) and
-`MISE_CREDENTIAL_PROVIDER` (`github`, `gitlab` or `forgejo`). It runs with
-mise's shims removed from `PATH`, with `GIT_TERMINAL_PROMPT=0` and no stdin, and
-at most once per host per mise command. If it exits with an error or prints
-nothing, mise moves on to the next source.
+`MISE_CREDENTIAL_PROVIDER` (`github`, `gitlab` or `forgejo`). It runs in your
+home directory, not in the project mise was called in, with mise's shims removed
+from `PATH`, with `GIT_TERMINAL_PROMPT=0` and no stdin, and at most once per
+host per mise command. A relative path in the command is therefore read from
+your home directory. If it exits with an error or prints nothing, mise moves on
+to the next source.
 
 ::: warning Deprecated
 sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh` and `zsh`) also receive
@@ -290,7 +292,8 @@ oauth_cache_set = "pass insert -m -f mise/github-oauth"
 back; mise treats the value as opaque, so any tool that stores a multi-line
 secret works, including `op`, `bw` and fnox. GitHub rotates the refresh token on
 every refresh, so both commands are required. Both are global-only settings: a
-project's `mise.toml` cannot set them.
+project's `mise.toml` cannot set them. Like `credential_command`, they run in
+your home directory, not in the project mise was called in.
 
 mise writes the refresh token with `oauth_cache_set` when you authorize and each
 time it is rotated, and reads it with `oauth_cache_get` when the access token
