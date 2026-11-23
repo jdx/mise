@@ -1035,7 +1035,7 @@ pub trait SettingsExt: Sized {
     fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>>;
 
     /// The `trusted_config_paths` entries as written (with `~` expanded), without touching the
-    /// filesystem.
+    /// filesystem. Entries that are not absolute are left out with a warning: they trust nothing.
     fn trusted_config_paths_as_written(&self) -> impl Iterator<Item = PathBuf> + '_;
 
     /// The `trusted_config_paths` entries that exist, canonicalized.
@@ -1366,14 +1366,21 @@ impl SettingsExt for Settings {
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
+            // A relative entry would resolve against the current directory, which may be a
+            // repository that must not choose what mise trusts.
+            .filter(|p| {
+                if !p.is_absolute() {
+                    warn_while_loading_settings(format!(
+                        "ignoring trusted_config_paths entry {}: it must be an absolute path or start with ~/",
+                        p.display()
+                    ));
+                }
+                p.is_absolute()
+            })
     }
 
     fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.trusted_config_paths_as_written().filter_map(|p| {
-            // A relative entry resolves against the current directory, which can change.
-            if !p.is_absolute() {
-                return file::canonicalize_cached(&p);
-            }
             if let Some(resolved) = TRUSTED_PATHS_RESOLVED.lock().unwrap().get(&p) {
                 return resolved.clone();
             }
@@ -2628,6 +2635,28 @@ mod tests {
             parses() - before,
             first_pass,
             "a read outside a load was cached"
+        );
+    }
+
+    /// A relative entry must not be looked up in the current directory, where `.` always
+    /// exists and a repository can provide any other name.
+    #[test]
+    fn test_trusted_config_paths_ignores_relative_entries() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let dir = tempfile::tempdir().unwrap();
+        let absolute = dir.path().canonicalize().unwrap();
+        let mut partial = SettingsPartial::empty();
+        partial.trusted_config_paths = Some([PathBuf::from("."), absolute.clone()].into());
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+
+        assert_eq!(
+            settings.trusted_config_paths_as_written().collect_vec(),
+            vec![absolute.clone()]
+        );
+        assert_eq!(
+            settings.trusted_config_paths().collect_vec(),
+            vec![absolute]
         );
     }
 
