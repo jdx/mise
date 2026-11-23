@@ -554,6 +554,54 @@ pub fn withdraw(table: &mut toml::Table) {
     table.remove("proxy_tls");
 }
 
+/// The ports a daemon table is configured for: an integer, or the `expect`
+/// list of pitchfork's structured `port`. `mise` writes the second form for a
+/// daemon whose port it resolved.
+fn configured_ports(table: &toml::Table) -> Vec<u16> {
+    let as_port =
+        |value: &toml::Value| value.as_integer().and_then(|port| u16::try_from(port).ok());
+    match table.get("port") {
+        Some(toml::Value::Table(port)) => port
+            .get("expect")
+            .and_then(toml::Value::as_array)
+            .map(|ports| ports.iter().filter_map(as_port).collect())
+            .unwrap_or_default(),
+        Some(port) => as_port(port).into_iter().collect(),
+        None => Vec::new(),
+    }
+}
+
+/// The URL a daemon declares with `url`, which pitchfork hands out when its
+/// proxy does not serve the daemon. `None` when there is no `url`, or when it
+/// does not render.
+///
+/// Pitchfork renders the template with the daemon's configured ports, and so
+/// does this, so `$NAME_URL` and `{{ daemons.<name>.url }}` name the same
+/// address. mise knows `port`, `ports` and `name`; a template that reads
+/// anything else (such as `namespace`) renders only in pitchfork, and exports
+/// nothing here.
+pub fn declared_url(name: &str, table: &toml::Table) -> Option<String> {
+    let template = table.get("url")?.as_str()?;
+    let ports = configured_ports(table);
+    let mut ctx = tera::Context::new();
+    ctx.insert("port", &ports.first());
+    ctx.insert("ports", &ports);
+    ctx.insert("name", name);
+    let mut renderer = mise_util::tera::get_tera(None);
+    match mise_util::tera::render_str(&mut renderer, template, &ctx) {
+        Ok(url) if !url.is_empty() => Some(url),
+        Ok(_) => None,
+        Err(_) => {
+            // Neither the template nor the error goes in the message: a URL
+            // can carry credentials, and a render error may quote it.
+            warn_once!(
+                "[daemons.{name}] cannot render its url, so no {name}_URL is exported. mise renders port, ports and name; pitchfork renders more."
+            );
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -11274,6 +11274,10 @@
               },
               "proxy_idle_timeout": {
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later."
               }
             },
             "required": ["run"],
@@ -11400,6 +11404,10 @@
               },
               "proxy_idle_timeout": {
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later."
               }
             },
             "required": ["task"],
@@ -11659,6 +11667,10 @@
               },
               "proxy_idle_timeout": {
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              },
+              "url": {
+                "type": "string",
+                "description": "URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later."
               }
             },
             "required": ["image"],
