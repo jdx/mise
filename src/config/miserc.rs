@@ -564,6 +564,13 @@ fn keep_inherited_ignored_config_paths(
 /// would lead out of the directory must not become a path: `mise lock` deletes
 /// the lockfiles it migrates and rewrites the ones it finds.
 ///
+/// The override filenames are looked up in every directory above the project
+/// too, and they decide how mise parses a file of that name anywhere, so a
+/// name from a project file is a plain file name with the suffix of its kind,
+/// `.toml` or `tool-versions`: it cannot name a file of the user's such as
+/// `~/.netrc`, `~/.npmrc` or `~/.ssh/authorized_keys`, or make mise read
+/// `mise.toml` or `config.toml` as a `.tool-versions` file.
+///
 /// The names also become the `mise_env` template variable of every config,
 /// including global config and projects trusted earlier, so a name from a
 /// project file is limited to letters, digits, `_`, `-` and `.`, starting with
@@ -609,25 +616,41 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path, 
             false
         });
     }
-    for filenames in [
-        settings.override_config_filenames.as_mut(),
-        settings.override_tool_versions_filenames.as_mut(),
-    ]
-    .into_iter()
-    .flatten()
-    {
+    for (filenames, suffix) in [
+        (settings.override_config_filenames.as_mut(), ".toml"),
+        (
+            settings.override_tool_versions_filenames.as_mut(),
+            "tool-versions",
+        ),
+    ] {
+        let Some(filenames) = filenames else {
+            continue;
+        };
         filenames.retain(|filename| {
-            let valid = !filename.contains('\\')
-                && Path::new(filename)
+            let reason = if filename.contains('\\')
+                || !Path::new(filename)
                     .components()
-                    .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
-            if !valid {
-                warn_while_loading_settings(format!(
-                    "{}: ignoring override filename {filename:?}: it must stay in its directory",
-                    file::display_path(path)
-                ));
-            }
-            valid
+                    .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+            {
+                "it must stay in its directory"
+            } else if global {
+                return true;
+            } else if filename.contains('/') {
+                "a name in a project .miserc.toml must be a file name, without a directory"
+            } else if !filename.ends_with(suffix) || filename.len() == suffix.len() {
+                if suffix == ".toml" {
+                    "a name in a project .miserc.toml must end in `.toml`"
+                } else {
+                    "a name in a project .miserc.toml must end in `tool-versions`"
+                }
+            } else {
+                return true;
+            };
+            warn_while_loading_settings(format!(
+                "{}: ignoring override filename {filename:?}: {reason}; set it in ~/.config/mise/miserc.toml instead",
+                file::display_path(path)
+            ));
+            false
         });
     }
 }
@@ -918,16 +941,41 @@ ceiling_paths = ["/home/user"]
         );
         assert_eq!(
             settings.override_config_filenames,
-            Some(
-                ["mise.ci.toml", ".config/mise.toml"]
-                    .map(String::from)
-                    .to_vec()
-            )
+            Some(["mise.ci.toml"].map(String::from).to_vec())
         );
         assert_eq!(
             settings.override_tool_versions_filenames,
             Some([".tool-versions"].map(String::from).to_vec())
         );
+    }
+
+    #[test]
+    fn test_project_override_filenames_are_file_names_of_their_kind() {
+        let toml = r#"
+override_config_filenames = ["mise.ci.toml", ".config/mise.toml", ".netrc", ".npmrc", ".toml", "config.toml"]
+override_tool_versions_filenames = [".tool-versions", "ci.tool-versions", "mise.toml", ".ssh/authorized_keys", "tool-versions"]
+"#;
+
+        let mut settings: MisercSettings = toml::from_str(toml).unwrap();
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
+        assert_eq!(
+            settings.override_config_filenames.unwrap(),
+            ["mise.ci.toml", "config.toml"]
+        );
+        assert_eq!(
+            settings.override_tool_versions_filenames.unwrap(),
+            [".tool-versions", "ci.tool-versions"]
+        );
+
+        // the user's own global file keeps any name that stays in its directory
+        let mut settings: MisercSettings = toml::from_str(toml).unwrap();
+        drop_names_leaving_the_directory(
+            &mut settings,
+            Path::new("/home/user/.config/mise/miserc.toml"),
+            true,
+        );
+        assert_eq!(settings.override_config_filenames.unwrap().len(), 6);
+        assert_eq!(settings.override_tool_versions_filenames.unwrap().len(), 5);
     }
 
     #[test]

@@ -91,7 +91,9 @@ idea:
   adds to the list it inherits and cannot remove an entry, so a project under
   an ignored path stays ignored. Its environment names may use only letters,
   digits, `_`, `-` and `.`, so they cannot carry shell or template syntax into
-  a trusted config that uses `{{ mise_env }}`. Global and system `conf.d`
+  a trusted config that uses `{{ mise_env }}`. Its override filenames must be
+  file names ending in `.toml` or `tool-versions`, so they cannot make mise
+  read a file such as `~/.netrc` as config. Global and system `conf.d`
   fragments follow only the global and system `env_conf_d`. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your

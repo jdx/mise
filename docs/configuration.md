@@ -479,7 +479,11 @@ the `.miserc.toml` file.
 
 `env` holds names, so mise ignores one that contains a path separator. It also
 ignores an override filename that is absolute or contains `..`: both only select
-files in the directories mise already searches.
+files in the directories mise already searches. An override filename from a file
+found from the current directory must also be a file name without a directory,
+ending in `.toml` for `override_config_filenames` or `tool-versions` for
+`override_tool_versions_filenames`; set any other name in
+`~/.config/mise/miserc.toml`.
 
 ### Where mise looks for .miserc.toml {#miserc-locations}
 
