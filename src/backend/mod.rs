@@ -4373,7 +4373,7 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> bool {
-        let check_path = |install_path: &Path, check_symlink: bool| {
+        let check_path_on_disk = |install_path: &Path, check_symlink: bool| {
             let is_installed = install_path.exists();
             let is_active_postinstall = is_active_postinstall_install(tv, install_path);
             let is_not_incomplete =
@@ -4408,6 +4408,22 @@ pub trait Backend: Debug + Send + Sync {
                 trace!("{}", msg);
             }
             installed
+        };
+        let check_path = |install_path: &Path, check_symlink: bool| {
+            // A postinstall hook's own mise sees its unfinished installation
+            // as installed, and only while the hook runs.
+            if std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some() {
+                return check_path_on_disk(install_path, check_symlink);
+            }
+            install_state::installed_check(
+                (
+                    install_path.to_path_buf(),
+                    tv.request.ba().clone(),
+                    tv.state_key(),
+                    check_symlink,
+                ),
+                || check_path_on_disk(install_path, check_symlink),
+            )
         };
         match tv.request {
             ToolRequest::System { .. } => true,
