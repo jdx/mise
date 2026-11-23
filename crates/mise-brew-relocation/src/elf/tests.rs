@@ -174,6 +174,71 @@ fn test_patch_growing_rejects_a_string_table_past_the_end() {
     }
 }
 
+fn short_prefix_opts() -> LinkageOpts {
+    LinkageOpts {
+        prefix: "/hb".to_string(),
+        cellar: "/hb/Cellar".to_string(),
+        gcc_current: true,
+    }
+}
+
+#[test]
+fn test_patch_rejects_an_interpreter_past_the_end() {
+    // a short prefix rewrites in place, the default prefix moves the string
+    for opts in [short_prefix_opts(), test_opts()] {
+        for filesz in [4096, u64::MAX] {
+            let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", "@@HOMEBREW_PREFIX@@/lib");
+            wr_u64(&mut elf, phdr_off(1) + 32, filesz);
+            let before = elf.clone();
+            let err = patch(&mut elf, &opts, Path::new("test")).unwrap_err();
+            assert!(
+                err.to_string().contains("PT_INTERP runs past the end"),
+                "{err}"
+            );
+            assert_eq!(elf, before);
+        }
+    }
+}
+
+#[test]
+fn test_patch_skips_a_section_table_whose_offset_wraps() {
+    let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", GROWING_RPATH);
+    wr_u64(&mut elf, 40, u64::MAX - 19); // e_shoff
+    wr_u16(&mut elf, 58, SHDR_SIZE as u16); // e_shentsize
+    wr_u16(&mut elf, 60, 1); // e_shnum
+    assert!(patch(&mut elf, &test_opts(), Path::new("test")).unwrap());
+    let (interp, _) = read_linkage(&elf);
+    assert_eq!(interp, format!("{PREFIX}/lib/ld.so"));
+}
+
+#[test]
+fn test_patch_rejects_an_rpath_offset_that_wraps() {
+    let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", "@@HOMEBREW_PREFIX@@/lib");
+    let off = dyn_val_off(&elf, DT_RPATH);
+    wr_u64(&mut elf, off, u64::MAX);
+    let err = patch(&mut elf, &test_opts(), Path::new("test")).unwrap_err();
+    assert!(err.to_string().contains("out of bounds"), "{err}");
+}
+
+#[test]
+fn test_patch_rejects_header_fields_that_overflow() {
+    // e_phoff, then the PT_LOAD's p_vaddr, p_filesz and p_memsz, then the
+    // PT_DYNAMIC's p_filesz
+    let fields = [
+        32,
+        phdr_off(2) + 16,
+        phdr_off(2) + 32,
+        phdr_off(2) + 40,
+        phdr_off(3) + 32,
+    ];
+    for field in fields {
+        let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", GROWING_RPATH);
+        wr_u64(&mut elf, field, u64::MAX);
+        // an error or a relocated file, never a panic
+        let _ = patch(&mut elf, &test_opts(), Path::new("test"));
+    }
+}
+
 #[test]
 fn test_patch_shrinking_stays_in_place() {
     // a short prefix shrinks both strings: nothing moves
