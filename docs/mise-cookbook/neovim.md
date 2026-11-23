@@ -41,7 +41,7 @@ In your Neovim config, create an `after/queries/toml/injections.scm` file with t
   ]
 
   (#is-mise?)
-  (#match? @injection.language "^['\"]{3}\\s*#!(/\\w+)+/env\\s+\\w+") ; multiline shebang using env
+  (#match? @injection.language "^['\"]{3}\\_s*#!(/[^/ \t\n]+)+/env\\s+\\w+") ; multiline shebang using env
   (#gsub! @injection.language "^.*#!/.*/env%s+([^%s]+).*" "%1") ; extract lang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
 )
@@ -55,7 +55,7 @@ In your Neovim config, create an `after/queries/toml/injections.scm` file with t
   ]
 
   (#is-mise?)
-  (#match? @injection.language "^['\"]{3}\\s*#!(/\\w+)+\\s*\n") ; multiline shebang
+  (#match? @injection.language "^['\"]{3}\\_s*#!(/[^/ \t\n]+)+\\s*\n") ; multiline shebang
   (#gsub! @injection.language "^.*#!/[^%s]+/([^%s]+).*" "%1") ; extract lang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
 )
@@ -70,7 +70,7 @@ In your Neovim config, create an `after/queries/toml/injections.scm` file with t
 
   (#is-mise?)
   (#match? @injection.content "^['\"]{3}") ; multiline
-  (#not-match? @injection.content "^['\"]{3}\\s*#!") ; no shebang
+  (#not-match? @injection.content "^['\"]{3}\\_s*#!") ; no shebang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
   (#set! injection.language "sh") ; mise's default inline shell
 )
