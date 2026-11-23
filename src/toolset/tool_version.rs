@@ -42,6 +42,50 @@ pub(super) fn reset_install_path_cache() {
     crate::install_layout::resolver::reset_cache();
 }
 
+/// What mise.lock records for each platform of a [`ToolVersion`].
+///
+/// It reads and writes as the map it holds. Cloning it shares that map, and
+/// the first write through a clone copies it: listing a toolset's versions
+/// clones every `ToolVersion`, on every command, and almost nothing that
+/// receives one writes to this map.
+#[derive(Debug, Clone, Default)]
+pub struct LockPlatforms(Arc<BTreeMap<String, PlatformInfo>>);
+
+impl LockPlatforms {
+    pub fn into_map(self) -> BTreeMap<String, PlatformInfo> {
+        Arc::unwrap_or_clone(self.0)
+    }
+}
+
+impl From<BTreeMap<String, PlatformInfo>> for LockPlatforms {
+    fn from(platforms: BTreeMap<String, PlatformInfo>) -> Self {
+        Self(Arc::new(platforms))
+    }
+}
+
+impl std::ops::Deref for LockPlatforms {
+    type Target = BTreeMap<String, PlatformInfo>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for LockPlatforms {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
+}
+
+impl<'a> IntoIterator for &'a LockPlatforms {
+    type Item = (&'a String, &'a PlatformInfo);
+    type IntoIter = std::collections::btree_map::Iter<'a, String, PlatformInfo>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
 pub struct ToolVersion {
@@ -54,7 +98,7 @@ pub struct ToolVersion {
     /// A lazy request left unresolved because nothing is installed: `version` is
     /// the request itself, not a release, so nothing may record or compare it as one.
     deferred: bool,
-    pub lock_platforms: BTreeMap<String, PlatformInfo>,
+    pub lock_platforms: LockPlatforms,
     /// Platforms mise.lock records this version has no build for.
     pub lock_unsupported_platforms: BTreeSet<String>,
     pub install_path: Option<PathBuf>,
@@ -407,7 +451,7 @@ impl ToolVersion {
         let mut tv = Self::new(request, lt.version);
         tv.locked = true;
         tv.resolved_from_lockfile = true;
-        tv.lock_platforms = lt.platforms;
+        tv.lock_platforms = lt.platforms.into();
         tv.lock_unsupported_platforms = lt.unsupported_platforms;
         tv.aube_lock = lt.aube;
         tv.uv_lock = lt.uv;
@@ -1872,6 +1916,39 @@ impl Display for ResolveOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lock_platforms_clone_shares_until_written() {
+        let info = |url: &str| PlatformInfo {
+            url: Some(url.to_string()),
+            ..Default::default()
+        };
+        let original = LockPlatforms::from(BTreeMap::from([(
+            "linux-x64".to_string(),
+            info("https://a"),
+        )]));
+        let mut copy = original.clone();
+        assert!(Arc::ptr_eq(&original.0, &copy.0));
+        // Reading through either, by any route, copies nothing.
+        assert_eq!(
+            copy.get("linux-x64").unwrap().url.as_deref(),
+            Some("https://a")
+        );
+        assert_eq!((&copy).into_iter().count(), 1);
+        assert!(Arc::ptr_eq(&original.0, &copy.0));
+
+        // A write lands in the clone alone.
+        copy.entry("macos-arm64".to_string()).or_default().url = Some("https://b".to_string());
+        copy.get_mut("linux-x64").unwrap().url = Some("https://c".to_string());
+        assert!(!Arc::ptr_eq(&original.0, &copy.0));
+        assert_eq!(original.len(), 1);
+        assert_eq!(original["linux-x64"].url.as_deref(), Some("https://a"));
+        assert_eq!(copy.len(), 2);
+        assert_eq!(copy["linux-x64"].url.as_deref(), Some("https://c"));
+
+        let map = copy.clone().into_map();
+        assert_eq!(map.keys().collect::<Vec<_>>(), ["linux-x64", "macos-arm64"]);
+    }
     use crate::args::BackendResolution;
     use crate::toolset::{CoreToolOptions, ToolOptionSource, ToolVersionOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
