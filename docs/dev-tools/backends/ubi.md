@@ -125,6 +125,15 @@ download URL such as
 `ubi:https://github.com/goreleaser/goreleaser/releases/download/v1.16.2/goreleaser_Darwin_arm64.tar.gz`,
 which has only the version `latest`.
 
+ubi sends a GitHub or GitLab token with every request it makes, the download
+included, and reads one from `GITHUB_TOKEN`, `GITLAB_TOKEN`, `CI_JOB_TOKEN`,
+`CODEBERG_TOKEN` or `FORGEJO_TOKEN` when mise gives it none. mise gives it a
+token only when every request goes to the provider's API (or, for GitHub, to
+`github.com`). A download URL on another host, or a GitLab release whose asset
+links point at another host, installs only while none of those variables is
+set; otherwise mise refuses it. Install such a tool with the github, gitlab or
+http backend instead.
+
 mise puts `bin_path` on `PATH` when it is set. Otherwise it uses the install
 directory when `extract_all` is set, then the install's `bin/` directory if it
 exists, and the install directory last.

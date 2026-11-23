@@ -541,6 +541,124 @@ fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> U
     }
 }
 
+/// The forge ubi talks to: a URL on codeberg.org or gitlab.com selects that
+/// forge, any other URL GitHub, whatever `provider` says.
+fn ubi_forge(name: &str, provider: &ForgeType) -> ForgeType {
+    if !name_is_url(name) {
+        return provider.clone();
+    }
+    let url = url::Url::parse(name).ok();
+    match url.as_ref().and_then(|url| url.domain()) {
+        Some("codeberg.org") => ForgeType::Forgejo,
+        Some("gitlab.com") => ForgeType::GitLab,
+        _ => ForgeType::GitHub,
+    }
+}
+
+/// The environment variable ubi reads a token from for `forge`, when one is set.
+fn forge_token_env_var(forge: &ForgeType) -> Option<&'static str> {
+    let names: &[&'static str] = match forge {
+        ForgeType::Forgejo => &["CODEBERG_TOKEN", "FORGEJO_TOKEN"],
+        ForgeType::GitHub => &["GITHUB_TOKEN"],
+        ForgeType::GitLab => &["CI_JOB_TOKEN", "GITLAB_TOKEN"],
+    };
+    names
+        .iter()
+        .copied()
+        .find(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()))
+}
+
+/// Whether `api_url` is the public GitHub or GitLab API, which ubi uses
+/// without being told.
+fn is_public_forge_api_url(api_url: &str) -> Result<bool> {
+    let url =
+        url::Url::parse(api_url).map_err(|e| eyre::eyre!("api_url {api_url} is not a URL: {e}"))?;
+    Ok(matches!(
+        url.host_str(),
+        Some("github.com" | "api.github.com" | "gitlab.com")
+    ))
+}
+
+/// The hosts a forge token may go to: the origin of the forge API, and for the
+/// public GitHub API also github.com, which serves its release downloads.
+struct TokenHosts {
+    forge: ForgeType,
+    api_origin: url::Origin,
+    api_host: String,
+    public_api: bool,
+}
+
+impl TokenHosts {
+    fn new(forge: ForgeType, api_url: Option<&str>) -> Result<Self> {
+        let public_api = match api_url {
+            Some(api_url) => is_public_forge_api_url(api_url)?,
+            None => true,
+        };
+        let api_url = match api_url.filter(|_| !public_api) {
+            Some(api_url) => api_url,
+            None => match forge {
+                ForgeType::Forgejo => "https://codeberg.org/api/v1",
+                ForgeType::GitHub => "https://api.github.com",
+                ForgeType::GitLab => "https://gitlab.com/api/v4",
+            },
+        };
+        let api_url = url::Url::parse(api_url)?;
+        Ok(Self {
+            forge,
+            api_origin: api_url.origin(),
+            api_host: api_url.host_str().unwrap_or_default().to_string(),
+            public_api,
+        })
+    }
+
+    fn allows(&self, url: &str) -> bool {
+        let Ok(url) = url::Url::parse(url) else {
+            return false;
+        };
+        url.origin() == self.api_origin
+            || (self.public_api
+                && self.forge == ForgeType::GitHub
+                && url.scheme() == "https"
+                && url.port().is_none()
+                && url.host_str() == Some("github.com"))
+    }
+
+    /// A host this install would send the token to that may not get it.
+    async fn foreign_host(
+        &self,
+        name: &str,
+        v: &str,
+        opts: &UbiOptions<'_>,
+    ) -> Result<Option<String>> {
+        let host = |url: &str| {
+            url::Url::parse(url)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_string))
+                .unwrap_or_else(|| url.to_string())
+        };
+        if name_is_url(name) {
+            return Ok((!self.allows(name)).then(|| host(name)));
+        }
+        if self.forge != ForgeType::GitLab || !gitlab_token_available(self.public_api) {
+            return Ok(None);
+        }
+        // GitLab release links can point at any host, and ubi downloads from them.
+        let release = gitlab::get_release_for_url(&opts.api_url(&self.forge)?, name, v).await?;
+        Ok(release
+            .assets
+            .links
+            .iter()
+            .find(|link| !self.allows(&link.url))
+            .map(|link| host(&link.url)))
+    }
+}
+
+fn gitlab_token_available(public_api: bool) -> bool {
+    GITLAB_TOKEN.is_some()
+        || (!public_api && MISE_GITLAB_ENTERPRISE_TOKEN.is_some())
+        || forge_token_env_var(&ForgeType::GitLab).is_some()
+}
+
 async fn install(
     name: &str,
     v: &str,
@@ -574,8 +692,15 @@ async fn install(
         builder = builder.matching_regex(matching_regex);
     }
 
-    let forge = opts.provider()?;
-    builder = builder.forge(forge.clone());
+    let provider = opts.provider()?;
+    builder = builder.forge(provider.clone());
+    let forge = ubi_forge(name, &provider);
+    let token_hosts = TokenHosts::new(forge.clone(), opts.api_url_override())?;
+    if let Some(api_url) = opts.api_url_override()
+        && !token_hosts.public_api
+    {
+        builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
+    }
     // An `api_url` that project config named in safe mode gets no token; see
     // `mise_util::untrusted_hosts`.
     let token_denied = opts
@@ -583,16 +708,25 @@ async fn install(
         .and_then(|api_url| url::Url::parse(api_url).ok())
         .and_then(|url| url.host_str().map(str::to_string))
         .is_some_and(|host| mise_util::untrusted_hosts::forge_token_denied(&host));
-    if !token_denied {
+    // ubi sends its token with every request, the download included, and reads
+    // one from the environment when it is given none.
+    let env_token = forge_token_env_var(&forge);
+    if token_denied {
+        if let Some(var) = env_token {
+            bail!(
+                "ubi would send the {var} token to {}, which mise does not send a token to here\nhint: unset {var}, or install the tool with the github or gitlab backend",
+                token_hosts.api_host
+            );
+        }
+    } else if let Some(host) = token_hosts.foreign_host(name, v, opts).await? {
+        if let Some(var) = env_token {
+            bail!(
+                "ubi would send the {var} token to {host}, which is not the {forge:?} API\nhint: unset {var}, or install the tool with the github, gitlab or http backend"
+            );
+        }
+    } else {
         builder = set_token(builder, &forge);
-    }
-
-    if let Some(api_url) = opts.api_url_override()
-        && !api_url.contains("github.com")
-        && !api_url.contains("gitlab.com")
-    {
-        builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
-        if !token_denied {
+        if !token_hosts.public_api {
             builder = set_enterprise_token(builder, &forge);
         }
     }
@@ -638,6 +772,58 @@ mod tests {
                 "{key} changes what is installed"
             );
         }
+    }
+
+    #[test]
+    fn test_public_forge_api_url_is_matched_on_the_host() {
+        for api_url in [
+            "https://api.github.com",
+            "https://github.com/api/v3/",
+            "https://GitLab.com/api/v4",
+        ] {
+            assert!(is_public_forge_api_url(api_url).unwrap(), "{api_url}");
+        }
+        for api_url in [
+            "https://github.company.com/api/v3",
+            "https://gitlab.company.com/api/v4",
+            "https://gitlab.com.example/api/v4",
+            "https://mirror.example/github.com/api/v3",
+        ] {
+            assert!(!is_public_forge_api_url(api_url).unwrap(), "{api_url}");
+        }
+        assert!(is_public_forge_api_url("ghe.example.com/api/v3").is_err());
+    }
+
+    #[test]
+    fn test_token_hosts_are_the_forge_api() {
+        let github = TokenHosts::new(ForgeType::GitHub, None).unwrap();
+        assert!(github.allows("https://api.github.com/repos/o/r/releases/assets/1"));
+        assert!(github.allows("https://github.com/o/r/releases/download/v1/tool.tar.gz"));
+        assert!(!github.allows("http://api.github.com/repos/o/r/releases/assets/1"));
+        assert!(!github.allows("https://github.com.example/tool.tar.gz"));
+        assert!(!github.allows("https://downloads.example/tool.tar.gz"));
+
+        let enterprise =
+            TokenHosts::new(ForgeType::GitHub, Some("https://ghe.example.com/api/v3/")).unwrap();
+        assert!(!enterprise.public_api);
+        assert!(enterprise.allows("https://ghe.example.com/api/v3/repos/o/r/releases/assets/1"));
+        assert!(!enterprise.allows("https://api.github.com/repos/o/r/releases/assets/1"));
+        assert!(!enterprise.allows("https://github.com/o/r/releases/download/v1/tool.tar.gz"));
+
+        let gitlab = TokenHosts::new(ForgeType::GitLab, Some("https://gitlab.com/api/v4")).unwrap();
+        assert!(gitlab.public_api);
+        assert!(gitlab.allows("https://gitlab.com/o/r/-/releases/v1/downloads/tool.tar.gz"));
+        assert!(!gitlab.allows("https://cdn.example/tool.tar.gz"));
+        assert!(!gitlab.allows("https://github.com/o/r/releases/download/v1/tool.tar.gz"));
+    }
+
+    #[test]
+    fn test_ubi_forge_follows_the_url_host() {
+        let gitlab_url = "https://gitlab.com/o/r/-/releases/v1/downloads/tool.tar.gz";
+        assert_eq!(ubi_forge(gitlab_url, &ForgeType::GitHub), ForgeType::GitLab);
+        let other_url = "https://downloads.example/tool.tar.gz";
+        assert_eq!(ubi_forge(other_url, &ForgeType::GitLab), ForgeType::GitHub);
+        assert_eq!(ubi_forge("o/r", &ForgeType::GitLab), ForgeType::GitLab);
     }
 
     #[test]
