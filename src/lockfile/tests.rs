@@ -806,6 +806,24 @@ backend = "asdf:"
 }
 
 #[test]
+fn untrusted_lockfile_may_not_pin_a_version_that_needs_trust() {
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "cargo:https://github.com/o/r".to_string(),
+        vec![basic_tool(
+            "rev:refs/pull/1/head",
+            "cargo:https://github.com/o/r",
+        )],
+    );
+    lockfile.tools.insert(
+        "cargo:o/s".to_string(),
+        vec![basic_tool("tag:v1.0.0", "cargo:o/s")],
+    );
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+    assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["cargo:o/s"]);
+}
+
+#[test]
 fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
     let mut pinned = basic_tool("3.10.0", "aqua:mvdan/sh");
     pinned.platforms.insert(

@@ -314,6 +314,15 @@ mod tests {
         assert!(body_requires_trust("node path:./local\n"));
         assert!(body_requires_trust("node 20 path:./local # x\n"));
         assert!(!body_requires_trust("node 20 # path:./local\n"));
+        // `rev:` and `ref:` name any commit the forge serves, such as a pull request's head
+        assert!(body_requires_trust(
+            "cargo:https://github.com/o/r rev:refs/pull/1/head\n"
+        ));
+        assert!(body_requires_trust("cargo:o/r rev-refs/pull/1/head\n"));
+        assert!(body_requires_trust("node ref:main\n"));
+        assert!(!body_requires_trust("cargo:o/r tag:v1.0.0\n"));
+        assert!(!body_requires_trust("cargo:o/r branch:main\n"));
+        assert!(!body_requires_trust("node 20 refresh-1\n"));
     }
 
     /// The whole file is rendered as a template when it is loaded, so a version

@@ -568,7 +568,19 @@ pub(super) async fn parse_detected(
 /// A `path:<dir>` version names a directory that is already on disk, so it needs
 /// no install step: its `bin` is put on PATH as soon as the config loads, which
 /// would let an untrusted repository shadow any command.
+///
+/// A `ref:` or `rev:` version (or `ref-`/`rev-`, which `ToolRequest` reads the same way) names
+/// any commit the tool's repository serves, and forges serve commits nobody published there:
+/// a pull request's head (`refs/pull/1/head`) or, on GitHub, a fork's commit by its id. A
+/// shim or the not-found handler builds such a version from source when another version of
+/// the tool is installed. `tag:` and `branch:` only name what the repository's maintainers
+/// pushed, as a plain version names what they released.
 pub(crate) fn version_requires_trust(version: &str) -> bool {
+    is_path_version(version) || matches!(version.split_once([':', '-']), Some(("ref" | "rev", _)))
+}
+
+/// Whether a tool version is a `path:` version, which safe mode ignores in project config.
+pub(crate) fn is_path_version(version: &str) -> bool {
     version.starts_with("path:")
 }
 

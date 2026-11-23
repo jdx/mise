@@ -5894,6 +5894,19 @@ impl Lockfile {
                     );
                     return false;
                 }
+                // A version that needs trust in the config needs it here too, or the lockfile
+                // would turn a `latest` request into it. Safe mode loads such a config without
+                // trust, so it keeps the pin as well.
+                if !Settings::safe_mode()
+                    && crate::config::config_file::version_requires_trust(&entry.version)
+                {
+                    warn_once!(
+                        "{} locks {short} to {}, which needs its config to be trusted; ignoring the entry. Run `mise trust` to use it",
+                        display_path(path),
+                        entry.version,
+                    );
+                    return false;
+                }
                 entry.uv = None;
                 // The graph pins integrity hashes and the backend fetches from
                 // the user's registry, so it stays unless it names a place to

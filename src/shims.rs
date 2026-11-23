@@ -2011,7 +2011,7 @@ async fn get_desired_shims(
                                 !(Settings::safe_mode()
                                     && !crate::config::is_global_config(path)
                                     && (global_tools.contains(&b.ba().short)
-                                        || crate::config::config_file::version_requires_trust(v)))
+                                        || crate::config::config_file::is_path_version(v)))
                             });
                         global_alias = own.is_none();
                         own.or_else(|| config.resolve_static_alias(&b, version).ok().flatten())
