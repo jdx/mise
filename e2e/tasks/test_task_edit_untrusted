@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# "mise tasks edit" opens a file; it does not load it. A file that discovery
+# skips (not executable, or a dotfile) is opened as it is, so the templates in
+# its "#MISE" headers are not rendered before the project is trusted.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p mise-tasks
+cat <<'SH' >mise-tasks/plain
+#!/usr/bin/env bash
+#MISE description="{{ exec(command='touch plain-marker') }}"
+echo plain
+SH
+chmod 644 mise-tasks/plain
+cat <<'SH' >mise-tasks/.dotted
+#!/usr/bin/env bash
+#MISE description="{{ exec(command='touch dotted-marker') }}"
+echo dotted
+SH
+
+assert "MISE_PARANOID=config mise tasks edit plain --path" "$PWD/mise-tasks/plain"
+assert "MISE_PARANOID=config mise tasks edit .dotted --path" "$PWD/mise-tasks/.dotted"
+assert "mise tasks edit plain --path" "$PWD/mise-tasks/plain"
+assert "mise tasks edit .dotted --path" "$PWD/mise-tasks/.dotted"
+assert_fail "test -e plain-marker"
+assert_fail "test -e dotted-marker"
+assert_fail "test -e mise-tasks/plain-marker"
+assert_fail "test -e mise-tasks/dotted-marker"
+
+# The file was opened, not replaced.
+assert_contains "cat mise-tasks/plain" "echo plain"
+
+# A missing task is still created.
+assert "mise tasks edit created --path" "$PWD/mise-tasks/created"
+assert "test -x mise-tasks/created"

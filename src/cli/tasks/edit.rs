@@ -41,9 +41,9 @@ impl TasksEdit {
             let path = Task::task_dir()
                 .await?
                 .join(self.task.replace(':', MAIN_SEPARATOR_STR));
-            Task::from_path(&config, &path, path.parent().unwrap(), &project_root)
-                .await
-                .or_else(|_| Task::new(&path, path.parent().unwrap(), &project_root))?
+            // Only the file's path is needed. A file discovery skipped (not executable, a dotfile)
+            // was never trust-checked, so its `#MISE` headers are not parsed or rendered here.
+            Task::new(&path, path.parent().unwrap(), &project_root)?
         };
         let file = &task.config_source;
         if !file.exists() {
