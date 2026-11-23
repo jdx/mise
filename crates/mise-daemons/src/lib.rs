@@ -513,6 +513,7 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
             reference.exports = reference_exports(
                 name,
                 daemon,
+                state.withdrawn_hosts.contains(&reference.key),
                 &state.keys,
                 &mut claimed,
                 &mut ambiguous_references,
@@ -523,11 +524,6 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
         reference
             .exports
             .retain(|var, _| !state.ambiguous.contains(var) && !ambiguous_references.contains(var));
-        // The referenced daemon's hostname, when the proxy will not route it,
-        // goes with the `<NAME>_URL` that names it.
-        if state.withdrawn_hosts.contains(&reference.key) {
-            reference.exports.retain(|var, _| !var.ends_with("_URL"));
-        }
     }
     for (key, daemon) in set.daemons.iter_mut() {
         daemon
@@ -535,6 +531,17 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
             .retain(|key, _| !state.ambiguous.contains(key));
         if state.withdrawn_hosts.contains(key) {
             daemon.withdraw_host();
+            // Without a hostname the URL the daemon declares is the one that
+            // serves, as it is for pitchfork. A name two daemons fold onto
+            // stays unexported.
+            if !daemon.imported
+                && let Some(base) = env_var_base(&daemon.name)
+                && state.keys.get(&base) == Some(&daemon.name)
+                && !state.ambiguous.contains(&format!("{base}_URL"))
+                && let Some(url) = urls::declared_url(&daemon.name, &daemon.table)
+            {
+                daemon.exports.entry(format!("{base}_URL")).or_insert(url);
+            }
         }
     }
     // Two daemons in one project can resolve to one port: `auto` derives it
@@ -1066,8 +1073,16 @@ fn build(
     // this one, so it must not claim a variable here: doing so would make a
     // local daemon of the same name look ambiguous and strip its exports.
     let mut exports = IndexMap::new();
+    // The URL a daemon declares stands in when the proxy serves no hostname.
+    // It is rendered only then: a hostname wins, and a template that only
+    // pitchfork can render must not warn for a daemon the proxy serves.
+    let declared = if host.is_none() {
+        urls::declared_url(name, &table)
+    } else {
+        None
+    };
     if !imported
-        && (claim.is_some() || host.is_some())
+        && (claim.is_some() || host.is_some() || declared.is_some())
         && let Some(base) = env_var_base(name)
     {
         match state.keys.insert(base.clone(), name.to_string()) {
@@ -1086,8 +1101,8 @@ fn build(
                 if let Some(c) = claim {
                     exports.insert(format!("{base}_PORT"), c.port.to_string());
                 }
-                if let Some(host) = &host {
-                    exports.insert(format!("{base}_URL"), proxy.url(host));
+                if let Some(url) = host.as_ref().map(|host| proxy.url(host)).or(declared) {
+                    exports.insert(format!("{base}_URL"), url);
                 }
             }
         }
@@ -1496,12 +1511,21 @@ fn import(
 fn reference_exports(
     name: &str,
     daemon: &Daemon,
+    host_withdrawn: bool,
     local: &BTreeMap<String, String>,
     claimed: &mut BTreeMap<String, String>,
     ambiguous: &mut std::collections::BTreeSet<String>,
 ) -> IndexMap<String, String> {
     let mut exports = IndexMap::new();
-    if daemon.port.is_none() && daemon.host.is_none() {
+    // The hostname goes unrouted when another daemon claimed it, and the URL
+    // the daemon declares serves instead.
+    let host = daemon.host.as_ref().filter(|_| !host_withdrawn);
+    let declared = if host.is_none() {
+        urls::declared_url(&daemon.name, &daemon.table)
+    } else {
+        None
+    };
+    if daemon.port.is_none() && host.is_none() && declared.is_none() {
         return exports;
     }
     let Some(base) = env_var_base(name) else {
@@ -1525,8 +1549,11 @@ fn reference_exports(
     if let Some(claim) = daemon.port {
         exports.insert(format!("{base}_PORT"), claim.port.to_string());
     }
-    if let Some(host) = &daemon.host {
-        exports.insert(format!("{base}_URL"), urls::proxy_settings().url(host));
+    if let Some(url) = host
+        .map(|host| urls::proxy_settings().url(host))
+        .or(declared)
+    {
+        exports.insert(format!("{base}_URL"), url);
     }
     exports
 }
@@ -3194,6 +3221,138 @@ mod tests {
         assert!(!exports.contains_key("DATABASE_URL"), "{exports:?}");
         assert_eq!(exports["DATABASE_PORT"], "4100");
         assert!(set.daemons["db"].exports["DATABASE_URL"].starts_with("postgresql://"));
+    }
+
+    #[test]
+    fn a_declared_url_is_exported_when_the_proxy_serves_no_hostname() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (primary, _) = checkout_pair(tmp.path());
+        let load_body = |body: &str| {
+            load(&files(&[(
+                primary.join("mise.toml").to_str().unwrap(),
+                &format!("[daemons_settings]\nnamespace = 'shop'\n{body}"),
+            )]))
+            .unwrap()
+        };
+
+        // The url renders with the port the daemon is configured for, as
+        // pitchfork renders it, whichever way the port was declared.
+        let set = load_body(
+            "[daemons.api]\nrun = 'a'\nport = 4800\nproxy = false\n\
+             url = 'http://127.0.0.1:{{ port }}'\n\
+             [daemons.cache]\nrun = 'c'\nport = { auto = true, base = 6380 }\nproxy = false\n\
+             url = 'redis://127.0.0.1:{{ ports[0] }}/0'\n\
+             [daemons.queue]\nrun = 'q'\nport = { expect = [5672] }\nproxy = false\n\
+             url = 'amqp://{{ name }}:{{ port }}'\n\
+             [daemons.pair]\nrun = 'p'\nport = [4900, 4901]\nproxy = false\n\
+             url = 'http://127.0.0.1:{{ ports[1] }}/{{ port }}'\n",
+        );
+        assert_eq!(
+            set.daemons["pair"].exports["PAIR_URL"],
+            "http://127.0.0.1:4901/4900"
+        );
+        assert_eq!(set.daemons["api"].exports["API_PORT"], "4800");
+        assert_eq!(
+            set.daemons["api"].exports["API_URL"],
+            "http://127.0.0.1:4800"
+        );
+        assert_eq!(
+            set.daemons["cache"].exports["CACHE_URL"],
+            format!(
+                "redis://127.0.0.1:{}/0",
+                set.daemons["cache"].exports["CACHE_PORT"]
+            )
+        );
+        assert_eq!(
+            set.daemons["queue"].exports["QUEUE_URL"],
+            "amqp://queue:5672"
+        );
+        // pitchfork still sees the template, to render it for its own consumers.
+        assert_eq!(
+            set.daemons["api"].table["url"].as_str(),
+            Some("http://127.0.0.1:{{ port }}")
+        );
+
+        // A daemon with no port can still declare where it answers.
+        let set = load_body("[daemons.remote]\nrun = 'r'\nurl = 'https://example.test/api'\n");
+        assert_eq!(
+            set.daemons["remote"].exports["REMOTE_URL"],
+            "https://example.test/api"
+        );
+        assert!(!set.daemons["remote"].exports.contains_key("REMOTE_PORT"));
+
+        // The proxy's hostname wins when it serves the daemon, as in pitchfork.
+        let set = load_body(
+            "[daemons.api]\nrun = 'a'\nport = 4800\nurl = 'http://127.0.0.1:{{ port }}'\n",
+        );
+        assert_eq!(
+            set.daemons["api"].exports["API_URL"],
+            "https://api.shop.localhost"
+        );
+        // A template only pitchfork can render is never rendered for a daemon
+        // the proxy serves, so it cannot warn there.
+        let set = load_body(
+            "[daemons.api]\nrun = 'a'\nport = 4800\nurl = 'http://{{ namespace }}:{{ port }}'\n",
+        );
+        assert_eq!(
+            set.daemons["api"].exports["API_URL"],
+            "https://api.shop.localhost"
+        );
+
+        // Nothing is exported for a template mise cannot render, and the port
+        // still is. The warning does not repeat the template.
+        let set = load_body(
+            "[daemons.api]\nrun = 'a'\nport = 4800\nproxy = false\nurl = 'http://{{ namespace }}:{{ port }}'\n",
+        );
+        assert_eq!(set.daemons["api"].exports["API_PORT"], "4800");
+        assert!(!set.daemons["api"].exports.contains_key("API_URL"));
+    }
+
+    #[test]
+    fn a_declared_url_serves_when_a_hostname_collision_withdraws_the_proxy_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (primary, _) = checkout_pair(tmp.path());
+        // `web` takes the label `api`, so the proxy routes neither daemon.
+        let set = load(&files(&[(
+            primary.join("mise.toml").to_str().unwrap(),
+            "[daemons_settings]\nnamespace = 'shop'\n\
+             [daemons.api]\nrun = 'a'\nport = 3000\nurl = 'http://127.0.0.1:{{ port }}'\n\
+             [daemons.web]\nrun = 'b'\nport = 3001\nproxy = 'api'\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["api"].host.is_none());
+        assert_eq!(
+            set.daemons["api"].exports["API_URL"],
+            "http://127.0.0.1:3000"
+        );
+        assert!(!set.daemons["web"].exports.contains_key("WEB_URL"));
+    }
+
+    #[test]
+    fn a_reference_exports_the_url_its_daemon_declares() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let search = tmp.path().join("search");
+        referenced_project(
+            &search,
+            "[daemons.app]\nrun = 'exec search-api'\nport = 4100\nproxy = false\n\
+             url = 'http://127.0.0.1:{{ port }}'\n",
+        );
+        let shop = tmp.path().join("shop");
+        std::fs::create_dir_all(&shop).unwrap();
+        let config = files(&[(
+            shop.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.search]\nproject = {}\nname = 'app'\n",
+                toml::Value::String(search.to_string_lossy().into_owned())
+            ),
+        )]);
+        let set = load(&config).unwrap();
+        let exports = &reference(&set, "search").exports;
+        assert_eq!(exports["SEARCH_PORT"], "4100");
+        assert_eq!(exports["SEARCH_URL"], "http://127.0.0.1:4100");
+        // Only those two cross over, however the daemon was declared.
+        assert_eq!(exports.len(), 2, "{exports:?}");
     }
 
     #[test]

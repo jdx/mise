@@ -391,8 +391,9 @@ every preset opts out of the proxy and keeps exporting its own connection
 variables, such as `PGPORT`, `DATABASE_URL`, and `REDIS_URL`.
 
 A daemon without a `port`, or with `proxy = false`, gets no hostname and no
-`<NAME>_URL`. `mise daemons urls` still lists it, without a URL, and shows its
-port when it has one.
+`<NAME>_URL` of this kind. `mise daemons urls` still lists it, without a URL,
+and shows its port when it has one. A daemon can declare the URL it answers on
+instead, as described in [Declare a URL](#declare-a-url).
 
 ### Per-daemon proxy settings
 
@@ -437,6 +438,36 @@ proxy_tls = "passthrough"
 
 Both keys need pitchfork 2.26.0 or later. An older supervisor starts the
 daemons but does not serve their hostnames.
+
+### Declare a URL
+
+A daemon the proxy does not serve has no hostname, so nothing says what address
+to give its clients, or which scheme it speaks. `url` declares it, as a
+template that sees the daemon's `port`, `ports` and `name`:
+
+```toml
+[daemons.cache]
+run = "exec redis-server --port $PORT"
+port = 6380
+proxy = false
+url = "redis://127.0.0.1:{{ port }}/0"
+
+[env]
+REDIS_ENDPOINT = "{{ env.CACHE_URL }}"
+```
+
+mise exports `CACHE_URL` as `redis://127.0.0.1:6380/0`, and pitchfork gives the
+same address as <code v-pre>{{ daemons.cache.url }}</code> in its own templates. A daemon the
+proxy does serve keeps its hostname: `url` applies only when there is none,
+because `proxy = false` is set, a hostname collision withdrew it, or the daemon
+has no `port`. A `project` reference to a daemon with a `url` exports it as
+`<NAME>_URL`, named after the reference.
+
+<code v-pre>{{ port }}</code> is the port the daemon is configured for. A port that `auto`
+resolves is the resolved one. mise renders only `port`, `ports` and `name`; a
+`url` that reads another variable, such as `namespace`, works in pitchfork's
+templates but exports no `<NAME>_URL`, and mise warns. `url` needs pitchfork
+2.36.0 or later.
 
 ### Choose hostname labels
 

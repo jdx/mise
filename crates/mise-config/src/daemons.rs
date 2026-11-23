@@ -234,6 +234,8 @@ pub struct DaemonCommandDecl {
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy_idle_timeout")]
     pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
+    /// URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later.
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -274,6 +276,8 @@ pub struct DaemonTaskDecl {
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy_idle_timeout")]
     pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
+    /// URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later.
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -426,6 +430,8 @@ pub struct DaemonContainerDecl {
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy_idle_timeout")]
     pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
+    /// URL the daemon answers on, a template that sees `port`, `ports` and `name`, such as `redis://127.0.0.1:{{ port }}/0`. Used when the proxy does not serve the daemon, for example with `proxy = false`: mise exports it as <NAME>_URL and pitchfork gives it as `{{ daemons.<name>.url }}`. Needs pitchfork 2.36.0 or later.
+    pub url: Option<String>,
 }
 
 /// Port for this named port of the preset: a fixed port, or an allocation that gives each linked git worktree its own.
