@@ -124,6 +124,7 @@ pub(super) fn repair_link_record(name: &str, dry_run: bool) -> Result<bool> {
     let Some(repair) = pending_record_repair(name) else {
         return Ok(false);
     };
+    prefix::refuse_foreign_as_root()?;
     let record = if repair.destination == prefix::linked_keg_record(name) {
         "linked-keg record"
     } else {

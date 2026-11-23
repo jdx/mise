@@ -164,6 +164,66 @@ pub(super) fn sudo_invoking_user() -> Option<String> {
     }
 }
 
+/// The invoking user's uid (SUDO_UID) under `sudo mise`, None otherwise.
+fn sudo_invoking_uid() -> Option<u32> {
+    sudo_invoking_user()?;
+    mise_util::env::var("SUDO_UID")
+        .ok()?
+        .parse()
+        .ok()
+        .filter(|uid| *uid != 0)
+}
+
+/// Refuse to work as root in a prefix another account controls. Root can
+/// write anywhere, and mise stages, copies, links and removes by path, so the
+/// owner of the prefix, of a directory above it or of one of its standard
+/// directories could swap a directory for a symlink between a check and a
+/// write and have root create files wherever they like. Each of those must
+/// be owned by root or by the user who ran `sudo mise`.
+pub(super) fn refuse_foreign_as_root() -> Result<()> {
+    if !nix::unistd::geteuid().is_root() {
+        return Ok(());
+    }
+    let prefix = prefix();
+    if let Some((path, uid)) =
+        foreign_component(&prefix, &bootstrap_dirs(&prefix), sudo_invoking_uid())
+    {
+        let owner = nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid))
+            .ok()
+            .flatten()
+            .map_or_else(|| format!("uid {uid}"), |u| u.name);
+        bail!(
+            "{} is owned by {owner}, so mise will not install into or change the Homebrew \
+             prefix {} as root: {owner} could redirect root's writes. Run mise as {owner}, \
+             or make root own {}",
+            path.display(),
+            prefix.display(),
+            path.display(),
+        );
+    }
+    Ok(())
+}
+
+/// The first existing path, of `prefix`, the directories above it (spelled
+/// as given and as resolved) and `dirs`, whose owner is neither root nor
+/// `sudo_uid`. Read without following symlinks, so a link counts by its own
+/// owner, who can repoint it.
+fn foreign_component(
+    prefix: &Path,
+    dirs: &[PathBuf],
+    sudo_uid: Option<u32>,
+) -> Option<(PathBuf, u32)> {
+    let real = prefix.canonicalize().ok();
+    prefix
+        .ancestors()
+        .chain(real.iter().flat_map(|real| real.ancestors()))
+        .chain(dirs.iter().map(PathBuf::as_path))
+        .find_map(|path| {
+            let uid = std::os::unix::fs::MetadataExt::uid(&path.symlink_metadata().ok()?);
+            (uid != 0 && Some(uid) != sudo_uid).then(|| (path.to_path_buf(), uid))
+        })
+}
+
 /// Who should own the prefix. Under `sudo mise`, the invoking user
 /// (SUDO_USER), not root — mirrors brew's install.sh. Plain root (e.g. a
 /// container) owns it as root.
@@ -195,6 +255,7 @@ fn bootstrap_dirs(prefix: &Path) -> Vec<PathBuf> {
 
 pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
     let prefix = prefix();
+    refuse_foreign_as_root()?;
     if let Some(owner) = foreign_owner(&prefix) {
         // mise pours bottles itself, so it needs a prefix it can write. An
         // existing prefix owned by another real user (e.g. a dedicated
@@ -280,6 +341,39 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(foreign_owner(dir.path()), None);
         assert_eq!(foreign_owner(&dir.path().join("missing")), None);
+    }
+
+    #[test]
+    fn root_accepts_only_a_prefix_owned_by_root_or_the_sudo_user() {
+        let me = nix::unistd::geteuid().as_raw();
+        if me == 0 {
+            // root owns everything here; the check below needs another owner
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let prefix = base.join("prefix");
+        let dirs = [prefix.join("Cellar")];
+        std::fs::create_dir_all(&dirs[0]).unwrap();
+        // the temp dir is ours, not root's, and nobody ran sudo
+        let (path, uid) = foreign_component(&prefix, &dirs, None).unwrap();
+        assert_eq!(uid, me);
+        assert!(prefix.starts_with(&path));
+        // under `sudo mise` run by the owner it is theirs to change
+        assert_eq!(foreign_component(&prefix, &dirs, Some(me)), None);
+        // a symlink in the path is judged by its own owner, not its target's
+        let link = base.join("link");
+        std::os::unix::fs::symlink("/", &link).unwrap();
+        let (path, _) = foreign_component(&link.join("usr"), &[], Some(me + 1)).unwrap();
+        assert_eq!(path, link);
+        // a prefix that does not exist yet is judged by the directories above it
+        let (path, _) = foreign_component(&base.join("new/prefix"), &[], None).unwrap();
+        assert_eq!(path, base);
+        // a missing prefix below root-owned directories is fine
+        assert_eq!(
+            foreign_component(Path::new("/nonexistent-mise-prefix"), &[], None),
+            None
+        );
     }
 
     #[test]

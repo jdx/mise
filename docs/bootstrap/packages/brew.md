@@ -45,6 +45,11 @@ If the prefix does not exist, mise creates it with Homebrew's standard layout,
 using sudo to create the directory and give it to your user. It then installs
 formulae as that user, so run mise as the user who should own the prefix.
 
+As root, mise refuses to install into or change a prefix when the prefix, a
+directory above it, or one of its standard directories belongs to another user,
+since that user could redirect root's writes. The one exception is the user who
+ran `sudo mise`.
+
 Linked commands go into `<prefix>/bin`. These packages get no mise shims, and
 mise does not change the current shell's `PATH`, so add the directory in your
 shell startup file:
