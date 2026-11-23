@@ -88,7 +88,7 @@ A GitLab tool moves to the gitlab backend:
 | `matching`                    | Breaks a tie between assets that already match your platform, and is ignored when only one matches | Filters assets before platform detection; a value that matches no asset for your platform is an error                      |
 | What is installed             | One executable, unless `extract_all` is set                                                        | The whole archive; the directories with executables go on `PATH`, so other executables in the archive can appear there     |
 | Repositories without releases | Lists Git tags as versions                                                                         | Lists only releases with assets, so a repository that publishes only tags has no versions                                  |
-| Verification                  | Records a checksum of the installed executable                                                     | Checks the release's digest or checksum file and GitHub artifact attestations, and records the download URL in `mise.lock` |
+| Verification                  | Records a checksum of the installed executable, or of the whole install with `extract_all`         | Checks the release's digest or checksum file and GitHub artifact attestations, and records the download URL in `mise.lock` |
 
 Neither backend keeps two entries for the same `owner/repo` apart:
 `ubi:owner/repo[matching=a]` and `ubi:owner/repo[matching=b]` resolve to one

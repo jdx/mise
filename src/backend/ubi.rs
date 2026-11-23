@@ -24,6 +24,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::{fmt::Debug, sync::LazyLock};
 use ubi::{ForgeType, UbiBuilder};
+use walkdir::WalkDir;
 use xx::regex;
 
 #[derive(Debug)]
@@ -388,7 +389,11 @@ impl Backend for UbiBackend {
                 })
                 .unwrap()
         };
-        self.verify_checksum(ctx, &mut tv, &full_binary_path)?;
+        if extract_all {
+            self.verify_extract_all_checksum(ctx, &mut tv, &bin_dir, &full_binary_path)?;
+        } else {
+            self.verify_checksum(ctx, &mut tv, &full_binary_path)?;
+        }
 
         Ok(tv)
     }
@@ -408,20 +413,7 @@ impl Backend for UbiBackend {
         tv: &mut ToolVersion,
         file: &Path,
     ) -> eyre::Result<()> {
-        // For ubi backend, generate a more specific platform key that includes tool-specific options
-        let mut platform_key = self.get_platform_key();
-        let filename = file.file_name().unwrap().to_string_lossy().to_string();
-        let raw_opts = tv.request.options();
-        let opts = UbiOptions::new(&raw_opts);
-
-        if let Some(exe) = opts.exe() {
-            platform_key = format!("{platform_key}-{exe}");
-        }
-        if let Some(matching) = opts.matching() {
-            platform_key = format!("{platform_key}-{matching}");
-        }
-        // Include filename to distinguish different downloads for the same platform
-        platform_key = format!("{platform_key}-{filename}");
+        let platform_key = self.checksum_platform_key(tv, &checksum_file_name(file)?);
 
         // Get or create platform info for this platform key
         let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
@@ -498,6 +490,160 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 impl UbiBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    /// For ubi backend, generate a more specific platform key that includes tool-specific options
+    fn checksum_platform_key(&self, tv: &ToolVersion, name: &str) -> String {
+        let mut platform_key = self.get_platform_key();
+        let raw_opts = tv.request.options();
+        let opts = UbiOptions::new(&raw_opts);
+
+        if let Some(exe) = opts.exe() {
+            platform_key = format!("{platform_key}-{exe}");
+        }
+        if let Some(matching) = opts.matching() {
+            platform_key = format!("{platform_key}-{matching}");
+        }
+        // Include filename to distinguish different downloads for the same platform
+        format!("{platform_key}-{name}")
+    }
+
+    /// `verify_checksum` for an `extract_all` install. The whole release is unpacked into
+    /// `install_dir` and any file of it can be the one that runs, so the checksum covers
+    /// all of it, under a key that contains no name from the archive.
+    ///
+    /// A `mise.lock` can instead hold the checksum of one file of the install
+    /// (`picked_file`), under that file's name. Such an entry says nothing about the
+    /// other files, so it does not make an install a locked one.
+    fn verify_extract_all_checksum(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        install_dir: &Path,
+        picked_file: &Path,
+    ) -> eyre::Result<()> {
+        let platform_key = self.checksum_platform_key(tv, EXTRACT_ALL_CHECKSUM_NAME);
+        let locked = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.checksum.clone());
+
+        if let Some(checksum) = locked {
+            ctx.pr
+                .set_message(format!("checksum verify {platform_key}"));
+            let Some(expected) = checksum.strip_prefix("blake3:") else {
+                bail!("Invalid checksum: {platform_key}");
+            };
+            let actual = dir_hash_blake3(install_dir)?;
+            if actual != expected.to_lowercase() {
+                bail!(
+                    "Checksum mismatch for directory {}:\nExpected: blake3:{expected}\nActual:   blake3:{actual}",
+                    file::display_path(install_dir)
+                );
+            }
+            return Ok(());
+        }
+
+        let picked_key = self.checksum_platform_key(tv, &checksum_file_name(picked_file)?);
+        if let Some(file_key) = self.one_file_checksum_key(tv) {
+            if ctx.locked {
+                bail!(
+                    "The lockfile checksum of {} ({file_key}) covers one file of an extract_all install (--locked mode)\n\
+                    hint: Reinstall it without locked mode to update the lockfile, or use the github backend",
+                    tv.style()
+                );
+            }
+            // The names in this install come from the release, which must not get
+            // to choose a file the lockfile has no checksum for.
+            if file_key != picked_key {
+                bail!(
+                    "The lockfile checksum of {} ({file_key}) names a file this install does not use\n\
+                    hint: Remove the entry from mise.lock to record a checksum of the whole install, or use the github backend",
+                    tv.style()
+                );
+            }
+            self.verify_checksum(ctx, tv, picked_file)?;
+        }
+        if Settings::get().lockfile_enabled() {
+            ctx.pr
+                .set_message(format!("checksum generate {platform_key}"));
+            let hash = dir_hash_blake3(install_dir)?;
+            tv.lock_platforms.entry(platform_key).or_default().checksum =
+                Some(format!("blake3:{hash}"));
+        }
+        Ok(())
+    }
+
+    /// The key of a checksum of one file of an `extract_all` install for this
+    /// platform, whatever the file is called.
+    fn one_file_checksum_key(&self, tv: &ToolVersion) -> Option<String> {
+        let prefix = self.checksum_platform_key(tv, "");
+        let own_musl = self.get_platform_key().ends_with("-musl");
+        tv.lock_platforms
+            .iter()
+            .find(|(key, p)| {
+                p.checksum.is_some() && is_one_file_checksum_key(key, &prefix, own_musl)
+            })
+            .map(|(key, _)| key.clone())
+    }
+}
+
+/// Whether `key` holds the checksum of one file of an install whose keys start
+/// with `prefix`. The keys of the musl platform start with the same prefix as
+/// those of the glibc one, followed by `musl-`.
+fn is_one_file_checksum_key(key: &str, prefix: &str, own_musl: bool) -> bool {
+    let Some(name) = key.strip_prefix(prefix) else {
+        return false;
+    };
+    name != EXTRACT_ALL_CHECKSUM_NAME
+        && !name.ends_with(&format!("-{EXTRACT_ALL_CHECKSUM_NAME}"))
+        && (own_musl || !name.starts_with("musl-"))
+}
+
+/// What an `extract_all` install has in its `mise.lock` platform key where a single-file
+/// install has the name of the file.
+const EXTRACT_ALL_CHECKSUM_NAME: &str = "extract_all";
+
+/// A blake3 digest of everything below `dir`: each entry's relative path and type, a
+/// file's content and whether it is executable, and a symlink's target.
+fn dir_hash_blake3(dir: &Path) -> eyre::Result<String> {
+    let mut hasher = blake3::Hasher::new();
+    // Each field with its length, so that two different trees never hash the same bytes.
+    let mut field = |bytes: &[u8]| {
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    };
+    for entry in WalkDir::new(dir).min_depth(1).sort_by_file_name() {
+        let entry = entry?;
+        let path = entry.path();
+        field(path.strip_prefix(dir)?.as_os_str().as_encoded_bytes());
+        let file_type = entry.file_type();
+        if file_type.is_symlink() {
+            field(b"symlink");
+            field(std::fs::read_link(path)?.as_os_str().as_encoded_bytes());
+        } else if file_type.is_dir() {
+            field(b"dir");
+        } else if file_type.is_file() {
+            let kind: &[u8] = if file::is_executable(path) {
+                b"executable"
+            } else {
+                b"file"
+            };
+            field(kind);
+            field(hash::file_hash_blake3(path, None)?.as_bytes());
+        } else {
+            // Not opened: reading a FIFO would block.
+            field(b"other");
+        }
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// The name of an installed file, which its `mise.lock` checksum key ends with.
+fn checksum_file_name(file: &Path) -> Result<String> {
+    match file.file_name() {
+        Some(name) => Ok(name.to_string_lossy().to_string()),
+        None => bail!("{} is not a file", file::display_path(file)),
     }
 }
 
@@ -824,6 +970,99 @@ mod tests {
         let other_url = "https://downloads.example/tool.tar.gz";
         assert_eq!(ubi_forge(other_url, &ForgeType::GitLab), ForgeType::GitHub);
         assert_eq!(ubi_forge("o/r", &ForgeType::GitLab), ForgeType::GitLab);
+    }
+
+    #[test]
+    fn test_dir_hash_blake3_covers_every_entry() {
+        let tree = |files: &[(&str, &str)]| {
+            let dir = tempfile::tempdir().unwrap();
+            for (path, content) in files {
+                let path = dir.path().join(path);
+                file::create_dir_all(path.parent().unwrap()).unwrap();
+                file::write(&path, content).unwrap();
+            }
+            dir
+        };
+        let hash = |dir: &tempfile::TempDir| dir_hash_blake3(dir.path()).unwrap();
+        let genuine = [("LICENSE", "MIT"), ("tool", "genuine"), ("lib/a.so", "a")];
+        let base = hash(&tree(&genuine));
+
+        // The same tree somewhere else has the same digest.
+        assert_eq!(hash(&tree(&genuine)), base);
+
+        for changed in [
+            &[("LICENSE", "MIT"), ("tool", "replaced"), ("lib/a.so", "a")][..],
+            &[("LICENSE", "MIT"), ("tool", "genuine"), ("lib/a.so", "b")],
+            &[("LICENSE", "MIT"), ("tool", "genuine"), ("lib/b.so", "a")],
+            &[("LICENSE", "MIT"), ("tool", "genuine"), ("a.so", "a")],
+            &[("LICENSE", "MIT"), ("tool", "genuine")],
+            &[
+                ("LICENSE", "MIT"),
+                ("tool", "genuine"),
+                ("lib/a.so", "a"),
+                (".hidden", ""),
+            ],
+            &[
+                ("LICENSE", "MIT"),
+                ("tool", "genuine"),
+                ("lib/a.so", "a"),
+                ("bin/tool", "genuine"),
+            ],
+        ] {
+            assert_ne!(hash(&tree(changed)), base, "{changed:?}");
+        }
+
+        #[cfg(unix)]
+        {
+            let dir = tree(&genuine);
+            file::make_executable(dir.path().join("tool")).unwrap();
+            let executable = hash(&dir);
+            assert_ne!(executable, base);
+
+            // A symlink is hashed as its target path, not as what it points to.
+            file::remove_file(dir.path().join("LICENSE")).unwrap();
+            std::os::unix::fs::symlink("tool", dir.path().join("LICENSE")).unwrap();
+            let to_tool = hash(&dir);
+            file::remove_file(dir.path().join("LICENSE")).unwrap();
+            std::os::unix::fs::symlink("lib/a.so", dir.path().join("LICENSE")).unwrap();
+            assert_ne!(to_tool, executable);
+            assert_ne!(hash(&dir), to_tool);
+        }
+    }
+
+    #[test]
+    fn test_one_file_checksum_keys() {
+        let prefix = "linux-x64-";
+        assert!(is_one_file_checksum_key("linux-x64-LICENSE", prefix, false));
+        assert!(is_one_file_checksum_key("linux-x64-tool", prefix, false));
+        assert!(!is_one_file_checksum_key(
+            "linux-x64-extract_all",
+            prefix,
+            false
+        ));
+        assert!(!is_one_file_checksum_key("macos-arm64-tool", prefix, false));
+        // A musl entry is for another platform, unless this one is musl too.
+        assert!(!is_one_file_checksum_key(
+            "linux-x64-musl-tool",
+            prefix,
+            false
+        ));
+        assert!(!is_one_file_checksum_key(
+            "linux-x64-musl-extract_all",
+            prefix,
+            false
+        ));
+        let prefix = "linux-x64-musl-";
+        assert!(is_one_file_checksum_key(
+            "linux-x64-musl-tool",
+            prefix,
+            true
+        ));
+        assert!(!is_one_file_checksum_key(
+            "linux-x64-musl-extract_all",
+            prefix,
+            true
+        ));
     }
 
     #[test]
