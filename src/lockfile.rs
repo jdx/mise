@@ -3055,7 +3055,7 @@ pub fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
 
 /// The project config whose lockfile a tool stub reads from (see
 /// [`lockfile_path_for_tool_stub`]), with its monorepo lockfile root.
-fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
+pub fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
     let stub = resolve_tool_stub_path(stub)?;
     let monorepo_root = crate::config::monorepo_lockfile_root_from_dir(stub.parent()?);
     let dirs = file::all_dirs(stub.parent()?, &env::MISE_CEILING_PATHS).ok()?;

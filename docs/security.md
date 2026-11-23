@@ -75,8 +75,9 @@ idea:
   options, as it would for a tool option table.
 - A [tool stub](/dev-tools/tool-stubs.html) needs no trust to run, since running
   it is your approval. `mise lock` also reads the stubs that `mise.lock` lists
-  under `tool-stubs`, and for that the project's config needs trust. In safe
-  mode it does not apply the options of those stubs.
+  under `tool-stubs`, and `mise generate tool-stub --lock` reads the stub it
+  locks, and for that the project's config needs trust. In safe mode neither
+  applies the options of those stubs.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load, and mise finds it
   by walking up from the current directory. A project's `env` list can add

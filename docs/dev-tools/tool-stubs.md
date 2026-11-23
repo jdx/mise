@@ -252,6 +252,8 @@ A stub sets tool options, so `mise lock` reads the listed stubs only when the
 project's config is [trusted](/security.html#configuration-trust). In
 [safe mode](/security.html#safe-mode) it skips a listed stub that sets tool
 options (such as `url` or `install_env`) and leaves its entries as they are.
+`mise generate tool-stub --lock` asks for the same trust before it reads the
+stub, and in safe mode refuses a stub that sets tool options.
 References stay inside the git checkout that holds the lockfile.
 
 A stub finds its lockfile from where the stub file lives, not from the

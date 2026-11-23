@@ -3,7 +3,8 @@ use crate::backend::asset_matcher::detect_platform_from_url;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::tool_stub::ToolStubFile;
-use crate::config::{Config, Settings};
+use crate::config::config_file::trust_check;
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::file::{self, ExtractionFormat};
 use crate::http::HTTP;
@@ -797,15 +798,33 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
                 "--lock records lock data in mise.lock, but lockfiles are disabled (`lockfile = false`)"
             );
         }
-        let Some((lockfile_path, _)) = lockfile::lockfile_path_for_tool_stub(&self.output) else {
+        let Some((config_path, monorepo_root)) = lockfile::tool_stub_config(&self.output) else {
             bail!(
                 "no project config found above {}\n\
                 hint: a stub's lock data lives in its project's mise.lock; add a mise.toml in the stub's project",
                 display_path(&self.output)
             );
         };
+        let (lockfile_path, _) =
+            lockfile::lockfile_path_for_config(&config_path, monorepo_root.as_deref());
 
+        // A stub sets tool options, which a config file may only do once it is trusted.
+        // Running a stub stands in for that, but locking one does not run it, so the rules
+        // for the stubs `mise lock` reads apply: the config whose lockfile is written is
+        // trusted before the stub is read, in paranoid mode the stub is too, and safe mode
+        // applies no stub's options.
+        trust_check(&config_path)?;
+        if Settings::get().paranoid.config() {
+            trust_check(&self.output)?;
+        }
         let mut stub = ToolStubFile::from_file(&self.output)?;
+        if Settings::safe_mode() && stub.has_tool_options() {
+            bail!(
+                "cannot lock tool stub {} in safe mode: its tool options apply only outside safe mode\n\
+                hint: run the command without MISE_SAFE",
+                display_path(&self.output)
+            );
+        }
         let config = Config::get().await?;
 
         // Allow --version to override the version in the stub for bumping
