@@ -62,18 +62,11 @@ pub fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
         return Ok(ts);
     }
 
-    // Try parsing as a Zoned datetime (handles various formats)
-    if let Ok(zoned) = s.parse::<Zoned>() {
-        return Ok(zoned.timestamp());
-    }
-
-    // Try parsing as date only (YYYY-MM-DD) - use end of day UTC
-    if let Ok(civil_date) = s.parse::<jiff::civil::Date>() {
-        let datetime = civil_date.at(23, 59, 59, 0);
-        let ts = datetime.to_zoned(jiff::tz::TimeZone::UTC)?.timestamp();
-        return Ok(ts);
-    }
-
+    // A duration before a zoned datetime: jiff loads the system's time-zone
+    // database before it parses one, which costs far more than the parse, and
+    // a duration is what `minimum_release_age` holds on nearly every command.
+    // No string is both.
+    //
     // Subtract the duration from `process_now` so the same relative
     // duration resolves to the same absolute Timestamp every time.
     if let Ok(span) = s.parse::<Span>() {
@@ -85,6 +78,18 @@ pub fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
         let now_zoned = process_now().to_zoned(jiff::tz::TimeZone::UTC);
         let past = now_zoned.checked_sub(span)?;
         return Ok(past.timestamp());
+    }
+
+    // Try parsing as a Zoned datetime (handles various formats)
+    if let Ok(zoned) = s.parse::<Zoned>() {
+        return Ok(zoned.timestamp());
+    }
+
+    // Try parsing as date only (YYYY-MM-DD) - use end of day UTC
+    if let Ok(civil_date) = s.parse::<jiff::civil::Date>() {
+        let datetime = civil_date.at(23, 59, 59, 0);
+        let ts = datetime.to_zoned(jiff::tz::TimeZone::UTC)?.timestamp();
+        return Ok(ts);
     }
 
     bail!(
@@ -124,6 +129,21 @@ mod tests {
     fn test_parse_into_timestamp_rfc3339() {
         let ts = parse_into_timestamp("2024-01-02T03:04:05Z").unwrap();
         assert_eq!(ts.to_string(), "2024-01-02T03:04:05Z");
+    }
+
+    #[test]
+    fn test_parse_into_timestamp_zoned_datetime() {
+        // Tried after a duration, and still read as the instant it names.
+        let ts = parse_into_timestamp("2024-06-01T12:00:00+02:00[+02:00]").unwrap();
+        assert_eq!(ts, "2024-06-01T10:00:00Z".parse::<Timestamp>().unwrap());
+        let ts = parse_into_timestamp("2024-06-01T12:00[UTC]").unwrap();
+        assert_eq!(ts, "2024-06-01T12:00:00Z".parse::<Timestamp>().unwrap());
+    }
+
+    #[test]
+    fn test_parse_into_timestamp_rejects_negative_duration() {
+        let err = parse_into_timestamp("-1d").unwrap_err();
+        assert!(err.to_string().contains("must not be negative"), "{err}");
     }
 
     #[test]
