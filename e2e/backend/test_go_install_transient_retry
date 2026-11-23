@@ -30,7 +30,7 @@ reset() {
 reset 1
 MISE_HTTP_RETRIES=3 mise install 'go:example.com/tool@1.2.3'
 assert "awk 'END {print NR}' '$HOME/go-invocations'" "2"
-assert "sort -u '$HOME/go-invocations'" 'install -mod=mod example.com/tool@v1.2.3'
+assert "sort -u '$HOME/go-invocations'" 'install -mod=mod -- example.com/tool@v1.2.3'
 
 # Exhausted retries report the network error and never try the unprefixed version.
 reset 99
@@ -39,7 +39,7 @@ if MISE_HTTP_RETRIES=2 mise install 'go:example.com/other@1.2.3' >"$HOME/exhaust
   exit 1
 fi
 assert "awk 'END {print NR}' '$HOME/go-invocations'" "3"
-assert "sort -u '$HOME/go-invocations'" 'install -mod=mod example.com/other@v1.2.3'
+assert "sort -u '$HOME/go-invocations'" 'install -mod=mod -- example.com/other@v1.2.3'
 assert_contains "cat '$HOME/exhausted'" 'stream error'
 assert_not_contains "cat '$HOME/exhausted'" "Retry without the 'v' prefix"
 

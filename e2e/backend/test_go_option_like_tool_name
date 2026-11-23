@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+# A `go:` tool name comes from config that loads without trust, and `go` reads
+# an argument with a leading dash as a flag: `-debug-trace=FILE` truncates FILE.
+# A name that is not a Go package path never reaches `go`, and a valid one is
+# passed after `--`.
+
+# A stand-in for `go` that reads its flags the way cmd/go does: up to `--` or
+# the first argument without a leading dash.
+cat >"$HOME/bin/go" <<'GO'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$HOME/go-invocations"
+sub=$1
+shift
+versions=
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --)
+    shift
+    break
+    ;;
+  -debug-trace=*) : >"${1#-debug-trace=}" ;;
+  -versions) versions=1 ;;
+  -*) ;;
+  *) break ;;
+  esac
+  shift
+done
+case "$sub" in
+list)
+  for arg in "$@"; do
+    case "$arg" in
+    *@latest) echo '{"Path":"example.com/tool","Version":"v1.1.0"}' ;;
+    *@*) echo "{\"Path\":\"example.com/tool\",\"Version\":\"${arg#*@}\"}" ;;
+    *) [ -n "$versions" ] && echo '{"Path":"example.com/tool","Versions":["v1.0.0","v1.1.0"]}' ;;
+    esac
+  done
+  ;;
+install)
+  mkdir -p "$GOBIN"
+  printf '#!/usr/bin/env bash\necho tool\n' >"$GOBIN/tool"
+  chmod +x "$GOBIN/tool"
+  ;;
+esac
+GO
+chmod +x "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+# Resolve versions with `go list` alone, without a module proxy or the network.
+export GOPROXY=direct MISE_USE_VERSIONS_HOST=0
+
+echo keep >victim
+cat >mise.toml <<'TOML'
+[tools]
+"go:-debug-trace=victim" = "latest"
+TOML
+
+mise ls >/dev/null 2>&1 || true
+assert "cat victim" "keep"
+assert_fail "grep -- -debug-trace '$HOME/go-invocations'"
+
+assert_fail "mise install 'go:-debug-trace=victim@1.2.3'" "is not a Go package path"
+assert "cat victim" "keep"
+assert_fail "grep -- -debug-trace '$HOME/go-invocations'"
+
+# A module path that leaves the module proxy's path is refused the same way.
+assert_fail "mise ls-remote 'go:../../private/token.txt?'" "is not a Go package path"
+
+# A valid module path still lists and installs, after `--`.
+rm mise.toml
+assert "mise ls-remote go:example.com/tool" "1.0.0
+1.1.0"
+assert_contains "cat '$HOME/go-invocations'" "list -mod=readonly -m -versions -json -- example.com/tool"
+mise install go:example.com/tool@1.1.0
+assert_contains "cat '$HOME/go-invocations'" "install -mod=mod -- example.com/tool@v1.1.0"

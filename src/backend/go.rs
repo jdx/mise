@@ -23,6 +23,11 @@ use versions::Versioning;
 #[derive(Debug)]
 pub(crate) struct GoBackend {
     ba: Arc<BackendArg>,
+    /// The module paths that could provide the tool's package, deepest first,
+    /// or why the tool name is not a Go package path. Checked once here because
+    /// the name comes from config that loads without trust, and every route
+    /// puts it into a `go` command line or a module proxy URL.
+    module_candidates: std::result::Result<Vec<String>, String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -97,8 +102,9 @@ impl Backend for GoBackend {
         timeout::run_with_timeout_async(
             async || {
                 let tool_name = self.tool_name();
+                let candidates = self.module_candidates()?;
 
-                if let Some(versions) = self.fetch_proxy_versions(config, &tool_name).await? {
+                if let Some(versions) = self.fetch_proxy_versions(config, candidates).await? {
                     return Ok(versions);
                 }
 
@@ -106,11 +112,13 @@ impl Backend for GoBackend {
                 // private-module routing is configured. Package paths are not
                 // necessarily module paths, so walk their prefixes
                 // just as the proxy resolver does. `go list` runs with
-                // GOTOOLCHAIN=local (see go_list_env), so it is safe against
-                // untrusted config and does not need a safe-mode gate.
+                // GOTOOLCHAIN=local (see go_list_env) and gets the module path
+                // after `--`, and the path is a checked package path (see
+                // check_go_package_path), so it is safe against untrusted
+                // config and does not need a safe-mode gate.
                 let mut resolution_error = None;
-                for mod_path in module_path_candidates(&tool_name) {
-                    match self.fetch_go_module_versions(config, &mod_path).await {
+                for mod_path in candidates {
+                    match self.fetch_go_module_versions(config, mod_path).await {
                         Ok(Some(versions)) if !versions.is_empty() => return Ok(versions),
                         Ok(_) => {}
                         Err(err) => {
@@ -140,8 +148,8 @@ impl Backend for GoBackend {
             return Ok(None);
         }
 
+        let candidates = self.module_candidates()?;
         let env = self.dependency_env(config).await?;
-        let tool_name = self.tool_name();
         // Ask for @latest directly instead of listing every tag and fetching
         // metadata for each one; modules with thousands of tags make that
         // listing take minutes. When private-module routing is configured, go
@@ -157,7 +165,7 @@ impl Backend for GoBackend {
         timeout::run_with_timeout_async(
             async || {
                 if !proxies.is_empty() {
-                    match self.proxy_latest_stable(&proxies, &tool_name).await {
+                    match self.proxy_latest_stable(&proxies, candidates).await {
                         LatestOutcome::Found(info) => return Ok(Some(info)),
                         LatestOutcome::Unresolved => return Ok(None),
                         // Not on the proxy, which is where a private module
@@ -166,7 +174,7 @@ impl Backend for GoBackend {
                         LatestOutcome::NotFound => {}
                     }
                 }
-                Ok(match self.go_latest_stable(config, &tool_name).await {
+                Ok(match self.go_latest_stable(config, candidates).await {
                     LatestOutcome::Found(info) => Some(info),
                     LatestOutcome::Unresolved | LatestOutcome::NotFound => None,
                 })
@@ -198,7 +206,7 @@ impl Backend for GoBackend {
         };
         // Module versions carry the `v` prefix that listing strips off.
         let version = format!("v{}", version.trim_start_matches('v'));
-        let tool_name = self.tool_name();
+        let candidates = self.module_candidates()?;
         // One full pass per route, not one per candidate: a package path's first
         // candidates are not the module root, and spending the timeout on a
         // `go list` miss for one of those would strand the request before the
@@ -206,14 +214,13 @@ impl Backend for GoBackend {
         // Listing and `@latest` are laid out the same way.
         timeout::run_with_timeout_async(
             async || {
-                let candidates = module_path_candidates(&tool_name);
                 // A source that could not be reached is not a version without a
                 // release date, and the caller cannot tell them apart from
                 // `Ok(None)`: it would take the version as checked and let it
                 // past the cutoff without a word. Keep the first real failure so
                 // this can report one.
                 let mut failure: Option<eyre::Report> = None;
-                for mod_path in &candidates {
+                for mod_path in candidates {
                     if proxies.is_empty() {
                         break;
                     }
@@ -234,7 +241,7 @@ impl Backend for GoBackend {
                 // not on the proxy, and reporting no date for it would hand the
                 // cutoff an undated version to treat as eligible — the exact gap
                 // this exists to close.
-                for mod_path in &candidates {
+                for mod_path in candidates {
                     match self
                         .fetch_go_module_version_metadata(config, mod_path, &version)
                         .await
@@ -286,6 +293,7 @@ impl Backend for GoBackend {
         )
         .await;
 
+        self.module_candidates()?;
         let install_version = tv.version.clone();
 
         let raw_opts = tv.request.options();
@@ -316,6 +324,9 @@ impl Backend for GoBackend {
             // classify and send every network failure down the non-transient path.
             let result = cmd
                 .never_raw()
+                // The name is a checked package path, so it never starts with
+                // a dash; `--` keeps it an operand regardless.
+                .arg("--")
                 .arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
                 .with_stderr_observer(move |line| {
@@ -466,7 +477,23 @@ const GO_LIST_VERSION_METADATA_LIMIT: usize = 10;
 
 impl GoBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
+        let tool_name = ba.tool_name();
+        let module_candidates = check_go_package_path(&tool_name)
+            .map(|()| module_path_candidates(&tool_name))
+            .map_err(|reason| format!("{tool_name:?} is not a Go package path: {reason}"));
+        Self {
+            ba: Arc::new(ba),
+            module_candidates,
+        }
+    }
+
+    /// The module paths that could provide the tool's package, deepest first.
+    /// Fails for a tool name that is not a Go package path.
+    fn module_candidates(&self) -> Result<&[String]> {
+        match &self.module_candidates {
+            Ok(candidates) => Ok(candidates),
+            Err(err) => Err(eyre!("{err}")),
+        }
     }
 
     /// Query `$GOPROXY` to find versions, matching `go install`'s resolution algorithm.
@@ -474,7 +501,7 @@ impl GoBackend {
     async fn fetch_proxy_versions(
         &self,
         config: &Arc<Config>,
-        tool_name: &str,
+        candidates: &[String],
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
         let env = self.dependency_env(config).await?;
         if go_native_resolution_enabled(&env) {
@@ -488,8 +515,6 @@ impl GoBackend {
         if proxies.is_empty() {
             return Ok(None);
         }
-
-        let candidates = module_path_candidates(tool_name);
 
         let mut join_set = tokio::task::JoinSet::new();
         for (idx, path) in candidates.iter().enumerate() {
@@ -590,6 +615,7 @@ impl GoBackend {
                 "-m",
                 "-versions",
                 "-json",
+                "--",
                 mod_path,
             ],
             self.go_list_env(config).await?,
@@ -658,6 +684,7 @@ impl GoBackend {
                 "-mod=readonly".to_string(),
                 "-m".to_string(),
                 "-json".to_string(),
+                "--".to_string(),
             ];
             for version in chunk {
                 args.push(format!("{mod_path}@{version}"));
@@ -702,7 +729,14 @@ impl GoBackend {
         let target = format!("{mod_path}@{version}");
         let raw = crate::cmd::cmd_read_async(
             &go,
-            &["list", "-mod=readonly", "-m", "-json", target.as_str()],
+            &[
+                "list",
+                "-mod=readonly",
+                "-m",
+                "-json",
+                "--",
+                target.as_str(),
+            ],
             env,
         )
         .await
@@ -717,11 +751,15 @@ impl GoBackend {
     }
 
     /// Resolve `@latest` for the module-path candidates through the module proxies.
-    async fn proxy_latest_stable(&self, proxies: &[GoProxy], tool_name: &str) -> LatestOutcome {
-        for mod_path in module_path_candidates(tool_name) {
-            match query_proxy_latest(proxies, &encode_module_path(&mod_path)).await {
+    async fn proxy_latest_stable(
+        &self,
+        proxies: &[GoProxy],
+        candidates: &[String],
+    ) -> LatestOutcome {
+        for mod_path in candidates {
+            match query_proxy_latest(proxies, &encode_module_path(mod_path)).await {
                 ProxyVersionInfoResult::Found(info) => {
-                    return classify_latest(&mod_path, version_info_from_metadata(info));
+                    return classify_latest(mod_path, version_info_from_metadata(info));
                 }
                 ProxyVersionInfoResult::NotFound => {}
                 // A failing proxy is not a missing module: leave the report to
@@ -733,12 +771,12 @@ impl GoBackend {
     }
 
     /// Resolve `@latest` for the module-path candidates through `go list`.
-    async fn go_latest_stable(&self, config: &Arc<Config>, tool_name: &str) -> LatestOutcome {
-        for mod_path in module_path_candidates(tool_name) {
-            match self.fetch_go_module_latest_info(config, &mod_path).await {
+    async fn go_latest_stable(&self, config: &Arc<Config>, candidates: &[String]) -> LatestOutcome {
+        for mod_path in candidates {
+            match self.fetch_go_module_latest_info(config, mod_path).await {
                 Ok(Some(mut infos)) => {
                     if let Some(info) = infos.pop() {
-                        return classify_latest(&mod_path, info);
+                        return classify_latest(mod_path, info);
                     }
                 }
                 Ok(None) => {}
@@ -761,7 +799,14 @@ impl GoBackend {
         let latest = format!("{mod_path}@latest");
         let raw = crate::cmd::cmd_read_async(
             &go,
-            &["list", "-mod=readonly", "-m", "-json", latest.as_str()],
+            &[
+                "list",
+                "-mod=readonly",
+                "-m",
+                "-json",
+                "--",
+                latest.as_str(),
+            ],
             env,
         )
         .await
@@ -804,10 +849,63 @@ fn split_for_metadata(versions: &[String], limit: usize) -> (&[String], &[String
     versions.split_at(versions.len().saturating_sub(limit))
 }
 
-fn module_path_candidates(tool_name: &str) -> Vec<String> {
-    let parts: Vec<&str> = tool_name.split('/').collect();
+/// The longest `go:` tool name mise looks up.
+///
+/// Go sets no length limit, but real import paths stay far below this, and
+/// every path prefix of the name becomes a candidate module: the cap keeps a
+/// name from config that loads without trust from costing memory and requests
+/// that grow with the square of its length.
+const GO_PACKAGE_PATH_MAX_LEN: usize = 1024;
+
+/// Check that `name` is a Go package path, or a package pattern with `...`
+/// wildcards, by the rules `golang.org/x/mod/module.CheckImportPath` applies:
+/// path elements of ASCII letters, digits and `-._~+` that are not empty and
+/// neither begin nor end with a dot, and no leading dash. A name that passes
+/// cannot be read as a flag by `go` and stays one path below the module
+/// proxy's URL: it has no `..` element, `?`, `#`, `%` or `\`.
+fn check_go_package_path(name: &str) -> std::result::Result<(), String> {
+    if name.is_empty() {
+        return Err("empty path".to_string());
+    }
+    if name.len() > GO_PACKAGE_PATH_MAX_LEN {
+        return Err(format!(
+            "longer than {GO_PACKAGE_PATH_MAX_LEN} bytes ({} bytes)",
+            name.len()
+        ));
+    }
+    if name.starts_with('-') {
+        return Err("leading dash".to_string());
+    }
+    for elem in name.split('/') {
+        if elem.is_empty() {
+            return Err("empty path element".to_string());
+        }
+        if let Some(c) = elem
+            .chars()
+            .find(|c| !(c.is_ascii_alphanumeric() || "-._~+".contains(*c)))
+        {
+            return Err(format!("invalid character {c:?}"));
+        }
+        // A `...` wildcard may begin or end an element of a pattern; it is
+        // never the `.` or `..` that the module proxy URL would resolve.
+        if !elem.contains("...") && (elem.starts_with('.') || elem.ends_with('.')) {
+            return Err(format!("path element {elem:?} begins or ends with a dot"));
+        }
+    }
+    Ok(())
+}
+
+/// The prefixes of a package path checked by [`check_go_package_path`] that can
+/// be module paths, deepest first: a module path has no `+` and no wildcard.
+fn module_path_candidates(package_path: &str) -> Vec<String> {
+    let parts: Vec<&str> = package_path.split('/').collect();
     (1..=parts.len())
         .rev()
+        .filter(|&i| {
+            parts[..i]
+                .iter()
+                .all(|elem| !elem.contains('+') && !elem.contains("..."))
+        })
         .map(|i| parts[..i].join("/"))
         .collect()
 }
@@ -1272,6 +1370,73 @@ mod tests {
                 "github.com/example",
                 "github.com",
             ]
+        );
+    }
+
+    #[test]
+    fn package_patterns_only_offer_module_paths_as_candidates() {
+        assert_eq!(
+            module_path_candidates("example.com/tool/c++/..."),
+            vec!["example.com/tool", "example.com"]
+        );
+    }
+
+    #[test]
+    fn go_package_paths_are_accepted() {
+        for name in [
+            "github.com/example/tool/cmd/tool",
+            "github.com/GoogleCloudPlatform/scion",
+            "connectrpc.com/connect/v2/cmd/protoc-gen-connect-go",
+            "example.com/tool/...",
+            "example.com/tool/cmd/foo...",
+            "example.com/c++/x_y~z",
+            "cwd-test",
+        ] {
+            assert_eq!(check_go_package_path(name), Ok(()), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn names_that_are_not_go_package_paths_are_refused() {
+        for name in [
+            "",
+            "-debug-trace=../../.bashrc",
+            "-x",
+            "../../private/deploy-token.txt?",
+            "./x",
+            "example.com/../x",
+            "/example.com/tool",
+            "example.com/tool/",
+            "example.com//tool",
+            "example.com?/tool",
+            "example.com#/tool",
+            "%2e%2e/tool",
+            "example.com\\tool",
+            "example.com@v1/tool",
+            "exa mple.com/tool",
+            "example.com/tool.",
+            "exämple.com/tool",
+        ] {
+            assert!(check_go_package_path(name).is_err(), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn overlong_names_are_refused_before_splitting() {
+        let at_limit = "a/".repeat(GO_PACKAGE_PATH_MAX_LEN / 2 - 1) + "aa";
+        assert_eq!(at_limit.len(), GO_PACKAGE_PATH_MAX_LEN);
+        assert_eq!(check_go_package_path(&at_limit), Ok(()));
+        let over = format!("{at_limit}a");
+        assert!(check_go_package_path(&over).is_err());
+    }
+
+    #[test]
+    fn backend_for_an_invalid_name_refuses_every_lookup() {
+        let backend = GoBackend::from_arg("go:-debug-trace=victim".into());
+        let err = backend.module_candidates().unwrap_err().to_string();
+        assert!(
+            err.contains("is not a Go package path: leading dash"),
+            "{err}"
         );
     }
 
