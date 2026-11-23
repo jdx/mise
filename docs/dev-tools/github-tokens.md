@@ -183,7 +183,10 @@ home directory, not in the project mise was called in, with mise's shims removed
 from `PATH`, with `GIT_TERMINAL_PROMPT=0` and no stdin, and at most once per
 host per mise command. A relative path in the command is therefore read from
 your home directory. If it exits with an error or prints nothing, mise moves on
-to the next source.
+to the next source. mise does not run it for a host that is not spelled like a
+DNS name or an IP address (letters, digits, `.`, `-`, `_`, and `[`, `:`, `]`
+for IPv6), so a host cannot add to a command line that a shell expands it into,
+such as `%MISE_CREDENTIAL_HOST%` under `cmd`.
 
 ::: warning Deprecated
 sh-compatible shells (`ash`, `bash`, `dash`, `ksh`, `sh` and `zsh`) also receive

@@ -78,6 +78,16 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 /// for the lifetime of the process — repeated calls for the same host
 /// reuse the cached value (positive or negative).
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
+    // The host is often that of a URL chosen by a project's config or a
+    // server's response, and a URL host may contain `&`, `;`, `"`, `$`, `(`
+    // and more. The helper is a shell command line: `cmd` expands
+    // `%MISE_CREDENTIAL_HOST%` before it parses the line, and a helper that
+    // hands the host to another shell parses it again.
+    if !is_plain_host(host) {
+        debug!("{provider} credential_command skipped: {host:?} is not a plain host name");
+        return None;
+    }
+
     if credential_command_uses_legacy_host_arg(cmd) {
         deprecated_at!(
             "2026.11.0",
@@ -130,6 +140,16 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
     );
     cache.insert(cache_key, result.clone());
     result
+}
+
+/// Whether `host` is spelled like a DNS name or an IP address, optionally with
+/// a port: no character a shell reads as an operator, a quote or a
+/// substitution, and no leading `-` for a program to read as an option.
+fn is_plain_host(host: &str) -> bool {
+    host.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '[')
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-_:[]".contains(&b))
 }
 
 /// Build the process that runs a provider `credential_command` (or another
@@ -637,6 +657,65 @@ logins:
                 "{cmd} would inherit $GIT_DIR"
             );
         }
+    }
+
+    #[test]
+    fn test_is_plain_host() {
+        for host in [
+            "github.com",
+            "acme.ghe.com",
+            "GHE.Example.com",
+            "xn--bcher-kva.example",
+            "my_host.internal",
+            "localhost:8080",
+            "127.0.0.1",
+            "[::1]",
+            "[2001:db8::1]:8443",
+        ] {
+            assert!(is_plain_host(host), "{host}");
+        }
+        for host in [
+            "",
+            "a&evil.bat&b.ghe.com",
+            "a;{touch,x};b.ghe.com",
+            "a\"b.ghe.com",
+            "$(id).ghe.com",
+            "`id`.ghe.com",
+            "a'b.ghe.com",
+            "a=b.ghe.com",
+            "a b.ghe.com",
+            "a%PATH%.ghe.com",
+            "a\nb.ghe.com",
+            "-h.ghe.com",
+            ".ghe.com",
+            "bücher.example",
+        ] {
+            assert!(!is_plain_host(host), "{host}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_credential_command_token_skips_a_host_a_shell_would_parse() {
+        // The helper stands in for `cmd /c "... %MISE_CREDENTIAL_HOST%"`: the
+        // host is substituted into text that a shell then parses.
+        let dir = tempfile::tempdir().unwrap();
+        let ran = dir.path().join("ran");
+        let cmd = format!(
+            "echo helper >> {} && sh -c \"echo token-for-$MISE_CREDENTIAL_HOST\"",
+            ran.display()
+        );
+        let provider = "test-shell-host";
+
+        assert_eq!(
+            get_credential_command_token(provider, &cmd, "a;echo${IFS}injected;b.ghe.com"),
+            None
+        );
+        assert!(!ran.exists(), "the helper must not run for such a host");
+        assert_eq!(
+            get_credential_command_token(provider, &cmd, "acme.ghe.com").as_deref(),
+            Some("token-for-acme.ghe.com")
+        );
     }
 
     #[test]
