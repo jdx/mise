@@ -210,12 +210,44 @@ impl CondaBackend {
         Self::dedup_records_by_identifier(repodata.iter().flat_map(|rd| rd.iter()))
     }
 
-    /// Fetch repodata and solve the conda environment for the given specs and platform.
+    /// When the channel released `record`: when it first listed it, or else the
+    /// build start the builder recorded. A record with neither, or with a
+    /// non-positive one, has no release date.
+    fn record_released_at(record: &PackageRecord) -> Option<jiff::Timestamp> {
+        record
+            .indexed_timestamp
+            .or(record.timestamp)
+            .map(|t| t.jiff_timestamp())
+            .filter(|t| t.as_second() > 0)
+    }
+
+    /// The records the solver may choose from under the `minimum_release_age`
+    /// cutoff `before`: none released after it, whether a build of the tool or of
+    /// a dependency. A record with no release date is kept, as it is when versions
+    /// are listed.
+    fn released_before(
+        records: Vec<RepoDataRecord>,
+        before: Option<jiff::Timestamp>,
+    ) -> Vec<RepoDataRecord> {
+        let Some(before) = before else {
+            return records;
+        };
+        records
+            .into_iter()
+            .filter(|record| {
+                Self::record_released_at(&record.package_record).is_none_or(|t| t <= before)
+            })
+            .collect()
+    }
+
+    /// Fetch repodata and solve the conda environment for the given specs and platform,
+    /// choosing only from packages released by `before` (the `minimum_release_age` cutoff).
     async fn solve_packages(
         &self,
         specs: Vec<MatchSpec>,
         platform: CondaPlatform,
         opts: CondaOptions<'_>,
+        before: Option<jiff::Timestamp>,
     ) -> Result<Vec<RepoDataRecord>> {
         let channel = opts.channel()?;
         let gateway = Self::create_gateway()?;
@@ -227,7 +259,7 @@ impl CondaBackend {
             .map_err(|e| eyre::eyre!("failed to fetch repodata: {}", e))?
             .to_vec();
 
-        let flat_records = Self::flatten_repodata(&repodata);
+        let flat_records = Self::released_before(Self::flatten_repodata(&repodata), before);
         let virtual_packages = Self::detect_virtual_packages(platform)?;
 
         let task = SolverTask {
@@ -248,9 +280,12 @@ impl CondaBackend {
         };
 
         let mut solver = ResolvoSolver;
-        let result = solver
-            .solve(task)
-            .map_err(|e| eyre::eyre!("conda solve failed: {}", e))?;
+        let result = solver.solve(task).map_err(|e| match before {
+            Some(before) => eyre::eyre!(
+                "conda solve failed with only packages released before {before} (minimum_release_age): {e}"
+            ),
+            None => eyre::eyre!("conda solve failed: {}", e),
+        })?;
 
         Ok(result.records)
     }
@@ -657,7 +692,12 @@ impl CondaBackend {
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], Self::current_conda_platform()?, opts)
+            .solve_packages(
+                vec![match_spec],
+                Self::current_conda_platform()?,
+                opts,
+                ctx.before_date,
+            )
             .await?;
 
         // Separate main package from deps
@@ -1271,7 +1311,7 @@ impl CondaBackend {
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], platform, opts)
+            .solve_packages(vec![match_spec], platform, opts, tv.before_date)
             .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
@@ -1307,11 +1347,7 @@ fn collect_version_infos<'a>(
 ) -> Vec<VersionInfo> {
     let mut by_version: BTreeMap<String, Option<jiff::Timestamp>> = BTreeMap::new();
     for record in records {
-        let ts = record
-            .indexed_timestamp
-            .or(record.timestamp)
-            .map(|t| t.jiff_timestamp())
-            .filter(|t| t.as_second() > 0);
+        let ts = CondaBackend::record_released_at(record);
         let earliest = by_version.entry(record.version.to_string()).or_insert(None);
         *earliest = match (*earliest, ts) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -1469,7 +1505,7 @@ impl Backend for CondaBackend {
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], platform, opts)
+            .solve_packages(vec![match_spec], platform, opts, tv.before_date)
             .await
             .wrap_err_with(|| format!("failed to solve {tool_name} for {}", target.to_key()))?;
 
@@ -1701,6 +1737,37 @@ mod tests {
         let kept = crate::backend::VersionInfo::filter_by_date(infos, cutoff);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].version, "9.1.0");
+    }
+
+    #[test]
+    fn minimum_release_age_holds_back_too_new_builds_of_a_version() {
+        use rattler_conda_types::utils::TimestampMs;
+        let at = |s: &str| Some(TimestampMs::from_timestamp_millis(s.parse().unwrap()));
+        let channel = "https://conda.anaconda.org/conda-forge/linux-64";
+        let mut old_build = make_record("vim", "9.1.0", "a_0", &format!("{channel}/a.conda"));
+        old_build.package_record.timestamp = at("2024-01-01T00:00:00Z");
+        let mut new_build = make_record("vim", "9.1.0", "b_1", &format!("{channel}/b.conda"));
+        new_build.package_record.timestamp = at("2024-06-10T00:00:00Z");
+        let mut new_dep = make_record("zlib", "1.3.1", "h_2", &format!("{channel}/z.conda"));
+        new_dep.package_record.timestamp = at("2020-01-01T00:00:00Z");
+        new_dep.package_record.indexed_timestamp = at("2024-06-10T00:00:00Z");
+        let undated = make_record("ncurses", "6.5", "h_0", &format!("{channel}/n.conda"));
+        let records = vec![old_build, new_build, new_dep, undated];
+
+        let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
+        let builds = |kept: Vec<RepoDataRecord>| {
+            kept.iter()
+                .map(|r| r.package_record.build.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            builds(CondaBackend::released_before(records.clone(), Some(cutoff))),
+            ["a_0", "h_0"]
+        );
+        assert_eq!(
+            builds(CondaBackend::released_before(records, None)).len(),
+            4
+        );
     }
 
     #[test]

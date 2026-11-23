@@ -426,17 +426,20 @@ A backend can filter only versions it knows a release date for:
 | Capability                                       | Backends                                                                                                                        |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | Filter the tool's own versions                   | Backends that report release dates, such as `aqua:`, `cargo:`, `github:`, `gitlab:`, `go:`, `npm:`, `pypi:` and most core tools |
-| Filter dependencies resolved during installation | `npm:` and `pypi:` (`pipx:` is an alias)                                                                                        |
+| Filter dependencies resolved during installation | `conda:`, `npm:` and `pypi:` (`pipx:` is an alias)                                                                              |
 
 Versions without a release date are not filtered. When mise installs one it
 warns that the cutoff could not be checked, so you know that version was not held
 back. Switch to a backend that reports dates, or exclude the tool to silence the
 warning.
 
-Backends other than `npm:` and `pypi:` can hold back the tool's own version, but
-not the dependencies its installer or compiler fetches. See the
+Backends other than `conda:`, `npm:` and `pypi:` can hold back the tool's own
+version, but not the dependencies its installer or compiler fetches. See the
 [npm](/dev-tools/backends/npm.html) and [PyPI](/dev-tools/backends/pypi.html)
-backend pages for how they pass the cutoff to their package managers.
+backend pages for how they pass the cutoff to their package managers. `conda:`
+solves the environment only from packages the channel listed before the cutoff,
+so a new build of an older version of the tool or of a dependency is held back
+too.
 
 ### What the cutoff applies to
 
