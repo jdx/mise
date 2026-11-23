@@ -118,8 +118,60 @@ fn test_patch_growing_appends_segment() {
         new_load.p_offset <= e_phoff && e_phoff < new_load.p_offset + new_load.p_filesz,
         "relocated phdr table must be covered by the new PT_LOAD"
     );
-    assert_eq!(new_load.p_vaddr % new_load.p_align, 0);
-    assert_eq!(new_load.p_offset % new_load.p_align, 0);
+    let p_align = rd_u64(&elf, e_phoff as usize + (phdrs.len() - 1) * PHDR_SIZE + 48).unwrap();
+    assert_eq!(p_align, NEW_SEGMENT_ALIGN);
+    assert_eq!(new_load.p_vaddr % p_align, 0);
+    assert_eq!(new_load.p_offset % p_align, 0);
+}
+
+/// file offset of program header `i` in a `synthetic_elf`
+fn phdr_off(i: usize) -> usize {
+    EHDR_SIZE + i * PHDR_SIZE
+}
+
+/// file offset of the d_val of the dynamic entry tagged `tag`
+fn dyn_val_off(elf: &[u8], tag: i64) -> usize {
+    let dyn_off = rd_u64(elf, phdr_off(3) + 8).unwrap() as usize;
+    (0..)
+        .map(|i| dyn_off + i * 16)
+        .find(|off| rd_u64(elf, *off).unwrap() as i64 == tag)
+        .unwrap()
+        + 8
+}
+
+const GROWING_RPATH: &str = "@@HOMEBREW_PREFIX@@/Cellar/xz/5.8.3/lib:@@HOMEBREW_PREFIX@@/lib";
+
+#[test]
+fn test_patch_growing_pads_to_a_fixed_alignment() {
+    // the file claims 16 MiB alignment for its PT_LOAD; the appended segment
+    // is still padded to 64 KiB only
+    let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", GROWING_RPATH);
+    wr_u64(&mut elf, phdr_off(2) + 48, 1 << 24);
+    assert!(patch(&mut elf, &test_opts(), Path::new("test")).unwrap());
+    assert!(
+        elf.len() < 2 * NEW_SEGMENT_ALIGN as usize,
+        "{} bytes",
+        elf.len()
+    );
+    let (interp, rpath) = read_linkage(&elf);
+    assert_eq!(interp, format!("{PREFIX}/lib/ld.so"));
+    assert_eq!(rpath, format!("{PREFIX}/Cellar/xz/5.8.3/lib:{PREFIX}/lib"));
+}
+
+#[test]
+fn test_patch_growing_rejects_a_string_table_past_the_end() {
+    for strsz in [1 << 24, u64::MAX] {
+        let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", GROWING_RPATH);
+        let off = dyn_val_off(&elf, DT_STRSZ);
+        wr_u64(&mut elf, off, strsz);
+        let len = elf.len();
+        let err = patch(&mut elf, &test_opts(), Path::new("test")).unwrap_err();
+        assert!(
+            err.to_string().contains("runs past the end of the file"),
+            "{err}"
+        );
+        assert_eq!(elf.len(), len);
+    }
 }
 
 #[test]

@@ -36,6 +36,11 @@ const PT_INTERP: u32 = 3;
 const PT_PHDR: u32 = 6;
 const PF_R: u32 = 4;
 
+/// Alignment of the segment `patch` appends: covers 4K, 16K and 64K runtime
+/// page sizes. The padding up to it is written out, so it is a constant
+/// rather than the existing PT_LOADs' p_align, which is whatever the file says.
+const NEW_SEGMENT_ALIGN: u64 = 0x10000;
+
 const DT_NULL: i64 = 0;
 const DT_STRTAB: i64 = 5;
 const DT_STRSZ: i64 = 10;
@@ -104,7 +109,6 @@ struct Phdr {
     p_vaddr: u64,
     p_filesz: u64,
     p_memsz: u64,
-    p_align: u64,
 }
 
 fn read_phdrs(content: &[u8]) -> Result<Vec<Phdr>> {
@@ -126,7 +130,6 @@ fn read_phdrs(content: &[u8]) -> Result<Vec<Phdr>> {
             p_vaddr: rd_u64(content, off + 16)?,
             p_filesz: rd_u64(content, off + 32)?,
             p_memsz: rd_u64(content, off + 40)?,
-            p_align: rd_u64(content, off + 48)?,
         });
     }
     Ok(phdrs)
@@ -308,14 +311,22 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
             path.display()
         );
     }
+    // the whole table is copied into the new segment, so DT_STRSZ sizes the
+    // output: it has to describe bytes that are in the file
+    if move_dynstr
+        && let (Some(st), Some(sz)) = (strtab_off, strsz)
+        && (st as u64)
+            .checked_add(sz)
+            .is_none_or(|end| end > content.len() as u64)
+    {
+        bail!(
+            "cannot relocate {}: its dynamic string table (DT_STRSZ {sz}) runs past the end \
+             of the file",
+            path.display()
+        );
+    }
 
-    let align = phdrs
-        .iter()
-        .filter(|p| p.p_type == PT_LOAD)
-        .map(|p| p.p_align)
-        .max()
-        .unwrap_or(0x1000)
-        .max(0x10000); // covers 4K/16K/64K runtime page sizes
+    let align = NEW_SEGMENT_ALIGN;
     let new_off = round_up(content.len() as u64, align);
     let max_vaddr_end = phdrs
         .iter()
