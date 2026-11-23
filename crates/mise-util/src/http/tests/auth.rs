@@ -660,3 +660,188 @@ fn with_host_auth_layers_configured_headers_over_automatic_ones() {
     assert_eq!(merged[AUTHORIZATION], "Bearer configured");
     assert_eq!(merged["x-extra"], "1");
 }
+
+#[test]
+fn a_raw_content_404_with_a_token_is_retried_without_it() {
+    let raw = Url::parse("https://raw.githubusercontent.com/o/r/abc/SKILL.md").unwrap();
+    let mut with_token = HeaderMap::new();
+    with_token.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghp_stale"));
+
+    assert_eq!(
+        raw_content_token_to_drop(&raw, StatusCode::NOT_FOUND, &with_token),
+        Some("ghp_stale")
+    );
+    // Only a 404, only with a token, and only on raw.githubusercontent.com:
+    // the API's 401 has its own report, and other hosts' 404s are real.
+    assert_eq!(
+        raw_content_token_to_drop(&raw, StatusCode::OK, &with_token),
+        None
+    );
+    assert_eq!(
+        raw_content_token_to_drop(&raw, StatusCode::NOT_FOUND, &HeaderMap::new()),
+        None
+    );
+    let api = Url::parse("https://api.github.com/repos/o/r/contents/SKILL.md").unwrap();
+    assert_eq!(
+        raw_content_token_to_drop(&api, StatusCode::NOT_FOUND, &with_token),
+        None
+    );
+    let other = Url::parse("https://example.com/o/r/abc/SKILL.md").unwrap();
+    assert_eq!(
+        raw_content_token_to_drop(&other, StatusCode::NOT_FOUND, &with_token),
+        None
+    );
+
+    let msg = rejected_raw_token_warning(Some(&crate::github::TokenSource::EnvVar("GITHUB_TOKEN")));
+    assert!(
+        msg.contains("did not accept the token in `GITHUB_TOKEN`"),
+        "{msg}"
+    );
+    assert!(msg.contains("mise token github"), "{msg}");
+    assert!(
+        rejected_raw_token_warning(None).contains("configured GitHub token"),
+        "{}",
+        rejected_raw_token_warning(None)
+    );
+}
+
+const NOT_FOUND_RESPONSE: &str =
+    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+const SKILL_RESPONSE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 6\r\nConnection: close\r\n\r\nskill\n";
+
+/// A client that sends raw.githubusercontent.com to the local test server.
+/// The server speaks plain HTTP, which is why the retry matches the host
+/// whatever the scheme.
+fn raw_content_client(port: u16) -> Client {
+    let timeout = Duration::from_secs(3);
+    // Downloads ask for `identity` and go through the undecoded client, which
+    // must resolve the host to the test server as well.
+    let resolved = |decode: bool| {
+        Client::_new_with(decode)
+            .no_proxy()
+            .resolve(
+                "raw.githubusercontent.com",
+                std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+            )
+            .read_timeout(timeout)
+            .connect_timeout(timeout)
+            .build()
+            .unwrap()
+    };
+    Client {
+        reqwest: Ok(resolved(true)),
+        manual_redirects: Default::default(),
+        undecoded: std::sync::OnceLock::from(Ok(resolved(false))),
+        undecoded_manual_redirects: Default::default(),
+        timeout,
+        read_timeout: Some(timeout),
+        downgrade: Downgrade::Refuse,
+        kind: ClientKind::Http,
+    }
+}
+
+async fn get_raw_content_with_token(
+    responses: Vec<&'static str>,
+) -> (
+    Result<String>,
+    usize,
+    std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) {
+    let (port, count, requests) = spawn_recording_server(responses).await;
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghp-stale"));
+    let result = raw_content_client(port)
+        .get_text_request(format!(
+            "http://raw.githubusercontent.com:{port}/o/r/abc/SKILL.md"
+        ))
+        .headers(&headers)
+        .send()
+        .await;
+    (
+        result,
+        count.load(std::sync::atomic::Ordering::SeqCst),
+        requests,
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_raw_content_404_is_fetched_again_without_the_token() {
+    let (result, count, requests) =
+        get_raw_content_with_token(vec![NOT_FOUND_RESPONSE, SKILL_RESPONSE, SKILL_RESPONSE]).await;
+
+    assert_eq!(result.unwrap(), "skill\n");
+    assert_eq!(count, 2);
+    let requests = requests.lock().unwrap();
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer ghp-stale"),
+        "{}",
+        requests[0]
+    );
+    assert!(
+        !requests[1].to_ascii_lowercase().contains("authorization:"),
+        "{}",
+        requests[1]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_raw_content_404_without_the_token_is_still_a_404() {
+    let (result, count, requests) = get_raw_content_with_token(vec![NOT_FOUND_RESPONSE; 6]).await;
+
+    let err = result.unwrap_err();
+    assert!(format!("{err:#}").contains("404"), "{err:#}");
+    // One request with the token and one without; neither the outer retry
+    // loop nor the retry itself sends the token, or anything, again.
+    assert_eq!(count, 2);
+    let requests = requests.lock().unwrap();
+    assert!(
+        !requests[1].to_ascii_lowercase().contains("authorization:"),
+        "{}",
+        requests[1]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_download_retry_after_a_raw_content_404_leaves_the_token_out() {
+    let _guard = set_test_http_retries(1);
+    let (port, count, requests) = spawn_recording_server(vec![
+        NOT_FOUND_RESPONSE,
+        truncated_download_response(),
+        resumed_download_response(),
+    ])
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("artifact");
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghp-stale"));
+
+    raw_content_client(port)
+        .download_file_with_headers(
+            format!("http://raw.githubusercontent.com:{port}/o/r/abc/artifact"),
+            &destination,
+            &headers,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    let requests = requests.lock().unwrap();
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer ghp-stale"),
+        "{}",
+        requests[0]
+    );
+    // The truncated body fails the first attempt; the resumed one keeps its
+    // range headers but not the token GitHub already turned down.
+    let resumed = requests[2].to_ascii_lowercase();
+    assert!(!requests[1].to_ascii_lowercase().contains("authorization:"));
+    assert!(!resumed.contains("authorization:"), "{resumed}");
+    assert!(resumed.contains("range: bytes=5-"), "{resumed}");
+    assert!(resumed.contains("if-range: \"artifact-v1\""), "{resumed}");
+}
