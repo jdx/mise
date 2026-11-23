@@ -34,7 +34,7 @@ use crate::{
     config, dirs, env, file, hash,
     registry::REGISTRY,
 };
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
@@ -639,7 +639,7 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid.config() {
         path.to_path_buf()
     } else {
-        config_root::config_root(path)
+        config_root::linked_project(path).unwrap_or_else(|| config_root::config_root(path))
     }
 }
 
@@ -647,7 +647,14 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
 ///
 /// Unlike a passing [`trust_check`], this is false for files that merely do
 /// not *need* trust (e.g. safe configs loaded without it).
+///
+/// A config reached through a symlink inside its project is judged by that project alone:
+/// trust in what the link leads to, another project or a file approved by content, is not trust
+/// in the project that holds the link.
 pub fn is_path_trusted(path: &Path) -> bool {
+    if let Some(project) = config_root::linked_project(path) {
+        return is_trusted(&project);
+    }
     is_trusted(&config_trust_root(path)) || is_trusted(path)
 }
 
@@ -796,6 +803,19 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     }
     if *REQUIRE_EXPLICIT_TRUST {
         Err(UntrustedConfig(path.into()))?
+    }
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+        && let Some(project) = config_root::linked_project(path)
+    {
+        bail!(
+            "{} is reached through a symlink inside {}, and paranoid mode cannot approve it: \
+             it approves a file by its content, and a link inside a project is that project's \
+             to change. Replace the link with a copy of the file, or add {} to \
+             `trusted_config_paths`.",
+            display_path(path),
+            display_path(&project),
+            display_path(&project)
+        );
     }
     if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = if settings::is_loaded()

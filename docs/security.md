@@ -176,9 +176,13 @@ that is a git repository of its own, such as a tracked `~/code/.config`.
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.
 
-Trust records use resolved paths. If a symlinked config, such as one installed
-with GNU Stow, still reports untrusted after `mise trust`, trust the real file
-path.
+A config that mise reaches through a symlink inside a project, such as a linked
+`mise.toml`, a linked `conf.d` folder or a linked `.mise` directory, belongs to
+that project: it is trusted when the project is, and trust in the file or
+directory the link leads to does not count. `mise trust` in the project trusts
+it. Paranoid mode approves a file by its content and refuses such a config with
+an error; replace the link with a copy, or add the project to
+`trusted_config_paths`. Links in global config are yours and are not affected.
 
 ### Trust by path
 

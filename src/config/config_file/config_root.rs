@@ -5,7 +5,7 @@ use std::sync::{LazyLock as Lazy, Mutex};
 use path_absolutize::Absolutize;
 use xx::regex;
 
-use crate::config::{discovered_global_config, is_conf_d_folder_file};
+use crate::config::{discovered_global_config, is_conf_d_folder_file, is_global_config};
 use crate::env;
 
 static CONFIG_ROOT_CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> =
@@ -50,6 +50,36 @@ pub(crate) fn config_source(path: &Path) -> String {
         .unwrap_or_else(|| path.to_path_buf())
         .to_string_lossy()
         .to_string()
+}
+
+/// The project a config was found in: its config root, or for a conf.d folder fragment the
+/// directory that holds the `conf.d`.
+fn enclosing_project(path: &Path) -> PathBuf {
+    let root = config_root(path);
+    if is_conf_d_folder_file(path)
+        && let Some(conf_d) = root.parent()
+    {
+        return config_root(&conf_d.join("mise.toml"));
+    }
+    root
+}
+
+/// The project a config was found in, when a symlink lies between that project's directory and
+/// the config, the config itself included.
+///
+/// Such a link is content of the project, so it decides nothing about trust: a config reached
+/// through it is trusted only when the project is, whatever the link leads to. Global and system
+/// config are exempt, since the user placed them and any link in them.
+pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
+    if is_global_config(path) {
+        return None;
+    }
+    let path = path.absolutize().ok()?.to_path_buf();
+    let project = enclosing_project(&path);
+    path.ancestors()
+        .take_while(|p| *p != project && p.starts_with(&project))
+        .any(Path::is_symlink)
+        .then_some(project)
 }
 
 pub fn config_root(path: &Path) -> PathBuf {
@@ -217,6 +247,60 @@ mod tests {
             std::fs::canonicalize(&link).unwrap(),
             std::fs::canonicalize(&real).unwrap()
         );
+    }
+
+    /// Any link between a project and its config makes the config the project's, whatever the
+    /// link leads to.
+    #[test]
+    fn a_link_inside_a_project_ties_the_config_to_the_project() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let other = root.join("other");
+        std::fs::create_dir_all(other.join("x")).unwrap();
+        std::fs::write(other.join("mise.toml"), "").unwrap();
+        std::fs::write(other.join("x/mise.toml"), "").unwrap();
+
+        let plain = root.join("plain");
+        std::fs::create_dir_all(plain.join(".mise/conf.d/x")).unwrap();
+        std::fs::write(plain.join("mise.toml"), "").unwrap();
+        std::fs::write(plain.join(".mise/conf.d/x/mise.toml"), "").unwrap();
+        assert_eq!(linked_project(&plain.join("mise.toml")), None);
+        assert_eq!(
+            linked_project(&plain.join(".mise/conf.d/x/mise.toml")),
+            None
+        );
+
+        // a conf.d folder that is a link out of the project
+        let folder = root.join("folder");
+        std::fs::create_dir_all(folder.join(".mise/conf.d")).unwrap();
+        symlink(other.join("x"), folder.join(".mise/conf.d/x")).unwrap();
+        assert_eq!(
+            linked_project(&folder.join(".mise/conf.d/x/mise.toml")),
+            Some(folder.clone())
+        );
+
+        // conf.d itself is the link
+        let conf_d = root.join("conf-d");
+        std::fs::create_dir_all(conf_d.join(".mise")).unwrap();
+        symlink(&other, conf_d.join(".mise/conf.d")).unwrap();
+        assert_eq!(
+            linked_project(&conf_d.join(".mise/conf.d/x/mise.toml")),
+            Some(conf_d.clone())
+        );
+
+        // the config file is the link
+        let file = root.join("file");
+        std::fs::create_dir_all(&file).unwrap();
+        symlink(other.join("mise.toml"), file.join("mise.toml")).unwrap();
+        assert_eq!(linked_project(&file.join("mise.toml")), Some(file.clone()));
+
+        // a project named `mise`, whose config root is its parent: a link to a sibling stays
+        // inside that parent and still counts
+        let w = root.join("w");
+        std::fs::create_dir_all(w.join("mise")).unwrap();
+        symlink(other.join("mise.toml"), w.join("mise/config.toml")).unwrap();
+        assert_eq!(linked_project(&w.join("mise/config.toml")), Some(w.clone()));
     }
 
     /// A file task grouped in a subdirectory shares its project's root.
