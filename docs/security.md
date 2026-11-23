@@ -337,8 +337,10 @@ its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
 too. It does not mark the config trusted for later runs without safe mode, not
-even when a command such as `mise use` or `mise set` edits it. Syntax errors and
-refused operations still fail.
+even when a command such as `mise use` or `mise set` edits it. A tool option
+that `mise use` writes to another config file, such as global config with `-g`,
+is written as its value and not as the template a project declares for it.
+Syntax errors and refused operations still fail.
 
 Safe mode limits what project config can do. It is not an operating-system
 sandbox for mise, its network requests or the plugins the operator installed.

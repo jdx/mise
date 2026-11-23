@@ -1559,14 +1559,19 @@ impl MiseToml {
     /// that declares it. An inherited template is kept only for the options it renders the same
     /// way here: one that depends on its own file, such as `{{ config_root }}/bin`, means another
     /// path in this file, so its value is written rendered, keeping what it pointed to.
+    ///
+    /// Safe mode loads project config without trust, so there only global and system config
+    /// lend their templates. Copied into another file, a project's template would render again
+    /// in a later run without safe mode, which trusts that file.
     fn templates_for_rewrite(&self, ba: &BackendArg) -> Vec<ToolOptionTemplate> {
         let mut templates = self.tool_option_templates(ba);
         let Some(config) = Config::maybe_get() else {
             return templates;
         };
+        let safe_mode = Settings::safe_mode();
         let mut context = None;
         for cf in config.config_files.values() {
-            if cf.get_path() == self.path {
+            if cf.get_path() == self.path || (safe_mode && !is_global_config(cf.get_path())) {
                 continue;
             }
             for mut template in cf.tool_option_templates(ba) {
