@@ -760,6 +760,13 @@ fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Whether a command that implies trust may record it for `path`. An ignore always wins: the user
+/// refused that config, and trust implied by a command neither overrides nor removes the refusal,
+/// even where something else (a trusted monorepo root, a file record) already trusts the file.
+fn implicit_trust_may_record(path: &Path, config_root: &Path) -> bool {
+    !is_ignored(config_root) && !is_ignored(path)
+}
+
 /// Checks whether a config may load, prompting for trust when appropriate.
 /// Automatic yes decisions cannot grant trust in paranoid mode.
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
@@ -779,7 +786,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
         let config_root = config_trust_root(path);
-        if is_path_trusted(path) || (!is_ignored(&config_root) && !is_ignored(path)) {
+        if implicit_trust_may_record(path, &config_root) {
             trust_and_reload_settings(&config_root)?;
             return Ok(());
         }
@@ -951,6 +958,14 @@ fn is_trusted_with(path: &Path, content_bound: bool) -> bool {
     false
 }
 
+/// Whether the trust root a file belongs to is on the ignore list. `mise trust --ignore` and a
+/// declined prompt record the root, so the files in it count as ignored too, ahead of every rule
+/// that trusts a file by where it lies (a trusted monorepo root, a sibling git worktree, CI).
+/// A directory is a trust root of its own and was looked up by itself.
+fn root_is_ignored(path: &Path, canonicalized_path: &Path) -> bool {
+    !canonicalized_path.is_dir() && is_persisted_ignored(&config_trust_root(path))
+}
+
 /// The trust rules that need no `trusted_config_paths` lookup.
 fn is_trusted_without_config_paths(
     path: &Path,
@@ -965,6 +980,9 @@ fn is_trusted_without_config_paths(
     if config::is_global_config(path) {
         add_trusted(canonicalized_path.to_path_buf());
         return true;
+    }
+    if !content_bound && root_is_ignored(path, canonicalized_path) {
+        return false;
     }
 
     // Check if this path is within a trusted monorepo root
@@ -2410,5 +2428,32 @@ mod hashed_path_filename_tests {
         rm_ignored(b.clone()).unwrap();
         assert!(!legacy.exists());
         untrust(&a).unwrap();
+    }
+
+    #[test]
+    fn an_ignored_subproject_stays_ignored_under_a_trusted_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mono = tmp.path().canonicalize().unwrap().join("mono");
+        let sub = mono.join("apps/sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(mono.join("mise.toml"), "monorepo_root = true\n").unwrap();
+        std::fs::write(sub.join("mise.toml"), "").unwrap();
+        let config = sub.join("mise.toml");
+        trust(&mono).unwrap();
+        file::write(with_appended_extension(&trust_path(&mono), "monorepo"), "").unwrap();
+        add_ignored(sub.clone()).unwrap();
+
+        // The ignore of the subproject's root covers its config file, ahead of the trusted
+        // monorepo root above it.
+        assert!(!is_trusted_with(&config, false));
+        assert!(!is_path_trusted(&config));
+        // A command that implies trust records none for it, so the ignore is not removed.
+        assert!(!implicit_trust_may_record(
+            &config,
+            &config_trust_root(&config)
+        ));
+
+        rm_ignored(sub).unwrap();
+        untrust(&mono).unwrap();
     }
 }

@@ -6094,6 +6094,10 @@ async fn load_local_tasks_with_context(
                             if !seen_config_paths.insert(file::desymlink_path(&config_path)) {
                                 continue;
                             }
+                            // an ignored subproject is left out, as config discovery leaves it out
+                            if config_path_is_ignored(&config_path, false) {
+                                continue;
+                            }
                             match config_file::parse(&config_path).await {
                                 Ok(cf) => {
                                     hierarchy_configs.insert(config_path, cf);

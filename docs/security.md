@@ -212,8 +212,10 @@ config file below its directory, so review the subprojects' config as part of
 the repository. They stay trusted only while the root is: after
 `mise trust --ignore` on the root, or once a `trusted_config_paths` entry that
 covered it is gone, they need trust of their own again. See
-[Monorepo tasks](/tasks/monorepo.html). In paranoid mode, trusting the root
-trusts only that file.
+[Monorepo tasks](/tasks/monorepo.html). A subproject you ignore with
+`mise trust --ignore` stays ignored under a trusted root: mise does not load
+its config or list its tasks, and a command that trusts the root does not
+remove the ignore. In paranoid mode, trusting the root trusts only that file.
 
 ### Git worktrees
 

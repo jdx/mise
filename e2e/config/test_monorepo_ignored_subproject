@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# `mise trust --ignore` on a monorepo subproject keeps it from loading, even though the
+# trusted monorepo root covers everything beneath it, and a command that implies trust at the
+# root does not remove the ignore.
+export MISE_EXPERIMENTAL=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*"]
+
+[tasks.hello]
+run = "echo hello"
+EOF
+
+mkdir -p apps/sub
+cat <<EOF >apps/sub/mise.toml
+[env]
+FROM_SUB = "{{ exec(command='touch $PWD/sub-env-ran; echo loaded') }}"
+
+[tasks.build]
+run = "echo build"
+EOF
+
+assert "mise trust"
+assert "mise trust --ignore apps/sub/mise.toml"
+
+assert_not_contains "mise tasks ls --all 2>&1" "//apps/sub:build"
+assert_succeed "test ! -e sub-env-ran"
+assert_contains "mise run //:hello" "hello"
+assert_succeed "test ! -e sub-env-ran"
+assert_contains "mise -C apps/sub trust --show" "untrusted"
+assert_not_contains "mise -C apps/sub env 2>&1" "FROM_SUB"
+assert_succeed "test ! -e sub-env-ran"
