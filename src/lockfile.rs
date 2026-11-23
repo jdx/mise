@@ -1791,10 +1791,11 @@ impl Lockfile {
             );
         }
 
-        let tools: toml::Table = table
+        let tools = table
             .remove("tools")
-            .unwrap_or(toml::Table::new().into())
-            .try_into()?;
+            .map(into_table)
+            .transpose()?
+            .unwrap_or_default();
 
         let mut lockfile = Lockfile {
             lockfile_version,
@@ -7086,6 +7087,17 @@ fn should_retry_lockfile_persist(_err: &std::io::Error) -> bool {
     false
 }
 
+/// The table a lockfile value holds. `Value::try_into` gets there by
+/// deserializing the value, which copies every key and string under it: for
+/// `[tools]` that is the whole lockfile. Anything else still goes through
+/// `try_into`, for the error it reports.
+fn into_table(value: toml::Value) -> Result<toml::Table> {
+    match value {
+        toml::Value::Table(table) => Ok(table),
+        other => Ok(other.try_into()?),
+    }
+}
+
 impl TryFrom<toml::Value> for LockfileTool {
     type Error = Report;
     fn try_from(value: toml::Value) -> Result<Self> {
@@ -7105,7 +7117,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 let mut platforms = BTreeMap::new();
                 // Handle nested platforms table format: [tools.X.platforms.linux-x64]
                 if let Some(platforms_table) = t.remove("platforms") {
-                    let platforms_table: toml::Table = platforms_table.try_into()?;
+                    let platforms_table = into_table(platforms_table)?;
                     for (platform, platform_info) in platforms_table {
                         platforms.insert(platform, platform_info.try_into()?);
                     }
@@ -7124,7 +7136,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 }
                 let mut options = BTreeMap::new();
                 if let Some(opts) = t.remove("options") {
-                    let opts_table: toml::Table = opts.try_into()?;
+                    let opts_table = into_table(opts)?;
                     for (key, value) in opts_table {
                         if let toml::Value::String(s) = value {
                             options.insert(key, strip_lock_option_credentials(&s));
