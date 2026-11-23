@@ -269,7 +269,7 @@ impl PackagePluginManager {
     }
 
     fn vfox(&self, env: &IndexMap<String, String>) -> Result<vfox::Vfox> {
-        let (mut vfox, _) = self.plugin.vfox()?;
+        let (mut vfox, _) = self.plugin.vfox();
         // A system plugin lives outside the user's plugins directory, and vfox finds a plugin
         // by name inside `plugin_dir`.
         if let Some(dir) = self.plugin.plugin_path.parent() {

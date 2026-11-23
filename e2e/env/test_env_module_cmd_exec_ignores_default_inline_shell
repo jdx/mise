@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# Test that vfox env module cmd.exec uses mise's configured default inline shell.
+# Test that vfox env module cmd.exec ignores mise's default inline shell: plugins write
+# their commands for sh (Unix) or cmd (Windows), not for the user's task shell. (#16033)
 
 CUSTOM_SHELL="$HOME/custom-inline-shell"
 cat >"$CUSTOM_SHELL" <<'EOFSHELL'
@@ -24,7 +25,7 @@ PLUGIN.name = "test-cmd-shell"
 PLUGIN.version = "1.0.0"
 PLUGIN.homepage = "https://example.com"
 PLUGIN.license = "MIT"
-PLUGIN.description = "Test that cmd.exec uses the default inline shell"
+PLUGIN.description = "Test that cmd.exec ignores the default inline shell"
 PLUGIN.minRuntimeVersion = "0.3.0"
 EOFMETA
 
@@ -48,4 +49,4 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 _.test-cmd-shell = {}
 EOF
 
-assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$CUSTOM_SHELL -c' mise env -s bash" "TEST_CMD_SHELL_RESULT='custom-shell:plugin-body'"
+assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='$CUSTOM_SHELL -c' mise env -s bash" "TEST_CMD_SHELL_RESULT=plugin-body"

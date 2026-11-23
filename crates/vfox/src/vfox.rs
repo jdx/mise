@@ -83,7 +83,9 @@ pub struct Vfox {
     /// their result. A caller that caches the result uses it to tell when the
     /// result no longer applies.
     pub hook_dependencies: Option<HookDependencyRecorder>,
-    /// Shell command used by Lua `cmd.exec()`.
+    /// Shell command used by Lua `cmd.exec()`, `cmd.stream()` and `os.execute()`.
+    /// `None` uses `sh -c` on Unix and `cmd /C` on Windows. mise leaves it unset so
+    /// a plugin gets the same shell whatever the user's task shell is.
     pub default_inline_shell: Option<Vec<String>>,
     /// Whether the user asked for child stdio to be connected (mise's `raw`
     /// setting). When false, hook children spawned by `cmd.exec`/`os.execute`
