@@ -714,8 +714,10 @@ const SKILL_RESPONSE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nCon
 /// whatever the scheme.
 fn raw_content_client(port: u16) -> Client {
     let timeout = Duration::from_secs(3);
-    Client {
-        reqwest: Ok(Client::_new()
+    // Downloads ask for `identity` and go through the undecoded client, which
+    // must resolve the host to the test server as well.
+    let resolved = |decode: bool| {
+        Client::_new_with(decode)
             .no_proxy()
             .resolve(
                 "raw.githubusercontent.com",
@@ -724,9 +726,12 @@ fn raw_content_client(port: u16) -> Client {
             .read_timeout(timeout)
             .connect_timeout(timeout)
             .build()
-            .unwrap()),
+            .unwrap()
+    };
+    Client {
+        reqwest: Ok(resolved(true)),
         manual_redirects: Default::default(),
-        undecoded: Default::default(),
+        undecoded: std::sync::OnceLock::from(Ok(resolved(false))),
         undecoded_manual_redirects: Default::default(),
         timeout,
         read_timeout: Some(timeout),
@@ -796,4 +801,47 @@ async fn a_raw_content_404_without_the_token_is_still_a_404() {
         "{}",
         requests[1]
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_download_retry_after_a_raw_content_404_leaves_the_token_out() {
+    let _guard = set_test_http_retries(1);
+    let (port, count, requests) = spawn_recording_server(vec![
+        NOT_FOUND_RESPONSE,
+        truncated_download_response(),
+        resumed_download_response(),
+    ])
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("artifact");
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghp-stale"));
+
+    raw_content_client(port)
+        .download_file_with_headers(
+            format!("http://raw.githubusercontent.com:{port}/o/r/abc/artifact"),
+            &destination,
+            &headers,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    let requests = requests.lock().unwrap();
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer ghp-stale"),
+        "{}",
+        requests[0]
+    );
+    // The truncated body fails the first attempt; the resumed one keeps its
+    // range headers but not the token GitHub already turned down.
+    let resumed = requests[2].to_ascii_lowercase();
+    assert!(!requests[1].to_ascii_lowercase().contains("authorization:"));
+    assert!(!resumed.contains("authorization:"), "{resumed}");
+    assert!(resumed.contains("range: bytes=5-"), "{resumed}");
+    assert!(resumed.contains("if-range: \"artifact-v1\""), "{resumed}");
 }

@@ -137,6 +137,22 @@ fn new_retry_state(headers: &HeaderMap, netrc_replacement_only: bool) -> RetrySt
     }))
 }
 
+/// `headers` with the credentials an earlier attempt settled on: a refreshed
+/// token, or none once a token was rejected. Only Authorization is taken from the
+/// saved state, which also holds that attempt's own Range and conditional headers.
+fn with_saved_authorization(headers: &HeaderMap, retry_state: &RetryStateHandle) -> HeaderMap {
+    let mut headers = headers.clone();
+    match retry_state.lock().unwrap().headers.get(AUTHORIZATION) {
+        Some(value) => {
+            headers.insert(AUTHORIZATION, value.clone());
+        }
+        None => {
+            headers.remove(AUTHORIZATION);
+        }
+    }
+    headers
+}
+
 /// The headers and send options for the next attempt, which an earlier attempt
 /// may have changed (a refreshed token, netrc turned off).
 fn attempt_options(
@@ -2038,7 +2054,8 @@ impl Client {
             }
 
             let offset = resume.as_ref().map(|(_, size)| *size).unwrap_or(0);
-            let mut request_headers = headers.clone();
+            let netrc_state = outcome.netrc.as_ref().expect("download sets netrc state");
+            let mut request_headers = with_saved_authorization(headers, netrc_state);
             request_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
             let mut conditional = false;
             if resume.is_none()
@@ -2068,7 +2085,7 @@ impl Client {
                     url.clone(),
                     &request_headers,
                     "GET",
-                    outcome.netrc.as_ref().expect("download sets netrc state"),
+                    netrc_state,
                 )
                 .await?;
             let response_filename = download_filename_hint(resp.url());
