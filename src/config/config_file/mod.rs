@@ -797,7 +797,16 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     if *REQUIRE_EXPLICIT_TRUST {
         Err(UntrustedConfig(path.into()))?
     }
-    if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+    // `__USAGE` marks a `mise` that shell completion started, such as the `mise tasks
+    // --usage` mounted under `run`. Like hook-env it runs unasked, for a line nobody has
+    // entered: there is nobody to prompt, and neither a `--yes` on that line nor the `yes`
+    // setting is a decision to trust.
+    if cmd != "hook-env"
+        && env::__USAGE.is_none()
+        && !strict
+        && !is_ignored(&config_root)
+        && !is_ignored(path)
+    {
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid.config())
         {

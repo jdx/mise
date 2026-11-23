@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Pressing TAB asks mise about a line nobody has entered. Completion forwards the
+# global flags typed so far to the `mise tasks --usage` it mounts under `run`, so
+# a `-y` on that line reaches a mise that loads the project, and so does a `yes`
+# setting. Neither is a decision to trust: a config that needs trust stays
+# untrusted and its templates do not run.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+ran="$PWD/ran"
+cat <<EOF >mise.toml
+[env]
+BUILD_ID = "{{ exec(command='touch $ran') }}"
+
+[tasks.deploy]
+run = "true"
+EOF
+
+press_tab() {
+  mise __complete_word__ --shell fish --line "$1" 2>/dev/null || true
+}
+
+for line in 'mise -y run ' 'mise --yes run d' 'mise -qy run ' 'mise -y deploy '; do
+  MISE_YES=0 press_tab "$line" >/dev/null
+  assert_contains "mise trust --show" ": untrusted"
+done
+MISE_YES=1 press_tab 'mise ' >/dev/null
+assert_contains "mise trust --show" ": untrusted"
+# an older completion script goes through the `usage` CLI, which starts the
+# mount the same way
+__USAGE=1 MISE_YES=1 mise -y tasks --usage >/dev/null 2>&1 || true
+assert_contains "mise trust --show" ": untrusted"
+assert_directory_not_exists "$MISE_STATE_DIR/ignored-configs"
+assert_fail "test -e '$ran'"
+
+# entering the line is the decision
+assert_contains "MISE_YES=0 mise -y tasks ls" "deploy"
+assert_contains "mise trust --show" ": trusted"
+assert_contains_text "$(MISE_YES=0 press_tab 'mise run ')" 'deploy'

@@ -153,8 +153,10 @@ trusted and records nothing. Configs on the ignore list or under
 do not load. `CI` also turns on [`yes`](/configuration/settings.html#yes).
 
 Outside CI, `--yes` or `MISE_YES=1` answers the trust prompt with yes, which
-records trust. Paranoid mode turns off both the CI exemption and `--yes` for
-trust.
+records trust. That applies to a command you entered: shell activation and
+shell completion run mise unasked, so they neither ask nor take `--yes` or
+`MISE_YES=1` for an answer. Paranoid mode turns off both the CI exemption and
+`--yes` for trust.
 
 ### Manage trust
 
