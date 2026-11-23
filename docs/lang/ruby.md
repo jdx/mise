@@ -134,6 +134,9 @@ version = "3.3.11"
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
 
+mise downloads that URL as it is and checks it against the locked checksum; it
+does not compile Ruby instead when the release can no longer be found.
+
 To move to the newest build of the same version, delete the Ruby entry from
 `mise.lock`, or every Ruby platform `url`, then run:
 
