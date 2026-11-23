@@ -578,7 +578,7 @@ pub(crate) fn version_requires_trust(version: &str) -> bool {
 /// An `spm:` package named by the URL of a self-hosted forge makes mise derive
 /// that host's API from the name and send it the user's forge token, as an
 /// `api_url` option would.
-fn tool_key_requires_trust(tool: &str) -> bool {
+pub fn tool_key_requires_trust(tool: &str) -> bool {
     tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(tool)
 }
 

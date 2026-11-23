@@ -59,6 +59,15 @@ api_url = "http://127.0.0.1:9/api/v3"
 EOF
 assert_fail_contains "MISE_YES=0 mise lock 2>&1" "not trusted"
 assert_contains "MISE_YES=0 mise trust --show" "untrusted"
+# An spm: package named by the URL of a self-hosted forge picks the API host
+# the GitHub token goes to, as an api_url option does.
+cat >mise.toml <<'EOF'
+[tasks.build]
+run = "swift build"
+tools = { "spm:https://127.0.0.1:9/tools/swiftlint.git" = "latest" }
+EOF
+assert_fail_contains "MISE_YES=0 mise lock 2>&1" "not trusted"
+assert_contains "MISE_YES=0 mise trust --show" "untrusted"
 
 # Safe mode keeps a project's tool options inert, a stub's included, even in a
 # trusted project. The stub's lock entries are left alone.
