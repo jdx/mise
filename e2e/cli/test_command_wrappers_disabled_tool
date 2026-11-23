@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# A wrapper whose command runs the wrapped name again finds nothing when the tool is disabled and
+# no other copy is on PATH. The error names the wrapper instead of calling its shim invalid (#16017).
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/wrap-claude" <<'EOF'
+#!/usr/bin/env bash
+exec claude "$@"
+EOF
+chmod +x "$fake_bin/wrap-claude"
+# Only the fixtures and links to the commands this test runs, mise included, so a claude
+# installed on the host cannot answer.
+tools_bin="$HOME/tools-bin"
+mkdir -p "$tools_bin"
+for cmd in bash cat chmod env mise mkdir; do
+  ln -s "$(command -v "$cmd")" "$tools_bin/$cmd"
+done
+export PATH="$fake_bin:$tools_bin"
+
+cat >mise.toml <<'EOF'
+[settings]
+disable_tools = ["claude"]
+
+[tools]
+claude = { version = "latest", lazy = true }
+
+[wrappers.claude]
+command = "wrap-claude"
+env = { ACCOUNT = "work" }
+EOF
+
+mise reshim
+eval "$(mise activate bash --shims)"
+
+output="$(quiet_assert_fail "claude --version")"
+assert_contains_text "$output" "[wrappers.claude] in "
+assert_contains_text "$output" "mise.toml runs"
+assert_contains_text "$output" "wrap-claude"
+assert_contains_text "$output" ", which ran claude again, but no configured tool provides claude"
+assert_contains_text "$output" "claude is in disable_tools, so mise does not install it."
+assert_contains_text "$output" "Put a claude on PATH for the wrapper to run, or remove [wrappers.claude]."
+assert_not_contains_text "$output" "not a valid shim"
+
+# enable_tools is authoritative when set, so the message names the list that left claude out.
+output="$(quiet_assert_fail "MISE_ENABLE_TOOLS=node claude --version")"
+assert_contains_text "$output" "claude is not in enable_tools, so mise does not install it."
+assert_not_contains_text "$output" "disable_tools"
+
+# With another claude further down PATH, the wrapper runs it with its env.
+other_bin="$HOME/other-bin"
+mkdir -p "$other_bin"
+cat >"$other_bin/claude" <<'EOF'
+#!/usr/bin/env bash
+echo "real claude account:$ACCOUNT"
+EOF
+chmod +x "$other_bin/claude"
+PATH="$PATH:$other_bin" assert "claude --version" "real claude account:work"
+
+# A configured version that is not installed yet is the provider to install, not a missing one.
+cat >mise.toml <<'EOF'
+[tools]
+claude = "2.0.0"
+
+[wrappers.claude]
+command = "wrap-claude"
+EOF
+output="$(quiet_assert_fail "MISE_NOT_FOUND_AUTO_INSTALL=0 claude --version")"
+assert_contains_text "$output" ", which ran claude again, but claude@2.0.0 is not installed."
+assert_contains_text "$output" "Install it with: mise install"
+assert_not_contains_text "$output" "no configured tool provides"
