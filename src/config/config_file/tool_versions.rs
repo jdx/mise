@@ -31,6 +31,9 @@ pub(crate) struct ToolVersions {
     tools: Mutex<ToolRequestSet>,
     /// Skipped because it links to a file of another name; never written back.
     unread: bool,
+    /// Rendered from templates whose lines cannot be told apart in the result
+    /// (`{% ... %}` or `{# ... #}`, or a value that spans lines); never written back.
+    unmapped_templates: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +41,9 @@ struct ToolVersionPlugin {
     orig_name: String,
     versions: Vec<String>,
     post: String,
+    /// The tool's line as written, up to any comment, when it holds a template.
+    /// It is written back as it is until the tool's versions change.
+    raw: Option<String>,
 }
 
 impl ToolVersions {
@@ -89,13 +95,21 @@ impl ToolVersions {
         if body_requires_trust(s) {
             trust_check(&path)?;
         }
+        let raw = s;
         let s = if contains_template_syntax(s) {
             let mut tera = get_tera(dir);
             render_config_str(&mut tera, s, &cf.context, &path)?
         } else {
             s.to_string()
         };
-        for line in s.lines() {
+        // Each line of the file renders to the line of the same number, unless a tag or a
+        // value spans lines. Comments and the lines of tools a command does not change are
+        // then written back from the file as written, so saving keeps their templates.
+        let mapped =
+            raw.lines().count() == s.lines().count() && !raw.contains("{%") && !raw.contains("{#");
+        cf.unmapped_templates = !mapped;
+        let raw = if mapped { raw } else { s.as_str() };
+        for line in raw.lines() {
             if !line.trim_start().starts_with('#') {
                 break;
             }
@@ -103,23 +117,34 @@ impl ToolVersions {
             cf.pre.push('\n');
         }
 
-        cf.plugins = Mutex::new(Self::parse_plugins(&s));
+        cf.plugins = Mutex::new(Self::parse_lines(s.lines().zip(raw.lines())));
         cf.populate_toolset()?;
         trace!("{cf}");
         Ok(cf)
     }
 
+    #[cfg(test)]
     fn parse_plugins(input: &str) -> IndexMap<BackendArg, ToolVersionPlugin> {
+        Self::parse_lines(input.lines().zip(input.lines()))
+    }
+
+    /// Tools from pairs of a rendered line and the line as written.
+    fn parse_lines<'a>(
+        lines: impl Iterator<Item = (&'a str, &'a str)>,
+    ) -> IndexMap<BackendArg, ToolVersionPlugin> {
         let mut plugins: IndexMap<BackendArg, ToolVersionPlugin> = IndexMap::new();
-        for line in input.lines() {
-            if line.trim_start().starts_with('#') {
+        for (line, raw_line) in lines {
+            if raw_line.trim_start().starts_with('#') || line.trim_start().starts_with('#') {
                 if let Some(prev) = &mut plugins.values_mut().last() {
-                    prev.post.push_str(line);
+                    prev.post.push_str(raw_line);
                     prev.post.push('\n');
                 }
                 continue;
             }
-            let (line, post) = line.split_once('#').unwrap_or((line, ""));
+            let raw_tool = raw_line.split_once('#').map_or(raw_line, |(tool, _)| tool);
+            let raw = (raw_line != line).then(|| raw_tool.trim_end().to_string());
+            let post = raw_line.split_once('#').map_or("", |(_, post)| post);
+            let (line, _) = line.split_once('#').unwrap_or((line, ""));
             let mut parts = line.split_whitespace();
             if let Some(plugin) = parts.next() {
                 // handle invalid trailing colons in `.tool-versions` files
@@ -135,6 +160,7 @@ impl ToolVersions {
                         "" => String::from("\n"),
                         _ => [" #", post, "\n"].join(""),
                     },
+                    raw,
                 };
                 plugins.insert(ba, tvp);
             }
@@ -194,7 +220,19 @@ impl ConfigFile for ToolVersions {
     fn replace_versions(&self, fa: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
         ensure_versions_are_not_templates(&self.path, fa, &versions)?;
         let mut plugins = self.plugins.lock().unwrap();
-        get_or_create_plugin(&mut plugins, fa).versions.clear();
+        let plugin = get_or_create_plugin(&mut plugins, fa);
+        if let Some(raw) = plugin.raw.take() {
+            // Its versions are rewritten from what they rendered to. A template in the
+            // name would be replaced by its value as well.
+            if raw.split_whitespace().next() != Some(plugin.orig_name.as_str()) {
+                plugin.raw = Some(raw);
+                eyre::bail!(
+                    "not writing {}: the line of {fa} is written with a template, which mise would replace with the value it renders to. Edit the file by hand",
+                    display_path(&self.path)
+                );
+            }
+        }
+        plugin.versions.clear();
         for tr in versions {
             if !tr.options().is_empty() {
                 warn!("tool options are not supported in .tool-versions files");
@@ -208,6 +246,12 @@ impl ConfigFile for ToolVersions {
         if self.unread {
             eyre::bail!(
                 "not writing {}: it is a symlink to a file of another name, which mise did not read",
+                display_path(&self.path)
+            );
+        }
+        if self.unmapped_templates {
+            eyre::bail!(
+                "not writing {}: it has a template tag or a value that spans lines, so mise cannot tell which line a template renders to and would replace every template with its value. Edit the file by hand",
                 display_path(&self.path)
             );
         }
@@ -225,6 +269,10 @@ impl ConfigFile for ToolVersions {
             .max()
             .unwrap_or_default();
         for (_, tv) in &*plugins {
+            if let Some(raw) = &tv.raw {
+                s.push_str(&format!("{raw}{}", tv.post));
+                continue;
+            }
             let mut plugin = tv.orig_name.to_string();
             if plugin == "node" {
                 plugin = "nodejs".into();
@@ -257,6 +305,7 @@ fn get_or_create_plugin<'a>(
             orig_name: fa.short.to_string(),
             versions: vec![],
             post: "\n".into(),
+            raw: None,
         })
 }
 
@@ -269,6 +318,7 @@ impl Clone for ToolVersions {
             plugins: Mutex::new(self.plugins.lock().unwrap().clone()),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
             unread: self.unread,
+            unmapped_templates: self.unmapped_templates,
         }
     }
 }
@@ -339,6 +389,51 @@ mod tests {
         let err = tv.replace_versions(&ba, vec![tr]).unwrap_err();
         assert!(err.to_string().contains("template syntax"), "{err}");
         assert!(!tv.dump().unwrap().contains("{{"));
+    }
+
+    /// Saving writes the comments and the tools a command did not change as the
+    /// file has them, so their templates are kept instead of the values they
+    /// rendered to.
+    #[test]
+    fn saving_keeps_the_templates_of_other_lines() {
+        let parsed = |raw: &str, rendered: &str| {
+            let tv = ToolVersions::init(Path::new("/tmp/.tool-versions"));
+            *tv.plugins.lock().unwrap() =
+                ToolVersions::parse_lines(rendered.lines().zip(raw.lines()));
+            tv
+        };
+        let node: Arc<BackendArg> = Arc::new("node".into());
+        let node_20 =
+            || ToolRequest::new_version_for_test(node.clone(), "20.0.0", ToolSource::Unknown);
+
+        let tv = parsed(
+            "http:t[url=https://h/{{ env.TOKEN }}/t.tgz] 1.0.0 # {{ env.TOKEN }}\n# {{ env.TOKEN }}\nnode 18.0.0\n",
+            "http:t[url=https://h/s3cr3t/t.tgz] 1.0.0 # s3cr3t\n# s3cr3t\nnode 18.0.0\n",
+        );
+        tv.replace_versions(&node, vec![node_20()]).unwrap();
+        assert_eq!(
+            tv.dump().unwrap(),
+            "http:t[url=https://h/{{ env.TOKEN }}/t.tgz] 1.0.0 # {{ env.TOKEN }}\n# {{ env.TOKEN }}\nnodejs 20.0.0\n"
+        );
+
+        // the versions of a changed line are its new ones
+        let tv = parsed("node {{ env.NV }}\n", "node 18.0.0\n");
+        tv.replace_versions(&node, vec![node_20()]).unwrap();
+        assert_eq!(tv.dump().unwrap(), "nodejs 20.0.0\n");
+
+        // a changed line whose name is a template would lose it
+        let tv = parsed("{{ env.TOOL }} 18.0.0\n", "node 18.0.0\n");
+        let err = tv.replace_versions(&node, vec![node_20()]).unwrap_err();
+        assert!(err.to_string().contains("Edit the file by hand"), "{err}");
+        assert_eq!(tv.dump().unwrap(), "{{ env.TOOL }} 18.0.0\n");
+
+        // a file whose lines cannot be told apart once rendered is not written
+        let tv = ToolVersions {
+            unmapped_templates: true,
+            ..ToolVersions::init(Path::new("/tmp/.tool-versions"))
+        };
+        let err = tv.save().unwrap_err();
+        assert!(err.to_string().contains("Edit the file by hand"), "{err}");
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever
