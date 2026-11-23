@@ -29,6 +29,7 @@ A whole-file entry is keyed by its target path, absolute or starting with
 | `manifest`          | `"git"`         | Deploy only files in the source repository's Git index. See [Deploy only files committed to Git](/dotfiles/managed.html#git-tracked-directories).                                                                                 |
 | `dot_prefix`        | boolean         | Deploy source names `dot-<name>` as `.<name>`. See [Visible source names](/dotfiles/managed.html#dot-prefix).                                                                                                                     |
 | `relative`          | boolean         | `symlink` and `symlink-each`: link by a relative path. Overrides [`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks).                                                                         |
+| `main_checkout`     | boolean         | `symlink` and `symlink-each`: link a source inside a linked Git worktree at the same path in the main checkout. See [Links from a Git worktree](/dotfiles/managed.html#main-checkout).                                            |
 | `remove_empty`      | boolean         | Remove the target when the template renders empty. See [Remove the target when a template renders empty](/dotfiles/managed.html#remove-empty).                                                                                    |
 | `create_if_missing` | boolean         | Write the target only when nothing exists there; an existing file is left untouched. See [Create a file only if it is missing](/dotfiles/managed.html#create-if-missing).                                                         |
 | `variants`          | list of tables  | Per-machine selection: a target per machine for deployed entries, separate contents for tracked ones. See [Variant selectors](#variant-selectors).                                                                                |
@@ -77,8 +78,8 @@ and mise warns and ignores an edit that sets it. Every kind except `track` and
 
 | Entry            | Accepts                                                                                                                                                             | Accepted, no effect              |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `symlink`        | `source`, `relative`, `variants` (selectors and `target`)                                                                                                           | `exclude`, `autosave`, `encrypt` |
-| `symlink-each`   | `source` (a directory), `exclude`, `manifest`, `dot_prefix`, `relative`, `variants` (selectors and `target`)                                                        | `autosave`, `encrypt`            |
+| `symlink`        | `source`, `relative`, `main_checkout`, `variants` (selectors and `target`)                                                                                          | `exclude`, `autosave`, `encrypt` |
+| `symlink-each`   | `source` (a directory), `exclude`, `manifest`, `dot_prefix`, `relative`, `main_checkout`, `variants` (selectors and `target`)                                       | `autosave`, `encrypt`            |
 | `copy`           | `source`, `variants` (selectors and `target`); with a directory source, `exclude`, `manifest`, `dot_prefix`; with a file source, `permissions`, `create_if_missing` | `autosave`, `encrypt`            |
 | `template`       | `source` (a file), `permissions`, `remove_empty`, `create_if_missing`, `variants` (selectors and `target`)                                                          | `exclude`, `autosave`, `encrypt` |
 | `content`        | `content`, `permissions`, `create_if_missing`, `variants` (selectors only)                                                                                          | `autosave`                       |
@@ -88,10 +89,10 @@ and mise warns and ignores an edit that sets it. Every kind except `track` and
 | `track`          | `exclude`, `include`, `autosave`, `encrypt`, `allow_plaintext`, `variants` (selectors only)                                                                         |                                  |
 | `track-local`    | `exclude`, `include`, `autosave`, `allow_plaintext`                                                                                                                 |                                  |
 
-For `encrypt` and `relative`, the table means the `true` value; `encrypt =
-false` and `relative = false` are accepted everywhere except that
-permissions-only and `track-local` entries reject any `encrypt` key, including
-`encrypt = false`. See [Local-only history](/dotfiles/history.html#local-only)
+For `encrypt`, `relative`, and `main_checkout`, the table means the `true`
+value; `encrypt = false`, `relative = false`, and `main_checkout = false` are
+accepted everywhere except that permissions-only and `track-local` entries
+reject any `encrypt` key, including `encrypt = false`. See [Local-only history](/dotfiles/history.html#local-only)
 for `track-local`.
 
 mise warns about and ignores an entry that sets one of the

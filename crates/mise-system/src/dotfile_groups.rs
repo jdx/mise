@@ -521,6 +521,7 @@ fn expand_group(
             create_if_missing: None,
             dot_prefix: (group.dot_prefix && walks).then_some(true),
             relative: group.relative,
+            main_checkout: None,
             group: Some(name.to_string()),
             depends: (!group.depends.is_empty()).then(|| group.depends.clone()),
         })),

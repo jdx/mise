@@ -743,6 +743,32 @@ repoints absolute links to the same source. Turning them off leaves relative
 links that already reach the source in place. Windows ignores the option,
 because directory links there are junctions, which cannot be relative.
 
+## Links from a Git worktree {#main-checkout}
+
+A link applied from a linked Git worktree points into that worktree, so it
+breaks once the worktree is removed. Set `main_checkout = true` on a `symlink`
+or `symlink-each` entry to link to the same path in the repository's main
+checkout instead:
+
+```toml
+[dotfiles]
+"~/.config/mise/config.toml" = { source = "mise.global.toml", main_checkout = true }
+```
+
+Applied from `~/src/project-wt`, a linked worktree of `~/src/project`, this
+links `~/.config/mise/config.toml` to `~/src/project/mise.global.toml`. The
+source resolves as usual, so a relative path still starts at the declaring
+config's directory and a wildcard matches files in the worktree, and mise then
+swaps the worktree for the main checkout in each path. A source outside a
+linked worktree, such as one applied from the main checkout itself, is linked
+as it is.
+
+The link shows the main checkout's copy, not the worktree's, so the source
+must exist there: a file added on the worktree's branch can be linked once it
+is in the main checkout. mise reads the worktree's Git metadata from disk and
+runs no Git command. A worktree of a bare repository has no main checkout, so
+mise warns and links its source as written.
+
 ## Unapply {#unapplying}
 
 Deleting an entry from your config leaves its file, block, or line in place.

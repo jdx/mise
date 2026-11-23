@@ -528,6 +528,10 @@ pub(crate) struct FileTomlTable {
     /// `dotfiles.relative_symlinks`
     #[serde(default)]
     pub(crate) relative: Option<bool>,
+    /// symlink modes only: link a source inside a linked Git worktree at
+    /// the same path in the repository's main checkout
+    #[serde(default)]
+    pub(crate) main_checkout: Option<bool>,
     /// the dotfile group this entry belongs to, selected with
     /// `[bootstrap] dotfile_groups`
     #[serde(default)]
@@ -1135,6 +1139,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "create_if_missing"
                             | "dot_prefix"
                             | "relative"
+                            | "main_checkout"
                             | "group"
                             | "depends"
                     ) {
@@ -1164,6 +1169,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     create_if_missing,
                     dot_prefix,
                     relative,
+                    main_checkout,
                     group,
                     depends,
                     ..
@@ -1304,6 +1310,15 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 {
                     bail!(
                         "dotfile {target}: relative requires mode = \"symlink\" or \"symlink-each\""
+                    );
+                }
+                if main_checkout == Some(true)
+                    && (content.is_some()
+                        || permissions_only
+                        || !matches!(mode, FileMode::Symlink | FileMode::SymlinkEach))
+                {
+                    bail!(
+                        "dotfile {target}: main_checkout requires mode = \"symlink\" or \"symlink-each\""
                     );
                 }
                 if !matches!(mode, FileMode::Track | FileMode::Absent | FileMode::Fnox)
@@ -1614,6 +1629,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                     || table.contains_key("content")
                     || table.contains_key("permissions")
                     || table.contains_key("relative")
+                    || table.contains_key("main_checkout")
                     || table.contains_key("dot_prefix")
                     || table.contains_key("group")
                     || table.contains_key("depends"))
@@ -1685,6 +1701,44 @@ pub(crate) fn merge_group_toml_entry(
     Ok(())
 }
 
+/// `main_checkout = true`: a source inside a linked Git worktree is linked at
+/// the same path in the repository's main checkout, so the link still works
+/// after the worktree is removed. None leaves any other source as it is.
+fn main_checkout_source(target_raw: &str, source: &Path) -> Option<PathBuf> {
+    // a path that does not resolve stays as written, to be reported missing
+    let resolved = resolve_parent_dirs(source)?;
+    if !mise_util::git::in_linked_worktree(&resolved) {
+        return None;
+    }
+    let checkout = mise_util::git::checkout_of(&resolved);
+    let (Some(main), Some(worktree)) = (checkout.repository, checkout.worktree) else {
+        warn!(
+            "[dotfiles].\"{target_raw}\": main_checkout: {} is in a worktree of a bare repository, which has no main checkout; linking it as written",
+            resolved.display_user()
+        );
+        return None;
+    };
+    Some(main.join(resolved.strip_prefix(&worktree).ok()?))
+}
+
+/// `source` with every `..` resolved the way the filesystem resolves it, so
+/// `../files/value` from a nested config maps by where it lands in the
+/// worktree, not by the directory it climbs out of. The components after the
+/// last `..` stay as written. None when the part up to the last `..` does
+/// not exist: guessing where it leads could name a file the source does not.
+fn resolve_parent_dirs(source: &Path) -> Option<PathBuf> {
+    let components = source.components().collect_vec();
+    let Some(last) = components
+        .iter()
+        .rposition(|c| matches!(c, std::path::Component::ParentDir))
+    else {
+        return Some(source.to_path_buf());
+    };
+    let prefix: PathBuf = components[..=last].iter().collect();
+    let rest: PathBuf = components[last + 1..].iter().collect();
+    Some(prefix.canonicalize().ok()?.join(rest))
+}
+
 /// Resolve one declaration, merging explicit tracking policies into earlier layers.
 fn merge_file_entry(
     target_raw: String,
@@ -1710,11 +1764,13 @@ fn merge_file_entry(
         create_if_missing,
         dot_prefix,
         relative,
+        main_checkout,
         group,
         depends,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1751,6 +1807,7 @@ fn merge_file_entry(
                 create_if_missing,
                 dot_prefix,
                 relative,
+                main_checkout,
                 group,
                 depends,
             } = *table;
@@ -1771,6 +1828,7 @@ fn merge_file_entry(
                 create_if_missing,
                 dot_prefix,
                 relative,
+                main_checkout,
                 group,
                 depends,
             )
@@ -1887,6 +1945,7 @@ fn merge_file_entry(
             || remove_empty
             || create_if_missing
             || relative == Some(true)
+            || main_checkout == Some(true)
             || dot_prefix
             || group.is_some()
             || !depends.is_empty()
@@ -1894,7 +1953,7 @@ fn merge_file_entry(
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, create_if_missing, relative, dot_prefix, group, or depends",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, create_if_missing, relative, main_checkout, dot_prefix, group, or depends",
                 local,
             );
             return;
@@ -2048,9 +2107,13 @@ fn merge_file_entry(
             );
             return;
         }
-        if remove_empty || create_if_missing || relative == Some(true) {
+        if remove_empty
+            || create_if_missing
+            || relative == Some(true)
+            || main_checkout == Some(true)
+        {
             warn!(
-                "[dotfiles].\"{target_raw}\": mode = \"absent\" takes no remove_empty, create_if_missing, or relative, ignoring entry"
+                "[dotfiles].\"{target_raw}\": mode = \"absent\" takes no remove_empty, create_if_missing, relative, or main_checkout, ignoring entry"
             );
             return;
         }
@@ -2210,6 +2273,16 @@ fn merge_file_entry(
         );
         return;
     }
+    if main_checkout == Some(true)
+        && (content.is_some()
+            || permissions_only
+            || !matches!(mode, FileMode::Symlink | FileMode::SymlinkEach))
+    {
+        warn!(
+            "[dotfiles].\"{target_raw}\": main_checkout requires mode = \"symlink\" or \"symlink-each\", ignoring entry"
+        );
+        return;
+    }
     let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
@@ -2359,6 +2432,23 @@ fn merge_file_entry(
         group,
         depends,
     }) {
+        // after expansion, so each match maps on its own
+        let mapped = if main_checkout == Some(true) {
+            main_checkout_source(&req.target_raw, &req.source)
+        } else {
+            None
+        };
+        let req = match mapped {
+            Some(source) => FileRequest {
+                origin: ResourceOrigin {
+                    source: Some(source.clone()),
+                    ..req.origin
+                },
+                source,
+                ..req
+            },
+            None => req,
+        };
         merged.insert((req.target.clone(), false), req);
     }
 }

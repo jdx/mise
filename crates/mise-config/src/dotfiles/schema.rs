@@ -24,6 +24,7 @@ pub(crate) fn entry_rules(schema: &mut Schema) {
         rule_10(),
         rule_11(),
         rule_12(),
+        rule_13(),
     ];
     schema.insert("allOf".into(), rules.into());
     // an encrypted entry is a whole file from a source, never inline content or an edit
@@ -56,6 +57,7 @@ fn rule_0() -> Value {
                 "remove_empty": false,
                 "create_if_missing": false,
                 "relative": false,
+                "main_checkout": false,
                 "dot_prefix": false,
                 "group": false,
                 "depends": false,
@@ -70,9 +72,20 @@ fn rule_0() -> Value {
 
 /// `relative` applies to symlink modes only.
 fn rule_1() -> Value {
+    symlink_only("relative")
+}
+
+/// `main_checkout` applies to symlink modes only.
+fn rule_13() -> Value {
+    symlink_only("main_checkout")
+}
+
+/// A boolean key that only a `symlink` or `symlink-each` entry may set to true; with no mode
+/// it follows `dotfiles.default_mode`, so only the keys of other kinds of entry rule it out.
+fn symlink_only(key: &str) -> Value {
     json!({
         "anyOf": [
-            {"properties": {"relative": {"const": false}}},
+            {"properties": {key: {"const": false}}},
             {"properties": {"mode": {"enum": ["symlink", "symlink-each"]}}, "required": ["mode"]},
             {
                 "properties": {
@@ -325,6 +338,7 @@ fn rule_11() -> Value {
                 "create_if_missing": false,
                 "dot_prefix": {"const": false},
                 "relative": {"const": false},
+                "main_checkout": {"const": false},
                 "encrypt": {"const": false},
                 "merge": false,
                 "format": false,

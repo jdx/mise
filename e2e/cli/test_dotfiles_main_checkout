@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# `main_checkout = true` links a source inside a linked Git worktree at the
+# same path in the main checkout, so the link survives removing the worktree.
+require_cmd git
+export MISE_HISTORY_ENABLED=0
+root="$(pwd -P)"
+main="$root/main"
+wt="$root/wt"
+commit() {
+  git -C "$1" -c user.name=Test -c user.email=test@example.test -c commit.gpgsign=false commit -qm init
+}
+git init -q "$main"
+mkdir -p "$main/nested" "$main/files" "$main/tree"
+echo main >"$main/files/value"
+echo tree >"$main/tree/a"
+ln -s value "$main/files/alias"
+cat >"$main/nested/mise.toml" <<'TOML'
+[dotfiles]
+"~/.stable" = { source = "../files/value", main_checkout = true, relative = false }
+"~/.tree" = { source = "../tree", mode = "symlink-each", main_checkout = true, relative = false }
+"~/.plain" = { source = "../files/value", relative = false }
+"~/.glob/*" = { source = "../tree/*", main_checkout = true, relative = false }
+"~/.alias" = { source = "../files/alias", main_checkout = true, relative = false }
+TOML
+git -C "$main" add .
+commit "$main"
+
+# from the main checkout itself the source is linked as it is
+assert_succeed "cd '$main/nested' && mise dot apply --yes"
+assert "readlink ~/.stable" "$main/nested/../files/value"
+rm -r ~/.stable ~/.tree ~/.plain ~/.glob ~/.alias
+
+# from a linked worktree, preview and apply both name the main checkout,
+# and an entry without the key still links into the worktree
+git -C "$main" worktree add -q --detach "$wt" HEAD
+echo linked >"$wt/files/value"
+assert_contains "cd '$wt/nested' && mise dot apply --dry-run" "main/files/value ~/.stable"
+assert_contains "cd '$wt/nested' && mise dot apply --dry-run" "main/tree/a ~/.glob/a"
+assert_succeed "cd '$wt/nested' && mise dot apply --yes"
+assert "readlink ~/.stable" "$main/files/value"
+assert "readlink ~/.tree/a" "$main/tree/a"
+assert "readlink ~/.glob/a" "$main/tree/a"
+assert "readlink ~/.alias" "$main/files/alias"
+assert "cat ~/.stable" "main"
+assert "cat ~/.plain" "linked"
+
+# the links survive removing the worktree
+git -C "$main" worktree remove --force "$wt"
+assert "cat ~/.stable" "main"
+assert "cat ~/.tree/a" "tree"
+
+# a source that exists only in the worktree is not linked into it
+git -C "$main" worktree add -q --detach "$wt" HEAD
+echo new >"$wt/files/new"
+mkdir -p "$wt/missing"
+cat >"$wt/missing/mise.toml" <<'TOML'
+[dotfiles]
+"~/.new" = { source = "../files/new", main_checkout = true }
+TOML
+assert_fail_contains "cd '$wt/missing' && mise dot apply --yes 2>&1" "main/files/new"
+assert_fail "test -L ~/.new"
+
+# a source that does not resolve stays missing rather than guessed at, even
+# when a lexical guess would name a file
+mkdir -p "$wt/gone" "$root/persistent"
+echo kept >"$root/persistent/value"
+cat >"$wt/gone/mise.toml" <<'TOML'
+[dotfiles]
+"~/.gone" = { source = "missing/../../../persistent/value", main_checkout = true }
+TOML
+assert_fail_contains "cd '$wt/gone' && mise dot apply --yes 2>&1" "sources do not exist"
+assert_fail "test -L ~/.gone"
+
+# a worktree of a bare repository has no main checkout, so the source is
+# linked as written
+git clone -q --bare "$main" "$root/bare"
+git --git-dir="$root/bare" worktree add -q --detach "$root/bare-wt" HEAD
+rm -r ~/.stable ~/.tree ~/.plain ~/.glob ~/.alias
+assert_contains "cd '$root/bare-wt/nested' && mise dot apply --yes 2>&1" "has no main checkout; linking it as written"
+assert "readlink ~/.stable" "$root/bare-wt/nested/../files/value"
+
+# only symlink modes take the key
+mkdir -p "$root/copy"
+echo copied >"$root/copy/value"
+# schema: invalid
+cat >"$root/copy/mise.toml" <<'TOML'
+[dotfiles]
+"~/.copied" = { source = "value", mode = "copy", main_checkout = true }
+TOML
+assert_contains "cd '$root/copy' && mise dot apply --dry-run 2>&1" 'main_checkout requires mode = "symlink" or "symlink-each"'

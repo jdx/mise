@@ -77,6 +77,8 @@ pub struct DotfileTableDecl {
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,
+    /// symlink and symlink-each only: when the source is inside a linked Git worktree, link to the same path in the repository's main checkout instead, so the link keeps working after the worktree is removed; the source must exist there
+    pub main_checkout: Option<bool>,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
     /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)
@@ -227,6 +229,8 @@ pub struct DotfileGroupEntryTableDecl {
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,
+    /// symlink and symlink-each only: when the source is inside a linked Git worktree, link to the same path in the repository's main checkout instead, so the link keeps working after the worktree is removed; the source must exist there
+    pub main_checkout: Option<bool>,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
     /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)
