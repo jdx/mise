@@ -736,3 +736,105 @@ async fn test_download_to_reports_progress() {
     assert_eq!(seen.first(), Some(&(0, Some(8))));
     assert_eq!(seen.last(), Some(&(8, Some(8))));
 }
+
+/// A plugin whose `Available` reports, as versions, the directories its
+/// `io.popen`, `os.execute` and `cmd.exec` children start in, and whether
+/// `GIT_DIR` reaches them.
+fn cwd_probe_plugin(plugins: &Path) {
+    let dir = plugins.join("cwd-probe");
+    std::fs::create_dir_all(dir.join("hooks")).unwrap();
+    std::fs::write(
+        dir.join("metadata.lua"),
+        r#"PLUGIN = {}
+PLUGIN.name = "cwd-probe"
+PLUGIN.version = "0.1.0"
+PLUGIN.minRuntimeVersion = "0.3.0"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("hooks/available.lua"),
+        r#"function PLUGIN:Available(ctx)
+    local cmd = require("cmd")
+    local handle = io.popen("pwd")
+    local popen_cwd = handle:read("*l")
+    handle:close()
+    local out = os.tmpname()
+    os.execute("pwd > '" .. out .. "'")
+    local f = io.open(out)
+    local execute_cwd = f:read("*l")
+    f:close()
+    os.remove(out)
+    local exec_cwd = cmd.exec("pwd"):gsub("%s+$", "")
+    local git_dir = cmd.exec("echo \"git_dir=${GIT_DIR-unset}\""):gsub("%s+$", "")
+    return {
+        { version = popen_cwd },
+        { version = execute_cwd },
+        { version = exec_cwd },
+        { version = git_dir },
+    }
+end
+"#,
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn listing_versions_runs_hook_commands_outside_the_working_directory() {
+    let plugins = tempfile::tempdir().unwrap();
+    cwd_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+    let mut env = IndexMap::new();
+    env.insert(
+        "PATH".to_string(),
+        std::env::var("PATH").unwrap_or_default(),
+    );
+    env.insert("GIT_DIR".to_string(), "/project/.git".to_string());
+    vfox.cmd_env = Some(env);
+
+    let versions: Vec<String> = vfox
+        .list_available_versions("cwd-probe")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|v| v.version)
+        .collect();
+
+    let home = homedir::my_home().unwrap().unwrap().canonicalize().unwrap();
+    let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+    assert_ne!(home, cwd, "the test must run outside the home directory");
+    for seen in &versions[..3] {
+        assert_eq!(
+            Path::new(seen).canonicalize().unwrap(),
+            home,
+            "{versions:?}"
+        );
+    }
+    assert_eq!(versions[3], "git_dir=unset");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn env_hooks_still_run_in_the_working_directory() {
+    let plugins = tempfile::tempdir().unwrap();
+    cwd_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+
+    let plugin = vfox.get_sdk_with_env("cwd-probe").unwrap();
+    let seen: String = plugin
+        .eval_async(mlua::chunk! {
+            local handle = io.popen("pwd")
+            local cwd = handle:read("*l")
+            handle:close()
+            return cwd
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        Path::new(&seen).canonicalize().unwrap(),
+        std::env::current_dir().unwrap().canonicalize().unwrap()
+    );
+}

@@ -20,7 +20,7 @@ impl Vfox {
         arch: &str,
         options: IndexMap<String, toml::Value>,
     ) -> Result<PreInstall> {
-        let sdk = self.get_sdk_with_env(sdk)?;
+        let sdk = self.get_sdk_detached(sdk)?;
         sdk.pre_install_for_platform_with_options(version, os, arch, options)
             .await
     }

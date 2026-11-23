@@ -231,7 +231,7 @@ impl Vfox {
     }
 
     pub async fn list_available_versions(&self, sdk: &str) -> Result<Vec<AvailableVersion>> {
-        let sdk = self.get_sdk_with_env(sdk)?;
+        let sdk = self.get_sdk_detached(sdk)?;
         sdk.available_async().await
     }
 
@@ -313,6 +313,16 @@ impl Vfox {
             plugin.set_hook_dependencies(recorder.clone());
         }
         self.set_github_token(&plugin)?;
+        Ok(plugin)
+    }
+
+    /// [`Self::get_sdk_with_env`] for a hook that has nothing to do with the
+    /// project mise runs in (listing versions, installing, uninstalling): its
+    /// children start outside mise's working directory; see
+    /// [`Plugin::detach_cmds_from_cwd`].
+    fn get_sdk_detached(&self, name: &str) -> Result<Plugin> {
+        let plugin = self.get_sdk_with_env(name)?;
+        plugin.detach_cmds_from_cwd()?;
         Ok(plugin)
     }
 

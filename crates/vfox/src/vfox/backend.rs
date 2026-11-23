@@ -20,7 +20,7 @@ impl Vfox {
         tool: &str,
         options: IndexMap<String, toml::Value>,
     ) -> Result<BackendListVersionsResponse> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
             options,
@@ -33,7 +33,7 @@ impl Vfox {
         sdk: &str,
         query: String,
     ) -> Result<Option<Vec<BackendTool>>> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         if !plugin
             .get_metadata()?
             .hooks
@@ -49,7 +49,7 @@ impl Vfox {
     }
 
     pub async fn backend_list_tools(&self, sdk: &str) -> Result<Option<Vec<BackendTool>>> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("backend_list_tools") {
             return Ok(None);
         }
@@ -68,7 +68,7 @@ impl Vfox {
         download_path: PathBuf,
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         let ctx = BackendInstallContext {
             tool: tool.to_string(),
             version: version.to_string(),
@@ -91,7 +91,7 @@ impl Vfox {
         download_path: PathBuf,
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("backend_uninstall") {
             return Ok(());
         }

@@ -102,6 +102,15 @@ are merged over it.
 environment: in them, `os.getenv` and commands see the environment of the mise
 process, including values set with [`env.setenv`](#environment-module).
 
+Commands that hooks listing versions, installing or uninstalling start
+(`os.execute`, `io.popen`, `cmd.exec` and `cmd.stream`) run in your home
+directory, not in the directory you ran mise from, and without `GIT_DIR`,
+`GIT_WORK_TREE` and the other variables that point git at a repository. A
+project mise happens to run in can be untrusted, and a `git ls-remote` there
+would follow that repository's git config. Pass the `cwd` option of `cmd.exec`
+or `cmd.stream` to run a command in a directory of your choice. Environment
+hooks such as `EnvKeys` still run commands in the current directory.
+
 ## metadata.lua {#metadata}
 
 `metadata.lua` sits at the plugin's root and assigns the `PLUGIN` table:

@@ -37,7 +37,7 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
-        let sdk = self.get_sdk_with_env(sdk)?;
+        let sdk = self.get_sdk_detached(sdk)?;
         let pre_install = sdk
             .pre_install_with_options(version, options.clone())
             .await?;
@@ -87,9 +87,11 @@ impl Vfox {
         version: &str,
         install_dir: ID,
     ) -> Result<()> {
-        let sdk = self.get_sdk_with_env(sdk)?;
+        let sdk = self.get_sdk_detached(sdk)?;
         if sdk.get_metadata()?.hooks.contains("pre_uninstall") {
-            let sdk_info = sdk.sdk_info(version.to_string(), install_dir.as_ref().to_path_buf())?;
+            // The hook's commands do not run in mise's working directory.
+            let install_dir = std::path::absolute(install_dir)?;
+            let sdk_info = sdk.sdk_info(version.to_string(), install_dir)?;
             sdk.pre_uninstall(PreUninstallContext {
                 main: sdk_info.clone(),
                 sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
@@ -106,9 +108,11 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
         if sdk.get_metadata()?.hooks.contains("post_install") {
-            let sdk_info = sdk.sdk_info(version.to_string(), install_dir.to_path_buf())?;
+            // The hook's commands do not run in mise's working directory.
+            let install_dir = std::path::absolute(install_dir)?;
+            let sdk_info = sdk.sdk_info(version.to_string(), install_dir.clone())?;
             sdk.post_install(PostInstallContext {
-                root_path: install_dir.to_path_buf(),
+                root_path: install_dir,
                 runtime_version: version.to_string(),
                 sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
                 options,
@@ -127,7 +131,7 @@ impl Vfox {
         install_dir: ID,
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
-        let sdk = self.get_sdk_with_env(sdk)?;
+        let sdk = self.get_sdk_detached(sdk)?;
         Self::run_post_install(&sdk, version, install_dir.as_ref(), options).await
     }
 
@@ -140,7 +144,7 @@ impl Vfox {
         install_dir: ID,
         options: T,
     ) -> Result<Option<MiseInstallSatisfiedResult>> {
-        let sdk = self.get_sdk_with_env(sdk)?;
+        let sdk = self.get_sdk_detached(sdk)?;
         if !sdk.get_metadata()?.hooks.contains("mise_install_satisfied") {
             return Ok(None);
         }

@@ -144,6 +144,25 @@ impl Plugin {
         Ok(())
     }
 
+    /// Start the children of this plugin's hooks (`os.execute`, `io.popen`,
+    /// `cmd.exec`, `cmd.stream`) in the user's home directory, or the filesystem
+    /// root when there is none, instead of mise's working directory, and without
+    /// the variables that select a git repository. For hooks that have nothing to
+    /// do with the project mise runs in, such as listing versions or installing:
+    /// that directory may be a project the user has not trusted, and a `git` run
+    /// there obeys the repository config it finds (`core.sshCommand` is a shell
+    /// command). A hook's own `cwd` option still applies.
+    pub(crate) fn detach_cmds_from_cwd(&self) -> Result<()> {
+        let home = homedir::my_home().ok().flatten();
+        let dir = match home {
+            Some(home) if home.is_absolute() && home.is_dir() => home,
+            _ => PathBuf::from(std::path::MAIN_SEPARATOR_STR),
+        };
+        self.lua
+            .set_named_registry_value("mise_cmd_cwd", dir.to_string_lossy().to_string())?;
+        Ok(())
+    }
+
     /// Register the terminal lock used by Lua `cmd.stream` and `os.execute`.
     ///
     /// mise supplies a runner that takes the lock `--raw` uses — exclusively for

@@ -42,6 +42,42 @@ pub(crate) fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     };
     os.set("execute", lua.create_function(os_execute)?)?;
     os.set("getenv", lua.create_function(os_getenv)?)?;
+    super::popen::mod_popen(lua)?;
+    Ok(())
+}
+
+/// The directory hook children start in when the hook has been detached from
+/// the user's working directory (`Plugin::detach_cmds_from_cwd`), or `None` when
+/// they start in mise's own working directory.
+pub(super) fn detached_cwd(lua: &Lua) -> LuaResult<Option<String>> {
+    lua.named_registry_value::<Option<String>>("mise_cmd_cwd")
+}
+
+/// Variables that point git at a repository whatever its working directory is.
+const GIT_CONTEXT_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+];
+
+pub(super) fn remove_git_context_env(cmd: &mut Command) {
+    for key in GIT_CONTEXT_ENV {
+        cmd.env_remove(key);
+    }
+}
+
+/// Start `cmd` in the detached directory, without the variables that would
+/// select a repository again, when the hook has one. Runs after the mise env is
+/// applied and before the hook's own `cwd` and `env` options, which still win.
+fn apply_detached_cwd(lua: &Lua, cmd: &mut Command) -> LuaResult<()> {
+    if let Some(cwd) = detached_cwd(lua)? {
+        cmd.current_dir(cwd);
+        remove_git_context_env(cmd);
+    }
     Ok(())
 }
 
@@ -285,6 +321,7 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
     // This ensures mise-managed tools are on PATH when called from env module hooks.
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[cmd.exec] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    apply_detached_cwd(lua, &mut cmd)?;
 
     apply_options(&mut cmd, options.as_ref())?;
 
@@ -322,6 +359,7 @@ fn stream(lua: &Lua, args: mlua::MultiValue) -> LuaResult<i64> {
     let mut cmd = command_from_shell(&shell, &command)?;
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[cmd.stream] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    apply_detached_cwd(lua, &mut cmd)?;
     apply_options(&mut cmd, options.as_ref())?;
 
     // Interactive by definition, so all three descriptors go to the terminal.
@@ -422,6 +460,7 @@ fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
     let mut cmd = command_from_shell(&shell, &command)?;
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[os.execute] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    apply_detached_cwd(lua, &mut cmd)?;
     cmd.stdin(stdin_for(lua));
     // Shared, not exclusive: concurrent `os.execute` calls may overlap each other
     // as they always have, but none of them may overlap a `cmd.stream` child that
@@ -461,7 +500,7 @@ fn lookup_env_table(env: &Table, key: &str) -> LuaResult<Option<String>> {
     Ok(None)
 }
 
-fn cmd_shell(lua: &Lua) -> LuaResult<Vec<String>> {
+pub(super) fn cmd_shell(lua: &Lua) -> LuaResult<Vec<String>> {
     if let Ok(shell) = lua.named_registry_value::<Table>("mise_cmd_shell") {
         return shell.sequence_values::<String>().collect();
     }
@@ -476,7 +515,7 @@ fn default_cmd_shell() -> Vec<String> {
     }
 }
 
-fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
+pub(super) fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
     let (program, args) = shell.split_first().ok_or_else(|| {
         mlua::Error::RuntimeError("cmd.exec shell command cannot be empty".to_string())
     })?;
