@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# A wrapper whose command runs the wrapped name again finds nothing when the tool is disabled and
+# no other copy is on PATH. The error names the wrapper instead of calling its shim invalid (#16017).
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/wrap-claude" <<'EOF'
+#!/usr/bin/env bash
+exec claude "$@"
+EOF
+chmod +x "$fake_bin/wrap-claude"
+export PATH="$fake_bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[settings]
+disable_tools = ["claude"]
+
+[tools]
+claude = { version = "latest", lazy = true }
+
+[wrappers.claude]
+command = "wrap-claude"
+env = { ACCOUNT = "work" }
+EOF
+
+mise reshim
+eval "$(mise activate bash --shims)"
+
+output="$(quiet_assert_fail "claude --version")"
+assert_contains_text "$output" "[wrappers.claude] in "
+assert_contains_text "$output" "mise.toml runs"
+assert_contains_text "$output" "wrap-claude"
+assert_contains_text "$output" ", which ran claude again, but no configured tool provides claude"
+assert_contains_text "$output" "claude is in disable_tools, so mise does not install it."
+assert_contains_text "$output" "Put a claude on PATH for the wrapper to run, or remove [wrappers.claude]."
+assert_not_contains_text "$output" "not a valid shim"
+
+# With another claude further down PATH, the wrapper runs it with its env.
+other_bin="$HOME/other-bin"
+mkdir -p "$other_bin"
+cat >"$other_bin/claude" <<'EOF'
+#!/usr/bin/env bash
+echo "real claude account:$ACCOUNT"
+EOF
+chmod +x "$other_bin/claude"
+PATH="$PATH:$other_bin" assert "claude --version" "real claude account:work"

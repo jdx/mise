@@ -2247,6 +2247,9 @@ pub async fn err_no_version_set(
         if let Some(msg) = unavailable_configured_tool_message(config, &ts, bin_name).await {
             return Err(eyre!(msg));
         }
+        if is_active_command_wrapper(bin_name) {
+            return Err(eyre!(reentered_wrapper_message(config, bin_name)));
+        }
         bail!(
             "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
         );
@@ -2283,6 +2286,57 @@ pub async fn err_no_version_set(
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
     }
+}
+
+/// Why a wrapped command has nothing to run once its wrapper's command calls it again.
+///
+/// While a wrapper runs, its own shim skips it (`ACTIVE_WRAPPERS_ENV`), so the command has to come
+/// from a tool or from further down PATH. When neither has it, "not a valid shim" blames an
+/// uninstalled tool, but the shim is the wrapper's and is still wanted (#16017).
+fn reentered_wrapper_message(config: &Config, bin_name: &str) -> String {
+    let wrapper = load_command_wrappers(&config.config_files, std::iter::empty())
+        .ok()
+        .and_then(|wrappers| {
+            wrappers
+                .into_iter()
+                .find(|(name, _)| same_command_name(name, bin_name))
+        });
+    let mut msg = match &wrapper {
+        Some((name, wrapper)) => {
+            let source = crate::config::command_wrapper_source(&config.config_files, name)
+                .ok()
+                .flatten()
+                .map(|path| format!(" in {}", display_path(path)))
+                .unwrap_or_default();
+            format!(
+                "[wrappers.{name}]{source} runs `{}`, which ran {bin_name} again",
+                wrapper.command()
+            )
+        }
+        None => format!("the command wrapper for {bin_name} ran {bin_name} again"),
+    };
+    msg.push_str(&format!(
+        ", but no configured tool provides {bin_name} and there is no other {bin_name} on PATH."
+    ));
+    let disable_tools = Settings::get().disable_tools();
+    let disabled = crate::registry::REGISTRY
+        .values()
+        .unique_by(|rt| rt.short)
+        .filter(|rt| rt.short == bin_name || rt.provides_bin(bin_name))
+        .filter(|rt| disable_tools.contains(rt.short))
+        .map(|rt| rt.short)
+        .collect_vec();
+    if !disabled.is_empty() {
+        msg.push_str(&format!(
+            "\n{} is in disable_tools, so mise does not install it.",
+            disabled.join(", ")
+        ));
+    }
+    let name = wrapper.as_ref().map_or(bin_name, |(name, _)| name.as_str());
+    msg.push_str(&format!(
+        "\nPut a {bin_name} on PATH for the wrapper to run, or remove [wrappers.{name}]."
+    ));
+    msg
 }
 
 /// The installed version a shim without a configured version should use or suggest: the
