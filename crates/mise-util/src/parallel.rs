@@ -19,11 +19,13 @@ where
         let permit = semaphore.acquire_owned().await?;
         // The tasks run in the trusted scopes of the caller, see
         // `untrusted_hosts::inherit_trusted_scope`, and count into its
-        // `quiet_problems` scope. Boxed so that wrapping it does not copy a
-        // large future around the stack, which overflows it in debug builds.
+        // `quiet_problems` scope. The caller's future is boxed on its own, so
+        // that each scope wrapped around it holds a pointer: a wrapper holds
+        // its future more than once, and the task for a future of 26 KB was
+        // 78 KB, copied whole to the heap for every item.
         let task = Box::pin(crate::untrusted_hosts::inherit_trusted_scope(async move {
             let _permit = permit;
-            let res = f(item.1).await?;
+            let res = Box::pin(f(item.1)).await?;
             Ok((item.0, res))
         }));
         jset.spawn(crate::quiet_problems::inherit(task));
