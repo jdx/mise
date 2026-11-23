@@ -82,10 +82,17 @@ fn version_from_output(output: &str) -> Option<String> {
     numeric_cmp(candidate, "0").map(|_| (*candidate).to_owned())
 }
 
+/// The most output a version probe may print.
+const PROBE_LIMIT: usize = 64 * 1024;
+
 async fn probe(program: &str, args: &[&str]) -> Option<String> {
+    probe_with_limit(program, args, PROBE_LIMIT).await
+}
+
+async fn probe_with_limit(program: &str, args: &[&str], limit: usize) -> Option<String> {
     CmdLineRunner::new(program)
         .args(args)
-        .read_isolated(64 * 1024)
+        .read_isolated(limit)
         .await
         .ok()
 }
@@ -143,6 +150,35 @@ async fn os_version() -> Option<String> {
 /// be read.
 type LoaderCache = tokio::sync::OnceCell<Option<BTreeSet<String>>>;
 
+/// The most `ldconfig -p` may print. It writes a line of about 100 bytes for
+/// every library the loader knows, and a desktop install knows thousands: at
+/// the version probes' 64 KiB the cache of such a host could not be read, so
+/// every library it was asked about was reported as unknown.
+#[cfg(target_os = "linux")]
+const LOADER_CACHE_LIMIT: usize = 16 * 1024 * 1024;
+
+/// The names in the loader cache `ldconfig` prints, or `None` if it could
+/// not be read.
+#[cfg(target_os = "linux")]
+async fn read_loader_cache(ldconfig: &str) -> Option<BTreeSet<String>> {
+    let cache = probe_with_limit(ldconfig, &["-p"], LOADER_CACHE_LIMIT).await?;
+    Some(loader_cache_names(&cache))
+}
+
+/// The directories the loader searches by default, checked before the
+/// loader cache is read. Debian and Ubuntu keep libraries in a directory
+/// named for the architecture's multiarch triplet.
+#[cfg(target_os = "linux")]
+fn default_library_dirs() -> Vec<PathBuf> {
+    let triplet = format!("{}-linux-gnu", std::env::consts::ARCH);
+    let mut dirs: Vec<PathBuf> = ["/lib", "/lib64", "/usr/lib", "/usr/lib64"]
+        .map(PathBuf::from)
+        .into();
+    dirs.push(PathBuf::from("/lib").join(&triplet));
+    dirs.push(PathBuf::from("/usr/lib").join(&triplet));
+    dirs
+}
+
 /// The names `ldconfig -p` resolves to an existing file of this
 /// architecture.
 #[cfg(target_os = "linux")]
@@ -179,17 +215,14 @@ async fn library_present(name: &str, loader_cache: &LoaderCache) -> Option<bool>
         let mut paths: Vec<PathBuf> = std::env::var_os("LD_LIBRARY_PATH")
             .map(|p| std::env::split_paths(&p).collect())
             .unwrap_or_default();
-        paths.extend(["/lib", "/lib64", "/usr/lib", "/usr/lib64"].map(PathBuf::from));
+        paths.extend(default_library_dirs());
         if paths.iter().any(|p| p.join(name).is_file()) {
             return Some(true);
         }
         // Cache failure is unknown, not proof of absence. The cache normally
         // covers distribution-specific multiarch directories as well.
         let names = loader_cache
-            .get_or_init(|| async {
-                let cache = probe("/sbin/ldconfig", &["-p"]).await?;
-                Some(loader_cache_names(&cache))
-            })
+            .get_or_init(|| read_loader_cache("/sbin/ldconfig"))
             .await;
         Some(names.as_ref()?.contains(name))
     }
@@ -410,6 +443,52 @@ mod tests {
         // A cache that could not be read stays unknown for every name.
         let unread = LoaderCache::new_with(Some(None));
         assert_eq!(library_present("libhere.so.1", &unread).await, None);
+    }
+
+    /// A desktop's loader cache, thousands of lines long, is read whole: at
+    /// a 64 KiB bound it was not, and every library came back unknown.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_large_loader_cache_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = std::env::current_exe().unwrap();
+        let mut cache = String::from("5001 libs found in cache `/etc/ld.so.cache'\n");
+        for i in 0..5000 {
+            cache.push_str(&format!(
+                "\tlibfiller{i}.so.1 (libc6,x86-64,AArch64) => {}\n",
+                exe.display()
+            ));
+        }
+        cache.push_str(&format!(
+            "\tlibudev.so.1 (libc6,x86-64,AArch64) => {}\n",
+            exe.display()
+        ));
+        assert!(cache.len() > PROBE_LIMIT, "{}", cache.len());
+        let listing = dir.path().join("ldconfig.out");
+        std::fs::write(&listing, cache).unwrap();
+        let ldconfig = dir.path().join("ldconfig");
+        std::fs::write(
+            &ldconfig,
+            format!("#!/bin/sh\ncat '{}'\n", listing.display()),
+        )
+        .unwrap();
+        file::make_executable(&ldconfig).unwrap();
+
+        let names = read_loader_cache(&ldconfig.to_string_lossy())
+            .await
+            .expect("the loader cache should be readable");
+        if matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            assert!(names.contains("libudev.so.1"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_multiarch_directories_are_searched() {
+        let dirs = default_library_dirs();
+        let triplet = format!("{}-linux-gnu", std::env::consts::ARCH);
+        assert!(dirs.contains(&PathBuf::from("/usr/lib").join(&triplet)));
+        assert!(dirs.contains(&PathBuf::from("/lib").join(&triplet)));
     }
 
     #[cfg(unix)]

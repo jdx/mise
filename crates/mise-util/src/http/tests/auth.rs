@@ -660,3 +660,47 @@ fn with_host_auth_layers_configured_headers_over_automatic_ones() {
     assert_eq!(merged[AUTHORIZATION], "Bearer configured");
     assert_eq!(merged["x-extra"], "1");
 }
+
+#[test]
+fn a_raw_content_404_with_a_token_is_retried_without_it() {
+    let raw = Url::parse("https://raw.githubusercontent.com/o/r/abc/SKILL.md").unwrap();
+    let mut with_token = HeaderMap::new();
+    with_token.insert(AUTHORIZATION, HeaderValue::from_static("Bearer ghp_stale"));
+
+    assert_eq!(
+        raw_content_token_to_drop(&raw, StatusCode::NOT_FOUND, &with_token),
+        Some("ghp_stale")
+    );
+    // Only a 404, only with a token, and only on raw.githubusercontent.com:
+    // the API's 401 has its own report, and other hosts' 404s are real.
+    assert_eq!(
+        raw_content_token_to_drop(&raw, StatusCode::OK, &with_token),
+        None
+    );
+    assert_eq!(
+        raw_content_token_to_drop(&raw, StatusCode::NOT_FOUND, &HeaderMap::new()),
+        None
+    );
+    let api = Url::parse("https://api.github.com/repos/o/r/contents/SKILL.md").unwrap();
+    assert_eq!(
+        raw_content_token_to_drop(&api, StatusCode::NOT_FOUND, &with_token),
+        None
+    );
+    let http = Url::parse("http://raw.githubusercontent.com/o/r/abc/SKILL.md").unwrap();
+    assert_eq!(
+        raw_content_token_to_drop(&http, StatusCode::NOT_FOUND, &with_token),
+        None
+    );
+
+    let msg = rejected_raw_token_warning(Some(&crate::github::TokenSource::EnvVar("GITHUB_TOKEN")));
+    assert!(
+        msg.contains("did not accept the token in `GITHUB_TOKEN`"),
+        "{msg}"
+    );
+    assert!(msg.contains("mise token github"), "{msg}");
+    assert!(
+        rejected_raw_token_warning(None).contains("configured GitHub token"),
+        "{}",
+        rejected_raw_token_warning(None)
+    );
+}

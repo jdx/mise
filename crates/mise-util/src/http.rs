@@ -2676,6 +2676,44 @@ impl Client {
             ))
             .await;
         }
+        // raw.githubusercontent.com answers a token it does not accept (expired,
+        // revoked) with a 404 rather than a 401, even for a public repository, so
+        // the file looks missing. Retry once without the token: a public file
+        // then arrives, and a private one is the same 404 as before. Callers that
+        // read the status themselves get the retried response too, so a rejected
+        // token cannot make a file they probe for look absent.
+        if let Some(token) = raw_content_token_to_drop(&url, resp.status(), &final_headers) {
+            let token_source = url
+                .host_str()
+                .and_then(|host| crate::github::token_source_for_token(host, token));
+            let mut headers = final_headers.clone();
+            headers.remove(AUTHORIZATION);
+            forward_rules.attach_to(&mut headers);
+            if let Some(retry_state) = &options.retry_state {
+                *retry_state.lock().unwrap() = RetryState {
+                    headers: headers.clone(),
+                    use_netrc: false,
+                    netrc_replacement_only: false,
+                };
+            }
+            debug!(
+                "{} {} retrying without GitHub auth after 404",
+                verb_label,
+                log_url(&url)
+            );
+            let retried = Box::pin(self.send_once_inner(
+                method,
+                original_url,
+                &headers,
+                verb_label,
+                options.recursive_retry(),
+            ))
+            .await?;
+            if retried.status().is_success() {
+                warn_once!("{}", rejected_raw_token_warning(token_source.as_ref()));
+            }
+            return Ok(retried);
+        }
         if options.error_for_status && is_github_unauthorized(&url, &resp) {
             // A static invalid/expired token (env var, gh CLI, ...) produces a 401
             // that the OAuth-refresh path above cannot recover. Surface a clear
@@ -2977,6 +3015,38 @@ pub async fn read_bounded_error_body(resp: Response, deadline: Duration) -> Stri
     tokio::time::timeout(deadline, read)
         .await
         .unwrap_or_default()
+}
+
+/// The GitHub token a raw.githubusercontent.com request should be retried
+/// without: the one it carried when the answer was a 404.
+fn raw_content_token_to_drop<'a>(
+    url: &Url,
+    status: StatusCode,
+    headers: &'a HeaderMap,
+) -> Option<&'a str> {
+    if status != StatusCode::NOT_FOUND || !crate::github::is_github_raw_content_url(url) {
+        return None;
+    }
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+}
+
+/// What to tell the user when raw.githubusercontent.com served a file only once
+/// mise stopped sending their GitHub token: the token is not being accepted, and
+/// the requests that need it (private repositories, the API) will fail too.
+fn rejected_raw_token_warning(token_source: Option<&crate::github::TokenSource>) -> String {
+    let source = match token_source {
+        Some(crate::github::TokenSource::EnvVar(var)) => format!("token in `{var}`"),
+        Some(source) => format!("token from {source}"),
+        None => "configured GitHub token".to_string(),
+    };
+    format!(
+        "GitHub did not accept the {source}: raw.githubusercontent.com answered 404 until mise \
+         retried without it. Check that it is valid and not expired with `mise token github` — \
+         see https://mise.jdx.dev/dev-tools/github-tokens.html"
+    )
 }
 
 fn github_unauthorized_report(
