@@ -473,6 +473,11 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     } else {
         path.into()
     };
+    // A dangling link is not a missing config: starting a new one would create the file the
+    // link names, wherever that is. The write checks where a link leads before it follows one.
+    if !path.exists() && path.is_symlink() {
+        symlink_check_before_write(&path)?;
+    }
     let cf = match path.exists() {
         true => parse(&path).await?,
         false => init(&path).await?,
@@ -1287,6 +1292,58 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Refuses to write config file `path` through a symlink to a file the user did not choose.
+///
+/// A project's links come with its working tree, so in a checkout nobody reviewed their author
+/// would choose which file `mise use` or `mise set` replaces: a file elsewhere in the user's
+/// home, or a trust record in mise's state directory. A link that stays in the config root is
+/// followed. One that leaves it is followed only for global or system config, which the user
+/// links into place themselves (a dotfiles checkout), or for a trusted project outside safe
+/// mode. Nothing is ever written into the state directory through a link, and a link out of
+/// the root whose target does not exist is not followed either, so a write never creates a
+/// file outside the project.
+pub fn symlink_check_before_write(path: &Path) -> Result<()> {
+    if !path.is_symlink() {
+        return Ok(());
+    }
+    let target = file::atomic_write_target(path)?;
+    let refuse = |why: &str| -> Result<()> {
+        Err(eyre!(
+            "refusing to write {} through its symlink to {}: {why}. Write the file it links to directly, or replace the link with a regular file",
+            display_path(path),
+            display_path(&target)
+        ))
+    };
+    let unresolved = target
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir));
+    let state_dir = file::desymlink_path(&dirs::STATE);
+    if unresolved || target.starts_with(&state_dir) {
+        return refuse("the target is in mise's state directory or cannot be resolved");
+    }
+    let root = config_root::config_root(path).canonicalize().ok();
+    let in_root = root.is_some_and(|root| target.starts_with(root))
+        || path
+            .parent()
+            .and_then(|dir| dir.canonicalize().ok())
+            .is_some_and(|dir| target.starts_with(dir));
+    if in_root {
+        return Ok(());
+    }
+    if config::is_global_config_write(path) && !config::is_project_link_to_global_config(path) {
+        return Ok(());
+    }
+    if !target.exists() {
+        return refuse("the link leaves the config's directory and its target does not exist");
+    }
+    if !Settings::safe_mode() && is_path_trusted(path) {
+        return Ok(());
+    }
+    refuse(
+        "a link out of the config's directory is only followed for global config, or for a trusted project outside safe mode",
+    )
 }
 
 /// Whether a config file, as it is on disk, loads only once trusted.

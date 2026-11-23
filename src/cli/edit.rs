@@ -268,6 +268,9 @@ impl Edit {
         } else {
             InteractiveConfig::new(path.to_path_buf())
         };
+        if !self.dry_run {
+            config_file::symlink_check_before_write(&path)?;
+        }
 
         editor = editor
             .title(&title)

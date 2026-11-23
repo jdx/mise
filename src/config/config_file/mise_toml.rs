@@ -2128,6 +2128,7 @@ impl ConfigFile for MiseToml {
 
     fn save(&self) -> eyre::Result<()> {
         let contents = self.dump()?;
+        super::symlink_check_before_write(&self.path)?;
         trust_check_before_write(&self.path)?;
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;

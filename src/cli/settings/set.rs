@@ -216,6 +216,7 @@ pub(super) fn set(
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;
 
+        crate::config::config_file::symlink_check_before_write(&path)?;
         file::write(path, config.to_string())?;
     }
     Ok(())

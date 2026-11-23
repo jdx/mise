@@ -116,6 +116,7 @@ impl TasksRm {
             // was trusted before the edit.
             let renew_trust =
                 Settings::get().paranoid.config() && config_file::is_path_trusted(path);
+            config_file::symlink_check_before_write(path)?;
             file::write(path, doc.to_string())?;
             if renew_trust {
                 config_file::trust_after_write(path)?;
