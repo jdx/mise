@@ -350,18 +350,25 @@ impl CondaBackend {
             .map(|h| format!("sha256:{}", hex::encode(h)))
     }
 
-    /// Verify a file's sha256 against an expected "sha256:<hex>" checksum.
-    /// Returns Ok(true) if matches, Ok(false) if mismatches, or Ok(true)
-    /// if no expected checksum is provided (skip verification).
+    /// Verify a file against an expected "<algorithm>:<hex>" checksum.
+    /// Returns Ok(true) if it matches, Ok(false) if it does not, and Ok(true)
+    /// if no checksum is expected. A checksum without an algorithm, or with one
+    /// that cannot be computed, is an error, never a match.
     fn verify_checksum(path: &std::path::Path, expected: Option<&str>) -> Result<bool> {
         let Some(expected) = expected else {
             return Ok(true);
         };
-        let Some(expected_hex) = expected.strip_prefix("sha256:") else {
-            return Ok(true);
+        let Some((algo, expected_hex)) = expected.split_once(':') else {
+            eyre::bail!(
+                "invalid checksum {expected:?} for {}: expected <algorithm>:<hex>",
+                path.display()
+            );
         };
-        let actual_hex = hash::file_hash_sha256(path, None)?;
-        Ok(actual_hex == expected_hex)
+        match hash::ensure_checksum(path, expected_hex, None, algo) {
+            Ok(()) => Ok(true),
+            Err(err) if err.is::<hash::ChecksumMismatch>() => Ok(false),
+            Err(err) => Err(err),
+        }
     }
 
     /// Download a file to dest with optional checksum verification.
@@ -379,8 +386,10 @@ impl CondaBackend {
         HTTP.download_file_pinned(url, &temp, checksum, None)
             .await?;
 
-        if !Self::verify_checksum(&temp, checksum)? {
+        let verified = Self::verify_checksum(&temp, checksum);
+        if !matches!(verified, Ok(true)) {
             let _ = file::remove_all(&temp);
+            verified?;
             let display_checksum = checksum.unwrap_or("unknown");
             return Err(eyre::eyre!(
                 "checksum mismatch for {}: expected {}",
@@ -717,6 +726,48 @@ impl CondaBackend {
         }
 
         Ok(())
+    }
+
+    /// Why `--locked` refuses the dependency packages `deps` that the lockfile entry of
+    /// `tool` on `platform_key`, whose own package is at `main_url`, names in
+    /// `[conda-packages]`: one is missing, comes from another channel, has a checksum
+    /// that cannot be verified, or, when `require_checksum`, has none.
+    fn locked_dependencies_problem(
+        lockfile: &Lockfile,
+        tool: &str,
+        platform_key: &str,
+        main_url: &str,
+        deps: &[String],
+        require_checksum: bool,
+    ) -> Option<eyre::Report> {
+        for key in deps {
+            let Some(package) = lockfile.get_conda_package(platform_key, key) else {
+                return Some(eyre::eyre!(
+                    "conda package {key} of {tool} is not in the [conda-packages] section of mise.lock for platform {platform_key} (--locked mode)\n\
+                    hint: Run `mise lock` to record it"
+                ));
+            };
+            if let Err(err) = Self::check_locked_dependency(key, package, main_url) {
+                return Some(err);
+            }
+            match package.checksum.as_deref() {
+                Some(checksum) if !hash::is_verifiable_checksum(checksum) => {
+                    return Some(eyre::eyre!(
+                        "Invalid lockfile checksum {checksum:?} for conda package {key} of {tool} on platform {platform_key} (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums"
+                    ));
+                }
+                None if require_checksum => {
+                    return Some(eyre::eyre!(
+                        "No lockfile checksum found for conda package {key} of {tool} on platform {platform_key} ({}) (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false",
+                        crate::install_layout::resolver::redact_credentials(&package.url)
+                    ));
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// Install using URLs stored in the lockfile (deterministic/reproducible path).
@@ -1281,6 +1332,37 @@ impl Backend for CondaBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn locked_dependencies_error(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        platform_key: &str,
+        locked_platform: Option<&PlatformInfo>,
+    ) -> Option<eyre::Report> {
+        let locked_platform = locked_platform?;
+        let deps = locked_platform.conda_deps.as_deref()?;
+        let main_url = locked_platform.url.as_deref()?;
+        if deps.is_empty() {
+            return None;
+        }
+        let lockfile = match tv.request.read_lockfile(config) {
+            Ok(lockfile) => lockfile,
+            Err(err) => return Some(err),
+        };
+        let settings = Settings::get();
+        let require_checksum = settings
+            .locked_require_checksum
+            .unwrap_or(settings.generate_lockfiles());
+        Self::locked_dependencies_problem(
+            &lockfile,
+            &tv.style(),
+            platform_key,
+            main_url,
+            deps,
+            require_checksum,
+        )
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
@@ -2205,6 +2287,70 @@ mod tests {
         assert!(err.contains("not in the channel"), "{err}");
         let err = check(&key(forge_noarch), forge).unwrap_err();
         assert!(err.contains("names another channel"), "{err}");
+    }
+
+    #[test]
+    fn verify_checksum_compares_every_algorithm_and_rejects_unknown_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pkg.conda");
+        std::fs::write(&path, b"abc").unwrap();
+        let sha256 = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let md5 = "md5:900150983cd24fb0d6963f7d28e17f72";
+        let verify = |checksum: &str| CondaBackend::verify_checksum(&path, Some(checksum));
+        assert!(verify(sha256).unwrap());
+        assert!(verify(md5).unwrap());
+        assert!(CondaBackend::verify_checksum(&path, None).unwrap());
+
+        std::fs::write(&path, b"replaced").unwrap();
+        assert!(!verify(sha256).unwrap());
+        assert!(!verify(md5).unwrap());
+        assert!(verify("crc32:352441c2").is_err());
+        assert!(verify("900150983cd24fb0d6963f7d28e17f72").is_err());
+    }
+
+    #[test]
+    fn locked_mode_refuses_dependencies_it_cannot_verify() {
+        let platform = "linux-x64";
+        let main = "https://conda.anaconda.org/conda-forge/linux-64/tool-1.0-h_0.conda";
+        let dep_url = "https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.1-h_2.conda";
+        let key = CondaBackend::record_basename(&make_record("zlib", "1.3.1", "h_2", dep_url));
+        let lockfile_with = |checksum: Option<&str>| {
+            let mut lockfile = super::Lockfile::default();
+            lockfile.set_conda_package(
+                platform,
+                &key,
+                super::CondaPackageInfo {
+                    url: dep_url.to_string(),
+                    checksum: checksum.map(str::to_string),
+                },
+            );
+            lockfile
+        };
+        let problem = |lockfile: &super::Lockfile, deps: &[String], require: bool| {
+            CondaBackend::locked_dependencies_problem(
+                lockfile,
+                "conda:tool",
+                platform,
+                main,
+                deps,
+                require,
+            )
+            .map(|e| e.to_string())
+        };
+        let deps = vec![key.clone()];
+        let sha256 = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+        assert_eq!(problem(&lockfile_with(Some(sha256)), &deps, true), None);
+        assert_eq!(problem(&lockfile_with(None), &deps, false), None);
+        let err = problem(&lockfile_with(None), &deps, true).unwrap();
+        assert!(err.contains("No lockfile checksum found"), "{err}");
+        let err = problem(&lockfile_with(Some("crc32:00")), &deps, false).unwrap();
+        assert!(err.contains("Invalid lockfile checksum"), "{err}");
+        let err = problem(&super::Lockfile::default(), &deps, false).unwrap();
+        assert!(
+            err.contains("is not in the [conda-packages] section"),
+            "{err}"
+        );
     }
 
     /// rattler writes what a package names by name, through the links that are in the
