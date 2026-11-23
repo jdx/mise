@@ -85,7 +85,7 @@ cat <<EOF >mise.toml
 EOF
 
 mise lock --platform macos-arm64
-assert_contains "cat mise.lock" 'url = "https://raw.githubusercontent.com/awslabs/git-secrets/1.3.0/git-secrets"'
+assert_contains "cat mise.lock" 'url = "https://raw.githubusercontent.com/awslabs/git-secrets/refs/tags/1.3.0/git-secrets"'
 assert_not_contains "cat mise.lock" "archive/refs/tags/1.3.0.tar.gz"
 
 echo "=== Testing minimum release age filtering ==="

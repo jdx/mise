@@ -3060,6 +3060,7 @@ impl AquaBackend {
         url.to_string()
     }
 
+    /// Names the tag in full, like the archive URL above. See [`Self::github_content_url`].
     fn github_archive_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let mut url = Url::parse(github::API_URL).expect("GitHub API URL should be valid");
         url.path_segments_mut()
@@ -3069,11 +3070,18 @@ impl AquaBackend {
                 pkg.repo_owner.as_str(),
                 pkg.repo_name.as_str(),
                 "tarball",
+                "refs",
+                "tags",
                 v,
             ]);
         url.to_string()
     }
 
+    /// The version is looked up under `refs/tags`, like the archive URL above. In the ref
+    /// position GitHub also resolves a branch, a full ref or a commit id, including the head of
+    /// an unmerged pull request or a commit pushed to a fork. A version can come from a config
+    /// that needs no trust or from the versions host, so it may only select a tag the
+    /// repository's owners created.
     fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let mut url = Url::parse("https://raw.githubusercontent.com")
             .expect("GitHub content URL should be valid");
@@ -3081,7 +3089,12 @@ impl AquaBackend {
             let mut segments = url
                 .path_segments_mut()
                 .expect("GitHub content URL should support path segments");
-            segments.extend([pkg.repo_owner.as_str(), pkg.repo_name.as_str()]);
+            segments.extend([
+                pkg.repo_owner.as_str(),
+                pkg.repo_name.as_str(),
+                "refs",
+                "tags",
+            ]);
             segments.extend(v.split('/'));
             segments.extend(pkg.path.as_deref().unwrap().split('/'));
         }
@@ -3102,7 +3115,9 @@ impl AquaBackend {
             ]);
             segments.extend(pkg.path.as_deref().unwrap().split('/'));
         }
-        url.query_pairs_mut().append_pair("ref", v);
+        // Names the tag in full. See [`Self::github_content_url`].
+        url.query_pairs_mut()
+            .append_pair("ref", &format!("refs/tags/{v}"));
         url.to_string()
     }
 
