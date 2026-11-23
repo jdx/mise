@@ -492,6 +492,10 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
                     .unwrap_or_default();
             } else {
                 keep_global_envs(&mut settings, &global_env);
+                keep_inherited_ignored_config_paths(
+                    &mut settings,
+                    merged.ignored_config_paths.as_ref(),
+                );
                 if let Some(sets) = settings.env_sets.as_mut() {
                     sets.retain(|name, _| {
                         !global_sets.contains(name) && !global_env.contains(name)
@@ -518,6 +522,20 @@ fn keep_global_envs(settings: &mut MisercSettings, global_env: &[String]) {
     let mut kept: IndexSet<String> = global_env.iter().cloned().collect();
     kept.extend(envs);
     settings.env = Some(kept.into_iter().collect());
+}
+
+/// `ignored_config_paths` is a hard block that overrides `trusted_config_paths`
+/// and `mise trust`. A project `.miserc.toml` loads without trust, so its list
+/// adds to the one it inherits from the system and global files and from the
+/// project files above it and cannot drop an entry: a checkout under an
+/// ignored path would otherwise un-ignore itself with `ignored_config_paths = []`.
+fn keep_inherited_ignored_config_paths(
+    settings: &mut MisercSettings,
+    inherited: Option<&BTreeSet<PathBuf>>,
+) {
+    if let (Some(paths), Some(inherited)) = (settings.ignored_config_paths.as_mut(), inherited) {
+        paths.extend(inherited.iter().cloned());
+    }
 }
 
 /// `env` and the override filenames only choose which files mise loads from the
@@ -741,6 +759,35 @@ mod tests {
         let mut settings = MisercSettings::default();
         keep_global_envs(&mut settings, &global);
         assert_eq!(settings.env, None);
+    }
+
+    #[test]
+    fn test_keep_inherited_ignored_config_paths() {
+        let paths = |v: &[&str]| v.iter().map(PathBuf::from).collect::<BTreeSet<_>>();
+        let inherited = paths(&["/home/user/work/vendor"]);
+        let mut settings = MisercSettings {
+            ignored_config_paths: Some(paths(&[])),
+            ..Default::default()
+        };
+        keep_inherited_ignored_config_paths(&mut settings, Some(&inherited));
+        assert_eq!(settings.ignored_config_paths, Some(inherited.clone()));
+
+        let mut settings = MisercSettings {
+            ignored_config_paths: Some(paths(&["/home/user/work/app/legacy"])),
+            ..Default::default()
+        };
+        keep_inherited_ignored_config_paths(&mut settings, Some(&inherited));
+        assert_eq!(
+            settings.ignored_config_paths,
+            Some(paths(&[
+                "/home/user/work/app/legacy",
+                "/home/user/work/vendor"
+            ]))
+        );
+
+        let mut settings = MisercSettings::default();
+        keep_inherited_ignored_config_paths(&mut settings, Some(&inherited));
+        assert_eq!(settings.ignored_config_paths, None);
     }
 
     #[test]

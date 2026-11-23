@@ -507,6 +507,13 @@ order, ahead of the project's own, so a project cannot turn off a baseline such 
 files. The `-E` flag and environment variables such as `MISE_ENV` and
 `MISE_ENV_CONF_D` override every `.miserc.toml` file.
 
+`ignored_config_paths` is the other exception. A file found from the current
+directory adds its entries to the list it inherits, from the global and system
+files and from the files in parent directories, and cannot remove one, so a
+checkout under an ignored path cannot un-ignore itself with
+`ignored_config_paths = []`. The global and system files still replace each
+other's list, and `MISE_IGNORED_CONFIG_PATHS` replaces them all.
+
 ### Personal and machine-wide choices
 
 Use `.miserc.local.toml` for a choice that belongs to your checkout rather than
