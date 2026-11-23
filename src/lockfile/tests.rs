@@ -207,6 +207,106 @@ fn test_lockfile_version_at_matches_a_full_read() {
     );
 }
 
+/// Every kind of value TOML has, since the cache has to return each one as
+/// the parser produced it.
+const EVERY_TOML_VALUE: &str = r#"
+lockfile_version = 4
+negative = -7
+big = 9007199254740993
+float = 1.5
+whole_float = 2.0
+flag = true
+text = "a \"quoted\" string"
+offset_datetime = 2026-11-23T10:00:00+01:00
+utc_datetime = 2026-11-23T10:00:00Z
+local_datetime = 2026-11-23T10:00:00.5
+date = 2026-11-23
+time = 10:00:00
+empty = []
+mixed = [1, "two", 3.0, { four = 4 }]
+
+[[tools.node]]
+version = "24.1.0"
+backend = "core:node"
+
+[tools.node.platforms.linux-x64]
+checksum = "sha256:abc"
+size = 123
+
+[[tools.node]]
+version = 2026-11-23
+"#;
+
+#[test]
+fn parse_lockfile_toml_returns_what_the_parser_did_from_its_cache() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache_file = temp.path().join("lockfile.msgpack.z");
+    let parsed: toml::Table = toml::from_str(EVERY_TOML_VALUE).unwrap();
+
+    assert_eq!(
+        parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap(),
+        parsed
+    );
+    // Text that does not parse proves the second answer is the stored one.
+    let cached = parse_lockfile_toml_in(&cache_file, "not = [toml").unwrap();
+    assert_eq!(cached, parsed);
+    // The order of keys is part of what the parser returned.
+    assert_eq!(
+        cached.keys().collect::<Vec<_>>(),
+        parsed.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn parse_lockfile_toml_parses_again_when_its_cache_is_damaged() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache_file = temp.path().join("lockfile.msgpack.z");
+    let cache_files = || -> Vec<PathBuf> {
+        std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect()
+    };
+    let parsed: toml::Table = toml::from_str(EVERY_TOML_VALUE).unwrap();
+
+    // Text that does not parse reports its error and stores nothing.
+    assert!(parse_lockfile_toml_in(&cache_file, "not = [toml").is_err());
+    assert!(cache_files().is_empty());
+
+    parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap();
+    let [stored] = &cache_files()[..] else {
+        panic!("expected one cache file, found {:?}", cache_files());
+    };
+    std::fs::write(stored, b"damaged").unwrap();
+    assert_eq!(
+        parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap(),
+        parsed
+    );
+    // And the damaged file was replaced by one that reads.
+    assert_eq!(
+        parse_lockfile_toml_in(&cache_file, "not = [toml").unwrap(),
+        parsed
+    );
+}
+
+#[test]
+fn parse_lockfile_toml_names_its_cache_by_the_content() {
+    // Long enough to be cached, and differing by one byte.
+    let padding = "# padding\n".repeat(PARSED_TOML_CACHE_MIN_LEN / 10 + 1);
+    let first = format!("{padding}lockfile_version = 3\n");
+    let second = format!("{padding}lockfile_version = 4\n");
+    for _ in 0..2 {
+        assert_eq!(
+            parse_lockfile_toml(&first).unwrap()["lockfile_version"].as_integer(),
+            Some(3)
+        );
+        assert_eq!(
+            parse_lockfile_toml(&second).unwrap()["lockfile_version"].as_integer(),
+            Some(4)
+        );
+    }
+}
+
 #[test]
 fn read_parsed_lockfile_parses_again_only_once_the_file_changes() {
     use std::time::{Duration, SystemTime};
