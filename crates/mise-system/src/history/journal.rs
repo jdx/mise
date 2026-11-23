@@ -552,6 +552,11 @@ pub(crate) fn begin_changes_with(
         let prior = PathSnapshot::capture_with(&super::local::root(), &path, capture);
         if let PathSnapshot::Unrecorded { reason, .. } = &prior {
             if super::scope::requires_recovery_preimage() {
+                // The captures so far may have stored sidecars, which are
+                // only cleaned up through the journal entry that names them.
+                if let Err(err) = super::scope::record_all(entries) {
+                    warn!("history: {err:#}");
+                }
                 eyre::bail!(
                     "cannot safely change {} without a recovery preimage: {reason}",
                     display_path(&path)
