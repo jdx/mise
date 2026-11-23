@@ -1,7 +1,9 @@
 use crate::config::Settings;
 use crate::config::env_directive::EnvDirective;
 use crate::task::task_fetcher::TaskFetcher;
-use crate::task::{Task, TaskRunPhase, parse_usage_values_from_task};
+use crate::task::{
+    Task, TaskRunPhase, parse_usage_values_for_inspection, parse_usage_values_from_task,
+};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
@@ -221,9 +223,13 @@ impl Deps {
             if a.has_usage_runtime_templates() {
                 // A `git::` file left unfetched (experimental is off) can't be read, so its usage
                 // defaults come from the task's TOML alone.
-                let usage_values = match TaskFetcher::toml_only(&a) {
-                    Some(toml_only) => parse_usage_values_from_task(config, &toml_only).await?,
-                    None => parse_usage_values_from_task(config, &a).await?,
+                let toml_only = TaskFetcher::toml_only(&a);
+                let task = toml_only.as_ref().unwrap_or(&a);
+                // Looking at the graph is not the run that lets an untrusted task's spec
+                // name files to read.
+                let usage_values = match fetcher.is_inspecting() {
+                    true => parse_usage_values_for_inspection(config, task).await?,
+                    false => parse_usage_values_from_task(config, task).await?,
                 };
                 if !usage_values.is_empty() {
                     a.render_runtime_templates_with_usage(config, &usage_values)

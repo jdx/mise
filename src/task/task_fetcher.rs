@@ -160,6 +160,11 @@ impl TaskFetcher {
         self
     }
 
+    /// Whether this fetcher is for a command that only inspects tasks.
+    pub fn is_inspecting(&self) -> bool {
+        self.inspecting
+    }
+
     /// True for a task whose `file` is a `git::` source that has not been fetched.
     pub fn is_unfetched_git_task(task: &Task) -> bool {
         task.file

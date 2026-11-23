@@ -894,15 +894,17 @@ pub(crate) fn header_has_decoded_template(body: &str) -> bool {
 
 #[cfg(test)]
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
-    parse_task_script_usage_with_env(file, None, "")
+    parse_task_script_usage_with_env(file, None, "", true)
 }
 
 /// `preamble` is the task's `usage` field, which a file task only has from a template it
-/// extends: it comes first, ahead of the script's own `#USAGE` lines.
+/// extends: it comes first, ahead of the script's own `#USAGE` lines. `trusted` is whether
+/// the spec may name files to read (see [`refuse_usage_file_reads`]).
 fn parse_task_script_usage_with_env(
     file: &Path,
     env: Option<&EnvMap>,
     preamble: &str,
+    trusted: bool,
 ) -> usage::Result<usage::Spec> {
     // `file` comes from config that may not be trusted yet, so it is read like
     // a config file: only a regular file, and only up to the size limit.
@@ -913,10 +915,61 @@ fn parse_task_script_usage_with_env(
     if !preamble.trim().is_empty() {
         raw = format!("{}\n{raw}", preamble.trim_end());
     }
-    if raw.trim().is_empty() {
+    // Here usage-lib reads the script again and finds its `#USAGE` lines by its own rules,
+    // so there is no text to check first: an untrusted task keeps the empty spec found above.
+    if raw.trim().is_empty() && trusted {
         return usage::Spec::parse_script(file);
     }
-    parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw), env)
+    let raw = hoist_root_usage_mounts(&raw).unwrap_or(raw);
+    if !trusted {
+        refuse_usage_file_reads(file, &raw)?;
+    }
+    parse_task_usage_raw(file, &raw, env)
+}
+
+/// Refuse the nodes of a usage spec that make its parser read another file: `include`, and
+/// the `schema file=` of an `output`.
+///
+/// This is for a task whose config is not trusted, or any project task in safe mode, whose
+/// spec is parsed without a run: to complete `mise run`, for `mise tasks ls --usage`,
+/// `mise tasks info`, `mise tasks deps` and `mise tasks validate`. The parser reads those
+/// files while it parses, from whatever path the spec names, so unlike the commands of a spec
+/// they cannot be taken out of the result. A file that is not a spec is quoted in the error, a
+/// schema file is printed as part of the spec, and an include that names itself recurses until
+/// the stack overflows.
+///
+/// The nodes are found with the KDL parser `usage::Spec` uses rather than by searching the
+/// text, because a node name can be quoted or escaped. Text that does not parse reads no file,
+/// and is left for `usage::Spec` to report.
+fn refuse_usage_file_reads(file: &Path, raw: &str) -> usage::Result<()> {
+    use usage::kdl::{KdlDocument, KdlNode};
+    fn find(doc: &KdlDocument) -> Option<&KdlNode> {
+        doc.nodes().iter().find_map(|node| {
+            let reads_file = match node.name().value() {
+                "include" => true,
+                "schema" => node.entry("file").is_some(),
+                _ => false,
+            };
+            match reads_file {
+                true => Some(node),
+                false => node.children().and_then(find),
+            }
+        })
+    }
+    let Ok(doc) = raw.parse::<KdlDocument>() else {
+        return Ok(());
+    };
+    match find(&doc) {
+        Some(node) => Err(usage::error::UsageErr::InvalidInput(
+            format!(
+                "`{}` reads a file, and this task's config is not trusted: run `mise trust` to read it",
+                node.name().value()
+            ),
+            node.span(),
+            usage::miette::NamedSource::new(file.to_string_lossy(), raw.to_string()),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Render a usage spec failure with the detail its `Display` leaves behind.
@@ -930,8 +983,17 @@ pub(crate) fn render_usage_err(err: usage::error::UsageErr) -> String {
 }
 
 /// Parse a task's `usage` field, naming the task and what was wrong with its spec.
-pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usage::Spec> {
-    spec.parse::<usage::Spec>().map_err(|err| {
+/// `trusted` is whether the spec may name files to read (see [`refuse_usage_file_reads`]).
+pub(crate) fn parse_task_usage_field(
+    task_name: &str,
+    spec: &str,
+    trusted: bool,
+) -> Result<usage::Spec> {
+    let parsed = match trusted {
+        true => spec.parse::<usage::Spec>(),
+        false => refuse_usage_file_reads(Path::new(""), spec).and_then(|()| spec.parse()),
+    };
+    parsed.map_err(|err| {
         eyre!(
             "invalid usage spec for task '{task_name}'\n{}",
             render_usage_err(err)
@@ -947,8 +1009,9 @@ fn parse_task_script_usage_checked(
     file: &Path,
     env: Option<&EnvMap>,
     preamble: &str,
+    trusted: bool,
 ) -> Result<usage::Spec> {
-    match parse_task_script_usage_with_env(file, env, preamble) {
+    match parse_task_script_usage_with_env(file, env, preamble, trusted) {
         Ok(spec) => Ok(spec),
         // Reading the script is the first thing this does, and a script that was discovered
         // and has since been deleted or made unreadable fails there. Calling that an invalid
@@ -976,8 +1039,9 @@ fn parse_task_script_usage_or_warn(
     file: &Path,
     env: Option<&EnvMap>,
     preamble: &str,
+    trusted: bool,
 ) -> usage::Spec {
-    parse_task_script_usage_checked(file, env, preamble).unwrap_or_else(|err| {
+    parse_task_script_usage_checked(file, env, preamble, trusted).unwrap_or_else(|err| {
         warn!("{err}");
         usage::Spec::default()
     })
@@ -2095,7 +2159,8 @@ impl Task {
             .render_inherited_usage(config, self, false, Some(&env))
             .await?;
             (
-                parse_task_script_usage_or_warn(&file, Some(&include_env), &inherited),
+                // running the task is the consent to read what its spec includes
+                parse_task_script_usage_or_warn(&file, Some(&include_env), &inherited, true),
                 vec![],
             )
         } else {
@@ -2183,10 +2248,13 @@ impl Task {
             let inherited = TaskScriptParser::new(dir.clone())
                 .render_inherited_usage(config, self, false, None)
                 .await?;
+            // Listing, completing and validating a task are not consent to read the files
+            // its spec names.
+            let trusted = self.is_trusted(config).await;
             if strict {
-                parse_task_script_usage_checked(&file, Some(&env), &inherited)?
+                parse_task_script_usage_checked(&file, Some(&env), &inherited, trusted)?
             } else {
-                parse_task_script_usage_or_warn(&file, Some(&env), &inherited)
+                parse_task_script_usage_or_warn(&file, Some(&env), &inherited, trusted)
             }
         } else {
             let scripts_only = self.run_script_strings();
@@ -2221,7 +2289,8 @@ impl Task {
             let inherited = TaskScriptParser::new(self.config_root.clone())
                 .render_inherited_usage(config, self, true, None)
                 .await?;
-            parse_task_script_usage_or_warn(&file, Some(&env), &inherited)
+            // preflight is part of the run
+            parse_task_script_usage_or_warn(&file, Some(&env), &inherited, true)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(self.config_root.clone())
@@ -4369,6 +4438,21 @@ pub(crate) async fn parse_usage_values_from_bypassed_task(
     parse_usage_values(config, task, true).await
 }
 
+/// Like [`parse_usage_values_from_task`] for a command that builds the dependency graph to
+/// look at it, such as `mise tasks deps`. That is not the run that consents to reading the
+/// files an untrusted task's spec names (see [`refuse_usage_file_reads`]), so such a task's
+/// values come from the spec the listing commands parse.
+pub(crate) async fn parse_usage_values_for_inspection(
+    config: &Arc<Config>,
+    task: &Task,
+) -> Result<IndexMap<String, tera::Value>> {
+    if task.is_trusted(config).await {
+        return parse_usage_values_from_task(config, task).await;
+    }
+    let spec = task.parse_usage_spec_for_display(config).await?;
+    Ok(usage_values_from_spec(task, &spec))
+}
+
 async fn parse_usage_values(
     config: &Arc<Config>,
     task: &Task,
@@ -4387,23 +4471,27 @@ async fn parse_usage_values(
         }
         Err(err) => return Err(err),
     };
+    Ok(usage_values_from_spec(task, &spec))
+}
+
+fn usage_values_from_spec(task: &Task, spec: &usage::Spec) -> IndexMap<String, tera::Value> {
     if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() && spec.cmd.subcommands.is_empty() {
-        return Ok(IndexMap::new());
+        return IndexMap::new();
     }
     // Build args list with empty first element (usage parser expects argv[0] to be the command)
     let args: Vec<String> = once(String::new())
-        .chain(task.args_for_usage_parser(&spec, &task.args))
+        .chain(task.args_for_usage_parser(spec, &task.args))
         .collect();
-    let po = match usage::Parser::new(&spec).parse(&args) {
+    let po = match usage::Parser::new(spec).parse(&args) {
         Ok(po) => po,
         Err(e) => {
             debug!("usage parse failed for task '{}': {e}", task.name);
-            return Ok(IndexMap::new());
+            return IndexMap::new();
         }
     };
-    Ok(TaskScriptParser::make_usage_ctx(&spec, &po)
+    TaskScriptParser::make_usage_ctx(spec, &po)
         .into_iter()
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]
@@ -5246,6 +5334,66 @@ exec shapeme "$@"
 
         assert_eq!(spec.cmd.flags.len(), 1);
         assert_eq!(spec.cmd.flags[0].long, ["release"]);
+    }
+
+    /// An untrusted task's spec is parsed to list and complete it, and the usage parser
+    /// reads the files a spec names while it parses: a file that is not a spec is quoted in
+    /// the error, and one that includes itself never returns.
+    #[test]
+    fn test_untrusted_usage_spec_reads_no_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let secret = dir.path().join("netrc");
+        let looping = dir.path().join("loop.usage.kdl");
+        std::fs::write(&secret, "machine example.com password hunter2\n").unwrap();
+        std::fs::write(&looping, "include file=\"loop.usage.kdl\"\n").unwrap();
+        let specs = [
+            format!("include file={secret:?}"),
+            format!("include file={looping:?}"),
+            // a node name can be written as a string, with escapes
+            format!("\"incl\\u{{75}}de\" file={secret:?}"),
+            format!("output \"json\" {{\n  schema file={secret:?}\n}}"),
+            format!("cmd \"sub\" {{\n  output \"json\" {{\n    schema file={secret:?}\n  }}\n}}"),
+        ];
+        for spec in &specs {
+            let err = super::parse_task_usage_field("build", spec, false).unwrap_err();
+            let err = format!("{err:?}");
+            assert!(err.contains("mise trust"), "{spec}: {err}");
+            assert!(!err.contains("hunter2"), "{spec}: {err}");
+
+            let task = dir.path().join("build");
+            let lines: String = spec.lines().map(|l| format!("#USAGE {l}\n")).collect();
+            std::fs::write(&task, format!("#!/usr/bin/env bash\n{lines}")).unwrap();
+            let err = super::parse_task_script_usage_with_env(&task, None, "", false).unwrap_err();
+            let err = super::render_usage_err(err);
+            assert!(err.contains("mise trust"), "{spec}: {err}");
+            assert!(!err.contains("hunter2"), "{spec}: {err}");
+        }
+        // the same specs are read for a trusted task, and one with nothing to read is fine
+        assert!(super::parse_task_usage_field("build", &specs[3], true).is_ok());
+        let spec = super::parse_task_usage_field("build", "flag \"--release\"", false).unwrap();
+        assert_eq!(spec.cmd.flags[0].long, ["release"]);
+    }
+
+    /// When mise finds no usage text, usage-lib is asked to look by its own rules. A bare
+    /// `#MISE` line is (empty) usage text to mise, which stops at the code after it, while
+    /// usage-lib reads on to the `#USAGE` line.
+    #[test]
+    fn test_untrusted_usage_spec_is_not_left_to_usage_lib() {
+        let dir = tempfile::tempdir().unwrap();
+        let secret = dir.path().join("netrc");
+        let task = dir.path().join("build");
+        std::fs::write(&secret, "machine example.com password hunter2\n").unwrap();
+        std::fs::write(
+            &task,
+            format!("#!/usr/bin/env bash\n#MISE\ntrue\n#USAGE include file={secret:?}\n"),
+        )
+        .unwrap();
+
+        let err = super::parse_task_script_usage_with_env(&task, None, "", true).unwrap_err();
+        assert!(super::render_usage_err(err).contains("hunter2"));
+        let spec = super::parse_task_script_usage_with_env(&task, None, "", false).unwrap();
+        assert_eq!(spec.bin, "build");
+        assert!(spec.cmd.flags.is_empty());
     }
 
     #[tokio::test]

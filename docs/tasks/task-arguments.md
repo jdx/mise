@@ -487,6 +487,13 @@ so they cannot supply variables for include paths. If an include references an
 undefined variable, mise reports an invalid usage spec. The task still loads,
 but without its argument parsing, help, and validation.
 
+An `include` makes mise read another file, and so does the `schema file=` of an
+`output`. For a project task, listing, completion, `--help`, `mise tasks info`,
+`mise tasks deps`, and `mise tasks validate` read those files only once the
+project is [trusted](/security.html#what-needs-trust), and never in safe mode.
+Until then mise reports an invalid usage spec for the task instead of reading
+the file. Running the task with `mise run` reads them as before.
+
 To share tools, environment variables, or dependencies between tasks in the
 same project, use [task templates](/tasks/templates.html).
 

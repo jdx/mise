@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+# Listing and completing tasks parses every task's usage spec, and the usage
+# parser reads the files a spec names while it parses. For a task nobody
+# trusted that would read any file the repository points at: one that is not a
+# spec is quoted in the warning, and one that includes itself never returns.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+outside="$HOME/outside"
+mkdir -p "$outside" mise-tasks
+echo "machine example.com password hunter2" >"$outside/netrc"
+echo 'flag "--from-include"' >"$outside/shared.usage.kdl"
+echo 'include file="loop.usage.kdl"' >loop.usage.kdl
+
+cat <<EOF >mise.toml
+[tasks.plain]
+run = "true"
+usage = 'flag "--plain"'
+
+[tasks.include]
+run = 'echo "from_include=\${usage_from_include?}"'
+usage = 'include file="$outside/shared.usage.kdl"'
+
+[tasks.not-a-spec]
+run = "true"
+usage = 'include file="$outside/netrc"'
+
+# a node name can be written as a string
+[tasks.quoted]
+run = "true"
+usage = '"incl\u{75}de" file="$outside/netrc"'
+
+[tasks.loop]
+run = "true"
+usage = 'include file="$PWD/loop.usage.kdl"'
+
+[tasks.schema]
+run = "true"
+usage = '''
+cmd "sub" {
+  output "json" {
+    schema file="$outside/netrc"
+  }
+}
+'''
+EOF
+
+cat <<'EOF' >mise-tasks/script
+#!/usr/bin/env bash
+#USAGE include file="$HOME/outside/netrc"
+EOF
+chmod +x mise-tasks/script
+
+# Only a template from the user's own config can give an untrusted task a
+# dependency that refers to its usage values, which makes the dependency graph
+# parse the spec as well.
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[task_templates.usage-dep]
+depends = ["plain {{usage.target}}"]
+EOF
+cat <<'EOF' >mise-tasks/extended
+#!/usr/bin/env bash
+#MISE extends="usage-dep"
+#USAGE include file="$HOME/outside/netrc"
+EOF
+chmod +x mise-tasks/extended
+
+# What completion mounts, and a Tab press itself
+untrusted="$(mise tasks --usage 2>&1)"
+assert_not_contains_text "$untrusted" "hunter2"
+assert_not_contains_text "$untrusted" "from-include"
+assert_contains_text "$untrusted" "mise trust"
+# the other tasks still complete
+assert_contains_text "$untrusted" "flag --plain"
+assert_contains_text "$untrusted" "cmd loop"
+assert_not_contains "mise __complete_word__ --shell fish --line 'mise run include --' 2>&1" "from-include"
+assert_contains "mise __complete_word__ --shell fish --line 'mise run ' 2>/dev/null" "plain"
+assert_not_contains "mise tasks info schema --json 2>&1" "hunter2"
+assert_not_contains "mise tasks info script 2>&1" "hunter2"
+assert_not_contains "mise tasks validate 2>&1 || true" "hunter2"
+assert_not_contains "mise tasks deps 2>&1" "hunter2"
+assert_not_contains "MISE_SAFE=1 mise tasks --usage 2>&1" "hunter2"
+
+# Running a task is the consent to read what its spec includes.
+assert "mise run include --from-include" "from_include=true"
+
+# A trusted project's includes are read for listing too, except in safe mode.
+# (An include that names itself is the user's own by then, and usage's to limit.)
+rm loop.usage.kdl
+mise trust
+assert_contains "mise tasks --usage 2>/dev/null" "flag --from-include"
+assert_contains "mise tasks info schema --json 2>/dev/null" "hunter2"
+assert_not_contains "MISE_SAFE=1 mise tasks --usage 2>&1" "from-include"
+assert_not_contains "MISE_SAFE=1 mise tasks info schema --json 2>&1" "hunter2"

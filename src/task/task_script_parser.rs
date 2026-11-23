@@ -721,6 +721,9 @@ impl TaskScriptParser {
         scripts: &[String],
         preflight: bool,
     ) -> Result<usage::Spec> {
+        // Preflight is part of a run, which is the consent to read what the spec includes.
+        // Every other caller is looking at a task that may never have been trusted.
+        let trusted = preflight || task.is_trusted(config).await;
         let usage_has_template = contains_template_syntax(&task.usage);
         let scripts_have_template = scripts
             .iter()
@@ -728,7 +731,7 @@ impl TaskScriptParser {
         if !usage_has_template
             && (!scripts_have_template || Settings::get().task.disable_spec_from_run_scripts)
         {
-            return parse_task_usage_field(&task.name, task.usage.trim());
+            return parse_task_usage_field(&task.name, task.usage.trim(), trusted);
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
@@ -743,7 +746,8 @@ impl TaskScriptParser {
         } else {
             task.usage.trim().to_string()
         };
-        let spec_from_field: usage::Spec = parse_task_usage_field(&task.name, &rendered_usage)?;
+        let spec_from_field: usage::Spec =
+            parse_task_usage_field(&task.name, &rendered_usage, trusted)?;
 
         if Settings::get().task.disable_spec_from_run_scripts {
             return Ok(spec_from_field);
@@ -806,7 +810,8 @@ impl TaskScriptParser {
             let scripts = scripts.iter().map(|s| s.trim().to_string()).collect();
             return Ok((
                 scripts,
-                parse_task_usage_field(&task.name, task.usage.trim())?,
+                // running the task is the consent to read what its spec includes
+                parse_task_usage_field(&task.name, task.usage.trim(), true)?,
             ));
         }
 
@@ -822,7 +827,8 @@ impl TaskScriptParser {
         } else {
             task.usage.trim().to_string()
         };
-        let spec_from_field: usage::Spec = parse_task_usage_field(&task.name, &rendered_usage)?;
+        let spec_from_field: usage::Spec =
+            parse_task_usage_field(&task.name, &rendered_usage, true)?;
         let usage_ctx = Self::make_usage_ctx_from_spec_defaults(&spec_from_field);
         tera_ctx.insert("usage", &usage_ctx);
 
