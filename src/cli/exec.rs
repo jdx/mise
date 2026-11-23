@@ -862,7 +862,8 @@ where
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
-    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    // What came from mise's own command line is a lossy copy: the program gets the originals.
+    let args = env::args_as_given(args.into_iter().map(Into::into).collect());
     let program = program.to_executable();
     // Captured before `program` is shadowed by the resolved path, so a failed
     // exec can still name what the user asked for.
@@ -1172,7 +1173,8 @@ where
         // A native shim that finds its own path here was picked instead of the tool.
         env::set_var(env::MISE_SHIM_TARGET_ENV, &program);
     }
-    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    // What came from mise's own command line is a lossy copy: the program gets the originals.
+    let args = env::args_as_given(args.into_iter().map(Into::into).collect());
 
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting

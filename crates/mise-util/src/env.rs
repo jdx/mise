@@ -9,7 +9,7 @@ use log::LevelFilter;
 use mise_settings::Settings;
 use std::collections::{BTreeSet, HashMap, HashSet};
 pub use std::env::*;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::LazyLock as Lazy;
@@ -1053,6 +1053,25 @@ pub fn args_safe() -> Vec<String> {
     apply_launcher_args(args_os().map(|a| a.to_string_lossy().to_string()).collect())
 }
 
+/// `args` for handing on to another program, with those that end this process's command line
+/// given back as they arrived.
+///
+/// [`args_safe`] is a lossy copy, which is fine for mise's own command line. Handed on, its
+/// U+FFFD is a different name from the one the caller passed, and can be that of another file.
+pub fn args_as_given(args: Vec<OsString>) -> Vec<OsString> {
+    restore_given_args(args, &args_os().skip(1).collect::<Vec<_>>())
+}
+
+fn restore_given_args(mut args: Vec<OsString>, given: &[OsString]) -> Vec<OsString> {
+    for (arg, given) in args.iter_mut().rev().zip(given.iter().rev()) {
+        if arg.to_str() != Some(&*given.to_string_lossy()) {
+            break;
+        }
+        arg.clone_from(given);
+    }
+    args
+}
+
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 
 /// essentially, this is whether we show spinners or build output on runtime install
@@ -1642,6 +1661,35 @@ mod launcher_args_tests {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn args_ending_the_command_line_are_handed_on_as_given() {
+        use super::restore_given_args;
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let os = |bytes: &[u8]| OsString::from_vec(bytes.to_vec());
+        let lossy = |args: &[OsString]| -> Vec<OsString> {
+            args.iter()
+                .map(|a| a.to_string_lossy().as_ref().into())
+                .collect()
+        };
+        // `notes<0xff>` and `notes<U+FFFD>` are two file names with one lossy copy
+        let given = [os(b"-w"), os(b"notes\xff"), os(b"notes\xef\xbf\xbd")];
+        assert_eq!(restore_given_args(lossy(&given), &given), given);
+        // a shim puts the tool's own arguments before what it was called with
+        let mut args = vec![os("--config\u{fffd}".as_bytes())];
+        args.extend(lossy(&given));
+        let restored = restore_given_args(args.clone(), &given);
+        assert_eq!(restored[0], args[0]);
+        assert_eq!(restored[1..], given);
+        // arguments that are not the command line's are left alone
+        let shell = vec![os(b"-c"), os("echo \u{fffd}".as_bytes())];
+        assert_eq!(
+            restore_given_args(shell.clone(), &[os(b"en"), os(b"echo \xff"), os(b".")]),
+            shell
+        );
+    }
+
     #[test]
     fn fish_secret_copies_are_always_inherited_secrets_but_plain_copies_are_not() {
         let names = [
