@@ -3249,35 +3249,88 @@ pub fn is_safe_relative_path(path: &str) -> bool {
 /// ship an `/opt/<name>` tree link into it with absolute paths. The rewritten
 /// link is checked like any other, and an absolute link to a path that is not in
 /// the tree is left as it is and refused.
+///
+/// A link that needs more than 40 links to resolve is refused, like the kernel
+/// refuses to open it. The work for the whole tree is bounded by
+/// [`LINK_CHECK_STEPS`]; a tree that needs more is refused.
 pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    ensure_symlinks_stay_within_steps(root, LINK_CHECK_STEPS)
+}
+
+/// The work one [`ensure_symlinks_stay_within`] call may do, counted in path
+/// components walked, queued or looked up and directory entries visited. An
+/// ordinary link costs a few dozen, so a tree with hundreds of thousands of
+/// links fits; a crafted one whose links make every check walk thousands of
+/// components does not.
+const LINK_CHECK_STEPS: u64 = 20_000_000;
+
+fn ensure_symlinks_stay_within_steps(root: &Path, mut steps: u64) -> Result<()> {
     if fs::symlink_metadata(root)?.file_type().is_symlink() {
         bail!("{} is a symlink", display_path(root));
     }
+    let over_budget = || link_check_over_budget(root);
     #[cfg(unix)]
-    rebase_absolute_symlinks_into_tree(root)?;
+    rebase_absolute_symlinks_into_tree(root, &mut steps)?;
     let real_root = root.canonicalize()?;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
         for entry in fs::read_dir(&dir)? {
             let path = entry?.path();
+            if !spend_link_check_steps(&mut steps, 1) {
+                return Err(over_budget());
+            }
             let kind = fs::symlink_metadata(&path)?.file_type();
             if kind.is_dir() {
                 dirs.push(path);
             } else if kind.is_symlink() {
                 let target = fs::read_link(&path)?;
-                let base = path.parent().unwrap_or(root).canonicalize()?;
-                if !link_target_stays_within(&real_root, root, &base, &target) {
-                    bail!(
+                let parent = path.parent().unwrap_or(root);
+                if !spend_link_check_steps(&mut steps, parent.components().count()) {
+                    return Err(over_budget());
+                }
+                let base = parent.canonicalize()?;
+                match link_target_stays_within(&real_root, root, &base, &target, &mut steps) {
+                    LinkCheck::Inside => {}
+                    LinkCheck::Outside => bail!(
                         "symlink {} points outside of {}: {}",
                         display_path(&path),
                         display_path(root),
                         target.display()
-                    );
+                    ),
+                    LinkCheck::TooManyLinks => bail!(
+                        "symlink {} in {} resolves through more than 40 links: {}",
+                        display_path(&path),
+                        display_path(root),
+                        target.display()
+                    ),
+                    LinkCheck::OverBudget => return Err(over_budget()),
                 }
             }
         }
     }
     Ok(())
+}
+
+fn link_check_over_budget(root: &Path) -> eyre::Report {
+    eyre::eyre!(
+        "the symlinks in {} take too long to check (more than {LINK_CHECK_STEPS} steps), so the archive is refused",
+        display_path(root)
+    )
+}
+
+/// Takes `n` steps from the budget of [`ensure_symlinks_stay_within`], and
+/// reports whether there were enough.
+fn spend_link_check_steps(steps: &mut u64, n: usize) -> bool {
+    match steps.checked_sub(n as u64) {
+        Some(left) => {
+            *steps = left;
+            true
+        }
+        None => {
+            *steps = 0;
+            false
+        }
+    }
 }
 
 /// Rewrites absolute symlinks whose target exists inside `root` (as `root` plus
@@ -3286,17 +3339,22 @@ pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
 /// that are not in the tree, contain `..`, or would still leave `root` once
 /// rewritten are left untouched for [`ensure_symlinks_stay_within`] to refuse.
 #[cfg(unix)]
-fn rebase_absolute_symlinks_into_tree(root: &Path) -> Result<()> {
+fn rebase_absolute_symlinks_into_tree(root: &Path, steps: &mut u64) -> Result<()> {
     let real_root = root.canonicalize()?;
+    let over_budget = || link_check_over_budget(root);
     // A link can depend on another absolute link that is rewritten later in the
     // walk, so repeat until a pass rewrites nothing. Each rewrite turns an
-    // absolute link relative, so this ends.
+    // absolute link relative, so this ends, and every pass is charged to the
+    // budget.
     loop {
         let mut rewrote = false;
         let mut dirs = vec![root.to_path_buf()];
         while let Some(dir) = dirs.pop() {
             for entry in fs::read_dir(&dir)? {
                 let path = entry?.path();
+                if !spend_link_check_steps(steps, 1) {
+                    return Err(over_budget());
+                }
                 let kind = fs::symlink_metadata(&path)?.file_type();
                 if kind.is_dir() {
                     dirs.push(path);
@@ -3319,10 +3377,17 @@ fn rebase_absolute_symlinks_into_tree(root: &Path) -> Result<()> {
                 }
                 let parent = path.parent().unwrap_or(root);
                 let replacement = relative_path(parent, &candidate);
+                if !spend_link_check_steps(steps, parent.components().count()) {
+                    return Err(over_budget());
+                }
                 let base = parent.canonicalize()?;
-                if link_target_stays_within(&real_root, root, &base, &replacement) {
-                    make_symlink(&replacement, &path)?;
-                    rewrote = true;
+                match link_target_stays_within(&real_root, root, &base, &replacement, steps) {
+                    LinkCheck::Inside => {
+                        make_symlink(&replacement, &path)?;
+                        rewrote = true;
+                    }
+                    LinkCheck::Outside | LinkCheck::TooManyLinks => {}
+                    LinkCheck::OverBudget => return Err(over_budget()),
                 }
             }
         }
@@ -3403,13 +3468,33 @@ fn relative_path(from: &Path, to: &Path) -> PathBuf {
     }
 }
 
+/// The outcome of [`link_target_stays_within`].
+enum LinkCheck {
+    Inside,
+    Outside,
+    /// Resolving the target follows more than 40 different links.
+    TooManyLinks,
+    /// The step budget of [`ensure_symlinks_stay_within`] ran out.
+    OverBudget,
+}
+
 /// Resolves `target` as seen from the directory `base` (already real), following
 /// every link on the way, and reports whether each step stays under `root` (the
 /// real path of the tree, which is `given_root` as the caller spelled it).
-/// Components that do not exist are taken as written. A chain of links that loops
-/// without leaving `root` is harmless, so the walk stops after `MAX_LINKS` links
-/// and accepts it.
-fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target: &Path) -> bool {
+/// Components that do not exist are taken as written.
+///
+/// A link met again with the same rest of the path still to walk is a loop: the
+/// walk would repeat forever, and the kernel refuses such a path. Its name is
+/// then taken as written and the rest of the path is still checked, because
+/// resolvers that look up one component at a time end up there. More than 40
+/// different links is [`LinkCheck::TooManyLinks`]. The work is charged to `steps`.
+fn link_target_stays_within(
+    root: &Path,
+    given_root: &Path,
+    base: &Path,
+    target: &Path,
+    steps: &mut u64,
+) -> LinkCheck {
     use std::collections::VecDeque;
     use std::path::Component;
     const MAX_LINKS: usize = 40;
@@ -3420,8 +3505,15 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
     };
     let mut current = base.to_path_buf();
     let mut pending = parts(target);
-    let mut followed = 0;
+    if !spend_link_check_steps(steps, pending.len()) {
+        return LinkCheck::OverBudget;
+    }
+    // Each link followed, with what was left to walk after it.
+    let mut followed: Vec<(PathBuf, VecDeque<PathBuf>)> = vec![];
     while let Some(part) = pending.pop_front() {
+        if !spend_link_check_steps(steps, 1) {
+            return LinkCheck::OverBudget;
+        }
         let Some(component) = part.components().next() else {
             continue;
         };
@@ -3435,9 +3527,12 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
                     .into_iter()
                     .find_map(|root| absolute.strip_prefix(root).ok())
                 else {
-                    return false;
+                    return LinkCheck::Outside;
                 };
                 pending = parts(rest);
+                if !spend_link_check_steps(steps, pending.len()) {
+                    return LinkCheck::OverBudget;
+                }
                 current = root.to_path_buf();
             }
             Component::CurDir => {}
@@ -3446,14 +3541,32 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
             }
             Component::Normal(name) => {
                 let candidate = current.join(name);
+                // The lookup walks every component of the path.
+                if !spend_link_check_steps(steps, candidate.components().count()) {
+                    return LinkCheck::OverBudget;
+                }
                 match fs::read_link(&candidate) {
                     Ok(link) => {
-                        followed += 1;
-                        if followed > MAX_LINKS {
-                            return true;
+                        // Comparing against the links followed so far.
+                        if !spend_link_check_steps(steps, (followed.len() + 1) * pending.len()) {
+                            return LinkCheck::OverBudget;
                         }
-                        for part in link.components().rev() {
-                            pending.push_front(PathBuf::from(part.as_os_str()));
+                        if followed
+                            .iter()
+                            .any(|(seen, rest)| *seen == candidate && *rest == pending)
+                        {
+                            current = candidate;
+                        } else if followed.len() == MAX_LINKS {
+                            return LinkCheck::TooManyLinks;
+                        } else {
+                            let link_parts = link.components().count();
+                            if !spend_link_check_steps(steps, pending.len() + link_parts) {
+                                return LinkCheck::OverBudget;
+                            }
+                            followed.push((candidate, pending.clone()));
+                            for part in link.components().rev() {
+                                pending.push_front(PathBuf::from(part.as_os_str()));
+                            }
                         }
                     }
                     Err(_) => current = candidate,
@@ -3461,10 +3574,10 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
             }
         }
         if !current.starts_with(root) {
-            return false;
+            return LinkCheck::Outside;
         }
     }
-    true
+    LinkCheck::Inside
 }
 
 fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {

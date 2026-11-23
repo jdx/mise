@@ -801,3 +801,92 @@ fn test_ensure_symlinks_stay_within_rebases_chained_absolute_links() {
 
     assert_eq!(fs::read_to_string(root.join("tool")).unwrap(), "tool");
 }
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_refuses_a_chain_of_more_than_40_links() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    for hops in [40, 41, 100] {
+        let root = tmp.path().join(format!("install-{hops}"));
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::write(root.join("bin/tool"), "tool").unwrap();
+        symlink(".", root.join("d")).unwrap();
+        // Every `d/` follows a link without moving; the rest of the target
+        // leads out of the tree.
+        symlink(
+            format!("{}../../outside", "d/".repeat(hops)),
+            root.join("escape"),
+        )
+        .unwrap();
+        let err = ensure_symlinks_stay_within(&root).unwrap_err();
+        let expected = if hops > 40 {
+            "more than 40 links"
+        } else {
+            "points outside of"
+        };
+        assert!(format!("{err:#}").contains(expected), "{hops}: {err:#}");
+    }
+
+    // 40 links that end inside the tree are fine.
+    let root = tmp.path().join("install-40");
+    fs::remove_file(root.join("escape")).unwrap();
+    symlink(format!("{}bin/tool", "d/".repeat(40)), root.join("inside")).unwrap();
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_checks_the_path_after_a_loop() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(&root).unwrap();
+    symlink("b", root.join("a")).unwrap();
+    symlink("a", root.join("b")).unwrap();
+    symlink("a/x", root.join("through")).unwrap();
+    ensure_symlinks_stay_within(&root).unwrap();
+
+    symlink("a/../../outside", root.join("escape")).unwrap();
+    let err = ensure_symlinks_stay_within(&root).unwrap_err();
+    assert!(format!("{err:#}").contains("points outside of"), "{err:#}");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_bounds_the_work_for_one_tree() {
+    use std::os::unix::fs::symlink;
+
+    // Ten chained links whose targets walk `x/..` 200 times, and twenty short
+    // links into the chain: every link stays inside, but each short link costs
+    // thousands of lookups.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(root.join("x")).unwrap();
+    fs::create_dir_all(root.join("s")).unwrap();
+    fs::create_dir_all(root.join("bin")).unwrap();
+    fs::write(root.join("bin/tool"), "tool").unwrap();
+    for i in 0..10 {
+        let next = if i == 9 {
+            "bin/tool".to_string()
+        } else {
+            format!("L{}", i + 1)
+        };
+        symlink(
+            format!("{}{next}", "x/../".repeat(200)),
+            root.join(format!("L{i}")),
+        )
+        .unwrap();
+    }
+    for i in 0..20 {
+        symlink("../L0", root.join(format!("s/{i}"))).unwrap();
+    }
+    ensure_symlinks_stay_within(&root).unwrap();
+    let err = ensure_symlinks_stay_within_steps(&root, 100_000).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("take too long to check"),
+        "{err:#}"
+    );
+}
