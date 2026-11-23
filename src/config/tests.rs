@@ -97,6 +97,56 @@ fn test_task_config_rust_cache_is_a_default() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn test_path_is_spelled_in_dir_does_not_follow_links_into_it() -> Result<()> {
+    use std::os::unix::fs::symlink;
+    let tmp = TempDir::new()?;
+    let real_home = tmp.path().join("real-home");
+    let dotfiles = tmp.path().join("dotfiles");
+    fs::create_dir_all(real_home.join(".config"))?;
+    fs::create_dir_all(dotfiles.join("mise/tasks/setup"))?;
+    File::create(dotfiles.join("mise/tasks/build"))?;
+    symlink(dotfiles.join("mise"), real_home.join(".config/mise"))?;
+    let home = tmp.path().join("home");
+    symlink(&real_home, &home)?;
+    let tasks = home.join(".config/mise/tasks");
+
+    // the global directory under each of its spellings
+    for spelling in [
+        tasks.clone(),
+        real_home.join(".config/mise/tasks"),
+        dotfiles.join("mise/tasks"),
+    ] {
+        assert!(
+            path_is_spelled_in_dir(&spelling.join("build"), &tasks),
+            "{}",
+            spelling.display()
+        );
+    }
+
+    let project = tmp.path().join("project");
+    fs::create_dir_all(project.join("mise-tasks"))?;
+    fs::create_dir_all(project.join(".mise"))?;
+    symlink(tasks.join("build"), project.join("mise-tasks/bootstrap"))?;
+    symlink(tasks.join("setup"), project.join(".mise/tasks"))?;
+    symlink(&tasks, project.join("mise-tasks/all"))?;
+    symlink(home.join(".config/mise"), project.join("config"))?;
+    for linked in [
+        project.join("mise-tasks/bootstrap"),
+        project.join(".mise/tasks/bootstrap"),
+        project.join("mise-tasks/all/build"),
+        project.join("config/tasks/build"),
+    ] {
+        assert!(
+            !path_is_spelled_in_dir(&linked, &tasks),
+            "{}",
+            linked.display()
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn test_collect_task_files_skips_dangling_symlinks() -> Result<()> {
     let tmp = TempDir::new()?;

@@ -5672,7 +5672,27 @@ pub(crate) fn is_global_task_include_path(path: &Path) -> bool {
         dirs::SYSTEM_CONFIG.join("tasks"),
     ]
     .iter()
-    .any(|prefix| file::path_starts_with_resolved(path, prefix))
+    .any(|dir| path_is_spelled_in_dir(path, dir))
+}
+
+/// Whether `path`, as written, names something inside `dir`. Links on the way to `dir` itself are
+/// followed, so `dir` reached under another spelling (a linked home or config directory) still
+/// counts, but links in `path` below that are not: a project file that links into `dir` is still
+/// the project's file.
+fn path_is_spelled_in_dir(path: &Path, dir: &Path) -> bool {
+    let Ok(path) = path.absolutize() else {
+        return false;
+    };
+    let Ok(dir) = dir.absolutize() else {
+        return false;
+    };
+    path.starts_with(&dir)
+        || dir.ancestors().any(|ancestor| {
+            let rest = dir.strip_prefix(ancestor).unwrap_or(Path::new(""));
+            ancestor
+                .canonicalize()
+                .is_ok_and(|resolved| path.starts_with(dunce::simplified(&resolved).join(rest)))
+        })
 }
 
 #[async_backtrace::framed]
