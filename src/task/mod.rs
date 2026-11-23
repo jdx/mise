@@ -5205,10 +5205,8 @@ rust_cache = { unknown = true }
             assert!(file_declares_secrets(toml, &body), "{body}");
         }
         // the marker as the first key of a nested table
-        let body = format!(
-            "[build]\nrun = \"cargo build\"\n[build.env]\n\"$__toml_private_datetime\" = \"1979-05-27\"\nX = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
-        );
-        assert!(file_has_decoded_template(toml, &body), "{body}");
+        let body = "[build]\nrun = \"cargo build\"\n[build.env]\n\"$__toml_private_datetime\" = \"1979-05-27\"\nX = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n";
+        assert!(file_has_decoded_template(toml, body), "{body}");
         // a real date is still no template, and a file the parser rejects does not load
         assert!(!file_has_decoded_template(
             toml,
