@@ -1205,9 +1205,9 @@ pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
             }
         }
     });
-    match path.canonicalize() {
-        Ok(path) => IS_IGNORED.lock().unwrap().contains(&path),
-        Err(_) => {
+    match file::canonicalize_cached(path) {
+        Some(path) => IS_IGNORED.lock().unwrap().contains(&path),
+        None => {
             debug!("is_persisted_ignored: path canonicalize failed");
             true
         }
