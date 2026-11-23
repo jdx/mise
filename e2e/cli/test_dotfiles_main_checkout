@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# `main_checkout = true` links a source inside a linked Git worktree at the
+# same path in the main checkout, so the link survives removing the worktree.
+require_cmd git
+export MISE_HISTORY_ENABLED=0
+root="$(pwd -P)"
+main="$root/main"
+wt="$root/wt"
+commit() {
+  git -C "$1" -c user.name=Test -c user.email=test@example.test -c commit.gpgsign=false commit -qm init
+}
+git init -q "$main"
+mkdir -p "$main/nested" "$main/files" "$main/tree"
+echo main >"$main/files/value"
+echo tree >"$main/tree/a"
+cat >"$main/nested/mise.toml" <<'TOML'
+[dotfiles]
+"~/.stable" = { source = "../files/value", main_checkout = true, relative = false }
+"~/.tree" = { source = "../tree", mode = "symlink-each", main_checkout = true, relative = false }
+"~/.plain" = { source = "../files/value", relative = false }
+TOML
+git -C "$main" add .
+commit "$main"
+
+# from the main checkout itself the source is linked as it is
+assert_succeed "cd '$main/nested' && mise dot apply --yes"
+assert "readlink ~/.stable" "$main/files/value"
+
+# from a linked worktree, the main-checkout links are already in place and
+# only the entry without the key moves into the worktree
+git -C "$main" worktree add -q --detach "$wt" HEAD
+echo linked >"$wt/files/value"
+assert_contains "cd '$wt/nested' && mise dot apply --dry-run" "~/.plain"
+assert_not_contains "cd '$wt/nested' && mise dot apply --dry-run" "~/.stable"
+assert_not_contains "cd '$wt/nested' && mise dot apply --dry-run" "~/.tree"
+assert_succeed "cd '$wt/nested' && mise dot apply --yes"
+assert "readlink ~/.stable" "$main/files/value"
+assert "readlink ~/.tree/a" "$main/tree/a"
+assert "cat ~/.stable" "main"
+assert "cat ~/.plain" "linked"
+
+# the links survive removing the worktree
+git -C "$main" worktree remove --force "$wt"
+assert "cat ~/.stable" "main"
+assert "cat ~/.tree/a" "tree"
+
+# a source that exists only in the worktree is not linked into it
+git -C "$main" worktree add -q --detach "$wt" HEAD
+echo new >"$wt/files/new"
+mkdir -p "$wt/missing"
+cat >"$wt/missing/mise.toml" <<'TOML'
+[dotfiles]
+"~/.new" = { source = "../files/new", main_checkout = true }
+TOML
+assert_fail_contains "cd '$wt/missing' && mise dot apply --yes 2>&1" "main/files/new"
+assert_fail "test -L ~/.new"
+
+# a worktree of a bare repository has no main checkout
+git clone -q --bare "$main" "$root/bare"
+git --git-dir="$root/bare" worktree add -q --detach "$root/bare-wt" HEAD
+assert_contains "cd '$root/bare-wt/nested' && mise dot apply --dry-run 2>&1" "no main checkout path to link to"
+
+# only symlink modes take the key
+mkdir -p "$root/copy"
+echo copied >"$root/copy/value"
+# schema: invalid
+cat >"$root/copy/mise.toml" <<'TOML'
+[dotfiles]
+"~/.copied" = { source = "value", mode = "copy", main_checkout = true }
+TOML
+assert_contains "cd '$root/copy' && mise dot apply --dry-run 2>&1" 'main_checkout requires mode = "symlink" or "symlink-each"'

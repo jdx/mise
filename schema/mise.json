@@ -7475,12 +7475,11 @@
               },
               "mode": {
                 "type": "string",
-                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"symlink-main\" links to an explicit path in the main Git checkout. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared. \"fnox\" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared. \"fnox\" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source",
                 "anyOf": [
                   {
                     "enum": [
                       "symlink",
-                      "symlink-main",
                       "symlink-each",
                       "copy",
                       "template",
@@ -7528,6 +7527,10 @@
                 "type": "boolean",
                 "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
                 "default": false
+              },
+              "main_checkout": {
+                "type": "boolean",
+                "description": "symlink and symlink-each only: when the source is inside a linked Git worktree, link to the same path in the repository's main checkout instead, so the link keeps working after the worktree is removed; the source must exist there"
               },
               "relative": {
                 "type": "boolean",
@@ -7679,6 +7682,7 @@
                     "remove_empty": false,
                     "create_if_missing": false,
                     "relative": false,
+                    "main_checkout": false,
                     "dot_prefix": false,
                     "group": false,
                     "depends": false,
@@ -7701,7 +7705,7 @@
                   {
                     "properties": {
                       "mode": {
-                        "enum": ["symlink", "symlink-each", "symlink-main"]
+                        "enum": ["symlink", "symlink-each"]
                       }
                     },
                     "required": ["mode"]
@@ -8038,6 +8042,9 @@
                     "relative": {
                       "const": false
                     },
+                    "main_checkout": {
+                      "const": false
+                    },
                     "encrypt": {
                       "const": false
                     },
@@ -8068,20 +8075,32 @@
                 }
               },
               {
-                "if": {
-                  "properties": {
-                    "mode": {
-                      "const": "symlink-main"
+                "anyOf": [
+                  {
+                    "properties": {
+                      "main_checkout": {
+                        "const": false
+                      }
                     }
                   },
-                  "required": ["mode"]
-                },
-                "then": {
-                  "required": ["source"],
-                  "properties": {
-                    "content": false
+                  {
+                    "properties": {
+                      "mode": {
+                        "enum": ["symlink", "symlink-each"]
+                      }
+                    },
+                    "required": ["mode"]
+                  },
+                  {
+                    "properties": {
+                      "mode": false,
+                      "content": false,
+                      "permissions": false,
+                      "block": false,
+                      "line": false
+                    }
                   }
-                }
+                ]
               }
             ],
             "anyOf": [
@@ -8244,6 +8263,10 @@
                       "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
                       "default": false
                     },
+                    "main_checkout": {
+                      "type": "boolean",
+                      "description": "symlink and symlink-each only: when the source is inside a linked Git worktree, link to the same path in the repository's main checkout instead, so the link keeps working after the worktree is removed; the source must exist there"
+                    },
                     "relative": {
                       "type": "boolean",
                       "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
@@ -8394,6 +8417,7 @@
                           "remove_empty": false,
                           "create_if_missing": false,
                           "relative": false,
+                          "main_checkout": false,
                           "dot_prefix": false,
                           "group": false,
                           "depends": false,
@@ -8753,6 +8777,9 @@
                           "relative": {
                             "const": false
                           },
+                          "main_checkout": {
+                            "const": false
+                          },
                           "encrypt": {
                             "const": false
                           },
@@ -8781,6 +8808,34 @@
                           }
                         }
                       }
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "main_checkout": {
+                              "const": false
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "mode": {
+                              "enum": ["symlink", "symlink-each"]
+                            }
+                          },
+                          "required": ["mode"]
+                        },
+                        {
+                          "properties": {
+                            "mode": false,
+                            "content": false,
+                            "permissions": false,
+                            "block": false,
+                            "line": false
+                          }
+                        }
+                      ]
                     }
                   ],
                   "anyOf": [

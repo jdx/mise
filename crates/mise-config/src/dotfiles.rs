@@ -54,10 +54,10 @@ pub struct DotfileTableDecl {
     pub source: Option<String>,
     /// literal inline file content; alternative to source
     pub content: Option<String>,
-    /// how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. "symlink-main" links to an explicit path in the main Git checkout. "absent" removes a file or symlink at the target and takes no source. "track" saves the file's history where it is, and "track-local" saves it in this machine's local-only history, which is never shared. "fnox" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source
+    /// how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. "absent" removes a file or symlink at the target and takes no source. "track" saves the file's history where it is, and "track-local" saves it in this machine's local-only history, which is never shared. "fnox" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source
     // A string, so a mode from a newer mise warns and is skipped.
     #[schemars(extend("anyOf" = [
-        {"enum": ["symlink", "symlink-main", "symlink-each", "copy", "template", "absent", "track", "track-local", "fnox"]},
+        {"enum": ["symlink", "symlink-each", "copy", "template", "absent", "track", "track-local", "fnox"]},
         {"type": "string"}
     ]))]
     pub mode: Option<String>,
@@ -77,6 +77,8 @@ pub struct DotfileTableDecl {
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,
+    /// symlink and symlink-each only: when the source is inside a linked Git worktree, link to the same path in the repository's main checkout instead, so the link keeps working after the worktree is removed; the source must exist there
+    pub main_checkout: Option<bool>,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
     /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)
@@ -192,7 +194,7 @@ pub enum DotfileGroupEntryDecl {
 // relative source starts at the group root.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = schema::group_entry_rules)]
+#[schemars(transform = schema::entry_rules)]
 pub struct DotfileGroupEntryTableDecl {
     /// encrypt tracked file contents before storing them in Git; the live file remains plaintext
     #[serde(default)]
@@ -227,6 +229,8 @@ pub struct DotfileGroupEntryTableDecl {
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,
+    /// symlink and symlink-each only: when the source is inside a linked Git worktree, link to the same path in the repository's main checkout instead, so the link keeps working after the worktree is removed; the source must exist there
+    pub main_checkout: Option<bool>,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
     /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)

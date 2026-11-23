@@ -720,27 +720,6 @@ platform config file such as `config.macos.toml` instead, with the
 [Platform environments](/configuration/environments.html#platform-environments).
 Use `variants` when one entry needs a different target on each machine.
 
-## Symlinks to the main Git checkout {#symlink-main}
-
-To keep a link usable after removing a linked Git worktree, use `symlink-main`:
-
-```toml
-[dotfiles]
-"~/.config/mise/config.toml" = { mode = "symlink-main", source = "mise.global.toml" }
-```
-
-The source is a literal path from the root of the main checkout associated
-with the declaring config. If the config is itself a symlink, mise uses the
-checkout containing the file it points to. The source must exist there and
-cannot contain `..`, wildcards, or templates, or resolve through a symlink
-outside that checkout. It cannot point into a linked worktree, even if an
-independent repository sits between the worktree and the source.
-A bare repository, a submodule configuration, or a directory without a
-recognized main checkout cannot use this mode. It is for whole-file entries
-in `[dotfiles]`, not directory tree groups or rendered templates. Ordinary
-symlink sources still resolve as before. Source resolution does not run Git or
-template commands, in a preview or during apply.
-
 ## Relative symlinks {#relative}
 
 By default, links point at their source by an absolute path. Set
@@ -763,6 +742,32 @@ requires `symlink` or `symlink-each`. With relative links on, the next apply
 repoints absolute links to the same source. Turning them off leaves relative
 links that already reach the source in place. Windows ignores the option,
 because directory links there are junctions, which cannot be relative.
+
+## Links from a Git worktree {#main-checkout}
+
+A link applied from a linked Git worktree points into that worktree, so it
+breaks once the worktree is removed. Set `main_checkout = true` on a `symlink`
+or `symlink-each` entry to link to the same path in the repository's main
+checkout instead:
+
+```toml
+[dotfiles]
+"~/.config/mise/config.toml" = { source = "mise.global.toml", main_checkout = true }
+```
+
+Applied from `~/src/project-wt`, a linked worktree of `~/src/project`, this
+links `~/.config/mise/config.toml` to `~/src/project/mise.global.toml`. The
+source resolves as usual, so a relative path still starts at the declaring
+config's directory, and mise then swaps the worktree for the main checkout. A
+source outside a linked worktree, such as one applied from the main checkout
+itself, is linked as it is.
+
+The link shows the main checkout's copy, not the worktree's, so the source
+must exist there: a file added on the worktree's branch can be linked once it
+is in the main checkout. mise reads the worktree's Git metadata from disk and
+runs no Git command. A worktree of a bare repository has no main checkout, and
+a main checkout path that leads through a symlink is not followed; mise reports
+either one and skips the entry.
 
 ## Unapply {#unapplying}
 

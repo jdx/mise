@@ -87,72 +87,6 @@ impl FileManifest {
 /// The mode of a track entry saved only in this machine's own history.
 pub const TRACK_LOCAL: &str = "track-local";
 
-/// Explicit dotfiles mode; resolves its source before using normal symlink behavior.
-pub(crate) const SYMLINK_MAIN: &str = "symlink-main";
-
-fn main_checkout_relative_source(source: Option<&str>) -> Result<&Path> {
-    let Some(source) = source else {
-        bail!("mode = \"symlink-main\" requires an explicit source");
-    };
-    let path = Path::new(source);
-    if source.starts_with('~')
-        || mise_util::tera::contains_template_syntax(source)
-        || is_glob_pattern(path)
-        || !path
-            .components()
-            .any(|c| matches!(c, std::path::Component::Normal(_)))
-        || path.components().any(|c| {
-            !matches!(
-                c,
-                std::path::Component::Normal(_) | std::path::Component::CurDir
-            )
-        })
-    {
-        bail!(
-            "mode = \"symlink-main\" requires a literal checkout-relative source without \"..\" or wildcards"
-        );
-    }
-    Ok(path)
-}
-
-fn resolve_main_checkout_source(config: &Path, source: Option<&str>) -> Result<PathBuf> {
-    let relative = main_checkout_relative_source(source)?;
-    // A deployed global config can be a symlink back into its repository.
-    // Only this explicit mode uses the real declaring file for lookup.
-    let root = config
-        .canonicalize()
-        .ok()
-        .and_then(|path| mise_util::git::stable_main_checkout_root(path.parent()?));
-    let root = root.ok_or_else(|| {
-        eyre::eyre!(
-            "mode = \"symlink-main\" found no main Git checkout for {}",
-            config.display()
-        )
-    })?;
-    let source = root.join(relative);
-    // Resolve the target we will actually link to. In particular a symlink
-    // into a disposable worktree must not put that worktree back in the link.
-    let resolved = source.canonicalize().map_err(|err| {
-        eyre::eyre!(
-            "cannot resolve main checkout source {}: {err}",
-            source.display()
-        )
-    })?;
-    if !resolved.starts_with(&root) {
-        bail!(
-            "main checkout source {} leads outside the checkout",
-            source.display()
-        );
-    }
-    if mise_util::git::has_linked_worktree_ancestor(&resolved) {
-        bail!(
-            "main checkout source {} is inside a linked worktree",
-            source.display()
-        );
-    }
-    Ok(resolved)
-}
-
 /// Whether a raw `[dotfiles]` value declares tracking, shared or local.
 fn is_track_value(value: &toml::Value) -> bool {
     matches!(
@@ -594,6 +528,10 @@ pub(crate) struct FileTomlTable {
     /// `dotfiles.relative_symlinks`
     #[serde(default)]
     pub(crate) relative: Option<bool>,
+    /// symlink modes only: link a source inside a linked Git worktree at
+    /// the same path in the repository's main checkout
+    #[serde(default)]
+    pub(crate) main_checkout: Option<bool>,
     /// the dotfile group this entry belongs to, selected with
     /// `[bootstrap] dotfile_groups`
     #[serde(default)]
@@ -1201,6 +1139,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "create_if_missing"
                             | "dot_prefix"
                             | "relative"
+                            | "main_checkout"
                             | "group"
                             | "depends"
                     ) {
@@ -1230,6 +1169,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     create_if_missing,
                     dot_prefix,
                     relative,
+                    main_checkout,
                     group,
                     depends,
                     ..
@@ -1262,12 +1202,8 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         "dotfile {target}: inline content does not support mode, exclude, or manifest"
                     );
                 }
-                if mode.as_deref() == Some(SYMLINK_MAIN) {
-                    main_checkout_relative_source(source.as_deref())?;
-                }
                 let mode = match mode.as_deref() {
                     Some(TRACK_LOCAL) => FileMode::Track,
-                    Some(SYMLINK_MAIN) => FileMode::Symlink,
                     Some(value) => FileMode::parse(value).ok_or_else(|| {
                         eyre::eyre!("unknown dotfile mode {value:?} for {target}")
                     })?,
@@ -1374,6 +1310,15 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 {
                     bail!(
                         "dotfile {target}: relative requires mode = \"symlink\" or \"symlink-each\""
+                    );
+                }
+                if main_checkout == Some(true)
+                    && (content.is_some()
+                        || permissions_only
+                        || !matches!(mode, FileMode::Symlink | FileMode::SymlinkEach))
+                {
+                    bail!(
+                        "dotfile {target}: main_checkout requires mode = \"symlink\" or \"symlink-each\""
                     );
                 }
                 if !matches!(mode, FileMode::Track | FileMode::Absent | FileMode::Fnox)
@@ -1684,6 +1629,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                     || table.contains_key("content")
                     || table.contains_key("permissions")
                     || table.contains_key("relative")
+                    || table.contains_key("main_checkout")
                     || table.contains_key("dot_prefix")
                     || table.contains_key("group")
                     || table.contains_key("depends"))
@@ -1755,6 +1701,24 @@ pub(crate) fn merge_group_toml_entry(
     Ok(())
 }
 
+/// `main_checkout = true`: a source inside a linked Git worktree is linked at
+/// the same path in the repository's main checkout, so the link still works
+/// after the worktree is removed. Any other source is linked as it is.
+fn main_checkout_source(source: PathBuf) -> Result<PathBuf> {
+    // `../files/value` from a nested config must map by where it lands in
+    // the worktree, not by the directory it climbs out of
+    let source = lexical_normalize(&source);
+    if !mise_util::git::in_linked_worktree(&source) {
+        return Ok(source);
+    }
+    mise_util::git::main_checkout_equivalent(&source).ok_or_else(|| {
+        eyre::eyre!(
+            "main_checkout: {} is in a linked Git worktree with no main checkout path to link to (a bare repository's worktree, or a path that leads through a symlink)",
+            source.display()
+        )
+    })
+}
+
 /// Resolve one declaration, merging explicit tracking policies into earlier layers.
 fn merge_file_entry(
     target_raw: String,
@@ -1780,11 +1744,13 @@ fn merge_file_entry(
         create_if_missing,
         dot_prefix,
         relative,
+        main_checkout,
         group,
         depends,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1821,6 +1787,7 @@ fn merge_file_entry(
                 create_if_missing,
                 dot_prefix,
                 relative,
+                main_checkout,
                 group,
                 depends,
             } = *table;
@@ -1841,6 +1808,7 @@ fn merge_file_entry(
                 create_if_missing,
                 dot_prefix,
                 relative,
+                main_checkout,
                 group,
                 depends,
             )
@@ -1850,11 +1818,8 @@ fn merge_file_entry(
     // It is a mode rather than a flag so that a mise that predates it skips
     // the entry as an unknown mode instead of tracking the file as shared.
     let local = mode.as_deref() == Some(TRACK_LOCAL);
-    let symlink_main = mode.as_deref() == Some(SYMLINK_MAIN);
     let mode = if local {
         Some("track".to_string())
-    } else if symlink_main {
-        Some("symlink".to_string())
     } else {
         mode
     };
@@ -1960,6 +1925,7 @@ fn merge_file_entry(
             || remove_empty
             || create_if_missing
             || relative == Some(true)
+            || main_checkout == Some(true)
             || dot_prefix
             || group.is_some()
             || !depends.is_empty()
@@ -1967,7 +1933,7 @@ fn merge_file_entry(
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, create_if_missing, relative, dot_prefix, group, or depends",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, create_if_missing, relative, main_checkout, dot_prefix, group, or depends",
                 local,
             );
             return;
@@ -2121,9 +2087,13 @@ fn merge_file_entry(
             );
             return;
         }
-        if remove_empty || create_if_missing || relative == Some(true) {
+        if remove_empty
+            || create_if_missing
+            || relative == Some(true)
+            || main_checkout == Some(true)
+        {
             warn!(
-                "[dotfiles].\"{target_raw}\": mode = \"absent\" takes no remove_empty, create_if_missing, or relative, ignoring entry"
+                "[dotfiles].\"{target_raw}\": mode = \"absent\" takes no remove_empty, create_if_missing, relative, or main_checkout, ignoring entry"
             );
             return;
         }
@@ -2283,6 +2253,16 @@ fn merge_file_entry(
         );
         return;
     }
+    if main_checkout == Some(true)
+        && (content.is_some()
+            || permissions_only
+            || !matches!(mode, FileMode::Symlink | FileMode::SymlinkEach))
+    {
+        warn!(
+            "[dotfiles].\"{target_raw}\": main_checkout requires mode = \"symlink\" or \"symlink-each\", ignoring entry"
+        );
+        return;
+    }
     let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
@@ -2388,15 +2368,6 @@ fn merge_file_entry(
         return;
     }
     let source = match source {
-        source if symlink_main => {
-            match resolve_main_checkout_source(&origin.config, source.as_deref()) {
-                Ok(source) => source,
-                Err(err) => {
-                    record_invalid(&target_raw, &origin.config, err.to_string(), local);
-                    return;
-                }
-            }
-        }
         Some(source) => {
             let source = file::replace_path(&source);
             if source.is_relative() {
@@ -2416,9 +2387,20 @@ fn merge_file_entry(
             }
         },
     };
+    let source = if main_checkout == Some(true) {
+        match main_checkout_source(source) {
+            Ok(source) => source,
+            Err(err) => {
+                record_invalid(&target_raw, &origin.config, err.to_string(), local);
+                return;
+            }
+        }
+    } else {
+        source
+    };
     let mut origin = origin.clone();
     origin.source = Some(source.clone());
-    let request = FileRequest {
+    for req in expand_request(FileRequest {
         target_raw,
         target,
         source,
@@ -2440,15 +2422,8 @@ fn merge_file_entry(
         relative: relative_symlinks(mode, relative),
         group,
         depends,
-    };
-    if symlink_main {
-        // Canonical paths can contain glob metacharacters even when the
-        // declared source did not. Do not reinterpret a validated source.
-        merged.insert((request.target.clone(), false), request);
-    } else {
-        for req in expand_request(request) {
-            merged.insert((req.target.clone(), false), req);
-        }
+    }) {
+        merged.insert((req.target.clone(), false), req);
     }
 }
 
@@ -8253,13 +8228,8 @@ mod tests {
             .map(|mode| mode.name().to_string())
             .chain([TRACK_LOCAL.to_string()])
             .collect();
-        for (index, (mode, manifest, format, position, template)) in entries.into_iter().enumerate()
-        {
-            let mut expected_modes = modes.clone();
-            if index == 0 {
-                expected_modes.insert(SYMLINK_MAIN.to_string());
-            }
-            assert_eq!(mode, expected_modes);
+        for (mode, manifest, format, position, template) in entries {
+            assert_eq!(mode, modes);
             names_every_variant("manifest", &manifest, FileManifest::parse);
             names_every_variant("format", &format, Format::from_name);
             names_every_variant("position", &position, LinePosition::parse);

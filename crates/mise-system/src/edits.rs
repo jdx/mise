@@ -334,7 +334,7 @@ pub(crate) fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditReque
 pub(crate) const EDIT_KEYS: [&str; 5] = ["block", "line", "template", "comment", "position"];
 
 /// keys that only mean something on a whole-file entry
-pub(crate) const WHOLE_FILE_KEYS: [&str; 17] = [
+pub(crate) const WHOLE_FILE_KEYS: [&str; 18] = [
     "mode",
     "content",
     "permissions",
@@ -349,6 +349,7 @@ pub(crate) const WHOLE_FILE_KEYS: [&str; 17] = [
     "remove_empty",
     "create_if_missing",
     "relative",
+    "main_checkout",
     "dot_prefix",
     "group",
     "depends",

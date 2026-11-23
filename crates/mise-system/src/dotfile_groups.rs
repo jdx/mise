@@ -521,6 +521,7 @@ fn expand_group(
             create_if_missing: None,
             dot_prefix: (group.dot_prefix && walks).then_some(true),
             relative: group.relative,
+            main_checkout: None,
             group: Some(name.to_string()),
             depends: (!group.depends.is_empty()).then(|| group.depends.clone()),
         })),
@@ -683,9 +684,6 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         .get("mode")
         .and_then(toml::Value::as_str)
         .map(str::to_string);
-    if mode.as_deref() == Some(files::SYMLINK_MAIN) {
-        bail!("entries.{key:?}: mode = \"symlink-main\" is only supported in [dotfiles]");
-    }
     let has_source = table.contains_key("source");
     let needs_source = !(has_source
         || table.contains_key("content")
