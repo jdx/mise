@@ -2772,16 +2772,13 @@ static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .map(|s| s.to_string())
         .collect()
 });
-static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobMatcher>> = Lazy::new(|| {
+static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobSet>> = Lazy::new(|| {
     TOML_CONFIG_FILENAMES
         .iter()
         .filter_map(|pattern| {
-            globset::GlobBuilder::new(pattern)
-                .literal_separator(true)
-                .build()
+            config_file::compile_path_glob(pattern)
                 .map_err(|e| warn!("failed to compile config glob pattern {pattern}: {e}"))
                 .ok()
-                .map(|glob| glob.compile_matcher())
         })
         .collect()
 });
