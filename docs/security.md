@@ -258,7 +258,9 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`, and the `spm:` backend's
-  `install_command`.
+  `install_command`. `mise lock` does not run uv for a `pypi:` tool that sets
+  `install_env`, so it warns and locks that tool's version without a
+  [dependency graph](/dev-tools/mise-lock.html#dependency-graphs).
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the
