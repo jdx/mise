@@ -554,6 +554,7 @@ impl ToolRequest {
         };
         let project = !crate::config::is_global_config(path);
         record_safe_mode_credential_hosts(&self.options().opts, project);
+        crate::config::record_safe_mode_tool(self.ba(), project);
     }
 
     /// Rejects install options that can execute configuration-provided code in safe mode.

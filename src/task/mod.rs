@@ -1261,10 +1261,32 @@ impl Task {
     }
 
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
-        self.tools
+        let tools = self
+            .tools
             .iter()
             .map(|(tool, value)| value.to_tool_arg(tool))
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        // These are requests the task's config makes, though they are built as arguments, so
+        // in safe mode they are recorded as that config's `[tools]` are
+        // (`ToolRequest::record_safe_mode_credential_hosts`), whichever command resolves them:
+        // a project task's tools get neither netrc credentials on the hosts they name nor
+        // `env` in their templates. A task is global only if all of its config is.
+        if crate::config::Settings::safe_mode() {
+            let project = !self.config_sources().into_iter().all(|path| {
+                crate::config::is_global_config(path)
+                    || crate::config::is_global_task_include_path(path)
+            });
+            for tool in &tools {
+                crate::config::record_safe_mode_tool(&tool.ba, project);
+                if let Some(request) = &tool.tvr {
+                    crate::toolset::record_safe_mode_credential_hosts(
+                        &request.options().opts,
+                        project,
+                    );
+                }
+            }
+        }
+        Ok(tools)
     }
 
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {

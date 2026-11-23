@@ -297,7 +297,11 @@ These are skipped without an error, so resolution commands keep working:
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
   and a tool that project config declares gets no `~/.netrc` credentials for
   the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
-  or `api_url` names. Tools from global and system config keep theirs. A
+  or `api_url` names. That includes a monorepo subproject's tools and a task's
+  `tools`. Only tools that global or system config declares or aliases, and no
+  project requests, keep theirs and keep `env` in their templates; a tool named
+  only on the command line, in a tool stub or by `MISE_<TOOL>_VERSION` does
+  not. A
   project that points at a private forge or file server therefore cannot list
   or download versions there.
 - A project `[tool_alias]` for a tool that global config declares, so a

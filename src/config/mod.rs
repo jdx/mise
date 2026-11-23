@@ -4593,6 +4593,9 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     };
     let global_tools = declared_tools(true);
     let mut project_tools = declared_tools(false);
+    // What global config declares or aliases, which is all that safe mode takes
+    // for the operator's own; see `is_safe_mode_project_tool`.
+    let mut global_names = global_tools.clone();
 
     // Iterate in reverse order (global -> local) so the closest config wins.
     for config_file in config_files.values().rev() {
@@ -4608,6 +4611,8 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
             }
             if project {
                 project_tools.insert(plugin.clone());
+            } else if safe_mode {
+                global_names.insert(plugin.clone());
             }
             if safe_mode
                 && let Some(backend) = &plugin_aliases.backend
@@ -4636,6 +4641,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     }
     trace!("load_aliases: {}", aliases.len());
     record_safe_mode_project_tools(project_tools);
+    SAFE_MODE_GLOBAL_TOOLS.lock().unwrap().extend(global_names);
 
     Ok(aliases)
 }
@@ -4645,6 +4651,20 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 /// not drop the project tools of the main one.
 fn record_safe_mode_project_tools(tools: BTreeSet<String>) {
     SAFE_MODE_PROJECT_TOOLS.lock().unwrap().extend(tools);
+}
+
+/// Records, in safe mode, a tool requested somewhere [`load_aliases`] does not
+/// look: a monorepo subproject's config, a tracked config or a task's `tools`.
+/// `project` is false for global and system config. A project's request can
+/// carry options of its own for a tool that global config declares too, so the
+/// project's record wins in [`is_safe_mode_project_tool`].
+pub(crate) fn record_safe_mode_tool(ba: &BackendArg, project: bool) {
+    let tools = if project {
+        &SAFE_MODE_PROJECT_TOOLS
+    } else {
+        &SAFE_MODE_GLOBAL_TOOLS
+    };
+    tools.lock().unwrap().insert(ba.short.clone());
 }
 
 #[cfg(test)]
@@ -4659,20 +4679,49 @@ mod safe_mode_project_tools_tests {
             "http:project-only-tool"
         )));
     }
+
+    #[test]
+    fn only_a_tool_of_global_config_alone_is_not_a_project_tool() {
+        record_safe_mode_tool(&BackendArg::from("http:global-only-tool"), false);
+        record_safe_mode_tool(&BackendArg::from("http:redeclared-tool"), false);
+        // as a monorepo subproject or a task does, which `load_aliases` never sees
+        record_safe_mode_tool(&BackendArg::from("http:redeclared-tool"), true);
+        assert!(!is_safe_mode_project_tool(&BackendArg::from(
+            "http:global-only-tool"
+        )));
+        assert!(is_safe_mode_project_tool(&BackendArg::from(
+            "http:redeclared-tool"
+        )));
+        // nothing recorded it, so nothing says it is the operator's
+        assert!(is_safe_mode_project_tool(&BackendArg::from(
+            "http:unrecorded-tool"
+        )));
+    }
 }
 
 /// The tools that project config declares or aliases, recorded in safe mode by
-/// [`load_aliases`]; see [`is_safe_mode_project_tool`].
+/// [`load_aliases`] and [`record_safe_mode_tool`]; see
+/// [`is_safe_mode_project_tool`].
 static SAFE_MODE_PROJECT_TOOLS: std::sync::Mutex<BTreeSet<String>> =
     std::sync::Mutex::new(BTreeSet::new());
 
-/// Whether, in safe mode, project config declares or aliases `ba`, so that its
-/// options (and the hosts they name) come from config nobody reviewed. A tool
-/// that a project and global config both declare counts, since the project's
-/// entry takes precedence.
+/// The tools that global or system config declares or aliases, recorded in safe
+/// mode by [`load_aliases`] and [`record_safe_mode_tool`]; see
+/// [`is_safe_mode_project_tool`].
+static SAFE_MODE_GLOBAL_TOOLS: std::sync::Mutex<BTreeSet<String>> =
+    std::sync::Mutex::new(BTreeSet::new());
+
+/// Whether, in safe mode, the options of `ba` (and the hosts they name) may come
+/// from config nobody reviewed. That is every tool that global or system config
+/// does not declare or alias, whether or not a project was seen requesting it,
+/// and every tool a project requests too, since the project's entry takes
+/// precedence.
 pub(crate) fn is_safe_mode_project_tool(ba: &BackendArg) -> bool {
-    let tools = SAFE_MODE_PROJECT_TOOLS.lock().unwrap();
-    tools.contains(&ba.short) || tools.contains(&ba.full())
+    let names = |tools: &std::sync::Mutex<BTreeSet<String>>| {
+        let tools = tools.lock().unwrap();
+        tools.contains(&ba.short) || tools.contains(&ba.full())
+    };
+    names(&SAFE_MODE_PROJECT_TOOLS) || !names(&SAFE_MODE_GLOBAL_TOOLS)
 }
 
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
