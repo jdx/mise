@@ -1,7 +1,7 @@
 use crate::file;
 use eyre::Result;
 use eyre::{bail, eyre};
-use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey};
+use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey, SignedPublicSubKey};
 use pgp::packet::Signature;
 use pgp::ser::Serialize;
 use pgp::types::{Fingerprint, KeyDetails, KeyId, VerifyingKey};
@@ -94,8 +94,8 @@ where
     // number of signature packets, each naming any number of issuers. Cap the total at one
     // attempt per trusted key and subkey, which is all a single signature without an issuer hint
     // needs, so the work is bounded by the bundled keyring rather than by the downloaded file.
-    let key_count: usize = keys.iter().map(|k| 1 + k.public_subkeys.len()).sum();
-    let attempts_left = Cell::new(key_count);
+    let trusted = trusted_keys(&keys);
+    let attempts_left = Cell::new(trusted.len());
     let open_data = || match attempts_left.get().checked_sub(1) {
         Some(left) => {
             attempts_left.set(left);
@@ -107,7 +107,7 @@ where
     // Fast path: only try keys whose id/fingerprint matches the signature's issuer, so the signed
     // content is hashed at most once in the common case.
     for sig in &signatures {
-        if verify_against_keys(sig, &keys, &open_data, true)? {
+        if verify_against_keys(sig, &trusted, &open_data, true)? {
             return Ok(());
         }
     }
@@ -115,16 +115,52 @@ where
     // hint. A signature that named an issuer we don't trust is genuinely unverifiable, so skip it
     // rather than re-hashing the (potentially large) content against every key.
     for sig in signatures.iter().filter(|sig| !has_issuer(&sig.signature)) {
-        if verify_against_keys(sig, &keys, &open_data, false)? {
+        if verify_against_keys(sig, &trusted, &open_data, false)? {
             return Ok(());
         }
     }
     bail!("signature does not match any trusted public key");
 }
 
+/// A trusted key or subkey together with the identifiers a signature can name as its issuer.
+struct TrustedKey<'a> {
+    key: &'a SignedPublicKey,
+    /// `None` for the primary key itself.
+    subkey: Option<&'a SignedPublicSubKey>,
+    fingerprint: Fingerprint,
+    key_id: KeyId,
+}
+
+/// List every trusted key and subkey with its fingerprint and key id.
+///
+/// rPGP serializes and hashes a key each time it is asked for either identifier, so compute them
+/// here, once per key, rather than for every signature packet: the download host chooses how many
+/// packets there are, and one naming an issuer we don't trust is compared with every key without
+/// ever counting as a verification attempt.
+fn trusted_keys(keys: &[SignedPublicKey]) -> Vec<TrustedKey<'_>> {
+    let mut trusted = Vec::new();
+    for key in keys {
+        trusted.push(TrustedKey {
+            key,
+            subkey: None,
+            fingerprint: key.fingerprint(),
+            key_id: key.legacy_key_id(),
+        });
+        for subkey in &key.public_subkeys {
+            trusted.push(TrustedKey {
+                key,
+                subkey: Some(subkey),
+                fingerprint: subkey.fingerprint(),
+                key_id: subkey.legacy_key_id(),
+            });
+        }
+    }
+    trusted
+}
+
 fn verify_against_keys<R, F>(
     sig: &DetachedSignature,
-    keys: &[SignedPublicKey],
+    trusted: &[TrustedKey<'_>],
     open_data: &F,
     require_issuer_match: bool,
 ) -> Result<bool>
@@ -132,24 +168,22 @@ where
     R: Read,
     F: Fn() -> Result<R>,
 {
-    for key in keys {
-        if (!require_issuer_match
-            || issuer_matches(&sig.signature, &key.fingerprint(), &key.legacy_key_id()))
-            && try_verify(sig, key, open_data)?
+    // Likewise read the issuers out of the signature's subpackets once, not once per key.
+    let issuer_fingerprints = sig.signature.issuer_fingerprint();
+    let issuer_key_ids = sig.signature.issuer_key_id();
+    for candidate in trusted {
+        if require_issuer_match
+            && !issuer_fingerprints.contains(&&candidate.fingerprint)
+            && !issuer_key_ids.contains(&&candidate.key_id)
         {
-            return Ok(true);
+            continue;
         }
-        for subkey in &key.public_subkeys {
-            if (!require_issuer_match
-                || issuer_matches(
-                    &sig.signature,
-                    &subkey.fingerprint(),
-                    &subkey.legacy_key_id(),
-                ))
-                && try_verify(sig, subkey, open_data)?
-            {
-                return Ok(true);
-            }
+        let verified = match candidate.subkey {
+            Some(subkey) => try_verify(sig, subkey, open_data)?,
+            None => try_verify(sig, candidate.key, open_data)?,
+        };
+        if verified {
+            return Ok(true);
         }
     }
     Ok(false)
@@ -163,13 +197,6 @@ where
 {
     let reader = open_data()?;
     Ok(sig.signature.verify(key, reader).is_ok())
-}
-
-fn issuer_matches(sig: &Signature, fingerprint: &Fingerprint, key_id: &KeyId) -> bool {
-    sig.issuer_fingerprint()
-        .into_iter()
-        .any(|f| f == fingerprint)
-        || sig.issuer_key_id().into_iter().any(|k| k == key_id)
 }
 
 fn has_issuer(sig: &Signature) -> bool {
@@ -323,9 +350,8 @@ mod tests {
         assert!(verify_node(b"data", sig.as_bytes()).is_err());
     }
 
-    /// Verify `count` copies of a bogus v4 signature carrying `unhashed` subpackets against the
-    /// swift keyring and return how often the signed content was read.
-    fn count_reads_of_bogus_signatures(unhashed: &[u8], count: usize) -> usize {
+    /// A bogus v4 signature packet carrying `unhashed` subpackets.
+    fn bogus_signature(unhashed: &[u8]) -> Vec<u8> {
         // v4, binary document, RSA, SHA-256, no hashed subpackets
         let mut body = vec![4, 0, 1, 8, 0, 0, 0, unhashed.len() as u8];
         body.extend_from_slice(unhashed);
@@ -333,6 +359,13 @@ mod tests {
         body.extend_from_slice(&[0, 0, 0, 1, 1]);
         let mut packet = vec![0xc2, body.len() as u8];
         packet.extend_from_slice(&body);
+        packet
+    }
+
+    /// Verify `count` copies of a bogus v4 signature carrying `unhashed` subpackets against the
+    /// swift keyring and return how often the signed content was read.
+    fn count_reads_of_bogus_signatures(unhashed: &[u8], count: usize) -> usize {
+        let packet = bogus_signature(unhashed);
 
         let reads = Cell::new(0);
         let open_data = || {
@@ -386,6 +419,50 @@ mod tests {
             count_reads_of_bogus_signatures(&unhashed, 100),
             key_ids.len()
         );
+    }
+
+    #[test]
+    fn signatures_naming_an_unknown_issuer_are_skipped_without_reading() {
+        // An issuer key id subpacket (type 16) for a key that is in no keyring. Such signatures
+        // never use up a verification attempt, so any number of them must stay cheap: matching
+        // them against the keyring may not cost more than comparing identifiers. Hashing every
+        // node key and subkey per packet takes seconds for these 2,000 in a debug build, past
+        // the time limit nextest gives a unit test.
+        let packet = bogus_signature(&[9, 16, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa]);
+        let reads = Cell::new(0);
+        let open_data = || {
+            reads.set(reads.get() + 1);
+            Ok(Cursor::new(b"data"))
+        };
+        let err = verify_detached(
+            include_str!("assets/gpg/node.asc"),
+            &packet.repeat(2000),
+            open_data,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("signature does not match any trusted public key"),
+            "{err}"
+        );
+        assert_eq!(reads.get(), 0);
+    }
+
+    #[test]
+    fn lists_every_trusted_key_and_subkey_with_its_identifiers() {
+        let keys = parse_public_keys(include_str!("assets/gpg/swift.asc")).unwrap();
+        let trusted = trusted_keys(&keys);
+        assert_eq!(
+            trusted.iter().map(|t| t.key_id).collect::<Vec<_>>(),
+            swift_key_ids()
+        );
+        for t in &trusted {
+            let (fingerprint, key_id) = match t.subkey {
+                Some(subkey) => (subkey.fingerprint(), subkey.legacy_key_id()),
+                None => (t.key.fingerprint(), t.key.legacy_key_id()),
+            };
+            assert_eq!((&t.fingerprint, &t.key_id), (&fingerprint, &key_id));
+        }
     }
 
     // A real, checked-in detached signature over the genuine Node.js v20.11.0 `SHASUMS256.txt`
