@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use eyre::{Result, WrapErr, eyre};
 use serde_json::Deserializer;
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsStr;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Semaphore;
 use versions::Versioning;
@@ -595,9 +596,15 @@ impl GoBackend {
     /// safe mode: version listing then only performs module-metadata queries
     /// (including VCS access for GOPROXY=direct) without any toolchain
     /// download-and-execute step.
+    ///
+    /// `GOWORK=off` and [`go_list`] running in a directory of mise's own keep
+    /// a project `go.work` or `go.mod` out of the query altogether: as the main
+    /// module, its `exclude` lines would hide versions from a listing that is
+    /// cached for every directory.
     async fn go_list_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
         let mut env = self.dependency_env(config).await?;
         env.insert("GOTOOLCHAIN".to_string(), "local".to_string());
+        env.insert("GOWORK".to_string(), "off".to_string());
         Ok(env)
     }
 
@@ -607,7 +614,7 @@ impl GoBackend {
         mod_path: &str,
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
         let go = self.spawn_program(config, None, "go").await;
-        let raw = match crate::cmd::cmd_read_async(
+        let raw = match go_list(
             &go,
             &[
                 "list",
@@ -618,7 +625,7 @@ impl GoBackend {
                 "--",
                 mod_path,
             ],
-            self.go_list_env(config).await?,
+            &self.go_list_env(config).await?,
         )
         .await
         {
@@ -690,7 +697,7 @@ impl GoBackend {
                 args.push(format!("{mod_path}@{version}"));
             }
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
-            let raw = match crate::cmd::cmd_read_async(&go, &args, &env).await {
+            let raw = match go_list(&go, &args, &env).await {
                 Ok(raw) => raw,
                 Err(err) => {
                     debug!("go list metadata batch failed for {mod_path}: {err:#}");
@@ -727,7 +734,7 @@ impl GoBackend {
         let env = self.go_list_env(config).await?;
         let go = self.spawn_program(config, None, "go").await;
         let target = format!("{mod_path}@{version}");
-        let raw = crate::cmd::cmd_read_async(
+        let raw = go_list(
             &go,
             &[
                 "list",
@@ -737,7 +744,7 @@ impl GoBackend {
                 "--",
                 target.as_str(),
             ],
-            env,
+            &env,
         )
         .await
         .inspect_err(|err| {
@@ -797,7 +804,7 @@ impl GoBackend {
         let env = self.go_list_env(config).await?;
         let go = self.spawn_program(config, None, "go").await;
         let latest = format!("{mod_path}@latest");
-        let raw = crate::cmd::cmd_read_async(
+        let raw = go_list(
             &go,
             &[
                 "list",
@@ -807,7 +814,7 @@ impl GoBackend {
                 "--",
                 latest.as_str(),
             ],
-            env,
+            &env,
         )
         .await
         .wrap_err_with(|| format!("failed to resolve latest Go module version for {mod_path}"))?;
@@ -816,6 +823,20 @@ impl GoBackend {
         })?;
         Ok(Some(vec![version_info_from_metadata(info)]))
     }
+}
+
+/// Run a `go list` query with `env` as its whole environment, in
+/// `CACHE/go-meta` rather than the directory mise was started in.
+///
+/// `go` takes the `go.mod` of its working directory or a parent as the main
+/// module, and a project's module would filter what the query returns. mise
+/// owns the cache directory, so no project file takes part.
+async fn go_list(go: &OsStr, args: &[&str], env: &BTreeMap<String, String>) -> Result<String> {
+    let dir = crate::dirs::CACHE.join("go-meta");
+    crate::file::create_dir_all(&dir)?;
+    let mut cmd = tokio::process::Command::new(go);
+    cmd.env_clear().envs(env).current_dir(&dir);
+    crate::cmd::cmd_read_async_command(cmd, &go.to_string_lossy(), args).await
 }
 
 /// Result of asking one route for a module's `@latest` version.
