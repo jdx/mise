@@ -96,3 +96,19 @@ assert_fail_contains "mise set FOO=bar 2>&1" "Write global config with"
 assert_not_contains "cat $HOME/.config/mise/config.toml" "FOO"
 assert "mise set -g FOO=bar"
 assert_contains "cat $HOME/.config/mise/config.toml" 'FOO = "bar"'
+
+echo "=== tasks rm removes nothing when one file links out ==="
+mkdir -p ../rm-two
+cat <<'TOML' >../outside/rm.toml
+[tasks.b]
+run = "echo b"
+TOML
+cd ../rm-two || exit 1
+cat <<'TOML' >mise.toml
+[tasks.a]
+run = "echo a"
+TOML
+ln -s ../outside/rm.toml mise.local.toml
+assert_fail_contains "MISE_YES=1 mise tasks rm a b 2>&1" "refusing to write"
+assert_contains "cat mise.toml" "[tasks.a]"
+assert_contains "cat ../outside/rm.toml" "[tasks.b]"
