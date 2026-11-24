@@ -92,10 +92,12 @@ pub fn escape_rendered_data(rendered: &str) -> String {
 }
 
 /// Rewrite every `{{`, `{%` and `{#` in `data` as an expression that renders to it, so that a
-/// render of the result, by either engine, outputs `data` unchanged.
+/// render of the result, by either engine, outputs `data` unchanged. A `{` that ends `data` is
+/// rewritten too, since deferred code or other text placed after the result could complete it
+/// into an opener.
 pub fn escape_template_syntax(data: &str) -> String {
-    static OPENER: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[{%#]").unwrap());
-    if !contains_template_syntax(data) {
+    static OPENER: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[{%#]|\{$").unwrap());
+    if !contains_template_syntax(data) && !data.ends_with('{') {
         return data.to_string();
     }
     OPENER

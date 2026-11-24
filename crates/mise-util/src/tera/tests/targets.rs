@@ -183,6 +183,42 @@ fn test_reemitted_argument_with_quotes_stays_a_literal_in_tera_v1() {
     assert_eq!(second.render_str(&preserved, &ctx).unwrap(), value);
 }
 #[test]
+fn test_escaped_braces_render_back_in_both_engines() {
+    // Braces next to an opener, and data that ends in `{` before deferred code, render
+    // back to the same text.
+    let mut ctx = Context::new();
+    ctx.insert("version", "1.2.3");
+    for data in [
+        "{{{x",
+        "{{{",
+        "{{{{",
+        "{{{{{",
+        "{{}}",
+        "{%}",
+        "{#}",
+        "{{{%",
+        "{",
+        "x{",
+        "}}}",
+        "{{ \"{{\" }}",
+    ] {
+        for mut tera in [
+            TeraEngine::V1(Box::default()),
+            TeraEngine::V2(Box::default()),
+        ] {
+            let escaped = escape_template_syntax(data);
+            assert_eq!(tera.render_str(&escaped, &ctx).unwrap(), data, "{escaped}");
+            let with_code =
+                escape_rendered_data(&format!("{data}{}{data}", mark_deferred("{{ version }}")));
+            assert_eq!(
+                tera.render_str(&with_code, &ctx).unwrap(),
+                format!("{data}1.2.3{data}"),
+                "{with_code}"
+            );
+        }
+    }
+}
+#[test]
 fn test_escape_template_syntax_leaves_plain_text_alone() {
     assert_eq!(escape_template_syntax("a}}b%}c"), "a}}b%}c");
     assert_eq!(escape_template_syntax("{{x"), r#"{{ "{{" }}x"#);
