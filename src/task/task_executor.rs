@@ -1312,7 +1312,7 @@ impl TaskExecutor {
                         &task.args,
                         &env,
                         extra_vars.clone(),
-                        self.clone_default_inline_shell()?,
+                        self.shell.clone(),
                     )
                     .await?;
 
@@ -2052,13 +2052,7 @@ impl TaskExecutor {
     }
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
-        if let Some(shell) = &self.shell {
-            let mut shell = crate::path::split_shell_command(shell)?;
-            Settings::get().maybe_no_profile(&mut shell);
-            Ok(shell)
-        } else {
-            Settings::get().default_inline_shell()
-        }
+        inline_shell(self.shell.as_deref())
     }
 
     async fn resolve_cache_command_inputs(
@@ -3546,6 +3540,19 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
         #[cfg(windows)]
         "vbs" => Some(vec!["cscript".to_string(), "//nologo".to_string()]),
         _ => None,
+    }
+}
+
+/// The shell an inline script runs under when its task sets no `shell`: `mise run --shell`,
+/// else the default inline shell setting.
+pub(super) fn inline_shell(run_shell: Option<&str>) -> Result<Vec<String>> {
+    match run_shell {
+        Some(shell) => {
+            let mut shell = crate::path::split_shell_command(shell)?;
+            Settings::get().maybe_no_profile(&mut shell);
+            Ok(shell)
+        }
+        None => Settings::get().default_inline_shell(),
     }
 }
 

@@ -2241,8 +2241,8 @@ impl Task {
         TaskScriptParser::new(self.config_root.clone()).validate_template_syntax(self, input)
     }
 
-    /// `inline_shell` is the shell that runs a script with no shebang when the task sets no
-    /// `shell`, so the template functions quote their values for it.
+    /// `run_shell` is `mise run --shell`, which runs a script with no shebang when the task sets
+    /// no `shell`; the template functions quote their values for the shell that reads the script.
     pub(crate) async fn render_run_scripts_with_args(
         &self,
         config: &Arc<Config>,
@@ -2250,7 +2250,7 @@ impl Task {
         args: &[String],
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
-        inline_shell: Vec<String>,
+        run_shell: Option<String>,
     ) -> Result<Vec<(String, Vec<String>)>> {
         let parsed = self
             .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
@@ -2291,7 +2291,7 @@ impl Task {
             let scripts = self
                 .make_script_parser(config, parser_dir, extra_vars)
                 .await
-                .with_inline_shell(inline_shell)
+                .with_run_shell(run_shell)
                 .parse_run_scripts_with_args(config, self, &scripts_only, &env, &args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())

@@ -55,10 +55,10 @@ pub(super) struct TaskScriptParser {
     /// `task_source_files(only_changed=true)`. Stored as a path rather than a
     /// timestamp so a template that never asks for filtering costs no syscall.
     baseline: Option<PathBuf>,
-    /// The shell that runs a script with no shebang when the task sets no `shell`: `mise run
-    /// --shell`, or the default inline shell setting when this is `None`. The template functions
-    /// quote their values for the shell that reads them.
-    inline_shell: Option<Vec<String>>,
+    /// `mise run --shell`, which runs a script with no shebang when the task sets no `shell`.
+    /// The template functions quote their values for the shell that reads the script, which
+    /// [`rendered_script_shell`] picks.
+    run_shell: Option<String>,
 }
 
 impl TaskScriptParser {
@@ -67,12 +67,12 @@ impl TaskScriptParser {
             dir,
             extra_vars: None,
             baseline: None,
-            inline_shell: None,
+            run_shell: None,
         }
     }
 
-    pub(super) fn with_inline_shell(mut self, shell: Vec<String>) -> Self {
-        self.inline_shell = Some(shell);
+    pub(super) fn with_run_shell(mut self, shell: Option<String>) -> Self {
+        self.run_shell = shell;
         self
     }
 
@@ -908,14 +908,8 @@ impl TaskScriptParser {
                 out.push(script.trim().to_string());
                 continue;
             }
-            let shell = match shell_from_shebang(script)
-                .or(task.shell()?)
-                .or_else(|| self.inline_shell.clone())
-            {
-                Some(shell) => shell,
-                None => Settings::get().default_inline_shell()?,
-            };
-            let shell_type = shell[0].parse().ok();
+            let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
+            let shell_type = shell.first().and_then(|program| program.parse().ok());
             let escape = {
                 move |v: &usage::parse::ParseValue| match v {
                     // fish reads `\'` and `\\` inside single quotes as escapes, so POSIX quoting,
@@ -1148,6 +1142,41 @@ pub(super) fn subcommand_name_from_parse(cmds: &[usage::SpecCommand]) -> Option<
     }
 }
 
+/// The shell that reads an inline run script once it is rendered, so the one whose quoting the
+/// template functions must use. It is the shell `TaskExecutor::exec_script` starts for it:
+///
+/// - Rendering trims the script, so a `#!` after leading whitespace is a shebang. Such a script
+///   is written to an executable file. The OS runs that file under its shebang on Unix, unless
+///   `use_file_shell_for_executable_tasks` is set; then, and on Windows, where the OS cannot
+///   start an extensionless script, mise picks a file shell as for a file task: the task's
+///   `shell`, then the shebang, then the default file shell.
+/// - Any other script runs under the task's `shell`, then `mise run --shell`, then the default
+///   inline shell.
+///
+/// The fallback shells are read only when the script needs one, so a shebang script still runs
+/// when a `--shell` it does not use cannot be parsed.
+fn rendered_script_shell(
+    script: &str,
+    task: &Task,
+    run_shell: Option<&str>,
+) -> Result<Vec<String>> {
+    let script = script.trim_start();
+    if !script.starts_with("#!") {
+        return match task.shell()? {
+            Some(shell) => Ok(shell),
+            None => super::task_executor::inline_shell(run_shell),
+        };
+    }
+    let shebang = shell_from_shebang(script);
+    if cfg!(unix) && !Settings::get().use_file_shell_for_executable_tasks {
+        return Ok(shebang.unwrap_or_default());
+    }
+    match task.shell()?.or(shebang) {
+        Some(shell) => Ok(shell),
+        None => Settings::get().default_file_shell(),
+    }
+}
+
 fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
     let shebang = script.lines().next()?.strip_prefix("#!")?;
     let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
@@ -1204,9 +1233,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_arg_quotes_for_the_shell_that_runs_the_script() {
+        let _guard = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let script = "echo {{ arg(i=0, name='foo') }}";
-        let fish = vec!["fish".to_string(), "-c".to_string()];
         let value = [r"\'; touch injected #".to_string()];
         let fish_quoted = r"echo '\\\'; touch injected #'";
         let posix_quoted = r"echo '\'\''; touch injected #'";
@@ -1217,25 +1246,40 @@ mod tests {
         } else {
             posix_quoted
         };
-        // A shebang picks the shell first, then the task's `shell`, then `mise run --shell`,
-        // then the default inline shell setting.
-        // (task shell, `mise run --shell`, script prefix, expected)
+        let bash = "#!/usr/bin/env bash\n";
+        let fish = "#!/usr/bin/env fish\n";
+        // The rule is `rendered_script_shell`'s. (task shell, `mise run --shell`,
+        // `use_file_shell_for_executable_tasks`, script prefix, expected)
         let cases = [
-            (None, None, "", default_quoted),
-            (None, Some(&fish), "", fish_quoted),
-            (Some("bash -c"), Some(&fish), "", posix_quoted),
-            (None, Some(&fish), "#!/usr/bin/env bash\n", posix_quoted),
+            (None, None, false, "", default_quoted),
+            (None, Some("fish -c"), false, "", fish_quoted),
+            (Some("bash -c"), Some("fish -c"), false, "", posix_quoted),
+            (None, Some("fish -c"), false, bash, posix_quoted),
+            // Rendering trims the script, so this is a shebang too.
+            (
+                None,
+                Some("fish -c"),
+                false,
+                " \n#!/bin/bash\n",
+                posix_quoted,
+            ),
+            (Some("bash -e"), None, true, fish, posix_quoted),
+            (Some("fish"), None, true, bash, fish_quoted),
+            (None, Some("fish -c"), true, bash, posix_quoted),
+            // A `--shell` the script does not use is not read.
+            (None, Some("'"), false, bash, posix_quoted),
         ];
-        for (task_shell, inline_shell, prefix, expected) in cases {
+        for (task_shell, run_shell, file_shell, prefix, expected) in cases {
+            Settings::override_with(|settings| {
+                settings.use_file_shell_for_executable_tasks = Some(file_shell);
+            })
+            .unwrap();
             let task = Task {
                 shell: task_shell.map(str::to_string),
                 ..Default::default()
             };
             let scripts = vec![format!("{prefix}{script}")];
-            let mut parser = TaskScriptParser::new(None);
-            if let Some(shell) = inline_shell {
-                parser = parser.with_inline_shell(shell.clone());
-            }
+            let parser = TaskScriptParser::new(None).with_run_shell(run_shell.map(str::to_string));
             let (_, spec) = parser
                 .parse_run_scripts(&config, &task, &scripts, &Default::default())
                 .await
@@ -1253,10 +1297,30 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 parsed,
-                vec![format!("{prefix}{expected}")],
-                "task shell {task_shell:?}, inline shell {inline_shell:?}, prefix {prefix:?}"
+                vec![format!("{}{expected}", prefix.trim_start())],
+                "task shell {task_shell:?}, --shell {run_shell:?}, file shell {file_shell}, \
+                 prefix {prefix:?}"
             );
         }
+        // A blank `--shell` names no shell; the executor refuses it rather than this panicking.
+        let task = Task::default();
+        let scripts = vec![script.to_string()];
+        let parser = TaskScriptParser::new(None).with_run_shell(Some(" ".into()));
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts,
+                &Default::default(),
+                &value,
+                &spec,
+            )
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
