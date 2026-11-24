@@ -11160,6 +11160,10 @@ source = "oldrc""#,
             if source.is_some_and(|source| !source.exists()) {
                 continue;
             }
+            // root opens a read-only file for writing, so nothing is refused
+            if target_mode & 0o200 == 0 && nix::unistd::geteuid().is_root() {
+                continue;
+            }
             let dir = tempfile::tempdir()?;
             let target = dir.path().join("target");
             let secret = dir.path().join("source");
