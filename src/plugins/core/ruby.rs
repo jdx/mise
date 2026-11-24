@@ -10,7 +10,7 @@ use xx::regex;
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::lock_checksum;
+use crate::backend::static_helpers::{is_lock_url, lock_checksum};
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cmd::CmdLineRunner;
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
@@ -691,7 +691,7 @@ impl RubyPlugin {
         let locked_info = tv
             .lock_platforms
             .get(&platform_key)
-            .filter(|info| info.url.as_deref() == Some(url.as_str()));
+            .filter(|info| is_lock_url(info.url.as_deref(), &url));
         let reuse_provenance = locked_info.is_some_and(|info| info.has_checksum_and_provenance())
             && !Settings::get().force_provenance_verify();
         if let Some((algorithm, expected)) = locked_info
@@ -1430,6 +1430,36 @@ mod tests {
             opts.get("precompiled_os").map(String::as_str),
             Some("linux")
         );
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/ruby-3.3.0-arm64_linux.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_ruby_lock_info_url_has_no_credentials() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        // merge mode does not download the archive for its checksum
+        settings.lockfile_mode = Some("merge".to_string());
+        settings.ruby.compile = Some(false);
+        settings.ruby.precompiled_url =
+            Some("https://ci:token@example.com/ruby-{version}-{platform}.tar.gz".to_string());
+        settings.ruby.precompiled_arch = Some("arm64".to_string());
+        settings.ruby.precompiled_os = Some("linux".to_string());
+        Settings::reset(Some(settings));
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+        let target = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+        let tv = ToolVersion::new(request, "3.3.0".to_string());
+        let info = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(backend.resolve_lock_info(&tv, &target))
+            .unwrap();
+
         assert_eq!(
             info.url.as_deref(),
             Some("https://example.com/ruby-3.3.0-arm64_linux.tar.gz")

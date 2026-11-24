@@ -2,6 +2,7 @@ use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::{lock_url, with_login_of};
 use crate::backend::{MISE_BINS_DIR, VersionInfo, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
@@ -510,7 +511,8 @@ impl CondaBackend {
             .lock_platforms
             .entry(platform_key.to_string())
             .or_default();
-        platform_info.url = Some(main_record.url.to_string());
+        // The lockfile names packages without the login of the channel.
+        platform_info.url = Some(lock_url(main_record.url.as_str()));
         platform_info.checksum = Self::format_sha256(&main_record);
         platform_info.conda_deps = Some(dep_basenames.clone());
 
@@ -520,7 +522,7 @@ impl CondaBackend {
             tv.conda_packages.insert(
                 (platform_key.to_string(), basename),
                 CondaPackageInfo {
-                    url: record.url.to_string(),
+                    url: lock_url(record.url.as_str()),
                     checksum: Self::format_sha256(record),
                 },
             );
@@ -571,6 +573,16 @@ impl CondaBackend {
             }
         }
         downloads.push((main_url, main_checksum));
+        // The channel's login, which the lockfile leaves out, for packages on its server.
+        let raw_opts = tv.request.options();
+        let channel = url::Url::parse(&CondaOptions::new(&raw_opts).channel_name()).ok();
+        if let Some(channel) = &channel {
+            for (url, _) in &mut downloads {
+                if let Ok(parsed) = url::Url::parse(url) {
+                    *url = with_login_of(parsed, channel).to_string();
+                }
+            }
+        }
 
         ctx.pr
             .set_message(format!("downloading {} packages", downloads.len()));
@@ -1033,7 +1045,7 @@ impl CondaBackend {
             result.insert(
                 basename,
                 CondaPackageInfo {
-                    url: record.url.to_string(),
+                    url: lock_url(record.url.as_str()),
                     checksum: Self::format_sha256(record),
                 },
             );
@@ -1210,7 +1222,7 @@ impl Backend for CondaBackend {
             )
         })?;
         Ok(PlatformInfo {
-            url: Some(main.url.to_string()),
+            url: Some(lock_url(main.url.as_str())),
             checksum: Self::format_sha256(&main),
             size: None,
             url_api: None,

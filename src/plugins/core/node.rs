@@ -1,5 +1,6 @@
 use crate::args::BackendArg;
 use crate::backend::VersionInfo;
+use crate::backend::static_helpers::{is_lock_url, lock_url, resolve_lock_url, with_login_of};
 use crate::backend::{
     Backend, VersionCacheManager, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
@@ -300,7 +301,7 @@ impl NodePlugin {
                 .lock_platforms
                 .get(&platform_key)
                 .filter(|info| {
-                    (info.url.as_deref() == Some(url.as_str()) || pinned_by_checksum)
+                    (is_lock_url(info.url.as_deref(), url.as_str()) || pinned_by_checksum)
                         && info.install.as_deref() == lockfile_install
                 })
                 .and_then(|info| info.pin_checksum().cloned());
@@ -308,7 +309,8 @@ impl NodePlugin {
                 .await?;
         }
         ctx.pr.next_operation();
-        let url = url.to_string();
+        // The lockfile names the archive without the login of `node.mirror_url`.
+        let url = lock_url(url.as_str());
         let needs_checksum = settings.node.verify
             && !pinned_by_checksum
             && tv
@@ -316,7 +318,7 @@ impl NodePlugin {
                 .get(&platform_key)
                 .map(|platform_info| {
                     platform_info.checksum.is_none()
-                        || platform_info.url.as_deref() != Some(url.as_str())
+                        || !is_lock_url(platform_info.url.as_deref(), &url)
                         || platform_info.install.as_deref() != lockfile_install
                 })
                 .unwrap_or(true);
@@ -326,7 +328,7 @@ impl NodePlugin {
             None
         };
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        let artifact_changed = (platform_info.url.as_deref() != Some(url.as_str())
+        let artifact_changed = (!is_lock_url(platform_info.url.as_deref(), &url)
             && !pinned_by_checksum)
             || platform_info.install.as_deref() != lockfile_install;
         if artifact_changed {
@@ -962,7 +964,7 @@ impl Backend for NodePlugin {
         // Fetch SHASUMS256.txt to get checksum without downloading the tarball.
         // If the file is absent from SHASUMS in fallback mode, lock the source
         // compile outcome instead of recording a binary URL that install would 404.
-        let checksum = match self.resolve_shasum(&mirror, version, &filename).await {
+        let mut checksum = match self.resolve_shasum(&mirror, version, &filename).await {
             Ok(Some(shasum)) => Some(shasum),
             Ok(None) => {
                 if node_compile != Some(false) && target.os_name() != "windows" {
@@ -973,7 +975,7 @@ impl Backend for NodePlugin {
                 return Err(eyre::Report::new(crate::errors::Error::UnsupportedTarget(
                     format!(
                         "precompiled node archive {filename} not found in {} and compilation is disabled",
-                        mirror.join(&format!("v{version}/SHASUMS256.txt"))?
+                        lock_url(mirror.join(&format!("v{version}/SHASUMS256.txt"))?.as_str())
                     ),
                 )));
             }
@@ -986,8 +988,9 @@ impl Backend for NodePlugin {
             }
         };
 
+        let url = resolve_lock_url(url.as_str(), &mut checksum).await?;
         Ok(PlatformInfo {
-            url: Some(url.to_string()),
+            url: Some(url),
             checksum,
             size: None,
             url_api: None,
@@ -1005,7 +1008,7 @@ impl NodePlugin {
         let url = mirror
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js source URL: {e}"))?;
-        let checksum = match self.resolve_shasum(&mirror, version, &filename).await {
+        let mut checksum = match self.resolve_shasum(&mirror, version, &filename).await {
             Ok(checksum) => checksum,
             Err(e) => {
                 debug!(
@@ -1016,10 +1019,11 @@ impl NodePlugin {
             }
         };
 
+        let url = resolve_lock_url(url.as_str(), &mut checksum).await?;
         Ok(PlatformInfo {
             install: Some("source".to_string()),
             checksum,
-            url: Some(url.to_string()),
+            url: Some(url),
             ..Default::default()
         })
     }
@@ -1156,6 +1160,7 @@ impl BuildOpts {
         let binary_tarball_name = format!("{slug}.tar.gz");
 
         let settings = Settings::get();
+        let mirror = settings.node.mirror_url();
         let default_binary_tarball_url = mirror_url_for(&settings.node, &binary_tarball_name)
             .join(&format!("v{v}/{binary_tarball_name}"))?;
         let platform_key = Platform::current().to_key();
@@ -1173,6 +1178,7 @@ impl BuildOpts {
                 .and_then(|pi| pi.url.as_deref())
                 .map(Url::parse)
                 .transpose()?
+                .map(|url| with_login_of(url, &mirror))
                 .unwrap_or(default_binary_tarball_url)
         };
         let binary_tarball_name = binary_tarball_url
@@ -1190,6 +1196,7 @@ impl BuildOpts {
                 .and_then(|pi| pi.url.as_deref())
                 .map(Url::parse)
                 .transpose()?
+                .map(|url| with_login_of(url, &mirror))
                 .or_else(|| {
                     locked_platform_info
                         .filter(|pi| pi.is_pinned_without_url())
@@ -1375,7 +1382,7 @@ fn lock_pins_precompiled(
 ) -> bool {
     lock_platforms
         .get(platform_key)
-        .filter(|pi| pi.install.is_none() && pi.url.as_deref() == Some(url.as_str()))
+        .filter(|pi| pi.install.is_none() && is_lock_url(pi.url.as_deref(), url.as_str()))
         .is_some_and(|pi| pi.checksum.is_some())
 }
 
@@ -1526,6 +1533,76 @@ mod tests {
         info.install = None;
         info.checksum = None;
         assert!(!lock_pins_precompiled(&lock_platforms, "linux-x64", &url));
+    }
+
+    #[test]
+    fn test_locked_url_has_no_mirror_credentials() {
+        let mirror = Url::parse("https://ci:token@corp.example/node/").unwrap();
+        let download = mirror
+            .join("v22.0.0/node-v22.0.0-linux-x64.tar.gz")
+            .unwrap();
+        let locked = "https://corp.example/node/v22.0.0/node-v22.0.0-linux-x64.tar.gz";
+        assert_eq!(lock_url(download.as_str()), locked);
+
+        // The recorded URL still describes the archive the mirror login fetches
+        let lock_platforms = BTreeMap::from([(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some(locked.to_string()),
+                checksum: Some("sha256:abc".to_string()),
+                ..Default::default()
+            },
+        )]);
+        assert!(lock_pins_precompiled(
+            &lock_platforms,
+            "linux-x64",
+            &download
+        ));
+
+        // A locked install gets the login back, on the mirror's server only
+        let locked = Url::parse(locked).unwrap();
+        assert_eq!(with_login_of(locked.clone(), &mirror), download);
+        for other in [
+            "http://corp.example/node/v22.0.0/node-v22.0.0-linux-x64.tar.gz",
+            "https://corp.example:8443/node/v22.0.0/node-v22.0.0-linux-x64.tar.gz",
+            "https://corp.example.evil.test/node/v22.0.0/node-v22.0.0-linux-x64.tar.gz",
+            "https://other@corp.example/node/v22.0.0/node-v22.0.0-linux-x64.tar.gz",
+        ] {
+            let other = Url::parse(other).unwrap();
+            assert_eq!(with_login_of(other.clone(), &mirror), other);
+        }
+        let plain = Url::parse(DEFAULT_NODE_MIRROR_URL).unwrap();
+        assert_eq!(with_login_of(locked.clone(), &plain), locked);
+    }
+
+    #[test]
+    fn test_lock_info_url_has_no_mirror_credentials() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let _env_guard = NodeEnvResetGuard::clear();
+        let mut settings = SettingsPartial::empty();
+        // merge mode does not download the archive for its checksum
+        settings.lockfile_mode = Some("merge".to_string());
+        settings.node.compile = Some(false);
+        // Nothing listens there, so SHASUMS256.txt is not found
+        settings.node.mirror_url = Some("http://ci:token@127.0.0.1:9/node/".to_string());
+        Settings::reset(Some(settings));
+
+        let backend = NodePlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "22.0.0", ToolSource::Unknown)
+            .expect("valid node request");
+        let tv = ToolVersion::new(request, "22.0.0".to_string());
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let info = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(backend.resolve_lock_info(&tv, &target))
+            .unwrap();
+
+        assert_eq!(
+            info.url.as_deref(),
+            Some("http://127.0.0.1:9/node/v22.0.0/node-v22.0.0-linux-x64.tar.gz")
+        );
     }
 
     #[test]

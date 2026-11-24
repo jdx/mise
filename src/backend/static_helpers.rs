@@ -1169,10 +1169,50 @@ pub(crate) fn lock_checksum(
     url: &str,
 ) -> Option<String> {
     let info = tv.lock_platforms.get(platform_key)?;
-    if info.url.as_deref().is_some_and(|locked| locked != url) {
+    if info.url.is_some() && !is_lock_url(info.url.as_deref(), url) {
         return None;
     }
     info.pin_checksum().cloned()
+}
+
+/// `url` as a lockfile records it: without the login that fetches it. The
+/// lockfile is committed, and the login in a mirror setting (`node.mirror_url`,
+/// `go.download_mirror`, `ruby.precompiled_url`) is the user's own.
+pub(crate) fn lock_url(url: &str) -> String {
+    mise_util::redactions::strip_url_credentials_in_value(url).into_owned()
+}
+
+/// Whether the lockfile URL `locked` names the artifact downloaded from `url`.
+/// A login is no part of that, on either side: `url` carries the one in the
+/// user's config, and an existing lockfile entry may carry one too.
+pub(crate) fn is_lock_url(locked: Option<&str>, url: &str) -> bool {
+    locked.is_some_and(|locked| lock_url(locked) == lock_url(url))
+}
+
+/// A URL from mise.lock as it is downloaded. The lockfile records it without
+/// a login, so an artifact on the server of `base`, the mirror or channel the
+/// user configured (same scheme, host and port), is fetched with the login
+/// configured there. A URL with a login of its own, or on another server,
+/// is returned as it is.
+pub(crate) fn with_login_of(mut url: url::Url, base: &url::Url) -> url::Url {
+    if url.username().is_empty() && url.password().is_none() && url.origin() == base.origin() {
+        let _ = url.set_username(base.username());
+        let _ = url.set_password(base.password());
+    }
+    url
+}
+
+/// [`lock_url`] for a `mise lock` entry of the artifact at `url`. With no
+/// checksum yet, and lockfile generation on, the artifact is hashed through
+/// `url` itself: the recorded URL, without its login, would only answer with
+/// an authentication error.
+pub(crate) async fn resolve_lock_url(url: &str, checksum: &mut Option<String>) -> Result<String> {
+    let lock_url = lock_url(url);
+    if checksum.is_none() && lock_url != url && crate::config::Settings::get().generate_lockfiles()
+    {
+        crate::lockfile::generate::download_for_verification(url, checksum).await?;
+    }
+    Ok(lock_url)
 }
 
 /// The checksum a tool pinned for this platform, in its options or in the

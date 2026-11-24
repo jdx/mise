@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use eyre::{Result, eyre};
 
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::resolve_lock_url;
 use crate::config::{CompilePurpose, Settings, SettingsExt};
 use crate::github;
 use crate::http::HTTP_FETCH;
@@ -482,6 +483,8 @@ impl RubyPlugin {
                     provenance = None;
                 }
             }
+            // A `ruby.precompiled_url` template can carry a login.
+            let url = resolve_lock_url(&url, &mut checksum).await?;
             return Ok(PlatformInfo {
                 url: Some(url),
                 checksum,
