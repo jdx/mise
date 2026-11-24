@@ -391,10 +391,10 @@ These are skipped without an error, so resolution commands keep working:
   the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
   or `api_url` names. That includes a monorepo subproject's tools and a task's
   `tools`. Only tools that global or system config declares or aliases, and no
-  project requests, keep theirs and keep `env` in their templates; a tool named
-  only on the command line, in a tool stub or by `MISE_<TOOL>_VERSION` does
-  not. A
-  project that points at a private forge or file server therefore cannot list
+  project requests, keep theirs and keep `env` in their templates, as do the
+  `tools` of a global task, including one from a task file that global config
+  includes from anywhere; a tool named only on the command line, in a tool stub
+  or by `MISE_<TOOL>_VERSION` does not. A project that points at a private forge or file server therefore cannot list
   or download versions there.
 - A project `[tool_alias]` for a tool that global config declares, so a
   repository cannot point your tool at another backend, options or versions.
