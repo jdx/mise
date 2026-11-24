@@ -1197,7 +1197,14 @@ mod tests {
         let glibc = "linux-x64-";
         let musl = "linux-x64-musl-";
         // (entries, prefix, picked file, own musl, expected); the install hashes to "aa".
-        let cases: Vec<(Vec<(&str, &str)>, &str, &str, bool, ExtractAllLock)> = vec![
+        type Case<'a> = (
+            Vec<(&'a str, &'a str)>,
+            &'a str,
+            &'a str,
+            bool,
+            ExtractAllLock,
+        );
+        let cases: Vec<Case> = vec![
             (
                 vec![("linux-x64-extract_all", "blake3:aa")],
                 glibc,
