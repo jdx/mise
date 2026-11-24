@@ -1076,6 +1076,10 @@ fn cycles_within(
     // owner -> (target, the reference that says so), owners in the order the document has them
     let mut owners: Vec<&str> = vec![];
     let mut edges: HashMap<&str, Vec<(&str, &Reference)>> = HashMap::new();
+    // `found` lists a task's keys together, where its table first appears; the text order
+    // decides which cycles a spent budget leaves out
+    let mut found: Vec<&Reference> = found.iter().collect();
+    found.sort_by_key(|reference| reference.range.start);
     for reference in found {
         let [root, owner, field, ..] = reference.path.as_slice() else {
             continue;
@@ -1100,7 +1104,9 @@ fn cycles_within(
     }
     // A `depends` between tasks of different groups is on no cycle. Only the others are
     // searched, so the tasks that are on no cycle cost one pass, however many they are.
-    let group = groups(&owners, &edges, budget);
+    let Some(group) = groups(&owners, &edges, budget) else {
+        return;
+    };
     for (owner, targets) in edges.iter_mut() {
         targets.retain(|(target, _)| group.get(target) == group.get(owner));
     }
@@ -1159,12 +1165,13 @@ fn cycles_within(
 /// Numbers the tasks so that two get the same number exactly when each depends on the other,
 /// directly or through other tasks: the strongly connected components of the graph, by
 /// Tarjan's algorithm. The walk does not recurse, because the document decides how deep the
-/// graph is. It follows every `depends` once and spends one of `budget` for each.
+/// graph is. It follows every `depends` once and spends one of `budget` for each, and gives
+/// up with `None` when that would take more than `budget`.
 fn groups<'a>(
     owners: &[&'a str],
     edges: &HashMap<&'a str, Vec<(&'a str, &Reference)>>,
     budget: &mut usize,
-) -> HashMap<&'a str, usize> {
+) -> Option<HashMap<&'a str, usize>> {
     // when the walk came to a task, and the earliest task it can get back to from there
     let mut seen: HashMap<&str, usize> = HashMap::new();
     let mut earliest: HashMap<&str, usize> = HashMap::new();
@@ -1185,7 +1192,7 @@ fn groups<'a>(
         while let Some((task, targets)) = walk.last_mut() {
             let task = *task;
             if let Some(&(target, _)) = targets.next() {
-                *budget = budget.saturating_sub(1);
+                *budget = budget.checked_sub(1)?;
                 if !seen.contains_key(target) {
                     seen.insert(target, seen.len());
                     earliest.insert(target, seen[target]);
@@ -1211,7 +1218,7 @@ fn groups<'a>(
             }
         }
     }
-    group
+    Some(group)
 }
 
 /// The edits that rename a task or template and every reference to it in `text`, or why they
@@ -2125,6 +2132,48 @@ wait_for = [["build", "arg"]]
         let (found, spent) = cycle_work(&text, 10_000);
         assert!(spent <= 10_000);
         assert!(!found.is_empty() && found.len() < 101);
+    }
+
+    #[test]
+    fn a_spent_budget_keeps_the_first_cycles_in_the_text() {
+        // `a` is the first key below `[tasks]`, so its keys are listed first, but its
+        // `depends` comes last in the text
+        let text = "[tasks]\na.env.X = \"1\"\nb.depends = [\"c\"]\nc.depends = [\"b\"]\n\
+                    a.depends = [\"d\"]\nd.depends = [\"a\"]\n";
+        let (all, _) = cycle_work(text, usize::MAX / 2);
+        assert_eq!(all.len(), 4);
+        // enough for the walk over the four `depends` and one cycle
+        let (some, _) = cycle_work(text, 40);
+        assert_eq!(some, ["dependency cycle: b -> c -> b"]);
+    }
+
+    #[test]
+    fn the_walk_over_the_tasks_stops_at_the_budget() {
+        // a chain of 10 `depends`: the walk follows each once
+        let mut text = String::new();
+        for i in 0..10 {
+            text.push_str(&format!("[tasks.t{i}]\ndepends = [\"t{}\"]\n", i + 1));
+        }
+        text.push_str("[tasks.t10]\n");
+        let parsed = parse(&text);
+        let index = Index::build(&text, None, &Roots::default());
+        let found = references(&text, &parsed);
+        let mut owners = vec![];
+        let mut edges: HashMap<&str, Vec<(&str, &Reference)>> = HashMap::new();
+        for reference in &found {
+            let owner = reference.path[1].as_str();
+            let target = index.find(Namespace::Task, &reference.name).unwrap();
+            owners.push(owner);
+            edges
+                .entry(owner)
+                .or_default()
+                .push((target.name.as_str(), reference));
+        }
+        let mut budget = 10;
+        assert!(groups(&owners, &edges, &mut budget).is_some());
+        assert_eq!(budget, 0);
+        let mut budget = 9;
+        assert!(groups(&owners, &edges, &mut budget).is_none());
     }
 
     #[test]
