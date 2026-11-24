@@ -284,19 +284,21 @@ fn complete_spec(
 /// so the value is quoted here. A value made only of characters that mean nothing to either
 /// shell stays as it is, so flags and ordinary names complete as before. Nushell matches a
 /// quoted candidate against the unquoted prefix typed so far.
+///
+/// Plain means letters, digits and `_ - . / : @ + = ~`, with neither `@` (a splat in
+/// PowerShell) nor `~` (a home directory in both) first. Everything else is quoted, `,`
+/// included: PowerShell reads `build,check` as an array of two names.
 fn quote_for_insertion(answer: String, shell: usage_rs::complete::Shell) -> String {
     let quote: fn(&str) -> String = match shell {
         usage_rs::complete::Shell::Nu => nu_quote,
         usage_rs::complete::Shell::PowerShell => powershell_quote,
         _ => return answer,
     };
-    // A leading `@` splats in PowerShell and a leading `~` is a home directory in both, so
-    // those two are only plain inside a word, as in `node@22`.
     let plain = |value: &str| {
         !value.starts_with(['@', '~'])
             && value
                 .chars()
-                .all(|c| c.is_alphanumeric() || "_-./:@+=,~".contains(c))
+                .all(|c| c.is_alphanumeric() || "_-./:@+=~".contains(c))
     };
     answer
         .split_inclusive('\n')
@@ -882,6 +884,44 @@ mod shell_name_tests {
         assert_eq!(quote_for_insertion(answer.clone(), Shell::Bash), answer);
         assert_eq!(nu_quote(r#"a'b"c\d"#), r#""a'b\"c\\d""#);
         assert_eq!(powershell_quote("a\u{2019}b"), "'a\u{2019}\u{2019}b'");
+    }
+
+    #[test]
+    fn only_word_characters_complete_unquoted() {
+        use usage_rs::complete::Shell;
+        let plain = [
+            "build", "--force", "node@22", "lint:fix", "a/b.c", "c++", "k=v", "x~y", "é",
+        ];
+        let quoted = [
+            "build,check",
+            "@all",
+            "~home",
+            "a b",
+            "a;b",
+            "a|b",
+            "a&b",
+            "$x",
+            "a(b)",
+            "{a}",
+            "a`b",
+            "a#b",
+            "a<b",
+            "a\"b",
+        ];
+        for shell in [Shell::Nu, Shell::PowerShell] {
+            for value in plain {
+                let line = format!("{value}\n");
+                assert_eq!(quote_for_insertion(line.clone(), shell), line, "{value}");
+            }
+            for value in quoted {
+                let line = format!("{value}\n");
+                let answer = quote_for_insertion(line.clone(), shell);
+                assert!(
+                    answer.starts_with(['\'', '"']) && answer != line,
+                    "{shell:?} {value}: {answer}"
+                );
+            }
+        }
     }
 
     #[test]
