@@ -329,19 +329,30 @@ fn withhold_untrusted_dirs(
     }
 }
 
-/// Whether safe mode keeps this request's tool options from the plugin's
-/// environment hooks: they come from project config, which safe mode does not
-/// trust.
-fn safe_mode_withholds_options(request: &crate::toolset::ToolRequest) -> bool {
+/// The tool options a plugin's environment hooks get in safe mode, which
+/// trusts no project config, or `None` outside safe mode.
+///
+/// A request from project config gets none. Any other request, such as a tool
+/// named on the command line or in global config, gets only the options it
+/// carries itself: the options mise looks up in the loaded config, and those
+/// it copies from config onto a command-line request, can come from the
+/// project's `mise.toml`.
+fn safe_mode_options(request: &crate::toolset::ToolRequest) -> Option<ToolOptions> {
     use crate::toolset::ToolSource;
-    Settings::safe_mode()
-        && match request.source() {
-            ToolSource::MiseToml(path)
-            | ToolSource::MiseTomlDaemon(path)
-            | ToolSource::ToolVersions(path)
-            | ToolSource::IdiomaticVersionFile(path) => !crate::config::is_global_config(path),
-            _ => false,
+    if !Settings::safe_mode() {
+        return None;
+    }
+    Some(match request.source() {
+        ToolSource::MiseToml(path)
+        | ToolSource::MiseTomlDaemon(path)
+        | ToolSource::ToolVersions(path)
+        | ToolSource::IdiomaticVersionFile(path)
+            if !crate::config::is_global_config(path) =>
+        {
+            ToolOptions::default()
         }
+        _ => request.explicit_options(),
+    })
 }
 
 fn restore_config_tool_option_env(
@@ -1238,10 +1249,9 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        let opts = if safe_mode_withholds_options(&tv.request) {
-            ToolOptions::default()
-        } else {
-            self.tool_options_for_tv(config, tv).await
+        let opts = match safe_mode_options(&tv.request) {
+            Some(opts) => opts,
+            None => self.tool_options_for_tv(config, tv).await,
         };
         // A hook that looks in the current directory, for a Pipfile say, and
         // puts what it finds on PATH would run a program an untrusted project

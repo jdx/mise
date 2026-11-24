@@ -118,3 +118,7 @@ poetry = { version = "1.8.0", pyproject = "./';touch pwned-poetry;'/pyproject.to
 TOML
 assert_contains "cd safe-repo && MISE_SAFE=1 mise env" "POETRY_HOME="
 assert_empty "$pwned_files"
+# nor through a tool named on the command line, which picks up the options
+# that mise.toml gives the same tool
+assert_contains "cd safe-repo && MISE_SAFE=1 mise x poetry@1.8.0 -- env" "POETRY_HOME="
+assert_empty "$pwned_files"
