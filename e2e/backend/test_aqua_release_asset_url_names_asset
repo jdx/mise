@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+# The signed checksums.txt of a release lists every file of it. mise picks the release asset by
+# its name, so the download and the checksum line it is compared with must be the file of that
+# name: a release answer that keeps the name `tool` but points its download URL at `tool-server`
+# must not install `tool-server` as `tool`.
+
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_USE_VERSIONS_HOST=0
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+
+mkdir -p server/gh/acme/tool/releases/download/2.0.0
+D=server/gh/acme/tool/releases/download/2.0.0
+printf '#!/bin/sh\necho acme-tool\n' >"$D/tool"
+printf '#!/bin/sh\necho acme-tool-server\n' >"$D/tool-server"
+printf '%s  tool\n%s  tool-server\n' \
+  4838d8b189adf3013f13db548864e8b5a8804cb41081c5ec78b55022557a5b5c \
+  5f767731c41132ea671c98976bc7fa9b3ac02c990eab2ef3bcb5518f737706f7 >"$D/checksums.txt"
+cat <<'SIG' >"$D/checksums.txt.minisig"
+untrusted comment: signature from minisign secret key
+RUTDdBlCBmdz0Hn6YzOSioEtDyuI1RFtX/xr2km3IQfVHGgKV5wtRB2JN5TBqHPhTVTM6yk5jlDRVVOUT7ZrhyzeMEeA009FJAY=
+trusted comment: timestamp:1795478649	file:checksums.txt	hashed
+c5n3kaqLbix4OrBtoAV444krrrkJxY3onCGjJ2RHETvhaqwa9HtHws4gE95pE7epOz/jNX7wpnrBOVUzmbahDw==
+SIG
+
+# release.json is the answer for the 2.0.0 release; `tool_url` is the download URL it gives `tool`
+write_release() {
+  local tool_url="$1" dl="https://github.com/acme/tool/releases/download/2.0.0"
+  cat <<JSON >server/release.json
+{"tag_name": "2.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-02T00:00:00Z",
+ "assets": [
+  {"name": "tool", "browser_download_url": "$dl/$tool_url", "url": "https://api.github.com/repos/acme/tool/releases/assets/1"},
+  {"name": "tool-server", "browser_download_url": "$dl/tool-server", "url": "https://api.github.com/repos/acme/tool/releases/assets/2"},
+  {"name": "checksums.txt", "browser_download_url": "$dl/checksums.txt", "url": "https://api.github.com/repos/acme/tool/releases/assets/3"},
+  {"name": "checksums.txt.minisig", "browser_download_url": "$dl/checksums.txt.minisig", "url": "https://api.github.com/repos/acme/tool/releases/assets/4"}
+ ]}
+JSON
+  printf '[%s]\n' "$(cat server/release.json)" >server/releases.json
+}
+
+start_http_server --dir server --handler - <<'PY'
+class Handler(TestHandler):
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/api/repos/acme/tool/releases":
+            self.path = "/releases.json"
+        elif path.startswith("/api/repos/acme/tool/releases/tags/"):
+            self.path = "/release.json"
+        super().do_GET()
+PY
+export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"http://127.0.0.1:$HTTP_PORT/api\",\"https://github.com\":\"http://127.0.0.1:$HTTP_PORT/gh\"}"
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR"
+cat <<'YAML' >"$REGISTRY_DIR/registry.yaml"
+packages:
+  - type: github_release
+    repo_owner: acme
+    repo_name: tool
+    asset: tool
+    format: raw
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+      minisign:
+        type: github_release
+        asset: checksums.txt.minisig
+        public_key: RWTDdBlCBmdz0E3pL1SzxsLf2iSQtJqVNe5TzRsUmi97h09J0hNMqJcb
+YAML
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'TOML' >mise.toml
+[tools]
+"aqua:acme/tool" = "2.0.0"
+TOML
+
+# The asset named `tool` gets the download URL of `tool-server`
+write_release tool-server
+assert_fail_contains "mise install" "release asset tool has a download URL that names another file"
+assert_fail "mise x -- tool"
+
+# GitHub's own answer installs `tool`
+write_release tool
+mise cache clear
+assert "mise install"
+assert "mise x -- tool" "acme-tool"

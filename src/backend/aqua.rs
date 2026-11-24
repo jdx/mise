@@ -3038,6 +3038,7 @@ impl AquaBackend {
                 gh_release.assets.iter().map(|a| &a.name).join("\n")
             )
         })?;
+        ensure_download_url_names_asset(asset)?;
 
         Ok((
             asset.browser_download_url.to_string(),
@@ -5082,6 +5083,19 @@ fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
     )
 }
 
+/// The asset is matched by `name`, but the download, the line read from a verified checksum file
+/// and the lockfile entry are named after its download URL, so the two must agree.
+fn ensure_download_url_names_asset(asset: &github::GithubAsset) -> Result<()> {
+    if get_filename_from_url(&asset.browser_download_url) != asset.name {
+        bail!(
+            "release asset {} has a download URL that names another file: {}",
+            asset.name,
+            asset.browser_download_url
+        );
+    }
+    Ok(())
+}
+
 fn select_github_release_asset<'a>(
     assets: &'a [github::GithubAsset],
     asset_strs: &IndexSet<String>,
@@ -6209,6 +6223,36 @@ no_asset: true
             url: format!("https://api.example.com/{name}"),
             digest: None,
             updated_at: None,
+        }
+    }
+
+    #[test]
+    fn download_url_must_name_the_matched_asset() {
+        let dl = "https://github.com/acme/tool/releases/download/2.0.0";
+        let with_url = |name: &str, url: String| GithubAsset {
+            browser_download_url: url,
+            ..asset(name)
+        };
+        assert!(ensure_download_url_names_asset(&with_url("tool", format!("{dl}/tool"))).is_ok());
+        assert!(
+            ensure_download_url_names_asset(&with_url(
+                "tool-1.0.0+build.tar.gz",
+                format!("{dl}/tool-1.0.0%2Bbuild.tar.gz")
+            ))
+            .is_ok()
+        );
+        for url in [
+            format!("{dl}/tool-server"),
+            format!("{dl}/tool/"),
+            format!("{dl}/..%2Ftool-server"),
+            "https://github.com/".to_string(),
+        ] {
+            let err = ensure_download_url_names_asset(&with_url("tool", url.clone())).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("release asset tool has a download URL that names another file"),
+                "{url}: {err}"
+            );
         }
     }
 
