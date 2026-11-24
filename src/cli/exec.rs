@@ -379,6 +379,10 @@ impl Exec {
         // would otherwise do this never gets the chance.
         if ts.has_lazy_declarations()
             && !program.contains(['/', '\\'])
+            && !self
+                .command
+                .as_deref()
+                .is_some_and(super::shim::is_native_shim_completion)
             && ts.has_missing_lazy_bin_provider(&config, &program).await?
         {
             ts.install_missing_lazy_bin(&mut config, &program).await?;

@@ -249,17 +249,22 @@ pub(crate) async fn install_native_shim_command(
     ts: &mut Toolset,
     command: &[String],
 ) -> Result<()> {
-    if env::MISE_SHIM_PATH.read().unwrap().is_none() {
+    if env::MISE_SHIM_PATH.read().unwrap().is_none() || is_native_shim_completion(command) {
         return Ok(());
     }
     let Some(program) = command.first() else {
         return Ok(());
     };
-    let shim_name = command_name_without_exe_suffix(program);
-    if is_offline_completion(shim_name, command) {
-        return Ok(());
-    }
-    install_missing_wrapper_command(config, ts, shim_name).await
+    install_missing_wrapper_command(config, ts, command_name_without_exe_suffix(program)).await
+}
+
+/// Whether `mise x -- <command>` is a native shim completing a word, which installs nothing,
+/// as [`is_offline_completion`] keeps a shim that is mise itself from installing.
+pub(crate) fn is_native_shim_completion(command: &[String]) -> bool {
+    env::MISE_SHIM_PATH.read().unwrap().is_some()
+        && command.first().is_some_and(|program| {
+            is_offline_completion(command_name_without_exe_suffix(program), command)
+        })
 }
 
 /// The command wrapper configured for `shim_name`, with its command installed first when

@@ -37,3 +37,13 @@ assert_directory_not_exists "$MISE_DATA_DIR/installs/http-other"
 # `mise exec` typed by the user still installs everything the config lists.
 assert_contains "mise x -- dummy 2>/dev/null" "This is Dummy 2.0.0!"
 assert_directory_exists "$MISE_DATA_DIR/installs/http-other/1.0.0"
+
+# Completing does not install a lazy tool either; running its command does.
+mise uninstall dummy@2.0.0
+cat >mise.toml <<TOML
+[tools]
+dummy = { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] }
+TOML
+__MISE_SHIM_PATH="$shim" mise x -- dummy __complete_word__ >/dev/null 2>&1 || true
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+assert_contains "__MISE_SHIM_PATH='$shim' mise x -- dummy 2>/dev/null" "This is Dummy 2.0.0!"
