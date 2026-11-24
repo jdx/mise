@@ -32,8 +32,8 @@ pub(crate) struct ToolVersions {
     /// Skipped because it links to a file of another name; never written back.
     unread: bool,
     /// Rendered from templates whose lines cannot be told apart in the result
-    /// (`{% ... %}` or `{# ... #}`, or a `{{ ... }}` or a value that spans lines); never
-    /// written back.
+    /// (`{% ... %}` or `{# ... #}`, a `{{ ... }}` or a value that spans lines, or a
+    /// `{{- ... }}` or `{{ ... -}}` that removes a line break); never written back.
     unmapped_templates: bool,
 }
 
@@ -302,7 +302,7 @@ impl ConfigFile for ToolVersions {
         }
         if self.unmapped_templates {
             eyre::bail!(
-                "not writing {}: it has a template tag, or a template or a value that spans lines, so mise cannot tell which line a template renders to and would replace every template with its value. Edit the file by hand",
+                "not writing {}: it has a template tag, a template or a value that spans lines, or a template that removes a line break, so mise cannot tell which line a template renders to and would replace every template with its value. Edit the file by hand",
                 display_path(&self.path)
             );
         }
@@ -347,12 +347,17 @@ impl ConfigFile for ToolVersions {
 }
 
 /// Whether each line of a file renders to the line of the same number. That fails
-/// when a tag (`{% ... %}`, `{# ... #}`), a value or a `{{ ... }}` spans lines; a
-/// value and an expression that both span lines can leave the count unchanged.
+/// when a tag (`{% ... %}`, `{# ... #}`), a value or a `{{ ... }}` spans lines, or
+/// when a `{{- ... }}` that starts a line or a `{{ ... -}}` that ends one removes a
+/// line break; a value that adds a line break next to one of those can leave the
+/// count unchanged. A `{{- ... }}` inside a line removes only spaces.
 fn lines_map(raw: &str, rendered: &str) -> bool {
     raw.lines().count() == rendered.lines().count()
         && !raw.contains("{%")
         && !raw.contains("{#")
+        && raw
+            .lines()
+            .all(|line| !line.trim_start().starts_with("{{-") && !line.trim_end().ends_with("-}}"))
         && raw.lines().all(|mut line| {
             while let Some(open) = line.find("{{") {
                 match line[open + 2..].find("}}") {
@@ -541,6 +546,19 @@ mod tests {
                 "node 20\npython 3.12\nruby 3\n",
                 false,
             ),
+            // whitespace control that removes a line break, next to a value that adds one
+            (
+                "node 20\n  {{- \" 18\" }}\npython {{ env.PV }}\n",
+                "node 20 18\npython 3.12\nruby 3\n",
+                false,
+            ),
+            (
+                "node {{ \"20\" -}}  \n 18\npython {{ env.PV }}\n",
+                "node 20 18\npython 3.12\nruby 3\n",
+                false,
+            ),
+            // inside a line it removes spaces only
+            ("node 2 {{- env.NV }}\n", "node 20.0.0\n", true),
         ] {
             assert_eq!(lines_map(raw, rendered), maps, "{raw:?}");
         }
