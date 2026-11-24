@@ -177,23 +177,52 @@ pub struct RegistryBackend {
     /// publish them. `github:` and `aqua:` backends only; for `aqua:` the
     /// recipe must also declare the attestations. Only the one version being installed is compared, never
     /// a version list, so unlike `min_version` any `version_order` works: a
-    /// version that isn't semver is simply not required.
+    /// version that is neither semver nor a list of numbers is not required.
     pub attestations_since: Option<&'static str>,
     pub options: &'static [(&'static str, &'static str)],
 }
 
+/// `parts`, each a string of ASCII digits, padded with `0` to `len` and keyed
+/// so that comparing keys compares the numbers, however many digits they have.
+fn padded_numbers<'a>(parts: &[&'a str], len: usize) -> Vec<(usize, &'a str)> {
+    (0..len)
+        .map(|i| {
+            let digits = parts.get(i).copied().unwrap_or("0").trim_start_matches('0');
+            (digits.len(), digits)
+        })
+        .collect()
+}
+
 impl RegistryBackend {
     /// Whether the concrete, installed `version` must carry GitHub artifact
-    /// attestations. Anything that is not a semantic version (a ref, a
-    /// channel, a build the registry can't place) is not required: the
-    /// boundary never orders opaque versions.
+    /// attestations. A semantic version is compared with the boundary, and
+    /// so is a version made only of dot-separated numbers (`0.72`,
+    /// `2.50.0.1`), a missing number counting as 0. Anything else (a ref, a
+    /// channel, a pre-release the boundary can't place) is not required:
+    /// the boundary never orders opaque versions.
     fn requires_github_attestations(&self, version: &str) -> bool {
         let Some(since) = self.attestations_since else {
             return false;
         };
         let since = semver::Version::parse(since).expect("validated registry attestations_since");
         let version = version.trim_start_matches(['v', 'V']);
-        semver::Version::parse(version).is_ok_and(|v| !v.cmp_precedence(&since).is_lt())
+        if let Ok(version) = semver::Version::parse(version) {
+            return !version.cmp_precedence(&since).is_lt();
+        }
+        let parts: Vec<&str> = version.split('.').collect();
+        if !parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return false;
+        }
+        // A pre-release boundary sorts before its release, and a list of
+        // numbers equal to that release is required either way, so only the
+        // three numbers of the boundary matter.
+        let since = [since.major, since.minor, since.patch].map(|n| n.to_string());
+        let since: Vec<&str> = since.iter().map(String::as_str).collect();
+        let len = parts.len().max(since.len());
+        padded_numbers(&parts, len) >= padded_numbers(&since, len)
     }
 
     /// Whether this entry's version range shares any version with `other`'s.
@@ -1772,15 +1801,32 @@ backends = [
         for version in ["2.50.0", "v2.50.0", "V2.51.3", "3.0.0", "2.50.0+build.1"] {
             assert!(backend.requires_github_attestations(version), "{version}");
         }
-        // Earlier releases, and anything the registry can't place, are not
-        // required: opaque versions are never ordered.
+        // A release tagged with fewer or more numbers than semver is placed
+        // by its numbers, a missing one counting as 0.
+        for version in [
+            "2.50",
+            "v2.51",
+            "3",
+            "2.50.0.1",
+            "2.050.00",
+            "2024.01.15.1",
+            "99999999999999999999.0",
+        ] {
+            assert!(backend.requires_github_attestations(version), "{version}");
+        }
+        // Earlier releases, and anything that is not a list of numbers, are
+        // not required: channels and refs are never ordered.
         for version in [
             "2.49.9",
+            "2.49",
+            "2",
+            "2.49.9.9",
             "2.50.0-rc.1",
-            "2.50",
+            "2.50.",
+            "2..50",
+            "2.50-1",
             "nightly",
             "ref:main",
-            "2024.01.15.1",
             "",
         ] {
             assert!(!backend.requires_github_attestations(version), "{version}");
