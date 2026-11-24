@@ -68,6 +68,14 @@ impl TasksRm {
             }
             definitions.push((task.as_str(), definition));
         }
+        // Every config file must be writable before any task is removed from one.
+        if !self.dry_run {
+            for (_, definition) in &definitions {
+                if let Definition::Toml(path) = definition {
+                    config_file::symlink_check_before_write(path)?;
+                }
+            }
+        }
         if !self.dry_run && !Settings::get().yes {
             let list = definitions
                 .iter()

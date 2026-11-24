@@ -611,7 +611,9 @@ pub(super) async fn choose_definition(name: &str, target: &TargetArgs) -> Result
 
 /// Whether config file `path` loads without asking for trust already, before a write.
 fn is_already_trusted(path: &Path) -> bool {
-    Settings::safe_mode() || config::is_global_config(path) || config_file::is_path_trusted(path)
+    Settings::safe_mode()
+        || config::is_global_config_write(path)
+        || config_file::is_path_trusted(path)
 }
 
 /// Writes config file `path` the way `mise set` does: asks for trust beforehand, for the files the

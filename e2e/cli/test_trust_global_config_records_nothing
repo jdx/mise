@@ -11,8 +11,13 @@ assert_no_trust_records() {
   assert "find $MISE_STATE_DIR -path '*trusted-configs/*' -print | wc -l | tr -d ' '" "0"
 }
 
-echo "=== writing global config records nothing ==="
+echo "=== the first global task reports no trust ==="
 cd "$HOME" || exit 1
+assert_not_contains "mise tasks add -g first -- echo first 2>&1" "trusted"
+assert_no_trust_records
+rm "$MISE_CONFIG_DIR/config.toml"
+
+echo "=== writing global config records nothing ==="
 assert "mise set -g FOO=bar"
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'FOO = "bar"'
 assert_no_trust_records

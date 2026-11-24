@@ -121,6 +121,9 @@ impl InteractiveConfig {
         if self.dry_run {
             self.renderer.flash_message("Dry-run mode: not saving")?;
         } else {
+            if let Some(check) = &self.before_save {
+                check(&self.path)?;
+            }
             self.doc.save(&self.path)?;
             self.doc.modified = false;
             self.renderer.flash_message("Saved")?;

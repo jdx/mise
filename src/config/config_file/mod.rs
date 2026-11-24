@@ -39,6 +39,7 @@ use eyre::{Result, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
+use path_absolutize::Absolutize;
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 
@@ -452,7 +453,10 @@ impl dyn ConfigFile {
     }
 }
 
-async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
+/// Starts a new, empty config for `path` without reading it. Nothing is written until the
+/// config is saved, so a preview of a new config uses this even where `path` is a dangling
+/// link that [`parse_or_init`] refuses.
+pub async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     let settings = IdiomaticVersionFileSettings::current();
     let detection = detect_config_file_with_settings(path, &settings).await;
     match detection {
@@ -747,6 +751,7 @@ pub fn trust_active_config() -> Result<()> {
         }
         if !is_trusted(&config_root) {
             trust(&config_root)?;
+            granted_by_this_command(&config_root);
             newly_trusted = true;
         }
     }
@@ -761,12 +766,49 @@ pub fn trust_active_config() -> Result<()> {
 /// Trusts a config root. The settings snapshot was built without the project's
 /// `[settings]` while it was untrusted, so rebuild it to pick them up.
 fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
+    trust_then_reload_settings(config_root, || {})
+}
+
+/// [`trust_and_reload_settings`] that runs `on_trusted` once the record is saved, before the
+/// reload, which can fail on the project's own `[settings]`.
+fn trust_then_reload_settings(config_root: &Path, on_trusted: impl FnOnce()) -> eyre::Result<()> {
     let was_trusted = is_trusted(config_root);
     trust(config_root)?;
+    if !was_trusted {
+        granted_by_this_command(config_root);
+    }
+    on_trusted();
     if !was_trusted && settings::is_loaded() {
         Settings::reload()?;
     }
     Ok(())
+}
+
+/// The config roots this process trusted that were not trusted when it started, resolved.
+static GRANTED_BY_THIS_COMMAND: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+
+fn resolved_root(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Notes that this process trusted `config_root`. Every way a command grants trust on its own
+/// comes through here: a command that implies trust, one typed on a terminal, a yes to the
+/// prompt, and the `yes` setting.
+fn granted_by_this_command(config_root: &Path) {
+    GRANTED_BY_THIS_COMMAND
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashSet::new)
+        .insert(resolved_root(config_root));
+}
+
+/// Whether this process trusted `config_root`, rather than finding it trusted when it started.
+fn trusted_by_this_command(config_root: &Path) -> bool {
+    GRANTED_BY_THIS_COMMAND
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|roots| roots.contains(&resolved_root(config_root)))
 }
 
 /// Whether a command that implies trust may record it for `path`. An ignore always wins: the user
@@ -1345,6 +1387,18 @@ pub(crate) fn is_ignored(path: &Path) -> bool {
 }
 
 pub fn trust(path: &Path) -> Result<()> {
+    trust_as(path, TrustAs::Config)
+}
+
+/// Approves `path` as an env file, which is never trust in the same path as config, whichever
+/// paranoid categories are on.
+pub fn trust_env_file(path: &Path) -> Result<()> {
+    trust_as(path, TrustAs::EnvFile)
+}
+
+/// Records trust in `path` for `kind`. [`trust`] approves an env file too, under only the
+/// `env_files` category, when the file is not named like a config.
+fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     let canonicalized_path = path.canonicalize()?;
@@ -1360,7 +1414,12 @@ pub fn trust(path: &Path) -> Result<()> {
     let paranoid = &Settings::get().paranoid;
     let trust_hash_path = with_appended_extension(&hashed_path, "hash");
     let env_file_path = with_appended_extension(&hashed_path, ENV_FILE_APPROVAL);
-    if paranoid.config() || (paranoid.env_files() && path.is_file()) {
+    let env_file = kind == TrustAs::EnvFile
+        || (paranoid.env_files()
+            && !paranoid.config()
+            && path.is_file()
+            && !looks_like_config_file(path));
+    if env_file || paranoid.config() || (paranoid.env_files() && path.is_file()) {
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;
     } else if trust_hash_path.exists() {
@@ -1368,10 +1427,8 @@ pub fn trust(path: &Path) -> Result<()> {
         // would keep the record bound to that file's content.
         file::remove_file(&trust_hash_path)?;
     }
-    // With only `env_files` on, a file that is not named like a config is approved as an env
-    // file, which `is_trusted` never takes as trust in it as config.
-    if paranoid.env_files() && !paranoid.config() && path.is_file() && !looks_like_config_file(path)
-    {
+    // An env file approval, which `is_trusted` never takes as trust in the path as config.
+    if env_file {
         file::write(env_file_path, "")?;
     } else if env_file_path.exists() {
         file::remove_file(&env_file_path)?;
@@ -1441,22 +1498,35 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
 
 /// Refuses to write config file `path` through a symlink to a file the user did not choose.
 ///
+/// The symlink is `path` itself, or a directory between the project and `path`, such as a
+/// linked `.config` or `.mise`: the lockfile writer checks the same directories.
+///
 /// A project's links come with its working tree, so in a checkout nobody reviewed their author
 /// would choose which file `mise use` or `mise set` replaces: a file elsewhere in the user's
 /// home, or a trust record in mise's state directory. A link that stays in the config root is
 /// followed. One that leaves it is followed only for global or system config, which the user
 /// links into place themselves (a dotfiles checkout), or for a project outside safe mode that
-/// was trusted before this command started. Nothing is ever written into the state directory through a link, and a link out of
-/// the root whose target does not exist is not followed either, so a write never creates a
-/// file outside the project.
+/// was trusted before this command started. A project's link to global config, a link into the
+/// state directory, and a link out of the root whose target does not exist are never followed,
+/// so a write never creates a file outside the project.
 pub fn symlink_check_before_write(path: &Path) -> Result<()> {
-    if !path.is_symlink() {
+    let dir_leads_out = config_root::linked_project(path).is_some_and(|project| {
+        let dir = path.parent().and_then(|dir| dir.canonicalize().ok());
+        let project = project.canonicalize().ok();
+        !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
+    });
+    if !path.is_symlink() && !dir_leads_out {
         return Ok(());
     }
     let target = file::atomic_write_target(path)?;
+    let through = if path.is_symlink() {
+        "its symlink"
+    } else {
+        "a linked directory"
+    };
     let refuse = |why: &str| -> Result<()> {
         Err(eyre!(
-            "refusing to write {} through its symlink to {}: {why}. Write the file it links to directly, or replace the link with a regular file",
+            "refusing to write {} through {through} to {}: {why}. Write the file it links to directly, or replace the link with a regular file",
             display_path(path),
             display_path(&target)
         ))
@@ -1468,16 +1538,30 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     if unresolved || target.starts_with(&state_dir) {
         return refuse("the target is in mise's state directory or cannot be resolved");
     }
+    // Global config's root is the home directory, which holds the project too, so a project's
+    // link to global config would pass every check below, and the trust it would need is the
+    // home directory's. The project's author chose that link, and `-g` writes the same file.
+    if path
+        .absolutize()
+        .is_ok_and(|abs| config::is_project_link_to_global_config(&abs))
+    {
+        return refuse(
+            "a project's link to global config is not followed. Write global config with `-g`",
+        );
+    }
+    // Below a directory link that leaves the project, the config root and the link's own
+    // directory resolve to wherever that link leads, so neither says the target stays.
     let root = config_root::config_root(path).canonicalize().ok();
-    let in_root = root.is_some_and(|root| target.starts_with(root))
-        || path
-            .parent()
-            .and_then(|dir| dir.canonicalize().ok())
-            .is_some_and(|dir| target.starts_with(dir));
+    let in_root = !dir_leads_out
+        && (root.is_some_and(|root| target.starts_with(root))
+            || path
+                .parent()
+                .and_then(|dir| dir.canonicalize().ok())
+                .is_some_and(|dir| target.starts_with(dir)));
     if in_root {
         return Ok(());
     }
-    if config::is_global_config_write(path) && !config::is_project_link_to_global_config(path) {
+    if config::is_global_config_write(path) {
         return Ok(());
     }
     if !target.exists() {
@@ -1488,14 +1572,15 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
             "a link out of the config's directory is only followed for global config, or for a trusted project outside safe mode",
         );
     }
-    // Trust this command granted on its own, because it was typed in the project, came before
-    // anyone looked at where the project's links lead, so it does not cover them.
+    // Only trust from before the command started covers a link out of the project. Trust the
+    // command granted itself, however it was granted, came before anyone looked at where the
+    // project's links lead: the prompt names the directory, not the files its links reach.
     let project = config_trust_root(path);
-    if is_path_trusted(path) && !typed_consent::trusted_by_this_command(&project) {
+    if is_path_trusted(path) && !trusted_by_this_command(&project) {
         return Ok(());
     }
     Err(eyre!(
-        "refusing to write {} through its symlink to {}: the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link with a regular file",
+        "refusing to write {} through {through} to {}: the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link with a regular file",
         display_path(path),
         display_path(&target),
         display_path(&project)
@@ -2610,6 +2695,31 @@ mod env_file_trust_tests {
         assert!(!has_trust_hash(&path));
         untrust(&path).unwrap();
         untrust(&config).unwrap();
+    }
+
+    /// With both categories on, an env file `mise trust` approves for an env directive is still
+    /// not trust in the same path as config.
+    #[test]
+    fn an_env_file_approval_is_not_config_trust_in_full_paranoid_mode() {
+        use confique::Layer;
+        use mise_settings::Paranoid;
+        let _held = crate::test::SettingsGuard::lock();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(Paranoid::all());
+        Settings::reset(Some(settings));
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("env.toml");
+        std::fs::write(&path, "A = 1\n").unwrap();
+
+        trust_env_file(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+        assert!(!is_trusted(&path));
+
+        // Trusting the path as config replaces the approval.
+        trust(&path).unwrap();
+        assert!(is_trusted(&path));
+        untrust(&path).unwrap();
+        Settings::reset(None);
     }
 
     #[test]

@@ -23,6 +23,12 @@ TYPED_TRUST_TEST = "1"
 EOF
 
 notice="because you ran a mise command there"
+# This directory as mise prints it, with the home directory as `~`.
+# shellcheck disable=SC2088
+case $PWD in
+  "$HOME"/*) shown="~${PWD#"$HOME"}" ;;
+  *) shown=$PWD ;;
+esac
 
 # Runs $1 on a pty and answers "No" if the trust prompt appears, so a run that
 # would prompt finishes instead of waiting for a key.
@@ -67,6 +73,8 @@ ok "[trust] an ignored directory is not trusted"
 # The shell's command-not-found handler runs mise on the terminal after a
 # mistyped command; nobody typed a mise command.
 output="$(on_pty 'mise hook-not-found -s bash -- nosuchbin')" || true
+# The handler leaves untrusted config out without asking.
+assert_not_contains_text "$output" "Trust them?"
 assert_not_contains_text "$output" "$notice"
 assert_untrusted
 forget_trust
@@ -76,11 +84,57 @@ ok "[trust] the command-not-found handler does not trust the project"
 assert_fail "MISE_YES=0 mise env </dev/null" "not trusted"
 assert_untrusted
 
+# The trust record names the directory, so it admits every config file there.
+# `.config/mise.toml` loads after `mise.toml`; when it belongs to another
+# account, the user's own `mise.toml` must not trust the directory for it.
+if [ "$(id -u)" != 0 ]; then
+  mkdir .config
+  ln -s /etc/passwd .config/mise.toml
+  output="$(on_pty 'mise env')" || true
+  assert_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  rm -r .config
+  forget_trust
+  ok "[trust] another account's config file in the directory still asks"
+fi
+
 # Typed on a terminal: trusted, with a notice, and the config applies.
 output="$(on_pty 'mise env')"
 assert_contains_text "$output" "$notice"
-assert_contains_text "$output" "mise untrust"
+assert_contains_text "$output" "Undo with \`mise untrust $shown/mise.toml\`"
 assert_contains_text "$output" "TYPED_TRUST_TEST"
 assert_not_contains_text "$output" "Trust them?"
 assert_contains "mise trust --show" "$(basename "$PWD"): trusted"
+forget_trust
 ok "[trust] a command typed on a terminal trusts the project"
+
+# One command can trust a parent project too. Each notice names the file whose
+# directory it trusted, so running every hint it printed undoes all of them.
+mkdir sub
+cat <<'EOF' >sub/mise.toml
+[env]
+TYPED_TRUST_SUB = "1"
+EOF
+output="$(cd sub && on_pty 'mise env')"
+assert_contains_text "$output" "TYPED_TRUST_SUB"
+assert_contains_text "$output" "mise untrust $shown/mise.toml"
+assert_contains_text "$output" "mise untrust $shown/sub/mise.toml"
+(cd sub && mise untrust "$PWD/../mise.toml" && mise untrust "$PWD/mise.toml")
+assert_untrusted
+assert_contains "cd sub && mise trust --show" "sub: untrusted"
+forget_trust
+ok "[trust] the notice for each trusted directory says how to undo it"
+
+# The notice is printed once the trust is saved, so a project whose settings
+# then fail to load still says it was trusted.
+cat <<'EOF' >sub/mise.toml
+[settings]
+versions_host_exclude = ["["]
+EOF
+output="$(cd sub && on_pty 'mise env')" || true
+assert_contains_text "$output" "mise untrust $shown/sub/mise.toml"
+# Every command now fails on that setting, `mise trust --show` too, so look for
+# the record itself.
+assert_contains "ls $MISE_STATE_DIR/trusted-configs" "sub-"
+ok "[trust] the notice is printed when the project's settings fail to load"

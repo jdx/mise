@@ -51,6 +51,27 @@ assert_contains "mise -C named run hello" "hello"
 assert_contains "mise untrust named/.mise/conf.d/x/mise.local.toml 2>&1" "untrusted ~/workdir/named/.mise/conf.d/x"
 assert_contains "mise -C named trust --show 2>&1" "~/workdir/named: trusted"
 
+# Naming the project's own mise.toml refuses only the project's root, not a nested root the
+# user trusted on its own.
+make_clone top .config/mise
+mise trust top/mise.toml
+mise trust top/.config/mise/mise.local.toml
+assert "mise untrust top/mise.toml 2>&1" "mise untrusted ~/workdir/top"
+assert_contains "mise -C top trust --show 2>&1" "~/workdir/top/.config/mise: trusted"
+
+# A nested root whose only config is for another environment is refused with its project.
+mkdir -p staged/.mise/conf.d/x
+cat <<'EOF' >staged/.mise/conf.d/x/mise.staging.toml
+[env]
+STAGED = "{{ exec(command='echo staged') }}"
+EOF
+echo "# empty" >staged/mise.toml
+mise trust staged
+MISE_ENV=staging mise trust staged/.mise/conf.d/x/mise.staging.toml
+assert_contains "MISE_ENV=staging mise -C staged env" "STAGED=staged"
+assert_contains "mise untrust staged 2>&1" "untrusted ~/workdir/staged/.mise/conf.d/x"
+assert_fail_contains "MISE_ENV=staging mise -C staged env 2>&1" "not trusted"
+
 # `mise trust --all` trusts each root once and stops.
 make_clone all .mise/conf.d/x
 assert_contains "cd all && timeout 20 mise trust --all 2>&1" "trusted ~/workdir/all"

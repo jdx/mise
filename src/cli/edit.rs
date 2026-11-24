@@ -316,6 +316,12 @@ impl Edit {
         editor = editor
             .title(&title)
             .dry_run(self.dry_run)
+            // The file can become a link while the editor is open, so where it leads is
+            // checked again when it is saved.
+            .before_save(|path| {
+                config_file::symlink_check_before_write(path)
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            })
             .with_tool_provider(Box::new(MiseToolProvider))
             .with_version_provider(Box::new(MiseVersionProvider {
                 path: env::current_dir().unwrap_or_default().join(path),
@@ -366,7 +372,13 @@ impl Edit {
     }
 
     async fn tool_versions(&self, tool_versions: &Path, path: &Path) -> Result<String> {
-        let to = config_file::parse_or_init(path).await?;
+        // A dry run writes nothing, so it previews a dangling link's new config instead of
+        // refusing it the way a write does.
+        let to = if self.dry_run && path.is_symlink() && !path.exists() {
+            config_file::init(path).await?
+        } else {
+            config_file::parse_or_init(path).await?
+        };
         let from = config_file::parse(tool_versions).await?;
         let tools = from.to_tool_request_set()?.tools;
         for (ba, tools) in tools {
