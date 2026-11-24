@@ -582,17 +582,11 @@ impl ToolRequest {
     /// [`crate::backend::url_logins::tool_key_login_url`]), unless global or system config
     /// makes the request for a tool that no project config declares. git takes those logins
     /// from the user's own setup, so mise cannot withhold them as it does for its HTTP client.
-    pub(crate) fn ensure_safe_url_tool_key(&self) -> Result<()> {
+    pub fn ensure_safe_url_tool_key(&self) -> Result<()> {
         if !Settings::safe_mode() || self.is_global_config_tool() {
             return Ok(());
         }
-        if crate::backend::url_logins::tool_key_login_url(&self.ba().full()).is_some() {
-            Settings::ensure_not_safe(&format!(
-                "fetching `{}`, a tool URL that global config does not request,",
-                crate::install_layout::resolver::redact_credentials(&self.ba().short)
-            ))?;
-        }
-        Ok(())
+        crate::backend::url_logins::ensure_safe_url_tool_key(self.ba())
     }
 
     /// Rejects install options that can execute configuration-provided code in safe mode.

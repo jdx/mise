@@ -8,6 +8,7 @@
 
 use eyre::Result;
 
+use crate::args::BackendArg;
 use crate::config::{Settings, SettingsExt};
 
 /// Hosts whose logins only ever reach the forge itself; a config naming a
@@ -40,6 +41,21 @@ pub fn tool_key_login_url(tool: &str) -> Option<String> {
         super::pipx::fetched_url(name)?
     };
     url_takes_user_logins(&url).then_some(url)
+}
+
+/// In safe mode, refuses to fetch `ba` when its key is such a URL (see
+/// [`tool_key_login_url`]). Call this before any lookup of a tool that no
+/// request from global config vouches for: one named on the command line, by a
+/// task, or by project config. A request from global config is checked with
+/// [`crate::toolset::ToolRequest::ensure_safe_url_tool_key`] instead.
+pub fn ensure_safe_url_tool_key(ba: &BackendArg) -> Result<()> {
+    if Settings::safe_mode() && tool_key_login_url(&ba.full()).is_some() {
+        Settings::ensure_not_safe(&format!(
+            "fetching `{}`, a tool URL that global config does not request,",
+            crate::install_layout::resolver::redact_credentials(&ba.short)
+        ))?;
+    }
+    Ok(())
 }
 
 /// In safe mode, refuses to run git against `remote` when project config named

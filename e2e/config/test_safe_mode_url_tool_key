@@ -18,6 +18,11 @@ EOF
   rm -f mise.lock
   assert_fail "MISE_SAFE=1 mise lock --platform linux-x64" "$refused"
   assert_fail "MISE_SAFE=1 mise install" "$refused"
+  # Looking up versions fetches the URL too, also for a name that only the
+  # command line gives.
+  rm mise.toml
+  assert_fail "MISE_SAFE=1 mise latest '$tool'" "$refused"
+  assert_fail "MISE_SAFE=1 mise ls-remote '$tool'" "$refused"
 done
 
 # A tool that only a task declares is a project tool too.
