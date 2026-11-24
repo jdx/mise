@@ -27,6 +27,14 @@ const MAX_FILES: usize = 200;
 /// Directory entries the scans for file tasks look at, in all the directories together.
 const MAX_SCAN: usize = 5000;
 
+/// What the cycle check spends on one document at most: one for every `depends` it follows
+/// and one for every byte of a message that spells a cycle out.
+const MAX_CYCLE_WORK: usize = 1_000_000;
+
+/// Unknown names past this many in one document are reported without a suggestion, since
+/// each suggestion compares the name with every known one.
+const MAX_SUGGESTIONS: usize = 100;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Namespace {
     Task,
@@ -855,6 +863,8 @@ fn key_segments(key: &str, base: usize) -> Vec<(String, Range<usize>)> {
 pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagnostic> {
     let mut out = vec![];
     let found = references(text, parsed);
+    let mut known: HashMap<Namespace, Vec<&str>> = HashMap::new();
+    let mut suggestions = 0;
     if index.complete {
         for reference in &found {
             if is_pattern(&reference.name) || is_optional(&parsed.json, &reference.path) {
@@ -866,7 +876,15 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
             }
             let mut message = format!("unknown {} `{}`", namespace.noun(), reference.name);
             // A name that needs escaping in a TOML string gets no fix.
-            let suggestion = keypath::closest(&reference.name, index.names(namespace).into_iter())
+            suggestions += 1;
+            let suggestion = (suggestions <= MAX_SUGGESTIONS)
+                .then(|| {
+                    let names = known
+                        .entry(namespace)
+                        .or_insert_with(|| index.names(namespace));
+                    keypath::closest(&reference.name, names.iter().copied())
+                })
+                .flatten()
                 .filter(|name| valid_name(name));
             if let Some(suggestion) = suggestion {
                 message.push_str(&format!("; did you mean `{suggestion}`?"));
@@ -1035,14 +1053,29 @@ fn is_optional(json: &Value, path: &[String]) -> bool {
 
 /// Reports every `depends` that is part of a cycle among the tasks the document defines.
 fn cycles(found: &[Reference], index: &Index, out: &mut Vec<Diagnostic>) {
+    let mut budget = MAX_CYCLE_WORK;
+    cycles_within(found, index, out, &mut budget);
+}
+
+/// [`cycles`], spending at most `budget`: one for every `depends` followed and one for every
+/// byte of a message that spells a cycle out. A spent budget leaves the cycles found after it
+/// unreported; the `depends` are looked at in the order of the document, so the same ones are
+/// reported every time.
+fn cycles_within(
+    found: &[Reference],
+    index: &Index,
+    out: &mut Vec<Diagnostic>,
+    budget: &mut usize,
+) {
     let defined: HashSet<&str> = index
         .tasks
         .iter()
         .filter(|d| matches!(d.origin, Origin::Open(_)))
         .map(|d| d.name.as_str())
         .collect();
-    // owner -> (target, the reference that says so)
-    let mut edges: HashMap<&str, Vec<(String, &Reference)>> = HashMap::new();
+    // owner -> (target, the reference that says so), owners in the order the document has them
+    let mut owners: Vec<&str> = vec![];
+    let mut edges: HashMap<&str, Vec<(&str, &Reference)>> = HashMap::new();
     for reference in found {
         let [root, owner, field, ..] = reference.path.as_slice() else {
             continue;
@@ -1058,53 +1091,127 @@ fn cycles(found: &[Reference], index: &Index, out: &mut Vec<Diagnostic>) {
             && defined.contains(target.name.as_str())
             && defined.contains(owner.as_str())
         {
-            edges
-                .entry(owner)
-                .or_default()
-                .push((target.name.clone(), reference));
+            let targets = edges.entry(owner).or_default();
+            if targets.is_empty() {
+                owners.push(owner);
+            }
+            targets.push((target.name.as_str(), reference));
         }
     }
+    // A `depends` between tasks of different groups is on no cycle. Only the others are
+    // searched, so the tasks that are on no cycle cost one pass, however many they are.
+    let group = groups(&owners, &edges, budget);
+    for (owner, targets) in edges.iter_mut() {
+        targets.retain(|(target, _)| group.get(target) == group.get(owner));
+    }
     // the shortest way from `from` back to `to`, by the tasks on it
-    let route = |from: &str, to: &str| -> Option<Vec<String>> {
-        let mut previous: HashMap<String, String> = HashMap::new();
-        let mut queue = VecDeque::from([from.to_string()]);
+    let route = |from: &str, to: &str, budget: &mut usize| -> Option<Vec<String>> {
+        let mut previous: HashMap<&str, &str> = HashMap::new();
+        let mut queue = VecDeque::from([from]);
         while let Some(task) = queue.pop_front() {
             if task == to {
-                let mut path = vec![task.clone()];
+                let mut path = vec![task.to_string()];
                 let mut at = task;
-                while let Some(before) = previous.get(&at) {
-                    path.push(before.clone());
-                    at = before.clone();
+                while let Some(before) = previous.get(at) {
+                    path.push(before.to_string());
+                    at = before;
                 }
                 path.reverse();
                 return Some(path);
             }
-            for (next, _) in edges.get(task.as_str()).into_iter().flatten() {
-                if next != from && !previous.contains_key(next) {
-                    previous.insert(next.clone(), task.clone());
-                    queue.push_back(next.clone());
+            for (next, _) in edges.get(task).into_iter().flatten() {
+                *budget = budget.checked_sub(1)?;
+                if *next != from && !previous.contains_key(next) {
+                    previous.insert(next, task);
+                    queue.push_back(next);
                 }
             }
         }
         None
     };
-    for (owner, targets) in &edges {
-        for (target, reference) in targets {
-            let Some(back) = route(target, owner) else {
+    'owners: for owner in owners {
+        for (target, reference) in &edges[owner] {
+            let Some(back) = route(target, owner, budget) else {
+                if *budget == 0 {
+                    break 'owners;
+                }
                 continue;
             };
             let mut cycle = vec![owner.to_string()];
             cycle.extend(back);
+            let message = format!("dependency cycle: {}", cycle.join(" -> "));
+            let Some(left) = budget.checked_sub(message.len()) else {
+                break 'owners;
+            };
+            *budget = left;
             out.push(Diagnostic::new(
                 reference.range.clone(),
                 &reference.path,
                 Severity::Error,
                 "task-cycle",
-                format!("dependency cycle: {}", cycle.join(" -> ")),
+                message,
             ));
         }
     }
     out.sort_by_key(|d| d.range.start);
+}
+
+/// Numbers the tasks so that two get the same number exactly when each depends on the other,
+/// directly or through other tasks: the strongly connected components of the graph, by
+/// Tarjan's algorithm. The walk does not recurse, because the document decides how deep the
+/// graph is. It follows every `depends` once and spends one of `budget` for each.
+fn groups<'a>(
+    owners: &[&'a str],
+    edges: &HashMap<&'a str, Vec<(&'a str, &Reference)>>,
+    budget: &mut usize,
+) -> HashMap<&'a str, usize> {
+    // when the walk came to a task, and the earliest task it can get back to from there
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    let mut earliest: HashMap<&str, usize> = HashMap::new();
+    let mut group = HashMap::new();
+    // the tasks the walk came to whose group is not known yet
+    let mut open = vec![];
+    let none = vec![];
+    let targets_of = |task: &str| edges.get(task).unwrap_or(&none).iter();
+    for &root in owners {
+        if seen.contains_key(root) {
+            continue;
+        }
+        seen.insert(root, seen.len());
+        earliest.insert(root, seen[root]);
+        open.push(root);
+        // the way from `root` to where the walk is, each task with its targets still to follow
+        let mut walk = vec![(root, targets_of(root))];
+        while let Some((task, targets)) = walk.last_mut() {
+            let task = *task;
+            if let Some(&(target, _)) = targets.next() {
+                *budget = budget.saturating_sub(1);
+                if !seen.contains_key(target) {
+                    seen.insert(target, seen.len());
+                    earliest.insert(target, seen[target]);
+                    open.push(target);
+                    walk.push((target, targets_of(target)));
+                } else if !group.contains_key(target) {
+                    earliest.insert(task, earliest[task].min(seen[target]));
+                }
+                continue;
+            }
+            walk.pop();
+            if let Some(&(before, _)) = walk.last() {
+                earliest.insert(before, earliest[before].min(earliest[task]));
+            }
+            // nothing got back past `task`: what the walk came to since then is its group
+            if earliest[task] == seen[task] {
+                while let Some(member) = open.pop() {
+                    group.insert(member, seen[task]);
+                    if member == task {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    group
 }
 
 /// The edits that rename a task or template and every reference to it in `text`, or why they
@@ -1950,6 +2057,88 @@ wait_for = [["build", "arg"]]
                 ),
             ]
         );
+    }
+
+    /// The cycle diagnostics of `text` and what finding them spent, starting from `budget`.
+    fn cycle_work(text: &str, budget: usize) -> (Vec<String>, usize) {
+        let parsed = parse(text);
+        let index = Index::build(text, None, &Roots::default());
+        let mut out = vec![];
+        let mut left = budget;
+        cycles_within(&references(text, &parsed), &index, &mut out, &mut left);
+        (out.into_iter().map(|d| d.message).collect(), budget - left)
+    }
+
+    #[test]
+    fn tasks_on_no_cycle_cost_one_pass() {
+        // each of 40 tasks depends on the 20 after it: no cycle, and many ways through
+        let mut text = String::new();
+        let mut depends = 0;
+        for i in 0..40 {
+            let later: Vec<_> = (i + 1..40.min(i + 21))
+                .map(|j| format!("\"t{j}\""))
+                .collect();
+            depends += later.len();
+            text.push_str(&format!("[tasks.t{i}]\ndepends = [{}]\n", later.join(",")));
+        }
+        let (found, spent) = cycle_work(&text, usize::MAX / 2);
+        assert!(found.is_empty());
+        assert!(spent <= depends, "{spent} steps for {depends} depends");
+        // a cycle beside them is still found
+        text.push_str("[tasks.a]\ndepends = [\"t0\", \"b\"]\n[tasks.b]\ndepends = [\"a\"]\n");
+        assert_eq!(
+            cycle_work(&text, usize::MAX / 2).0,
+            [
+                "dependency cycle: a -> b -> a",
+                "dependency cycle: b -> a -> b"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_cycle_check_stops_when_its_budget_is_spent() {
+        // a ring of 50 tasks: every `depends` is on the cycle and every message names them all
+        let mut text = String::new();
+        for i in 0..50 {
+            text.push_str(&format!(
+                "[tasks.t{i}]\ndepends = [\"t{}\"]\n",
+                (i + 1) % 50
+            ));
+        }
+        let (all, _) = cycle_work(&text, usize::MAX / 2);
+        assert_eq!(all.len(), 50);
+        let (some, spent) = cycle_work(&text, 6000);
+        assert!(spent <= 6000);
+        assert!(!some.is_empty() && some.len() < 50);
+        assert_eq!(some, all[..some.len()]);
+        assert!(some[0].starts_with("dependency cycle: t0 -> t1 -> "));
+    }
+
+    #[test]
+    fn a_long_name_on_a_cycle_is_spelled_out_within_the_budget() {
+        // `b` names the long task by its alias many times: every message spells the name out
+        let long = "x".repeat(500);
+        let text = format!(
+            "[tasks.{long}]\nalias = \"a\"\ndepends = [\"b\"]\n[tasks.b]\ndepends = [{}]\n",
+            vec!["\"a\""; 100].join(",")
+        );
+        let (found, spent) = cycle_work(&text, 10_000);
+        assert!(spent <= 10_000);
+        assert!(!found.is_empty() && found.len() < 101);
+    }
+
+    #[test]
+    fn only_the_first_unknown_names_get_a_suggestion() {
+        let names = vec!["\"bild\""; MAX_SUGGESTIONS + 1].join(",");
+        let text = format!("[tasks.build]\n[tasks.a]\ndepends = [{names}]\n");
+        let unknown = problems(&text);
+        assert_eq!(unknown.len(), MAX_SUGGESTIONS + 1);
+        assert!(
+            unknown[..MAX_SUGGESTIONS]
+                .iter()
+                .all(|(_, message)| message == "unknown task `bild`; did you mean `build`?")
+        );
+        assert_eq!(unknown[MAX_SUGGESTIONS].1, "unknown task `bild`");
     }
 
     #[test]
