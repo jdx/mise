@@ -5,11 +5,12 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ensure_plain_asset_name, ensure_plain_bin_name, read_archive_metadata,
+    ensure_plain_asset_name, ensure_plain_bin_name, lookup_platform_key, read_archive_metadata,
 };
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
+use crate::hash::hash_to_str;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -274,6 +275,20 @@ impl Backend for SPMBackend {
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &["provider", "api_url", "artifactbundle_asset"]
+    }
+
+    /// The listing options set for this platform, as in
+    /// `platforms.<os>-<arch>.api_url`. The shared cache key covers only the
+    /// top-level keys, while listing reads the platform's value first, so a
+    /// list from another host gets its own entry.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let platform_values: BTreeMap<&str, String> = self
+            .remote_version_listing_tool_option_keys()
+            .iter()
+            .filter_map(|key| lookup_platform_key(&raw_opts, key).map(|value| (*key, value)))
+            .collect();
+        Ok((!platform_values.is_empty()).then(|| hash_to_str(&platform_values)))
     }
 
     fn resolve_lockfile_options(
@@ -2855,5 +2870,47 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("does-not-exist"), "got: {msg}");
         assert!(msg.contains("swiftly"), "got: {msg}");
+    }
+
+    /// A per-platform listing option selects its own cache entry, since
+    /// listing reads it before the top-level value the shared key covers.
+    #[tokio::test]
+    async fn per_platform_listing_options_key_the_version_cache() {
+        let config = Config::get().await.unwrap();
+        let (os, arch) = crate::backend::static_helpers::platform_aliases().remove(0);
+        let backend = |opts: Option<ToolVersionOptions>| {
+            SPMBackend::from_arg(BackendArg::new_raw(
+                "spm".to_string(),
+                Some("acme/tool".to_string()),
+                "acme/tool".to_string(),
+                opts,
+                BackendResolution::new(true),
+            ))
+        };
+        let nested = |api_url: &str| {
+            let mut platform = toml::Table::new();
+            platform.insert("api_url".into(), api_url.into());
+            let mut platforms = toml::Table::new();
+            platforms.insert(format!("{os}-{arch}"), platform.into());
+            opts_with("platforms", platforms.into())
+        };
+        let context = async |opts| {
+            backend(opts)
+                .remote_version_cache_context(&config)
+                .await
+                .unwrap()
+        };
+
+        assert_eq!(context(None).await, None);
+        let acme = context(Some(nested("https://github.acme.com/api/v3"))).await;
+        let other = context(Some(nested("https://github.other.com/api/v3"))).await;
+        assert!(acme.is_some());
+        assert_ne!(acme, other);
+        let flat = context(Some(opts_with(
+            &format!("platforms_{os}_{arch}_api_url"),
+            "https://github.acme.com/api/v3".into(),
+        )))
+        .await;
+        assert_eq!(flat, acme);
     }
 }
